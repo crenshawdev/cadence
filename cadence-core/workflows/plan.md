@@ -155,8 +155,9 @@ another iteration.
 </step>
 
 <step name="commit">
-1. Overwrite the .planning/STATE.md cursor (~4 lines): phase {N} + name,
-   status "planned", next "/cad-execute {N}". No history, no log entries.
+1. Overwrite the .planning/STATE.md cursor in the canonical schema
+   (references/conventions.md): `Phase: {N} of {total} ({name})`,
+   status "planned", next "/cad-execute {N}", `Updated:` today. No log entries.
 2. If planning.commit_docs is true: apply the protected-branch guard
    (references/git.md rail 1), then commit the plan file(s) and STATE.md -
    `docs: plan phase {N} - {name}` - staging exactly those files.

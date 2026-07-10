@@ -254,8 +254,8 @@ full file": show the file, then re-ask.
 </step>
 
 <step name="state">
-Read `$HOME/.claude/cadence-core/templates/STATE.md` and write
-`.planning/STATE.md` as the 4-line cursor, nothing else:
+Write `.planning/STATE.md` as the canonical 4-line cursor
+(references/conventions.md), nothing else:
 
 ```markdown
 # State
@@ -263,6 +263,7 @@ Read `$HOME/.claude/cadence-core/templates/STATE.md` and write
 Phase: 1 of [N] ([Phase 1 name])
 Status: ready to plan
 Next: /cad-context 1
+Updated: [today]
 ```
 
 Do NOT create `.planning/phases/` directories - they are created lazily by

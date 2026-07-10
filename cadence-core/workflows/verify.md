@@ -187,10 +187,10 @@ Compute the session result:
   without a reason.
 
 Update the UAT.md frontmatter status. On **complete**, overwrite the
-`.planning/STATE.md` cursor per templates/STATE.md: current phase, status
-"phase complete", next action (next phase, or /cad-land if this was the
-last). STATE.md stays a ~4-line cursor - no session log, no history
-append.
+`.planning/STATE.md` cursor in the canonical schema (references/conventions.md):
+`Phase: <N> of <total> (<name>)`, status "phase complete", next action (next
+phase's /cad-context, or /cad-land if this was the last), `Updated:` today.
+STATE.md stays a 4-line cursor - no session log, no history append.
 
 If `planning.commit_docs` is true, commit UAT.md (plus STATE.md when it
 changed): `docs: phase <N> UAT - {passed} passed, {failed} failed`.

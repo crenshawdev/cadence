@@ -125,21 +125,24 @@ SUMMARY open items, not a fix loop.
 Write `.planning/phases/<N>/SUMMARY.md` from
 `$HOME/.claude/cadence-core/templates/SUMMARY.md`, aggregating the executor
 reports: what shipped, commits per task with hashes, deviations, open items,
-and the goal-check paragraph.
-
-If `planning.commit_docs` is true, commit it: `docs(<N>): phase <N> summary`.
+and the goal-check paragraph. Do not commit yet - the cursor lands in the
+same docs commit (state step).
 </step>
 
 <step name="state">
-Overwrite `.planning/STATE.md` with the 4-line cursor (full overwrite, never
-append):
+Overwrite `.planning/STATE.md` with the canonical 4-line cursor
+(references/conventions.md), full overwrite, never append:
 
 ```
-Phase: <N> - <name>
+Phase: <N> of <total> (<name>)
 Status: executed
 Next: /cad-verify <N>
 Updated: YYYY-MM-DD
 ```
+
+If `planning.commit_docs` is true, commit SUMMARY.md and STATE.md together -
+`docs(<N>): phase <N> summary` - staging exactly those two files. The cursor
+is never left uncommitted.
 </step>
 
 <step name="done">

@@ -215,10 +215,11 @@ no ambiguity report - git and the file itself are the record.
 </step>
 
 <step name="update_cursor">
-Overwrite `.planning/STATE.md` with the 4-line cursor (never append):
+Overwrite `.planning/STATE.md` with the canonical 4-line cursor
+(references/conventions.md), never append:
 
 ```
-Phase: {N} - {phase_name}
+Phase: {N} of {total} ({phase_name})
 Status: context gathered
 Next: /cad-plan {N}
 Updated: {date}

@@ -21,9 +21,27 @@ Read only the keys you need. Unknown keys are ignored, never fatal.
 
 ## State
 
-- `STATE.md` is a ~4-line cursor (current phase / status / next action). It is
-  overwritten, never appended. NO audit logs, no activity tables, no session
-  narratives - git history is the log. Derive views from `git log` on demand.
+- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended. NO
+  audit logs, no activity tables, no session narratives - git history is the
+  log. Derive views from `git log` on demand.
+- Canonical cursor schema - every writer emits exactly these four lines under a
+  `# State` heading, in this order:
+
+  ```
+  Phase: <N> of <total> (<phase name>)
+  Status: <lifecycle value>
+  Next: <the one command to run next>
+  Updated: <YYYY-MM-DD>
+  ```
+
+- Status lifecycle (the only permitted values, one per spine step):
+  `ready to plan` (new-project) -> `context gathered` (context) -> `planned`
+  (plan) -> `executed` (execute) -> `phase complete` (verify). `paused`
+  (cad-pause) is allowed at any point. Do not invent other values.
+- `cad-progress` treats the cursor as a hint: if it disagrees with the derived
+  state it rewrites it in this schema. Any skill that changes phase state
+  overwrites the cursor and commits it with that step's docs commit - never
+  leave it dirty.
 
 ## Subagents and reviews
 

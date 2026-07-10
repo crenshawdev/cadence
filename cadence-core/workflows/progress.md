@@ -35,9 +35,10 @@ disagrees with the derivation, the derivation wins.
 
 <step name="reconcile">
 If STATE.md is missing, or its cursor disagrees with the derived current
-phase/status, overwrite it with the derived cursor: ~4 lines (phase, status,
-next action), keeping an existing pause note only if it still applies.
-Overwrite, never append - git is the log.
+phase/status, overwrite it with the derived cursor in the canonical schema
+(references/conventions.md): `Phase: <N> of <total> (<name>)`, the derived
+status, next action, `Updated:` today, keeping an existing pause note only if
+it still applies. Overwrite, never append - git is the log.
 </step>
 
 <step name="stats">
