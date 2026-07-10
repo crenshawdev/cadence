@@ -61,9 +61,10 @@ The hard rules (DESIGN §6), in order of importance:
 | Structural-deviation stop | cad-execute | the executor returns a structural checkpoint |
 | PHASE TOO BIG | cad-plan | the plan cannot fit one pass |
 
-cad-debug does not exist yet; its rows wire in when it is built. cad-execute's
-structural checkpoint and cad-plan's PHASE-TOO-BIG are live and reference this
-file at those points.
+All rows are live: cad-debug references this file at its three dead-ends
+(Attempts >= 3, test red after 3 iterations, exhausted hypotheses), and
+cad-execute's structural checkpoint and cad-plan's PHASE-TOO-BIG reference it at
+those points.
 
 ## Config
 
