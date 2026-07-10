@@ -386,7 +386,6 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
   "search": { "brave_search": false, "firecrawl": false, "exa_search": false },
   "memory": { "backend": "none" },
   "review": {
-    "backend": "claude-subagent",
     "mode": "adjudicated",
     "reviewers": ["claude-subagent"],
     "key_file": null,
@@ -409,6 +408,12 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
 (off by default); granularity → kept; response_language/i18n → **cut (English v1)**. Everything in
 §3's DELETE buckets (model-ID routing, multi-runtime, multi-team, cut-feature toggles, state/guard
 cruft, local-server review hosts) is gone.
+
+**Canonical shape + validation:** the block above is illustrative; the source of truth for keys,
+types, enums, and defaults is `cadence-core/config.schema.json`, enforced by the `bin/config.mjs`
+seam (`validate | check | set | keys`). `cad-config` writes only through it. `mode` is
+`interactive`-only for v1 (autonomous/audit-fix cut, §3); `review.reviewers[]` is the live
+reviewer selector (`review.backend` was removed as dead); `review.mode` is `single|panel|adjudicated`.
 
 **Review block shape (step 5):** each trigger picks a *gate* + a cognitive *tier*
 (flagship/balanced/cheap) + *effort*, all provider-agnostic; `providers.<name>.tiers`

@@ -27,7 +27,6 @@
   "search": { "brave_search": false, "firecrawl": false, "exa_search": false },
   "memory": { "backend": "none" },
   "review": {
-    "backend": "claude-subagent",
     "mode": "adjudicated",
     "reviewers": ["claude-subagent"],
     "key_file": null,
