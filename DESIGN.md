@@ -43,6 +43,15 @@ These are worth more than any per-skill cut. Each removes weight from *many* ski
    → Removes the verify-loop, fix-loop, advisor fan-out, convergence loop, secure-phase
    auditor, code-reviewer, and most web-research fan-outs as separate machinery.
 
+**Emergent property — context is disposable.** These four decisions share a
+consequence worth naming: durable state lives in files (`.planning/` docs, git
+history) and every plan, review, and execution runs in a fresh-context
+subagent, so the working conversation carries almost nothing a file doesn't
+already hold. Cadence is meant to be `/clear`-ed aggressively mid-project —
+clear at any phase boundary and the next command reconstructs what it needs
+from disk. This is a deliberate *attempt* at context frugality — it keeps
+prompt-cache reuse high and the orchestrator context lean — not a guarantee.
+
 ---
 
 ## 2. Cadence skill set (~22 skills replacing 69)
@@ -329,6 +338,12 @@ lever is trigger frequency (gating), never a weak reviewer.
   *escalation* uses a small set of **variant agent files** (`planner-high`/`planner-low`, etc.) for
   the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps effort-variant
   when needed, bounded by guardrails.
+- ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
+  (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
+  (`references/seams.md`) resolves every dispatch through it; re-dispatch sites pass `--attempt N`
+  so `auto` escalates on failure. `model.profile` gains `auto`; the one low-effort role
+  (`cad-plan-checker`) escalates via variant file `cad-plan-checker-high`. Tests: `bin/route.test.mjs`
+  (10, zero-dep `node:test`). Role tiers + matrix are data — edit `route-table.json`, not code.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + fork
@@ -386,7 +401,6 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
   "search": { "brave_search": false, "firecrawl": false, "exa_search": false },
   "memory": { "backend": "none" },
   "review": {
-    "backend": "claude-subagent",
     "mode": "adjudicated",
     "reviewers": ["claude-subagent"],
     "key_file": null,
@@ -409,6 +423,12 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
 (off by default); granularity → kept; response_language/i18n → **cut (English v1)**. Everything in
 §3's DELETE buckets (model-ID routing, multi-runtime, multi-team, cut-feature toggles, state/guard
 cruft, local-server review hosts) is gone.
+
+**Canonical shape + validation:** the block above is illustrative; the source of truth for keys,
+types, enums, and defaults is `cadence-core/config.schema.json`, enforced by the `bin/config.mjs`
+seam (`validate | check | set | keys`). `cad-config` writes only through it. `mode` is
+`interactive`-only for v1 (autonomous/audit-fix cut, §3); `review.reviewers[]` is the live
+reviewer selector (`review.backend` was removed as dead); `review.mode` is `single|panel|adjudicated`.
 
 **Review block shape (step 5):** each trigger picks a *gate* + a cognitive *tier*
 (flagship/balanced/cheap) + *effort*, all provider-agnostic; `providers.<name>.tiers`

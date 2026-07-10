@@ -215,7 +215,8 @@ Passed {n}/{total} ({v} auto-verified) | Failed {n} | Skipped {n} | Blocked {n}
 ```
 
 One suggestion max: the resume command if partial, the next phase if
-complete.
+complete. Either way, safe to `/clear` first: UAT.md and the STATE cursor
+hold the result and the next command starts fresh.
 </step>
 
 </process>

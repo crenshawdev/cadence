@@ -49,17 +49,22 @@ For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
 for it to finish before starting the next. Timeout:
 `workflow.subagent_timeout`.
 
-Record the pre-plan HEAD, then dispatch with a prompt containing:
+Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
+successive executors in the phase share a cached prefix: phase-level context
+(identical across the phase's plans) before the plan-specific tail.
 - Phase number, name, and the one-line goal.
-- Files to read at start: the plan file, `.planning/phases/<N>/CONTEXT.md`
-  (if present), `.planning/PROJECT.md` (if present), project `CLAUDE.md`
-  (if present).
-- Commit scope: `{phase}-{plan}` (e.g. `feat(3-2): ...`).
-- Mode line: "Sequential executor on the normal working tree."
-- The standing rules: one atomic commit per task; record every deviation;
-  stop with a checkpoint on structural deviations and risk-surface matches;
-  never write STATE.md, ROADMAP.md, or SUMMARY.md; return the structured
-  report.
+- Shared files to read first (identical for every plan in the phase): project
+  `CLAUDE.md` (if present), `.planning/PROJECT.md` (if present),
+  `.planning/phases/<N>/CONTEXT.md` (if present).
+- Then the plan-specific tail: the plan file to read, commit scope
+  `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
+  executor on the normal working tree."
+
+Do NOT restate the executor's standing rules (atomic commit per task,
+deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
+report format) - `cad-executor.md` already carries them as its stable, cached
+definition. Repeating them in the volatile dispatch tail pays for cached
+content twice.
 
 Handle the executor's return:
 - **complete** -> collect its report (tasks, hashes, deviations, open items).
@@ -149,7 +154,9 @@ is never left uncommitted.
 
 <step name="done">
 Report tersely: plans executed, commits (count and range), deviations count,
-open items, goal-check verdict. One suggestion max: `/cad-verify <N>`.
+open items, goal-check verdict. One suggestion max: `/cad-verify <N>` - safe
+to `/clear` first: SUMMARY.md and the STATE cursor are committed and
+verification runs in a fresh subagent.
 </step>
 
 </process>

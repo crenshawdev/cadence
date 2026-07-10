@@ -285,7 +285,9 @@ Commit(s): {hashes, or "none - commit_docs is false"}
 Next: /cad-context 1
 ```
 
-One suggestion, no menu.
+One suggestion, no menu. A `/clear` before it is safe - everything is on disk
+in `.planning/` and `/cad-context` runs a fresh analyzer, so the interview
+transcript need not be carried forward.
 </step>
 
 </process>
