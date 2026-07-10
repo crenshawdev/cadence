@@ -15,9 +15,12 @@ codex-risk-gate), Artifact + cosmic-design for UI, rtk for tests. Claude-Code-on
 
 These are worth more than any per-skill cut. Each removes weight from *many* skills at once.
 
-1. **Hard git fork — your edits ARE the source.** gd-light is a plain git repo symlinked into
-   `~/.claude`, updated by `git pull` (+ occasional manual `git merge`/cherry-pick from
-   upstream that you adjudicate). NO destructive clean-install.
+1. **Hard git fork — the repo is the only source.** gd-light is a plain git repo; the installed
+   tree under `~/.claude` is disposable output, NEVER edited in place. Install = idempotent
+   copy script, re-run after any repo edit or `git pull` (+ occasional manual `git merge`/
+   cherry-pick from upstream that you adjudicate). An `install.sh --dev` flag may symlink
+   instead for fast local iteration, but no skill/agent/workflow may depend on the install
+   mechanism — distributable (copy-based, Windows-safe) from day one.
    → Evaporates the entire `update` / `sync-skills` / `reapply-patches` / `gsd-pristine` /
    three-way-merge / `installer-migrations` subsystem. GSD's own patch machinery proves the
    tolerable-divergence ceiling is too low to track upstream as patches; gd-light diverges
@@ -131,8 +134,11 @@ integration-checker, code-reviewer/code-fixer (→ panel-review).
 ## 5. Open questions for John (discussion)
 1. Keep structured `.planning/` STATE at all, or go lighter (git + a thin ROADMAP/SUMMARY)?
    This decides whether `health`/`forensics`/`undo`-manifest survive.  → **DECIDED: slim-cursor.**
-   Keep ROADMAP + per-phase PLAN/SUMMARY/UAT; collapse STATE to a ~4-line cursor (phase/status/next,
-   no audit log); cut all derived/analytics files. `health` → ~20-line "is ROADMAP/cursor parseable".
+   Canonical `.planning/` file set: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`
+   (~4-line cursor: phase/status/next, no audit log), `phases/<N>/{PLAN,SUMMARY,UAT}.md`.
+   Nothing else — cut all derived/analytics files. (PROJECT.md + REQUIREMENTS.md stay because
+   `cad-new-project` writes them and `cad-milestone`/`cad-audit` consume them.)
+   `health` → ~20-line "is ROADMAP/cursor parseable".
    `forensics` → cut (self-obsoletes once worktree-waves are opt-in), handle ad hoc via git + review.
 3. pause/resume → **SETTLED:** `/cad-pause` = tiny skill (WIP commit + write cursor + one-line
    "where I was"). Resume is **folded into `/cad-progress`** (already reads the cursor). One skill,
@@ -149,6 +155,14 @@ integration-checker, code-reviewer/code-fixer (→ panel-review).
 
 - **Positioning:** public distribution eventually; a trimmed **single-developer** fork of GSD,
   properly licensed. Trim anything team/multi-author.
+- **Distribution model:** distributable from the start. **User install = npm** (like GSD:
+  `npx @vintagetechie/cadence install`) — the package carries the tree and runs the same
+  idempotent **copy** into `~/.claude` (`skills/cad-*`, `agents/cad-*.md`, `cadence-core/`);
+  update = rerun at the new version. **Dev/contributor flow = clone + `./install.sh`**
+  (`--dev` = per-item symlinks, local-iteration convenience ONLY — the project and skills
+  never lean on symlinks). Installed tree is disposable, never edited in place; that rule is
+  what lets npm-copy work with zero reapply-patches machinery (GSD ships
+  `verify-reapply-patches.cjs` because its users edit the installed copy).
 - **Runtime:** **Claude Code only**, one clean path resolver, no multi-host shim. But the three
   host-touchpoints — **ask-user, spawn-agent, run-external-review-CLI** — go through thin internal
   seams so a future contributor could add a runtime without rewriting workflows
@@ -171,6 +185,17 @@ integration-checker, code-reviewer/code-fixer (→ panel-review).
 - Config drives: `backend`, `mode` (single|panel|adjudicated), `reviewers[]`, `models.<cli>`,
   and per-trigger gating (`plan`, `diff`, `risk_surface` auto-detected, `pre_ship`) at
   off|advisory|blocking|adjudicated.
+- **Trigger wiring (which skill fires what):** `plan` → `cad-plan`, after PLAN.md is written;
+  `diff` → `cad-execute`, at plan completion (advisory by default — low-ceremony solo flow);
+  `risk_surface` → `cad-execute`, at commit time when the diff matches a risk surface;
+  `pre_ship` → `cad-land`, before executing the chosen publish mechanism. `cad-verify` routes
+  fix requests through the subsystem rather than spawning its own fixer loop.
+- **`risk_surface` detection — shipped defaults** (path/diff heuristics, configurable list):
+  auth/authz/sessions · DB schema/migrations · money/billing/pricing · concurrency/async/locking ·
+  destructive ops (deletes, bulk updates, drops) · secrets/crypto/keys · public API/wire
+  contracts · untrusted-input parsing.
+- The spine is built before the review subsystem, so the **trigger interface (a stub seam) is a
+  Foundation deliverable** — spine skills call the seam from day one; the subsystem fills it in later.
 - The auto-replan *convergence loop* is cut (auto-decides; against verify-before-done discipline).
 
 ### Model routing = minimal canned profiles + optional auto (the standout feature)
@@ -224,19 +249,19 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
 {
   "mode": "interactive",
   "granularity": "standard",
-  "context_window": 200000,
+  "context_window": 1000000,
   "model": {
     "profile": "balanced",
     "auto": { "ceiling": "quality", "escalate_on_failure": true, "max_escalations": 1 }
   },
   "workflow": {
-    "research": true, "plan_check": true, "verifier": true, "auto_advance": false,
+    "research": false, "plan_check": true, "verifier": true, "auto_advance": false,
     "discuss_mode": "discuss", "skip_discuss": false, "human_verify_mode": "end-of-phase",
     "subagent_timeout": 300000, "inline_plan_threshold": 3,
     "test_command": null, "build_command": null
   },
   "parallelization": {
-    "enabled": true, "max_concurrent_agents": 3, "min_plans_for_parallel": 2,
+    "enabled": false, "max_concurrent_agents": 3, "min_plans_for_parallel": 2,
     "use_worktrees": true
   },
   "git": {
@@ -255,7 +280,7 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
     "reviewers": ["claude-subagent"],
     "models": { "codex": "codex exec {prompt}", "gemini": "gemini -p {prompt}" },
     "triggers": {
-      "plan": "adjudicated", "diff": "blocking",
+      "plan": "adjudicated", "diff": "advisory",
       "risk_surface": "blocking", "pre_ship": "adjudicated"
     }
   }
