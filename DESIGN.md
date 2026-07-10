@@ -1,8 +1,8 @@
-# gd-light — Design & Fork Plan
+# Cadence — Design & Fork Plan
 
 A single-developer fork of GSD, derived from a file-backed deep-dive of all 69 skills,
 34 agents, and the `gsd-core` engine (110 workflows / 94 references / 143 node scripts /
-~55K lines). Per-skill analyses live in the session scratchpad (`dd-*.md`).
+~55K lines). Per-skill analyses live in `design-notes/dd-*.md` (gitignored, local only).
 
 Audience assumptions (John): solo dev; Rust/CLI/backend + some COSMIC/iced UI + general
 scripts; NOT building AI/LLM products; already runs mem-* (primary memory), claude-mem,
@@ -15,7 +15,7 @@ codex-risk-gate), Artifact + cosmic-design for UI, rtk for tests. Claude-Code-on
 
 These are worth more than any per-skill cut. Each removes weight from *many* skills at once.
 
-1. **Hard git fork — the repo is the only source.** gd-light is a plain git repo; the installed
+1. **Hard git fork — the repo is the only source.** Cadence is a plain git repo; the installed
    tree under `~/.claude` is disposable output, NEVER edited in place. Install = idempotent
    copy script, re-run after any repo edit or `git pull` (+ occasional manual `git merge`/
    cherry-pick from upstream that you adjudicate). An `install.sh --dev` flag may symlink
@@ -23,7 +23,7 @@ These are worth more than any per-skill cut. Each removes weight from *many* ski
    mechanism — distributable (copy-based, Windows-safe) from day one.
    → Evaporates the entire `update` / `sync-skills` / `reapply-patches` / `gsd-pristine` /
    three-way-merge / `installer-migrations` subsystem. GSD's own patch machinery proves the
-   tolerable-divergence ceiling is too low to track upstream as patches; gd-light diverges
+   tolerable-divergence ceiling is too low to track upstream as patches; Cadence diverges
    *structurally*, so it must own its source.
 
 2. **Delete the 16–18-host CLI locator shim everywhere.** It is pasted (~40 lines) into nearly
@@ -35,53 +35,55 @@ These are worth more than any per-skill cut. Each removes weight from *many* ski
    history (and your mem-*/vault). git is the log. → Simplifies `.planning/`, which in turn
    shrinks `health`, `forensics`, `cleanup` by design.
 
-4. **Route every second opinion to Codex.** Kill all internal "Claude-reviews/researches/
-   fixes/converges-Claude" loops. They are weaker same-model second opinions than
-   `/panel-review` + `codex-rescue`, which you already trust and which are genuinely distinct.
+4. **Route every second opinion through the review subsystem (§6).** Kill all ad-hoc internal
+   "Claude-reviews/researches/fixes/converges-Claude" loops scattered across skills; one
+   configurable subsystem replaces them. Default backend is a fresh-context, refute-prompted
+   claude-subagent (zero-dep); cross-model reviewers (Codex/Gemini/custom CLI) are a configured
+   upgrade for users who run a second model.
    → Removes the verify-loop, fix-loop, advisor fan-out, convergence loop, secure-phase
-   auditor, code-reviewer, and most web-research fan-outs.
+   auditor, code-reviewer, and most web-research fan-outs as separate machinery.
 
 ---
 
-## 2. gd-light skill set (~18 skills replacing 69)
+## 2. Cadence skill set (~22 skills replacing 69)
 
 ### Build spine (the core loop)
-| gd-light skill | Derived from | Change |
+| Cadence skill | Derived from | Change |
 |---|---|---|
-| `gd-new-project` | new-project (1629L) | Keep questioning spine; research off-by-default → optional Codex pass. ~55% smaller |
-| `gd-context` | **discuss + spec + mvp** | Collapse 3 pre-plan gates into 1. Keep assumptions-analyzer + falsifiable acceptance + one "too big?" question. Cut ambiguity scoring, edge-probe engine, SPIDR, interview modes |
-| `gd-plan` | plan-phase (1770L) | Planner-only (+ optional checker); ~4 flags not ~20; plan-review → Codex. ~250L |
-| `gd-execute` | execute-phase (1707L) | **Sequential inline**, no worktree waves. Keep atomic commits + deviation rules + SUMMARY + light goal check. ~200L |
-| `gd-verify` | verify-work (877L) | Keep conversational persistent UAT; fixes → Codex; `--sweep` folds audit-uat. ~1/4 size |
-| `gd-progress` | progress (1250L) | Count-based truth + auto-resume incomplete phase. Fold `stats` as `--stats`. Cut `--do`/`--forensic`/`--converge`. ~100L |
-| `gd-task` | **fast + quick** | Merge. Inline-first (fast's clean body); `--plan` opt-in; worktree off. Replaces ~1100L with a few hundred |
+| `cad-new-project` | new-project (1629L) | Keep questioning spine; research off-by-default → optional Codex pass. ~55% smaller |
+| `cad-context` | **discuss + spec + mvp** | Collapse 3 pre-plan gates into 1. Keep assumptions-analyzer + falsifiable acceptance + one "too big?" question. Cut ambiguity scoring, edge-probe engine, SPIDR, interview modes |
+| `cad-plan` | plan-phase (1770L) | Planner-only (+ optional checker); ~4 flags not ~20; plan-review → Codex. ~250L |
+| `cad-execute` | execute-phase (1707L) | **Sequential inline**, no worktree waves. Keep atomic commits + deviation rules + SUMMARY + light goal check. ~200L |
+| `cad-verify` | verify-work (877L) | Keep conversational persistent UAT; fixes → Codex; `--sweep` folds audit-uat. ~1/4 size |
+| `cad-progress` | progress (1250L) | Count-based truth + auto-resume incomplete phase. Fold `stats` as `--stats`. Cut `--do`/`--forensic`/`--converge`. ~100L |
+| `cad-task` | **fast + quick** | Merge. Inline-first (fast's clean body); `--plan` opt-in; worktree off. Replaces ~1100L with a few hundred |
 
 ### Quality gates (all defer to Codex)
-| gd-light skill | Derived from | Change |
+| Cadence skill | Derived from | Change |
 |---|---|---|
-| `gd-plan-review` | **gsd-review** (the one cross-AI keeper) | Codex-only, ~50L. Reviews the PLAN *before* code — a real gap /panel-review doesn't fill (it reviews diffs). Cut convergence loop + all non-Codex hosts |
-| `gd-debug` | debug | Persistent hypothesis-state across `/clear` + scientific method, single-pass. Deep cases → codex-rescue. Cut session-manager layer + specialist dispatch |
-| `gd-coverage` | **validate-phase + add-tests** | Merge. "Which requirements have zero failing-test coverage → generate tests." Model-agnostic, un-duplicated. Drop Nyquist branding, Playwright default |
-| `gd-docs-verify` | docs-update verifier (~220L of 1168) | Keep the verify-claims-against-live-code engine (real value for OSS distribution). Collapse the writer |
-| `gd-audit` | audit-milestone | Pre-ship requirement-traceability cross-ref + orphan detection + FAIL gate. Catches silently-dropped requirements |
+| `cad-plan-review` | **gsd-review** (the one cross-AI keeper) | Codex-only, ~50L. Reviews the PLAN *before* code — a real gap /panel-review doesn't fill (it reviews diffs). Cut convergence loop + all non-Codex hosts |
+| `cad-debug` | debug | Persistent hypothesis-state across `/clear` + scientific method, single-pass. Deep cases → codex-rescue. Cut session-manager layer + specialist dispatch |
+| `cad-coverage` | **validate-phase + add-tests** | Merge. "Which requirements have zero failing-test coverage → generate tests." Model-agnostic, un-duplicated. Drop Nyquist branding, Playwright default |
+| `cad-docs-verify` | docs-update verifier (~220L of 1168) | Keep the verify-claims-against-live-code engine (real value for OSS distribution). Collapse the writer |
+| `cad-audit` | audit-milestone | Pre-ship requirement-traceability cross-ref + orphan detection + FAIL gate. Catches silently-dropped requirements |
 
 ### Lifecycle & git
-| gd-light skill | Derived from | Change |
+| Cadence skill | Derived from | Change |
 |---|---|---|
-| `gd-milestone` | **new + complete-milestone** | Collapse to a thin version-cut: `git tag`, prune completed phases from live roadmap (git is the archive), evolve PROJECT.md, refresh REQUIREMENTS. Fold `cleanup` in |
-| `gd-phase` | phase CRUD | Keep the `remove` renumbering + dependency-ref repair (the op humans botch). add/insert/edit ≈ direct markdown edits |
-| `gd-undo` | undo | Keep manifest→hashes discovery + dirty guard + `--no-commit` squash. Drop heuristic dependency-check |
-| `gd-land` | **replaces ship** | ⚠️ ~30L, reports git state, asks the mechanism with NO pre-selected default, executes it raw. Honors your "git mechanism is my call" rule by construction |
+| `cad-milestone` | **new + complete-milestone** | Collapse to a thin version-cut: `git tag`, prune completed phases from live roadmap (git is the archive), evolve PROJECT.md, refresh REQUIREMENTS. Fold `cleanup` in |
+| `cad-phase` | phase CRUD | Keep the `remove` renumbering + dependency-ref repair (the op humans botch). add/insert/edit ≈ direct markdown edits |
+| `cad-undo` | undo | Keep manifest→hashes discovery + dirty guard + `--no-commit` squash. Drop heuristic dependency-check |
+| `cad-land` | **replaces ship** | ⚠️ ~30L, reports git state, asks the mechanism with NO pre-selected default, executes it raw. Honors your "git mechanism is my call" rule by construction |
 
 ### Support
-| gd-light skill | Derived from | Change |
+| Cadence skill | Derived from | Change |
 |---|---|---|
-| `gd-capture` | capture | todos (the one thing mem-* lacks: actionable phase-linked queue) + optional seed. Notes → route to `/mem-note` |
-| `gd-config` | **config + settings** | One skill, ~6 surviving knobs (node_repair, subagent_timeout, **context_window**=1M, git.base_branch, inline_plan_threshold) |
-| `gd-help` | help + 6 ns-routers | Static COMMANDS.md; fold the 6 namespace tables in as headings |
-| `gd-spike` | spike | Keep falsifiable Given/When/Then + verdict + risk-first ordering (counters declare-success-on-assumption). Slim the 5-artifact wrap-up |
-| (Stop hook) | pause + resume | Cursor (`.continue-here`) + WIP commit; narrative already auto-captured by claude-mem |
-| `gd-health` | health | Keep stripped, only if `.planning/` STATE is retained |
+| `cad-capture` | capture | todos (the one thing mem-* lacks: actionable phase-linked queue) + optional seed. Notes → route to `/mem-note` |
+| `cad-config` | **config + settings** | One skill managing the ~22-key config in §7 |
+| `cad-help` | help + 6 ns-routers | Static COMMANDS.md; fold the 6 namespace tables in as headings |
+| `cad-spike` | spike | Keep falsifiable Given/When/Then + verdict + risk-first ordering (counters declare-success-on-assumption). Slim the 5-artifact wrap-up |
+| `cad-pause` | pause + resume | Tiny skill (§5.3): WIP commit + STATE.md cursor + one-line "where I was". Resume folded into `cad-progress`. No Stop hook |
+| `cad-health` | health | Keep stripped: ~20-line "is ROADMAP/STATE cursor parseable" (§5.1; the cursor IS retained) |
 
 ### UI: no skills — one hook
 Phase tagged UI + COSMIC → auto-load `cosmic-design`. Web mockups → Artifact + artifact-design.
@@ -112,21 +114,22 @@ Phase tagged UI + COSMIC → auto-load `cosmic-design`. Web mockups → Artifact
 **Wrong domain / experimental:**
 - `ai-integration-phase` + `eval-review` (+ 5 AI agents + 2 refs) — you don't build LLM products.
 - `ultraplan-phase` (BETA cloud, GitHub-gated), `secure-phase` (→ your codex-risk-gate),
-  `review-backlog` (+ the 999.x mechanism), `audit-uat` (→ gd-verify --sweep), `stats` (→
-  gd-progress --stats), `add-tests`/`validate-phase` (→ gd-coverage).
+  `review-backlog` (+ the 999.x mechanism), `audit-uat` (→ cad-verify --sweep), `stats` (→
+  cad-progress --stats), `add-tests`/`validate-phase` (→ cad-coverage).
 
 **Agents:** 34 → ~8–10 keep (executor, planner, plan-checker[opt], assumptions-analyzer,
 verifier, debugger, doc-verifier, nyquist/coverage). Cut all ai-*, ui-*, doc-classifier/
 synthesizer, mempalace-curator, user-profiler, codebase-mapper, intel-updater,
 framework-selector, domain-researcher, eval-*, advisor-researcher, research-synthesizer,
 pattern-mapper (→ mem-*), project-researcher (→ Codex), security-auditor (→ Codex),
-integration-checker, code-reviewer/code-fixer (→ panel-review).
+integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant files
+(`planner-high`/`planner-low` etc., §6) add ~4–8 files but are variants of kept roles, not new agents.
 
 ---
 
 ## 4. Rough magnitude
-- Skills: 69 → ~18 (−74%)
-- Agents: 34 → ~9 (−74%)
+- Skills: 69 → ~22 (−68%)
+- Agents: 34 → ~9 roles (−74%), plus ~4–8 effort-variant files of the same roles (§6)
 - The spine alone: ~5,100 workflow lines → ~900, with no loss of solo-dev value.
 - Whole subsystems deleted: update/patch/pristine, CLI shim, STATE audit logs, MemPalace,
   graphify, AI track, doc-ingest, UI track, workstreams/workspace.
@@ -144,8 +147,10 @@ integration-checker, code-reviewer/code-fixer (→ panel-review).
    "where I was"). Resume is **folded into `/cad-progress`** (already reads the cursor). One skill,
    no Stop hook to install. Optional auto-pause Stop hook can come later.
 4. Name → **SETTLED: Cadence, `/cad-*`.** Install to a distinct dir so it coexists with GSD during
-   migration (decide exact path at scaffold time).
-5. Distribution → private fork first, public later (MIT, scoped npm name reserved).
+   migration. **SETTLED at scaffold (2026-07-10):** engine dir `~/.claude/cadence-core/`; skills/agents
+   install as `cad-*` into the shared flat `~/.claude/skills/` and `~/.claude/agents/` (all verified free).
+5. Distribution → **SUPERSEDED:** repo is already public; model locked in §6 Distribution
+   (npm `@vintagetechie/cadence` = user install, clone = dev flow).
 
 **ALL DESIGN DECISIONS SETTLED (2026-07-10). Ready to scaffold.**
 
@@ -169,7 +174,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review).
   ("portability-ready seams"). We don't pay portability tax now.
 - **Generic-user reframe:** cuts that were "John already has mem-*/claude-mem/Codex" become
   **built-in minimal + optional hook**, NOT deletions — a generic installer has none of that.
-  gd-light ships self-contained; power users plug in richer backends.
+  Cadence ships self-contained; power users plug in richer backends.
 - **Agent fan-out: KEPT** as a first-class configurable capability (not amputated). Sequential is
   the low-ceremony default; parallel waves are opt-in. The ~60% of execute-phase we cut was the
   always-on worktree *safety scaffolding*, not the fan-out — safety applies only when parallel is on.
@@ -212,7 +217,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review).
 - ✅ **VERIFIED (claude-code-guide, 2026-07-10):** **Model IS dispatch-overridable** per subagent
   invocation (resolution: env → per-invocation param → frontmatter → session). **Effort is NOT**
   dispatch-overridable in a SKILL.md system — it is definition-time frontmatter only. (The
-  Agent-SDK/Workflow harness *does* expose per-call effort, but gd-light is SKILL.md-based.)
+  Agent-SDK/Workflow harness *does* expose per-call effort, but Cadence is SKILL.md-based.)
   → **Design:** MODEL is the primary auto-routing lever (native per-dispatch). EFFORT is fixed per
   agent *role* (planner=high, formatter=low; role is known so this is fine). Runtime effort
   *escalation* uses a small set of **variant agent files** (`planner-high`/`planner-low`, etc.) for
@@ -243,7 +248,7 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
 - Config: `git { protected_branches, on_protected: ask|refuse|allow, base_branch, auto_push:false,
   create_tag }`. No templates, no strategy presets, no PR body sections.
 
-## 7. Final gd-light config.json (~110 GSD keys → ~22)
+## 7. Final Cadence config.json (~110 GSD keys → ~22)
 
 ```json
 {
