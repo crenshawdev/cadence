@@ -138,7 +138,8 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 1. Keep structured `.planning/` STATE at all, or go lighter (git + a thin ROADMAP/SUMMARY)?
    This decides whether `health`/`forensics`/`undo`-manifest survive.  → **DECIDED: slim-cursor.**
    Canonical `.planning/` file set: `PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `STATE.md`
-   (~4-line cursor: phase/status/next, no audit log), `phases/<N>/{PLAN,SUMMARY,UAT}.md`.
+   (~4-line cursor: phase/status/next, no audit log), `phases/<N>/{CONTEXT?,PLAN,SUMMARY,UAT}.md`
+   (CONTEXT.md optional, written by cad-context when a discussion ran; cad-plan reads it if present).
    Nothing else — cut all derived/analytics files. (PROJECT.md + REQUIREMENTS.md stay because
    `cad-new-project` writes them and `cad-milestone`/`cad-audit` consume them.)
    `health` → ~20-line "is ROADMAP/cursor parseable".
