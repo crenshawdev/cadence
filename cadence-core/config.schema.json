@@ -5,11 +5,11 @@
   },
   "keys": {
     "mode":                                 { "type": "enum", "values": ["interactive"], "default": "interactive", "src": "repo", "purpose": "How the loop runs (autonomous/audit-fix cut in DESIGN:111)" },
-    "granularity":                          { "type": "enum", "values": ["fine", "standard", "coarse"], "default": "standard", "src": "proposed", "purpose": "How finely phases split into tasks" },
+    "granularity":                          { "type": "enum", "values": ["fine", "standard", "coarse"], "default": "standard", "src": "repo", "purpose": "How finely phases split into tasks (new-project maps coarse 3-5 / standard 5-8 / fine 8-12 phases)" },
     "context_window":                       { "type": "int", "min": 1, "default": 1000000, "purpose": "Model context budget (tokens) used for chunking" },
 
-    "model.profile":                        { "type": "enum", "values": ["fast", "balanced", "quality"], "default": "balanced", "src": "proposed", "purpose": "Quality/cost tier for agents" },
-    "model.auto.ceiling":                   { "type": "enum", "values": ["fast", "balanced", "quality"], "default": "quality", "src": "proposed", "purpose": "Highest tier auto-escalation may reach" },
+    "model.profile":                        { "type": "enum", "values": ["fast", "balanced", "quality", "auto"], "default": "balanced", "src": "repo", "purpose": "Model routing: fast/balanced/quality canned tiers, or auto (role + difficulty, escalate on failure)" },
+    "model.auto.ceiling":                   { "type": "enum", "values": ["fast", "balanced", "quality"], "default": "quality", "src": "repo", "purpose": "Highest profile auto-escalation may reach" },
     "model.auto.escalate_on_failure":       { "type": "bool", "default": true, "purpose": "Bump the tier after a failed attempt" },
     "model.auto.max_escalations":           { "type": "int", "min": 0, "default": 1, "purpose": "How many times to escalate before giving up" },
 

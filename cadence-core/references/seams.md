@@ -23,9 +23,28 @@ How a workflow dispatches work to a fresh-context subagent.
 - `model` is per-dispatch overridable; use it as the primary auto-routing lever.
 - Effort is NOT per-dispatch overridable: it is fixed in agent frontmatter per
   role. Runtime effort escalation swaps to an effort-variant agent file
-  (`cad-planner-high`, `cad-planner-low`, ...) - these exist only for the
-  heavy-reasoner roles.
+  (`cad-plan-checker-high`, ...) - these exist only for roles whose base effort
+  is below the escalation target.
 - Timeout: `workflow.subagent_timeout` from config.
+
+**Routing (which model + which agent file).** Before every dispatch, resolve the
+role through the routing seam - never hardcode a model, never dispatch a role at
+the session default when a profile is set:
+
+```
+node "$HOME/.claude/cadence-core/bin/route.mjs" resolve --role <agent_name> \
+  [--attempt <N>] [--files <N>] [--ambiguity <0..1>]
+```
+
+- Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
+  run failed - that is the signal `auto` uses to escalate. Pass `--files` /
+  `--ambiguity` when you have them (auto tier bump); omit otherwise.
+- Use the returned `agent` (may be an effort-variant) and `model` in the
+  dispatch. `escalated`/`reason` are for logging why.
+- `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
+  no `model` override (session default). Routing never blocks a spawn.
+- Fixed profiles (`fast`/`balanced`/`quality`) never escalate - explicit pick
+  wins. Only `model.profile: auto` reacts to `--attempt`/signals.
 
 ## Seam: call-review-provider
 

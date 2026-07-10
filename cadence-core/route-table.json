@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "note": "Data table for bin/route.mjs (model routing). Editable: change the tier of a role or the model an (profile, tier) pair resolves to without touching code. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per role in agent frontmatter; escalating a low-effort role swaps to its `escalate_effort_variant` agent file.",
+    "tiers": "light < standard < heavy (order used for difficulty bumps and clamping)"
+  },
+  "tier_order": ["light", "standard", "heavy"],
+  "profile_order": ["fast", "balanced", "quality"],
+
+  "roles": {
+    "cad-planner":              { "tier": "heavy",    "base_effort": "high" },
+    "cad-assumptions-analyzer": { "tier": "heavy",    "base_effort": "xhigh" },
+    "cad-verifier":             { "tier": "heavy",    "base_effort": "high" },
+    "cad-reviewer":             { "tier": "heavy",    "base_effort": "high" },
+    "cad-executor":             { "tier": "standard", "base_effort": "high" },
+    "cad-plan-checker":         { "tier": "light",    "base_effort": "low", "escalate_effort_variant": "cad-plan-checker-high" }
+  },
+
+  "profiles": {
+    "fast":     { "light": "haiku",  "standard": "haiku",  "heavy": "sonnet" },
+    "balanced": { "light": "haiku",  "standard": "sonnet", "heavy": "opus" },
+    "quality":  { "light": "sonnet", "standard": "opus",   "heavy": "opus" }
+  },
+
+  "auto": {
+    "base_profile": "balanced",
+    "signals": {
+      "files": { "threshold": 15, "note": "phase/plan touches >= this many files -> +1 tier" },
+      "ambiguity": { "threshold": 0.6, "note": "0-1 ambiguity score >= this -> +1 tier" }
+    },
+    "max_tier_bump": 1
+  }
+}

@@ -329,6 +329,12 @@ lever is trigger frequency (gating), never a weak reviewer.
   *escalation* uses a small set of **variant agent files** (`planner-high`/`planner-low`, etc.) for
   the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps effort-variant
   when needed, bounded by guardrails.
+- ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
+  (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
+  (`references/seams.md`) resolves every dispatch through it; re-dispatch sites pass `--attempt N`
+  so `auto` escalates on failure. `model.profile` gains `auto`; the one low-effort role
+  (`cad-plan-checker`) escalates via variant file `cad-plan-checker-high`. Tests: `bin/route.test.mjs`
+  (10, zero-dep `node:test`). Role tiers + matrix are data — edit `route-table.json`, not code.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + fork

@@ -64,11 +64,11 @@ selectable option and its `description`.
 |---|---|---|---|---|
 | **Core** |||||
 | `mode` `[repo]` | enum | How the loop runs | `interactive`→stop at gates for your input (only value; `autonomous`/`audit-fix` cut, DESIGN:111) | interactive |
-| `granularity` `[proposed]` | enum | How finely phases split into tasks | `fine`→many small tasks · `standard`→balanced · `coarse`→fewer large tasks | standard |
+| `granularity` `[repo]` | enum | How finely phases split into tasks (new-project phase count) | `fine`→8-12 phases · `standard`→5-8 · `coarse`→3-5 | standard |
 | `context_window` | int | Model context budget (tokens) used for chunking | any token count, e.g. `200000`, `1000000` | 1000000 |
 | **Model** |||||
-| `model.profile` `[proposed]` | enum | Quality/cost tier for agents | `fast`→cheapest, quickest · `balanced`→default mix · `quality`→strongest models | balanced |
-| `model.auto.ceiling` `[proposed]` | enum | Highest tier auto-escalation may reach | `fast` · `balanced` · `quality` (caps the escalation) | quality |
+| `model.profile` `[repo]` | enum | Model routing for agents (see `route-table.json`) | `fast`→cheapest/quickest · `balanced`→default mix · `quality`→strongest · `auto`→role + difficulty, escalate on failure | balanced |
+| `model.auto.ceiling` `[repo]` | enum | Highest profile `auto` escalation may reach | `fast` · `balanced` · `quality` (caps the escalation) | quality |
 | `model.auto.escalate_on_failure` | bool | Bump the tier after a failed attempt | `true`→retry stronger · `false`→stay put | true |
 | `model.auto.max_escalations` | int | How many times to escalate before giving up | `0`–`3` | 1 |
 | **Workflow** |||||
