@@ -12,38 +12,67 @@
 //   resolve --role <name> [--attempt N] [--files N] [--ambiguity 0..1] [--file <config>]
 //   table                                  dump the routing table
 //
-// Config keys read (from --file, default .planning/config.json):
+// Config is layered: a global file (see GLOBAL_CONFIG below) provides defaults,
+// the per-repo --file (default .planning/config.json) overrides it, and the
+// built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
+// Config keys read:
 //   model.profile          fast | balanced | quality | auto
 //   model.auto.ceiling     highest profile auto may escalate to
 //   model.auto.escalate_on_failure (bool), model.auto.max_escalations (int)
 
 import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TABLE = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
 
+// User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps tests
+// hermetic); otherwise ~/.claude/cadence/config.json.
+const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG || join(homedir(), '.claude', 'cadence', 'config.json');
+
 const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
 
+// Parse a JSON file, or null if it is missing/unreadable/invalid (a bad layer
+// is skipped, never fatal - the spine must not block on config).
+function readJSON(file) {
+  try { return JSON.parse(readFileSync(file, 'utf8')); }
+  catch { return null; }
+}
+
+// Deep-merge `over` onto `base`: nested objects recurse, arrays and scalars
+// replace wholesale (the higher-precedence layer's list wins, no concat).
+function deepMerge(base, over) {
+  if (over === undefined) return base;
+  if (base === null || typeof base !== 'object' || Array.isArray(base) ||
+      over === null || typeof over !== 'object' || Array.isArray(over)) return over;
+  const merged = { ...base };
+  for (const [k, v] of Object.entries(over)) merged[k] = deepMerge(base[k], v);
+  return merged;
+}
+
+// Resolve the effective config from global + repo layers (repo wins), falling
+// back to DEFAULTS for anything unset. _source names the layers that applied.
 function readConfig(file) {
-  try {
-    const c = JSON.parse(readFileSync(file, 'utf8'));
-    const m = c.model || {};
-    const a = m.auto || {};
-    return {
-      profile: m.profile ?? DEFAULTS.profile,
-      ceiling: a.ceiling ?? DEFAULTS.ceiling,
-      escalate_on_failure: a.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
-      max_escalations: a.max_escalations ?? DEFAULTS.max_escalations,
-      _source: 'config',
-    };
-  } catch {
-    return { ...DEFAULTS, _source: 'defaults' };
-  }
+  const global = readJSON(GLOBAL_CONFIG);
+  const repo = readJSON(file);
+  const layers = [];
+  if (global) layers.push('global');
+  if (repo) layers.push('repo');
+  const c = deepMerge(global || {}, repo || {});
+  const m = c.model || {};
+  const a = m.auto || {};
+  return {
+    profile: m.profile ?? DEFAULTS.profile,
+    ceiling: a.ceiling ?? DEFAULTS.ceiling,
+    escalate_on_failure: a.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
+    max_escalations: a.max_escalations ?? DEFAULTS.max_escalations,
+    _source: layers.length ? layers.join('+') : 'defaults',
+  };
 }
 
 const clampIdx = (i, lo, hi) => Math.max(lo, Math.min(hi, i));

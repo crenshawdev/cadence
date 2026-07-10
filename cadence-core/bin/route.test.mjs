@@ -1,4 +1,4 @@
-// Zero-dep tests for route.mjs. Run: node --test cadence-core/bin/
+// Zero-dep tests for route.mjs. Run: node --test 'cadence-core/bin/*.test.mjs'
 // Uses only node: builtins (no framework), matching the repo's zero-dep ethos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,16 +11,23 @@ import { fileURLToPath } from 'node:url';
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
 
+// A global-config path that does not exist, so tests are hermetic by default
+// (never read the dev's real ~/.claude/cadence/config.json).
+const NO_GLOBAL = join(dir, 'no-global.json');
+
 // Write a config with the given model block and return its path.
-function cfg(model) {
-  const p = join(dir, `c-${Math.abs(JSON.stringify(model).length)}-${model.profile}-${(model.auto && model.auto.ceiling) || 'x'}.json`);
+function cfg(model, name) {
+  const p = join(dir, name || `c-${Math.abs(JSON.stringify(model).length)}-${model.profile}-${(model.auto && model.auto.ceiling) || 'x'}.json`);
   writeFileSync(p, JSON.stringify({ model }));
   return p;
 }
 
-function resolve(role, file, extra = []) {
+// resolve() defaults to an isolated (missing) global layer; pass opts.global to
+// point CADENCE_GLOBAL_CONFIG at a real global file for merge tests.
+function resolve(role, file, extra = [], opts = {}) {
   const args = ['resolve', '--role', role, ...(file ? ['--file', file] : []), ...extra];
-  return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8' }));
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
+  return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
 }
 
 test('fixed profiles resolve the matrix per role tier', () => {
@@ -99,4 +106,32 @@ test('missing config file uses schema defaults, does not crash', () => {
   assert.equal(r.ok, true);
   assert.equal(r.profile, 'balanced');
   assert.match(r.reason.join(' '), /config:defaults/);
+});
+
+// --- global config layer -----------------------------------------------------
+
+test('global layer applies when no repo config is present', () => {
+  const g = cfg({ profile: 'quality' }, 'g-quality.json');
+  const r = resolve('cad-planner', join(dir, 'no-repo.json'), [], { global: g });
+  assert.equal(r.profile, 'quality');
+  assert.equal(r.model, 'opus'); // heavy@quality
+  assert.match(r.reason.join(' '), /config:global/);
+});
+
+test('repo config overrides the global layer (repo wins)', () => {
+  const g = cfg({ profile: 'quality' }, 'g-quality2.json');
+  const repo = cfg({ profile: 'fast' }, 'repo-fast.json');
+  const r = resolve('cad-planner', repo, [], { global: g });
+  assert.equal(r.profile, 'fast'); // repo wins over global
+  assert.equal(r.model, 'sonnet'); // heavy@fast
+  assert.match(r.reason.join(' '), /config:global\+repo/);
+});
+
+test('layers deep-merge: global auto block + repo profile combine', () => {
+  const g = cfg({ profile: 'balanced', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } }, 'g-auto.json');
+  const repo = cfg({ profile: 'auto' }, 'repo-auto.json'); // only overrides profile
+  // repo sets auto profile; global supplies the auto.* sub-keys -> escalation works
+  const r = resolve('cad-plan-checker', repo, ['--attempt', '2'], { global: g });
+  assert.equal(r.profile, 'quality'); // escalated using global's ceiling
+  assert.equal(r.agent, 'cad-plan-checker-high');
 });

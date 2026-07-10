@@ -5,16 +5,24 @@
 // value is ever written. Never blocks the spine: callers degrade on {ok:false}.
 //
 // Subcommands (all print one JSON line on stdout):
-//   validate [--file <path>]        validate a whole config file
-//   check <key=value> ...           validate one or more dotted key=value pairs
-//   set [--file <path>] <key=value> validate pairs, then write them into the file
-//   keys                            dump the schema keys (for menu/catalog derivation)
+//   validate [--file <path>|--global]        validate a whole config file
+//   check <key=value> ...                     validate one or more dotted key=value pairs
+//   set [--file <path>|--global] <key=value>  validate pairs, then write them into the file
+//   keys                                      dump the schema keys (for menu/catalog derivation)
 //
-// Default --file is .planning/config.json relative to cwd.
+// Default --file is .planning/config.json relative to cwd. --global targets the
+// user-global layer (auto-created on set); route.mjs merges global under repo at
+// read time (precedence repo > global > defaults). Each file is validated on its
+// own - every layer must be independently valid.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+
+// User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps tests
+// hermetic); otherwise ~/.claude/cadence/config.json. Mirrors route.mjs.
+const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG || join(homedir(), '.claude', 'cadence', 'config.json');
 
 const SCHEMA = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'config.schema.json'), 'utf8'),
@@ -121,13 +129,19 @@ function setInto(obj, dotted, value) {
   node[parts[parts.length - 1]] = value;
 }
 
-function set(file, tokens) {
+// `create` (the --global path) starts from an empty config and makes the parent
+// dir if the file does not exist yet; a corrupt existing file still fails.
+function set(file, tokens, create) {
   const { pairs, errors } = checkPairs(tokens);
   if (errors.length) fail('invalid', errors);
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
-  catch (e) { fail('read', `cannot read/parse ${file}: ${e.message}`); }
+  catch (e) {
+    if (create && e.code === 'ENOENT') cfg = {};
+    else fail('read', `cannot read/parse ${file}: ${e.message}`);
+  }
   for (const { key, value } of pairs) setInto(cfg, key, value);
+  if (create) mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n');
   out({ ok: true, file, changed: pairs });
 }
@@ -138,15 +152,17 @@ const argv = process.argv.slice(2);
 const cmd = argv[0];
 const rest = argv.slice(1);
 function optFile(tokens) {
+  const gi = tokens.indexOf('--global');
+  if (gi >= 0) return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
   const i = tokens.indexOf('--file');
-  if (i < 0) return { file: '.planning/config.json', tokens };
-  return { file: tokens[i + 1], tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
+  if (i < 0) return { file: '.planning/config.json', global: false, tokens };
+  return { file: tokens[i + 1], global: false, tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
 }
 
 try {
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') { const { errors } = checkPairs(rest); out({ ok: errors.length === 0, errors }); }
-  else if (cmd === 'set') { const { file, tokens } = optFile(rest); set(file, tokens); }
+  else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
   else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }
   else fail('usage', 'subcommand: validate | check | set | keys');
 } catch (e) {

@@ -131,8 +131,16 @@ node "$HOME/.claude/cadence-core/bin/config.mjs" keys                # dump sche
 ```
 
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
-`.planning/config.json`. Collect the menu's diffs and apply them with a single
-`set` call so the write is one atomic, validated operation.
+`.planning/config.json`, and `--global` targets the user-global layer at
+`~/.claude/cadence/config.json` (`CADENCE_GLOBAL_CONFIG` relocates it), which
+`set` auto-creates. Collect the menu's diffs and apply them with a single `set`
+call so the write is one atomic, validated operation.
+
+**Config layering.** At read time `bin/route.mjs` deep-merges global under repo
+(precedence **repo > global > built-in defaults**); nested objects merge, arrays
+replace wholesale. Each file is still validated on its own - every layer must be
+independently valid. Use `--global` for machine-wide defaults (e.g. a preferred
+`model.profile`) and the per-repo file to override per project.
 
 ## Direct set
 
