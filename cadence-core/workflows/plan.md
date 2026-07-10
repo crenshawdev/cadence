@@ -54,9 +54,10 @@ git.protected_branches, git.on_protected.
 </step>
 
 <step name="spawn_planner">
-Dispatch cad-planner via the spawn-agent seam (references/seams.md); model
-follows the active profile. Then wait - do not read, edit, or plan anything
-else while the subagent runs.
+Dispatch cad-planner via the spawn-agent seam (references/seams.md) - resolve
+its model + agent file through the seam's routing step (first dispatch is
+`--attempt 1`). Then wait - do not read, edit, or plan anything else while the
+subagent runs.
 
 Prompt:
 
@@ -138,9 +139,11 @@ Handle the return:
 - `## VERIFICATION PASSED` -> continue.
 - `## ISSUES FOUND` -> ONE revision, maximum:
   1. Plans came from cad-planner: re-dispatch it in revision mode with the
-     issues (see spawn_planner). Plans were written inline: apply the fixes
+     issues (see spawn_planner), this time with `--attempt 2` so the routing
+     seam can escalate under `auto`. Plans were written inline: apply the fixes
      in the main context.
-  2. Re-dispatch the checker once on the revised plans.
+  2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
+     (routing seam escalates it to the `-high` effort variant under `auto`).
   3. Passes -> continue. Still failing -> present the remaining issues and
      ask (ask-user seam): proceed to execution anyway, or stop and revise
      by hand. Never loop again.
@@ -177,7 +180,8 @@ Review: {plan trigger outcome}
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
 
-One suggestion only: `/cad-execute {N}`.
+One suggestion only: `/cad-execute {N}` - safe to `/clear` first: the plan is
+on disk and each executor runs in a fresh context.
 </step>
 
 </process>

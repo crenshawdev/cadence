@@ -245,7 +245,9 @@ File: {phase_dir}/CONTEXT.md
 Commit: {hash or "not committed (planning.commit_docs=false)"}
 ```
 
-One suggestion max: `/cad-plan {N}`.
+One suggestion max: `/cad-plan {N}` - safe to `/clear` first: CONTEXT.md
+holds every decision and planning runs in a fresh subagent, so a cleared
+context loses nothing.
 </step>
 
 </process>

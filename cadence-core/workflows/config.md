@@ -1,9 +1,11 @@
 # cad-config workflow
 
-Configure `.planning/config.json` (the ~22-key file; template and canonical
-shape in `cadence-core/templates/config.json` and DESIGN §7). One interactive
-skill; the substantive part is review-provider model assignment, which is the
-only config knob that needs live detection rather than a plain edit.
+Configure `.planning/config.json`. Canonical shape and validation live in
+`cadence-core/config.schema.json` (the source of truth), enforced by the
+`bin/config.mjs` seam; `cadence-core/templates/config.json` is the scaffolded
+default. One interactive skill; the substantive part is review-provider model
+assignment, which is the only config knob that needs live detection rather than
+a plain edit.
 
 ## 0. Locate config
 
@@ -17,16 +19,138 @@ Parse `$ARGUMENTS`:
 - Starts with `--review`: go to **Review provider setup** (a trailing
   `redetect` just means re-run detection and reassign; same flow).
 - Contains `<key>=<value>` tokens: go to **Direct set**.
-- Empty: show a compact summary of the current config, then ask (ask-user seam)
-  what to configure - `[Review providers | A setting | Nothing]` - and route.
+- Empty: go to **Interactive menu** - walk every knob as a selectable list.
+
+## Interactive menu (no args)
+
+Goal: let the user adjust **every** knob, presented as selectable lists - no
+knob is edit-the-file-only. `review.providers.*` is the one exception: it needs
+live detection, so the menu routes it to **Review provider setup** rather than
+free-typing model ids.
+
+### The walk
+
+1. Read the current config. Show a one-screen summary (each knob = current value).
+2. Walk the catalog below **in order, 4 knobs per `AskUserQuestion` call** (the
+   ask-user seam; its 4-option cap is why we page). For each knob:
+   - one question; its text = the knob's **Purpose**, options = the knob's Values,
+   - **each option carries its Explanation as the option `description`** (the small
+     line shown under the option in the selection list),
+   - **preselect the option matching the file's current value** (list it first,
+     labelled e.g. `standard (current)`),
+   - `Other` (auto-added) is the free-type entry for numbers, strings, and lists.
+3. A page whose knobs the user leaves unchanged is a no-op; only diffs are applied.
+4. After the last page, show the changed keys as a diff and write once via the
+   **Validation seam** (`config.mjs set`) - one atomic, validated write. The user
+   may pick `Skip rest` on any page to stop and write what changed so far.
+5. `review.providers` is not in the page walk - offer it as a final step
+   (`Configure review providers now?`) that enters **Review provider setup**.
+
+### Catalog
+
+**Source of truth is `cadence-core/config.schema.json`**, enforced by the
+`bin/config.mjs` seam - this table is the menu's *presentation layer* (purpose +
+per-value copy) and must stay in sync with the schema's keys/types/enums. Never
+hand-validate against this table; call the seam (see **Validation seam** below).
+
+Type key: `bool` = true/false · `int` = free-typed number (Other) · `str|null`
+= free-typed string or empty→null · `list` = comma-typed → array · `enum` =
+fixed options. `[repo]` = value-set pinned in DESIGN/references; `[proposed]` =
+label the executing model honors (membership pinned, behavior not yet wired).
+**Purpose** is the question text; each **Value → Explanation** pair is one
+selectable option and its `description`.
+
+| Key `[src]` | Type | Purpose (question) | Value → Explanation (option → description) | Default |
+|---|---|---|---|---|
+| **Core** |||||
+| `mode` `[repo]` | enum | How the loop runs | `interactive`→stop at gates for your input (only value; `autonomous`/`audit-fix` cut, DESIGN:111) | interactive |
+| `granularity` `[repo]` | enum | How finely phases split into tasks (new-project phase count) | `fine`→8-12 phases · `standard`→5-8 · `coarse`→3-5 | standard |
+| `context_window` | int | Model context budget (tokens) used for chunking | any token count, e.g. `200000`, `1000000` | 1000000 |
+| **Model** |||||
+| `model.profile` `[repo]` | enum | Model routing for agents (see `route-table.json`) | `fast`→cheapest/quickest · `balanced`→default mix · `quality`→strongest · `auto`→role + difficulty, escalate on failure | balanced |
+| `model.auto.ceiling` `[repo]` | enum | Highest profile `auto` escalation may reach | `fast` · `balanced` · `quality` (caps the escalation) | quality |
+| `model.auto.escalate_on_failure` | bool | Bump the tier after a failed attempt | `true`→retry stronger · `false`→stay put | true |
+| `model.auto.max_escalations` | int | How many times to escalate before giving up | `0`–`3` | 1 |
+| **Workflow** |||||
+| `workflow.research` | bool | Run a research pass before planning | `true`→scout first · `false`→skip | false |
+| `workflow.plan_check` | bool | Gate plans through the checker before code | `true`→verify plan first · `false`→trust it | true |
+| `workflow.verifier` | bool | Goal-backward verification after a phase | `true`→check goal was met · `false`→skip | true |
+| `workflow.auto_advance` | bool | Roll into the next phase without asking | `true`→continue · `false`→pause | false |
+| `workflow.discuss_mode` `[repo]` | enum | Pre-plan discussion (3 gates collapsed to 1) | `discuss`→the one discussion gate (only value; use `skip_discuss` to disable) | discuss |
+| `workflow.skip_discuss` | bool | Skip the discussion step entirely | `true`→straight to plan · `false`→discuss | false |
+| `workflow.human_verify_mode` `[proposed]` | enum | When you're asked to UAT | `end-of-phase`→once per phase · `per-task`→each task · `off`→never | end-of-phase |
+| `workflow.subagent_timeout` | int | ms before a subagent is killed | e.g. `300000` (5 min) | 300000 |
+| `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
+| `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
+| `workflow.build_command` | str\|null | Command Cadence runs to build | shell string, or empty→`null` (none) | null |
+| **Parallelization** |||||
+| `parallelization.enabled` | bool | Run independent plans concurrently | `true`→parallel · `false`→sequential | false |
+| `parallelization.max_concurrent_agents` | int | Cap on simultaneous agents | e.g. `3` | 3 |
+| `parallelization.min_plans_for_parallel` | int | Min plans before going parallel | e.g. `2` | 2 |
+| `parallelization.use_worktrees` | bool | Isolate parallel writes in git worktrees | `true`→isolate · `false`→shared tree | true |
+| **Git** |||||
+| `git.protected_branches` | list | Branches Cadence won't commit to directly | comma list, e.g. `main, master` | main, master |
+| `git.on_protected` `[repo]` | enum | What to do on a protected branch | `ask`→prompt · `refuse`→block · `allow`→proceed | ask |
+| `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
+| `git.auto_push` | bool | Push after committing | `true`→push · `false`→local only | false |
+| `git.create_tag` | bool | Tag on milestone | `true`→tag · `false`→don't | true |
+| **Planning** |||||
+| `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
+| **Search** |||||
+| `search.brave_search` | bool | Enable Brave web-search provider | `true`→on · `false`→off | false |
+| `search.firecrawl` | bool | Enable Firecrawl provider | `true`→on · `false`→off | false |
+| `search.exa_search` | bool | Enable Exa provider | `true`→on · `false`→off | false |
+| **Memory** |||||
+| `memory.backend` `[repo]` | enum | Where notes/observations route | `none`→off (only value wired today) | none |
+| **Review** (providers handled separately) |||||
+| `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model | claude-subagent |
+| `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |
+| `review.key_file` | str\|null | Path override for the provider key env file | path, or empty→`null` (default location) | null |
+| `review.consult.enabled` | bool | Allow a second-model consult at dead-ends | `true`→offer consult · `false`→don't | false |
+| `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
+| `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
+| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground then hand off | per §7 |
+| `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger | `flagship` · `balanced` · `cheap` | per §7 |
+| `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger | `minimal` · `low` · `medium` · `high` | per §7 |
+
+`<t>` ∈ `{plan, diff, risk_surface, pre_ship}` - present the four triggers as
+their own page (or a "Review triggers?" opt-in step) since they are power knobs.
+Every write goes through the **Validation seam** (below); a value outside its set
+is rejected, never written.
+
+### Validation seam
+
+`bin/config.mjs` is the enforcement point - the schema, not this doc, decides what
+is valid. Never write config JSON by hand; go through the seam:
+
+```
+node "$HOME/.claude/cadence-core/bin/config.mjs" validate            # whole file ok?
+node "$HOME/.claude/cadence-core/bin/config.mjs" check <key=value>…  # dry-run one or more pairs
+node "$HOME/.claude/cadence-core/bin/config.mjs" set   <key=value>…  # validate then write (atomic: all-or-nothing)
+node "$HOME/.claude/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
+```
+
+Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
+`.planning/config.json`, and `--global` targets the user-global layer at
+`~/.claude/cadence/config.json` (`CADENCE_GLOBAL_CONFIG` relocates it), which
+`set` auto-creates. Collect the menu's diffs and apply them with a single `set`
+call so the write is one atomic, validated operation.
+
+**Config layering.** At read time `bin/route.mjs` deep-merges global under repo
+(precedence **repo > global > built-in defaults**); nested objects merge, arrays
+replace wholesale. Each file is still validated on its own - every layer must be
+independently valid. Use `--global` for machine-wide defaults (e.g. a preferred
+`model.profile`) and the per-repo file to override per project.
 
 ## Direct set
 
 For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
-- Confirm the key exists in the §7 schema and the value fits its type/enum.
-- Reject an unknown key or bad value (list the valid keys/values); do not write
-  a malformed config.
-- Apply all valid pairs, write the file, and echo the changed keys.
+- Validate and write in one shot through the **Validation seam**:
+  `config.mjs set <key=value>…`. It rejects an unknown key or bad value
+  (`{ok:false, reason:"invalid", detail:[…]}`) atomically - nothing is written
+  unless every pair is valid - and echoes `{ok:true, changed:[…]}` on success.
+- On rejection, surface the seam's `detail` (the invalid keys and why) and the
+  allowed values from `config.mjs keys`; do not retry with a malformed config.
 
 ## Review provider setup (the assignment flow)
 
@@ -83,10 +207,21 @@ Ask the user (ask-user seam) which mode:
 
 ### 4. Write
 
-Set `review.providers.<name>.tiers` to the chosen ids. A position with no
-suitable model stays `null` - triggers that map to that tier fall back to
-`claude-subagent` until it is assigned. Write the config after each provider so
-a mid-flow stop still persists what was decided.
+Write the chosen ids through the **Validation seam**, one `set` per provider so a
+mid-flow stop still persists what was decided:
+
+```
+node "$HOME/.claude/cadence-core/bin/config.mjs" set \
+  'review.providers.<name>.tiers.flagship=<id>' \
+  'review.providers.<name>.tiers.balanced=<id>' \
+  'review.providers.<name>.tiers.cheap=<id>'
+```
+
+A position with no suitable model stays `null` (omit that pair) - triggers that
+map to that tier fall back to `claude-subagent` until it is assigned. Once a
+provider has assigned tiers, add its name to `review.reviewers` (e.g.
+`set 'review.reviewers=["claude-subagent","openai"]'`) so `fire()` actually
+resolves it - assignment alone does not enroll a reviewer.
 
 ## Wrap-up
 

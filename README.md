@@ -22,6 +22,10 @@ team, multi-runtime, and AI-product machinery a solo developer doesn't need.
   step that asks how you want to publish instead of forcing a branch/PR flow.
 - **Lean `.planning/`** — ROADMAP + per-phase PLAN/SUMMARY/UAT + a ~4-line state cursor. No
   audit logs duplicating git.
+- **Context-frugal by design** — durable state lives in `.planning/` files and git, and every
+  plan/review/execution runs in a fresh subagent, so you can `/clear` aggressively: clear at any
+  phase boundary and the next command rebuilds from disk. An attempt to keep prompt-cache reuse
+  high and context lean, not a magic trick.
 - **Built-in minimal memory** with an optional hook to a richer backend.
 
 ## Attribution
