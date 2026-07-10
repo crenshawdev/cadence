@@ -1,0 +1,16 @@
+# OS / editor
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Node (installer/tooling, if any)
+node_modules/
+npm-debug.log*
+*.tgz
+
+# Local scratch / test projects
+/tmp/
+scratch/
+*.local
