@@ -270,6 +270,45 @@ across all Cadence projects. Never in the repo, `config.json` (it is committed),
   will not have. The seam abstracts "get key for provider", so a keychain backend could slot in
   later without touching workflows, but it is not a plan item.
 
+### Provider model selection + live detection (DECIDED 2026-07-10)
+Best-fit per situation: model AND reasoning effort are configurable per trigger, per provider - not
+one fixed model per provider. Review/consult want a *strong independent* reviewer, so the cost
+lever is trigger frequency (gating), never a weak reviewer.
+- **Per-trigger cognitive fit.** `plan` = abstract forward-reasoning (rare) -> flagship reasoner,
+  high effort. `diff` = concrete detail-scan (frequent) -> cost-balanced tier, medium effort.
+  `risk_surface` = security-critical (rare, blocking) -> flagship, high/xhigh. `consult` =
+  generative "what would you try" (rare) -> flagship, high.
+- **Within a family the lever is the reasoning-effort dial + a cost tier, NOT a code-specialized
+  model** - neither OpenAI nor Gemini ships a distinct code model (verified 2026-07: Codex is a
+  harness over the general flagship; coding strength lives in the flagship). So "different model
+  for plan vs code" resolves to different *effort* on the flagship, optionally a cheaper tier for
+  the frequent concrete work.
+- **Effort is a per-call API parameter** (`reasoning.effort` none/low/medium/high/xhigh on OpenAI;
+  `thinking_level` minimal/low/medium/high on Gemini) - so the external review path gets free
+  per-trigger effort control that Cadence's internal SKILL.md agents cannot have (their effort is
+  frontmatter-frozen). An argument the CLI path could not match.
+- **Live detection makes model IDs non-fatal (the key robustness win).** Three layers:
+  1. Live detection - after the key is set, call the provider models endpoint (OpenAI
+     `GET /v1/models`, Gemini `ListModels`) to enumerate what THAT key can access. This is truth;
+     anything Cadence ships is a hint, never a hard dependency. New models show up and are
+     selectable even if Cadence has never heard of them.
+  2. Shipped hint table - tags KNOWN model IDs with tier (flagship / balanced / cheap) and high-
+     effort support. Detection intersects live list with the table: known -> auto-classified,
+     unknown -> "you place it". The table is the one maintained artifact, but staleness is soft
+     (unknowns fall through to manual, never error).
+  3. Assignment via the ask-user seam (the "TUI decision tree"): per position, present detected +
+     classified candidates with a recommended default. Two modes: "you decide" (auto-map via the
+     best-fit logic, then accept-all or drill in - the low-friction default) and full manual.
+- **Runs** at provider setup (`cad-config`), re-runnable on demand, and trouble-triggered (a
+  model-not-found/deprecated review failure offers re-detect-and-reassign). Degrades: if detection
+  fails (offline/bad key/rate limit), fall back to shipped default IDs or manual entry - never
+  block setup on a network call.
+- Snapshot of current lineups (2026-07, superseded by detection at runtime): OpenAI GPT-5.6 family
+  (Sol flagship / Terra balanced / Luna cheap) + GPT-5.5; Gemini 3.1 Pro / 3.1 Flash / 3.5 Flash.
+  Exact API id strings are never hardcoded - detection provides them.
+- **Step-5 build items:** models-endpoint detection per provider, the classification hint table,
+  and the per-position assignment flow in cad-config.
+
 ### Model routing = minimal canned profiles + optional auto (the standout feature)
 - Whole GSD model-routing family (`model_profile`, `model_policy.*`, per-agent overrides,
   `models.*`, `granularities.*`) → collapsed to **three canned profiles + an `auto` mode**.
