@@ -254,6 +254,22 @@ the dead-ends between them.
 - Config gates it like review (a switch, plus which providers). Open: exact trigger thresholds,
   how the offer is presented, output-handling specifics.
 
+### Provider API key storage (DECIDED 2026-07-10)
+Keys are user credentials (billing), never project data - user-global, set once per machine, shared
+across all Cadence projects. Never in the repo, `config.json` (it is committed), or `.planning/`.
+- **Resolution order:** environment variable first (`OPENAI_API_KEY`, `GEMINI_API_KEY` - both
+  providers' SDK convention; an env-set key always wins), then a single shared env file at
+  `${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env` (holds both keys). Config stores only the
+  *path*, never the value. Matches the prompter pattern (env file + env-takes-precedence).
+- **Graceful degradation:** a missing key never blocks the spine. The `call-review-provider` seam
+  reports where to set it and marks that provider unavailable - review falls back to
+  `claude-subagent`, consult is simply not offered. Zero-dep promise intact.
+- **Lazy** (key looked up only when a provider is actually invoked), never logged/echoed/committed.
+- **No convenience setter** (edit the file), **no keychain** - a 600-perm env file is the standard
+  local-dev posture, and a keychain needs an unlocked keyring that John's headless/scheduled runs
+  will not have. The seam abstracts "get key for provider", so a keychain backend could slot in
+  later without touching workflows, but it is not a plan item.
+
 ### Model routing = minimal canned profiles + optional auto (the standout feature)
 - Whole GSD model-routing family (`model_profile`, `model_policy.*`, per-agent overrides,
   `models.*`, `granularities.*`) → collapsed to **three canned profiles + an `auto` mode**.
