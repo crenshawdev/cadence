@@ -170,9 +170,9 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
   what lets npm-copy work with zero reapply-patches machinery (GSD ships
   `verify-reapply-patches.cjs` because its users edit the installed copy).
 - **Runtime:** **Claude Code only**, one clean path resolver, no multi-host shim. But the three
-  host-touchpoints — **ask-user, spawn-agent, run-external-review-CLI** — go through thin internal
-  seams so a future contributor could add a runtime without rewriting workflows
-  ("portability-ready seams"). We don't pay portability tax now.
+  host-touchpoints — **ask-user, spawn-agent, call-review-provider** (a provider API call, not a
+  CLI) — go through thin internal seams so a future contributor could add a runtime without
+  rewriting workflows ("portability-ready seams"). We don't pay portability tax now.
 - **Generic-user reframe:** cuts that were "John already has mem-*/claude-mem/Codex" become
   **built-in minimal + optional hook**, NOT deletions — a generic installer has none of that.
   Cadence ships self-contained; power users plug in richer backends.
@@ -186,11 +186,35 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 ### Adversarial review = first-class configurable subsystem (absorbs gsd-review, code-review,
 ### plan-review-convergence, secure-phase)
 - Default backend `claude-subagent` (fresh-context, refute-prompted) so it works with only Claude
-  Code installed. **Cross-model reviewers (Codex/Gemini/custom CLI) are a configured upgrade**, not
-  a requirement. Reviewer plug-ability is about *reviewer models*, not host runtimes.
-- Config drives: `backend`, `mode` (single|panel|adjudicated), `reviewers[]`, `models.<cli>`,
-  and per-trigger gating (`plan`, `diff`, `risk_surface` auto-detected, `pre_ship`) at
-  off|advisory|blocking|adjudicated.
+  Code installed and no API keys. **Cross-model reviewers are a configured upgrade**, not a
+  requirement. Reviewer plug-ability is about *reviewer models*, not host runtimes.
+- **Cross-model reviewers are direct provider API calls, NOT CLI subprocesses (DECIDED 2026-07-10).**
+  Supported providers: **OpenAI (Codex/GPT) and Google Gemini.** Rationale: in Cadence, review is a
+  pure function (artifact in → structured findings out); the API is built for exactly that, while a
+  CLI is an agent harness whose self-directed investigation is dead weight here because the
+  *adjudicator is the main model* and already owns repo grounding. The API wins on the axes that
+  make review seamless:
+  - **Enforced structured output** — OpenAI `response_format` JSON-schema / Gemini `responseSchema`
+    return the exact finding shape (file, line, severity, claim, failure-scenario). No telemetry
+    stripping, no sentinel scraping, no `jq` fallbacks — the whole class of "hacked" parsing that
+    plagued GSD's `code_review_command` and the CLI path is gone.
+  - **Deterministic control** (model, temperature, system prompt, token budget per trigger tier) →
+    reproducible and unit-testable (mock the HTTP, assert the schema); CLI review is not.
+  - **Trivial panels** — adjudicated/panel mode is N parallel HTTP calls, no subprocess/worktree
+    orchestration. **Clean failure modes** — HTTP status, not parsed stderr.
+  - The CLI's one real edge (agentic self-investigation) is redundant: reviewers critique the
+    presented artifact; the main-model adjudicator investigates and grounds. If a reviewer needs
+    more than the diff, put the relevant files in the request payload.
+  - Trade-off on record: API means the subsystem carries provider clients + key management as a
+    real dependency, pushing on "zero-dep/distributable." The `claude-subagent` default is the
+    no-key fallback; the API path is the cross-model *upgrade* a user opts into.
+- **Division of labor:** API reviewers (Codex/GPT + Gemini) = structured single-shot independent
+  critique. Main model = agentic grounding, false-positive kill, dedupe of convergent findings,
+  final verdict. Same as `/panel-review`, which is the proven pattern.
+- Config drives: `backend`, `mode` (single|panel|adjudicated), `reviewers[]`, provider config
+  (`providers.<name>`: model id, endpoint, key reference — key storage TBD), and per-trigger gating
+  (`plan`, `diff`, `risk_surface` auto-detected, `pre_ship`) at off|advisory|blocking|adjudicated.
+  A master on/off switch gates the whole subsystem above the per-trigger levels.
 - **Trigger wiring (which skill fires what):** `plan` → `cad-plan`, after PLAN.md is written;
   `diff` → `cad-execute`, at plan completion (advisory by default — low-ceremony solo flow);
   `risk_surface` → `cad-execute`, at commit time when the diff matches a risk surface;
