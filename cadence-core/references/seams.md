@@ -41,6 +41,9 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   - Review: `review --provider <openai|gemini> --model <id> [--effort <level>]`,
     the `{instruction, artifact}` payload on stdin. Stdout is one JSON object:
     `{ok:true, findings:[...]}` or `{ok:false, reason, detail}`.
+  - Consult: `consult --provider <name> --model <id> [--effort <level>]`, the
+    `{situation}` payload on stdin -> `{ok:true, angles:[...]}` (dead-end help;
+    see references/consult.md). Same key resolution and degradation as review.
   - Model detection: `detect-models --provider <name>` -> `{ok:true, models:[...]}`.
   - Pass `--key-file <path>` from config `review.key_file` when set (else omit;
     the script uses the XDG default). Never pass a key itself.

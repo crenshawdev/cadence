@@ -104,7 +104,10 @@ file only - inline never splits.
 - `## PHASE TOO BIG` - present the planner's reason and proposed split, then
   ask (ask-user seam): restructure the roadmap (stop; point at /cad-phase,
   re-run /cad-plan after) or plan the full scope anyway (re-dispatch ONCE
-  with that instruction).
+  with that instruction). This is a consult dead-end: before that ask, run
+  offer_consult (references/consult.md) with the split problem as the
+  situation - a second model may see a cleaner cut. User-gated; skip silently
+  if consult is not configured.
 - Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
   the files as authoritative and continue; otherwise report the failed
   spawn and stop.

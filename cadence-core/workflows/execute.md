@@ -80,7 +80,9 @@ task, and what the executor needs. Route by type:
 
 - **structural** (architectural change needed, plan wrong at its core) ->
   present to the user via the ask-user seam: approve the proposed change /
-  adjust it / stop the phase.
+  adjust it / stop the phase. This is a consult dead-end: before that ask, run
+  offer_consult (references/consult.md) with the deviation as the situation.
+  User-gated; skip silently if consult is not configured.
 - **risk_surface** (staged diff matches a risk surface) -> fire the
   `risk_surface` review trigger with the flagged diff. Blocking: on FAIL,
   findings are fixed or the user explicitly overrides - never silently

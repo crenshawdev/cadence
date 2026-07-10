@@ -3,10 +3,12 @@
 //
 // This is the ONLY place a direct provider HTTPS call happens. The
 // call-review-provider seam (references/seams.md) binds to invoking this
-// script; SKILL.md workflows never inline provider specifics. Two jobs:
+// script; SKILL.md workflows never inline provider specifics. Three jobs:
 //
 //   review        single-shot structured-output critique of an artifact ->
 //                 normalized findings JSON on stdout.
+//   consult       reactive dead-end help: a stuck situation in -> angles to
+//                 try out (hypotheses, never a decision). Decision-support only.
 //   detect-models enumerate the model IDs the resolved key can access ->
 //                 {models:[...]} on stdout (feeds cad-config assignment).
 //
@@ -24,6 +26,11 @@
 //   review-provider.mjs review  --provider <openai|gemini> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
 //                               [--key-file <path>]
+//       payload (stdin/file): {instruction, artifact} -> {ok, findings[]}
+//   review-provider.mjs consult --provider <openai|gemini> --model <id>
+//                               [--effort <level>] [--payload <file>|-]
+//                               [--key-file <path>]
+//       payload (stdin/file): {situation} -> {ok, angles[]}  (dead-end help)
 //   review-provider.mjs detect-models --provider <openai|gemini> [--key-file <path>]
 //
 // --key-file overrides the shared env-file path (config review.key_file); an
@@ -193,6 +200,31 @@ const FINDING_SCHEMA = {
   },
 };
 
+// Consult is a different job from review: not "critique this artifact" but
+// "the primary engineer is stuck - what would you try?" It returns angles to
+// investigate, never a decision. Decision-support only; the main model grounds
+// each angle and the user decides (DESIGN §6).
+const CONSULT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['angles'],
+  properties: {
+    angles: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['hypothesis', 'rationale', 'how_to_check'],
+        properties: {
+          hypothesis: { type: 'string' },
+          rationale: { type: 'string' },
+          how_to_check: { type: 'string' },
+        },
+      },
+    },
+  },
+};
+
 // Deep-copy a JSON schema with every `additionalProperties` key removed.
 // OpenAI strict mode requires it; Gemini's OpenAPI-subset responseSchema
 // rejects it. One schema, two dialects.
@@ -220,20 +252,18 @@ const ADAPTERS = {
     // OpenAI Responses API. reasoning.effort is a first-class per-call param.
     base: 'https://api.openai.com',
     authHeaders: (key) => ({ authorization: `Bearer ${key}` }),
-    reviewRequest({ model, effort, instruction, artifact }) {
+    // One structured-output call, shared by review and consult - only the
+    // schema and prompt differ. Wire output for review is byte-identical to
+    // before this was generalized.
+    structuredRequest({ model, effort, system, user, schema, schemaName }) {
       const body = {
         model,
         input: [
-          { role: 'system', content: instruction },
-          { role: 'user', content: artifact },
+          { role: 'system', content: system },
+          { role: 'user', content: user },
         ],
         text: {
-          format: {
-            type: 'json_schema',
-            name: 'cadence_review',
-            strict: true,
-            schema: FINDING_SCHEMA,
-          },
+          format: { type: 'json_schema', name: schemaName, strict: true, schema },
         },
       };
       if (effort) body.reasoning = { effort };
@@ -241,7 +271,7 @@ const ADAPTERS = {
     },
     // Responses API returns output items; the text lives in output_text or in
     // the assistant message content. Handle both to be robust across versions.
-    extractReview(json) {
+    extractText(json) {
       let text = json.output_text;
       if (!text && Array.isArray(json.output)) {
         for (const item of json.output) {
@@ -262,24 +292,24 @@ const ADAPTERS = {
     // Google Gemini API (generativelanguage). Key via x-goog-api-key header.
     base: 'https://generativelanguage.googleapis.com',
     authHeaders: (key) => ({ 'x-goog-api-key': key }),
-    reviewRequest({ model, effort, instruction, artifact }) {
+    structuredRequest({ model, effort, system, user, schema }) {
       const generationConfig = {
         responseMimeType: 'application/json',
         // Gemini responseSchema is an OpenAPI-3.0 subset that rejects the
         // `additionalProperties` keyword (which OpenAI strict mode requires),
         // so strip it for Gemini only. thinkingLevel is the Gemini 3.x effort
         // dial (minimal|low|medium|high); omitted when no effort is set.
-        responseSchema: stripAdditionalProperties(FINDING_SCHEMA),
+        responseSchema: stripAdditionalProperties(schema),
       };
       if (effort) generationConfig.thinkingConfig = { thinkingLevel: effort };
       const body = {
-        systemInstruction: { parts: [{ text: instruction }] },
-        contents: [{ role: 'user', parts: [{ text: artifact }] }],
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: user }] }],
         generationConfig,
       };
       return { path: `/v1beta/models/${model}:generateContent`, method: 'POST', body };
     },
-    extractReview(json) {
+    extractText(json) {
       const parts = json?.candidates?.[0]?.content?.parts;
       if (Array.isArray(parts)) {
         for (const p of parts) if (typeof p.text === 'string') return p.text;
@@ -314,6 +344,17 @@ function validateFindings(obj) {
   return null;
 }
 
+function validateConsult(obj) {
+  if (!obj || !Array.isArray(obj.angles)) return 'missing angles[]';
+  for (const a of obj.angles) {
+    if (!a || typeof a !== 'object') return 'angle not an object';
+    for (const k of ['hypothesis', 'rationale', 'how_to_check']) {
+      if (typeof a[k] !== 'string') return `angle.${k} must be a string`;
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Commands.
 // ---------------------------------------------------------------------------
@@ -327,25 +368,22 @@ async function readPayload(opts) {
   }
 }
 
-async function cmdReview(opts) {
+// Shared preamble for the two structured-output commands.
+function resolveProvider(opts, cmdName) {
   const provider = opts.provider;
   const adapter = ADAPTERS[provider];
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`);
-  if (!opts.model) fail('bad-args', 'review needs --model');
-
+  if (!opts.model) fail('bad-args', `${cmdName} needs --model`);
   const { key, where } = resolveKey(provider, opts['key-file']);
   if (!key) fail('no-key', `set ${where}`);
+  return { provider, adapter, key };
+}
 
-  const payload = await readPayload(opts);
-  if (!payload || !payload.instruction || !payload.artifact) {
-    fail('bad-payload', 'payload needs {instruction, artifact}');
-  }
-
-  const { path: p, method, body } = adapter.reviewRequest({
-    model: opts.model, effort: opts.effort,
-    instruction: payload.instruction, artifact: payload.artifact,
-  });
-
+// Run a structured-output request through the transport, extract, and parse.
+// Returns the parsed JSON object or degrades via fail(). Schema validation is
+// the caller's job (review and consult assert different shapes).
+async function callStructured(adapter, key, reqSpec) {
+  const { path: p, method, body } = reqSpec;
   let res;
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key), body });
@@ -355,15 +393,47 @@ async function cmdReview(opts) {
   if (res.status < 200 || res.status >= 300) {
     fail('http', { status: res.status, body: res.json || res.raw });
   }
-
-  const text = adapter.extractReview(res.json);
+  const text = adapter.extractText(res.json);
   if (typeof text !== 'string') fail('no-output', 'no text in provider response');
-  let parsed;
-  try { parsed = JSON.parse(text); } catch (e) { fail('bad-json', e.message); }
+  try { return JSON.parse(text); } catch (e) { fail('bad-json', e.message); }
+}
+
+async function cmdReview(opts) {
+  const { provider, adapter, key } = resolveProvider(opts, 'review');
+  const payload = await readPayload(opts);
+  if (!payload || !payload.instruction || !payload.artifact) {
+    fail('bad-payload', 'payload needs {instruction, artifact}');
+  }
+  const parsed = await callStructured(adapter, key, adapter.structuredRequest({
+    model: opts.model, effort: opts.effort,
+    system: payload.instruction, user: payload.artifact,
+    schema: FINDING_SCHEMA, schemaName: 'cadence_review',
+  }));
   const bad = validateFindings(parsed);
   if (bad) fail('bad-shape', bad);
-
   ok({ provider, model: opts.model, findings: parsed.findings });
+}
+
+async function cmdConsult(opts) {
+  const { provider, adapter, key } = resolveProvider(opts, 'consult');
+  const payload = await readPayload(opts);
+  if (!payload || !payload.situation) {
+    fail('bad-payload', 'payload needs {situation}');
+  }
+  const system =
+    'You are a second-opinion consultant to an engineer stuck at a dead-end. ' +
+    'Return angles to investigate - concrete things to try or check, each with ' +
+    'why it might be the cause and how to test it. Do NOT make the decision or ' +
+    'pick the path: the engineer grounds each angle against the real code and ' +
+    'decides. Be specific to the situation, not generic advice.';
+  const parsed = await callStructured(adapter, key, adapter.structuredRequest({
+    model: opts.model, effort: opts.effort,
+    system, user: payload.situation,
+    schema: CONSULT_SCHEMA, schemaName: 'cadence_consult',
+  }));
+  const bad = validateConsult(parsed);
+  if (bad) fail('bad-shape', bad);
+  ok({ provider, model: opts.model, angles: parsed.angles });
 }
 
 async function cmdDetect(opts) {
@@ -418,8 +488,9 @@ function classify(provider, ids) {
 async function main() {
   const { cmd, opts } = parseArgs(process.argv.slice(2));
   if (cmd === 'review') await cmdReview(opts);
+  else if (cmd === 'consult') await cmdConsult(opts);
   else if (cmd === 'detect-models') await cmdDetect(opts);
-  else fail('bad-command', `use: review | detect-models (got: ${cmd || 'none'})`);
+  else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
 }
 main().catch((e) => {
   if (e === DONE) return; // normal ok()/fail() unwind
