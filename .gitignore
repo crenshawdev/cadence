@@ -14,3 +14,7 @@ npm-debug.log*
 /tmp/
 scratch/
 *.local
+
+# Working handoffs / design deep-dives (local only, not published)
+/RESUME.md
+/design-notes/
