@@ -8,6 +8,10 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
   probing, no locator shim. Skills @-include workflows from here.
 - Project state: `.planning/` in the repo root (see DESIGN.md canonical set:
   PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md).
+- Phase directory: `.planning/phases/<N>/` where `<N>` is the bare phase integer
+  from ROADMAP.md (`phases/1/`, `phases/2/`, ... no zero-padding, no slug suffix).
+  Created lazily by the first skill that needs it (cad-context or cad-plan).
+  Match an existing directory's name if one is already present.
 
 ## Config resolution
 
