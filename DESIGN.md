@@ -214,7 +214,8 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 - Config drives: `backend`, `mode` (single|panel|adjudicated), `reviewers[]`, provider config
   (`providers.<name>`: model id, endpoint, key reference — key storage TBD), and per-trigger gating
   (`plan`, `diff`, `risk_surface` auto-detected, `pre_ship`) at off|advisory|blocking|adjudicated.
-  A master on/off switch gates the whole subsystem above the per-trigger levels.
+  No global master switch - per-trigger `off` disables any gate, and consult is always-ask, so a
+  separate on/off is redundant.
 - **Trigger wiring (which skill fires what):** `plan` → `cad-plan`, after PLAN.md is written;
   `diff` → `cad-execute`, at plan completion (advisory by default — low-ceremony solo flow);
   `risk_surface` → `cad-execute`, at commit time when the diff matches a risk surface;
