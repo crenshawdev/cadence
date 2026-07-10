@@ -46,6 +46,16 @@ node "$HOME/.claude/cadence-core/bin/route.mjs" resolve --role <agent_name> \
 - Fixed profiles (`fast`/`balanced`/`quality`) never escalate - explicit pick
   wins. Only `model.profile: auto` reacts to `--attempt`/signals.
 
+**Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
+context that repeats across dispatches of the same role (phase/goal, shared
+files to read) goes BEFORE the volatile per-dispatch specifics (this plan, this
+scope, a continuation's completed-task table). The prompt cache matches the
+longest identical prefix, so a stable preamble lets the 2nd..Nth dispatch of a
+role read most of its prompt from cache instead of paying fresh. And never
+restate rules the agent's own definition already carries - the definition is a
+cached prefix; the dispatch prompt is billed fresh each time, so repeating
+stable rules in it pays for them twice.
+
 ## Seam: call-review-provider
 
 How the review subsystem reaches a cross-model reviewer. A cross-model review
