@@ -1,0 +1,46 @@
+{
+  "mode": "interactive",
+  "granularity": "standard",
+  "context_window": 1000000,
+  "model": {
+    "profile": "balanced",
+    "auto": { "ceiling": "quality", "escalate_on_failure": true, "max_escalations": 1 }
+  },
+  "workflow": {
+    "research": false, "plan_check": true, "verifier": true, "auto_advance": false,
+    "discuss_mode": "discuss", "skip_discuss": false, "human_verify_mode": "end-of-phase",
+    "subagent_timeout": 300000, "inline_plan_threshold": 3,
+    "test_command": null, "build_command": null
+  },
+  "parallelization": {
+    "enabled": false, "max_concurrent_agents": 3, "min_plans_for_parallel": 2,
+    "use_worktrees": true
+  },
+  "git": {
+    "protected_branches": ["main", "master"],
+    "on_protected": "ask",
+    "base_branch": null,
+    "auto_push": false,
+    "create_tag": true
+  },
+  "planning": { "commit_docs": true },
+  "search": { "brave_search": false, "firecrawl": false, "exa_search": false },
+  "memory": { "backend": "none" },
+  "review": {
+    "backend": "claude-subagent",
+    "mode": "adjudicated",
+    "reviewers": ["claude-subagent"],
+    "key_file": null,
+    "providers": {
+      "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
+      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
+    },
+    "triggers": {
+      "plan":         { "gate": "adjudicated", "tier": "flagship", "effort": "high" },
+      "diff":         { "gate": "advisory",    "tier": "balanced", "effort": "medium" },
+      "risk_surface": { "gate": "blocking",    "tier": "flagship", "effort": "high" },
+      "pre_ship":     { "gate": "adjudicated", "tier": "flagship", "effort": "high" }
+    },
+    "consult": { "enabled": false, "tier": "flagship", "effort": "high" }
+  }
+}
