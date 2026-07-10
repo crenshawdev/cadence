@@ -61,7 +61,10 @@ Notes:
 - A good requirement is specific and testable ("User can reset password via
   email link", not "Handle password reset"), user-centric ("User can X", not
   "System does Y"), and atomic (one capability each).
-- Status values: Pending / In Progress / Complete / Blocked. Complete means
-  implemented AND verified, not just written.
+- Status values: Pending / Complete. /cad-verify flips a phase's requirements
+  to Complete when that phase's UAT fully passes (Complete means implemented
+  AND verified, never just written); /cad-progress reconciles if it drifts.
+  This column and the ROADMAP phase checkbox are the only persisted status -
+  everything else is derived.
 - Unmapped v1 requirements are a roadmap gap - coverage must reach 100%
   before the roadmap is approved.

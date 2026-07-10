@@ -39,6 +39,16 @@ phase/status, overwrite it with the derived cursor in the canonical schema
 (references/conventions.md): `Phase: <N> of <total> (<name>)`, the derived
 status, next action, `Updated:` today, keeping an existing pause note only if
 it still applies. Overwrite, never append - git is the log.
+
+Also check the persisted status hints against the derivation, but do NOT edit
+those files here - cad-verify is their single writer:
+- ROADMAP `## Phases` box: a phase derived complete whose box is still `- [ ]`
+  (or vice versa) is drift.
+- REQUIREMENTS Traceability: a complete phase's requirement still `Pending`
+  is drift.
+On drift, note it in the report ("ROADMAP shows phase N open but it is
+complete") and route to `/cad-verify N` to repair it. Only the STATE cursor is
+rewritten here.
 </step>
 
 <step name="stats">

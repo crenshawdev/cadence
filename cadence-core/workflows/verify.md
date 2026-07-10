@@ -186,14 +186,25 @@ Compute the session result:
 - **partial** - anything `pending`, `fail`, `blocked`, or skipped
   without a reason.
 
-Update the UAT.md frontmatter status. On **complete**, overwrite the
-`.planning/STATE.md` cursor in the canonical schema (references/conventions.md):
-`Phase: <N> of <total> (<name>)`, status "phase complete", next action (next
-phase's /cad-context, or /cad-land if this was the last), `Updated:` today.
-STATE.md stays a 4-line cursor - no session log, no history append.
+Update the UAT.md frontmatter status. On **complete**, this skill is the
+single writer of persisted phase status - do all three, then commit together:
 
-If `planning.commit_docs` is true, commit UAT.md (plus STATE.md when it
-changed): `docs: phase <N> UAT - {passed} passed, {failed} failed`.
+1. Overwrite the `.planning/STATE.md` cursor in the canonical schema
+   (references/conventions.md): `Phase: <N> of <total> (<name>)`, status
+   "phase complete", next action (next phase's /cad-context, or /cad-land if
+   this was the last), `Updated:` today. 4-line cursor, no history append.
+2. Check the phase's box in `.planning/ROADMAP.md`: the `## Phases` line for
+   phase <N> flips `- [ ]` to `- [x]`. Change only that one line.
+3. Flip this phase's requirements to Complete in
+   `.planning/REQUIREMENTS.md`: for each REQ-ID mapped to phase <N> in the
+   Traceability table (also listed in the phase's PLAN.md `requirements`),
+   set its Status cell to `Complete`. Change only those rows.
+
+On a **partial** session, do none of 1-3 for status - the phase is not done.
+
+If `planning.commit_docs` is true, commit UAT.md plus whichever of STATE.md,
+ROADMAP.md, and REQUIREMENTS.md changed:
+`docs: phase <N> UAT - {passed} passed, {failed} failed`.
 
 Report tersely:
 
@@ -228,5 +239,7 @@ complete.
 - [ ] User walked through only untested items, one at a time, plain-text answers
 - [ ] Every failure carries verbatim evidence + inferred severity in UAT.md
 - [ ] Fixes were user-approved atomic commits or a /cad-plan route - no auto-fix loop
-- [ ] STATE.md cursor updated only on full pass
+- [ ] STATE.md cursor updated only on full pass; on full pass the ROADMAP
+      phase box is checked and the phase's REQUIREMENTS Status flipped to
+      Complete, all in one docs commit
 </success_criteria>

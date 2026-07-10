@@ -36,13 +36,6 @@ ordered this way.]
 **Success Criteria:**
 1. [Criterion]
 2. [Criterion]
-
-## Progress
-
-| Phase | Status | Completed |
-|-------|--------|-----------|
-| 1. [Name] | Not started | - |
-| 2. [Name] | Not started | - |
 ```
 
 </template>
@@ -58,7 +51,10 @@ Notes:
   insertions added later via /cad-phase; execution follows numeric order.
 - Every v1 REQ-ID appears in exactly one phase; the Traceability table in
   REQUIREMENTS.md mirrors this mapping.
-- Status values: Not started / In progress / Complete (with date) /
-  Deferred (with reason). The Progress table is updated by /cad-execute.
+- Phase status is the `## Phases` checkbox, and nothing else: `- [ ]` open,
+  `- [x]` complete. /cad-verify checks the box when a phase's UAT fully
+  passes; /cad-progress reconciles it if it ever drifts. There is no separate
+  progress table - live status is derived by /cad-progress from phase
+  artifacts (git is the log, not a hand-maintained mirror).
 - No time estimates, no plan sub-lists - plans live in
   .planning/phases/<N>/PLAN.md, created by /cad-plan when a phase starts.
