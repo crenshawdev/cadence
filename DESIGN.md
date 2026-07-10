@@ -43,6 +43,15 @@ These are worth more than any per-skill cut. Each removes weight from *many* ski
    → Removes the verify-loop, fix-loop, advisor fan-out, convergence loop, secure-phase
    auditor, code-reviewer, and most web-research fan-outs as separate machinery.
 
+**Emergent property — context is disposable.** These four decisions share a
+consequence worth naming: durable state lives in files (`.planning/` docs, git
+history) and every plan, review, and execution runs in a fresh-context
+subagent, so the working conversation carries almost nothing a file doesn't
+already hold. Cadence is meant to be `/clear`-ed aggressively mid-project —
+clear at any phase boundary and the next command reconstructs what it needs
+from disk. This is a deliberate *attempt* at context frugality — it keeps
+prompt-cache reuse high and the orchestrator context lean — not a guarantee.
+
 ---
 
 ## 2. Cadence skill set (~22 skills replacing 69)

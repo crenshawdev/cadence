@@ -56,6 +56,15 @@ restate rules the agent's own definition already carries - the definition is a
 cached prefix; the dispatch prompt is billed fresh each time, so repeating
 stable rules in it pays for them twice.
 
+**Return shape (bounded handoff).** A subagent's return is the load-bearing
+thing the orchestrator ingests back into the main context, so keep it bounded.
+When the agent produced a durable artifact (a written file, commits), return a
+slim summary plus the path/hashes and let the orchestrator open the artifact
+only if it must - never echo the artifact's contents back. When there is no
+artifact, cap the structured return to what the orchestrator will act on and
+push raw evidence to a file rather than inline. This is what keeps the
+orchestrator context flat across a long run of dispatches.
+
 ## Seam: call-review-provider
 
 How the review subsystem reaches a cross-model reviewer. A cross-model review

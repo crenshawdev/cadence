@@ -180,7 +180,8 @@ Review: {plan trigger outcome}
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
 
-One suggestion only: `/cad-execute {N}`.
+One suggestion only: `/cad-execute {N}` - safe to `/clear` first: the plan is
+on disk and each executor runs in a fresh context.
 </step>
 
 </process>

@@ -154,7 +154,9 @@ is never left uncommitted.
 
 <step name="done">
 Report tersely: plans executed, commits (count and range), deviations count,
-open items, goal-check verdict. One suggestion max: `/cad-verify <N>`.
+open items, goal-check verdict. One suggestion max: `/cad-verify <N>` - safe
+to `/clear` first: SUMMARY.md and the STATE cursor are committed and
+verification runs in a fresh subagent.
 </step>
 
 </process>
