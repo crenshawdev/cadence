@@ -389,11 +389,18 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
     "backend": "claude-subagent",
     "mode": "adjudicated",
     "reviewers": ["claude-subagent"],
-    "models": { "codex": "codex exec {prompt}", "gemini": "gemini -p {prompt}" },
+    "key_file": null,
+    "providers": {
+      "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
+      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
+    },
     "triggers": {
-      "plan": "adjudicated", "diff": "advisory",
-      "risk_surface": "blocking", "pre_ship": "adjudicated"
-    }
+      "plan":         { "gate": "adjudicated", "tier": "flagship", "effort": "high" },
+      "diff":         { "gate": "advisory",    "tier": "balanced", "effort": "medium" },
+      "risk_surface": { "gate": "blocking",    "tier": "flagship", "effort": "high" },
+      "pre_ship":     { "gate": "adjudicated", "tier": "flagship", "effort": "high" }
+    },
+    "consult": { "enabled": false, "tier": "flagship", "effort": "high" }
   }
 }
 ```
@@ -402,3 +409,11 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
 (off by default); granularity → kept; response_language/i18n → **cut (English v1)**. Everything in
 §3's DELETE buckets (model-ID routing, multi-runtime, multi-team, cut-feature toggles, state/guard
 cruft, local-server review hosts) is gone.
+
+**Review block shape (step 5):** each trigger picks a *gate* + a cognitive *tier*
+(flagship/balanced/cheap) + *effort*, all provider-agnostic; `providers.<name>.tiers`
+maps tier → a concrete detected model id, `null` until `cad-config` runs live detection and
+assignment. Model IDs are never hardcoded. `key_file` stores only a path override (default:
+`${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env`), never a key. The provider seam is
+`bin/review-provider.mjs` (zero-dep); wire shapes are pinned in `references/provider-api.md`,
+soft tier hints in `references/model-hints.json`.

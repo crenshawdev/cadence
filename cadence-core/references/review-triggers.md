@@ -1,10 +1,11 @@
 # Review trigger interface
 
-STATUS: STUB. The review subsystem is built after the spine (build order step 5).
-Spine skills call this interface from day one; the subsystem fills in the
-backends. Until then, `claude-subagent` review means: spawn a fresh-context
-subagent (spawn-agent seam) prompted to REFUTE the artifact, and report its
-findings.
+STATUS: building (step 5). Spine skills call this interface from day one.
+Backends: `claude-subagent` (default, zero-dep) spawns a fresh-context subagent
+(spawn-agent seam) prompted to REFUTE the artifact and report findings;
+cross-model reviewers (OpenAI / Gemini) run through the call-review-provider seam
+(`bin/review-provider.mjs`, built). Still to wire: the per-skill `fire()`
+dispatch/adjudication logic and the consult capability.
 
 ## fire(trigger)
 
@@ -13,7 +14,9 @@ findings.
 2. Assemble the payload (see wiring table).
 3. Dispatch to the configured backend(s): `review.backend`, `review.reviewers[]`,
    `review.mode` (single | panel | adjudicated). Default backend is
-   `claude-subagent` (zero-dep); external CLIs go through the review-cli seam.
+   `claude-subagent` (zero-dep, via spawn-agent); cross-model reviewers
+   (OpenAI / Gemini) go through the call-review-provider seam (a provider API
+   call, not a CLI).
 4. Act on the gating level:
    - **advisory** - report findings, continue.
    - **blocking** - PASS/FAIL; on FAIL, halt until findings are fixed or the

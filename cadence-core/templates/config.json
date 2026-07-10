@@ -30,10 +30,17 @@
     "backend": "claude-subagent",
     "mode": "adjudicated",
     "reviewers": ["claude-subagent"],
-    "models": { "codex": "codex exec {prompt}", "gemini": "gemini -p {prompt}" },
+    "key_file": null,
+    "providers": {
+      "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
+      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
+    },
     "triggers": {
-      "plan": "adjudicated", "diff": "advisory",
-      "risk_surface": "blocking", "pre_ship": "adjudicated"
-    }
+      "plan":         { "gate": "adjudicated", "tier": "flagship", "effort": "high" },
+      "diff":         { "gate": "advisory",    "tier": "balanced", "effort": "medium" },
+      "risk_surface": { "gate": "blocking",    "tier": "flagship", "effort": "high" },
+      "pre_ship":     { "gate": "adjudicated", "tier": "flagship", "effort": "high" }
+    },
+    "consult": { "enabled": false, "tier": "flagship", "effort": "high" }
   }
 }
