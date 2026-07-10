@@ -26,8 +26,9 @@ Build the truth from files and git, never from logs or memory:
    - SUMMARY.md, but UAT.md missing or has failing/pending items -> **executed** (unverified)
    - SUMMARY.md and UAT.md fully passed -> **complete**
 3. `git log --oneline -8` for recent context.
-4. Read the STATE.md cursor (phase / status / next, plus the one-line pause
-   note if /cad-pause wrote one). It is a hint only.
+4. Read the STATE.md cursor (phase / status / next). When `Status: paused`, the
+   `Next:` line is the resume pointer /cad-pause wrote - the one-line "where I
+   was". The cursor is a hint only.
 
 Current phase = the lowest-numbered phase that is not complete. If the cursor
 disagrees with the derivation, the derivation wins.
@@ -70,7 +71,7 @@ Compact status, no banners:
 {one line per phase: number, name, status}
 
 Recent: {2-3 recent commit subjects}
-Paused: {one-line note}          (only if a pause note exists)
+Paused: {the cursor's Next line}   (only when Status is paused)
 ```
 </step>
 
