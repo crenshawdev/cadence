@@ -228,6 +228,31 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
   Foundation deliverable** — spine skills call the seam from day one; the subsystem fills it in later.
 - The auto-replan *convergence loop* is cut (auto-decides; against verify-before-done discipline).
 
+### Cross-model consult = on-demand second-model help at dead-ends (DECIDED 2026-07-10)
+A capability distinct from adversarial review, reusing the same provider connections (OpenAI/Codex
++ Gemini) but for a different job. Review is *scheduled critique* of an artifact; consult is
+*reactive help* when the primary model is stuck. Codifies John's manual "Codex reflex" (Lane R /
+codex-rescue) as a first-class feature — GSD rails you through steps but has no "phone a friend" at
+the dead-ends between them.
+- **Decision-support, never delegation.** The consult returns angles/hypotheses to try; the main
+  model grounds each against the real code and the *user* decides. It never takes the wheel or
+  auto-picks a process fork (that is the autonomous pattern already cut).
+- **ALWAYS user-approval-gated.** Even when a trigger condition is met, the process OFFERS a
+  consult and waits for explicit yes — it never auto-consults. (Asymmetry with review, which CAN
+  fire automatically per its config gating; a consult spends a second model's tokens on a judgment
+  call, so it asks every time.)
+- **Triggered by observable state, not self-assessment.** Bind to counters/checkpoints the system
+  can see — N failed fix attempts on one bug, a test still red after K iterations, cad-execute's
+  structural-deviation stop, cad-plan's PHASE TOO BIG, cad-debug's exhausted-hypotheses state.
+  Never "the model feels stuck" (least reliable signal; the capability meant to fight thrashing
+  would otherwise cause it).
+- **Bounded** — one consult per dead-end unless genuinely new information appears. **Advisory
+  only.** **Home:** cad-debug plus the existing decision-point checkpoints, not an always-on
+  behavior. **Opportunistic:** available only if providers are wired; claude-subagent is the
+  zero-dep fallback.
+- Config gates it like review (a switch, plus which providers). Open: exact trigger thresholds,
+  how the offer is presented, output-handling specifics.
+
 ### Model routing = minimal canned profiles + optional auto (the standout feature)
 - Whole GSD model-routing family (`model_profile`, `model_policy.*`, per-agent overrides,
   `models.*`, `granularities.*`) → collapsed to **three canned profiles + an `auto` mode**.
