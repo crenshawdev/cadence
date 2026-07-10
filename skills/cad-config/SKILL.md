@@ -21,7 +21,8 @@ Routing:
   each provider's accessible models and assign them to the flagship/balanced/
   cheap tiers.
 - **`<key>=<value>` ...**: set config keys directly (validated against the §7 schema).
-- **default** (no args): show current config and ask what to configure.
+- **default** (no args): walk every knob as a selectable list (batched pages),
+  each preselected to its current value.
 </objective>
 
 <execution_context>
