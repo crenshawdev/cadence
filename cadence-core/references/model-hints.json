@@ -1,0 +1,22 @@
+{
+  "note": "Soft tier classification for detected REVIEW model IDs. Live detection is truth; this table only pre-tags KNOWN ids so cad-config can auto-place them. Staleness is soft: an unmatched id gets tier=null and the user places it manually - it never errors. `exclude` drops non-text modalities (embeddings, audio, image, etc.) that cannot do structured text review, so they never appear as candidates. Rules are ordered most-specific-first; match is case-insensitive substring; first match wins. Tiers: flagship (deep reasoning) | balanced (cost/quality mid) | cheap (fast/frequent). high_effort = the id meaningfully honors a high reasoning/thinking level. Update as families ship.",
+  "exclude": [
+    "embedding", "tts", "transcribe", "whisper", "audio", "image",
+    "realtime", "moderation", "sora", "dall-e", "-video", "veo", "imagen"
+  ],
+  "rules": {
+    "openai": [
+      { "match": "nano",  "tier": "cheap",    "high_effort": false },
+      { "match": "luna",  "tier": "cheap",    "high_effort": false },
+      { "match": "mini",  "tier": "balanced", "high_effort": true },
+      { "match": "terra", "tier": "balanced", "high_effort": true },
+      { "match": "sol",   "tier": "flagship", "high_effort": true },
+      { "match": "gpt-5", "tier": "flagship", "high_effort": true }
+    ],
+    "gemini": [
+      { "match": "flash-lite", "tier": "cheap",    "high_effort": false },
+      { "match": "pro",        "tier": "flagship", "high_effort": true },
+      { "match": "flash",      "tier": "balanced", "high_effort": true }
+    ]
+  }
+}
