@@ -388,22 +388,28 @@ async function cmdDetect(opts) {
   ok({ provider, models: classify(provider, ids) });
 }
 
-// Tag each detected id with a tier hint (references/model-hints.json). Known ->
-// {tier, high_effort}; unknown -> tier:null so cad-config asks the user to
-// place it. Missing/broken hint file degrades to all-unknown, never errors.
+// Tag each detected id with a tier hint (references/model-hints.json). First
+// drop non-text modalities (embeddings, audio, image, ...) that can't do text
+// review, so the candidate list is review-usable. Then: known id ->
+// {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
+// to place it. Missing/broken hint file degrades to all-unknown, never errors.
 function classify(provider, ids) {
-  let rules = [];
+  let rules = [], exclude = [];
   try {
     const hints = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
     rules = (hints.rules && hints.rules[provider]) || [];
-  } catch { /* no hints -> everything unknown */ }
-  return ids.map((id) => {
-    const lower = id.toLowerCase();
-    const hit = rules.find((r) => lower.includes(String(r.match).toLowerCase()));
-    return hit
-      ? { id, tier: hit.tier, high_effort: !!hit.high_effort }
-      : { id, tier: null, high_effort: null };
-  });
+    exclude = hints.exclude || [];
+  } catch { /* no hints -> everything unknown, nothing excluded */ }
+  const excluded = (lower) => exclude.some((p) => lower.includes(String(p).toLowerCase()));
+  return ids
+    .filter((id) => !excluded(id.toLowerCase()))
+    .map((id) => {
+      const lower = id.toLowerCase();
+      const hit = rules.find((r) => lower.includes(String(r.match).toLowerCase()));
+      return hit
+        ? { id, tier: hit.tier, high_effort: !!hit.high_effort }
+        : { id, tier: null, high_effort: null };
+    });
 }
 
 // ---------------------------------------------------------------------------
