@@ -4,8 +4,9 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
 
 ## Paths
 
-- Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/` - the ONE hardcoded location. No host
-  probing, no locator shim. Skills @-include workflows from here.
+- Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/` - the single canonical engine root,
+  resolved by the Claude Code plugin runtime. No host probing, no locator shim.
+  Skills @-include workflows from here.
 - Project state: `.planning/` in the repo root (see DESIGN.md canonical set:
   PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md).
 - Phase directory: `.planning/phases/<N>/` where `<N>` is the bare phase integer
