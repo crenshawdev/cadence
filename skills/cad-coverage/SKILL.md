@@ -24,7 +24,7 @@ kind and runner follow the code and `workflow.test_command`, not a fixed stack.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/coverage.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/coverage.md
 </execution_context>
 
 <process>

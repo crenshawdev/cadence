@@ -24,7 +24,7 @@ resume-work + stats.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/progress.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/progress.md
 </execution_context>
 
 <process>

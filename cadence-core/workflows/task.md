@@ -18,7 +18,7 @@ Store as $TASK.
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`$HOME/.claude/cadence-core/references/git.md` before any work.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` before any work.
 </step>
 
 <step name="scope">

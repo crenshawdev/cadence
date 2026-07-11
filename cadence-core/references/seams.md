@@ -32,7 +32,7 @@ role through the routing seam - never hardcode a model, never dispatch a role at
 the session default when a profile is set:
 
 ```
-node "$HOME/.claude/cadence-core/bin/route.mjs" resolve --role <agent_name> \
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_name> \
   [--attempt <N>] [--files <N>] [--ambiguity <0..1>]
 ```
 
@@ -75,7 +75,7 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 
 **Claude Code binding:**
 - Run `cadence-core/bin/review-provider.mjs` via the shell (installed at
-  `$HOME/.claude/cadence-core/bin/review-provider.mjs`):
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs`):
   - Review: `review --provider <openai|gemini> --model <id> [--effort <level>]`,
     the `{instruction, artifact}` payload on stdin. Stdout is one JSON object:
     `{ok:true, findings:[...]}` or `{ok:false, reason, detail}`.

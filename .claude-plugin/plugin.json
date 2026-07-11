@@ -1,0 +1,18 @@
+{
+  "name": "cadence",
+  "description": "A planning and execution system for a single developer in Claude Code: one disciplined discuss/plan/execute/verify loop, state in files not conversation, opinionated defaults, a deliberately small surface.",
+  "version": "0.1.0",
+  "author": {
+    "name": "John Crenshaw (VintageTechie)"
+  },
+  "homepage": "https://gitlab.com/vintagetechie/cadence",
+  "repository": "https://gitlab.com/vintagetechie/cadence.git",
+  "license": "MIT",
+  "keywords": [
+    "planning",
+    "workflow",
+    "claude-code",
+    "software-development",
+    "git"
+  ]
+}

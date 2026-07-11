@@ -21,8 +21,8 @@ milestone that silently dropped a requirement (cad-audit gates it).
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/milestone.md
-@$HOME/.claude/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/milestone.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
 </execution_context>
 
 <process>

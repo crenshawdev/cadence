@@ -35,7 +35,7 @@ built, then return the report.
 1. `git status --short`. Stage the specific files you changed, individually.
    Never `git add -A`, never `git add .`.
 2. Risk-surface gate: check the staged diff against the risk-surface list in
-   `$HOME/.claude/cadence-core/references/review-triggers.md` (auth/authz,
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (auth/authz,
    DB schema/migrations, money, concurrency/locking, destructive ops,
    secrets/crypto, public API contracts, untrusted-input parsing). On a
    match: do NOT commit - stop and return a `risk_surface` checkpoint with

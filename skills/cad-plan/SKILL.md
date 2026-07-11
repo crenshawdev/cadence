@@ -23,7 +23,7 @@ tasks from unresolved UAT items.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/plan.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/plan.md
 </execution_context>
 
 <process>

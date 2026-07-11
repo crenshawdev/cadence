@@ -45,7 +45,7 @@ For each reviewer in the set, in parallel where the host allows:
 - **openai / gemini**: resolve `model = review.providers.<name>.tiers[trigger.tier]`
   and `effort = trigger.effort`, then run the seam:
   ```
-  node "$HOME/.claude/cadence-core/bin/review-provider.mjs" review \
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <model> --effort <effort> \
     [--key-file <review.key_file, only if set>]
   ```

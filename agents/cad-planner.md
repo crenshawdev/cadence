@@ -79,7 +79,7 @@ than ~5 files is usually two tasks.
 
 <plan_output>
 Write .planning/phases/<N>/PLAN.md following
-$HOME/.claude/cadence-core/templates/PLAN.md. The frontmatter
+${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. The frontmatter
 `requirements` field MUST cover every phase requirement ID from your
 dispatch prompt, distributed across the plan(s); an ID covered by no plan
 is a planning failure.

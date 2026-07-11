@@ -22,7 +22,7 @@ for /cad-plan to read. Optional - /cad-plan runs without it.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/context.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/context.md
 </execution_context>
 
 <process>

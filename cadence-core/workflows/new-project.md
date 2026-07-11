@@ -29,7 +29,7 @@ In order:
    verbatim:
 
    ```bash
-   cp "$HOME/.claude/cadence-core/templates/config.json" .planning/config.json
+   cp "${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/config.json" .planning/config.json
    ```
 
    Ask no configuration questions. Tell the user in one line:
@@ -111,7 +111,7 @@ Loop until "Create PROJECT.md".
 </step>
 
 <step name="write_project">
-Read `$HOME/.claude/cadence-core/templates/PROJECT.md` and synthesize
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and synthesize
 everything gathered into `.planning/PROJECT.md`. Do not compress; capture
 all of it.
 
@@ -203,7 +203,7 @@ user-centric, and atomic. Push vague ones until they pass:
 - "Support sharing" becomes "User can share a post via a link that opens in
   the recipient's browser"
 
-Read `$HOME/.claude/cadence-core/templates/REQUIREMENTS.md` and write
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
 `.planning/REQUIREMENTS.md`: v1 by category with REQ-IDs, v2 deferred, Out
 of Scope with reasons, Traceability table left as headers (filled by the
 roadmap step).
@@ -232,7 +232,7 @@ Derivation rules:
    "X works" or "X is improved".
 6. Order by dependency; state each phase's `Depends on` explicitly.
 
-Read `$HOME/.claude/cadence-core/templates/ROADMAP.md` and write
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 `.planning/ROADMAP.md`. Then update the Traceability table in
 REQUIREMENTS.md: every REQ-ID mapped to its phase, coverage counts filled.
 

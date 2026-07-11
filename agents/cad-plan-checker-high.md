@@ -18,7 +18,7 @@ borderline BLOCKER vs WARNING calls.
 <instructions>
 Read your full contract now and execute it exactly:
 
-    $HOME/.claude/agents/cad-plan-checker.md
+    ${CLAUDE_PLUGIN_ROOT}/agents/cad-plan-checker.md
 
 Follow every section -
 stance, the five dimensions, process, returns, guardrails, success criteria -

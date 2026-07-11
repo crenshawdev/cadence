@@ -38,7 +38,7 @@ The hard rules (DESIGN §6), in order of importance:
    `[Consult | Keep going without it]`. Wait for an explicit yes. A no ends here.
 4. **Call.** On yes, run the seam:
    ```
-   node "$HOME/.claude/cadence-core/bin/review-provider.mjs" consult \
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" consult \
      --provider <name> --model <review.consult.tier -> id> \
      --effort <review.consult.effort> [--key-file <review.key_file if set>]
    ```

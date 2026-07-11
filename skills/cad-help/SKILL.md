@@ -13,7 +13,7 @@ headings. No search, no state, no side effects.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/references/COMMANDS.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/COMMANDS.md
 </execution_context>
 
 <process>

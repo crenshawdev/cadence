@@ -124,10 +124,10 @@ is rejected, never written.
 is valid. Never write config JSON by hand; go through the seam:
 
 ```
-node "$HOME/.claude/cadence-core/bin/config.mjs" validate            # whole file ok?
-node "$HOME/.claude/cadence-core/bin/config.mjs" check <key=value>…  # dry-run one or more pairs
-node "$HOME/.claude/cadence-core/bin/config.mjs" set   <key=value>…  # validate then write (atomic: all-or-nothing)
-node "$HOME/.claude/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" validate            # whole file ok?
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" check <key=value>…  # dry-run one or more pairs
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set   <key=value>…  # validate then write (atomic: all-or-nothing)
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys                # dump schema (types/enums/defaults/purpose)
 ```
 
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
@@ -167,7 +167,7 @@ Invoke the call-review-provider seam (this is the only place a provider call
 happens):
 
 ```
-node "$HOME/.claude/cadence-core/bin/review-provider.mjs" detect-models \
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" detect-models \
   --provider <name> [--key-file <review.key_file, only if set>]
 ```
 
@@ -211,7 +211,7 @@ Write the chosen ids through the **Validation seam**, one `set` per provider so 
 mid-flow stop still persists what was decided:
 
 ```
-node "$HOME/.claude/cadence-core/bin/config.mjs" set \
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set \
   'review.providers.<name>.tiers.flagship=<id>' \
   'review.providers.<name>.tiers.balanced=<id>' \
   'review.providers.<name>.tiers.cheap=<id>'
