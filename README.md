@@ -1,19 +1,56 @@
 # Cadence
 
-**Cadence is a single-developer fork of [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core),
-trimmed and re-focused for solo work.** It keeps GSD's core discipline — a
-discuss → plan → execute → verify loop with atomic commits — and strips the
-team, multi-runtime, and AI-product machinery a solo developer doesn't need.
+Cadence is a planning and execution system for a single developer working in Claude Code. It runs one disciplined loop, discuss then plan then execute then verify, with an atomic commit per task, opinionated defaults, and a deliberately small surface. Your state lives in files, not in the conversation, so you can `/clear` aggressively and the next command rebuilds from disk.
 
-> Status: **early scaffolding.** See [`DESIGN.md`](./DESIGN.md) for the full design and rationale.
+It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that never pushes and never decides how you publish without asking.
 
-## What Cadence changes vs GSD
+> Cadence began as a hard fork of [GSD](https://github.com/open-gsd/gsd-core). It kept the methodology and rebuilt everything else, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
+
+## The loop
+
+Cadence runs as `/cad-*` slash commands in Claude Code. A project moves through five steps, each its own command:
+
+1. **`/cad-new-project`** — define the project through deep questioning: what, why, who, done.
+2. **`/cad-context <phase>`** — gather locked decisions and acceptance criteria before planning.
+3. **`/cad-plan <phase>`** — turn a phase into an executable, checkable plan.
+4. **`/cad-execute <phase>`** — build it, one atomic commit per task.
+5. **`/cad-verify <phase>`** — confirm the phase delivered what it promised.
+
+`/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
+
+## The commands
+
+Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-help <name>` shows one entry.
+
+**Review & quality**
+- **`/cad-plan-review`** — adversarial review of a plan before any code is written.
+- **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification. Catches silently-dropped work.
+- **`/cad-coverage`** — find a phase's requirements that have zero failing-capable test coverage, then close the gaps.
+- **`/cad-docs-verify`** — check factual claims in docs against the live codebase.
+- **`/cad-debug`** — systematic debugging with hypotheses that survive `/clear`.
+
+**Lifecycle & git**
+- **`/cad-milestone`** — cut a release: audit nothing was dropped, tag, prune completed phases, evolve the docs.
+- **`/cad-land`** — publish finished work, asking how (push / MR or PR / tag / leave local) with no preselected default.
+- **`/cad-phase`** — add, insert, remove, or renumber phases, fixing every reference in one pass.
+- **`/cad-undo`** — safely roll back a phase's commits from its summary manifest.
+- **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
+
+**Support**
+- **`/cad-config`** — the ~22-key config: workflow toggles, model routing, cross-model review providers.
+- **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
+- **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
+- **`/cad-task`** — a small off-roadmap task with atomic commits.
+- **`/cad-health`** — a quick planning-health check.
+- **`/cad-help`** — the command reference.
+
+## What's inside
 
 - **Claude Code only** — one clean runtime, no multi-host shim. Portability-ready seams
-  (ask-user / spawn-agent / review-CLI) if a contributor ever adds a runtime.
-- **~18 skills instead of 69, ~9 agents instead of 34.** Deleted: team/multi-author tooling,
-  the AI-product track, web-UI design track, catalog-scaling, and features that duplicate a
-  developer's own memory/graph tools.
+  (ask-user / spawn-agent / review-provider) if a contributor ever adds a runtime.
+- **22 skills, 7 agents, and nothing you didn't ask for.** No team or multi-author tooling,
+  no AI-product track, no web-UI design track, no catalog-scaling, and nothing that duplicates
+  a developer's own memory or graph tools. See [`LINEAGE.md`](./LINEAGE.md) for the full cut.
 - **Adversarial review is a first-class, configurable subsystem** — a fresh-context Claude
   reviewer by default, with pluggable cross-model reviewers (Codex, Gemini, any CLI).
 - **Model routing** — three canned profiles (low / balanced / quality) plus an optional `auto`
