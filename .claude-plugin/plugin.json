@@ -5,6 +5,8 @@
   "author": {
     "name": "John Crenshaw (VintageTechie)"
   },
+  "homepage": "https://gitlab.com/vintagetechie/cadence",
+  "repository": "https://gitlab.com/vintagetechie/cadence.git",
   "license": "MIT",
   "keywords": [
     "planning",
