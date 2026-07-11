@@ -23,7 +23,7 @@ research pass.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/new-project.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/new-project.md
 </execution_context>
 
 <process>

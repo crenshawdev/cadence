@@ -21,7 +21,7 @@ honest verdict. The code is throwaway; the SPIKE.md verdict is the deliverable.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/spike.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/spike.md
 </execution_context>
 
 <process>

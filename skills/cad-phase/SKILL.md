@@ -20,8 +20,8 @@ references rot. This skill keeps them consistent.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/phase.md
-@$HOME/.claude/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/phase.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
 </execution_context>
 
 <process>

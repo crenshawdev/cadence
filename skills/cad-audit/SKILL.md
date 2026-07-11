@@ -25,7 +25,7 @@ not write status itself.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/audit.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/audit.md
 </execution_context>
 
 <process>

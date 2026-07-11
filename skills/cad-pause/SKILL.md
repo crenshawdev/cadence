@@ -18,8 +18,8 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/references/git.md
-@$HOME/.claude/cadence-core/references/conventions.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md
 </execution_context>
 
 <process>
