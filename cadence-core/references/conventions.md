@@ -4,7 +4,7 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
 
 ## Paths
 
-- Engine: `$HOME/.claude/cadence-core/` - the ONE hardcoded location. No host
+- Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/` - the ONE hardcoded location. No host
   probing, no locator shim. Skills @-include workflows from here.
 - Project state: `.planning/` in the repo root (see DESIGN.md canonical set:
   PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md).
@@ -16,7 +16,7 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
 ## Config resolution
 
 1. `.planning/config.json` if present.
-2. Else the defaults in `$HOME/.claude/cadence-core/templates/config.json`.
+2. Else the defaults in `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/config.json`.
 Read only the keys you need. Unknown keys are ignored, never fatal.
 
 ## State

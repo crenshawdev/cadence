@@ -26,7 +26,7 @@ use it).
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`$HOME/.claude/cadence-core/references/git.md` BEFORE dispatching the first
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` BEFORE dispatching the first
 executor. Executors commit; the guard question belongs here, once, never
 inside a subagent.
 
@@ -130,7 +130,7 @@ SUMMARY open items, not a fix loop.
 
 <step name="summary">
 Write `.planning/phases/<N>/SUMMARY.md` from
-`$HOME/.claude/cadence-core/templates/SUMMARY.md`, aggregating the executor
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/SUMMARY.md`, aggregating the executor
 reports: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).

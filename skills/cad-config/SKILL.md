@@ -26,7 +26,7 @@ Routing:
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/config.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/config.md
 </execution_context>
 
 <process>

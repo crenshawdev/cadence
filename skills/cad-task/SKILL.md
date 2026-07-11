@@ -21,7 +21,7 @@ multi-step work. Feature-sized requests get re-routed to /cad-context.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/task.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/task.md
 </execution_context>
 
 <process>

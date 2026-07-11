@@ -20,8 +20,8 @@ plainly whether later phases exist and lets the user decide.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/undo.md
-@$HOME/.claude/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/undo.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
 </execution_context>
 
 <process>
