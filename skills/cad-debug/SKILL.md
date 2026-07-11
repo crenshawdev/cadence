@@ -29,7 +29,7 @@ Routing (parse `$ARGUMENTS` first):
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/debug.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/debug.md
 </execution_context>
 
 <process>

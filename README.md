@@ -6,9 +6,20 @@ It is built to say no. One runtime, no team tooling, no feature catalog. What it
 
 > Cadence began as a hard fork of [GSD](https://github.com/open-gsd/gsd-core). It kept the methodology and rebuilt everything else, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
 
+## Install
+
+Cadence is a Claude Code plugin. Add the marketplace, then install:
+
+```
+/plugin marketplace add https://gitlab.com/vintagetechie/cadence.git
+/plugin install cadence@cadence
+```
+
+Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support.
+
 ## The loop
 
-Cadence runs as `/cad-*` slash commands in Claude Code. A project moves through five steps, each its own command:
+Cadence runs as slash commands in Claude Code, namespaced `/cadence:cad-*` (for example `/cadence:cad-new-project`). They are written below without the `cadence:` prefix for brevity. A project moves through five steps, each its own command:
 
 1. **`/cad-new-project`** — define the project through deep questioning: what, why, who, done.
 2. **`/cad-context <phase>`** — gather locked decisions and acceptance criteria before planning.

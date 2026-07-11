@@ -17,8 +17,8 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/references/review-triggers.md
-@$HOME/.claude/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
 </execution_context>
 
 <process>

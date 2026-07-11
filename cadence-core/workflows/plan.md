@@ -77,7 +77,7 @@ Read before planning:
 - The actual source files your tasks will touch
 
 Write .planning/phases/{N}/PLAN.md per
-$HOME/.claude/cadence-core/templates/PLAN.md. Default is ONE PLAN.md; split
+${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. Default is ONE PLAN.md; split
 into PLAN-1.md, PLAN-2.md only for genuinely independent slices (no shared
 files, no cross-slice ordering).
 

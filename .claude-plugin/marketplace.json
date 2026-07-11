@@ -1,0 +1,13 @@
+{
+  "name": "cadence",
+  "owner": {
+    "name": "John Crenshaw (VintageTechie)"
+  },
+  "plugins": [
+    {
+      "name": "cadence",
+      "source": "./",
+      "description": "The Cadence planning and execution system for Claude Code."
+    }
+  ]
+}

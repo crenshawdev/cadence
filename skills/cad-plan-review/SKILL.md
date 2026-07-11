@@ -25,7 +25,7 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/references/review-triggers.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md
 </execution_context>
 
 <process>

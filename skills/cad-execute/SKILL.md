@@ -22,7 +22,7 @@ opts in.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/execute.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/execute.md
 </execution_context>
 
 <process>

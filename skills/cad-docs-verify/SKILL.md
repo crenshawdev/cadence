@@ -22,7 +22,7 @@ human (or a later edit) acts on.
 </objective>
 
 <execution_context>
-@$HOME/.claude/cadence-core/workflows/docs-verify.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/docs-verify.md
 </execution_context>
 
 <process>
