@@ -199,9 +199,10 @@ Update the UAT.md frontmatter status. On **complete**, this skill is the
 single writer of persisted phase status - do all three, then commit together:
 
 1. Overwrite the `.planning/STATE.md` cursor in the canonical schema
-   (references/conventions.md): `Phase: <N> of <total> (<name>)`, status
-   "phase complete", next action (next phase's /cad-context, or /cad-land if
-   this was the last), `Updated:` today. 4-line cursor, no history append.
+   (references/conventions.md) - Read it first, then replace all four lines:
+   `Phase: <N> of <total> (<name>)`, status "phase complete", next action
+   (next phase's /cad-context, or /cad-land if this was the last), `Updated:`
+   today. 4-line cursor, no history append.
 2. Check the phase's box in `.planning/ROADMAP.md`: the `## Phases` line for
    phase <N> flips `- [ ]` to `- [x]`. Change only that one line.
 3. Flip this phase's requirements to Complete in

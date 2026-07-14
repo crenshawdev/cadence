@@ -22,9 +22,12 @@ Read only the keys you need. Unknown keys are ignored, never fatal.
 
 ## State
 
-- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended. NO
-  audit logs, no activity tables, no session narratives - git history is the
-  log. Derive views from `git log` on demand.
+- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended -
+  Read it first (it always exists after new-project), then replace all four
+  lines, or Edit them in place; a cold Write on an unread file trips the
+  read-before-write guard and forces a redo. NO audit logs, no activity tables,
+  no session narratives - git history is the log. Derive views from `git log`
+  on demand.
 - Canonical cursor schema - every writer emits exactly these four lines under a
   `# State` heading, in this order:
 

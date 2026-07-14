@@ -157,7 +157,8 @@ present. This file joins the docs commit in the state step.
 
 <step name="state">
 Overwrite `.planning/STATE.md` with the canonical 4-line cursor
-(references/conventions.md), full overwrite, never append:
+(references/conventions.md) - Read it first (it always exists), then replace
+all four lines; never append, and never cold-Write it unread:
 
 ```
 Phase: <N> of <total> (<name>)
