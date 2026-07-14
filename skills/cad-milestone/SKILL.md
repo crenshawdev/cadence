@@ -1,6 +1,6 @@
 ---
 name: cad-milestone
-description: "Cut a milestone - verify nothing was dropped (cad-audit), tag the release, prune completed phases from the live roadmap (git is the archive), evolve PROJECT.md, and refresh REQUIREMENTS for the next cycle. Folds in cleanup"
+description: "Cut a milestone - verify nothing was dropped (cad-audit), tag the release when the project tags, prune completed phases from the live roadmap (git is the archive), evolve PROJECT.md, and refresh REQUIREMENTS for the next cycle. Works for non-release projects too. Folds in cleanup"
 argument-hint: "[version | next-milestone name]"
 allowed-tools:
   - Read
@@ -14,10 +14,11 @@ allowed-tools:
 ---
 
 <objective>
-The version-cut ritual: close a finished milestone and set up the next. Thin by
-design - it collapses GSD's new-milestone + complete-milestone + cleanup into one
-flow. It never ships (publishing a tag is /cad-land's call) and it never cuts a
-milestone that silently dropped a requirement (cad-audit gates it).
+Close a finished milestone and set up the next. Thin by design - it collapses
+GSD's new-milestone + complete-milestone + cleanup into one flow. It tags the
+release only when the project tags (non-release projects skip it), it never
+ships (publishing a tag is /cad-land's call), and it never cuts a milestone
+that silently dropped a requirement (cad-audit gates it).
 </objective>
 
 <execution_context>

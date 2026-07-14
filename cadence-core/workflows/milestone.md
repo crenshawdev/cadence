@@ -1,8 +1,8 @@
 # cad-milestone workflow
 
-Close a finished milestone and set up the next one. A thin version-cut: audit,
-tag, prune, evolve, refresh. Git is the archive - pruning removes completed work
-from the LIVE planning docs, not from history.
+Close a finished milestone and set up the next one. A thin close-out: audit,
+tag (release projects only), prune, evolve, refresh. Git is the archive -
+pruning removes completed work from the LIVE planning docs, not from history.
 
 ## 1. Scope + audit gate
 Identify the milestone being closed (from PROJECT.md's current version/
@@ -11,11 +11,17 @@ its requirements. On FAIL - a requirement untraced, unverified, or dropped -
 report it and STOP, unless the user explicitly overrides (a milestone must not
 ship with silent gaps). On PASS, continue.
 
-## 2. Tag the release
-Confirm the version (`$ARGUMENTS`, else propose the next from PROJECT.md's
-current). Create an annotated tag at HEAD (`git tag -a <version> -m ...`). Do NOT
-push it - publishing the tag is /cad-land's decision. If `git.create_tag` is
-false, skip tagging and note it.
+## 2. Tag the release (release projects only)
+Detect release mode first: read `git.create_tag` from config and probe for any
+existing tag (`git tag`). It is a non-release milestone when `git.create_tag`
+is false, or the project has never tagged and the user is not cutting a named
+version - then skip this step, note "no tag (non-release milestone)", and do
+not frame the close as a version cut. Do not press the user toward a tag they
+did not ask for.
+
+Otherwise confirm the version (`$ARGUMENTS`, else propose the next from
+PROJECT.md's current), create an annotated tag at HEAD (`git tag -a <version>
+-m ...`), and do NOT push it - publishing the tag is /cad-land's decision.
 
 ## 3. Prune completed phases + cleanup
 - Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list;
