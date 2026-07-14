@@ -183,8 +183,8 @@ verification runs in a fresh subagent.
 </process>
 
 <guardrails>
-- The protected-branch guard runs once, before the first dispatch - never
-  inside an executor.
+- The protected-branch guard runs up front, before the first dispatch - once
+  per code repo the phase touches, never inside an executor.
 - The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
   is the only STATE writer, and only as the 4-line overwrite.
