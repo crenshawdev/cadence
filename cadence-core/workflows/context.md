@@ -52,6 +52,13 @@ Read what already constrains this phase - never re-ask a settled question:
 - up to 3 most recent prior `phases/*/CONTEXT.md` files (locked decisions
   that carry forward)
 
+Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
+carry the latest decisions, while a prior CONTEXT can be stale - a scope change
+often updates requirements without touching an older phase's CONTEXT file. When
+a carried-forward decision contradicts current REQUIREMENTS/ROADMAP, treat the
+current docs as authoritative: drop or re-open that decision rather than
+feeding it forward as settled.
+
 Missing files are fine - continue without. Build an internal prior-decisions
 summary for the analyzer prompt and for annotating questions ("you chose X
 in phase 2").
