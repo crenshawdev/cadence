@@ -80,6 +80,10 @@ Item rules:
   changes) - execution already covered those.
 - Deduplicate: a PLAN verification restating a ROADMAP criterion is one
   item, worded as the ROADMAP criterion (the contract).
+- A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT
+  becomes an item the deep verifier does not attempt as a machine check -
+  it is presented in the walk as a human check, since the tool that would
+  settle it is known to be absent here.
 - Cold-start smoke test: if the phase touched server/service entry
   points, database/migration/seed files, or startup/container config,
   PREPEND an item: "Stop everything, clear ephemeral state, start from

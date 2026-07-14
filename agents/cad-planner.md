@@ -70,7 +70,13 @@ Every task has exactly three fields, all concrete:
 - **Verify:** how to prove the task is done - a command whose output settles
   it ("cargo test auth:: passes", "curl -X POST /login with bad creds
   returns 401") or an observable behavior check. "Running X shows Y", never
-  "X works" or "looks good".
+  "X works" or "looks good". If proving the task needs a tool or service not
+  available in the execution environment (probe with `command -v`; e.g.
+  docker, a cloud CLI, a live endpoint), write the Verify as a `human-verify`
+  instruction naming the tool and what the user should observe - never a
+  command the executor cannot run, which only turns into a mid-task deferral
+  that later masquerades as a pass. A CONTEXT criterion already tagged
+  `(human-verify: ...)` carries that intent forward.
 
 Atomic means: one concern, independently verifiable, leaves the repo
 committable. Target 3-10 tasks for a typical phase; a task touching more
