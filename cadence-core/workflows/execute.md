@@ -22,26 +22,15 @@ Resolve the phase:
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY
 use it).
-
-Resolve the CODE REPO the phase edits: read each plan's `files:` frontmatter
-and take the common git root of those paths
-(`git -C <dir> rev-parse --show-toplevel`). Usually it is the `.planning/`
-repo (the cwd); when a plan's files are absolute paths inside another repo,
-that other repo is the code repo, and the guard, PHASE_START, per-plan diff,
-and goal-check below all apply THERE, not in the cwd. The SUMMARY/STATE docs
-still commit in the `.planning/` repo. If plans span more than one code repo,
-guard each before its first executor.
 </step>
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` in the CODE REPO resolved
-in `locate` (not necessarily the cwd) BEFORE dispatching the first executor.
-Executors commit; the guard question belongs here, once, never inside a
-subagent.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` BEFORE dispatching the first
+executor. Executors commit; the guard question belongs here, once, never
+inside a subagent.
 
-Record `git -C <code repo> rev-parse --short HEAD` as PHASE_START for later
-diffs - the code repo, since that is where the executor commits.
+Record `git rev-parse --short HEAD` as PHASE_START for later diffs.
 </step>
 
 <step name="choose_path">
@@ -60,7 +49,7 @@ For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
 for it to finish before starting the next. Timeout:
 `workflow.subagent_timeout`.
 
-Record the pre-plan HEAD (in the code repo from `locate`), then dispatch with a prompt ordered stable-first, so
+Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context
 (identical across the phase's plans) before the plan-specific tail.
 - Phase number, name, and the one-line goal.
@@ -80,14 +69,14 @@ content twice.
 Handle the executor's return:
 - **complete** -> collect its report (tasks, hashes, deviations, open items).
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
-- **timeout or no report** -> inspect `git -C <code repo> log {pre-plan HEAD}..HEAD` to see
+- **timeout or no report** -> inspect `git log {pre-plan HEAD}..HEAD` to see
   what actually landed, report the state, and ask the user (ask-user seam)
   whether to re-dispatch the remainder or stop. Never silently re-run a plan
   on top of partial commits.
 
 After each plan completes, fire the `diff` review trigger
-(references/review-triggers.md) with `git -C <code repo> diff {pre-plan HEAD}..HEAD`
-as the payload. Default is advisory: report findings, continue.
+(references/review-triggers.md) with `git diff {pre-plan HEAD}..HEAD` as the
+payload. Default is advisory: report findings, continue.
 </step>
 
 <step name="handle_checkpoint">
@@ -133,7 +122,7 @@ continuation executor is dispatched back into the same worktree.
 
 <step name="goal_check">
 Light, inline, no subagent. Read the phase goal and
-`git -C <code repo> log --oneline {PHASE_START}..HEAD`, then write one honest paragraph:
+`git log --oneline {PHASE_START}..HEAD`, then write one honest paragraph:
 does the sum of these commits plausibly deliver the phase goal? Name
 anything that looks missing. This is an assessment, not a gate - gaps become
 SUMMARY open items, not a fix loop.
@@ -183,8 +172,8 @@ verification runs in a fresh subagent.
 </process>
 
 <guardrails>
-- The protected-branch guard runs up front, before the first dispatch - once
-  per code repo the phase touches, never inside an executor.
+- The protected-branch guard runs once, before the first dispatch - never
+  inside an executor.
 - The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
   is the only STATE writer, and only as the 4-line overwrite.
