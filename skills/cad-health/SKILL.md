@@ -38,7 +38,12 @@ Check, then report - do not fix without asking.
 
 5. **Consistency.** Cursor `M` == ROADMAP phase count; cursor `N` is within
    range. `.planning/phases/<N>/` dirs correspond to real phases (a planned
-   phase with no dir yet is fine; a dir with no phase is an issue).
+   phase with no dir yet is fine; a dir with no phase is an issue). A phase
+   marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all
+   `Complete` (or a `Complete` requirement whose phase is still `- [ ]`) is a
+   status-drift issue - flag it. This is the cheap structural check that a
+   phase closed clean; whether the requirement was actually *delivered* is
+   /cad-audit's job, not this one.
 
 Report: **healthy** with a one-line all-clear, or a short list of issues, each
 with the file and what is wrong. For a trivial, unambiguous fix (cursor `of M`
