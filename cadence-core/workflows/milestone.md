@@ -27,7 +27,10 @@ PROJECT.md's current), create an annotated tag at HEAD (`git tag -a <version>
 - Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list;
   the tag + git history are their archive.
 - Remove the completed phases' `.planning/phases/<N>/` directories from the
-  working tree (recoverable from the tag). This folds in GSD's cleanup.
+  working tree - recoverable from the tag, or from git history when the
+  milestone is untagged. On a non-release (untagged) milestone there is no tag
+  to name them by, so prefer moving them into an on-disk `_archive-<version>/`
+  over deleting. This folds in GSD's cleanup.
 - Leave any unfinished phase and its dir in place - a milestone can close with
   deferred work that rolls to the next.
 Commit this as `chore: prune <version> completed phases`.
