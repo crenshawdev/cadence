@@ -112,9 +112,10 @@ checks) and writes nothing. Merge into UAT.md:
   evidence recorded. Not presented in the walk - the machine check saves
   the human the click.
 - Gap (FAILED truth) -> the matching item becomes `status: fail`,
-  `source: verifier`, with reason and artifacts as evidence; unmatched
-  gaps append as new failed items. These route through `route_failures`
-  exactly like user-reported failures.
+  `source: verifier`, with reason and artifacts as evidence, and
+  `first_pass: fail` if not already set; unmatched gaps append as new
+  failed items. These route through `route_failures` exactly like
+  user-reported failures.
 - Human check -> append as `pending` if not already covered by an item.
 - NEVER overwrite a result the user recorded; verifier findings only fill
   items still `pending`.
@@ -150,7 +151,10 @@ color/spacing/visual -> cosmetic.
 
 After EVERY reply: update the item, the Summary counts, and the
 frontmatter `updated` timestamp, then write the file - persistence never
-waits for the end of the session. Present the next pending item, or
+waits for the end of the session. On the item's FIRST non-pending result,
+also set `first_pass` to that result (`pass` or `fail`) and never
+overwrite it again - it is what keeps a fixed-then-passed item
+distinguishable from a clean pass. Present the next pending item, or
 continue to `route_failures` when none remain or the user stops.
 </step>
 
@@ -211,8 +215,11 @@ Report tersely:
 ```
 UAT {complete|partial}: phase <N>
 Passed {n}/{total} ({v} auto-verified) | Failed {n} | Skipped {n} | Blocked {n}
+Reworked {n} (items that failed first pass, then were fixed)
 {open failed items, one line each, if any}
 ```
+
+Omit the Reworked line when the count is zero.
 
 One suggestion max: the resume command if partial, the next phase if
 complete. Either way, safe to `/clear` first: UAT.md and the STATE cursor
