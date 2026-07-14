@@ -26,14 +26,15 @@ PROJECT.md's current), create an annotated tag at HEAD (`git tag -a <version>
 ## 3. Prune completed phases + cleanup
 - Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list;
   the tag + git history are their archive.
-- Remove the completed phases' `.planning/phases/<N>/` directories from the
-  working tree - recoverable from the tag, or from git history when the
-  milestone is untagged. On a non-release (untagged) milestone there is no tag
-  to name them by, so prefer moving them into an on-disk `_archive-<version>/`
-  over deleting. This folds in GSD's cleanup.
+- Archive the completed phases' `.planning/phases/<N>/` directories out of the
+  live tree. Tagged (release) milestone: delete them - recoverable from the tag.
+  Untagged (non-release) milestone: there is no tag to name them by, so MOVE
+  them into an on-disk `_archive-<label>/` (label = the shipped milestone's
+  name from PROJECT.md) rather than delete, so git history is not the only copy.
 - Leave any unfinished phase and its dir in place - a milestone can close with
   deferred work that rolls to the next.
-Commit this as `chore: prune <version> completed phases`.
+Commit this as `chore: prune <label> completed phases` (label = the version on
+a release, else the milestone name).
 
 ## 4. Evolve PROJECT.md
 Bump the version/milestone and set the next cycle's goal and scope. Ask the user
@@ -60,5 +61,6 @@ roadmap the new milestone first). Commit the doc changes (`docs:`), cursor
 included, per references/git.md - never leave the tree dirty.
 
 ## 7. Report
-Tag created (unpushed), phases pruned, PROJECT/REQUIREMENTS refreshed, cursor
-reset. One line on the next action. Note that publishing the tag is /cad-land.
+Tag created (unpushed) - or "no tag (non-release)" - phases pruned,
+PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next action. Note
+that publishing the tag is /cad-land.
