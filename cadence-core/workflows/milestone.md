@@ -34,8 +34,11 @@ changelog.
 
 ## 5. Refresh REQUIREMENTS
 - Mark the shipped milestone's requirements Complete (they already are, per the
-  audit) and move them under a shipped/archived heading or drop them from the
-  live list (git holds them).
+  audit) and move them under a shipped/archived heading - keep each REQ-ID as a
+  row with its phase and `Complete` status. Do NOT collapse them into a prose
+  bullet or drop them from the file: the archived rows are what keeps
+  /cad-audit able to trace shipped scope after phase dirs are pruned. Git holds
+  the detail; the live file keeps the trace.
 - Carry forward any deferred/unmet requirement into the new milestone.
 - Seed the next milestone's headline requirements from the PROJECT.md evolution
   and the user's intent. Deep per-phase requirements come later via /cad-plan;
