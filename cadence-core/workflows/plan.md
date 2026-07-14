@@ -143,16 +143,21 @@ Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
 
 Handle the return:
 - `## VERIFICATION PASSED` -> continue.
-- `## ISSUES FOUND` -> ONE revision, maximum:
-  1. Plans came from cad-planner: re-dispatch it in revision mode with the
-     issues (see spawn_planner), this time with `--attempt 2` so the routing
-     seam can escalate under `auto`. Plans were written inline: apply the fixes
-     in the main context.
-  2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
-     (routing seam escalates it to the `-high` effort variant under `auto`).
-  3. Passes -> continue. Still failing -> present the remaining issues and
-     ask (ask-user seam): proceed to execution anyway, or stop and revise
-     by hand. Never loop again.
+- `## ISSUES FOUND` -> read the severities (the checker marks each BLOCKER or
+  WARNING; WARNING means quality is degraded but execution can proceed):
+  - Only WARNINGs, no BLOCKER -> fold the worthwhile ones into the plan in the
+    main context (or note why not) and continue. Do NOT spend the revision loop
+    or a re-check on warnings alone.
+  - Any BLOCKER -> ONE revision, maximum:
+    1. Plans came from cad-planner: re-dispatch it in revision mode with the
+       issues (see spawn_planner), this time with `--attempt 2` so the routing
+       seam can escalate under `auto`. Plans were written inline: apply the
+       fixes in the main context.
+    2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
+       (routing seam escalates it to the `-high` effort variant under `auto`).
+    3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
+       blockers and ask (ask-user seam): proceed to execution anyway, or stop
+       and revise by hand. Never loop again.
 - Empty or unmarked return -> report it, ask whether to proceed unchecked.
 </step>
 
