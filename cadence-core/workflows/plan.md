@@ -92,9 +92,10 @@ any) or ## PHASE TOO BIG (reason + proposed split).
 </planning_context>
 ```
 
-Revision mode: append the checker's issues verbatim in a `<checker_issues>`
-block and instruct: fix each issue with minimal edits to the existing plan
-file(s), or rebut it explicitly; return ## REVISION COMPLETE.
+Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
+plan on disk carries the grounding). Append the checker's issues verbatim in a
+`<checker_issues>` block and instruct: fix each issue with minimal edits to the
+existing plan file(s), or rebut it explicitly; return ## REVISION COMPLETE.
 </step>
 
 <step name="inline_plan">
@@ -149,10 +150,11 @@ Handle the return:
     main context (or note why not) and continue. Do NOT spend the revision loop
     or a re-check on warnings alone.
   - Any BLOCKER -> ONE revision, maximum:
-    1. Plans came from cad-planner: re-dispatch it in revision mode with the
-       issues (see spawn_planner), this time with `--attempt 2` so the routing
-       seam can escalate under `auto`. Plans were written inline: apply the
-       fixes in the main context.
+    1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
+       the issues (see spawn_planner) - a new spawn, never a resume of the prior
+       run; the plan on disk preserves its grounding - with `--attempt 2` so the
+       routing seam can escalate under `auto`. Plans were written inline: apply
+       the fixes in the main context.
     2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
        (routing seam escalates it to the `-high` effort variant under `auto`).
     3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining

@@ -26,6 +26,10 @@ How a workflow dispatches work to a fresh-context subagent.
   (`cad-plan-checker-high`, ...) - these exist only for roles whose base effort
   is below the escalation target.
 - Timeout: `workflow.subagent_timeout` from config.
+- Every dispatch is fresh-context and self-contained; there is no resume or
+  "continue the same agent". A re-dispatch (revision, continuation, escalation)
+  is a NEW spawn that reads the prior artifact from disk - never a
+  resume/continuation of a prior run, which this seam does not provide.
 
 **Routing (which model + which agent file).** Before every dispatch, resolve the
 role through the routing seam - never hardcode a model, never dispatch a role at
