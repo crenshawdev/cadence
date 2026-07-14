@@ -65,6 +65,13 @@ in phase 2").
 </step>
 
 <step name="analyze">
+Before dispatching, settle any user-only foundational fork the analyzer cannot
+resolve from code - where new code lives (which repo / path), the target
+platform, whether a referenced repo is even in scope this milestone. Surface
+the blocking ones via the ask-user seam first, and do NOT bake an unverified
+scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
+wastes the whole pass and forces a mid-analysis interruption.
+
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), timeout `workflow.subagent_timeout` from config.
 This keeps raw file contents out of the main context. Prompt payload:
