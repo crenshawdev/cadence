@@ -134,6 +134,14 @@ Write `.planning/phases/<N>/SUMMARY.md` from
 reports: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
+
+For each open item, also append it to `.planning/CAPTURE.md` as
+`- [ ] (phase <N>) <text>` under `## Todos` (create the file with headings
+`## Todos`, `## Seeds`, `## Notes` if absent, same format as /cad-capture).
+SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
+deferred item routed here resurfaces on its phase instead of surviving only
+because the next executor re-notices it. Do not duplicate an item already
+present. This file joins the docs commit in the state step.
 </step>
 
 <step name="state">
@@ -147,8 +155,9 @@ Next: /cad-verify <N>
 Updated: YYYY-MM-DD
 ```
 
-If `planning.commit_docs` is true, commit SUMMARY.md and STATE.md together -
-`docs(<N>): phase <N> summary` - staging exactly those two files. The cursor
+If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, and
+`.planning/CAPTURE.md` if the summary step appended open items to it -
+`docs(<N>): phase <N> summary` - staging exactly those files. The cursor
 is never left uncommitted.
 </step>
 
