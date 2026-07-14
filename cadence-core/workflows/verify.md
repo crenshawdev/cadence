@@ -174,8 +174,9 @@ For each item with `status: fail` and no recorded `cause`:
    2. Re-plan it through /cad-plan (phase-sized gap)
    3. Leave it open
 3. **Apply now** -> make the change as an atomic conventional commit per
-   references/git.md (protected-branch guard, specific files,
-   risk-surface trigger at commit time). Set the item back to `pending`
+   references/git.md (protected-branch guard, specific files, risk-surface
+   trigger at commit time) in the repo that holds the code being fixed, which
+   is not always the `.planning/` repo. Set the item back to `pending`
    with `fix: {hash}, retest` and offer to re-walk it immediately.
 4. **Re-plan** -> record `fix: routed to /cad-plan`, leave the item
    failed, and tell the user to take the gap to `/cad-plan <N>`. Do not
