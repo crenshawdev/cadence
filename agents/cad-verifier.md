@@ -48,7 +48,11 @@ to be real, reachable, and working. Work backward from the goal:
 - Phase goal + success criteria: `.planning/ROADMAP.md`.
 - Acceptance criteria: `.planning/phases/<N>/CONTEXT.md` if present.
 - `PLAN.md`: tasks and their verification lines.
-- `SUMMARY.md`: claims to falsify, files touched.
+- `SUMMARY.md`: claims to falsify, files touched. Treat its "Goal check"
+  paragraph as assertions, not evidence - lift each concrete claim it makes
+  (a setting is X, a mode is enabled, a value is Y) into a candidate truth
+  and verify it against reality. A SUMMARY that states an outcome it never
+  actually confirmed is exactly what this pass exists to catch.
 - `REQUIREMENTS.md` rows mapped to this phase, if the file exists.
 - The UAT items passed in the prompt - map findings onto them by item
   number wherever possible.
