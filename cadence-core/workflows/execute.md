@@ -26,9 +26,20 @@ use it).
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` BEFORE dispatching the first
-executor. Executors commit; the guard question belongs here, once, never
-inside a subagent.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` in the cwd (planning) repo
+BEFORE dispatching the first executor - this covers both the executors' commits
+and the docs commit. Executors commit; the guard question belongs here, once,
+never inside a subagent.
+
+Cross-repo check: Cadence expects `.planning/` in the code repo root. If a
+plan's `files:` are absolute paths whose git root
+(`git -C <dir> rev-parse --show-toplevel`) differs from the cwd repo, the phase
+edits a SEPARATE code repo. Run the same protected-branch guard in that repo
+too before its first executor - its commits would otherwise be unguarded - and
+tell the user this is a partially-supported setup: PHASE_START, the diff
+review, and the goal check below run in the planning repo and will NOT reflect
+commits made in the code repo, so treat them as advisory and check the code
+repo by hand. Prefer keeping `.planning/` in the code repo.
 
 Record `git rev-parse --short HEAD` as PHASE_START for later diffs.
 </step>
@@ -172,7 +183,8 @@ verification runs in a fresh subagent.
 </process>
 
 <guardrails>
-- The protected-branch guard runs once, before the first dispatch - never
+- The protected-branch guard runs up front, before the first dispatch (in the
+  planning repo, and in a separate code repo when a phase edits one) - never
   inside an executor.
 - The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
