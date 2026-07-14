@@ -36,7 +36,8 @@ git.protected_branches, git.on_protected.
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
 2. Read .planning/phases/<N>/CONTEXT.md if present (locked decisions,
    deferred ideas, discretion areas from /cad-context). Absent is fine -
-   plan from the roadmap goal alone.
+   plan from the roadmap goal alone. Note its `Plan shape` line (in the
+   Scope boundary) if present - it is passed to the planner as a directive.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
    overwrite silently.
@@ -67,6 +68,7 @@ Phase: {N} - {name}
 Mode: {standard | gaps | revision}
 Goal: {goal line from ROADMAP.md}
 Requirements: {phase requirement IDs - every ID must appear in a plan}
+Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
 
 Read before planning:
 - .planning/ROADMAP.md (this phase's entry and its dependencies)
@@ -79,7 +81,11 @@ Read before planning:
 Write .planning/phases/{N}/PLAN.md per
 ${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. Default is ONE PLAN.md; split
 into PLAN-1.md, PLAN-2.md only for genuinely independent slices (no shared
-files, no cross-slice ordering).
+files, no cross-slice ordering). If a Plan shape directive is given above,
+honor it; if your file-independence analysis contradicts it (e.g. it asks
+for multiple plans but the slices share files), follow your analysis and
+record the deviation and its reason in your return marker and the PLAN
+Notes - never diverge silently.
 
 Return ## PLANNING COMPLETE (plan files + task counts, split rationale if
 any) or ## PHASE TOO BIG (reason + proposed split).

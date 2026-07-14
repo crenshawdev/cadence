@@ -90,6 +90,15 @@ ordering, each slice independently verifiable. Splits feed /cad-execute's
 optional parallel path. Never split to dodge difficulty, and never split
 shared-file work - if two slices touch the same file, they are one plan.
 
+If your dispatch prompt carries a `Plan shape` directive from CONTEXT,
+treat it as the intended structure: honor it when the independence test
+allows. When your analysis contradicts it - it asks for multiple plans but
+the slices share files, or asks for one plan but the slices are provably
+independent - follow the independence test (it is the hard constraint), but
+record the deviation and its reason in your return marker and in the PLAN
+Notes. File independence wins over the directive; a silent divergence does
+not.
+
 Gaps mode: write the next free plan number (an unnumbered PLAN.md counts as
 plan 1), tasks derived one-to-one from the unresolved UAT items.
 </plan_output>
@@ -97,8 +106,9 @@ plan 1), tasks derived one-to-one from the unresolved UAT items.
 <returns>
 End with exactly one marker:
 
-`## PLANNING COMPLETE` - each plan file, its task count, and (if split) one
-line of independence rationale.
+`## PLANNING COMPLETE` - each plan file, its task count, (if split) one
+line of independence rationale, and (if the structure departs from the
+CONTEXT `Plan shape` directive) one line naming the deviation and why.
 
 `## PHASE TOO BIG` - which of the three legitimate reasons applies, plus a
 proposed split into sub-phases with their goals. Do not write plan files.
