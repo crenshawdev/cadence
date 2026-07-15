@@ -1,7 +1,7 @@
 # NOTICE
 
 Cadence
-Copyright (c) 2026 John Crenshaw (VintageTechie)
+Copyright (c) 2026 John Crenshaw
 
 Cadence is free and open-source software, distributed under the MIT License.
 
