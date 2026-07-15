@@ -364,6 +364,19 @@ test('uat record: sets status, first_pass once, returns next pending (zero re-re
   assert.equal(done.next, null); // nothing pending left
 });
 
+test('uat record: fixed failure resets to pending, first_pass survives', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--reported', 'broken'], dir);
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pending',
+    '--fix', 'abc1234, retest'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.counts.pending, 2); // back in the walk
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /first_pass: fail/);
+  assert.match(text, /fix: abc1234, retest/);
+});
+
 test('uat record: verifier source cannot overwrite a recorded result', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);

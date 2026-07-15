@@ -257,7 +257,10 @@ function writeUat(dir, n, uat) {
   atomicWrite(uatFile(dir, n), renderUat(uat));
 }
 
-const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked'];
+// `pending` is legal for a user re-record: a fixed failure goes back to
+// pending (with fix: "<hash>, retest") so the walk retests it. first_pass is
+// untouched by that reset - it only ever records the first pass/fail verdict.
+const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending'];
 
 function cmdUat(dir, sub, opts) {
   const n = Number(opts.phase);
