@@ -29,15 +29,20 @@ function makeTree(spec) {
   if (spec.roadmap) {
     const lines = spec.roadmap.map((p) =>
       `- [${p.checked ? 'x' : ' '}] **Phase ${p.n}: ${p.name}** - ${p.desc || 'desc'}`);
+    const details = spec.roadmap.map((p) =>
+      `### Phase ${p.n}: ${p.name}\n**Goal:** goal ${p.n}\n**Depends on:** ${p.n === 1 ? 'Nothing' : `Phase ${p.n - 1}`}\n`);
     writeFileSync(join(dir, 'ROADMAP.md'),
-      `# Roadmap: Fixture\n\n## Overview\n\nx\n\n## Phases\n\n${lines.join('\n')}\n\n## Phase Details\n\nx\n`);
+      `# Roadmap: Fixture\n\n## Overview\n\nx\n\n## Phases\n\n${lines.join('\n')}\n\n## Phase Details\n\n${details.join('\n')}`);
   }
 
   for (const [n, ph] of Object.entries(spec.phases || {})) {
     const pdir = join(dir, 'phases', n);
     mkdirSync(pdir, { recursive: true });
     const plans = ph.plan === true ? ['PLAN.md'] : (ph.plan || []);
-    for (const f of plans) writeFileSync(join(pdir, f), `# Plan ${n}\n`);
+    for (const f of plans) {
+      const reqs = ph.planReqs ? `---\nphase: ${n}\nrequirements: [${ph.planReqs.join(', ')}]\nfiles: []\n---\n` : '';
+      writeFileSync(join(pdir, f), `${reqs}# Plan ${n}\n`);
+    }
     if (ph.summary) writeFileSync(join(pdir, 'SUMMARY.md'), `---\nphase: ${n}\nstatus: complete\n---\n`);
     if (ph.uat) {
       const items = ph.uat.map((it, i) => {
@@ -419,4 +424,104 @@ test('uat: missing checklist degrades to no-uat', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   const r = run(['uat', 'status', '--phase', '1'], dir);
   assert.equal(r.reason, 'no-uat');
+});
+
+// --- audit ---------------------------------------------------------------------
+
+test('audit: traces every break kind, orphans, and deferred', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }, { n: 2, name: 'Open' }],
+    phases: {
+      1: { plan: true, planReqs: ['REQ-1', 'REQ-6', 'REQ-99'] }, // REQ-99 unknown -> orphan
+      2: { plan: true, planReqs: ['REQ-2'] },
+    },
+    reqs: [
+      ['REQ-1', 1, 'Complete'],   // traced: plan + Complete + box checked
+      ['REQ-2', 2, 'Pending'],    // not-verified (phase open) - expected state
+      ['REQ-3', 2, 'Complete'],   // no plan carries it -> no-plan
+      ['REQ-4', null, 'Pending'], // no phase assigned -> no-phase
+      ['REQ-5', 7, 'Pending'],    // phase not in roadmap -> phase-missing
+      ['REQ-6', 1, 'Pending'],    // box checked but row Pending -> drift
+      ['REQ-9', 2, 'Deferred'],   // deferred: listed, never counted broken
+    ],
+  });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['REQ-1'].break, undefined);
+  assert.equal(byId['REQ-1'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['REQ-2'].break, 'not-verified');
+  assert.equal(byId['REQ-3'].break, 'no-plan');
+  assert.equal(byId['REQ-4'].break, 'no-phase');
+  assert.equal(byId['REQ-5'].break, 'phase-missing');
+  assert.equal(byId['REQ-6'].break, 'drift');
+  assert.deepEqual(r.deferred, ['REQ-9']);
+  assert.deepEqual(r.orphans.plan_ids, [{ file: 'phases/1/PLAN.md', ids: ['REQ-99'] }]);
+  assert.deepEqual(r.counts, { total: 7, traced: 1, broken: 5, deferred: 1 });
+});
+
+// --- renumber ------------------------------------------------------------------
+
+function renumberTree() {
+  return makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true } },
+    reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 2, 'Pending'], ['REQ-3', 3, 'Pending']],
+    cursor: { phase: 2, total: 3, name: 'Two', status: 'planned', next: '/cad-execute 2', updated: '2026-01-01' },
+  });
+}
+
+test('renumber insert --dry-run: full op plan, nothing touched', () => {
+  const dir = renumberTree();
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const r = run(['renumber', 'insert', '--at', '2', '--dry-run'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.dry_run, true);
+  // dirs 3 then 2 move up, high-to-low (collision-safe)
+  assert.deepEqual(r.ops[0], { git_mv: ['phases/3', 'phases/4'] });
+  assert.deepEqual(r.ops[1], { git_mv: ['phases/2', 'phases/3'] });
+  assert.match(r.slot, /Phase 2/);
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.ok(readdirSync(join(dir, 'phases')).includes('2'));
+});
+
+test('renumber insert: shifts dirs, tokens, traceability, and cursor', () => {
+  const dir = renumberTree();
+  const r = run(['renumber', 'insert', '--at', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '3', '4']); // 2 is the open slot
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /- \[ \] \*\*Phase 3: Two\*\*/);
+  assert.match(roadmap, /- \[ \] \*\*Phase 4: Three\*\*/);
+  assert.match(roadmap, /### Phase 4: Three/);
+  assert.match(roadmap, /\*\*Depends on:\*\* Phase 3/); // Three's dependency followed the shift
+  const reqs = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.match(reqs, /REQ-2 \| Phase 3 \|/);
+  assert.match(reqs, /REQ-1 \| Phase 1 \|/); // below the insertion point - untouched
+  const cursor = run(['cursor', 'get'], dir);
+  assert.equal(cursor.phase, 3); // was 2, shifted with its phase
+  assert.equal(cursor.total, 4);
+});
+
+test('renumber remove: cuts line + detail, orphans reqs, shifts down, reports prose refs', () => {
+  const dir = renumberTree();
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.orphaned_reqs, ['REQ-2']);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2']); // 3 became 2
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(roadmap, /Phase \d+: Two/); // list line and detail section gone
+  assert.match(roadmap, /- \[ \] \*\*Phase 2: Three\*\*/);
+  const reqs = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.match(reqs, /REQ-2 \|  \|/);            // orphaned: phase cell blanked
+  assert.match(reqs, /REQ-3 \| Phase 2 \|/);      // shifted down
+  const cursor = run(['cursor', 'get'], dir);
+  assert.equal(cursor.total, 2);
+  assert.ok(r.warn && /removed phase 2/.test(r.warn)); // cursor pointed at the removed phase
+});
+
+test('renumber: out-of-range and unknown phase refuse', () => {
+  const dir = renumberTree();
+  assert.equal(run(['renumber', 'insert', '--at', '9'], dir).reason, 'out-of-range');
+  assert.equal(run(['renumber', 'remove', '--n', '9'], dir).reason, 'unknown-phase');
 });

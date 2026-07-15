@@ -22,10 +22,13 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { renameSync, rmSync } from 'node:fs';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
-  setPhaseBox, setReqStatus,
+  setPhaseBox, setReqStatus, parsePlanRequirements, shiftPhaseTokens,
+  findProsePhaseRefs, cutPhaseDetail,
 } from './lib/planning-files.mjs';
 
 const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
@@ -383,6 +386,189 @@ function cmdUat(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// audit - the requirement -> phase -> plan -> verified trace, as data. The
+// ship-blocking verdict stays the model's sentence; this makes it arithmetic.
+// break codes: no-phase | phase-missing | no-plan | not-verified | drift.
+// ---------------------------------------------------------------------------
+function cmdAudit(dir) {
+  const reqText = read(join(dir, 'REQUIREMENTS.md'));
+  if (reqText === null) return fail('no-requirements', `${join(dir, 'REQUIREMENTS.md')} not found`);
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  const roadmap = new Map(parseRoadmapPhases(roadmapText).map((p) => [p.n, p]));
+
+  // requirement id -> the plan file that carries it, per phase dir.
+  const planByReq = new Map();
+  const planIds = new Map(); // plan file -> ids (for orphan detection)
+  for (const [n] of roadmap) {
+    const pdir = join(dir, 'phases', String(n));
+    let files = [];
+    try { files = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); } catch { /* unplanned */ }
+    for (const f of files) {
+      const rel = `phases/${n}/${f}`;
+      const ids = parsePlanRequirements(read(join(pdir, f)) || '');
+      planIds.set(rel, ids);
+      for (const id of ids) if (!planByReq.has(id)) planByReq.set(id, rel);
+    }
+  }
+
+  const rows = parseRequirements(reqText);
+  const requirements = [];
+  const deferred = [];
+  for (const r of rows) {
+    if (r.status === 'Deferred') { deferred.push(r.id); continue; }
+    const entry = { id: r.id, phase: r.phase };
+    if (r.phase === null) { entry.break = 'no-phase'; requirements.push(entry); continue; }
+    const phase = roadmap.get(r.phase);
+    if (!phase) { entry.break = 'phase-missing'; requirements.push(entry); continue; }
+    const plan = planByReq.get(r.id) || null;
+    entry.plan = plan;
+    entry.status = r.status;
+    entry.box = phase.checked;
+    if (!plan) entry.break = 'no-plan';
+    else if (r.status === 'Complete' && phase.checked) { /* fully traced */ }
+    else if (r.status !== 'Complete' && !phase.checked) entry.break = 'not-verified';
+    else entry.break = 'drift'; // the two status sources contradict
+    requirements.push(entry);
+  }
+
+  const known = new Set(rows.map((r) => r.id));
+  const orphanPlans = [];
+  for (const [file, ids] of planIds) {
+    const unknown = ids.filter((id) => !known.has(id));
+    if (unknown.length) orphanPlans.push({ file, ids: unknown });
+  }
+
+  const broken = requirements.filter((r) => r.break).length;
+  ok({
+    requirements,
+    ...(orphanPlans.length ? { orphans: { plan_ids: orphanPlans } } : {}),
+    ...(deferred.length ? { deferred } : {}),
+    counts: { total: rows.length, traced: requirements.length - broken, broken, deferred: deferred.length },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
+// phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
+// reported for the model to repair with judgment. --dry-run computes the full
+// operation plan and touches nothing - it is what the confirmation gate shows.
+// ---------------------------------------------------------------------------
+function gitMv(from, to) {
+  try { execFileSync('git', ['mv', from, to], { stdio: 'pipe' }); return 'git'; }
+  catch { renameSync(from, to); return 'fs'; }
+}
+
+function cmdRenumber(dir, sub, opts) {
+  if (sub !== 'insert' && sub !== 'remove') return fail('usage', 'renumber <insert --at N | remove --n N> [--dry-run]');
+  const roadmapFile = join(dir, 'ROADMAP.md');
+  const roadmapText = read(roadmapFile);
+  if (roadmapText === null) return fail('no-roadmap', `${roadmapFile} not found`);
+  const phases = parseRoadmapPhases(roadmapText);
+  if (!phases.length) return fail('unparseable-roadmap', 'no phase lines under ## Phases');
+  const total = phases.length;
+  const maxN = Math.max(...phases.map((p) => p.n));
+
+  const at = Number(sub === 'insert' ? opts.at : opts.n);
+  if (Number.isNaN(at)) return fail('bad-args', `renumber ${sub} needs --${sub === 'insert' ? 'at' : 'n'} <N>`);
+  if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
+  if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
+
+  const delta = sub === 'insert' ? 1 : -1;
+  const shiftFrom = sub === 'insert' ? at : at + 1;
+
+  // Directory moves, in collision-safe order.
+  const dirMoves = [];
+  const existingDir = (k) => existsSync(join(dir, 'phases', String(k)));
+  if (sub === 'insert') {
+    for (let k = maxN; k >= at; k--) if (existingDir(k)) dirMoves.push([k, k + 1]);
+  } else {
+    for (let k = at + 1; k <= maxN; k++) if (existingDir(k)) dirMoves.push([k, k - 1]);
+  }
+
+  // File edits, computed up front.
+  let newRoadmap = roadmapText;
+  if (sub === 'remove') {
+    newRoadmap = newRoadmap.split('\n')
+      .filter((l) => !new RegExp(`^- \\[( |x)\\] \\*\\*Phase ${at}: `).test(l)).join('\n');
+    newRoadmap = cutPhaseDetail(newRoadmap, at);
+  }
+  const roadmapShift = shiftPhaseTokens(newRoadmap, shiftFrom, delta);
+  newRoadmap = roadmapShift.text;
+
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const reqText = read(reqFile);
+  const orphanedReqs = [];
+  let newReqText = null;
+  if (reqText !== null) {
+    let t = reqText;
+    if (sub === 'remove') {
+      for (const r of parseRequirements(t)) if (r.phase === at) orphanedReqs.push(r.id);
+      // Blank the orphaned rows' Phase cell so they surface as no-phase in
+      // audit rather than silently pointing at the shifted neighbor.
+      t = t.split('\n').map((line) => {
+        const cells = line.match(/^(\|[^|]*\|)([^|]*)(\|[^|]*\|.*)$/);
+        if (cells && new RegExp(`\\bPhase ${at}\\b`).test(cells[2])) return `${cells[1]}  ${cells[3]}`;
+        return line;
+      }).join('\n');
+    }
+    newReqText = shiftPhaseTokens(t, shiftFrom, delta).text;
+  }
+
+  const stateFile = join(dir, 'STATE.md');
+  const cursor = parseCursor(read(stateFile) || '');
+  let newCursor = null;
+  let warn;
+  if (cursor) {
+    newCursor = { ...cursor, total: total + delta };
+    if (cursor.phase >= shiftFrom) newCursor.phase = cursor.phase + delta;
+    if (sub === 'remove' && cursor.phase === at) {
+      warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
+    }
+  }
+
+  // Prose refs the shift leaves alone - the model repairs these with judgment.
+  const inTextRefs = [];
+  for (const f of ['ROADMAP.md', 'REQUIREMENTS.md', 'STATE.md', 'PROJECT.md']) {
+    const t = read(join(dir, f));
+    if (t === null) continue;
+    for (const ref of findProsePhaseRefs(t, shiftFrom)) inTextRefs.push({ file: f, ...ref });
+  }
+
+  const ops = [
+    ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
+    ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
+    { edit: 'ROADMAP.md', changes: roadmapShift.count + (sub === 'remove' ? 1 : 0) },
+    ...(newReqText !== null ? [{ edit: 'REQUIREMENTS.md', changes: orphanedReqs.length ? orphanedReqs.length : undefined }] : []),
+    ...(newCursor ? [{ edit: 'STATE.md', changes: 1 }] : []),
+  ];
+
+  const result = {
+    ops,
+    ...(inTextRefs.length ? { in_text_refs: inTextRefs } : {}),
+    ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
+    ...(warn ? { warn } : {}),
+    ...(sub === 'insert' ? { slot: `add the new "- [ ] **Phase ${at}: ...**" line and its detail section` } : {}),
+  };
+  if ('dry-run' in opts) return ok({ dry_run: true, ...result });
+
+  // Apply: remove first (rm), then moves in the computed collision-safe order,
+  // then the file edits.
+  if (sub === 'remove' && existingDir(at)) {
+    try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
+    catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+  }
+  for (const [f, t] of dirMoves) gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)));
+  atomicWrite(roadmapFile, newRoadmap);
+  if (newReqText !== null) atomicWrite(reqFile, newReqText);
+  if (newCursor) atomicWrite(stateFile, renderCursor(newCursor));
+
+  // Sanity recount: every ROADMAP phase maps to at most one dir, none stray.
+  const after = parseRoadmapPhases(read(roadmapFile) || '');
+  ok({ ...result, total: after.length });
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -409,6 +595,8 @@ const COMMANDS = {
   },
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
+  audit: (dir, _sub, _opts) => cmdAudit(dir),
+  renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 
 try {

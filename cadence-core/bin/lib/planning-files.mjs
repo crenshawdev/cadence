@@ -218,6 +218,76 @@ export function uatComplete(uat) {
 }
 
 // ---------------------------------------------------------------------------
+// PLAN.md frontmatter - the `requirements: [..]` list (templates/PLAN.md).
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the requirement IDs a plan commits to deliver.
+ * @param {string} text
+ */
+export function parsePlanRequirements(text) {
+  const m = text.match(/^requirements:\s*\[(.*)\]/m);
+  if (!m) return [];
+  return m[1].split(',').map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
+}
+
+// ---------------------------------------------------------------------------
+// Renumbering - shift `Phase K` tokens and `phases/K/` paths in one pass.
+// Capital-P `Phase K` is the structured form every template uses (list lines,
+// detail headings, Depends on, traceability cells); lowercase prose refs are
+// reported to the caller, never rewritten - that edit needs judgment.
+// ---------------------------------------------------------------------------
+
+/**
+ * Shift every `Phase K` token and `phases/K/` path where K >= from by delta.
+ * Single-pass replace, so a shifted number is never re-shifted.
+ * @param {string} text @param {number} from @param {number} delta
+ */
+export function shiftPhaseTokens(text, from, delta) {
+  let count = 0;
+  const shift = (k) => { count++; return k + delta; };
+  const out = text
+    .replace(/\bPhase (\d+)\b/g, (m, k) => Number(k) >= from ? `Phase ${shift(Number(k))}` : m)
+    .replace(/\bphases\/(\d+)\//g, (m, k) => Number(k) >= from ? `phases/${shift(Number(k))}/` : m);
+  return { text: out, count };
+}
+
+/**
+ * Find lowercase `phase K` prose references (K >= from) the shift above
+ * deliberately leaves alone. Returns [{line, text}] for the caller to repair
+ * with judgment.
+ * @param {string} text @param {number} from
+ */
+export function findProsePhaseRefs(text, from) {
+  const refs = [];
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    for (const m of lines[i].matchAll(/\bphase (\d+)\b/g)) {
+      if (Number(m[1]) >= from) { refs.push({ line: i + 1, text: lines[i].trim() }); break; }
+    }
+  }
+  return refs;
+}
+
+/**
+ * Cut phase N's `### Phase N: ...` detail section out of ROADMAP text (from
+ * its heading to the next ### / ## heading). Returns the text unchanged when
+ * the section is absent.
+ * @param {string} text @param {number} n
+ */
+export function cutPhaseDetail(text, n) {
+  const re = new RegExp(`^### Phase ${n}: .*$`, 'm');
+  const start = text.search(re);
+  if (start === -1) return text;
+  const headingEnd = text.indexOf('\n', start);
+  if (headingEnd === -1) return text.slice(0, start);
+  const rest = text.slice(headingEnd + 1);
+  const endRel = rest.search(/^#{2,3} /m);
+  const end = endRel === -1 ? text.length : headingEnd + 1 + endRel;
+  return text.slice(0, start) + text.slice(end);
+}
+
+// ---------------------------------------------------------------------------
 // Atomic write - STATE/UAT are rewritten constantly; a crash must never
 // leave a torn file. Write a sibling temp file, then rename over the target.
 // ---------------------------------------------------------------------------
