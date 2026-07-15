@@ -2,8 +2,8 @@
 Answer "where am I and what's next" from the filesystem and git, then hand
 off to the spine skill that does the next piece of work. Count-based truth:
 ROADMAP.md phases vs phases/<N>/ artifacts decide status; STATE.md is only a
-hint. Folds in GSD's resume-work (auto-resume of incomplete or paused phases)
-and stats (`--stats`).
+hint. Includes auto-resume of incomplete or paused phases and stats
+(`--stats`).
 </purpose>
 
 <process>

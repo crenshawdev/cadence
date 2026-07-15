@@ -16,7 +16,7 @@ misleads every new reader of a distributed project. Extract the checkable claims
 from the target docs and test each against the actual repo, then report each as
 accurate, stale, or unverifiable.
 
-This is GSD's docs verifier engine kept whole; the doc WRITER is collapsed out
+This is the docs-verifier engine only; the doc WRITER is collapsed out
 (DESIGN §2). cad-docs-verify never rewrites a doc - it produces the findings a
 human (or a later edit) acts on.
 </objective>

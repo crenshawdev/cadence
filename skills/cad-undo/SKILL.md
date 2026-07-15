@@ -15,8 +15,8 @@ allowed-tools:
 Undo a phase's work by reverting its commits, using the phase SUMMARY.md as the
 manifest of exactly which hashes to touch (cad-execute records commits-per-task
 with hashes there). Safe by construction: never runs on a dirty tree, never
-guesses. GSD's heuristic dependency-check is dropped - instead cad-undo states
-plainly whether later phases exist and lets the user decide.
+guesses. No heuristic dependency-check - instead cad-undo states plainly
+whether later phases exist and lets the user decide.
 </objective>
 
 <execution_context>

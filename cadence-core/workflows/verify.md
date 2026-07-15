@@ -10,9 +10,8 @@ never asked. Failures are diagnosed and routed through the normal Cadence
 flow (user-approved atomic fix commit, or /cad-plan for phase-sized gaps) -
 there is no internal auto-fixer loop.
 
-Replaces GSD's verify-work + audit-uat pair: `--sweep` folds the
-cross-phase audit into this skill. `--deep` adds a goal-backward codebase
-pass via the cad-verifier agent.
+`--sweep` folds the cross-phase audit into this skill. `--deep` adds a
+goal-backward codebase pass via the cad-verifier agent.
 </purpose>
 
 <process>

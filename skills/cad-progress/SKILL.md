@@ -19,8 +19,7 @@ SUMMARY.md, UAT.md fully passed) plus recent git log. STATE.md is a hint, not
 a source. Detects incomplete or paused work and offers to resume at the right
 step, routing to the spine skill that does it (/cad-context, /cad-plan,
 /cad-execute, /cad-verify, /cad-milestone) - never does the work itself.
-`--stats` prints a summary derived on demand. Replaces GSD's progress +
-resume-work + stats.
+`--stats` prints a summary derived on demand.
 </objective>
 
 <execution_context>

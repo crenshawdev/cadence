@@ -10,8 +10,7 @@ A clear codebase costs one confirmation tap; a murky one costs a few focused
 questions. The exit condition is judged, not scored: decisions closed,
 acceptance criteria falsifiable.
 
-Replaces GSD's three pre-plan gates (spec-phase + discuss-phase + mvp-phase).
-WHAT and HOW are sections in one document, not separate skills; the slicing
+WHAT and HOW live in one document, not separate pre-plan gates; the slicing
 instinct survives as exactly one "too big?" question near the end.
 
 Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.

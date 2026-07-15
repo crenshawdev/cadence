@@ -1,7 +1,7 @@
 # Cadence commands
 
-Every Cadence skill, by cluster. A single-developer fork of GSD: the build loop
-plus the gates, lifecycle, and support around it. Invoke as `/cad-<name>`.
+Every Cadence skill, by cluster: the build loop plus the gates, lifecycle, and
+support around it. Invoke as `/cad-<name>`.
 
 ## Build spine (the core loop)
 The path a phase travels, new-project -> context -> plan -> execute -> verify,

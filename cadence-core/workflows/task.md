@@ -4,8 +4,8 @@ conventional commits and the protected-branch guard - and nothing else.
 Inline by default (no subagents, no plan files). `--plan` opts into a written
 PLAN.md for genuinely multi-step work.
 
-Replaces GSD's fast + quick pair: one command, the skill classifies the task
-instead of making the user pick a lane.
+One command, not a fast/quick split: the skill classifies the task instead of
+making the user pick a lane.
 </purpose>
 
 <process>

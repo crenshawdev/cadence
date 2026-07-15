@@ -10,9 +10,9 @@ allowed-tools:
 ---
 
 <objective>
-Land the current branch's work. cad-land replaces GSD's ship funnel and encodes
-"the git mechanism is the user's call" by construction: it never has a
-preselected publish action and never auto-pushes. It reports the state, runs the
+Land the current branch's work. cad-land encodes "the git mechanism is the
+user's call" by construction: it never has a preselected publish action and
+never auto-pushes. It reports the state, runs the
 final review gate, asks how to publish, and executes exactly that - nothing more.
 </objective>
 

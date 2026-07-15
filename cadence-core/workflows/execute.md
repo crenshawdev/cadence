@@ -5,9 +5,9 @@ slim per-phase SUMMARY.md at the end. Sequential is the default; parallel
 worktree execution is a short opt-in branch, and worktree ceremony exists
 only inside it.
 
-Replaces GSD's execute-phase: keeps the executor discipline (atomic commits,
-deviation rules, checkpoints), drops the orchestration apparatus (waves,
-worktree manifests, end-of-phase gate pipeline).
+Keeps the executor discipline (atomic commits, deviation rules, checkpoints)
+without the orchestration apparatus - no waves, no worktree manifests, no
+end-of-phase gate pipeline.
 </purpose>
 
 <process>

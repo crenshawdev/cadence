@@ -18,9 +18,8 @@ which phase requirements have NO test that would fail if that requirement
 regressed? Those are the gaps. Audit them, then generate real tests to cover
 them, in the project's own test framework.
 
-Merges GSD's validate-phase (audit) and add-tests (generate) into one
-un-duplicated flow. No Nyquist branding, no Playwright/E2E default - the test
-kind and runner follow the code and `workflow.test_command`, not a fixed stack.
+Audit and generate in one un-duplicated flow. No fixed stack, no Playwright/E2E
+default - the test kind and runner follow the code and `workflow.test_command`.
 </objective>
 
 <execution_context>

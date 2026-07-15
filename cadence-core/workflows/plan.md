@@ -5,10 +5,9 @@ verification. Pipeline: read the phase goal (plus CONTEXT.md if /cad-context
 ran) -> spawn cad-planner -> optional cad-plan-checker gate -> fire the
 `plan` review trigger -> commit docs.
 
-Replaces GSD's plan-phase: one planner plus one optional checker instead of
-a four-agent fan-out, 4 flags instead of ~20, one bounded revision instead
-of a convergence loop. Research is /cad-context's job; second opinions
-belong to the review subsystem.
+One planner plus one optional checker, not a four-agent fan-out; 4 flags, not
+~20; one bounded revision, not a convergence loop. Research is /cad-context's
+job; second opinions belong to the review subsystem.
 </purpose>
 
 <process>

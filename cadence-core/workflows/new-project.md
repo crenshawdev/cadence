@@ -7,10 +7,9 @@ This is the entry point, and the questioning is the point. An hour of
 following threads here buys weeks of downstream clarity; a vague PROJECT.md
 forces every later phase to guess, and the cost compounds.
 
-Replaces GSD's new-project: same questioning spine, minus the 4-researcher
-fan-out (one optional research pass instead), minus the interactive config
-questionnaire (defaults copied silently), minus roadmapper/synthesizer
-agents (the roadmap is derived inline).
+One questioning spine, not a fan-out: one optional research pass (not four
+researchers), config defaults copied silently (no questionnaire), and the
+roadmap derived inline (no roadmapper/synthesizer agents).
 </purpose>
 
 <process>

@@ -15,7 +15,7 @@ allowed-tools:
 
 <objective>
 Close a finished milestone and set up the next. Thin by design - it collapses
-GSD's new-milestone + complete-milestone + cleanup into one flow. It tags the
+new-milestone + complete-milestone + cleanup into one flow. It tags the
 release only when the project tags (non-release projects skip it), it never
 ships (publishing a tag is /cad-land's call), and it never cuts a milestone
 that silently dropped a requirement (cad-audit gates it).
