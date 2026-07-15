@@ -67,11 +67,12 @@ function makeTree(spec) {
 }
 
 /** Run planning.mjs against a fixture dir; parse the one JSON line. */
-function run(args, dir) {
+function run(args, dir, stdin) {
   let stdout;
   let code = 0;
   try {
-    stdout = execFileSync('node', [PLANNING, ...args, '--dir', dir], { encoding: 'utf8' });
+    stdout = execFileSync('node', [PLANNING, ...args, '--dir', dir],
+      { encoding: 'utf8', ...(stdin !== undefined ? { input: stdin } : {}) });
   } catch (e) {
     stdout = e.stdout; code = e.status;
   }
@@ -275,4 +276,147 @@ test('usage: unknown subcommand degrades, never crashes', () => {
   const r = run(['nonsense'], makeTree({}));
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
+});
+
+// --- phase-done ----------------------------------------------------------------
+
+test('phase-done: flips the box and the phase rows; Deferred untouched; --undo reverses', () => {
+  const spec = {
+    roadmap: [{ n: 1, name: 'Done' }, { n: 2, name: 'Open' }],
+    reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 1, 'Deferred'], ['REQ-3', 2, 'Pending']],
+  };
+  const dir = makeTree(spec);
+  const r = run(['phase-done', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.roadmap.now, '[x]');
+  assert.deepEqual(r.reqs, ['REQ-1']); // Deferred and other-phase rows untouched
+
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /- \[x\] \*\*Phase 1: Done\*\*/);
+  assert.match(roadmap, /- \[ \] \*\*Phase 2: Open\*\*/);
+  const reqs = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.match(reqs, /REQ-1 \| Phase 1 \| Complete /);
+  assert.match(reqs, /REQ-2 \| Phase 1 \| Deferred /);
+  assert.match(reqs, /REQ-3 \| Phase 2 \| Pending /);
+
+  const u = run(['phase-done', '--n', '1', '--undo'], dir);
+  assert.equal(u.roadmap.now, '[ ]');
+  assert.deepEqual(u.reqs, ['REQ-1']);
+  assert.match(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /- \[ \] \*\*Phase 1: Done\*\*/);
+  assert.match(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), /REQ-1 \| Phase 1 \| Pending /);
+});
+
+test('phase-done: unknown phase refuses; nothing written', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const r = run(['phase-done', '--n', '9'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unknown-phase');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+});
+
+// --- uat -----------------------------------------------------------------------
+
+const UAT_ITEMS = JSON.stringify([
+  { name: 'Login works', expected: 'user lands on dashboard' },
+  { name: 'Logout works', expected: 'session cleared' },
+]);
+
+function uatTree() {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true, summary: true } } });
+  run(['uat', 'init', '--phase', '1'], dir, UAT_ITEMS);
+  return dir;
+}
+
+test('uat init: writes all-pending checklist and returns the first item', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  const r = run(['uat', 'init', '--phase', '1'], dir, UAT_ITEMS);
+  assert.equal(r.ok, true);
+  assert.equal(r.items, 2);
+  assert.deepEqual(r.next, { k: 1, name: 'Login works', expected: 'user lands on dashboard' });
+  const text = readFileSync(join(dir, '.'.replace('.', ''), 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /status: testing/);
+  assert.match(text, /### 1\. Login works/);
+  // init refuses to clobber an existing checklist
+  const again = run(['uat', 'init', '--phase', '1'], dir, UAT_ITEMS);
+  assert.equal(again.reason, 'uat-exists');
+});
+
+test('uat record: sets status, first_pass once, returns next pending (zero re-reads)', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--reported', 'error on submit', '--severity', 'major'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.counts, { pass: 0, fail: 1, pending: 1, skipped: 0, blocked: 0 });
+  assert.equal(r.next.k, 2); // the walk continues without re-reading UAT.md
+
+  // fix lands, retest passes - status flips but first_pass stays fail
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /first_pass: fail/);
+  assert.match(text, /reworked: 1/);
+  const done = run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  assert.equal(done.next, null); // nothing pending left
+});
+
+test('uat record: verifier source cannot overwrite a recorded result', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--source', 'verifier'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'would-overwrite');
+});
+
+test('uat refresh: appends only new names, never touches recorded results', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  const r = run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Login works', expected: 'reworded criterion' },  // name exists - skipped
+    { name: 'Password reset', expected: 'email arrives' },     // new - appended
+  ]));
+  assert.equal(r.added, 1);
+  assert.equal(r.total, 3);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 3\. Password reset/);
+  assert.match(text, /expected: user lands on dashboard/); // original wording kept
+});
+
+test('uat merge: fills pending only, appends unmatched gaps and human checks', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir); // user result
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    passes: [{ name: 'Login works', evidence: 'src/auth.ts:42 asserts redirect' },
+             { name: 'Logout works', evidence: 'would overwrite - must be ignored' }],
+    gaps: [{ name: 'Rate limiting', reason: 'no limiter found on /login' }],
+    human_checks: [{ name: 'Email renders in dark mode', expected: 'readable' }],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.auto_passed, 1); // only the pending item; user result untouched
+  assert.equal(r.gaps, 1);
+  assert.equal(r.added, 2); // the gap + the human check
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 3\. Rate limiting/);
+  assert.match(text, /### 4\. Email renders in dark mode/);
+  assert.doesNotMatch(text, /would overwrite/);
+});
+
+test('uat status: complete only when every item passes or is skipped-with-reason', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  const partial = run(['uat', 'status', '--phase', '1'], dir);
+  assert.equal(partial.result, 'partial');
+  assert.equal(partial.first_pending.k, 2);
+
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'skipped',
+    '--reason', 'needs a physical device'], dir);
+  const complete = run(['uat', 'status', '--phase', '1'], dir);
+  assert.equal(complete.result, 'complete');
+  assert.equal(complete.first_pending, undefined);
+});
+
+test('uat: missing checklist degrades to no-uat', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
+  const r = run(['uat', 'status', '--phase', '1'], dir);
+  assert.equal(r.reason, 'no-uat');
 });

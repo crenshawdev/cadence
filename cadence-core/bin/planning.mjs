@@ -24,7 +24,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
-  parseRequirements, parseUat, uatComplete, atomicWrite,
+  parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
+  setPhaseBox, setReqStatus,
 } from './lib/planning-files.mjs';
 
 const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
@@ -190,6 +191,198 @@ function cmdCursorSet(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// phase-done - the two status flips verify.md owns (and undo reverses).
+// Flips phase N's ROADMAP box and its traceability rows in one call; output
+// names exactly what changed. Deferred rows are never touched unless named
+// explicitly via --reqs.
+// ---------------------------------------------------------------------------
+function cmdPhaseDone(dir, opts) {
+  const n = Number(opts.n);
+  if (!opts.n || Number.isNaN(n)) return fail('bad-args', 'phase-done needs --n <phase>');
+  const undo = 'undo' in opts;
+  const roadmapFile = join(dir, 'ROADMAP.md');
+  const roadmapText = read(roadmapFile);
+  if (roadmapText === null) return fail('no-roadmap', `${roadmapFile} not found`);
+  const boxed = setPhaseBox(roadmapText, n, !undo);
+  if (!boxed) return fail('unknown-phase', `no "**Phase ${n}:**" line under ## Phases`);
+
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const reqText = read(reqFile);
+  let reqs = [];
+  let newReqText = null;
+  if (reqText !== null) {
+    const rows = parseRequirements(reqText);
+    const ids = opts.reqs
+      ? opts.reqs.split(',').map((s) => s.trim())
+      : rows.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
+    const res = setReqStatus(reqText, ids, undo ? 'Pending' : 'Complete');
+    reqs = res.changed;
+    newReqText = res.text;
+  }
+
+  // Both edits validated before either write - all-or-nothing.
+  atomicWrite(roadmapFile, boxed.text);
+  if (newReqText !== null) atomicWrite(reqFile, newReqText);
+  ok({ roadmap: { line: boxed.line, now: undo ? '[ ]' : '[x]' }, reqs });
+}
+
+// ---------------------------------------------------------------------------
+// uat - checklist persistence. The script owns the invariants (first_pass
+// set-once, verifier never overwrites user results, counts always recomputed,
+// atomic writes); the model owns item wording and result inference.
+// ---------------------------------------------------------------------------
+function readStdinJson() {
+  try { return JSON.parse(readFileSync(0, 'utf8')); }
+  catch (e) { fail('bad-payload', e.message); return null; }
+}
+
+function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
+
+function loadUat(dir, n) {
+  const text = read(uatFile(dir, n));
+  if (text === null) { fail('no-uat', `${uatFile(dir, n)} not found`); return null; }
+  return parseUat(text);
+}
+
+function nextPending(items) {
+  const it = items.find((i) => i.status === 'pending');
+  return it ? { k: it.k, name: it.name, expected: it.expected } : null;
+}
+
+function writeUat(dir, n, uat) {
+  uat.fm.updated = new Date().toISOString().slice(0, 10);
+  atomicWrite(uatFile(dir, n), renderUat(uat));
+}
+
+const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked'];
+
+function cmdUat(dir, sub, opts) {
+  const n = Number(opts.phase);
+  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'uat needs --phase <N>');
+
+  if (sub === 'init' || sub === 'refresh') {
+    const items = readStdinJson();
+    if (items === null) return;
+    if (!Array.isArray(items) || items.some((i) => !i.name || !i.expected)) {
+      return fail('bad-payload', 'expected a JSON array of {name, expected}');
+    }
+    if (sub === 'init') {
+      if (existsSync(uatFile(dir, n))) return fail('uat-exists', 'use refresh, or remove the file deliberately');
+      const today = new Date().toISOString().slice(0, 10);
+      const uat = {
+        fm: { status: 'testing', phase: String(n), started: today, updated: today,
+          ...(opts.sources ? { sources: opts.sources } : {}) },
+        items: items.map((it, i) => ({ k: i + 1, name: it.name, expected: it.expected,
+          status: 'pending', ...(it.source ? { source: it.source } : {}) })),
+      };
+      writeUat(dir, n, uat);
+      return ok({ file: uatFile(dir, n), items: uat.items.length, next: nextPending(uat.items) });
+    }
+    // refresh: append only items whose name matches nothing existing; never
+    // touch a recorded result.
+    const uat = loadUat(dir, n);
+    if (!uat) return;
+    const have = new Set(uat.items.map((i) => String(i.name)));
+    const fresh = items.filter((i) => !have.has(i.name));
+    let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
+    for (const it of fresh) {
+      uat.items.push({ k: ++k, name: it.name, expected: it.expected, status: 'pending' });
+    }
+    if (fresh.length) writeUat(dir, n, uat);
+    return ok({ added: fresh.length, total: uat.items.length, next: nextPending(uat.items) });
+  }
+
+  if (sub === 'record') {
+    const uat = loadUat(dir, n);
+    if (!uat) return;
+    const k = Number(opts.item);
+    const item = uat.items.find((i) => Number(i.k) === k);
+    if (!item) return fail('unknown-item', `no item ${opts.item} in UAT.md`);
+    if (!UAT_RESULTS.includes(opts.result)) {
+      return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`);
+    }
+    const source = opts.source || 'user';
+    // Invariant: a verifier result only ever fills a pending item.
+    if (source === 'verifier' && item.status !== 'pending') {
+      return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
+    }
+    item.status = opts.result;
+    if (source === 'verifier') item.source = 'verifier';
+    for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
+      ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence']]) {
+      if (opts[flag] !== undefined) item[field] = opts[flag];
+    }
+    // Invariant: first_pass is the FIRST pass/fail verdict, set once, never after.
+    if (item.first_pass === undefined && (opts.result === 'pass' || opts.result === 'fail')) {
+      item.first_pass = opts.result;
+    }
+    writeUat(dir, n, uat);
+    const parsed = parseUat(read(uatFile(dir, n)) || '');
+    return ok({ item: { k, status: item.status }, counts: parsed.counts, next: nextPending(uat.items) });
+  }
+
+  if (sub === 'merge') {
+    // Verifier findings: {passes:[{k|name, evidence}], gaps:[{k|name, reason,
+    // evidence?}], human_checks:[{name, expected}]}. Fills only pending items.
+    const f = readStdinJson();
+    if (f === null) return;
+    const uat = loadUat(dir, n);
+    if (!uat) return;
+    const find = (ref) => uat.items.find((i) =>
+      (ref.k !== undefined && Number(i.k) === Number(ref.k)) || i.name === ref.name);
+    let auto = 0, gaps = 0, added = 0;
+    for (const p of f.passes || []) {
+      const it = find(p);
+      if (it && it.status === 'pending') {
+        it.status = 'pass'; it.source = 'verifier';
+        if (p.evidence) it.evidence = p.evidence;
+        if (it.first_pass === undefined) it.first_pass = 'pass';
+        auto++;
+      }
+    }
+    let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
+    for (const g of f.gaps || []) {
+      const it = find(g);
+      if (it && it.status === 'pending') {
+        it.status = 'fail'; it.source = 'verifier';
+        if (g.reason) it.reported = g.reason;
+        if (g.evidence) it.evidence = g.evidence;
+        it.severity = g.severity || 'major';
+        if (it.first_pass === undefined) it.first_pass = 'fail';
+        gaps++;
+      } else if (!it) {
+        uat.items.push({ k: ++k, name: g.name, expected: g.expected || g.reason || '',
+          status: 'fail', source: 'verifier', severity: g.severity || 'major',
+          ...(g.reason ? { reported: g.reason } : {}),
+          ...(g.evidence ? { evidence: g.evidence } : {}), first_pass: 'fail' });
+        gaps++; added++;
+      }
+    }
+    for (const h of f.human_checks || []) {
+      if (!find(h)) {
+        uat.items.push({ k: ++k, name: h.name, expected: h.expected || '', status: 'pending' });
+        added++;
+      }
+    }
+    writeUat(dir, n, uat);
+    return ok({ auto_passed: auto, gaps, added, next: nextPending(uat.items) });
+  }
+
+  if (sub === 'status') {
+    const uat = loadUat(dir, n);
+    if (!uat) return;
+    const complete = uatComplete(uat);
+    return ok({
+      status: uat.status, counts: uat.counts,
+      result: complete ? 'complete' : 'partial',
+      ...(nextPending(uat.items) ? { first_pending: nextPending(uat.items) } : {}),
+    });
+  }
+
+  return fail('usage', 'uat <init|refresh|record|merge|status>');
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -197,8 +390,12 @@ function parseArgs(argv) {
   const opts = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { opts[a.slice(2)] = argv[i + 1]; i++; }
-    else words.push(a);
+    if (a.startsWith('--')) {
+      // A flag followed by another flag (or nothing) is boolean, e.g. --undo.
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith('--')) { opts[a.slice(2)] = true; }
+      else { opts[a.slice(2)] = next; i++; }
+    } else words.push(a);
   }
   return { words, opts };
 }
@@ -210,6 +407,8 @@ const COMMANDS = {
     if (sub === 'set') return cmdCursorSet(dir, opts);
     return fail('usage', 'cursor <get|set>');
   },
+  'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
+  uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
 };
 
 try {

@@ -95,20 +95,76 @@ export function parseRequirements(text) {
 }
 
 // ---------------------------------------------------------------------------
-// UAT.md - the persistent checklist (templates/UAT.md).
+// ROADMAP.md / REQUIREMENTS.md - targeted single-line edits. These return the
+// whole rewritten text so callers stay pure; nothing else in the file moves.
 // ---------------------------------------------------------------------------
 
 /**
- * Parse UAT: frontmatter status/phase + items with their field lines.
- * Counts are always recomputed from the items, never read from Summary.
+ * Flip phase N's `## Phases` checkbox. Returns {text, line} (1-indexed) or
+ * null when the phase line is not found.
+ * @param {string} text @param {number} n @param {boolean} checked
+ */
+export function setPhaseBox(text, n, checked) {
+  const lines = text.split('\n');
+  const re = new RegExp(`^- \\[( |x)\\] \\*\\*Phase ${n}: `);
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) {
+      lines[i] = lines[i].replace(/^- \[( |x)\]/, `- [${checked ? 'x' : ' '}]`);
+      return { text: lines.join('\n'), line: i + 1 };
+    }
+  }
+  return null;
+}
+
+/**
+ * Set the traceability Status cell for the given REQ-IDs. Only rows whose id
+ * is in `ids` change; everything else is byte-preserved. Returns
+ * {text, changed:[ids...]}.
+ * @param {string} text @param {string[]} ids @param {string} status
+ */
+export function setReqStatus(text, ids, status) {
+  const lines = text.split('\n');
+  const changed = [];
+  let inTable = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Traceability\s*$/.test(lines[i])) { inTable = true; continue; }
+    if (inTable && /^## /.test(lines[i])) inTable = false;
+    if (!inTable) continue;
+    const cells = lines[i].match(/^(\|[^|]*\|[^|]*\|)([^|]*)(\|.*)$/);
+    if (!cells) continue;
+    const id = cells[1].split('|')[1].replace(/\*/g, '').trim();
+    if (ids.includes(id)) {
+      lines[i] = `${cells[1]} ${status} ${cells[3]}`;
+      changed.push(id);
+    }
+  }
+  return { text: lines.join('\n'), changed };
+}
+
+// ---------------------------------------------------------------------------
+// UAT.md - the persistent checklist (templates/UAT.md).
+// ---------------------------------------------------------------------------
+
+// Item field order in the rendered file - pinned so rewrites are stable.
+const UAT_FIELDS = ['expected', 'status', 'first_pass', 'source', 'evidence',
+  'reported', 'severity', 'cause', 'fix', 'reason'];
+const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
+
+/**
+ * Parse UAT: full frontmatter + items with their field lines. Counts are
+ * always recomputed from the items, never read from Summary.
  * @param {string} text
  */
 export function parseUat(text) {
-  const fm = text.match(/^---\n([\s\S]*?)\n---/);
-  const fmField = (k) => {
-    const m = fm && fm[1].match(new RegExp(`^${k}:\\s*(.+?)\\s*$`, 'm'));
-    return m ? m[1] : null;
-  };
+  const fmMatch = text.match(/^---\n([\s\S]*?)\n---/);
+  /** @type {Record<string, string>} */
+  const fm = {};
+  if (fmMatch) {
+    for (const line of fmMatch[1].split('\n')) {
+      const f = line.match(/^(\w+):\s*(.+?)\s*$/);
+      if (f) fm[f[1]] = f[2];
+    }
+  }
   const items = [];
   const parts = text.split(/^### /m).slice(1);
   for (const part of parts) {
@@ -125,7 +181,29 @@ export function parseUat(text) {
   }
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
   for (const it of items) if (it.status in counts) counts[String(it.status)]++;
-  return { status: fmField('status'), phase: fmField('phase'), items, counts };
+  return { status: fm.status || null, phase: fm.phase || null, fm, items, counts };
+}
+
+/**
+ * Render a UAT file from frontmatter + items, recomputing the Summary from
+ * the items (reworked = items whose first_pass is fail). Round-trips with
+ * parseUat.
+ * @param {{fm: Record<string,string>, items: Array<Record<string,string|number>>}} uat
+ */
+export function renderUat({ fm, items }) {
+  const fmLines = UAT_FM_FIELDS.filter((k) => fm[k] !== undefined)
+    .map((k) => `${k}: ${fm[k]}`);
+  const blocks = items.map((it) => {
+    const fields = UAT_FIELDS.filter((k) => it[k] !== undefined)
+      .map((k) => `${k}: ${it[k]}`);
+    return `### ${it.k}. ${it.name}\n${fields.join('\n')}\n`;
+  });
+  const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
+  for (const it of items) if (String(it.status) in counts) counts[String(it.status)]++;
+  const reworked = items.filter((i) => i.first_pass === 'fail').length;
+  const summary = `total: ${items.length}\npassed: ${counts.pass}\nfailed: ${counts.fail}\n` +
+    `pending: ${counts.pending}\nskipped: ${counts.skipped}\nblocked: ${counts.blocked}\nreworked: ${reworked}`;
+  return `---\n${fmLines.join('\n')}\n---\n\n## Items\n\n${blocks.join('\n')}\n## Summary\n\n${summary}\n`;
 }
 
 /**
