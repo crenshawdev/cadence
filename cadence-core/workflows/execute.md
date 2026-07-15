@@ -14,14 +14,23 @@ end-of-phase gate pipeline.
 
 <step name="locate">
 Resolve the phase:
-- `$ARGUMENTS` gives a phase number, else read the current phase from the
-  `.planning/STATE.md` cursor.
-- Plans live in `.planning/phases/<N>/`: a single `PLAN.md`, or `PLAN-1.md`,
-  `PLAN-2.md`, ... executed in numeric order.
-- No plan files -> stop: "No plans for phase <N>. Run /cad-plan first."
+- `$ARGUMENTS` gives a phase number, else run
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
+  take `current`. That phase's entry also lists its plan files
+  (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
+- Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
+  Run /cad-plan first."
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY
-use it).
+use it). Read config through the seam - one call:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
+  workflow.subagent_timeout workflow.test_command planning.commit_docs \
+  parallelization.enabled parallelization.max_concurrent_agents \
+  parallelization.min_plans_for_parallel parallelization.use_worktrees \
+  git.protected_branches git.on_protected review.triggers.diff.gate
+```
 </step>
 
 <step name="git_guard">
@@ -156,15 +165,10 @@ present. This file joins the docs commit in the state step.
 </step>
 
 <step name="state">
-Overwrite `.planning/STATE.md` with the canonical 4-line cursor
-(references/conventions.md) - Read it first (it always exists), then replace
-all four lines; never append, and never cold-Write it unread:
+Update the cursor through the seam:
 
 ```
-Phase: <N> of <total> (<name>)
-Status: executed
-Next: /cad-verify <N>
-Updated: YYYY-MM-DD
+node ".../planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
 ```
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, and

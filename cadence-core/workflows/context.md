@@ -20,8 +20,9 @@ Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 <process>
 
 <step name="resolve_phase">
-Parse `$ARGUMENTS` for a phase number. If missing, take the current phase
-from the `.planning/STATE.md` cursor; if there is no cursor either, ask:
+Parse `$ARGUMENTS` for a phase number. If missing, run
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get` and
+use its phase; if there is no cursor either (`no-cursor`), ask:
 "Which phase? (number from ROADMAP.md)"
 
 Read `.planning/ROADMAP.md` and extract the phase's name and goal. If
@@ -247,14 +248,11 @@ no ambiguity report - git and the file itself are the record.
 </step>
 
 <step name="update_cursor">
-Overwrite `.planning/STATE.md` with the canonical 4-line cursor
-(references/conventions.md), never append:
+Update the cursor through the seam (it derives name/total from ROADMAP and
+stamps the date):
 
 ```
-Phase: {N} of {total} ({phase_name})
-Status: context gathered
-Next: /cad-plan {N}
-Updated: {date}
+node ".../planning.mjs" cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"
 ```
 </step>
 

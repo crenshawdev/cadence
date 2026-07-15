@@ -55,10 +55,16 @@ changelog.
   keep this to the milestone's top-level asks.
 
 ## 6. Reset the cursor
-Set the STATE.md cursor to the new cycle: `ready to plan`, Next = the first
-action of the next milestone (e.g. `/cad-plan 1` once the roadmap has phases, or
-roadmap the new milestone first). Commit the doc changes (`docs:`), cursor
-included, per references/git.md - never leave the tree dirty.
+Point the cursor at the new cycle through the seam:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
+  --phase 1 --status "ready to plan" --next "<first action of the next milestone>"
+```
+
+(Pass `--name`/`--total` explicitly if the new roadmap is not written yet.)
+Commit the doc changes (`docs:`), cursor included, per references/git.md -
+never leave the tree dirty.
 
 ## 7. Report
 Tag created (unpushed) - or "no tag (non-release)" - phases pruned,

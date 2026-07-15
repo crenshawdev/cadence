@@ -15,19 +15,24 @@ job; second opinions belong to the review subsystem.
 <step name="parse">
 Parse `$ARGUMENTS`:
 
-- `[phase]` - phase number. If omitted, take the current phase from the
-  .planning/STATE.md cursor; if that is missing or already planned, list the
-  ROADMAP.md phases that still need plans and ask (ask-user seam).
+- `[phase]` - phase number. If omitted, run
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
+  take `current`; if the current phase is already planned, its `phases[]`
+  entries show which phases still need plans - ask (ask-user seam).
 - `--skip-check` - skip the plan-checker gate even when workflow.plan_check
   is true.
 - `--inline` - plan in the main context instead of spawning cad-planner.
   Honored only for small phases (see route).
-- `--gaps` - plan closure tasks for unresolved items in phases/<N>/UAT.md
-  instead of planning the phase from scratch.
+- `--gaps` - Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/plan-gaps.md`
+  and follow it (it rejoins at spawn_planner).
 
-Load config per references/conventions.md. Keys used: workflow.plan_check,
-workflow.inline_plan_threshold, planning.commit_docs, review.triggers.plan,
-git.protected_branches, git.on_protected.
+Read config through the seam - one call for every key this workflow uses:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
+  workflow.plan_check workflow.inline_plan_threshold planning.commit_docs \
+  review.triggers.plan.gate git.protected_branches git.on_protected
+```
 </step>
 
 <step name="load_phase">
@@ -40,8 +45,6 @@ git.protected_branches, git.on_protected.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
    overwrite silently.
-4. --gaps: read phases/<N>/UAT.md and extract unresolved or failed items.
-   If the file is missing or everything passed, report that and stop.
 </step>
 
 <step name="route">
@@ -173,9 +176,13 @@ another iteration.
 </step>
 
 <step name="commit">
-1. Overwrite the .planning/STATE.md cursor in the canonical schema
-   (references/conventions.md): `Phase: {N} of {total} ({name})`,
-   status "planned", next "/cad-execute {N}", `Updated:` today. No log entries.
+1. Update the cursor through the seam (it derives name/total from ROADMAP
+   and stamps the date):
+
+   ```
+   node ".../planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
+   ```
+
 2. If planning.commit_docs is true: apply the protected-branch guard
    (references/git.md rail 1), then commit the plan file(s) and STATE.md -
    `docs: plan phase {N} - {name}` - staging exactly those files.
