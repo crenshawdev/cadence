@@ -39,9 +39,9 @@ Drift is a FAIL input - the status cannot be trusted until it is reconciled
 
 ## 5. Verdict
 - **PASS** - every in-scope requirement traces requirement -> phase -> plan ->
-  verified, with no drift. Deferred requirements are allowed ONLY if explicitly
-  marked deferred in REQUIREMENTS.md (list them; they are not counted as
-  delivered).
+  verified, with no drift. Deferred requirements are allowed ONLY if their
+  Traceability Status is `Deferred` - the one pinned marker
+  (templates/REQUIREMENTS.md); list them; they are not counted as delivered.
 - **FAIL** - any requirement is untraced, unverified, dropped, or in drift.
   List each failing requirement with exactly where its chain breaks. This gate
   is meant to block a ship; do not soften it or mark it PASS-with-warnings.
