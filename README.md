@@ -19,7 +19,7 @@ The effect shows up in the numbers. Across roughly a billion input tokens of rea
 Cadence is a Claude Code plugin. Add the marketplace, then install:
 
 ```
-/plugin marketplace add https://gitlab.com/vintagetechie/cadence.git
+/plugin marketplace add https://github.com/crenshawdev/cadence.git
 /plugin install cadence@cadence
 ```
 
