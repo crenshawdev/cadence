@@ -215,7 +215,6 @@ on disk and each executor runs in a fresh context.
   independence rationale (no shared files, no cross-slice ordering).
 - STATE.md stays a ~4-line overwritten cursor. No audit entries, no roadmap
   annotations - git is the log.
-- Never push (references/git.md rail 3).
 - Config keys only as named in templates/config.json - nothing invented.
 </guardrails>
 

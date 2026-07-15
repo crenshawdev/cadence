@@ -296,7 +296,6 @@ transcript need not be carried forward.
 - Never spawn more than one research agent, and none at all unless
   configured or `--research` was passed. The 4-researcher fan-out and
   synthesizer are gone; do not reintroduce them.
-- Never push (references/git.md rail 3).
 - STATE.md is a ~4-line overwritten cursor: no audit logs, no session
   narratives, no progress bars, no metrics.
 - Config keys come from the engine config template only; never invent keys,

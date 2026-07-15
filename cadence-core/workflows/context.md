@@ -299,7 +299,6 @@ context loses nothing.
   the plan gets its review after /cad-plan writes PLAN.md.
 - CONTEXT.md is optional. Never tell the user planning is blocked on this
   workflow, and never create one retroactively for phases that skipped it.
-- Never push (references/git.md rail 3).
 </guardrails>
 
 <success_criteria>

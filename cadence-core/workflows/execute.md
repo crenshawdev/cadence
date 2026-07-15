@@ -193,7 +193,6 @@ verification runs in a fresh subagent.
 - The sequential path never touches worktrees.
 - Executors never write STATE.md, ROADMAP.md, or SUMMARY.md. This workflow
   is the only STATE writer, and only as the 4-line overwrite.
-- Never push (references/git.md rail 3).
 - Second opinions only via review triggers; the goal check stays inline
   prose, never an agent.
 - Deviations live in SUMMARY.md - git and SUMMARY are the record, STATE is

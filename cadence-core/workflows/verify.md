@@ -213,7 +213,6 @@ hold the result and the next command starts fresh.
 - Never ask severity - infer it, default major.
 - Phase status (cursor, ROADMAP box, REQUIREMENTS rows) is written only on
   full pass, only via phase-done + cursor set.
-- Never push (references/git.md rail 3).
 </guardrails>
 
 <success_criteria>
