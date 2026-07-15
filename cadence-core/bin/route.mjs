@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 // route.mjs - zero-dep model-routing resolver. Given an agent role (and, for
 // `auto`, difficulty signals + attempt number), resolve which model alias and
 // which agent file the spawn-agent seam should dispatch. The route-table.json
@@ -51,8 +52,10 @@ function readConfig(file) {
   };
 }
 
+/** @param {number} i @param {number} lo @param {number} hi */
 const clampIdx = (i, lo, hi) => Math.max(lo, Math.min(hi, i));
 
+/** @param {string} tier @param {number} n */
 function bumpTier(tier, n) {
   const order = TABLE.tier_order;
   return order[clampIdx(order.indexOf(tier) + n, 0, order.length - 1)];
@@ -60,6 +63,7 @@ function bumpTier(tier, n) {
 
 // Step from base profile toward ceiling by `steps`, never overshooting ceiling
 // and never dropping below base (escalation only raises when ceiling > base).
+/** @param {string} base @param {string} ceiling @param {number} steps */
 function stepProfile(base, ceiling, steps) {
   const order = TABLE.profile_order;
   const b = order.indexOf(base);

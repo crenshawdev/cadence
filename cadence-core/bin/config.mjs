@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 // config.mjs - zero-dep validator seam for .planning/config.json.
 // The schema in ../config.schema.json is the single source of truth; the
 // cad-config workflow (interactive menu + direct-set) calls this so no invalid
@@ -38,6 +39,7 @@ const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DON
 
 // Validate a single already-parsed value against a schema spec.
 // Returns null if ok, else an error string.
+/** @param {{type:string, min?:number, values?:any[]}} spec @param {any} v */
 function checkValue(spec, v) {
   switch (spec.type) {
     case 'bool':
@@ -71,6 +73,7 @@ function parseToken(raw) {
 }
 
 // Flatten a config object to dotted leaf paths. Arrays and null are leaves.
+/** @param {Record<string, any>} obj @param {string} prefix @param {Record<string, any>} acc */
 function flatten(obj, prefix, acc) {
   for (const [k, v] of Object.entries(obj)) {
     if (k.startsWith('_')) continue;

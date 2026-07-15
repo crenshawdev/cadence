@@ -78,7 +78,7 @@ process.on('uncaughtException', (e) => {
 // ---------------------------------------------------------------------------
 // Arg parsing (minimal, no deps). --flag value pairs + a leading subcommand.
 // ---------------------------------------------------------------------------
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const [cmd, ...rest] = argv;
   const opts = {};
   for (let i = 0; i < rest.length; i++) {
@@ -105,7 +105,8 @@ function providersEnvPath(override) {
 
 // Parse a dotenv-style file: KEY=VALUE per line, # comments, optional quotes,
 // ignores blank lines and a leading `export `. Intentionally tiny.
-function parseEnvFile(text) {
+/** @param {string} text @returns {Record<string, string>} */
+export function parseEnvFile(text) {
   const out = {};
   for (const raw of text.split('\n')) {
     const line = raw.trim();
@@ -228,7 +229,8 @@ const CONSULT_SCHEMA = {
 // Deep-copy a JSON schema with every `additionalProperties` key removed.
 // OpenAI strict mode requires it; Gemini's OpenAPI-subset responseSchema
 // rejects it. One schema, two dialects.
-function stripAdditionalProperties(node) {
+/** @param {any} node @returns {any} */
+export function stripAdditionalProperties(node) {
   if (Array.isArray(node)) return node.map(stripAdditionalProperties);
   if (node && typeof node === 'object') {
     const out = {};
@@ -247,7 +249,7 @@ function stripAdditionalProperties(node) {
 // Wire details are pinned in references/provider-api.md (verified against the
 // live docs); update both together if a provider changes its API.
 // ===========================================================================
-const ADAPTERS = {
+export const ADAPTERS = {
   openai: {
     // OpenAI Responses API. reasoning.effort is a first-class per-call param.
     base: 'https://api.openai.com',
@@ -331,7 +333,8 @@ const ADAPTERS = {
 // Assert the model returned our exact shape. Enforced output should already
 // match; we still guard so a schema-ignoring model degrades cleanly.
 // ---------------------------------------------------------------------------
-function validateFindings(obj) {
+/** @param {any} obj @returns {string|null} null when valid, else the defect */
+export function validateFindings(obj) {
   if (!obj || !Array.isArray(obj.findings)) return 'missing findings[]';
   for (const f of obj.findings) {
     if (!f || typeof f !== 'object') return 'finding not an object';
@@ -344,7 +347,8 @@ function validateFindings(obj) {
   return null;
 }
 
-function validateConsult(obj) {
+/** @param {any} obj @returns {string|null} null when valid, else the defect */
+export function validateConsult(obj) {
   if (!obj || !Array.isArray(obj.angles)) return 'missing angles[]';
   for (const a of obj.angles) {
     if (!a || typeof a !== 'object') return 'angle not an object';
@@ -463,7 +467,8 @@ async function cmdDetect(opts) {
 // review, so the candidate list is review-usable. Then: known id ->
 // {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
 // to place it. Missing/broken hint file degrades to all-unknown, never errors.
-function classify(provider, ids) {
+/** @param {string} provider @param {string[]} ids */
+export function classify(provider, ids) {
   let rules = [], exclude = [];
   try {
     const hints = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
@@ -492,7 +497,11 @@ async function main() {
   else if (cmd === 'detect-models') await cmdDetect(opts);
   else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
 }
-main().catch((e) => {
-  if (e === DONE) return; // normal ok()/fail() unwind
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) }, 1);
-});
+// Run only when executed as a script - importing the module (tests) exports
+// the pure helpers without side effects.
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+  main().catch((e) => {
+    if (e === DONE) return; // normal ok()/fail() unwind
+    emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) }, 1);
+  });
+}
