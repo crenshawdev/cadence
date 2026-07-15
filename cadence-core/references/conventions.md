@@ -7,8 +7,15 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
 - Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/` - the single canonical engine root,
   resolved by the Claude Code plugin runtime. No host probing, no locator shim.
   Skills @-include workflows from here.
-- Project state: `.planning/` in the repo root (see DESIGN.md canonical set:
-  PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md).
+- Project state: `.planning/` in the repo root - the SAME git repo as the code
+  it plans (see DESIGN.md canonical set: PROJECT.md, REQUIREMENTS.md,
+  ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md). Cadence assumes one
+  repo holds both plans and code: the protected-branch guard, diffs, and
+  goal-check all run where `.planning/` is, so a phase whose code lives in a
+  different repo is NOT a supported mode. Keep `.planning/` in the code repo;
+  driving a separate code repo from here is the steerer's responsibility, not
+  the tool's. (execute.md guards and warns if it detects the split, but does
+  not make it work.)
 - Phase directory: `.planning/phases/<N>/` where `<N>` is the bare phase integer
   from ROADMAP.md (`phases/1/`, `phases/2/`, ... no zero-padding, no slug suffix).
   Created lazily by the first skill that needs it (cad-context or cad-plan).
@@ -22,9 +29,12 @@ Read only the keys you need. Unknown keys are ignored, never fatal.
 
 ## State
 
-- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended. NO
-  audit logs, no activity tables, no session narratives - git history is the
-  log. Derive views from `git log` on demand.
+- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended -
+  Read it first (it always exists after new-project), then replace all four
+  lines, or Edit them in place; a cold Write on an unread file trips the
+  read-before-write guard and forces a redo. NO audit logs, no activity tables,
+  no session narratives - git history is the log. Derive views from `git log`
+  on demand.
 - Canonical cursor schema - every writer emits exactly these four lines under a
   `# State` heading, in this order:
 

@@ -16,7 +16,7 @@ reference every requirement against the phases, plans, and verifications that
 were supposed to deliver it, and detect orphans in both directions. Produce a
 PASS/FAIL verdict: FAIL if any requirement is untraced, unverified, or lost.
 
-This is the check that catches the quiet failure GSD's per-phase flow can miss -
+This is the check that catches the quiet failure a per-phase flow can miss -
 a requirement that no phase ever picked up, or one marked done while its phase
 never verified. It reads the authoritative status - the REQUIREMENTS
 traceability table (Requirement | Phase | Status) and the ROADMAP `## Phases`

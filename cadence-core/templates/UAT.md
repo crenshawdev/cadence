@@ -36,6 +36,7 @@ evidence: [what cad-verifier observed, file:line or command output]
 ### 4. [Name]
 expected: [observable behavior]
 status: fail
+first_pass: fail
 reported: "[verbatim user reply]"
 severity: blocker | major | minor | cosmetic
 cause: [root cause, once diagnosed]
@@ -59,6 +60,7 @@ failed: [N]
 pending: [N]
 skipped: [N]
 blocked: [N]
+reworked: [N]
 ```
 
 ---
@@ -70,6 +72,13 @@ blocked: [N]
 - Items are append-only; a status field is overwritten when the user
   answers or a fix lands (fail -> pending for retest). Never delete an
   item or a recorded result.
+- `first_pass`: the item's FIRST non-pending result (`pass` or `fail`),
+  written once and never overwritten. It preserves whether an item passed
+  clean or only after a fix, since `status` is later overwritten to `pass`
+  on retest. Items that passed on the first answer may omit it.
+- `reworked` (Summary): count of items whose `first_pass` is `fail` - the
+  phase needed N human fix-and-retest rounds. A clean run reports `0`; a
+  bumpy one does not hide behind `failed: 0`.
 - `source: verifier` marks results merged from a cad-verifier pass; they
   are skipped in the walk but stay visible here with their evidence.
 - Failure evidence lives on the item (reported / severity / cause / fix) -

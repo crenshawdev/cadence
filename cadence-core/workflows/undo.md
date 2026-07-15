@@ -20,8 +20,8 @@ a precondition; never discard the user's in-flight work.
 Show the exact hashes (oldest->newest) that will be reverted and the phase they
 belong to. State plainly whether later phases exist (phases N+1..) or later
 commits sit on top - "phases 4-5 were built after this; reverting phase 3 may
-break them." This is a factual notice, NOT a dependency analysis (GSD's guess is
-dropped). Require an explicit yes (ask-user seam).
+break them." This is a factual notice, NOT a dependency analysis (no heuristic
+dependency-guessing). Require an explicit yes (ask-user seam).
 
 ## 4. Revert
 - **Default**: `git revert --no-edit <hashes in reverse order>` - one revert

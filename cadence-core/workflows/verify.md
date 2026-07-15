@@ -10,9 +10,8 @@ never asked. Failures are diagnosed and routed through the normal Cadence
 flow (user-approved atomic fix commit, or /cad-plan for phase-sized gaps) -
 there is no internal auto-fixer loop.
 
-Replaces GSD's verify-work + audit-uat pair: `--sweep` folds the
-cross-phase audit into this skill. `--deep` adds a goal-backward codebase
-pass via the cad-verifier agent.
+`--sweep` folds the cross-phase audit into this skill. `--deep` adds a
+goal-backward codebase pass via the cad-verifier agent.
 </purpose>
 
 <process>
@@ -80,6 +79,10 @@ Item rules:
   changes) - execution already covered those.
 - Deduplicate: a PLAN verification restating a ROADMAP criterion is one
   item, worded as the ROADMAP criterion (the contract).
+- A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT
+  becomes an item the deep verifier does not attempt as a machine check -
+  it is presented in the walk as a human check, since the tool that would
+  settle it is known to be absent here.
 - Cold-start smoke test: if the phase touched server/service entry
   points, database/migration/seed files, or startup/container config,
   PREPEND an item: "Stop everything, clear ephemeral state, start from
@@ -112,9 +115,10 @@ checks) and writes nothing. Merge into UAT.md:
   evidence recorded. Not presented in the walk - the machine check saves
   the human the click.
 - Gap (FAILED truth) -> the matching item becomes `status: fail`,
-  `source: verifier`, with reason and artifacts as evidence; unmatched
-  gaps append as new failed items. These route through `route_failures`
-  exactly like user-reported failures.
+  `source: verifier`, with reason and artifacts as evidence, and
+  `first_pass: fail` if not already set; unmatched gaps append as new
+  failed items. These route through `route_failures` exactly like
+  user-reported failures.
 - Human check -> append as `pending` if not already covered by an item.
 - NEVER overwrite a result the user recorded; verifier findings only fill
   items still `pending`.
@@ -150,7 +154,10 @@ color/spacing/visual -> cosmetic.
 
 After EVERY reply: update the item, the Summary counts, and the
 frontmatter `updated` timestamp, then write the file - persistence never
-waits for the end of the session. Present the next pending item, or
+waits for the end of the session. On the item's FIRST non-pending result,
+also set `first_pass` to that result (`pass` or `fail`) and never
+overwrite it again - it is what keeps a fixed-then-passed item
+distinguishable from a clean pass. Present the next pending item, or
 continue to `route_failures` when none remain or the user stops.
 </step>
 
@@ -190,9 +197,10 @@ Update the UAT.md frontmatter status. On **complete**, this skill is the
 single writer of persisted phase status - do all three, then commit together:
 
 1. Overwrite the `.planning/STATE.md` cursor in the canonical schema
-   (references/conventions.md): `Phase: <N> of <total> (<name>)`, status
-   "phase complete", next action (next phase's /cad-context, or /cad-land if
-   this was the last), `Updated:` today. 4-line cursor, no history append.
+   (references/conventions.md) - Read it first, then replace all four lines:
+   `Phase: <N> of <total> (<name>)`, status "phase complete", next action
+   (next phase's /cad-context, or /cad-land if this was the last), `Updated:`
+   today. 4-line cursor, no history append.
 2. Check the phase's box in `.planning/ROADMAP.md`: the `## Phases` line for
    phase <N> flips `- [ ]` to `- [x]`. Change only that one line.
 3. Flip this phase's requirements to Complete in
@@ -211,8 +219,11 @@ Report tersely:
 ```
 UAT {complete|partial}: phase <N>
 Passed {n}/{total} ({v} auto-verified) | Failed {n} | Skipped {n} | Blocked {n}
+Reworked {n} (items that failed first pass, then were fixed)
 {open failed items, one line each, if any}
 ```
+
+Omit the Reworked line when the count is zero.
 
 One suggestion max: the resume command if partial, the next phase if
 complete. Either way, safe to `/clear` first: UAT.md and the STATE cursor

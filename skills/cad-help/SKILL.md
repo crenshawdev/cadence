@@ -7,9 +7,8 @@ allowed-tools:
 ---
 
 <objective>
-Show what Cadence can do. A static reference (references/COMMANDS.md) that
-replaces GSD's help plus its six namespace routers - the clusters are the
-headings. No search, no state, no side effects.
+Show what Cadence can do. A static reference (references/COMMANDS.md) - the
+clusters are the headings. No search, no state, no side effects.
 </objective>
 
 <execution_context>

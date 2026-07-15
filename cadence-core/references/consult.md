@@ -4,8 +4,8 @@ The counterpart to the review subsystem (references/review-triggers.md). Review
 is scheduled critique of an artifact; consult is reactive help when the primary
 model is stuck. It reuses the same provider connections (the call-review-provider
 seam) but for a different job: `consult` returns angles to investigate, never a
-verdict on an artifact. It codifies the "phone a friend" move at the dead-ends
-GSD rails you past without one.
+verdict on an artifact. It codifies the "phone a friend" move at the dead-ends a workflow would
+otherwise push you past without one.
 
 The hard rules (DESIGN §6), in order of importance:
 

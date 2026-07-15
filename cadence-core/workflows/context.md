@@ -10,8 +10,7 @@ A clear codebase costs one confirmation tap; a murky one costs a few focused
 questions. The exit condition is judged, not scored: decisions closed,
 acceptance criteria falsifiable.
 
-Replaces GSD's three pre-plan gates (spec-phase + discuss-phase + mvp-phase).
-WHAT and HOW are sections in one document, not separate skills; the slicing
+WHAT and HOW live in one document, not separate pre-plan gates; the slicing
 instinct survives as exactly one "too big?" question near the end.
 
 Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
@@ -52,12 +51,26 @@ Read what already constrains this phase - never re-ask a settled question:
 - up to 3 most recent prior `phases/*/CONTEXT.md` files (locked decisions
   that carry forward)
 
+Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
+carry the latest decisions, while a prior CONTEXT can be stale - a scope change
+often updates requirements without touching an older phase's CONTEXT file. When
+a carried-forward decision contradicts current REQUIREMENTS/ROADMAP, treat the
+current docs as authoritative: drop or re-open that decision rather than
+feeding it forward as settled.
+
 Missing files are fine - continue without. Build an internal prior-decisions
 summary for the analyzer prompt and for annotating questions ("you chose X
 in phase 2").
 </step>
 
 <step name="analyze">
+Before dispatching, settle any user-only foundational fork the analyzer cannot
+resolve from code - where new code lives (which repo / path), the target
+platform, whether a referenced repo is even in scope this milestone. Surface
+the blocking ones via the ask-user seam first, and do NOT bake an unverified
+scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
+wastes the whole pass and forces a mid-analysis interruption.
+
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), timeout `workflow.subagent_timeout` from config.
 This keeps raw file contents out of the main context. Prompt payload:
@@ -133,6 +146,14 @@ original.
 Everything confirmed or corrected becomes a numbered decision (D-01, D-02,
 ...). Anything the user explicitly leaves open ("planner's call") becomes a
 flagged assumption, not a decision.
+
+**Requirement wording drift.** If a locked decision contradicts the wording
+of a REQUIREMENTS.md row this phase serves - a corrected count or a term
+that no longer matches ("19 posts" when the decision settles 18 posts + 1
+page) - offer via the ask-user seam to correct that one row in place so the
+audit source of truth matches reality. Only on the user's yes, edit exactly
+that row; never rewrite requirements wholesale and never touch a row this
+phase does not serve.
 </step>
 
 <step name="acceptance_criteria">
@@ -153,6 +174,16 @@ Present the draft list and ask (ask-user seam, structured):
 
 On "Edit", take the user's changes in prose and re-present once. These
 criteria are what /cad-verify will check - do not lock anything untestable.
+
+**Tool-availability tag.** For each criterion, judge whether proving it
+needs an external tool or service (docker, a cloud CLI like doctl, a browser
+driver, a live endpoint). Probe the machine ones with `command -v <tool>`.
+Tag a criterion `(human-verify: needs <tool/service>)` when the tool is
+absent here or the check is inherently live/external - so /cad-verify routes
+it to a human check from the start and the executor never discovers
+mid-task that it cannot self-verify (which is how a deferred check
+masquerades as a pass). A criterion whose tool is present stays a normal
+machine-checkable box.
 </step>
 
 <step name="size_check">
@@ -201,6 +232,7 @@ Plan shape: {one plan | multiple plans | split - deferred slice above}
 ## Acceptance criteria
 
 - [ ] {pass/fail, observed behavior}
+- [ ] {pass/fail, observed behavior} (human-verify: needs {tool/service})
 - [ ] ...
 
 ## Flagged assumptions
@@ -253,8 +285,9 @@ context loses nothing.
 </process>
 
 <guardrails>
-- Never modify source code - this workflow writes only CONTEXT.md and the
-  STATE.md cursor.
+- Never modify source code - this workflow writes CONTEXT.md and the
+  STATE.md cursor, plus at most one user-approved REQUIREMENTS.md row
+  correction (requirement-wording drift, above). Nothing else.
 - No audit artifacts: no DISCUSSION-LOG, no checkpoint JSON, no interview
   log, no ambiguity scores. Git history is the log.
 - Exactly one size question, near the end. No SPIDR, no story formats, no

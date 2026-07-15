@@ -4,14 +4,22 @@ Cadence is a planning and execution system for a single developer working in Cla
 
 It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that never pushes and never decides how you publish without asking.
 
-> Cadence began as a hard fork of [GSD](https://github.com/open-gsd/gsd-core). It kept the methodology and rebuilt everything else, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
+> Cadence is a standalone planning-and-execution system for Claude Code. Its methodology descends from [GSD](https://github.com/open-gsd/gsd-core) - the discuss/plan/execute/verify loop - but everything else is a ground-up rewrite, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
+
+## Why Cadence
+
+Most of what makes AI-assisted development expensive is not the model, it is the mess. Context piles up, the same files get read again and again, the conversation drags a week of history into every single turn, and the bill follows the clutter.
+
+Cadence is built the other way around. One loop, discuss then plan then execute then verify. State lives in files, not in the conversation. Clear between steps and you lose nothing. Every task lands as one commit. The heavy reading happens in fresh-context subagents that hand back a short answer instead of emptying a file into your window. Small batches, clean state, tight loops, the same discipline that has always separated software that scales from software that seizes up.
+
+The effect shows up in the numbers. Across roughly a billion input tokens of real work, about 96% of that input was served from cache, the cached prefix was reused around 27 times for every rebuild, and fresh uncached input stayed near six hundredths of a percent. That is not the tool being clever with your money. It is the tool refusing to let your context rot, which keeps the model reading the same clean prefix instead of a growing pile. You still do real work and spend real tokens. You just stop paying full freight to re-read your own history.
 
 ## Install
 
 Cadence is a Claude Code plugin. Add the marketplace, then install:
 
 ```
-/plugin marketplace add https://gitlab.com/vintagetechie/cadence.git
+/plugin marketplace add https://github.com/crenshawdev/cadence.git
 /plugin install cadence@cadence
 ```
 
@@ -79,5 +87,6 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 ## Attribution
 
 Cadence is a derivative work of GSD by Open GSD, used under the MIT License. The original
-copyright is retained in [`LICENSE`](./LICENSE). Cadence is maintained by
-John Crenshaw (VintageTechie) and distributed under the MIT License.
+copyright is retained in [`LICENSE`](./LICENSE) and the lineage is spelled out in
+[`NOTICE`](./NOTICE.md). Cadence is maintained by John Crenshaw and distributed
+under the MIT License.

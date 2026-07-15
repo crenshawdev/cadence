@@ -1,7 +1,7 @@
 # Lineage: Cadence vs GSD
 
-Cadence is a hard fork of [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core).
-This file records the measured distance between the two, so the fork rationale in
+Cadence is a ground-up rewrite whose methodology descends from [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core).
+This file records the measured distance between the two, so the lineage in
 [`DESIGN.md`](./DESIGN.md) rests on numbers, not adjectives.
 
 **Provenance.** Figures below are counted from GSD at commit `d010ea1` (2026-07-10)
@@ -63,7 +63,7 @@ Whole categories, deleted rather than trimmed:
 - **Internationalization** (pt-BR, ja-JP translations).
 - The **giant living docs** — a 227K `CONTEXT.md`, a 172K `CHANGELOG.md`.
 
-## Why this settles the fork question
+## Why this is a rewrite, not a patched derivative
 
 GSD ships its own `update` / `sync-skills` / `reapply-patches` / three-way-merge
 machinery to track upstream as patches. At **~3% retained mass with the survivors

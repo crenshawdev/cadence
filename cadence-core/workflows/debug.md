@@ -1,9 +1,8 @@
 # cad-debug workflow
 
 Scientific-method debugging, single pass, with the investigation persisted so a
-`/clear` never loses it. No session-manager layer and no specialist dispatch
-(cut from GSD) - the main model runs the method inline and writes state after
-every step.
+`/clear` never loses it. No session-manager layer and no specialist dispatch - the main model runs the
+method inline and writes state after every step.
 
 ## State file: `.planning/debug/<slug>.md`
 

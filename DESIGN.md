@@ -1,6 +1,6 @@
-# Cadence — Design & Fork Plan
+# Cadence - Design Plan
 
-A single-developer fork of GSD, derived from a file-backed deep-dive of all 69 skills,
+A single-developer rewrite descended from GSD, derived from a file-backed deep-dive of all 69 skills,
 34 agents, and the `gsd-core` engine (110 workflows / 94 references / 143 node scripts /
 ~55K lines). Per-skill analyses live in `design-notes/dd-*.md` (gitignored, local only).
 
@@ -15,7 +15,7 @@ codex-risk-gate), Artifact + cosmic-design for UI, rtk for tests. Claude-Code-on
 
 These are worth more than any per-skill cut. Each removes weight from *many* skills at once.
 
-1. **Hard git fork — the repo is the only source.** Cadence is a plain git repo; the installed
+1. **Standalone repo - the repo is the only source.** Cadence is a plain git repo; the installed
    tree under `~/.claude` is disposable output, NEVER edited in place. Install = idempotent
    copy script, re-run after any repo edit or `git pull` (+ occasional manual `git merge`/
    cherry-pick from upstream that you adjudicate). An `install.sh --dev` flag may symlink
@@ -168,7 +168,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 
 ## 6. Locked decisions (2026-07-10)
 
-- **Positioning:** public distribution eventually; a trimmed **single-developer** fork of GSD,
+- **Positioning:** public distribution eventually; a trimmed **single-developer** rewrite descended from GSD,
   properly licensed. Trim anything team/multi-author.
 - **Distribution model:** distributable from the start. **User install = npm** (like GSD:
   `npx @vintagetechie/cadence install`) — the package carries the tree and runs the same
@@ -346,13 +346,13 @@ lever is trigger frequency (gating), never a weak reviewer.
   (10, zero-dep `node:test`). Role tiers + matrix are data — edit `route-table.json`, not code.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
-- Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + fork
+- Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
   notice, README lead line crediting GSD, NOTICE/CREDITS + lineage note.
 - **SETTLED:** display/brand name = **Cadence**; skill prefix `/cad-*` (collision-free). npm `cadence`
   is taken → publish as **`@vintagetechie/cadence`** (scoped) if/when distributed. Uber Cadence /
   Cadence Design Systems overlap is an accepted brand footnote for a personal-brand OSS tool.
 - **SETTLED: GSD license = MIT** [npm @opengsd/gsd-core, repo github.com/open-gsd/gsd-core]. Cadence
-  ships under MIT, retaining GSD's copyright + license text + a fork notice. Attribution obligation
+  ships under MIT, retaining GSD's copyright + license text + a lineage notice. Attribution obligation
   is minimal (keep the notice).
 
 ### Git model — "commit on your branch, guard protected, never decide how you publish"

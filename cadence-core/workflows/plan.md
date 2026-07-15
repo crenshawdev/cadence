@@ -5,10 +5,9 @@ verification. Pipeline: read the phase goal (plus CONTEXT.md if /cad-context
 ran) -> spawn cad-planner -> optional cad-plan-checker gate -> fire the
 `plan` review trigger -> commit docs.
 
-Replaces GSD's plan-phase: one planner plus one optional checker instead of
-a four-agent fan-out, 4 flags instead of ~20, one bounded revision instead
-of a convergence loop. Research is /cad-context's job; second opinions
-belong to the review subsystem.
+One planner plus one optional checker, not a four-agent fan-out; 4 flags, not
+~20; one bounded revision, not a convergence loop. Research is /cad-context's
+job; second opinions belong to the review subsystem.
 </purpose>
 
 <process>
@@ -36,7 +35,8 @@ git.protected_branches, git.on_protected.
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
 2. Read .planning/phases/<N>/CONTEXT.md if present (locked decisions,
    deferred ideas, discretion areas from /cad-context). Absent is fine -
-   plan from the roadmap goal alone.
+   plan from the roadmap goal alone. Note its `Plan shape` line (in the
+   Scope boundary) if present - it is passed to the planner as a directive.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
    overwrite silently.
@@ -67,6 +67,7 @@ Phase: {N} - {name}
 Mode: {standard | gaps | revision}
 Goal: {goal line from ROADMAP.md}
 Requirements: {phase requirement IDs - every ID must appear in a plan}
+Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
 
 Read before planning:
 - .planning/ROADMAP.md (this phase's entry and its dependencies)
@@ -79,16 +80,21 @@ Read before planning:
 Write .planning/phases/{N}/PLAN.md per
 ${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. Default is ONE PLAN.md; split
 into PLAN-1.md, PLAN-2.md only for genuinely independent slices (no shared
-files, no cross-slice ordering).
+files, no cross-slice ordering). If a Plan shape directive is given above,
+honor it; if your file-independence analysis contradicts it (e.g. it asks
+for multiple plans but the slices share files), follow your analysis and
+record the deviation and its reason in your return marker and the PLAN
+Notes - never diverge silently.
 
 Return ## PLANNING COMPLETE (plan files + task counts, split rationale if
 any) or ## PHASE TOO BIG (reason + proposed split).
 </planning_context>
 ```
 
-Revision mode: append the checker's issues verbatim in a `<checker_issues>`
-block and instruct: fix each issue with minimal edits to the existing plan
-file(s), or rebut it explicitly; return ## REVISION COMPLETE.
+Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
+plan on disk carries the grounding). Append the checker's issues verbatim in a
+`<checker_issues>` block and instruct: fix each issue with minimal edits to the
+existing plan file(s), or rebut it explicitly; return ## REVISION COMPLETE.
 </step>
 
 <step name="inline_plan">
@@ -137,16 +143,22 @@ Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
 
 Handle the return:
 - `## VERIFICATION PASSED` -> continue.
-- `## ISSUES FOUND` -> ONE revision, maximum:
-  1. Plans came from cad-planner: re-dispatch it in revision mode with the
-     issues (see spawn_planner), this time with `--attempt 2` so the routing
-     seam can escalate under `auto`. Plans were written inline: apply the fixes
-     in the main context.
-  2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
-     (routing seam escalates it to the `-high` effort variant under `auto`).
-  3. Passes -> continue. Still failing -> present the remaining issues and
-     ask (ask-user seam): proceed to execution anyway, or stop and revise
-     by hand. Never loop again.
+- `## ISSUES FOUND` -> read the severities (the checker marks each BLOCKER or
+  WARNING; WARNING means quality is degraded but execution can proceed):
+  - Only WARNINGs, no BLOCKER -> fold the worthwhile ones into the plan in the
+    main context (or note why not) and continue. Do NOT spend the revision loop
+    or a re-check on warnings alone.
+  - Any BLOCKER -> ONE revision, maximum:
+    1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
+       the issues (see spawn_planner) - a new spawn, never a resume of the prior
+       run; the plan on disk preserves its grounding - with `--attempt 2` so the
+       routing seam can escalate under `auto`. Plans were written inline: apply
+       the fixes in the main context.
+    2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
+       (routing seam escalates it to the `-high` effort variant under `auto`).
+    3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
+       blockers and ask (ask-user seam): proceed to execution anyway, or stop
+       and revise by hand. Never loop again.
 - Empty or unmarked return -> report it, ask whether to proceed unchecked.
 </step>
 

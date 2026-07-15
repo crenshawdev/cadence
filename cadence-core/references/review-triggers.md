@@ -100,3 +100,25 @@ Path/diff heuristics; a match fires the `risk_surface` trigger:
 auth/authz/sessions - DB schema/migrations - money/billing/pricing -
 concurrency/async/locking - destructive ops (deletes, bulk updates, drops) -
 secrets/crypto/keys - public API/wire contracts - untrusted-input parsing.
+
+**Pre-filter before escalating (avoid a blocking panel on a non-risk).**
+A heuristic match is dropped - it does NOT fire the trigger - when the match
+is provably harmless:
+
+- **Ephemeral / gitignored target.** A destructive op (`rm -rf`, drop, bulk
+  delete) whose only target is a gitignored or build-output path
+  (`git check-ignore <path>` matches). For a directory target, also require
+  `git ls-files -- <path>` to be empty - an ignored `dist/` that still holds
+  a force-added tracked file is not safe to drop. Deleting a truly ignored
+  `dist/` is a build clean, not data loss.
+- **Placeholder-shaped secret.** A secrets/keys match drops ONLY when BOTH
+  hold: the file is a template/sample/example (`*.env.example`, `*.sample`,
+  `*.template`, or an obvious example fixture) AND the value is a stub
+  (`<...>`, `changeme`, `your-...-here`, `xxx`, `example`, empty after `=`).
+  Either alone still fires - a real key in a `.env.example`, or a
+  placeholder-shaped value like `changeme` sitting in a runtime `.env` or
+  deploy config as an actual weak secret, both stay worth the panel.
+
+Drop only when the WHOLE match is harmless; a diff that also touches a real
+risk surface still fires. When unsure, do not drop - fire the trigger. Note
+each drop and why, so a mis-filter is visible rather than silent.
