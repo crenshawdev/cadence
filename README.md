@@ -79,5 +79,6 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 ## Attribution
 
 Cadence is a derivative work of GSD by Open GSD, used under the MIT License. The original
-copyright is retained in [`LICENSE`](./LICENSE). Cadence is maintained by
-John Crenshaw (VintageTechie) and distributed under the MIT License.
+copyright is retained in [`LICENSE`](./LICENSE) and the lineage is spelled out in
+[`NOTICE`](./NOTICE.md). Cadence is maintained by John Crenshaw (VintageTechie) and
+distributed under the MIT License.
