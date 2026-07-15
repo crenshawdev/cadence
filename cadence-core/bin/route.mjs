@@ -21,49 +21,25 @@
 //   model.auto.escalate_on_failure (bool), model.auto.max_escalations (int)
 
 import { readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { mergeLayers } from './lib/config-merge.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TABLE = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
 
-// User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps tests
-// hermetic); otherwise ~/.claude/cadence/config.json.
-const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG || join(homedir(), '.claude', 'cadence', 'config.json');
-
-const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
+// Seam convention: the JSON line is the contract; the exit code mirrors ok
+// for shell-side chaining (0 ok, 1 degraded).
+const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exitCode = o.ok === false ? 1 : 0; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
 
-// Parse a JSON file, or null if it is missing/unreadable/invalid (a bad layer
-// is skipped, never fatal - the spine must not block on config).
-function readJSON(file) {
-  try { return JSON.parse(readFileSync(file, 'utf8')); }
-  catch { return null; }
-}
-
-// Deep-merge `over` onto `base`: nested objects recurse, arrays and scalars
-// replace wholesale (the higher-precedence layer's list wins, no concat).
-function deepMerge(base, over) {
-  if (over === undefined) return base;
-  if (base === null || typeof base !== 'object' || Array.isArray(base) ||
-      over === null || typeof over !== 'object' || Array.isArray(over)) return over;
-  const merged = { ...base };
-  for (const [k, v] of Object.entries(over)) merged[k] = deepMerge(base[k], v);
-  return merged;
-}
-
-// Resolve the effective config from global + repo layers (repo wins), falling
-// back to DEFAULTS for anything unset. _source names the layers that applied.
+// Resolve the effective config from global + repo layers (repo wins, via the
+// shared merge lib), falling back to DEFAULTS for anything unset. _source
+// names the layers that applied.
 function readConfig(file) {
-  const global = readJSON(GLOBAL_CONFIG);
-  const repo = readJSON(file);
-  const layers = [];
-  if (global) layers.push('global');
-  if (repo) layers.push('repo');
-  const c = deepMerge(global || {}, repo || {});
+  const { config: c, source } = mergeLayers(file);
   const m = c.model || {};
   const a = m.auto || {};
   return {
@@ -71,7 +47,7 @@ function readConfig(file) {
     ceiling: a.ceiling ?? DEFAULTS.ceiling,
     escalate_on_failure: a.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     max_escalations: a.max_escalations ?? DEFAULTS.max_escalations,
-    _source: layers.length ? layers.join('+') : 'defaults',
+    _source: source,
   };
 }
 

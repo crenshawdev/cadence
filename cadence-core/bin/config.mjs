@@ -8,6 +8,9 @@
 //   validate [--file <path>|--global]        validate a whole config file
 //   check <key=value> ...                     validate one or more dotted key=value pairs
 //   set [--file <path>|--global] <key=value>  validate pairs, then write them into the file
+//   get [--file <path>] [key ...]             EFFECTIVE values (repo > global > schema
+//                                             defaults); no keys = all. The only correct
+//                                             way for a workflow to read config.
 //   keys                                      dump the schema keys (for menu/catalog derivation)
 //
 // Default --file is .planning/config.json relative to cwd. --global targets the
@@ -16,20 +19,20 @@
 // own - every layer must be independently valid.
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-
-// User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps tests
-// hermetic); otherwise ~/.claude/cadence/config.json. Mirrors route.mjs.
-const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG || join(homedir(), '.claude', 'cadence', 'config.json');
+import { GLOBAL_CONFIG, mergeLayers } from './lib/config-merge.mjs';
 
 const SCHEMA = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'config.schema.json'), 'utf8'),
 ).keys;
 
-const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
-const fail = (reason, detail) => { out({ ok: false, reason, detail }); process.exit(0); };
+// Seam convention: one JSON line; exit 0 on ok, 1 on degradation. fail()
+// throws DONE so the dispatch unwinds without process.exit() (which could
+// truncate stdout on a pipe).
+const DONE = Symbol('cadence-config-done');
+const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exitCode = o.ok === false ? 1 : 0; };
+const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // --- value typing ------------------------------------------------------------
 
@@ -146,6 +149,23 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
+// The effective value set: schema defaults, overlaid by the global then the
+// repo layer (shared merge lib - identical semantics to route.mjs). Output is
+// a flat dotted-key map, so callers read values without re-flattening.
+function get(file, keys) {
+  const { config, source } = mergeLayers(file);
+  const layered = flatten(config, '', {});
+  /** @type {Record<string, any>} */
+  const values = {};
+  const wanted = keys.length ? keys : Object.keys(SCHEMA);
+  const unknown = wanted.filter((k) => !SCHEMA[k]);
+  if (unknown.length) fail('unknown-key', unknown);
+  for (const k of wanted) {
+    values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
+  }
+  out({ ok: true, values, source });
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
@@ -163,8 +183,9 @@ try {
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') { const { errors } = checkPairs(rest); out({ ok: errors.length === 0, errors }); }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
+  else if (cmd === 'get') { const { file, tokens } = optFile(rest); get(file, tokens); }
   else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }
-  else fail('usage', 'subcommand: validate | check | set | keys');
+  else fail('usage', 'subcommand: validate | check | set | get | keys');
 } catch (e) {
-  fail('internal', e && e.message ? e.message : String(e));
+  if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
