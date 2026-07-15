@@ -7,8 +7,15 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
 - Engine: `${CLAUDE_PLUGIN_ROOT}/cadence-core/` - the single canonical engine root,
   resolved by the Claude Code plugin runtime. No host probing, no locator shim.
   Skills @-include workflows from here.
-- Project state: `.planning/` in the repo root (see DESIGN.md canonical set:
-  PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md).
+- Project state: `.planning/` in the repo root - the SAME git repo as the code
+  it plans (see DESIGN.md canonical set: PROJECT.md, REQUIREMENTS.md,
+  ROADMAP.md, STATE.md, phases/<N>/{PLAN,SUMMARY,UAT}.md). Cadence assumes one
+  repo holds both plans and code: the protected-branch guard, diffs, and
+  goal-check all run where `.planning/` is, so a phase whose code lives in a
+  different repo is NOT a supported mode. Keep `.planning/` in the code repo;
+  driving a separate code repo from here is the steerer's responsibility, not
+  the tool's. (execute.md guards and warns if it detects the split, but does
+  not make it work.)
 - Phase directory: `.planning/phases/<N>/` where `<N>` is the bare phase integer
   from ROADMAP.md (`phases/1/`, `phases/2/`, ... no zero-padding, no slug suffix).
   Created lazily by the first skill that needs it (cad-context or cad-plan).
