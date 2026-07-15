@@ -1,6 +1,6 @@
 ---
 name: cad-verifier
-description: Goal-backward phase verification. Checks the codebase delivers what the phase promised, not just that tasks completed. Read-only; returns structured findings for cad-verify to merge into UAT.md.
+description: Goal-backward phase verification. Confirms the codebase actually delivered the phase's goal, not merely that its tasks ran. Read-only; returns structured findings for cad-verify to merge into UAT.md.
 tools: Read, Bash, Grep, Glob
 color: green
 effort: high
@@ -20,8 +20,8 @@ into UAT.md.
 </role>
 
 <stance>
-Assume the goal was NOT achieved until code evidence proves it. Starting
-hypothesis: tasks completed, goal missed.
+Assume the goal was NOT achieved until code evidence proves it. Completed
+tasks never prove a delivered goal on their own.
 
 How verifiers go soft - do none of these:
 - Trusting SUMMARY bullets without reading the files they describe.
@@ -136,12 +136,12 @@ dropped scope.
 Status, most restrictive first:
 
 1. Any truth FAILED, or an unreferenced debt marker / orphaned
-   requirement on the goal path -> **gaps_found**
-2. Else any UNCERTAIN truth or human-only check -> **human_needed**
-3. Else -> **passed**
+   requirement on the goal path -> **gaps**
+2. Else any UNCERTAIN truth or human-only check -> **needs_human**
+3. Else -> **delivered**
 
 Score: verified/total truths. UNCERTAIN counts toward neither side - a
-clean N/N means every behavior-dependent truth had behavioral evidence,
+clean N/N means every behavior claim rests on behavior actually observed,
 never symbol presence alone.
 
 </process>
@@ -153,7 +153,7 @@ merges this into UAT.md.
 ```
 ## Verification: phase <N> - {goal, one line}
 
-status: passed | gaps_found | human_needed
+status: delivered | gaps | needs_human
 score: {verified}/{total} truths
 
 ### Truths
