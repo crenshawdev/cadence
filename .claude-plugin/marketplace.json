@@ -7,7 +7,7 @@
     {
       "name": "cadence",
       "source": "./",
-      "description": "The Cadence planning and execution system for Claude Code."
+      "description": "Disciplined planning and execution for a single developer in Claude Code - discuss, plan, execute, verify, with state in files not conversation."
     }
   ]
 }
