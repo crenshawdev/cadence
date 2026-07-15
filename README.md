@@ -4,7 +4,7 @@ Cadence is a planning and execution system for a single developer working in Cla
 
 It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that never pushes and never decides how you publish without asking.
 
-> Cadence began as a hard fork of [GSD](https://github.com/open-gsd/gsd-core). It kept the methodology and rebuilt everything else, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
+> Cadence is a standalone planning-and-execution system for Claude Code. Its methodology descends from [GSD](https://github.com/open-gsd/gsd-core) - the discuss/plan/execute/verify loop - but everything else is a ground-up rewrite, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
 
 ## Install
 
