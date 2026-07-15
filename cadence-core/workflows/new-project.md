@@ -34,9 +34,14 @@ In order:
    Ask no configuration questions. Tell the user in one line:
    "Config written with defaults (interactive, research off, plan check and
    verifier on). /cad-config changes any of it."
-5. Read the keys this workflow needs from `.planning/config.json`:
-   `workflow.research`, `workflow.subagent_timeout`, `planning.commit_docs`,
-   `granularity`, and the `git` block.
+5. Read the keys this workflow needs through the seam (effective values,
+   global layer included):
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
+     workflow.research workflow.subagent_timeout planning.commit_docs \
+     granularity git.protected_branches git.on_protected git.base_branch
+   ```
 6. Brownfield check: if the repo already contains source code (anything
    beyond dotfiles and `.planning/`), note it briefly ("Existing [language]
    code detected: [one-line shape]"). During questioning, treat existing
@@ -253,16 +258,12 @@ full file": show the file, then re-ask.
 </step>
 
 <step name="state">
-Write `.planning/STATE.md` as the canonical 4-line cursor
-(references/conventions.md), nothing else:
+Write the initial cursor through the seam (ROADMAP.md exists now, so
+name/total derive automatically):
 
-```markdown
-# State
-
-Phase: 1 of [N] ([Phase 1 name])
-Status: ready to plan
-Next: /cad-context 1
-Updated: [today]
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
+  --phase 1 --status "ready to plan" --next "/cad-context 1"
 ```
 
 Do NOT create `.planning/phases/` directories - they are created lazily by
@@ -295,7 +296,6 @@ transcript need not be carried forward.
 - Never spawn more than one research agent, and none at all unless
   configured or `--research` was passed. The 4-researcher fan-out and
   synthesizer are gone; do not reintroduce them.
-- Never push (references/git.md rail 3).
 - STATE.md is a ~4-line overwritten cursor: no audit logs, no session
   narratives, no progress bars, no metrics.
 - Config keys come from the engine config template only; never invent keys,

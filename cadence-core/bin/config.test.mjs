@@ -11,11 +11,16 @@ import { fileURLToPath } from 'node:url';
 const CONFIG = join(dirname(fileURLToPath(import.meta.url)), 'config.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-config-'));
 
-// Run config.mjs with a controlled global-config path; returns parsed JSON line.
+// Run config.mjs with a controlled global-config path; returns parsed JSON
+// line. Degraded results exit 1 (seam convention), so catch and parse stdout.
 function run(args, globalPath) {
   const env = { ...process.env };
   if (globalPath) env.CADENCE_GLOBAL_CONFIG = globalPath;
-  return JSON.parse(execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env }));
+  try {
+    return JSON.parse(execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
 }
 
 test('set --global auto-creates the global file (and parent dir) from empty', () => {
@@ -53,4 +58,33 @@ test('validate --global reads the global file', () => {
   const r = run(['validate', '--global'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.file, gpath);
+});
+
+// --- get: the layered effective read ------------------------------------------
+
+test('get: repo > global > schema defaults, with source named', () => {
+  const gpath = join(dir, 'get-global.json');
+  writeFileSync(gpath, JSON.stringify({ model: { profile: 'quality' }, workflow: { research: true } }));
+  const repo = join(dir, 'get-repo.json');
+  writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
+  const r = run(['get', '--file', repo, 'model.profile', 'workflow.research', 'workflow.plan_check'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['model.profile'], 'fast');        // repo wins
+  assert.equal(r.values['workflow.research'], true);      // global fills
+  assert.equal(r.values['workflow.plan_check'], true);    // schema default
+  assert.equal(r.source, 'global+repo');
+});
+
+test('get: no layers at all falls back to schema defaults for every key', () => {
+  const r = run(['get', '--file', join(dir, 'absent.json')], join(dir, 'also-absent.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.source, 'defaults');
+  assert.equal(r.values['git.on_protected'], 'ask');
+  assert.deepEqual(r.values['git.protected_branches'], ['main', 'master']);
+});
+
+test('get: unknown key is rejected, exit code mirrors ok', () => {
+  const r = run(['get', '--file', join(dir, 'absent.json'), 'no.such.key'], join(dir, 'no-g.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unknown-key');
 });

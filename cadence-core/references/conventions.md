@@ -49,6 +49,9 @@ Read only the keys you need. Unknown keys are ignored, never fatal.
   `ready to plan` (new-project) -> `context gathered` (context) -> `planned`
   (plan) -> `executed` (execute) -> `phase complete` (verify). `paused`
   (cad-pause) is allowed at any point. Do not invent other values.
+- `paused` adds no extra lines: `Status: paused` with the `Next:` line holding
+  cad-pause's one-line resume pointer. The cursor is always exactly these
+  four lines - there is no fifth.
 - `cad-progress` treats the cursor as a hint: if it disagrees with the derived
   state it rewrites it in this schema. Any skill that changes phase state
   overwrites the cursor and commits it with that step's docs commit - never

@@ -67,6 +67,11 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 
 - **Claude Code only** — one clean runtime, no multi-host shim. Portability-ready seams
   (ask-user / spawn-agent / review-provider) if a contributor ever adds a runtime.
+- **Deterministic seams** — every read and write of `.planning/` state, model routing, and
+  config validation runs through small zero-dependency Node scripts (`planning.mjs`,
+  `route.mjs`, `config.mjs`, `review-provider.mjs`) that speak one JSON line and never block
+  the loop. Prose keeps the judgment; the scripts keep the invariants, so state transitions
+  don't drift with the model's mood.
 - **22 skills, 7 agents, and nothing you didn't ask for.** No team or multi-author tooling,
   no AI-product track, no web-UI design track, no catalog-scaling, and nothing that duplicates
   a developer's own memory or graph tools. See [`LINEAGE.md`](./LINEAGE.md) for the full cut.
@@ -74,7 +79,8 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   reviewer by default, with pluggable cross-model reviewers (Codex, Gemini, any CLI).
 - **Model routing** — three canned profiles (low / balanced / quality) plus an optional `auto`
   mode that picks model (and effort, via role) per task, with guardrails.
-- **Git model** — atomic commits, a protected-branch guard, never auto-pushes, and a `land`
+- **Git model** — atomic commits, a protected-branch guard enforced by the harness itself (a
+  PreToolUse hook, not prose the model can talk itself out of), never auto-pushes, and a `land`
   step that asks how you want to publish instead of forcing a branch/PR flow.
 - **Lean `.planning/`** — ROADMAP + per-phase PLAN/SUMMARY/UAT + a ~4-line state cursor. No
   audit logs duplicating git.

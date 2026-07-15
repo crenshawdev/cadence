@@ -159,8 +159,8 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 4. Name → **SETTLED: Cadence, `/cad-*`.** Install to a distinct dir so it coexists with GSD during
    migration. **SETTLED at scaffold (2026-07-10):** engine dir `~/.claude/cadence-core/`; skills/agents
    install as `cad-*` into the shared flat `~/.claude/skills/` and `~/.claude/agents/` (all verified free).
-5. Distribution → **SUPERSEDED:** repo is already public; model locked in §6 Distribution
-   (npm `@vintagetechie/cadence` = user install, clone = dev flow).
+5. Distribution → **SUPERSEDED:** repo is already public; shipped as a Claude Code plugin
+   (`/plugin marketplace add`, clone = dev flow — see §6).
 
 **ALL DESIGN DECISIONS SETTLED (2026-07-10). Ready to scaffold.**
 
@@ -170,14 +170,15 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 
 - **Positioning:** public distribution eventually; a trimmed **single-developer** rewrite descended from GSD,
   properly licensed. Trim anything team/multi-author.
-- **Distribution model:** distributable from the start. **User install = npm** (like GSD:
-  `npx @vintagetechie/cadence install`) — the package carries the tree and runs the same
-  idempotent **copy** into `~/.claude` (`skills/cad-*`, `agents/cad-*.md`, `cadence-core/`);
-  update = rerun at the new version. **Dev/contributor flow = clone + `./install.sh`**
-  (`--dev` = per-item symlinks, local-iteration convenience ONLY — the project and skills
-  never lean on symlinks). Installed tree is disposable, never edited in place; that rule is
-  what lets npm-copy work with zero reapply-patches machinery (GSD ships
-  `verify-reapply-patches.cjs` because its users edit the installed copy).
+- **Distribution model:** **SUPERSEDED (shipped as a Claude Code plugin).** User install =
+  `/plugin marketplace add https://github.com/crenshawdev/cadence.git` then
+  `/plugin install cadence@cadence`; update/uninstall are the matching `/plugin` commands.
+  The plugin runtime carries the tree, so the npm copy-installer described below was never
+  built. Dev/contributor flow = clone the repo. *(Original 2026-07-10 decision, kept for
+  the record: user install = npm `npx @crenshawdev/cadence install` running an idempotent
+  copy into `~/.claude`; dev flow = clone + `./install.sh`. The disposable-installed-tree
+  rule that decision leaned on still holds — the plugin copy is likewise never edited in
+  place, so there is zero reapply-patches machinery.)*
 - **Runtime:** **Claude Code only**, one clean path resolver, no multi-host shim. But the three
   host-touchpoints — **ask-user, spawn-agent, call-review-provider** (a provider API call, not a
   CLI) — go through thin internal seams so a future contributor could add a runtime without
@@ -349,7 +350,7 @@ lever is trigger frequency (gating), never a weak reviewer.
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
   notice, README lead line crediting GSD, NOTICE/CREDITS + lineage note.
 - **SETTLED:** display/brand name = **Cadence**; skill prefix `/cad-*` (collision-free). npm `cadence`
-  is taken → publish as **`@vintagetechie/cadence`** (scoped) if/when distributed. Uber Cadence /
+  is taken → the scoped name is **`@crenshawdev/cadence`** if/when an npm package ships. Uber Cadence /
   Cadence Design Systems overlap is an accepted brand footnote for a personal-brand OSS tool.
 - **SETTLED: GSD license = MIT** [npm @opengsd/gsd-core, repo github.com/open-gsd/gsd-core]. Cadence
   ships under MIT, retaining GSD's copyright + license text + a lineage notice. Attribution obligation

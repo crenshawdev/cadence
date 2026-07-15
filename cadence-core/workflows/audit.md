@@ -10,38 +10,39 @@ checkbox, both written solely by cad-verify.
 `$ARGUMENTS` = a milestone (audit its requirements), else all active
 requirements in REQUIREMENTS.md. State the scope and the requirement count.
 
-## 2. Build the trace table
-The REQUIREMENTS traceability table (Requirement | Phase | Status) is the
-starting point - it already maps requirement -> phase. For each requirement ID,
-follow the chain and record where it breaks:
-- **Phase** - does the table assign it to a phase (and does that phase exist in
-  ROADMAP.md)? A blank/missing phase is a dropped requirement.
-- **Plan** - does that phase's PLAN carry the ID in its `requirements`
-  frontmatter (i.e. a plan actually committed to delivering it)?
-- **Verified** - is its table Status `Complete` AND the phase's ROADMAP
-  `## Phases` checkbox `- [x]`? Both are cad-verify's at phase-complete.
+## 2. Run the trace
+The joins are the planning seam's job - never build the table by hand:
 
-Trace = `requirement -> phase -> plan -> verified`. Any missing link is a defect.
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" audit
+```
 
-## 3. Orphan detection (both directions)
-- **Dropped requirements** - a requirement with no phase, or a phase but no plan
-  that carries it. This is the silent-drop this audit exists to catch.
-- **Unmapped work** - a phase or PLAN whose `requirements` reference IDs that do
-  not exist in REQUIREMENTS.md, or delivered artifacts that trace to no
-  requirement (scope creep). Report, but weigh lighter than a dropped requirement.
+One JSON line returns the full requirement -> phase -> plan -> verified
+chain: per requirement a `break` code where the chain fails (`no-phase` |
+`phase-missing` | `no-plan` | `not-verified` | `drift`), `orphans.plan_ids`
+(plan frontmatter referencing unknown REQ-IDs - scope creep, weigh lighter
+than a dropped requirement), `deferred` (rows whose Status is `Deferred` -
+the one pinned marker), and `counts`.
 
-## 4. Status reconciliation (drift)
-Flag contradictions between the two status sources:
-- A requirement marked done whose phase is not checked verified (or vice versa).
-- A phase checked complete with an unverified requirement still assigned to it.
-Drift is a FAIL input - the status cannot be trusted until it is reconciled
-(cad-verify re-run, or the discrepancy explained).
+If a milestone scope was given, filter the returned requirements to that
+milestone's IDs before judging; the seam always traces the whole file.
+
+## 3. Interpret the breaks
+- `no-phase` / `no-plan` - a dropped requirement: nothing committed to
+  deliver it. This is the silent-drop this audit exists to catch.
+- `phase-missing` - the table points at a phase that is not in ROADMAP.md.
+- `not-verified` - planned but not yet Complete + checked. Expected mid-cycle;
+  a defect at ship time.
+- `drift` - the two status sources contradict (row Complete vs box, either
+  direction). The status cannot be trusted until reconciled (cad-verify
+  re-run, or the discrepancy explained).
 
 ## 5. Verdict
-- **PASS** - every in-scope requirement traces requirement -> phase -> plan ->
-  verified, with no drift. Deferred requirements are allowed ONLY if explicitly
-  marked deferred in REQUIREMENTS.md (list them; they are not counted as
-  delivered).
+Arithmetic over the seam's output - in-scope `counts.broken` (after any
+milestone filter):
+- **PASS** - zero broken: every in-scope requirement traces requirement ->
+  phase -> plan -> verified. Deferred rows are allowed (list them; they are
+  not counted as delivered).
 - **FAIL** - any requirement is untraced, unverified, dropped, or in drift.
   List each failing requirement with exactly where its chain breaks. This gate
   is meant to block a ship; do not soften it or mark it PASS-with-warnings.

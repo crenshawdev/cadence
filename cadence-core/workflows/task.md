@@ -88,7 +88,6 @@ No next-step menu.
 <guardrails>
 - Never spawn a subagent on the inline path.
 - Never use worktrees - cad-task is always sequential.
-- Never push (references/git.md rail 3).
 - Never write STATE.md or any activity log for a task - git is the record.
 - If mid-task the scope grows past "planned", stop and re-route to
   /cad-context rather than improvising a phase inline.

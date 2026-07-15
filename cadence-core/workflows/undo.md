@@ -34,13 +34,17 @@ do not force; the user resolves or aborts (`git revert --abort`).
 
 ## 5. Reset the phase status
 Because the phase is being undone, roll its status back (the one legitimate
-exception to cad-verify owning status):
-- ROADMAP `## Phases`: the phase's box `- [x]` -> `- [ ]`.
-- REQUIREMENTS traceability: that phase's requirements Status Complete -> Pending.
-- STATE cursor: point back at the phase as its now-current work
-  (`planned` or `ready to plan` depending on how far back the revert went).
-Do this only for a committed revert; for `--no-commit`, leave status alone (the
-user has not finalized the undo).
+exception to cad-verify owning status) - two seam calls:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N> --undo
+node ".../planning.mjs" cursor set --phase <N> --status <planned | "ready to plan"> --next "<the redo step>"
+```
+
+(`--undo` unchecks the ROADMAP box and flips the phase's traceability rows
+back to Pending; pick the cursor status by how far back the revert went.)
+Do this only for a committed revert; for `--no-commit`, leave status alone
+(the user has not finalized the undo).
 
 ## 6. Report
 Which commits were reverted (or staged), the new HEAD, the status reset, and the

@@ -27,7 +27,12 @@ function cfg(model, name) {
 function resolve(role, file, extra = [], opts = {}) {
   const args = ['resolve', '--role', role, ...(file ? ['--file', file] : []), ...extra];
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
-  return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
+  try {
+    return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
+  } catch (e) {
+    // Degraded results exit 1 (seam convention); the JSON line is on stdout.
+    return JSON.parse(e.stdout);
+  }
 }
 
 test('fixed profiles resolve the matrix per role tier', () => {
