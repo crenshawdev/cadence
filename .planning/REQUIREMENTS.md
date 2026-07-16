@@ -47,7 +47,7 @@ Explicit exclusions. The reason prevents scope creep later.
 | RCL-01 | Phase 1 | Complete |
 | RCL-02 | Phase 1 | Complete |
 | RCL-03 | Phase 1 | Complete |
-| RCL-04 | Phase 2 | Pending |
+| RCL-04 | Phase 2 | Complete |
 | RCL-05 | Phase 1 | Complete |
 | CWT-01 | Phase 3 | Pending |
 | CWT-02 | Phase 3 | Pending |

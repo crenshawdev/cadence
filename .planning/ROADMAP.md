@@ -15,7 +15,7 @@ own prose surfaces — now slightly heavier — under a CI budget.
 ## Phases
 
 - [x] **Phase 1: Recall engine** - BM25 over `.planning/` as a `planning.mjs recall` subcommand, backend-gated, contracted, tested
-- [ ] **Phase 2: Recall consumers** - cad-context, cad-planner, cad-debug inject recall results with cited sources
+- [x] **Phase 2: Recall consumers** - cad-context, cad-planner, cad-debug inject recall results with cited sources
 - [ ] **Phase 3: Context weight** - prose-surface weight seam, blocking CI budget check, tools-declaration lint
 
 ## Phase Details
