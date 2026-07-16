@@ -465,11 +465,12 @@ async function cmdDetect(opts) {
 // review, so the candidate list is review-usable. Then: known id ->
 // {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
 // to place it. Missing/broken hint file degrades to all-unknown, never errors.
-/** @param {string} provider @param {string[]} ids */
-export function classify(provider, ids) {
+// hintsFile is injectable for tests; production always uses the shipped table.
+/** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
+export function classify(provider, ids, hintsFile) {
   let rules = [], exclude = [];
   try {
-    const hints = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
+    const hints = JSON.parse(fs.readFileSync(hintsFile || path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
     rules = (hints.rules && hints.rules[provider]) || [];
     exclude = hints.exclude || [];
   } catch { /* no hints -> everything unknown, nothing excluded */ }
