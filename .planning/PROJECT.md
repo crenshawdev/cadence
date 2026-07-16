@@ -5,9 +5,10 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. This planning cycle (v1.1.0) closes Cadence's biggest self-admitted
-gap: its memory is write-only. It also turns Cadence's context-engineering
-claims into measured, CI-enforced facts.
+subsystem. The v1.1.0 cycle (tagged `v1.1.0-rc.1`) closes Cadence's biggest
+self-admitted gap — its write-only memory — and turns its context-engineering
+claims into measured, CI-enforced facts. Further iterations continue as release
+candidates toward the final `v1.1.0` publish.
 
 ## Core Value
 
@@ -25,15 +26,16 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Self-verify drift linter in CI: config-key tokens ↔ schema, script invocations ↔ CONTRACTS table, plugin-root paths exist; README included as a linted surface — v1.0.0
 - ✓ Cross-model review subsystem (plan / diff / phase_diff / pre_ship triggers, consult, detect-models) — v1.0.0
 - ✓ `memory.backend` config key reserved, only `none` wired — v1.0.0
+- ✓ BM25 recall over `.planning/` artifacts as a zero-dep `planning.mjs` subcommand — v1.1.0-rc.1
+- ✓ `memory.backend` gains `builtin` and becomes the default; `none` turns recall off — v1.1.0-rc.1
+- ✓ cad-context, cad-planner, and cad-debug inject recall results at the moment they start reasoning — v1.1.0-rc.1
+- ✓ Deterministic context-weight measurement of agent/skill prose surfaces via a seam subcommand — v1.1.0-rc.1
+- ✓ self-verify budget check on context weight (blocking) — v1.1.0-rc.1
+- ✓ self-verify lint: agent prose references only tools declared in that agent's frontmatter (blocking) — v1.1.0-rc.1
 
 ### Active
 
-- [ ] BM25 recall over `.planning/` artifacts as a zero-dep `planning.mjs` subcommand
-- [ ] `memory.backend` gains `builtin` and it becomes the default; `none` turns recall off
-- [ ] cad-context, cad-planner, and cad-debug inject recall results at the moment they start reasoning
-- [ ] Deterministic context-weight measurement of agent/skill prose surfaces via a seam subcommand
-- [ ] self-verify budget check on context weight (blocking, like existing checks)
-- [ ] self-verify lint: agent prose references only tools declared in that agent's frontmatter (blocking)
+- _Next iteration toward `v1.1.0` — scope to be defined (`/cad-plan`)._
 
 ### Out of Scope
 
@@ -69,17 +71,18 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 - **Compatibility**: existing `.planning/` layouts must work unchanged; recall on a project with no SUMMARYs degrades to empty results, never an error
 - **Determinism**: same corpus + same query → same results; no timestamps, no randomness in ranking
 - **Toolchain**: Node 22/24 (CI matrix), `node --test`, `tsc --checkJs` must stay green
-- **Semver honesty**: ships as v1.1.0 — additive minor over the published v1.0.0 tag; never retag
+- **Semver honesty**: `v1.0.0` is the public baseline (immutable). Work toward the next release ships as `v1.1.0-rc.N` candidates, one per iteration; the final `v1.1.0` tag is cut only at publish. Never retag a published version.
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| BM25, not embeddings | Deterministic, zero-dep, fast on a small corpus; matches seam philosophy | - Pending |
-| `memory.backend` default flips to `builtin` | The feature's value is being there without setup; `none` remains the off switch | - Pending |
-| Context-weight stats live in a seam + self-verify budget check | Deterministic measurement; CI catches prose bloat mechanically, same as drift | - Pending |
-| Tools-declaration lint is blocking | Same species as the config-key drift check; consistency in how the linter treats drift | - Pending |
-| Recall consumers: cad-context, cad-planner, cad-debug | The three moments past knowledge changes decisions: assumptions, task breakdown, hypotheses | - Pending |
+| BM25, not embeddings | Deterministic, zero-dep, fast on a small corpus; matches seam philosophy | ✓ Shipped v1.1.0-rc.1 |
+| `memory.backend` default flips to `builtin` | The feature's value is being there without setup; `none` remains the off switch | ✓ Shipped v1.1.0-rc.1 |
+| Context-weight stats live in a seam + self-verify budget check | Deterministic measurement; CI catches prose bloat mechanically, same as drift | ✓ Shipped v1.1.0-rc.1 |
+| Tools-declaration lint is blocking | Same species as the config-key drift check; consistency in how the linter treats drift | ✓ Shipped v1.1.0-rc.1 |
+| Recall consumers: cad-context, cad-planner, cad-debug | The three moments past knowledge changes decisions: assumptions, task breakdown, hypotheses | ✓ Shipped v1.1.0-rc.1 |
+| Pre-release versioning toward v1.1.0 | v1.0.0 is public; dogfood iterations shouldn't each burn a public minor — candidates converge on one release | ✓ Adopted — `-rc.N` per iteration |
 
 ---
-*Last updated: 2026-07-16 after project init (v1.1.0 cycle)*
+*Last updated: 2026-07-16 after v1.1.0-rc.1 milestone close*

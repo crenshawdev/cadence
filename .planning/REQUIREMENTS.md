@@ -1,31 +1,36 @@
-# Requirements: Cadence v1.1.0
+# Requirements: Cadence (toward v1.1.0)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
-## v1 Requirements
+## Active
 
-Committed scope. Each maps to exactly one roadmap phase.
+Committed scope for the next iteration toward `v1.1.0`. Each maps to exactly one
+roadmap phase once planned.
 
-### Recall (RCL)
+_None defined yet — the next iteration is unplanned. Run `/cad-plan`._
 
-- [ ] **RCL-01**: Running `planning.mjs recall "<query>"` returns ranked snippets from `.planning/` artifacts (phase SUMMARYs, CAPTURE.md, UAT.md, CONTEXT decisions) as one-line JSON, via zero-dep BM25; same corpus + same query always returns the same results
-- [ ] **RCL-02**: On a project with no recallable artifacts, `recall` returns `{ok: true, results: []}` — never an error
-- [ ] **RCL-03**: `memory.backend` accepts `builtin` and defaults to it; `none` disables recall and every consumer skips it silently
-- [ ] **RCL-04**: cad-context injects recall results for the phase goal into its assumptions pass, cad-planner into its planning context, and cad-debug into hypothesis formation — each visibly citing the recalled source (file + phase)
-- [ ] **RCL-05**: The `recall` subcommand has a CONTRACTS entry in self-verify.mjs and tests in planning.test.mjs covering ranking, empty-corpus, and determinism
+## Shipped
 
-### Context Weight (CWT)
+Delivered and verified. Kept as rows for shipped-scope trace; the `v1.1.0-rc.1`
+tag and git history hold the full requirement text. Archived out of
+`## Traceability` so a new milestone's audit starts clean (the audit seam
+parses only the Traceability table).
 
-- [ ] **CWT-01**: A seam subcommand reports byte and estimated-token weight per agent/skill prose surface (agents/*.md, skills/*/SKILL.md, workflow files) as one-line JSON
-- [ ] **CWT-02**: self-verify runs a blocking budget check: any measured surface exceeding its declared size budget fails CI (exit 1) with the surface and overage named
-- [ ] **CWT-03**: self-verify lints that each agent's prose references only tools declared in that agent's frontmatter `tools:` list; violations are blocking (exit 1)
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+| RCL-01 (BM25 recall over `.planning/`, one-line JSON, deterministic) | 1 | Complete | v1.1.0-rc.1 |
+| RCL-02 (empty corpus → `{ok:true, results:[]}`, never an error) | 1 | Complete | v1.1.0-rc.1 |
+| RCL-03 (`memory.backend` accepts `builtin`, defaults to it; `none` disables recall) | 1 | Complete | v1.1.0-rc.1 |
+| RCL-04 (cad-context / cad-planner / cad-debug inject cited recall) | 2 | Complete | v1.1.0-rc.1 |
+| RCL-05 (recall CONTRACTS entry + tests: ranking, empty-corpus, determinism) | 1 | Complete | v1.1.0-rc.1 |
+| CWT-01 (per-surface byte + est-token weight seam, one-line JSON) | 3 | Complete | v1.1.0-rc.1 |
+| CWT-02 (blocking self-verify budget check, names surface + overage) | 3 | Complete | v1.1.0-rc.1 |
+| CWT-03 (blocking self-verify agent tools-declaration lint) | 3 | Complete | v1.1.0-rc.1 |
 
-## v2 Requirements
+## Deferred
 
-Deferred. Tracked, not in the current roadmap.
-
-### Recall (RCL)
+Tracked, not in the current roadmap.
 
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
 
@@ -42,18 +47,12 @@ Explicit exclusions. The reason prevents scope creep later.
 
 ## Traceability
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| RCL-01 | Phase 1 | Complete |
-| RCL-02 | Phase 1 | Complete |
-| RCL-03 | Phase 1 | Complete |
-| RCL-04 | Phase 2 | Complete |
-| RCL-05 | Phase 1 | Complete |
-| CWT-01 | Phase 3 | Complete |
-| CWT-02 | Phase 3 | Complete |
-| CWT-03 | Phase 3 | Complete |
+Live requirement → phase → plan → verified trace for the **current** milestone,
+written solely by cad-verify. Shipped rows move to `## Shipped` above when a
+milestone closes, so `/cad-audit` starts each cycle clean. This section must
+remain the last in the file — the audit seam parses every row beneath it.
 
-**Coverage:** 8 v1 requirements, 8 mapped, 0 unmapped
+_No active rows — the next iteration has not been planned._
 
 ---
-*Last updated: 2026-07-16 after project init (v1.1.0 cycle)*
+*Last updated: 2026-07-16 after v1.1.0-rc.1 milestone close*
