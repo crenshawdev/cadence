@@ -23,18 +23,20 @@ Shared rules every skill and workflow follows. Referenced, not repeated.
 
 ## Config resolution
 
-1. `.planning/config.json` if present.
-2. Else the defaults in `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/config.json`.
-Read only the keys you need. Unknown keys are ignored, never fatal.
+The only correct read is the seam - one call for every key the workflow uses:
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get <key> ...`.
+It layers repo (.planning/config.json) over the user-global file over the
+schema defaults, so a raw file read sees at most one layer and lies about the
+rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 
 ## State
 
-- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended -
-  Read it first (it always exists after new-project), then replace all four
-  lines, or Edit them in place; a cold Write on an unread file trips the
-  read-before-write guard and forces a redo. NO audit logs, no activity tables,
-  no session narratives - git history is the log. Derive views from `git log`
-  on demand.
+- `STATE.md` is a 4-line cursor. It is overwritten in place, never appended.
+  The only correct writer is the seam (`planning.mjs cursor set` - it derives
+  name/total from ROADMAP, validates the status, stamps the date, and writes
+  atomically); read it with `cursor get`. Never hand-edit the file. NO audit
+  logs, no activity tables, no session narratives - git history is the log.
+  Derive views from `git log` on demand.
 - Canonical cursor schema - every writer emits exactly these four lines under a
   `# State` heading, in this order:
 
@@ -64,6 +66,11 @@ Read only the keys you need. Unknown keys are ignored, never fatal.
   (references/review-triggers.md). No skill embeds its own reviewer loop.
 
 ## Reporting style
+
+- The "safe to /clear first" closer: when a command's durable output is on
+  disk (and committed where config says so), its done-report says so in one
+  line naming WHAT survives the clear. One line, per-command specifics, no
+  ceremony.
 
 - Terse completion reports: what changed, commit hash(es), files touched.
 - No next-step menus unless the workflow genuinely forks. One suggestion max.
