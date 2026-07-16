@@ -28,13 +28,17 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
    applies - references/git.md). If the tree is clean, skip this; there is
    nothing to preserve.
 
-2. **Set the cursor.** Rewrite `.planning/STATE.md` in place, keeping the strict
-   4-line schema (references/conventions.md - never add a 5th line):
-   - `Status: paused`
-   - `Next:` = the resume pointer: a one-line "where I was" that names the next
-     concrete action (from `$ARGUMENTS`, or ask via the ask-user seam if not
-     given). This line IS the pause note /cad-progress surfaces.
-   - keep `Phase:`; set `Updated:` to today.
+2. **Set the cursor** through the seam (never hand-edit STATE.md):
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
+     --phase <current> --status paused --next "<resume pointer>"
+   ```
+
+   The resume pointer is a one-line "where I was" naming the next concrete
+   action (from `$ARGUMENTS`, or ask via the ask-user seam if not given).
+   This line IS the pause note /cad-progress surfaces. The seam keeps
+   `Phase:` and stamps `Updated:` itself.
    Commit the cursor (`docs:`), or fold it into the WIP commit if one was made.
    Never leave the tree dirty.
 

@@ -22,8 +22,9 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 </execution_context>
 
 <process>
-1. **Report git state.** Current branch; `git.base_branch` (or `$ARGUMENTS`) as
-   the base; commits ahead of base; unpushed commits; uncommitted/untracked
+1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
+   `git.base_branch`, else the first `git.protected_branches` entry that
+   exists here (git.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
    changes; and the remote host detected from the origin URL (gitlab -> MR,
    github -> PR, none -> local only). Show this plainly before doing anything.
 
@@ -42,7 +43,7 @@ final review gate, asks how to publish, and executes exactly that - nothing more
    - **Direct push** - push the current branch to its remote.
    - **Open MR / PR** - the detected host's mechanism (`glab mr create` on
      GitLab, `gh pr create` on GitHub). If no remote, this option is absent.
-   - **Tag** - create `git.create_tag` a tag (ask the name); ask separately
+   - **Tag** - create an annotated tag (ask the name); ask separately
      whether to push it.
    - **Leave local** - do nothing further.
 

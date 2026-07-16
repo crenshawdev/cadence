@@ -11,6 +11,7 @@ allowed-tools:
   - Glob
   - Task
   - AskUserQuestion
+  - SlashCommand
 ---
 
 <objective>
