@@ -150,6 +150,10 @@ never symbol presence alone.
 Return findings as your final message - do NOT write any file. cad-verify
 merges this into UAT.md.
 
+Field names below are the `uat merge` payload's field names, on purpose: the
+orchestrator copies Gaps and Human checks entries field-for-field into the
+merge call (verify-deep.md) - never invent synonyms it would have to translate.
+
 ```
 ## Verification: phase <N> - {goal, one line}
 
@@ -157,18 +161,21 @@ status: delivered | gaps | needs_human
 score: {verified}/{total} truths
 
 ### Truths
-| # | Truth | Status | Evidence |
-(file:line or command output for every VERIFIED and FAILED entry; the
-matching UAT item number when one exists)
+| # | Truth | Status | UAT item | Evidence |
+(file:line or command output for every VERIFIED and FAILED entry; UAT item =
+the matching item number, blank when none - VERIFIED rows with an item number
+become the merge payload's passes)
 
 ### Gaps (if any)
-- truth: {what failed}
+- name: {the failed truth - the matching UAT item's exact name when one exists}
+  k: {matching UAT item number - omit when none}
   reason: {missing | stub | unwired | behavior wrong - and why}
-  artifacts: {each file and what is wrong in it}
+  evidence: {each artifact file and what is wrong in it}
+  severity: {blocker | major | minor | cosmetic}
   missing: {specific things to add or fix}
 
 ### Human checks (if any)
-- test: {what to do}
+- name: {what to do}
   expected: {what should happen}
   why_human: {why code inspection cannot settle it}
 ```
