@@ -4,9 +4,7 @@
     "types": "bool | int | string | string_or_null | enum | array_string | array_enum. int accepts an optional 'min'. enum/array_enum carry 'values'."
   },
   "keys": {
-    "mode":                                 { "type": "enum", "values": ["interactive"], "default": "interactive", "src": "repo", "purpose": "How the loop runs (autonomous/audit-fix cut in DESIGN:111)" },
     "granularity":                          { "type": "enum", "values": ["fine", "standard", "coarse"], "default": "standard", "src": "repo", "purpose": "How finely phases split into tasks (new-project maps coarse 3-5 / standard 5-8 / fine 8-12 phases)" },
-    "context_window":                       { "type": "int", "min": 1, "default": 1000000, "purpose": "Model context budget (tokens) used for chunking" },
 
     "model.profile":                        { "type": "enum", "values": ["fast", "balanced", "quality", "auto"], "default": "balanced", "src": "repo", "purpose": "Model routing: fast/balanced/quality canned tiers, or auto (role + difficulty, escalate on failure)" },
     "model.auto.ceiling":                   { "type": "enum", "values": ["fast", "balanced", "quality"], "default": "quality", "src": "repo", "purpose": "Highest profile auto-escalation may reach" },
@@ -16,14 +14,10 @@
     "workflow.research":                    { "type": "bool", "default": false, "purpose": "Run a research pass before planning" },
     "workflow.plan_check":                  { "type": "bool", "default": true, "purpose": "Gate plans through the checker before code" },
     "workflow.verifier":                    { "type": "bool", "default": true, "purpose": "Goal-backward verification after a phase" },
-    "workflow.auto_advance":                { "type": "bool", "default": false, "purpose": "Roll into the next phase without asking" },
-    "workflow.discuss_mode":                { "type": "enum", "values": ["discuss"], "default": "discuss", "src": "repo", "purpose": "Pre-plan discussion (3 gates collapsed to 1, DESIGN:54); skip_discuss disables it" },
     "workflow.skip_discuss":                { "type": "bool", "default": false, "purpose": "Skip the discussion step entirely" },
-    "workflow.human_verify_mode":           { "type": "enum", "values": ["end-of-phase", "per-task", "off"], "default": "end-of-phase", "src": "proposed", "purpose": "When you're asked to UAT" },
     "workflow.subagent_timeout":            { "type": "int", "min": 1, "default": 300000, "purpose": "ms before a subagent is killed" },
     "workflow.inline_plan_threshold":       { "type": "int", "min": 0, "default": 3, "purpose": "Task count at/below which a plan runs inline vs its own doc" },
     "workflow.test_command":                { "type": "string_or_null", "default": null, "purpose": "Command Cadence runs to test (null = none)" },
-    "workflow.build_command":               { "type": "string_or_null", "default": null, "purpose": "Command Cadence runs to build (null = none)" },
 
     "parallelization.enabled":              { "type": "bool", "default": false, "purpose": "Run independent plans concurrently" },
     "parallelization.max_concurrent_agents":{ "type": "int", "min": 1, "default": 3, "purpose": "Cap on simultaneous agents" },
@@ -33,14 +27,9 @@
     "git.protected_branches":               { "type": "array_string", "default": ["main", "master"], "purpose": "Branches Cadence won't commit to directly" },
     "git.on_protected":                     { "type": "enum", "values": ["ask", "refuse", "allow"], "default": "ask", "src": "repo", "purpose": "What to do on a protected branch (DESIGN:354)" },
     "git.base_branch":                      { "type": "string_or_null", "default": null, "purpose": "Branch new work branches off (null = current)" },
-    "git.auto_push":                        { "type": "bool", "default": false, "purpose": "Push after committing" },
     "git.create_tag":                       { "type": "bool", "default": true, "purpose": "Tag on milestone" },
 
     "planning.commit_docs":                 { "type": "bool", "default": true, "purpose": "Commit .planning docs alongside code" },
-
-    "search.brave_search":                  { "type": "bool", "default": false, "purpose": "Enable Brave web-search provider" },
-    "search.firecrawl":                     { "type": "bool", "default": false, "purpose": "Enable Firecrawl provider" },
-    "search.exa_search":                    { "type": "bool", "default": false, "purpose": "Enable Exa provider" },
 
     "memory.backend":                       { "type": "enum", "values": ["none"], "default": "none", "src": "repo", "purpose": "Where notes/observations route (only 'none' wired today)" },
 
