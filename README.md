@@ -23,7 +23,7 @@ Cadence is a Claude Code plugin. Add the marketplace, then install:
 /plugin install cadence@cadence
 ```
 
-Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support.
+Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node` and `git` on your PATH. The scripts inside are zero-dependency: there is no npm install, ever.
 
 ## The loop
 
@@ -56,7 +56,8 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
-- **`/cad-config`** — the config: workflow toggles, model routing, cross-model review providers.
+- **`/cad-config`** — the config: workflow toggles, model routing, review gates and providers,
+  parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly.
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
@@ -76,8 +77,13 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   no AI-product track, no web-UI design track, no catalog-scaling, and nothing that duplicates
   a developer's own memory or graph tools. See [`LINEAGE.md`](./LINEAGE.md) for the full cut.
 - **Adversarial review is a first-class, configurable subsystem** — a fresh-context Claude
-  reviewer by default, with pluggable cross-model reviewers (Codex, Gemini, any CLI).
-- **Model routing** — three canned profiles (low / balanced / quality) plus an optional `auto`
+  reviewer by default, with pluggable cross-model reviewers (OpenAI and Gemini, direct API
+  calls with provider-enforced structured output). Four review gates fire along the loop
+  (plan, diff, risk surface, pre-ship), each with its own gate/tier/effort switches in
+  `/cad-config`. At a debugging dead-end, an optional consult brings a second model's angles
+  to the table; it advises, never decides, always asks first, and is off until you enable
+  `review.consult.enabled`.
+- **Model routing** — three canned profiles (fast / balanced / quality) plus an optional `auto`
   mode that picks model (and effort, via role) per task, with guardrails. Routing governs the
   subagents Cadence dispatches; the main session's model and effort are yours to set in Claude
   Code, and Cadence cannot set them for you. My recommendation: run the main session on the
@@ -87,13 +93,30 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **Git model** — atomic commits, a protected-branch guard enforced by the harness itself (a
   PreToolUse hook, not prose the model can talk itself out of), never auto-pushes, and a `land`
   step that asks how you want to publish instead of forcing a branch/PR flow.
+- **Parallel execution, gated by arithmetic** — independent plans can run concurrently in
+  isolated git worktrees (`parallelization.enabled`, off by default). Parallelism is offered
+  only when a deterministic file-overlap check proves the plans declare no shared files, and
+  an opt-in `phase_diff` review can inspect the merged result as one diff, since per-plan
+  reviews cannot see cross-plan interactions.
+- **A working method, baked in** — plans are ordered skeleton-first, so a wired end-to-end
+  tracer bullet exists by the second or third commit; the executor states the output it
+  expects before running each verification and records any surprise as a deviation instead
+  of rationalizing it; and every goal-check claim carries file:line or command-output
+  evidence. Generalized from Andrej Karpathy's "A Recipe for Training Neural Networks":
+  make no assumptions, failures are silent, verify, don't trust. There is no switch for
+  this. It is simply how Cadence plans and builds.
 - **Lean `.planning/`** — ROADMAP + per-phase PLAN/SUMMARY/UAT + a ~4-line state cursor. No
   audit logs duplicating git.
 - **Context-frugal by design** — durable state lives in `.planning/` files and git, and every
   plan/review/execution runs in a fresh subagent, so you can `/clear` aggressively: clear at any
   phase boundary and the next command rebuilds from disk. An attempt to keep prompt-cache reuse
   high and context lean, not a magic trick.
-- **Built-in minimal memory** with an optional hook to a richer backend.
+- **Built-in minimal memory** — `/cad-capture` keeps phase-linked todos, seeds, and notes in
+  `.planning/CAPTURE.md`. A `memory.backend` key reserves the seam for richer backends;
+  only `none` ships today.
+- **Self-verifying** — CI lints the prose against the code: every config key, script
+  invocation, and file path named in the workflows must actually exist, or the build fails.
+  The docs cannot quietly drift from the tool.
 
 ## Attribution
 
