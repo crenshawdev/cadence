@@ -87,8 +87,16 @@ definition. Repeating them in the volatile dispatch tail pays for cached
 content twice.
 
 Handle the executor's return:
-- **complete** -> collect its report (tasks, hashes, deviations, open items).
+- **complete** (`PLAN COMPLETE`) -> collect its report (tasks, hashes,
+  deviations, open items).
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
+- **partial** (`PLAN PARTIAL`, a report but no checkpoint) -> the report's
+  completed-task table is authoritative; confirm its hashes against
+  `git log {pre-plan HEAD}..HEAD`, then ask the user (ask-user seam):
+  dispatch a fresh continuation executor for the remaining tasks (prompt
+  extended with the completed-task table and "continue from task <k>", as
+  in handle_checkpoint) or stop here - the incomplete tasks become SUMMARY
+  open items. Never silently re-run completed tasks.
 - **timeout or no report** -> inspect `git log {pre-plan HEAD}..HEAD` to see
   what actually landed, report the state, and ask the user (ask-user seam)
   whether to re-dispatch the remainder or stop. Never silently re-run a plan
