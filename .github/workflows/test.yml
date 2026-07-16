@@ -2,21 +2,49 @@ name: test
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   node-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: ['20', '22']
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
       # Zero-dep repo: no install step, the built-in runner is the framework.
-      # Unquoted so the shell expands the glob to explicit paths: node --test
-      # only accepts glob patterns itself on newer Node (fails on 20).
       - run: node --test cadence-core/bin/*.test.mjs
+
+  self-verify:
+    # The prose<->code drift linter: every config key, script invocation, and
+    # plugin-root path named in the live prose must exist in the code.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node cadence-core/bin/self-verify.mjs
+
+  typecheck:
+    # Honor the @ts-check pragmas. The repo has no package.json; typescript +
+    # @types/node are installed ephemerally for this job only (tsconfig.ci.json).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --no-package-lock typescript @types/node
+      - run: npx tsc -p tsconfig.ci.json

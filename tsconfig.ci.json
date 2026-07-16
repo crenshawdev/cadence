@@ -1,0 +1,16 @@
+{
+  "_comment": "CI-only typecheck config (the test.yml typecheck step). The repo has no package.json and no runtime dependencies - CI installs typescript + @types/node ephemerally (npm install --no-save) just to honor the @ts-check pragmas in cadence-core/bin. strict stays off: the pragmas exist to catch real drift (bad imports, wrong shapes), not to force annotation ceremony onto zero-dep scripts.",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "strict": false,
+    "target": "es2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["cadence-core/bin/**/*.mjs"],
+  "exclude": ["cadence-core/bin/**/*.test.mjs"]
+}

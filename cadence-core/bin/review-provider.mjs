@@ -64,11 +64,11 @@ function fail(reason, detail) { emit({ ok: false, reason, detail: detail || null
 // top-level handlers below convert it to a structured
 // {ok:false,reason:"internal"} so a provider/adapter surprise never crashes
 // the spine with a raw stack.
-process.on('unhandledRejection', (e) => {
+process.on('unhandledRejection', (/** @type {any} */ e) => {
   if (e === DONE) return;
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 });
-process.on('uncaughtException', (e) => {
+process.on('uncaughtException', (/** @type {any} */ e) => {
   if (e === DONE) return;
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 });
