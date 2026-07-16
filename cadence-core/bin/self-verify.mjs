@@ -26,6 +26,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
+import { weighAll } from './lib/surface-weight.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -194,6 +195,27 @@ function run(root) {
     if (!covered) problems.push({ kind: 'inert-config-key', file: 'cadence-core/config.schema.json', detail: key });
   }
 
+  // 4. context-weight budgets: every measured prose surface (agents/skills/
+  // workflows, via the SAME lib weight.mjs reports with, so enforced weight
+  // cannot diverge from reported weight) must have a budget entry and stay at
+  // or under it. The manifest is root-relative like config.schema.json, so a
+  // --root fixture can supply its own; an absent manifest skips the check.
+  const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
+  if (existsSync(budgetPath)) {
+    const budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
+    for (const { surface, bytes } of weighAll(root)) {
+      if (!(surface in budgets)) {
+        problems.push({ kind: 'unbudgeted-surface', file: surface, detail: 'no budget entry' });
+        continue;
+      }
+      const budget = budgets[surface];
+      if (bytes > budget) {
+        problems.push({ kind: 'budget-overrun', file: surface,
+          detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
+      }
+    }
+  }
+
   return problems;
 }
 
@@ -204,7 +226,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, budgets', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
