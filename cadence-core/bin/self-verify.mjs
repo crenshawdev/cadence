@@ -46,6 +46,7 @@ const CONTRACTS = {
     'uat status': ['--phase'],
     audit: [],
     'plan-overlap': ['--phase'],
+    recall: [],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },
