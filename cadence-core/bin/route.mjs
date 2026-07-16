@@ -61,17 +61,17 @@ function bumpTier(tier, n) {
   return order[clampIdx(order.indexOf(tier) + n, 0, order.length - 1)];
 }
 
-// Step from base profile toward ceiling by `steps`, never overshooting ceiling
-// and never dropping below base (escalation only raises when ceiling > base).
+// Step from base profile UP toward ceiling by `steps`, never overshooting.
+// Escalation only ever raises: a ceiling at or below the base profile
+// disables it entirely (re-running a FAILED attempt on a weaker model would
+// be a demotion, not an escalation). Unknown names also resolve at base.
 /** @param {string} base @param {string} ceiling @param {number} steps */
 function stepProfile(base, ceiling, steps) {
   const order = TABLE.profile_order;
   const b = order.indexOf(base);
   const c = order.indexOf(ceiling);
-  if (b < 0 || c < 0) return base;
-  const dir = Math.sign(c - b);
-  const target = clampIdx(b + dir * steps, Math.min(b, c), Math.max(b, c));
-  return order[target];
+  if (b < 0 || c <= b) return base;
+  return order[clampIdx(b + steps, b, c)];
 }
 
 function resolve(opts) {
@@ -99,9 +99,16 @@ function resolve(opts) {
     const steps = cfg.escalate_on_failure ? Math.min(Math.max((opts.attempt || 1) - 1, 0), cfg.max_escalations) : 0;
     const resolveProfile = stepProfile(A.base_profile, cfg.ceiling, steps);
     if (steps > 0) {
-      escalated = true;
-      reason.push(`profile ${A.base_profile}->${resolveProfile} (attempt ${opts.attempt}, ceiling ${cfg.ceiling}, max ${cfg.max_escalations})`);
-      if (role.escalate_effort_variant) { agent = role.escalate_effort_variant; effort = 'high'; reason.push(`effort-variant ${agent}`); }
+      // `escalated` reflects what actually changed: a ceiling at/below base
+      // holds the profile (stepProfile), but a failure still swaps the
+      // effort-variant - same model spend, harder reasoning.
+      if (resolveProfile !== A.base_profile) {
+        escalated = true;
+        reason.push(`profile ${A.base_profile}->${resolveProfile} (attempt ${opts.attempt}, ceiling ${cfg.ceiling}, max ${cfg.max_escalations})`);
+      } else {
+        reason.push(`profile held at ${A.base_profile} (ceiling ${cfg.ceiling} at/below base - escalation never demotes)`);
+      }
+      if (role.escalate_effort_variant) { escalated = true; agent = role.escalate_effort_variant; effort = 'high'; reason.push(`effort-variant ${agent}`); }
     }
     profile = resolveProfile;
     if (!escalated) reason.push(`auto base ${A.base_profile}`);

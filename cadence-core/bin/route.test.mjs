@@ -92,11 +92,24 @@ test('auto: escalate_on_failure=false disables failure escalation', () => {
   assert.equal(r.profile, 'balanced');
 });
 
-test('auto: ceiling below base clamps down, never above ceiling', () => {
+test('auto: ceiling at/below base disables escalation - a retry is never demoted', () => {
   const a = cfg({ profile: 'auto', auto: { ceiling: 'fast', escalate_on_failure: true, max_escalations: 3 } });
   const r = resolve('cad-planner', a, ['--attempt', '2']);
-  assert.equal(r.profile, 'fast'); // clamped to ceiling
-  assert.equal(r.model, 'sonnet'); // heavy@fast
+  assert.equal(r.profile, 'balanced'); // held at base, NOT dropped to fast
+  assert.equal(r.model, 'opus');       // heavy@balanced
+  assert.equal(r.escalated, false);    // nothing actually changed for this role
+  assert.match(r.reason.join(' '), /never demotes/);
+});
+
+test('auto: held profile still swaps the effort-variant on failure', () => {
+  // Ceiling blocks the profile raise, but the failure signal still escalates
+  // effort for roles that have a variant (same model spend, harder reasoning).
+  const a = cfg({ profile: 'auto', auto: { ceiling: 'balanced', escalate_on_failure: true, max_escalations: 1 } });
+  const r = resolve('cad-plan-checker', a, ['--attempt', '2']);
+  assert.equal(r.profile, 'balanced');            // held at base
+  assert.equal(r.agent, 'cad-plan-checker-high'); // variant swap still happens
+  assert.equal(r.effort, 'high');
+  assert.equal(r.escalated, true);                // the variant swap IS a change
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
