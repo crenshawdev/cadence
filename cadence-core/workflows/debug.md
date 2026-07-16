@@ -81,10 +81,12 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 ## Consult at dead-ends (references/consult.md)
 
 Offer a consult - user-gated, one per dead-end - when an OBSERVABLE state is hit,
-never on a feeling of being stuck:
+never on a feeling of being stuck. The threshold T is
+`review.consult.attempt_threshold` (default 3), read through the config seam
+(`config.mjs get review.consult.attempt_threshold`) once at session start:
 
-- **Attempts >= 3** on the same bug (three applied fixes, still failing).
-- **Test still red after 3** method-loop iterations.
+- **Attempts >= T** on the same bug (T applied fixes, still failing).
+- **Test still red after T** method-loop iterations.
 - **Exhausted hypotheses** - the set is empty and the bug is unresolved.
 
 Run `offer_consult` with the situation = the symptom, the confirmed/refuted

@@ -67,9 +67,13 @@
     "review.triggers.pre_ship.gate":        { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "adjudicated", "src": "repo", "purpose": "How the pre-ship review gates" },
     "review.triggers.pre_ship.tier":        { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for pre-ship review" },
     "review.triggers.pre_ship.effort":      { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for pre-ship review" },
+    "review.triggers.phase_diff.gate":      { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "off", "src": "repo", "purpose": "Opt-in aggregate review of the merged phase diff after parallel execution (per-plan reviews never see cross-plan interactions)" },
+    "review.triggers.phase_diff.tier":      { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for the merged-phase review" },
+    "review.triggers.phase_diff.effort":    { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for the merged-phase review" },
 
     "review.consult.enabled":               { "type": "bool", "default": false, "purpose": "Allow a second-model consult at dead-ends" },
     "review.consult.tier":                  { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for consults" },
-    "review.consult.effort":                { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for consults" }
+    "review.consult.effort":                { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for consults" },
+    "review.consult.attempt_threshold":     { "type": "int", "min": 1, "default": 3, "purpose": "Failed fix attempts (or red-test iterations) on one bug before cad-debug offers a consult" }
   }
 }
