@@ -40,7 +40,8 @@ One of, with the evidence behind it:
   spike). Say what would decide it. Do not use this to avoid an invalidated call.
 
 ## 6. Slim wrap-up
-Write ONE SPIKE.md: the question, the criteria, the observed result per
+Write ONE `.planning/spikes/<slug>/SPIKE.md` (beside the throwaway code):
+the question, the criteria, the observed result per
 criterion, the verdict, and the recommendation for the plan (what to do given
 the answer). No five-artifact ceremony. Discard the throwaway code or note where
 it is; it is not project source. Commit SPIKE.md (`docs: spike <slug>`,

@@ -12,7 +12,7 @@ Most of what makes AI-assisted development expensive is not the model, it is the
 
 Cadence is built the other way around. One loop, discuss then plan then execute then verify. State lives in files, not in the conversation. Clear between steps and you lose nothing. Every task lands as one commit. The heavy reading happens in fresh-context subagents that hand back a short answer instead of emptying a file into your window. Small batches, clean state, tight loops, the same discipline that has always separated software that scales from software that seizes up.
 
-The effect shows up in the numbers. Across roughly a billion input tokens of real work, about 96% of that input was served from cache, the cached prefix was reused around 27 times for every rebuild, and fresh uncached input stayed near six hundredths of a percent. That is not the tool being clever with your money. It is the tool refusing to let your context rot, which keeps the model reading the same clean prefix instead of a growing pile. You still do real work and spend real tokens. You just stop paying full freight to re-read your own history.
+The effect shows up in the numbers. These are measurements of my own real usage, taken from my account's usage data, not telemetry the tool collects. Cadence ships no instrumentation and phones nothing home. Across roughly a billion input tokens of real work, about 96% of that input was served from cache, the cached prefix was reused around 27 times for every rebuild, and fresh uncached input stayed near six hundredths of a percent. Your numbers will vary with your habits. That is not the tool being clever with your money. It is the tool refusing to let your context rot, which keeps the model reading the same clean prefix instead of a growing pile. You still do real work and spend real tokens. You just stop paying full freight to re-read your own history.
 
 ## Install
 
@@ -56,7 +56,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
-- **`/cad-config`** — the ~22-key config: workflow toggles, model routing, cross-model review providers.
+- **`/cad-config`** — the config: workflow toggles, model routing, cross-model review providers.
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
@@ -78,7 +78,12 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **Adversarial review is a first-class, configurable subsystem** — a fresh-context Claude
   reviewer by default, with pluggable cross-model reviewers (Codex, Gemini, any CLI).
 - **Model routing** — three canned profiles (low / balanced / quality) plus an optional `auto`
-  mode that picks model (and effort, via role) per task, with guardrails.
+  mode that picks model (and effort, via role) per task, with guardrails. Routing governs the
+  subagents Cadence dispatches; the main session's model and effort are yours to set in Claude
+  Code, and Cadence cannot set them for you. My recommendation: run the main session on the
+  strongest model at high effort. The context discipline is what makes that affordable, because
+  the orchestrator stays lean and reads its own prefix from cache while the heavy file work
+  happens in routed subagents.
 - **Git model** — atomic commits, a protected-branch guard enforced by the harness itself (a
   PreToolUse hook, not prose the model can talk itself out of), never auto-pushes, and a `land`
   step that asks how you want to publish instead of forcing a branch/PR flow.

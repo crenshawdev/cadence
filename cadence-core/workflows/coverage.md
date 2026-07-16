@@ -10,9 +10,10 @@ whole flow turns on one definition:
 ## 1. Resolve the phase
 `$ARGUMENTS` = a phase number, else the last completed phase from
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` (the
-highest phase whose status is complete, else executed). If the phase's
-status is unplanned or planned, say so and stop - there is nothing to cover
-yet.
+highest phase whose status is complete, else executed). On `ok:false`
+(no-planning-dir / no-roadmap), relay its `reason` and `hint` and stop. If
+the phase's status is unplanned or planned, say so and stop - there is
+nothing to cover yet.
 
 ## 2. Gather the phase's requirements and artifacts
 - Requirements: the phase's requirement IDs and their acceptance criteria -

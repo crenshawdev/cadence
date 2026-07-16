@@ -6,7 +6,8 @@ pruning removes completed work from the LIVE planning docs, not from history.
 
 ## 1. Scope + audit gate
 Identify the milestone being closed (from PROJECT.md's current version/
-milestone). Run cad-audit (the `plan`/traceability FAIL gate, /cad-audit) over
+milestone). Run the traceability audit (the requirement->phase->plan->verified FAIL
+gate) over
 its requirements. On FAIL - a requirement untraced, unverified, or dropped -
 report it and STOP, unless the user explicitly overrides (a milestone must not
 ship with silent gaps). On PASS, continue.

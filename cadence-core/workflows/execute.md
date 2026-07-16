@@ -16,7 +16,8 @@ end-of-phase gate pipeline.
 Resolve the phase:
 - `$ARGUMENTS` gives a phase number, else run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
-  take `current`. That phase's entry also lists its plan files
+  take `current` (on `ok:false`, relay its `reason` and `hint` and stop).
+  That phase's entry also lists its plan files
   (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
   Run /cad-plan first."
@@ -29,7 +30,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.subagent_timeout workflow.test_command planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
-  git.protected_branches git.on_protected review.triggers.diff.gate
+  git.protected_branches git.on_protected git.base_branch \
+  review.triggers.diff.gate review.triggers.phase_diff.gate
 ```
 </step>
 
@@ -57,8 +59,19 @@ Record `git rev-parse --short HEAD` as PHASE_START for later diffs.
 Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
-- the plans are independent: no plan builds on another's output and their
-  declared file lists do not overlap
+- no plan builds on another's output (your judgment, from the plans' goals
+  and ordering)
+- the declared file lists do not overlap - this half is arithmetic, not
+  judgment; run the seam and require empty `overlaps`:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-overlap --phase <N>
+  ```
+
+  Any `overlaps` entry -> sequential, and report which plans collide on
+  which files. Any `undeclared` entry -> sequential too: a plan declaring
+  no files cannot be proven independent. `ok:false` -> sequential (the
+  check could not run; never parallelize unproven).
 - `parallelization.use_worktrees` is true (parallel dispatch without
   isolation is not supported - fall back to sequential)
 </step>
@@ -87,8 +100,16 @@ definition. Repeating them in the volatile dispatch tail pays for cached
 content twice.
 
 Handle the executor's return:
-- **complete** -> collect its report (tasks, hashes, deviations, open items).
+- **complete** (`PLAN COMPLETE`) -> collect its report (tasks, hashes,
+  deviations, open items).
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
+- **partial** (`PLAN PARTIAL`, a report but no checkpoint) -> the report's
+  completed-task table is authoritative; confirm its hashes against
+  `git log {pre-plan HEAD}..HEAD`, then ask the user (ask-user seam):
+  dispatch a fresh continuation executor for the remaining tasks (prompt
+  extended with the completed-task table and "continue from task <k>", as
+  in handle_checkpoint) or stop here - the incomplete tasks become SUMMARY
+  open items. Never silently re-run completed tasks.
 - **timeout or no report** -> inspect `git log {pre-plan HEAD}..HEAD` to see
   what actually landed, report the state, and ask the user (ask-user seam)
   whether to re-dispatch the remainder or stop. Never silently re-run a plan
@@ -106,8 +127,8 @@ task, and what the executor needs. Route by type:
 - **structural** (architectural change needed, plan wrong at its core) ->
   present to the user via the ask-user seam: approve the proposed change /
   adjust it / stop the phase. This is a consult dead-end: before that ask, run
-  offer_consult (references/consult.md) with the deviation as the situation.
-  User-gated; skip silently if consult is not configured.
+  offer_consult per references/consult.md with the deviation as the
+  situation.
 - **risk_surface** (staged diff matches a risk surface) -> fire the
   `risk_surface` review trigger with the flagged diff. Blocking: on FAIL,
   findings are fixed or the user explicitly overrides - never silently
@@ -135,6 +156,13 @@ with the completed-task table (hashes included), the checkpoint outcome, and
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
    `diff` trigger once per plan (payload: that plan's commits as a diff).
+6. Fire the `phase_diff` trigger (references/review-triggers.md) with
+   `git diff {PHASE_START}..HEAD` as the payload. Off by default (opt-in) -
+   it exists because the per-plan reviews above each see one plan's diff in
+   isolation, so a bug in the INTERACTION of two merged plans is invisible
+   to them until pre_ship at land time. Parallel path only: on the
+   sequential path each diff review already sees a tree containing all
+   prior plans' work.
 
 Checkpoints on this path route exactly as in handle_checkpoint; the
 continuation executor is dispatched back into the same worktree.
@@ -144,7 +172,12 @@ continuation executor is dispatched back into the same worktree.
 Light, inline, no subagent. Read the phase goal and
 `git log --oneline {PHASE_START}..HEAD`, then write one honest paragraph:
 does the sum of these commits plausibly deliver the phase goal? Name
-anything that looks missing. This is an assessment, not a gate - gaps become
+anything that looks missing. Every concrete claim in the paragraph carries
+its evidence inline - a file:line or a command output, drawn from the
+executor reports or a direct look - never an unevidenced "X now works":
+cad-verifier later treats SUMMARY claims as assertions to falsify, so an
+evidenced claim closes that loop and an unevidenced one is just a guess
+wearing a verdict. This is an assessment, not a gate - gaps become
 SUMMARY open items, not a fix loop.
 </step>
 
@@ -168,7 +201,7 @@ present. This file joins the docs commit in the state step.
 Update the cursor through the seam:
 
 ```
-node ".../planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
 ```
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, and

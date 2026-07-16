@@ -63,9 +63,7 @@ selectable option and its `description`.
 | Key `[src]` | Type | Purpose (question) | Value → Explanation (option → description) | Default |
 |---|---|---|---|---|
 | **Core** |||||
-| `mode` `[repo]` | enum | How the loop runs | `interactive`→stop at gates for your input (only value; `autonomous`/`audit-fix` cut, DESIGN:111) | interactive |
 | `granularity` `[repo]` | enum | How finely phases split into tasks (new-project phase count) | `fine`→8-12 phases · `standard`→5-8 · `coarse`→3-5 | standard |
-| `context_window` | int | Model context budget (tokens) used for chunking | any token count, e.g. `200000`, `1000000` | 1000000 |
 | **Model** |||||
 | `model.profile` `[repo]` | enum | Model routing for agents (see `route-table.json`) | `fast`→cheapest/quickest · `balanced`→default mix · `quality`→strongest · `auto`→role + difficulty, escalate on failure | balanced |
 | `model.auto.ceiling` `[repo]` | enum | Highest profile `auto` escalation may reach | `fast` · `balanced` · `quality` (caps the escalation) | quality |
@@ -75,14 +73,10 @@ selectable option and its `description`.
 | `workflow.research` | bool | Run a research pass before planning | `true`→scout first · `false`→skip | false |
 | `workflow.plan_check` | bool | Gate plans through the checker before code | `true`→verify plan first · `false`→trust it | true |
 | `workflow.verifier` | bool | Goal-backward verification after a phase | `true`→check goal was met · `false`→skip | true |
-| `workflow.auto_advance` | bool | Roll into the next phase without asking | `true`→continue · `false`→pause | false |
-| `workflow.discuss_mode` `[repo]` | enum | Pre-plan discussion (3 gates collapsed to 1) | `discuss`→the one discussion gate (only value; use `skip_discuss` to disable) | discuss |
-| `workflow.skip_discuss` | bool | Skip the discussion step entirely | `true`→straight to plan · `false`→discuss | false |
-| `workflow.human_verify_mode` `[proposed]` | enum | When you're asked to UAT | `end-of-phase`→once per phase · `per-task`→each task · `off`→never | end-of-phase |
+| `workflow.skip_discuss` | bool | Skip the pre-plan discussion step entirely | `true`→straight to plan · `false`→discuss | false |
 | `workflow.subagent_timeout` | int | ms before a subagent is killed | e.g. `300000` (5 min) | 300000 |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
 | `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
-| `workflow.build_command` | str\|null | Command Cadence runs to build | shell string, or empty→`null` (none) | null |
 | **Parallelization** |||||
 | `parallelization.enabled` | bool | Run independent plans concurrently | `true`→parallel · `false`→sequential | false |
 | `parallelization.max_concurrent_agents` | int | Cap on simultaneous agents | e.g. `3` | 3 |
@@ -92,14 +86,9 @@ selectable option and its `description`.
 | `git.protected_branches` | list | Branches Cadence won't commit to directly | comma list, e.g. `main, master` | main, master |
 | `git.on_protected` `[repo]` | enum | What to do on a protected branch | `ask`→prompt · `refuse`→block · `allow`→proceed | ask |
 | `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
-| `git.auto_push` | bool | Push after committing | `true`→push · `false`→local only | false |
 | `git.create_tag` | bool | Tag on milestone | `true`→tag · `false`→don't | true |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
-| **Search** |||||
-| `search.brave_search` | bool | Enable Brave web-search provider | `true`→on · `false`→off | false |
-| `search.firecrawl` | bool | Enable Firecrawl provider | `true`→on · `false`→off | false |
-| `search.exa_search` | bool | Enable Exa provider | `true`→on · `false`→off | false |
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | Where notes/observations route | `none`→off (only value wired today) | none |
 | **Review** (providers handled separately) |||||
@@ -109,11 +98,12 @@ selectable option and its `description`.
 | `review.consult.enabled` | bool | Allow a second-model consult at dead-ends | `true`→offer consult · `false`→don't | false |
 | `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
 | `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
+| `review.consult.attempt_threshold` | int | Failed fix attempts on one bug before cad-debug offers a consult | e.g. `3` | 3 |
 | `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground then hand off | per §7 |
 | `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger | `flagship` · `balanced` · `cheap` | per §7 |
 | `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger | `minimal` · `low` · `medium` · `high` | per §7 |
 
-`<t>` ∈ `{plan, diff, risk_surface, pre_ship}` - present the four triggers as
+`<t>` ∈ `{plan, diff, risk_surface, phase_diff, pre_ship}` - present the triggers as
 their own page (or a "Review triggers?" opt-in step) since they are power knobs.
 Every write goes through the **Validation seam** (below); a value outside its set
 is rejected, never written.

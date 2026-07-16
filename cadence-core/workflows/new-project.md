@@ -266,8 +266,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
   --phase 1 --status "ready to plan" --next "/cad-context 1"
 ```
 
-Do NOT create `.planning/phases/` directories - they are created lazily by
-/cad-plan when a phase actually starts.
+Do NOT create `.planning/phases/` directories - the first skill that needs
+one creates it lazily (cad-context or cad-plan; conventions.md).
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
 `.planning/STATE.md`, `.planning/REQUIREMENTS.md`.

@@ -20,7 +20,9 @@ provider ships is selectable even if Cadence has never heard of it.
     strict mode requires every object to carry `additionalProperties:false` and
     list all properties in `required`.
   - Effort: `reasoning.effort` in `none|minimal|low|medium|high|xhigh` (newest
-    models also accept `max`; the supported set is model-dependent).
+    models also accept `max`; the supported set is model-dependent). Cadence's
+    config enums cap at `high` - the levels above it are documented for
+    completeness, not configurable.
   - Output text: `output_text`, or the `output[]` message item's
     `content[].text` where `type == "output_text"`. The adapter reads both.
 - **Detect:** `GET /v1/models` -> `{data:[{id, ...}]}`. IDs live in `data[].id`.
@@ -40,8 +42,9 @@ provider ships is selectable even if Cadence has never heard of it.
     the effort dial targets current 3.x reviewers.)
   - Output text: `candidates[0].content.parts[].text`.
 - **Detect:** `GET /v1beta/models` -> `{models:[{name:"models/<id>", supportedGenerationMethods:[...]}]}`.
-  The adapter keeps only entries whose `supportedGenerationMethods` include
-  `generateContent` and strips the `models/` prefix.
+  The adapter keeps entries whose `supportedGenerationMethods` include
+  `generateContent` OR that omit the field entirely (absence is not evidence
+  of inability), and strips the `models/` prefix.
 
 ## Notes on record
 

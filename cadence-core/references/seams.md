@@ -112,11 +112,14 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - The script resolves the key itself (env first, then the shared providers.env)
   and NEVER logs it; the workflow passes no key.
 - Degradation is structured, not exceptional: `ok:false` with `reason` one of
-  `no-key | transport | http | no-output | bad-json | bad-shape`. On `no-key`
+  `no-key | transport | http | no-output | bad-json | bad-shape` (call-shape
+  problems surface as `bad-payload | bad-provider | bad-args | bad-command`,
+  and an unforeseen bug as `internal`). On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
 - The default backend `claude-subagent` does NOT use this seam - it goes
   through spawn-agent with a fresh-context, refute-prompted reviewer.
 - Model, effort, and per-provider endpoint/key-file path come from config
-  (`review.providers.<name>`, per-trigger `review.triggers.<t>.model/effort`).
+  (`review.providers.<name>`; per-trigger `review.triggers.<t>.tier` resolves
+  the model id, `.effort` the reasoning level).
   A future non-HTTP reviewer backend replaces this script, not the workflows.

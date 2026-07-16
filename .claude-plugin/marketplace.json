@@ -7,7 +7,7 @@
     {
       "name": "cadence",
       "source": "./",
-      "description": "Disciplined planning and execution for a single developer in Claude Code - discuss, plan, execute, verify, with state in files not conversation."
+      "description": "A planning and execution system for a single developer in Claude Code: one disciplined discuss/plan/execute/verify loop, state in files not conversation, opinionated defaults, a deliberately small surface."
     }
   ]
 }

@@ -16,7 +16,7 @@ Manually run the review subsystem's `plan` trigger against a chosen plan. The
 review capability lives entirely in the subsystem (references/review-triggers.md);
 this skill is just the on-demand entry
 point for cases the automatic review does not cover - a plan written by hand,
-imported via /cad-import, or edited after its first review. When /cad-plan
+imported from elsewhere, or edited after its first review. When /cad-plan
 writes a plan it already fires this trigger, so you do not need this skill in the
 normal flow.
 

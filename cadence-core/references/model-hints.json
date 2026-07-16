@@ -6,6 +6,8 @@
   ],
   "rules": {
     "openai": [
+      { "match": "gpt-4", "tier": "cheap",    "high_effort": false,
+        "note": "legacy non-reasoning family (gpt-4o, gpt-4o-mini, gpt-4.1, ...) - MUST precede the bare 'mini' rule: reasoning.effort on these ids is an HTTP 400" },
       { "match": "nano",  "tier": "cheap",    "high_effort": false },
       { "match": "luna",  "tier": "cheap",    "high_effort": false },
       { "match": "mini",  "tier": "balanced", "high_effort": true },
@@ -15,6 +17,9 @@
     ],
     "gemini": [
       { "match": "flash-lite", "tier": "cheap",    "high_effort": false },
+      { "match": "2.5-pro",    "tier": "flagship", "high_effort": false,
+        "note": "Gemini 2.x rejects thinkingConfig.thinkingLevel (uses numeric thinkingBudget) - these two rules MUST precede 'pro'/'flash' so 2.x ids never get high_effort" },
+      { "match": "gemini-2",   "tier": "balanced", "high_effort": false },
       { "match": "pro",        "tier": "flagship", "high_effort": true },
       { "match": "flash",      "tier": "balanced", "high_effort": true }
     ]

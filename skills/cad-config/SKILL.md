@@ -1,6 +1,6 @@
 ---
 name: cad-config
-description: "Configure Cadence's ~22-key config.json - workflow toggles, model profile, and interactive cross-model review-provider setup (live model detection + per-tier assignment)"
+description: "Configure Cadence's config.json - workflow toggles, model profile, and interactive cross-model review-provider setup (live model detection + per-tier assignment)"
 argument-hint: "[--review [redetect] | <key>=<value> ...]"
 allowed-tools:
   - Read
@@ -11,7 +11,7 @@ allowed-tools:
 ---
 
 <objective>
-Manage `.planning/config.json` (the ~22-key file, template in
+Manage `.planning/config.json` (template in
 `cadence-core/templates/config.json`). One skill for the whole config; its
 substantive part is review-provider model assignment, which needs live
 detection (call the provider models endpoint, classify, assign per tier).
@@ -20,7 +20,7 @@ Routing:
 - **--review [redetect]**: run the cross-model review-provider setup - detect
   each provider's accessible models and assign them to the flagship/balanced/
   cheap tiers.
-- **`<key>=<value>` ...**: set config keys directly (validated against the §7 schema).
+- **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
 - **default** (no args): walk every knob as a selectable list (batched pages),
   each preselected to its current value.
 </objective>

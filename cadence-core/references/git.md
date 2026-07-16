@@ -44,7 +44,7 @@ A `base` that resolves and shares a merge-base with HEAD -> silent pass.
 ## 2. Atomic conventional commits
 
 One logical change per commit: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
-`test:`. Stage the specific files you changed, not `git add -A`. Planning docs
+`test:`, `perf:`, `style:`. Stage the specific files you changed, not `git add -A`. Planning docs
 commit separately from code (`docs:` prefix) when `planning.commit_docs` is true.
 
 ## 3. Never auto-push

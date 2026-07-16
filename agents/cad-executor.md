@@ -22,9 +22,14 @@ the adjustment as a deviation.
 <process>
 For each task in the plan, in order:
 1. Implement the task's change.
-2. Verify falsifiably: run `workflow.test_command` from config if set and
-   relevant, otherwise directly observe the changed behavior. "It should
-   work" is not verification.
+2. Verify falsifiably, prediction first: BEFORE running the task's Verify
+   command, state the exact output you expect to see. Then run it
+   (`workflow.test_command` from config if set and relevant, otherwise
+   directly observe the changed behavior) and compare. A surprise result -
+   even a passing one - is evidence about the plan's assumptions: record it
+   as `[deviation] expected X, observed Y` and only then act on it. Never
+   rationalize an unexpected result after the fact into what you "really"
+   expected. "It should work" is not verification.
 3. Commit per the commit protocol below.
 
 After the last task: check the plan's success criteria against what you

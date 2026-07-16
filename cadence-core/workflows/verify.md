@@ -44,7 +44,7 @@ the acceptance criteria (sources below), and pipe any criterion not already
 covered as a new item:
 
 ```
-node ".../planning.mjs" uat refresh --phase <N> --items -
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase <N>
    stdin: [{"name":"...","expected":"..."}]
 ```
 
@@ -83,7 +83,7 @@ Item rules (the model's judgment, before the seam call):
 Then create the checklist in one call:
 
 ```
-node ".../planning.mjs" uat init --phase <N> --items -
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat init --phase <N>
    stdin: [{"name":"...","expected":"..."}, ...]
 ```
 
@@ -129,7 +129,7 @@ Record each reply through the seam - it updates the item, the counts, the
 timestamp, and first_pass (set once, structurally) in one atomic write:
 
 ```
-node ".../planning.mjs" uat record --phase <N> --item <k> --result <r> \
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat record --phase <N> --item <k> --result <r> \
   [--reported "<verbatim reply>"] [--severity <s>] [--reason "<why>"]
 ```
 
@@ -166,7 +166,7 @@ between rounds.
 Ask the seam for the session result:
 
 ```
-node ".../planning.mjs" uat status --phase <N>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat status --phase <N>
 ```
 
 `result: complete` means every item passed or was skipped with a reason;
@@ -175,11 +175,12 @@ anything else is `partial`.
 On **complete**, this skill is the single writer of persisted phase status.
 Two seam calls, then one commit:
 
-1. `node ".../planning.mjs" phase-done --n <N>` - checks the phase's
+1. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N>` - checks the phase's
    ROADMAP box and flips its traceability rows to Complete (Deferred rows
    exempt), reporting exactly what changed.
-2. `node ".../planning.mjs" cursor set --phase <N> --status "phase complete"
-   --next "<next phase's /cad-context, or /cad-land if this was the last>"`
+2. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status "phase complete"
+   --next "<next phase's /cad-context, or /cad-milestone if this was the last
+   - the audit gate precedes any ship>"`
 
 On a **partial** session, do neither - the phase is not done.
 

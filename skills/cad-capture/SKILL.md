@@ -23,7 +23,9 @@ kinds, one file (`.planning/CAPTURE.md`):
 <process>
 1. **Parse** `$ARGUMENTS`: leading `todo | seed | note` (default `todo` if
    omitted), the text, and an optional `--phase N`. If a todo has no `--phase`,
-   default to the current phase from the STATE cursor.
+   default to the current phase from the STATE cursor (`cursor get`); if the
+   cursor is absent or unparseable, capture it unphased - `- [ ] <text>` with
+   no phase tag - rather than guessing a phase or stopping.
 
 2. **Ensure the file.** If `.planning/CAPTURE.md` is absent, create it with three
    headings: `## Todos`, `## Seeds`, `## Notes`.
@@ -31,9 +33,9 @@ kinds, one file (`.planning/CAPTURE.md`):
 3. **Append by kind:**
    - todo -> `- [ ] (phase N) <text>` under `## Todos`.
    - seed -> `- <text>` under `## Seeds`.
-   - note -> if `memory.backend` is not `none`, hand the note to that backend
-     (the memory hook) and say so; otherwise `- <YYYY-MM-DD> <text>` under
-     `## Notes`.
+   - note -> `- <YYYY-MM-DD> <text>` under `## Notes`. (`memory.backend`
+     currently wires only `none`; when a real backend ships, notes route to
+     it instead.)
 
 4. **Persist.** Stage ONLY `.planning/CAPTURE.md` and commit `docs: capture
    <kind>` (protected-branch guard applies) - this never touches the user's

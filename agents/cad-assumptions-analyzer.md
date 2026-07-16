@@ -2,6 +2,7 @@
 name: cad-assumptions-analyzer
 description: Studies the codebase for a single phase and returns structured, evidence-backed assumptions a planner would otherwise have to guess. Spawned by cad-context.
 tools: Read, Bash, Grep, Glob
+disallowedTools: Write, Edit, MultiEdit
 color: cyan
 effort: xhigh
 ---

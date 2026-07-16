@@ -46,33 +46,31 @@ import os from 'node:os';
 import path from 'node:path';
 import https from 'node:https';
 import { fileURLToPath } from 'node:url';
+import { DONE, emit } from './lib/seam-io.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
 // Output helpers. Everything the caller consumes is a single JSON object on
 // stdout so the main-model adjudicator parses one blob, never stderr scrapes.
+// The convention (one line, exitCode mirrors ok, no process.exit after the
+// write) lives in lib/seam-io.mjs.
 // ---------------------------------------------------------------------------
-// Write the one output blob and set the exit code, but do NOT call
-// process.exit() - that can truncate stdout mid-write on a pipe, and stdout is
-// the single channel the whole review subsystem parses. Setting exitCode lets
-// the event loop drain and exit cleanly once no work remains.
-function emit(obj, code) { process.stdout.write(JSON.stringify(obj) + '\n'); process.exitCode = code; }
-function ok(obj) { emit({ ok: true, ...obj }, 0); throw DONE; }
-function fail(reason, detail) { emit({ ok: false, reason, detail: detail || null }, 1); throw DONE; }
+function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
+function fail(reason, detail) { emit({ ok: false, reason, detail: detail || null }); throw DONE; }
 
-// ok()/fail() throw this sentinel to unwind the current command; the entry
-// point swallows it. Any OTHER throw is an unforeseen bug - the top-level
-// handlers below convert it to a structured {ok:false,reason:"internal"} so a
-// provider/adapter surprise never crashes the spine with a raw stack.
-const DONE = Symbol('cadence-review-done');
-process.on('unhandledRejection', (e) => {
+// ok()/fail() throw the DONE sentinel to unwind the current command; the
+// entry point swallows it. Any OTHER throw is an unforeseen bug - the
+// top-level handlers below convert it to a structured
+// {ok:false,reason:"internal"} so a provider/adapter surprise never crashes
+// the spine with a raw stack.
+process.on('unhandledRejection', (/** @type {any} */ e) => {
   if (e === DONE) return;
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) }, 1);
+  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 });
-process.on('uncaughtException', (e) => {
+process.on('uncaughtException', (/** @type {any} */ e) => {
   if (e === DONE) return;
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) }, 1);
+  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 });
 
 // ---------------------------------------------------------------------------
@@ -467,11 +465,12 @@ async function cmdDetect(opts) {
 // review, so the candidate list is review-usable. Then: known id ->
 // {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
 // to place it. Missing/broken hint file degrades to all-unknown, never errors.
-/** @param {string} provider @param {string[]} ids */
-export function classify(provider, ids) {
+// hintsFile is injectable for tests; production always uses the shipped table.
+/** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
+export function classify(provider, ids, hintsFile) {
   let rules = [], exclude = [];
   try {
-    const hints = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
+    const hints = JSON.parse(fs.readFileSync(hintsFile || path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
     rules = (hints.rules && hints.rules[provider]) || [];
     exclude = hints.exclude || [];
   } catch { /* no hints -> everything unknown, nothing excluded */ }
@@ -502,6 +501,6 @@ async function main() {
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   main().catch((e) => {
     if (e === DONE) return; // normal ok()/fail() unwind
-    emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) }, 1);
+    emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
   });
 }

@@ -42,7 +42,7 @@ are the on-demand and standalone gates.
 | Command | What it does |
 |---|---|
 | `/cad-capture [todo\|seed\|note] <text>` | Park a phase-linked todo, a backlog seed, or a note without derailing. |
-| `/cad-config [--review \| key=value]` | Configure the ~22-key config; interactive cross-model review-provider setup + model detection. |
+| `/cad-config [--review \| key=value]` | Configure the config; interactive cross-model review-provider setup + model detection. |
 | `/cad-help [command]` | This reference (a command name shows just that entry). |
 | `/cad-pause [note]` | Pause cleanly - WIP commit + cursor set to paused with a resume pointer. Resume via `/cad-progress`. |
 | `/cad-spike <question>` | Time-boxed risk-first experiment with falsifiable criteria and a verdict. Throwaway code, one SPIKE.md. |

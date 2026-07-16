@@ -367,58 +367,20 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
 - **`/cad-land`** (replaces ship): report git state, ask the publish mechanism with NO preselected
   default (direct push / open MR/PR [detect GitLab vs GitHub] / tag / leave local), execute exactly that.
 - Risk-surface commits trip the review subsystem `risk_surface` trigger before landing.
-- Config: `git { protected_branches, on_protected: ask|refuse|allow, base_branch, auto_push:false,
-  create_tag }`. No templates, no strategy presets, no PR body sections.
+- Config: `git { protected_branches, on_protected: ask|refuse|allow, base_branch,
+  create_tag }`. No templates, no strategy presets, no PR body sections. (An
+  `auto_push` switch was cut 2026-07-16: rail 3 says no workflow pushes, ever,
+  so a push switch could only ever be honored at false.)
 
-## 7. Final Cadence config.json (~110 GSD keys → ~22)
+## 7. Final Cadence config.json (~110 GSD keys → ~50 leaves)
 
-```json
-{
-  "mode": "interactive",
-  "granularity": "standard",
-  "context_window": 1000000,
-  "model": {
-    "profile": "balanced",
-    "auto": { "ceiling": "quality", "escalate_on_failure": true, "max_escalations": 1 }
-  },
-  "workflow": {
-    "research": false, "plan_check": true, "verifier": true, "auto_advance": false,
-    "discuss_mode": "discuss", "skip_discuss": false, "human_verify_mode": "end-of-phase",
-    "subagent_timeout": 300000, "inline_plan_threshold": 3,
-    "test_command": null, "build_command": null
-  },
-  "parallelization": {
-    "enabled": false, "max_concurrent_agents": 3, "min_plans_for_parallel": 2,
-    "use_worktrees": true
-  },
-  "git": {
-    "protected_branches": ["main", "master"],
-    "on_protected": "ask",
-    "base_branch": null,
-    "auto_push": false,
-    "create_tag": true
-  },
-  "planning": { "commit_docs": true },
-  "search": { "brave_search": false, "firecrawl": false, "exa_search": false },
-  "memory": { "backend": "none" },
-  "review": {
-    "mode": "adjudicated",
-    "reviewers": ["claude-subagent"],
-    "key_file": null,
-    "providers": {
-      "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
-      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
-    },
-    "triggers": {
-      "plan":         { "gate": "adjudicated", "tier": "flagship", "effort": "high" },
-      "diff":         { "gate": "advisory",    "tier": "balanced", "effort": "medium" },
-      "risk_surface": { "gate": "blocking",    "tier": "flagship", "effort": "high" },
-      "pre_ship":     { "gate": "adjudicated", "tier": "flagship", "effort": "high" }
-    },
-    "consult": { "enabled": false, "tier": "flagship", "effort": "high" }
-  }
-}
-```
+The shipped default IS the spec: `cadence-core/templates/config.json`,
+validated against `cadence-core/config.schema.json` (the source of truth for
+keys, types, enums, defaults). A second copy here only ever drifted - the
+2026-07-16 sweep found ten keys no workflow read (`mode`, `context_window`,
+`workflow.{auto_advance, discuss_mode, human_verify_mode, build_command}`,
+`search.*`, `git.auto_push`); they were pruned rather than wired.
+
 
 **Config decisions:** model routing → minimal (3 profiles + auto); search APIs → kept optional
 (off by default); granularity → kept; response_language/i18n → **cut (English v1)**. Everything in

@@ -31,7 +31,8 @@ Read config through the seam - one call for every key this workflow uses:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.plan_check workflow.inline_plan_threshold planning.commit_docs \
-  review.triggers.plan.gate git.protected_branches git.on_protected
+  review.triggers.plan.gate git.protected_branches git.on_protected \
+  git.base_branch
 ```
 </step>
 
@@ -88,10 +89,10 @@ honor it; if your file-independence analysis contradicts it (e.g. it asks
 for multiple plans but the slices share files), follow your analysis and
 record the deviation and its reason in your return marker and the PLAN
 Notes - never diverge silently.
-
-Return ## PLANNING COMPLETE (plan files + task counts, split rationale if
-any) or ## PHASE TOO BIG (reason + proposed split).
 </planning_context>
+
+(The return markers and report shape are the agent's own cached definition -
+never restate them in the dispatch tail; seams.md's cache discipline.)
 ```
 
 Revision mode: dispatch a FRESH cad-planner (never resume the prior run - the
@@ -115,9 +116,8 @@ file only - inline never splits.
   ask (ask-user seam): restructure the roadmap (stop; point at /cad-phase,
   re-run /cad-plan after) or plan the full scope anyway (re-dispatch ONCE
   with that instruction). This is a consult dead-end: before that ask, run
-  offer_consult (references/consult.md) with the split problem as the
-  situation - a second model may see a cleaner cut. User-gated; skip silently
-  if consult is not configured.
+  offer_consult per references/consult.md with the split problem as the
+  situation.
 - Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
   the files as authoritative and continue; otherwise report the failed
   spawn and stop.
@@ -180,7 +180,7 @@ another iteration.
    and stamps the date):
 
    ```
-   node ".../planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
    ```
 
 2. If planning.commit_docs is true: apply the protected-branch guard

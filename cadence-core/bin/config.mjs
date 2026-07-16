@@ -19,20 +19,21 @@
 // read time (precedence repo > global > defaults). Each file is validated on its
 // own - every layer must be independently valid.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers } from './lib/config-merge.mjs';
+import { atomicWrite } from './lib/planning-files.mjs';
+import { DONE, emit } from './lib/seam-io.mjs';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA = JSON.parse(
-  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'config.schema.json'), 'utf8'),
+  readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'),
 ).keys;
 
-// Seam convention: one JSON line; exit 0 on ok, 1 on degradation. fail()
-// throws DONE so the dispatch unwinds without process.exit() (which could
-// truncate stdout on a pipe).
-const DONE = Symbol('cadence-config-done');
-const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exitCode = o.ok === false ? 1 : 0; };
+// Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
+// dispatch unwinds without process.exit().
+const out = emit;
 const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // --- value typing ------------------------------------------------------------
@@ -125,6 +126,30 @@ function checkPairs(tokens) {
   return { pairs, errors };
 }
 
+// Cross-key checks the per-key schema types cannot express. Advisory only:
+// warnings, never errors - a legal-but-surprising value stays settable (a
+// user may deliberately disable escalation this way).
+function crossWarnings(pairs) {
+  const warnings = [];
+  for (const { key, value } of pairs) {
+    if (key === 'model.auto.ceiling') {
+      try {
+        const t = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+        const order = t.profile_order || [];
+        const base = t.auto && t.auto.base_profile;
+        if (order.indexOf(String(value)) <= order.indexOf(base)) {
+          warnings.push({
+            key,
+            warning: `ceiling "${value}" is at/below auto's base profile "${base}": ` +
+              'failure escalation holds at base (it never demotes) - use a higher ceiling to enable raises',
+          });
+        }
+      } catch { /* no table -> no cross-check; per-key validation already ran */ }
+    }
+  }
+  return warnings;
+}
+
 function setInto(obj, dotted, value) {
   const parts = dotted.split('.');
   let node = obj;
@@ -148,8 +173,11 @@ function set(file, tokens, create) {
   }
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n');
-  out({ ok: true, file, changed: pairs });
+  // atomicWrite (temp + rename), not a bare write: config is a live layer
+  // every other seam reads mid-session; a crash must never leave it torn.
+  atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
+  const warnings = crossWarnings(pairs);
+  out({ ok: true, file, changed: pairs, ...(warnings.length ? { warnings } : {}) });
 }
 
 // The effective value set: schema defaults, overlaid by the global then the
@@ -184,7 +212,11 @@ function optFile(tokens) {
 
 try {
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
-  else if (cmd === 'check') { const { errors } = checkPairs(rest); out({ ok: errors.length === 0, errors }); }
+  else if (cmd === 'check') {
+    const { pairs, errors } = checkPairs(rest);
+    const warnings = crossWarnings(pairs);
+    out({ ok: errors.length === 0, errors, ...(warnings.length ? { warnings } : {}) });
+  }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
   else if (cmd === 'get') { const { file, tokens } = optFile(rest); get(file, tokens); }
   else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }

@@ -62,13 +62,15 @@ The hard rules (DESIGN §6), in order of importance:
 | PHASE TOO BIG | cad-plan | the plan cannot fit one pass |
 
 All rows are live: cad-debug references this file at its three dead-ends
-(Attempts >= 3, test red after 3 iterations, exhausted hypotheses), and
-cad-execute's structural checkpoint and cad-plan's PHASE-TOO-BIG reference it at
-those points.
+(Attempts >= `review.consult.attempt_threshold`, test red after that many
+iterations, exhausted hypotheses), and cad-execute's structural checkpoint and
+cad-plan's PHASE-TOO-BIG reference it at those points.
 
 ## Config
 
-`review.consult = { enabled, tier, effort }`. `enabled` is the switch; `tier`
-resolves against `review.providers.<name>.tiers` like any trigger (flagship by
-default - dead-end help wants the strongest reasoner); `effort` is high. Which
+`review.consult = { enabled, tier, effort, attempt_threshold }`. `enabled` is
+the switch; `tier` resolves against `review.providers.<name>.tiers` like any
+trigger (flagship by default - dead-end help wants the strongest reasoner);
+`effort` is high; `attempt_threshold` (default 3) is how many failed fix
+attempts or red-test iterations cad-debug counts before offering. Which
 provider: the first configured reviewer whose consult tier is assigned.

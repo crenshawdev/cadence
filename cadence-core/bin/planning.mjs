@@ -2,7 +2,8 @@
 // @ts-check
 // planning.mjs - the .planning state-machine seam. Deterministic reads and
 // writes of the planning file set, so workflow prose keeps judgment and this
-// script keeps invariants (design-notes/planning-mjs-interface.md).
+// script keeps invariants. The JSON shapes asserted in planning.test.mjs ARE
+// the interface contract; there is no spec file beyond them.
 //
 // Seam contract (shared with route/config/review-provider):
 //   - exactly ONE JSON object on stdout; {ok:true,...} exit 0,
@@ -18,6 +19,8 @@
 //   cursor set --phase N --status s --next cmd [--name s] [--total N]
 //                                   canonical overwrite; derives name/total
 //                                   from ROADMAP when omitted; stamps today
+//   plan-overlap --phase N          pairwise intersection of the phase's
+//                                   plans' declared file lists (parallel gate)
 'use strict';
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -27,16 +30,14 @@ import { renameSync, rmSync } from 'node:fs';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
-  setPhaseBox, setReqStatus, parsePlanRequirements, shiftPhaseTokens,
-  findProsePhaseRefs, cutPhaseDetail,
+  setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
+  shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
 } from './lib/planning-files.mjs';
+import { emit } from './lib/seam-io.mjs';
 
-const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
-const ok = (o) => { out({ ok: true, ...o }); process.exitCode = 0; };
-const fail = (reason, detail, hint) => {
-  out({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
-  process.exitCode = 1;
-};
+const ok = (o) => emit({ ok: true, ...o });
+const fail = (reason, detail, hint) =>
+  emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
 
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {
@@ -452,6 +453,42 @@ function cmdAudit(dir) {
 }
 
 // ---------------------------------------------------------------------------
+// plan-overlap - the parallel-safety invariant as arithmetic. Intersects the
+// declared file lists of a phase's plans pairwise; cad-execute's choose_path
+// requires empty overlaps before dispatching plans concurrently. Overlaps
+// found is still ok:true - a successful check with a negative answer; the
+// caller branches on overlaps.length, like drift in status.
+// ---------------------------------------------------------------------------
+function cmdPlanOverlap(dir, opts) {
+  const n = Number(opts.phase);
+  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'plan-overlap needs --phase <N>');
+  const pdir = join(dir, 'phases', String(n));
+  let planFiles = [];
+  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
+  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  if (planFiles.length < 2) {
+    return ok({ phase: n, plans: [], overlaps: [], note: 'fewer than two plans - nothing to intersect' });
+  }
+  const declared = planFiles.map((f) => ({ plan: f, files: parsePlanFiles(read(join(pdir, f)) || '') }));
+  const overlaps = [];
+  for (let i = 0; i < declared.length; i++) {
+    for (let j = i + 1; j < declared.length; j++) {
+      const shared = declared[i].files.filter((x) => declared[j].files.includes(x));
+      if (shared.length) overlaps.push({ plans: [declared[i].plan, declared[j].plan], files: shared });
+    }
+  }
+  const undeclared = declared.filter((d) => !d.files.length).map((d) => d.plan);
+  ok({
+    phase: n,
+    plans: declared.map((d) => ({ plan: d.plan, files: d.files.length })),
+    overlaps,
+    // A plan declaring no files cannot be proven independent - the check is
+    // only as strong as the declarations. The caller treats these as unsafe.
+    ...(undeclared.length ? { undeclared } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -474,6 +511,10 @@ function cmdRenumber(dir, sub, opts) {
 
   const at = Number(sub === 'insert' ? opts.at : opts.n);
   if (Number.isNaN(at)) return fail('bad-args', `renumber ${sub} needs --${sub === 'insert' ? 'at' : 'n'} <N>`);
+  // Renumbering is integer arithmetic; a decimal insertion (2.1) neither
+  // displaces integers nor is displaced by them, so it is never shifted -
+  // operating ON one would only produce a half-shifted tree.
+  if (!Number.isInteger(at)) return fail('bad-args', 'renumber operates on integer phases; re-place decimal phases by hand');
   if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
   if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
 
@@ -538,6 +579,10 @@ function cmdRenumber(dir, sub, opts) {
     for (const ref of findProsePhaseRefs(t, shiftFrom)) inTextRefs.push({ file: f, ...ref });
   }
 
+  // Decimal phases are never shifted (see shiftPhaseTokens) - report them so
+  // the caller re-places them deliberately instead of discovering the gap.
+  const decimalPhases = phases.filter((p) => !Number.isInteger(p.n)).map((p) => p.n);
+
   const ops = [
     ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
@@ -550,6 +595,7 @@ function cmdRenumber(dir, sub, opts) {
     ops,
     ...(inTextRefs.length ? { in_text_refs: inTextRefs } : {}),
     ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
+    ...(decimalPhases.length ? { decimal_phases: decimalPhases } : {}),
     ...(warn ? { warn } : {}),
     ...(sub === 'insert' ? { slot: `add the new "- [ ] **Phase ${at}: ...**" line and its detail section` } : {}),
   };
@@ -599,6 +645,7 @@ const COMMANDS = {
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
+  'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 

@@ -2,7 +2,7 @@
 name: cad-plan-checker-high
 description: High-effort escalation variant of cad-plan-checker. Dispatched by the spawn-agent seam's routing step (bin/route.mjs) when auto mode escalates the plan-check role after a prior failure. Identical contract, harder reasoning.
 tools: Read, Bash, Glob, Grep
-disallowedTools: Write, Edit
+disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: high
 ---
