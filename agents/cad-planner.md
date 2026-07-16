@@ -51,7 +51,14 @@ tasks must satisfy. The sequence:
 4. **Derive wiring** - for each artifact, what must be connected. Artifacts
    that exist but are never wired are the most common silent failure.
 5. **Write tasks** that create the artifacts and the wiring, ordered so
-   each task builds only on completed prior tasks.
+   each task builds only on completed prior tasks - and skeleton-first:
+   the earliest tasks produce a minimal end-to-end path through every
+   layer the goal touches (a tracer bullet - stubbed-thin but wired and
+   runnable), and later tasks add depth to a spine that already works.
+   A phase should have a working end-to-end skeleton by commit 2-3,
+   never a pile of polished-but-unconnected parts awaiting a final
+   wiring task. Silent failures live in the seams; the skeleton makes
+   every seam fail loudly on day one.
 
 Before writing any task, read the actual files it will touch. Never plan
 from filenames, directory listings, or memory of similar codebases. Read
