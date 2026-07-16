@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-guard.mjs\""
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-guard.mjs\"",
+            "timeout": 10
           }
         ]
       }

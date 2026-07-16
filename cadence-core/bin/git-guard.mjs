@@ -84,7 +84,11 @@ function gitSubcommands(command) {
   return subs;
 }
 
-try {
+// No process.exit() anywhere below: the decision JSON is written to stdout,
+// and exiting right after a write can truncate it on a pipe (the same rule
+// lib/seam-io.mjs pins for the seam scripts). Plain returns let the stream
+// drain; the process exits 0 naturally, which is the hook contract.
+function main() {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const command = String(input?.tool_input?.command || '');
   const cwd = input?.cwd || process.cwd();
@@ -92,17 +96,17 @@ try {
   // Only police Cadence projects (walk-up, see planningRoot), and only
   // commands whose git SUBCOMMAND is push or commit.
   const root = planningRoot(cwd);
-  if (!root) process.exit(0);
+  if (!root) return;
   const subs = gitSubcommands(command);
   const isPush = subs.includes('push');
   const isCommit = subs.includes('commit');
-  if (!isPush && !isCommit) process.exit(0);
 
   if (isPush) {
     decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
       'call (references/git.md rail 3). Approve only if you are deliberately publishing.');
-    process.exit(0);
+    return;
   }
+  if (!isCommit) return;
 
   // git commit: enforce the protected-branch guard from config.
   const { config } = mergeLayers(join(root, '.planning', 'config.json'));
@@ -110,13 +114,13 @@ try {
   const protectedBranches = Array.isArray(git.protected_branches)
     ? git.protected_branches : ['main', 'master'];
   const onProtected = git.on_protected || 'ask';
-  if (onProtected === 'allow') process.exit(0);
+  if (onProtected === 'allow') return;
 
   let branch = '';
   try {
     branch = execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { process.exit(0); /* not a repo / no commits - nothing to guard */ }
+  } catch { return; /* not a repo / no commits - nothing to guard */ }
 
   if (protectedBranches.includes(branch)) {
     decide(onProtected === 'refuse' ? 'deny' : 'ask',
@@ -125,7 +129,6 @@ try {
         ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
         : 'Create a task branch first, or approve to commit here deliberately.'));
   }
-  process.exit(0);
-} catch {
-  process.exit(0); // never block on a guard failure
 }
+
+try { main(); } catch { /* never block on a guard failure */ }
