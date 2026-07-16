@@ -90,6 +90,11 @@ function* mdFiles(root) {
       if (f.endsWith('.md') && statSync(f).isFile()) yield f;
     }
   }
+  // README names user-facing switches (consult, parallelization, ...) - it is
+  // a live surface too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out:
+  // they legitimately name keys that were later cut, while explaining the cut.
+  const readme = join(root, 'README.md');
+  if (existsSync(readme)) yield readme;
 }
 
 /**
