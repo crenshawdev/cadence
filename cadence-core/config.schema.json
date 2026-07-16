@@ -25,7 +25,7 @@
     "parallelization.use_worktrees":        { "type": "bool", "default": true, "purpose": "Isolate parallel writes in git worktrees" },
 
     "git.protected_branches":               { "type": "array_string", "default": ["main", "master"], "purpose": "Branches Cadence won't commit to directly" },
-    "git.on_protected":                     { "type": "enum", "values": ["ask", "refuse", "allow"], "default": "ask", "src": "repo", "purpose": "What to do on a protected branch (DESIGN:354)" },
+    "git.on_protected":                     { "type": "enum", "values": ["ask", "refuse", "allow"], "default": "ask", "src": "repo", "purpose": "What to do on a protected branch (DESIGN \u00a75, git rails)" },
     "git.base_branch":                      { "type": "string_or_null", "default": null, "purpose": "Branch new work branches off (null = current)" },
     "git.create_tag":                       { "type": "bool", "default": true, "purpose": "Tag on milestone" },
 
@@ -33,8 +33,8 @@
 
     "memory.backend":                       { "type": "enum", "values": ["none"], "default": "none", "src": "repo", "purpose": "Where notes/observations route (only 'none' wired today)" },
 
-    "review.mode":                          { "type": "enum", "values": ["single", "panel", "adjudicated"], "default": "adjudicated", "src": "repo", "purpose": "How multiple reviewers combine (review-triggers.md:58)" },
-    "review.reviewers":                     { "type": "array_enum", "values": ["claude-subagent", "openai", "gemini"], "default": ["claude-subagent"], "src": "repo", "purpose": "Which reviewer backends fire() resolves (review-triggers.md:30)" },
+    "review.mode":                          { "type": "enum", "values": ["single", "panel", "adjudicated"], "default": "adjudicated", "src": "repo", "purpose": "How multiple reviewers combine (review-triggers.md \u00a7Combine)" },
+    "review.reviewers":                     { "type": "array_enum", "values": ["claude-subagent", "openai", "gemini"], "default": ["claude-subagent"], "src": "repo", "purpose": "Which reviewer backends fire() resolves (review-triggers.md \u00a7Resolve)" },
     "review.key_file":                      { "type": "string_or_null", "default": null, "purpose": "Path override for the provider key env file (never a key)" },
 
     "review.providers.openai.tiers.flagship":  { "type": "string_or_null", "default": null, "purpose": "OpenAI model id for the flagship tier (set by --review)" },
