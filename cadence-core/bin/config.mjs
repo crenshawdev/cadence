@@ -19,10 +19,11 @@
 // read time (precedence repo > global > defaults). Each file is validated on its
 // own - every layer must be independently valid.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers } from './lib/config-merge.mjs';
+import { atomicWrite } from './lib/planning-files.mjs';
 
 const SCHEMA = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'config.schema.json'), 'utf8'),
@@ -148,7 +149,9 @@ function set(file, tokens, create) {
   }
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n');
+  // atomicWrite (temp + rename), not a bare write: config is a live layer
+  // every other seam reads mid-session; a crash must never leave it torn.
+  atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
   out({ ok: true, file, changed: pairs });
 }
 
