@@ -73,3 +73,43 @@ test('custom protected_branches list is honored', () => {
   assert.equal(guard('git commit -m "x"',
     project('main', { git: { protected_branches: ['release'] } })), null);
 });
+
+test('git stash push is not a publish (subcommand-aware matching)', () => {
+  assert.equal(guard('git stash push -m wip', project('main')), null);
+});
+
+test('push as an argument or inside quotes never fires the rail', () => {
+  const p = project('main');
+  assert.equal(guard('git log --grep "push"', p), null);
+  assert.equal(guard('git log --grep push', p), null);
+  assert.equal(guard('echo "git push"', p), null);
+});
+
+test('global git options are skipped when finding the subcommand', () => {
+  const d = guard('git -C . -c user.name=t push origin x', project('feature'));
+  assert.equal(d.permissionDecision, 'ask');
+});
+
+test('compound command still catches the push half', () => {
+  const d = guard('git add . && git push', project('feature'));
+  assert.equal(d.permissionDecision, 'ask');
+});
+
+test('guard applies from a subdirectory of the project (walk-up)', () => {
+  const dir = project('main');
+  const sub = join(dir, 'src', 'deep');
+  mkdirSync(sub, { recursive: true });
+  const d = guard('git commit -m "x"', sub);
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /protected/);
+});
+
+test('walk-up stops at a repo root without .planning (still not policed)', () => {
+  // A plain repo whose PARENT happens to contain .planning must not be policed.
+  const outer = mkdtempSync(join(tmpdir(), 'cad-guard-outer-'));
+  mkdirSync(join(outer, '.planning'));
+  const inner = join(outer, 'other-repo');
+  mkdirSync(inner);
+  execFileSync('git', ['-C', inner, 'init', '-q', '-b', 'main']);
+  assert.equal(guard('git push origin main', inner), null);
+});

@@ -5,8 +5,8 @@
 // hooks/hooks.json for Bash tool calls.
 //
 // Scope: acts ONLY inside a Cadence project (a .planning/ dir in the hook's
-// cwd). Everywhere else it stays silent - this plugin must not police
-// unrelated repos.
+// cwd or an ancestor, up to the repo root). Everywhere else it stays silent -
+// this plugin must not police unrelated repos.
 //
 // Rails:
 //   git push          -> permissionDecision "ask" - publishing is /cad-land's
@@ -24,7 +24,7 @@
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 
 function decide(decision, reason) {
@@ -37,15 +37,65 @@ function decide(decision, reason) {
   }) + '\n');
 }
 
+// Find the Cadence project root: walk up from `start` until a directory
+// holding .planning/ (a Cadence project), stopping at a repo root without
+// one (.git present, .planning absent -> not ours to police) or the
+// filesystem root. The walk exists because the hook's cwd can sit BELOW the
+// project root (a session opened in src/, say) - checking only cwd would
+// let every commit from a subdirectory slip under the rails.
+function planningRoot(start) {
+  let dir = start;
+  for (;;) {
+    if (existsSync(join(dir, '.planning'))) return dir;
+    if (existsSync(join(dir, '.git'))) return null; // repo root, not Cadence
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// The git subcommand(s) a shell command actually invokes: for each simple
+// command containing a `git` word, the first word after it that is not a
+// global option (or that option's argument). Quoted strings are stripped
+// first, so `git log --grep "push"` or `echo "git push"` never look like a
+// push, and `git stash push` resolves to `stash`, not `push`. Conservative
+// by construction: an unrecognized shape yields no subcommand and the guard
+// stays silent - it must never block normal work.
+const GIT_OPT_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree',
+  '--namespace', '--exec-path', '--config-env']);
+
+function gitSubcommands(command) {
+  const stripped = String(command)
+    .replace(/"(?:[^"\\]|\\.)*"/g, ' ')
+    .replace(/'[^']*'/g, ' ');
+  const subs = [];
+  for (const segment of stripped.split(/&&|\|\||[;|\n]/)) {
+    const words = segment.trim().split(/\s+/).filter(Boolean);
+    const gi = words.findIndex((w) => w === 'git' || w.endsWith('/git'));
+    if (gi < 0) continue;
+    for (let i = gi + 1; i < words.length; i++) {
+      const w = words[i];
+      if (GIT_OPT_WITH_ARG.has(w)) { i++; continue; } // skip option + its arg
+      if (w.startsWith('-')) continue;                // other global flags
+      subs.push(w);
+      break;
+    }
+  }
+  return subs;
+}
+
 try {
   const input = JSON.parse(readFileSync(0, 'utf8'));
   const command = String(input?.tool_input?.command || '');
   const cwd = input?.cwd || process.cwd();
 
-  // Only police Cadence projects, and only git commands.
-  if (!existsSync(join(cwd, '.planning'))) process.exit(0);
-  const isPush = /\bgit\b(?:\s+\S+)*?\s+push\b/.test(command);
-  const isCommit = /\bgit\b(?:\s+\S+)*?\s+commit\b/.test(command);
+  // Only police Cadence projects (walk-up, see planningRoot), and only
+  // commands whose git SUBCOMMAND is push or commit.
+  const root = planningRoot(cwd);
+  if (!root) process.exit(0);
+  const subs = gitSubcommands(command);
+  const isPush = subs.includes('push');
+  const isCommit = subs.includes('commit');
   if (!isPush && !isCommit) process.exit(0);
 
   if (isPush) {
@@ -55,7 +105,7 @@ try {
   }
 
   // git commit: enforce the protected-branch guard from config.
-  const { config } = mergeLayers(join(cwd, '.planning', 'config.json'));
+  const { config } = mergeLayers(join(root, '.planning', 'config.json'));
   const git = config.git || {};
   const protectedBranches = Array.isArray(git.protected_branches)
     ? git.protected_branches : ['main', 'master'];
