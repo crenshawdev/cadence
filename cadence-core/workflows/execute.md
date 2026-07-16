@@ -16,7 +16,8 @@ end-of-phase gate pipeline.
 Resolve the phase:
 - `$ARGUMENTS` gives a phase number, else run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
-  take `current`. That phase's entry also lists its plan files
+  take `current` (on `ok:false`, relay its `reason` and `hint` and stop).
+  That phase's entry also lists its plan files
   (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
   Run /cad-plan first."
@@ -126,8 +127,8 @@ task, and what the executor needs. Route by type:
 - **structural** (architectural change needed, plan wrong at its core) ->
   present to the user via the ask-user seam: approve the proposed change /
   adjust it / stop the phase. This is a consult dead-end: before that ask, run
-  offer_consult (references/consult.md) with the deviation as the situation.
-  User-gated; skip silently if consult is not configured.
+  offer_consult per references/consult.md with the deviation as the
+  situation.
 - **risk_surface** (staged diff matches a risk surface) -> fire the
   `risk_surface` review trigger with the flagged diff. Blocking: on FAIL,
   findings are fixed or the user explicitly overrides - never silently
@@ -200,7 +201,7 @@ present. This file joins the docs commit in the state step.
 Update the cursor through the seam:
 
 ```
-node ".../planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
 ```
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, and

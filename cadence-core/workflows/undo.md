@@ -38,7 +38,7 @@ exception to cad-verify owning status) - two seam calls:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N> --undo
-node ".../planning.mjs" cursor set --phase <N> --status <planned | "ready to plan"> --next "<the redo step>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status <planned | "ready to plan"> --next "<the redo step>"
 ```
 
 (`--undo` unchecks the ROADMAP box and flips the phase's traceability rows

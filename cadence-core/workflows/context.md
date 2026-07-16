@@ -252,7 +252,7 @@ Update the cursor through the seam (it derives name/total from ROADMAP and
 stamps the date):
 
 ```
-node ".../planning.mjs" cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"
 ```
 </step>
 

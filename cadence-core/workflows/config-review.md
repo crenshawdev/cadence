@@ -76,23 +76,5 @@ resolves it - assignment alone does not enroll a reviewer.
 
 ## Wrap-up
 
-Summarize the final tier map per provider and note which triggers now have a
-cross-model reviewer (a trigger whose `tier` resolves to a non-null id on a
-configured reviewer). Remind the user this is re-runnable (`/cad-config
---review`) and is auto-offered when a review fails with a model-not-found /
-deprecated error (trouble-triggered redetect, wired in the review dispatch).
-
-**Flag dangling enrollment.** If `review.reviewers` names a cross-model
-provider (`openai`/`gemini`) but one or more `review.triggers.<t>.tier`
-values resolve to `null` for it (that provider's tier is unassigned), say so
-explicitly: the trigger silently falls back to `claude-subagent`, so the
-cross-model setup is inert for it. Name the trigger and the empty tier and
-offer to assign it or drop the provider from `reviewers`. A config that
-enrolls a reviewer it cannot actually reach should never look configured.
-
-## Degradation contract
-
-If detection fails for everything (offline, no keys, rate limited), the review
-subsystem still works via `claude-subagent`; consult is simply not offered.
-cad-config only ever writes validated ids and never blocks the spine on a
-network call.
+Rejoin config.md at its Wrap-up (the warm branch owns the summary, the
+dangling-enrollment flag, and the degradation contract - one copy, there).

@@ -37,7 +37,7 @@ milestone's IDs before judging; the seam always traces the whole file.
   direction). The status cannot be trusted until reconciled (cad-verify
   re-run, or the discrepancy explained).
 
-## 5. Verdict
+## 4. Verdict
 Arithmetic over the seam's output - in-scope `counts.broken` (after any
 milestone filter):
 - **PASS** - zero broken: every in-scope requirement traces requirement ->
