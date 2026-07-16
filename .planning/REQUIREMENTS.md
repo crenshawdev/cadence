@@ -44,11 +44,11 @@ Explicit exclusions. The reason prevents scope creep later.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RCL-01 | Phase 1 | Pending |
-| RCL-02 | Phase 1 | Pending |
-| RCL-03 | Phase 1 | Pending |
+| RCL-01 | Phase 1 | Complete |
+| RCL-02 | Phase 1 | Complete |
+| RCL-03 | Phase 1 | Complete |
 | RCL-04 | Phase 2 | Pending |
-| RCL-05 | Phase 1 | Pending |
+| RCL-05 | Phase 1 | Complete |
 | CWT-01 | Phase 3 | Pending |
 | CWT-02 | Phase 3 | Pending |
 | CWT-03 | Phase 3 | Pending |
