@@ -43,7 +43,26 @@ function makeTree(spec) {
       const reqs = ph.planReqs ? `---\nphase: ${n}\nrequirements: [${ph.planReqs.join(', ')}]\nfiles: []\n---\n` : '';
       writeFileSync(join(pdir, f), `${reqs}# Plan ${n}\n`);
     }
-    if (ph.summary) writeFileSync(join(pdir, 'SUMMARY.md'), `---\nphase: ${n}\nstatus: complete\n---\n`);
+    // SUMMARY: frontmatter-only when `summary` is set; with real `##
+    // Deviations` / `## Open items` bullets when `summaryBody` (a
+    // {deviations?, openItems?} object) is given - the recall corpus needs
+    // item-level bodies to rank against.
+    if (ph.summary || ph.summaryBody) {
+      let body = `---\nphase: ${n}\nstatus: complete\n---\n`;
+      if (ph.summaryBody) {
+        const devs = (ph.summaryBody.deviations || []).map((d) => `- ${d}`).join('\n') || '- None.';
+        const opens = (ph.summaryBody.openItems || []).map((o) => `- ${o}`).join('\n') || '- None.';
+        body += `\n## Deviations\n\n${devs}\n\n## Open items\n\n${opens}\n`;
+      }
+      writeFileSync(join(pdir, 'SUMMARY.md'), body);
+    }
+    // CONTEXT: a `## Decisions` section of `- D-NN (area): text` lines when
+    // `contextDecisions` (an array of decision strings) is given.
+    if (ph.contextDecisions) {
+      const lines = ph.contextDecisions
+        .map((d, i) => `- D-${String(i + 1).padStart(2, '0')} (area): ${d}`).join('\n');
+      writeFileSync(join(pdir, 'CONTEXT.md'), `# Phase ${n} Context\n\n## Decisions\n\n${lines}\n`);
+    }
     if (ph.uat) {
       const items = ph.uat.map((it, i) => {
         let s = `### ${i + 1}. Item ${i + 1}\nexpected: behavior ${i + 1}\nstatus: ${it.status}\n`;
@@ -55,6 +74,25 @@ function makeTree(spec) {
         `---\nstatus: testing\nphase: ${n}\nstarted: 2026-01-01\nupdated: 2026-01-01\n---\n\n## Items\n\n${items.join('\n')}\n## Summary\n\ntotal: ${ph.uat.length}\n`);
     }
   }
+
+  // CAPTURE.md: a top-level `[{section:'Todos'|'Seeds'|'Notes', text, phase?}]`
+  // list, each bullet under its named heading (todos carry a `(phase N)` tag
+  // when phase is given, matching /cad-capture's real format).
+  if (spec.capture) {
+    const bySection = { Todos: [], Seeds: [], Notes: [] };
+    for (const c of spec.capture) {
+      const tag = c.phase !== undefined ? `(phase ${c.phase}) ` : '';
+      const box = c.section === 'Todos' ? '[ ] ' : '';
+      bySection[c.section].push(`- ${box}${tag}${c.text}`);
+    }
+    writeFileSync(join(dir, 'CAPTURE.md'),
+      `## Todos\n\n${bySection.Todos.join('\n')}\n\n## Seeds\n\n${bySection.Seeds.join('\n')}\n\n` +
+      `## Notes\n\n${bySection.Notes.join('\n')}\n`);
+  }
+
+  // config.json written verbatim from `spec.config` (the backend-off test pins
+  // memory.backend here).
+  if (spec.config) writeFileSync(join(dir, 'config.json'), JSON.stringify(spec.config));
 
   if (spec.reqs) {
     const rows = spec.reqs.map(([id, ph, st]) =>
@@ -826,4 +864,80 @@ test('phase-done: a decimal phase flips its own line, dot not a wildcard', () =>
   const after = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
   assert.match(after, /- \[x\] \*\*Phase 2\.1: Insert\*\*/);
   assert.match(after, /- \[ \] \*\*Phase 291: Big\*\*/); // untouched
+});
+
+// --- recall: BM25 over the .planning corpus ------------------------------------
+
+// A dedicated runner: recall takes a positional query, and its backend read
+// goes through the config layers, so the global layer must be pinned off a
+// nonexistent path (D-10) or a developer's real ~/.claude/cadence/config.json
+// would flip results locally while CI stayed green. Returns the parsed JSON
+// AND the raw stdout (the determinism test byte-compares the raw string).
+function recall(query, dir) {
+  let raw;
+  let code = 0;
+  try {
+    raw = execFileSync('node', [PLANNING, 'recall', query, '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
+    });
+  } catch (e) { raw = e.stdout; code = e.status; }
+  return { json: JSON.parse(raw), raw, _exit: code };
+}
+
+test('recall: a matching SUMMARY deviation ranks first, with source and phase', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Recall' }, { n: 2, name: 'Later' }],
+    phases: {
+      1: { summaryBody: { deviations: ['tokenkiller saturation race fixed in the guard'] } },
+      2: { summaryBody: { deviations: ['unrelated documentation wording tweak'] } },
+    },
+  });
+  const r = recall('tokenkiller saturation', dir);
+  assert.equal(r.json.ok, true);
+  assert.equal(r._exit, 0);
+  assert.ok(r.json.results.length >= 1);
+  assert.equal(r.json.results[0].source, 'phases/1/SUMMARY.md');
+  assert.equal(r.json.results[0].phase, 1);
+  assert.match(r.json.results[0].snippet, /tokenkiller/);
+});
+
+test('recall: empty and absent corpus both return ok:true with no results', () => {
+  // Absent .planning entirely.
+  const gone = recall('anything', join(tmpdir(), 'cad-recall-nonexistent'));
+  assert.equal(gone.json.ok, true);
+  assert.deepEqual(gone.json.results, []);
+  assert.equal(gone._exit, 0);
+  // .planning exists (roadmap only) but no SUMMARY/CAPTURE/UAT/CONTEXT corpus.
+  const empty = recall('anything', makeTree({ roadmap: [{ n: 1, name: 'One' }] }));
+  assert.equal(empty.json.ok, true);
+  assert.deepEqual(empty.json.results, []);
+  assert.equal(empty._exit, 0);
+});
+
+test('recall: two runs on the same corpus are byte-identical', () => {
+  const dir = makeTree({
+    phases: {
+      1: { summaryBody: { deviations: ['alpha beta gamma', 'delta epsilon'] },
+        contextDecisions: ['use beta for the gamma path'] },
+    },
+    capture: [{ section: 'Todos', text: 'wire the beta recall path', phase: 1 },
+      { section: 'Seeds', text: 'gamma indexing idea' }],
+  });
+  const a = recall('beta gamma', dir);
+  const b = recall('beta gamma', dir);
+  assert.equal(a.raw, b.raw);
+  assert.ok(a.json.results.length >= 2);
+});
+
+test('recall: memory.backend none reports off with empty results, exit 0', () => {
+  const dir = makeTree({
+    phases: { 1: { summaryBody: { deviations: ['findable term here'] } } },
+    config: { memory: { backend: 'none' } },
+  });
+  const r = recall('findable', dir);
+  assert.equal(r.json.ok, true);
+  assert.equal(r.json.backend, 'none');
+  assert.deepEqual(r.json.results, []);
+  assert.equal(r._exit, 0);
 });
