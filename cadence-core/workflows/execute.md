@@ -152,7 +152,12 @@ continuation executor is dispatched back into the same worktree.
 Light, inline, no subagent. Read the phase goal and
 `git log --oneline {PHASE_START}..HEAD`, then write one honest paragraph:
 does the sum of these commits plausibly deliver the phase goal? Name
-anything that looks missing. This is an assessment, not a gate - gaps become
+anything that looks missing. Every concrete claim in the paragraph carries
+its evidence inline - a file:line or a command output, drawn from the
+executor reports or a direct look - never an unevidenced "X now works":
+cad-verifier later treats SUMMARY claims as assertions to falsify, so an
+evidenced claim closes that loop and an unevidenced one is just a guess
+wearing a verdict. This is an assessment, not a gate - gaps become
 SUMMARY open items, not a fix loop.
 </step>
 
