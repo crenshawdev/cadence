@@ -1,40 +1,97 @@
 {
   "granularity": "standard",
   "model": {
-    "profile": "balanced",
-    "auto": { "ceiling": "quality", "escalate_on_failure": true, "max_escalations": 1 }
+    "profile": "auto",
+    "auto": {
+      "ceiling": "quality",
+      "escalate_on_failure": true,
+      "max_escalations": 1
+    }
   },
   "workflow": {
-    "research": false, "plan_check": true, "verifier": true, "skip_discuss": false,
-    "subagent_timeout": 300000, "inline_plan_threshold": 3, "test_command": null
+    "research": false,
+    "plan_check": true,
+    "verifier": true,
+    "skip_discuss": false,
+    "subagent_timeout": 300000,
+    "inline_plan_threshold": 3,
+    "test_command": null
   },
   "parallelization": {
-    "enabled": false, "max_concurrent_agents": 3, "min_plans_for_parallel": 2,
+    "enabled": false,
+    "max_concurrent_agents": 3,
+    "min_plans_for_parallel": 2,
     "use_worktrees": true
   },
   "git": {
-    "protected_branches": ["main", "master"],
+    "protected_branches": [
+      "main",
+      "master"
+    ],
     "on_protected": "ask",
     "base_branch": null,
     "create_tag": true
   },
-  "planning": { "commit_docs": true },
-  "memory": { "backend": "builtin" },
+  "planning": {
+    "commit_docs": true
+  },
+  "memory": {
+    "backend": "builtin"
+  },
   "review": {
     "mode": "adjudicated",
-    "reviewers": ["claude-subagent"],
+    "reviewers": [
+      "claude-subagent"
+    ],
     "key_file": null,
     "providers": {
-      "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
-      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
+      "openai": {
+        "tiers": {
+          "flagship": null,
+          "balanced": null,
+          "cheap": null
+        }
+      },
+      "gemini": {
+        "tiers": {
+          "flagship": null,
+          "balanced": null,
+          "cheap": null
+        }
+      }
     },
     "triggers": {
-      "plan":         { "gate": "adjudicated", "tier": "flagship", "effort": "high" },
-      "diff":         { "gate": "advisory",    "tier": "balanced", "effort": "medium" },
-      "risk_surface": { "gate": "blocking",    "tier": "flagship", "effort": "high" },
-      "phase_diff":   { "gate": "off",         "tier": "flagship", "effort": "high" },
-      "pre_ship":     { "gate": "adjudicated", "tier": "flagship", "effort": "high" }
+      "plan": {
+        "gate": "adjudicated",
+        "tier": "flagship",
+        "effort": "high"
+      },
+      "diff": {
+        "gate": "advisory",
+        "tier": "balanced",
+        "effort": "medium"
+      },
+      "risk_surface": {
+        "gate": "blocking",
+        "tier": "flagship",
+        "effort": "high"
+      },
+      "phase_diff": {
+        "gate": "off",
+        "tier": "flagship",
+        "effort": "high"
+      },
+      "pre_ship": {
+        "gate": "adjudicated",
+        "tier": "flagship",
+        "effort": "high"
+      }
     },
-    "consult": { "enabled": false, "tier": "flagship", "effort": "high", "attempt_threshold": 3 }
+    "consult": {
+      "enabled": false,
+      "tier": "flagship",
+      "effort": "high",
+      "attempt_threshold": 3
+    }
   }
 }
