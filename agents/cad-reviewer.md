@@ -2,7 +2,7 @@
 name: cad-reviewer
 description: Fresh-context adversarial reviewer - the zero-dep `claude-subagent` backend of the review subsystem. Spawned by fire(trigger) to REFUTE an artifact (plan or diff) and return findings in the shared schema. Runs when no cross-model reviewer is configured, or as one voice in a panel.
 tools: Read, Bash, Glob, Grep
-disallowedTools: Write, Edit
+disallowedTools: Write, Edit, MultiEdit
 color: red
 effort: high
 ---

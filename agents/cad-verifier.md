@@ -4,7 +4,7 @@ description: Goal-backward phase verification. Confirms the codebase actually de
 tools: Read, Bash, Grep, Glob
 color: green
 effort: high
-disallowedTools: Edit, MultiEdit, Write
+disallowedTools: Write, Edit, MultiEdit
 ---
 
 <role>
