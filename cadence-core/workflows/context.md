@@ -259,8 +259,10 @@ node ".../planning.mjs" cursor set --phase {N} --status "context gathered" --nex
 <step name="commit">
 If `planning.commit_docs` is true: apply the protected-branch guard
 (references/git.md rail 1 - context is the first act of a phase), then
-commit exactly `{phase_dir}/CONTEXT.md` and `.planning/STATE.md`:
-`docs: capture context for phase {N}`.
+commit exactly `{phase_dir}/CONTEXT.md`, `.planning/STATE.md`, and - only
+when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:
+`docs: capture context for phase {N}`. Nothing this workflow wrote may be
+left dirty.
 
 If false, leave the files uncommitted and say so in the report.
 </step>
