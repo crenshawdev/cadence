@@ -57,8 +57,19 @@ Record `git rev-parse --short HEAD` as PHASE_START for later diffs.
 Sequential (default) unless ALL of these hold:
 - `parallelization.enabled` is true
 - plan count >= `parallelization.min_plans_for_parallel`
-- the plans are independent: no plan builds on another's output and their
-  declared file lists do not overlap
+- no plan builds on another's output (your judgment, from the plans' goals
+  and ordering)
+- the declared file lists do not overlap - this half is arithmetic, not
+  judgment; run the seam and require empty `overlaps`:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-overlap --phase <N>
+  ```
+
+  Any `overlaps` entry -> sequential, and report which plans collide on
+  which files. Any `undeclared` entry -> sequential too: a plan declaring
+  no files cannot be proven independent. `ok:false` -> sequential (the
+  check could not run; never parallelize unproven).
 - `parallelization.use_worktrees` is true (parallel dispatch without
   isolation is not supported - fall back to sequential)
 </step>

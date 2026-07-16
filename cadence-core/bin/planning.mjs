@@ -18,6 +18,8 @@
 //   cursor set --phase N --status s --next cmd [--name s] [--total N]
 //                                   canonical overwrite; derives name/total
 //                                   from ROADMAP when omitted; stamps today
+//   plan-overlap --phase N          pairwise intersection of the phase's
+//                                   plans' declared file lists (parallel gate)
 'use strict';
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -27,8 +29,8 @@ import { renameSync, rmSync } from 'node:fs';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
-  setPhaseBox, setReqStatus, parsePlanRequirements, shiftPhaseTokens,
-  findProsePhaseRefs, cutPhaseDetail,
+  setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
+  shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
 } from './lib/planning-files.mjs';
 import { emit } from './lib/seam-io.mjs';
 
@@ -450,6 +452,42 @@ function cmdAudit(dir) {
 }
 
 // ---------------------------------------------------------------------------
+// plan-overlap - the parallel-safety invariant as arithmetic. Intersects the
+// declared file lists of a phase's plans pairwise; cad-execute's choose_path
+// requires empty overlaps before dispatching plans concurrently. Overlaps
+// found is still ok:true - a successful check with a negative answer; the
+// caller branches on overlaps.length, like drift in status.
+// ---------------------------------------------------------------------------
+function cmdPlanOverlap(dir, opts) {
+  const n = Number(opts.phase);
+  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'plan-overlap needs --phase <N>');
+  const pdir = join(dir, 'phases', String(n));
+  let planFiles = [];
+  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
+  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  if (planFiles.length < 2) {
+    return ok({ phase: n, plans: [], overlaps: [], note: 'fewer than two plans - nothing to intersect' });
+  }
+  const declared = planFiles.map((f) => ({ plan: f, files: parsePlanFiles(read(join(pdir, f)) || '') }));
+  const overlaps = [];
+  for (let i = 0; i < declared.length; i++) {
+    for (let j = i + 1; j < declared.length; j++) {
+      const shared = declared[i].files.filter((x) => declared[j].files.includes(x));
+      if (shared.length) overlaps.push({ plans: [declared[i].plan, declared[j].plan], files: shared });
+    }
+  }
+  const undeclared = declared.filter((d) => !d.files.length).map((d) => d.plan);
+  ok({
+    phase: n,
+    plans: declared.map((d) => ({ plan: d.plan, files: d.files.length })),
+    overlaps,
+    // A plan declaring no files cannot be proven independent - the check is
+    // only as strong as the declarations. The caller treats these as unsafe.
+    ...(undeclared.length ? { undeclared } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -597,6 +635,7 @@ const COMMANDS = {
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
+  'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 

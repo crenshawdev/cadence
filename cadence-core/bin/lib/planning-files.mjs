@@ -231,6 +231,28 @@ export function parsePlanRequirements(text) {
   return m[1].split(',').map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
 }
 
+/**
+ * Extract the file paths a plan declares it touches: the frontmatter
+ * `files: [...]` list unioned with every task's `- **Files:** a, b` line
+ * (either source alone can go stale; the union is what the parallel-safety
+ * overlap check trusts). Trailing parentheticals ("src/a.rs (new)") and
+ * backticks are stripped; template placeholders ({...}) are ignored.
+ * @param {string} text @returns {string[]}
+ */
+export function parsePlanFiles(text) {
+  const files = new Set();
+  const add = (raw) => {
+    const f = raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
+    if (f && !f.startsWith('{')) files.add(f);
+  };
+  const fm = text.match(/^files:\s*\[(.*)\]/m);
+  if (fm) for (const f of fm[1].split(',')) add(f.replace(/["']/g, ''));
+  for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
+    for (const f of m[1].split(',')) add(f);
+  }
+  return [...files];
+}
+
 // ---------------------------------------------------------------------------
 // Renumbering - shift `Phase K` tokens and `phases/K/` paths in one pass.
 // Capital-P `Phase K` is the structured form every template uses (list lines,

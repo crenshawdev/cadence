@@ -538,3 +538,60 @@ test('renumber: out-of-range and unknown phase refuse', () => {
   assert.equal(run(['renumber', 'insert', '--at', '9'], dir).reason, 'out-of-range');
   assert.equal(run(['renumber', 'remove', '--n', '9'], dir).reason, 'unknown-phase');
 });
+
+// --- plan-overlap: the parallel-safety gate ------------------------------------
+
+/** A two-plan phase whose PLAN files declare the given file lists. */
+function overlapTree(filesA, filesB, taskLineB) {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    `---\nphase: 1\nplan: 1\nrequirements: [REQ-1]\nfiles: [${filesA.join(', ')}]\n---\n# Plan 1\n`);
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    `---\nphase: 1\nplan: 2\nrequirements: [REQ-2]\nfiles: [${filesB.join(', ')}]\n---\n# Plan 2\n` +
+    (taskLineB ? `\n### Task 1: t\n\n- **Files:** ${taskLineB}\n- **Action:** x\n- **Verify:** y\n` : ''));
+  return dir;
+}
+
+test('plan-overlap: disjoint declared lists come back clean', () => {
+  const r = run(['plan-overlap', '--phase', '1'],
+    overlapTree(['src/a.rs', 'src/b.rs'], ['src/c.rs']));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, []);
+  assert.deepEqual(r.plans, [{ plan: 'PLAN-1.md', files: 2 }, { plan: 'PLAN-2.md', files: 1 }]);
+  assert.equal(r.undeclared, undefined);
+});
+
+test('plan-overlap: a shared file is reported with both plan names', () => {
+  const r = run(['plan-overlap', '--phase', '1'],
+    overlapTree(['src/a.rs', 'src/shared.rs'], ['src/shared.rs', 'src/c.rs']));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
+});
+
+test('plan-overlap: task **Files:** lines count even when frontmatter omits them', () => {
+  // PLAN-2 frontmatter declares nothing, but its task line touches src/a.rs.
+  const r = run(['plan-overlap', '--phase', '1'],
+    overlapTree(['src/a.rs'], [], 'src/a.rs (edit), src/d.rs'));
+  assert.equal(r.overlaps.length, 1);
+  assert.deepEqual(r.overlaps[0].files, ['src/a.rs']);
+});
+
+test('plan-overlap: a plan with no declared files is flagged undeclared', () => {
+  const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/a.rs'], []));
+  assert.deepEqual(r.overlaps, []);
+  assert.deepEqual(r.undeclared, ['PLAN-2.md']);
+});
+
+test('plan-overlap: single plan and missing phase degrade predictably', () => {
+  const single = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { plan: true } } });
+  const r = run(['plan-overlap', '--phase', '1'], single);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, []);
+  assert.match(r.note, /fewer than two/);
+  assert.equal(run(['plan-overlap', '--phase', '9'], single).reason, 'no-phase-dir');
+  assert.equal(run(['plan-overlap'], single).reason, 'bad-args');
+});
