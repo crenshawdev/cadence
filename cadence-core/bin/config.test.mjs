@@ -88,3 +88,25 @@ test('get: unknown key is rejected, exit code mirrors ok', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'unknown-key');
 });
+
+// --- cross-key warnings ---------------------------------------------------
+
+test('check: ceiling at/below the auto base profile warns but stays valid', () => {
+  for (const ceiling of ['fast', 'balanced']) {
+    const r = run(['check', `model.auto.ceiling=${ceiling}`]);
+    assert.equal(r.ok, true); // legal value - advisory only
+    assert.equal(r.warnings.length, 1);
+    assert.match(r.warnings[0].warning, /never demotes/);
+  }
+  const ok = run(['check', 'model.auto.ceiling=quality']);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.warnings, undefined); // above base - no warning
+});
+
+test('set: the ceiling warning rides along with a successful write', () => {
+  const gpath = join(dir, 'warn.json');
+  const r = run(['set', '--global', 'model.auto.ceiling=fast'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).model.auto.ceiling, 'fast');
+  assert.match(r.warnings[0].warning, /holds at base/);
+});
