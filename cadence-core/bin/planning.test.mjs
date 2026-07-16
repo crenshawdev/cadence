@@ -787,3 +787,43 @@ test('plan-overlap: single plan and missing phase degrade predictably', () => {
   assert.equal(run(['plan-overlap', '--phase', '9'], single).reason, 'no-phase-dir');
   assert.equal(run(['plan-overlap'], single).reason, 'bad-args');
 });
+
+// --- decimal phases under renumber (the desync fix) ----------------------------
+
+test('renumber: decimal phase tokens are never shifted, and are reported', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true } },
+  });
+  // Add a decimal insertion between 2 and 3, with a token and a path ref.
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8').replace(
+    '- [ ] **Phase 3: Three**',
+    '- [ ] **Phase 2.1: TwoPointOne** - see phases/2.1/ notes\n- [ ] **Phase 3: Three**');
+  writeFileSync(join(dir, 'ROADMAP.md'), roadmap);
+
+  const r = run(['renumber', 'insert', '--at', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.decimal_phases, [2.1]); // surfaced for hand re-placement
+  const after = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(after, /\*\*Phase 2\.1: TwoPointOne\*\*/); // token untouched...
+  assert.match(after, /phases\/2\.1\//);                   // ...and path untouched
+  assert.match(after, /\*\*Phase 4: Three\*\*/);           // integers shifted
+});
+
+test('renumber: refuses to operate ON a decimal phase', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
+  assert.equal(run(['renumber', 'remove', '--n', '1.5'], dir).reason, 'bad-args');
+  assert.equal(run(['renumber', 'insert', '--at', '1.5'], dir).reason, 'bad-args');
+});
+
+test('phase-done: a decimal phase flips its own line, dot not a wildcard', () => {
+  // Phase 291 must NOT be flipped by --n 2.1 (the unescaped-regex bug).
+  const dir = makeTree({
+    roadmap: [{ n: 2.1, name: 'Insert' }, { n: 291, name: 'Big' }],
+  });
+  const r = run(['phase-done', '--n', '2.1'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(after, /- \[x\] \*\*Phase 2\.1: Insert\*\*/);
+  assert.match(after, /- \[ \] \*\*Phase 291: Big\*\*/); // untouched
+});

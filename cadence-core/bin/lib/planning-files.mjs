@@ -99,6 +99,11 @@ export function parseRequirements(text) {
 // whole rewritten text so callers stay pure; nothing else in the file moves.
 // ---------------------------------------------------------------------------
 
+// Phase numbers can be decimal (2.1 insertions); a bare `${n}` in a RegExp
+// would make the dot a wildcard (`Phase 2.1` matching `Phase 291`).
+/** @param {number} n */
+const escN = (n) => String(n).replace(/\./g, '\\.');
+
 /**
  * Flip phase N's `## Phases` checkbox. Returns {text, line} (1-indexed) or
  * null when the phase line is not found.
@@ -106,7 +111,7 @@ export function parseRequirements(text) {
  */
 export function setPhaseBox(text, n, checked) {
   const lines = text.split('\n');
-  const re = new RegExp(`^- \\[( |x)\\] \\*\\*Phase ${n}: `);
+  const re = new RegExp(`^- \\[( |x)\\] \\*\\*Phase ${escN(n)}: `);
   for (let i = 0; i < lines.length; i++) {
     if (re.test(lines[i])) {
       lines[i] = lines[i].replace(/^- \[( |x)\]/, `- [${checked ? 'x' : ' '}]`);
@@ -261,15 +266,20 @@ export function parsePlanFiles(text) {
 // ---------------------------------------------------------------------------
 
 /**
- * Shift every `Phase K` token and `phases/K/` path where K >= from by delta.
- * Single-pass replace, so a shifted number is never re-shifted.
+ * Shift every INTEGER `Phase K` token and `phases/K/` path where K >= from by
+ * delta. Single-pass replace, so a shifted number is never re-shifted.
+ * Decimal phases (2.1 insertions) are deliberately left alone on BOTH forms:
+ * the path regex never matched them, so shifting the integer part of the
+ * token (`Phase 2.1` -> `Phase 3.1`) desynced tokens from directories. The
+ * renumber command reports decimal phases for the caller to re-place with
+ * judgment instead.
  * @param {string} text @param {number} from @param {number} delta
  */
 export function shiftPhaseTokens(text, from, delta) {
   let count = 0;
   const shift = (k) => { count++; return k + delta; };
   const out = text
-    .replace(/\bPhase (\d+)\b/g, (m, k) => Number(k) >= from ? `Phase ${shift(Number(k))}` : m)
+    .replace(/\bPhase (\d+)\b(?!\.\d)/g, (m, k) => Number(k) >= from ? `Phase ${shift(Number(k))}` : m)
     .replace(/\bphases\/(\d+)\//g, (m, k) => Number(k) >= from ? `phases/${shift(Number(k))}/` : m);
   return { text: out, count };
 }
@@ -298,7 +308,7 @@ export function findProsePhaseRefs(text, from) {
  * @param {string} text @param {number} n
  */
 export function cutPhaseDetail(text, n) {
-  const re = new RegExp(`^### Phase ${n}: .*$`, 'm');
+  const re = new RegExp(`^### Phase ${escN(n)}: .*$`, 'm');
   const start = text.search(re);
   if (start === -1) return text;
   const headingEnd = text.indexOf('\n', start);

@@ -511,6 +511,10 @@ function cmdRenumber(dir, sub, opts) {
 
   const at = Number(sub === 'insert' ? opts.at : opts.n);
   if (Number.isNaN(at)) return fail('bad-args', `renumber ${sub} needs --${sub === 'insert' ? 'at' : 'n'} <N>`);
+  // Renumbering is integer arithmetic; a decimal insertion (2.1) neither
+  // displaces integers nor is displaced by them, so it is never shifted -
+  // operating ON one would only produce a half-shifted tree.
+  if (!Number.isInteger(at)) return fail('bad-args', 'renumber operates on integer phases; re-place decimal phases by hand');
   if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
   if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
 
@@ -575,6 +579,10 @@ function cmdRenumber(dir, sub, opts) {
     for (const ref of findProsePhaseRefs(t, shiftFrom)) inTextRefs.push({ file: f, ...ref });
   }
 
+  // Decimal phases are never shifted (see shiftPhaseTokens) - report them so
+  // the caller re-places them deliberately instead of discovering the gap.
+  const decimalPhases = phases.filter((p) => !Number.isInteger(p.n)).map((p) => p.n);
+
   const ops = [
     ...dirMoves.map(([f, t]) => ({ git_mv: [`phases/${f}`, `phases/${t}`] })),
     ...(sub === 'remove' && existingDir(at) ? [{ rm: `phases/${at}` }] : []),
@@ -587,6 +595,7 @@ function cmdRenumber(dir, sub, opts) {
     ops,
     ...(inTextRefs.length ? { in_text_refs: inTextRefs } : {}),
     ...(orphanedReqs.length ? { orphaned_reqs: orphanedReqs } : {}),
+    ...(decimalPhases.length ? { decimal_phases: decimalPhases } : {}),
     ...(warn ? { warn } : {}),
     ...(sub === 'insert' ? { slot: `add the new "- [ ] **Phase ${at}: ...**" line and its detail section` } : {}),
   };
