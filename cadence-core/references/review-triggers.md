@@ -91,7 +91,8 @@ fix list) instead of spawning its own fixer loop.
 |---|---|---|---|---|
 | `plan` | `cad-plan` | after PLAN.md is written | the plan | adjudicated |
 | `diff` | `cad-execute` | at plan completion | `git diff <pre-plan HEAD>..HEAD` | advisory |
-| `risk_surface` | `cad-execute` | at commit time, on detection match | the flagged diff | blocking |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | the flagged diff | blocking |
+| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | `git diff <PHASE_START>..HEAD` | off (opt-in) |
 | `pre_ship` | `cad-land` | before executing the publish mechanism | full branch diff | adjudicated |
 
 ## risk_surface detection (shipped defaults, configurable)

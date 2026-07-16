@@ -29,7 +29,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.subagent_timeout workflow.test_command planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
-  git.protected_branches git.on_protected review.triggers.diff.gate
+  git.protected_branches git.on_protected git.base_branch \
+  review.triggers.diff.gate review.triggers.phase_diff.gate
 ```
 </step>
 
@@ -154,6 +155,13 @@ with the completed-task table (hashes included), the checkpoint outcome, and
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
    `diff` trigger once per plan (payload: that plan's commits as a diff).
+6. Fire the `phase_diff` trigger (references/review-triggers.md) with
+   `git diff {PHASE_START}..HEAD` as the payload. Off by default (opt-in) -
+   it exists because the per-plan reviews above each see one plan's diff in
+   isolation, so a bug in the INTERACTION of two merged plans is invisible
+   to them until pre_ship at land time. Parallel path only: on the
+   sequential path each diff review already sees a tree containing all
+   prior plans' work.
 
 Checkpoints on this path route exactly as in handle_checkpoint; the
 continuation executor is dispatched back into the same worktree.
