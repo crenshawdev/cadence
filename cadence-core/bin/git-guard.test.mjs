@@ -13,24 +13,38 @@ const GUARD = join(dirname(fileURLToPath(import.meta.url)), 'git-guard.mjs');
 // Hermetic global config (never read the dev's real one).
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-guard-')), 'no-global.json');
 
+// Fixture git calls must never read the dev's global/system git config
+// (commit.gpgsign, init.defaultBranch hooks, ... would break the fixtures).
+const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+
+/** Run a git command against a fixture dir, hermetically. */
+function git(args, opts = {}) {
+  execFileSync('git', args, { stdio: 'ignore', env: GIT_ENV, ...opts });
+}
+
+/** Feed the hook a raw stdin payload; return trimmed stdout. */
+function guardRaw(input) {
+  return execFileSync('node', [GUARD], {
+    encoding: 'utf8',
+    input,
+    env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL },
+  }).trim();
+}
+
 /** Feed the hook a PreToolUse payload; return the parsed decision or null. */
 function guard(command, cwd) {
-  const stdout = execFileSync('node', [GUARD], {
-    encoding: 'utf8',
-    input: JSON.stringify({ tool_input: { command }, cwd }),
-    env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL },
-  });
-  return stdout.trim() ? JSON.parse(stdout).hookSpecificOutput : null;
+  const stdout = guardRaw(JSON.stringify({ tool_input: { command }, cwd }));
+  return stdout ? JSON.parse(stdout).hookSpecificOutput : null;
 }
 
 /** A Cadence project fixture: git repo on `branch` with a .planning dir. */
 function project(branch, config) {
   const dir = mkdtempSync(join(tmpdir(), 'cad-guard-repo-'));
-  execFileSync('git', ['-C', dir, 'init', '-q', '-b', branch]);
+  git(['-C', dir, 'init', '-q', '-b', branch]);
   writeFileSync(join(dir, 'f.txt'), 'x');
-  execFileSync('git', ['-C', dir, 'add', '.'], { stdio: 'ignore' });
-  execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t',
-    'commit', '-q', '-m', 'init'], { stdio: 'ignore' });
+  git(['-C', dir, 'add', '.']);
+  git(['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t',
+    'commit', '-q', '-m', 'init']);
   mkdirSync(join(dir, '.planning'), { recursive: true });
   if (config) writeFileSync(join(dir, '.planning', 'config.json'), JSON.stringify(config));
   return dir;
@@ -47,6 +61,7 @@ test('silent for non-git commands inside a project', () => {
 
 test('git push always asks (publishing is /cad-land\'s call)', () => {
   const d = guard('git push origin feature', project('feature'));
+  assert.equal(d.hookEventName, 'PreToolUse'); // the harness routes on this
   assert.equal(d.permissionDecision, 'ask');
   assert.match(d.permissionDecisionReason, /cad-land/);
 });
@@ -110,6 +125,29 @@ test('walk-up stops at a repo root without .planning (still not policed)', () =>
   mkdirSync(join(outer, '.planning'));
   const inner = join(outer, 'other-repo');
   mkdirSync(inner);
-  execFileSync('git', ['-C', inner, 'init', '-q', '-b', 'main']);
+  git(['-C', inner, 'init', '-q', '-b', 'main']);
   assert.equal(guard('git push origin main', inner), null);
+});
+
+test('commit guard degrades silently when .planning has no git repo', () => {
+  // planningRoot finds the project, but `git rev-parse` fails - the guard
+  // must swallow that and never block (a broken guard blocks nothing).
+  const dir = mkdtempSync(join(tmpdir(), 'cad-guard-norepo-'));
+  mkdirSync(join(dir, '.planning'));
+  assert.equal(guard('git commit -m "x"', dir), null);
+});
+
+test('detached HEAD is not a protected branch (rev-parse says HEAD)', () => {
+  const dir = project('main');
+  git(['-C', dir, 'checkout', '-q', '--detach']);
+  assert.equal(guard('git commit -m "x"', dir), null);
+});
+
+test('malformed stdin exits 0 with no output (guard never blocks work)', () => {
+  assert.equal(guardRaw('not json {'), '');
+});
+
+test('payload without a command stays silent inside a project', () => {
+  const dir = project('main');
+  assert.equal(guardRaw(JSON.stringify({ tool_input: {}, cwd: dir })), '');
 });

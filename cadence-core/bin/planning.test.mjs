@@ -1,10 +1,10 @@
 // Zero-dep tests for planning.mjs. Run: node --test 'cadence-core/bin/*.test.mjs'
-// Contract source: design-notes/planning-mjs-interface.md - the JSON shapes
-// asserted here ARE the spec. Only node: builtins, per the repo ethos.
+// The JSON shapes asserted here ARE the interface contract - there is no
+// spec file beyond them. Only node: builtins, per the repo ethos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,7 +84,9 @@ function run(args, dir, stdin) {
   return { ...JSON.parse(stdout), _exit: code };
 }
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// Computed per-assertion (never at module load): a run that straddles
+// midnight sees the stamp land on either side, and both are correct.
+const today = () => new Date().toISOString().slice(0, 10);
 
 // --- status: failure shapes --------------------------------------------------
 
@@ -223,6 +225,22 @@ test('status: cursor agreement and disagreement', () => {
   assert.equal(stale.drift[0].kind, 'cursor');
 });
 
+test('status: decimal insertion phases sort and derive like integers', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One', checked: true }, { n: 2.1, name: 'Hotfix' }, { n: 3, name: 'Three' }],
+    phases: {
+      1: { plan: true, summary: true, uat: [{ status: 'pass' }] },
+      '2.1': { plan: true },
+    },
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.phases.map((p) => p.n), [1, 2.1, 3]); // numeric sort, 2.1 between
+  assert.deepEqual(r.phases.map((p) => p.status), ['complete', 'planned', 'unplanned']);
+  assert.equal(r.current, 2.1); // lowest non-complete, decimals included
+  assert.equal(r.total, 3);
+});
+
 test('status: paused cursor always agrees (legal at any point)', () => {
   const r = run(['status'], makeTree({
     roadmap: [{ n: 1, name: 'Only' }],
@@ -248,16 +266,43 @@ test('cursor get: parses the canonical schema; missing file is no-cursor', () =>
   assert.equal(none.reason, 'no-cursor');
 });
 
+test('cursor get: malformed STATE.md degrades to unparseable-cursor', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'STATE.md'), '# State\n\nWorking on stuff, back soon\n');
+  const r = run(['cursor', 'get'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-cursor');
+  assert.equal(r._exit, 1);
+});
+
+test('cursor set: falls back to the existing cursor when ROADMAP is absent', () => {
+  const dir = makeTree({
+    cursor: { phase: 1, total: 3, name: 'Solo', status: 'planned', next: 'x', updated: '2026-01-01' },
+  });
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'executed', '--next', '/cad-verify 1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.name, 'Solo');   // from the prior cursor (same phase)
+  assert.equal(r.cursor.total, 3);       // prior total carried forward
+  assert.equal(r.cursor.status, 'executed');
+});
+
 test('cursor set: derives name/total from ROADMAP, stamps today, writes 4 lines', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }, { n: 2, name: 'Auth' }] });
+  const before = today();
   const r = run(['cursor', 'set', '--phase', '2', '--status', 'planned', '--next', '/cad-execute 2'], dir);
+  const after = today();
   assert.equal(r.ok, true);
+  // Midnight-robust: the stamp must be the subprocess's run date, which is
+  // one of the two dates observed around the call (usually the same one).
+  assert.ok([before, after].includes(r.cursor.updated),
+    `updated ${r.cursor.updated} not in [${before}, ${after}]`);
   assert.deepEqual(r.cursor, {
-    phase: 2, total: 2, name: 'Auth', status: 'planned', next: '/cad-execute 2', updated: TODAY,
+    phase: 2, total: 2, name: 'Auth', status: 'planned', next: '/cad-execute 2',
+    updated: r.cursor.updated,
   });
   const text = readFileSync(join(dir, 'STATE.md'), 'utf8');
   assert.equal(text,
-    `# State\n\nPhase: 2 of 2 (Auth)\nStatus: planned\nNext: /cad-execute 2\nUpdated: ${TODAY}\n`);
+    `# State\n\nPhase: 2 of 2 (Auth)\nStatus: planned\nNext: /cad-execute 2\nUpdated: ${r.cursor.updated}\n`);
   // atomic: no temp file left behind
   assert.ok(!readdirSync(dir).some((f) => f.endsWith('.tmp')));
 });
@@ -311,6 +356,36 @@ test('phase-done: flips the box and the phase rows; Deferred untouched; --undo r
   assert.match(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), /REQ-1 \| Phase 1 \| Pending /);
 });
 
+test('phase-done: decimal phase flips its own box and rows only', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2.1, name: 'Hotfix' }],
+    reqs: [['REQ-1', 2.1, 'Pending'], ['REQ-2', 1, 'Pending']],
+  });
+  const r = run(['phase-done', '--n', '2.1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.reqs, ['REQ-1']);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /- \[x\] \*\*Phase 2\.1: Hotfix\*\*/);
+  assert.match(roadmap, /- \[ \] \*\*Phase 1: One\*\*/);
+  const reqs = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.match(reqs, /REQ-1 \| Phase 2\.1 \| Complete /);
+  assert.match(reqs, /REQ-2 \| Phase 1 \| Pending /);
+});
+
+test('phase-done --reqs: explicit ids override the phase filter (even Deferred)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 1, 'Deferred'], ['REQ-3', 2, 'Pending']],
+  });
+  const r = run(['phase-done', '--n', '1', '--reqs', 'REQ-2, REQ-3'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.reqs, ['REQ-2', 'REQ-3']); // exactly the named rows
+  const reqs = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.match(reqs, /REQ-1 \| Phase 1 \| Pending /);   // phase row NOT auto-flipped
+  assert.match(reqs, /REQ-2 \| Phase 1 \| Complete /);  // Deferred flipped when named
+  assert.match(reqs, /REQ-3 \| Phase 2 \| Complete /);
+});
+
 test('phase-done: unknown phase refuses; nothing written', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
@@ -345,6 +420,47 @@ test('uat init: writes all-pending checklist and returns the first item', () => 
   // init refuses to clobber an existing checklist
   const again = run(['uat', 'init', '--phase', '1'], dir, UAT_ITEMS);
   assert.equal(again.reason, 'uat-exists');
+});
+
+test('uat init: refuses a malformed payload, writes nothing', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  assert.equal(run(['uat', 'init', '--phase', '1'], dir, 'not json {').reason, 'bad-payload');
+  assert.equal(run(['uat', 'init', '--phase', '1'], dir, '{"name":"not an array"}').reason, 'bad-payload');
+  assert.equal(run(['uat', 'init', '--phase', '1'], dir,
+    JSON.stringify([{ name: 'expected missing' }])).reason, 'bad-payload');
+  assert.equal(existsSync(join(dir, 'phases', '1', 'UAT.md')), false); // nothing written
+});
+
+test('uat record: unknown item and bad result refuse without writing', () => {
+  const dir = uatTree();
+  assert.equal(run(['uat', 'record', '--phase', '1', '--item', '9', '--result', 'pass'], dir)
+    .reason, 'unknown-item');
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'maybe'], dir);
+  assert.equal(r.reason, 'bad-result');
+  assert.match(r.detail, /pass \| fail \| skipped \| blocked \| pending/);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 1\. Login works\nexpected: user lands on dashboard\nstatus: pending/);
+});
+
+test('uat merge: matches by k, and a verifier pass never rewrites first_pass', () => {
+  const dir = uatTree();
+  // Item 1 fails, the fix lands, it resets to pending - first_pass is fail.
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail', '--reported', 'broken'], dir);
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pending', '--fix', 'abc1234'], dir);
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    passes: [{ k: 1, evidence: 'redirect asserted' }],  // by k, not name
+    gaps: [{ k: 2, reason: 'session not cleared' }],    // matches pending item 2
+  }));
+  assert.equal(r.auto_passed, 1);
+  assert.equal(r.gaps, 1);
+  assert.equal(r.added, 0); // both matched existing items - nothing appended
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  // set-once invariant: the verifier pass keeps the original fail verdict
+  assert.match(text, /### 1\. Login works\nexpected: [^\n]*\nstatus: pass\nfirst_pass: fail/);
+  // matched-gap branch: fail + default severity, first_pass set on first verdict
+  assert.match(text, /### 2\. Logout works\nexpected: [^\n]*\nstatus: fail\nfirst_pass: fail/);
+  assert.match(text, /reported: session not cleared/);
+  assert.match(text, /severity: major/);
 });
 
 test('uat record: sets status, first_pass once, returns next pending (zero re-reads)', () => {
@@ -473,6 +589,13 @@ test('audit: traces every break kind, orphans, and deferred', () => {
   assert.deepEqual(r.counts, { total: 7, traced: 1, broken: 5, deferred: 1 });
 });
 
+test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () => {
+  const noReqs = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
+  assert.equal(run(['audit'], noReqs).reason, 'no-requirements');
+  const noRoadmap = makeTree({ reqs: [['REQ-1', 1, 'Pending']] });
+  assert.equal(run(['audit'], noRoadmap).reason, 'no-roadmap');
+});
+
 // --- renumber ------------------------------------------------------------------
 
 function renumberTree() {
@@ -531,6 +654,75 @@ test('renumber remove: cuts line + detail, orphans reqs, shifts down, reports pr
   const cursor = run(['cursor', 'get'], dir);
   assert.equal(cursor.total, 2);
   assert.ok(r.warn && /removed phase 2/.test(r.warn)); // cursor pointed at the removed phase
+});
+
+test('renumber insert at total+1 appends: nothing shifts, only the slot opens', () => {
+  const dir = renumberTree();
+  const r = run(['renumber', 'insert', '--at', '4'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.ops.some((o) => o.git_mv), false); // no dir ever moves
+  assert.match(r.slot, /Phase 4/);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+  assert.match(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /- \[ \] \*\*Phase 3: Three\*\*/);
+  const cursor = run(['cursor', 'get'], dir);
+  assert.equal(cursor.phase, 2); // below the insertion point - untouched
+  assert.equal(cursor.total, 4); // but the denominator grew
+});
+
+test('renumber remove: dirs shift DOWN low-to-high (collision-safe order)', () => {
+  const dir = renumberTree();
+  const plan = run(['renumber', 'remove', '--n', '1', '--dry-run'], dir);
+  assert.deepEqual(plan.ops[0], { git_mv: ['phases/2', 'phases/1'] }); // 2 first,
+  assert.deepEqual(plan.ops[1], { git_mv: ['phases/3', 'phases/2'] }); // then 3
+  assert.deepEqual(plan.ops[2], { rm: 'phases/1' });
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2']);
+  // the surviving dirs really are the MOVED ones, not stale copies
+  assert.match(readFileSync(join(dir, 'phases', '1', 'PLAN.md'), 'utf8'), /# Plan 2/);
+  assert.match(readFileSync(join(dir, 'phases', '2', 'PLAN.md'), 'utf8'), /# Plan 3/);
+});
+
+test('renumber remove of the LAST phase cuts the final detail section cleanly', () => {
+  const dir = renumberTree();
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.total, 2);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(roadmap, /Phase 3/);
+  assert.doesNotMatch(roadmap, /Three/);
+  assert.match(roadmap, /### Phase 2: Two/); // the preceding detail survives intact
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2']);
+});
+
+test('renumber remove: a detail heading as the last line (no trailing newline) still cuts', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    '# Roadmap\n\n## Phases\n\n- [ ] **Phase 1: One** - a\n- [ ] **Phase 2: Two** - b\n\n' +
+    '## Phase Details\n\n### Phase 1: One\n**Goal:** g1\n\n### Phase 2: Two');
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.total, 1);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(roadmap, /Phase 2/);
+  assert.match(roadmap, /### Phase 1: One/);
+});
+
+test('renumber: prose phase refs are reported, never rewritten; key absent when none', () => {
+  // The structured-only fixture has no lowercase refs -> no in_text_refs key.
+  const clean = run(['renumber', 'remove', '--n', '2', '--dry-run'], renumberTree());
+  assert.equal(clean.in_text_refs, undefined);
+
+  const dir = renumberTree();
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    readFileSync(join(dir, 'ROADMAP.md'), 'utf8') + '\nSee phase 3 for the follow-up work.\n');
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.in_text_refs.length, 1);
+  assert.equal(r.in_text_refs[0].file, 'ROADMAP.md');
+  assert.match(r.in_text_refs[0].text, /phase 3/);
+  // The prose line itself is untouched - repairing it needs judgment.
+  assert.match(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), /See phase 3 for the follow-up/);
 });
 
 test('renumber: out-of-range and unknown phase refuse', () => {

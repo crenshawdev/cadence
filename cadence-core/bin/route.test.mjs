@@ -15,9 +15,12 @@ const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
 // (never read the dev's real ~/.claude/cadence/config.json).
 const NO_GLOBAL = join(dir, 'no-global.json');
 
-// Write a config with the given model block and return its path.
+// Write a config with the given model block and return its path. A counter
+// guarantees uniqueness - deriving names from the config's content collided
+// when two distinct configs shared a length/profile/ceiling.
+let cfgN = 0;
 function cfg(model, name) {
-  const p = join(dir, name || `c-${Math.abs(JSON.stringify(model).length)}-${model.profile}-${(model.auto && model.auto.ceiling) || 'x'}.json`);
+  const p = join(dir, name || `c-${++cfgN}.json`);
   writeFileSync(p, JSON.stringify({ model }));
   return p;
 }
@@ -37,14 +40,26 @@ function resolve(role, file, extra = [], opts = {}) {
 
 test('fixed profiles resolve the matrix per role tier', () => {
   const fast = cfg({ profile: 'fast' });
-  assert.equal(resolve('cad-planner', fast).model, 'sonnet');   // heavy@fast
-  assert.equal(resolve('cad-executor', fast).model, 'haiku');   // standard@fast
-  assert.equal(resolve('cad-plan-checker', fast).model, 'haiku'); // light@fast
+  // One full-shape assertion pins the whole resolution contract...
+  const planner = resolve('cad-planner', fast);
+  assert.equal(planner.ok, true);
+  assert.equal(planner.model, 'sonnet');          // heavy@fast
+  assert.equal(planner.tier, 'heavy');
+  assert.equal(planner.effort, 'high');           // role base_effort
+  assert.equal(planner.agent, 'cad-planner');     // no variant swap
+  assert.equal(planner.profile, 'fast');
+  // ...then the rest of the matrix: model + tier + effort per role.
+  const exec = resolve('cad-executor', fast);
+  assert.deepEqual([exec.model, exec.tier, exec.effort], ['haiku', 'standard', 'high']);
+  const checker = resolve('cad-plan-checker', fast);
+  assert.deepEqual([checker.model, checker.tier, checker.effort, checker.agent],
+    ['haiku', 'light', 'low', 'cad-plan-checker']);
 
   const quality = cfg({ profile: 'quality' });
   assert.equal(resolve('cad-planner', quality).model, 'opus');
   assert.equal(resolve('cad-executor', quality).model, 'opus');
-  assert.equal(resolve('cad-plan-checker', quality).model, 'sonnet');
+  const cq = resolve('cad-plan-checker', quality);
+  assert.deepEqual([cq.ok, cq.model, cq.tier], [true, 'sonnet', 'light']);
 });
 
 test('fixed profile never escalates even at attempt 3 (explicit pick wins)', () => {
@@ -110,6 +125,54 @@ test('auto: held profile still swaps the effort-variant on failure', () => {
   assert.equal(r.agent, 'cad-plan-checker-high'); // variant swap still happens
   assert.equal(r.effort, 'high');
   assert.equal(r.escalated, true);                // the variant swap IS a change
+});
+
+test('auto: ambiguity signal bumps tier; below threshold does not', () => {
+  const a = cfg({ profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } });
+  const bumped = resolve('cad-executor', a, ['--ambiguity', '0.8']);
+  assert.deepEqual([bumped.tier, bumped.model, bumped.escalated], ['heavy', 'opus', true]);
+  const calm = resolve('cad-executor', a, ['--ambiguity', '0.5']); // threshold is 0.6
+  assert.deepEqual([calm.tier, calm.model, calm.escalated], ['standard', 'sonnet', false]);
+});
+
+test('auto: two difficulty signals still bump only max_tier_bump (one) tier', () => {
+  const a = cfg({ profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } });
+  const r = resolve('cad-plan-checker', a, ['--files', '30', '--ambiguity', '0.9']);
+  assert.equal(r.tier, 'standard'); // light +1, NOT +2 to heavy
+  assert.equal(r.model, 'sonnet');  // standard@balanced
+});
+
+test('auto: a heavy role clamps at the tier top under a difficulty bump', () => {
+  const a = cfg({ profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } });
+  const r = resolve('cad-planner', a, ['--files', '30']);
+  assert.equal(r.tier, 'heavy'); // already at the top - no overshoot
+  assert.equal(r.model, 'opus'); // heavy@balanced
+});
+
+test('bad enum string in config degrades to unresolved, never crashes', () => {
+  const r = resolve('cad-planner', cfg({ profile: 'ludicrous' }));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unresolved');
+  assert.equal(r.profile, 'ludicrous'); // names the value that failed to resolve
+});
+
+test('usage degradation: missing --role and unknown subcommand', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const bare = (args) => {
+    try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
+    catch (e) { return JSON.parse(e.stdout); }
+  };
+  assert.equal(bare(['resolve']).reason, 'usage');
+  assert.equal(bare(['nonsense']).reason, 'usage');
+});
+
+test('table dumps the routing table (roles + matrix present)', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.table.tier_order, ['light', 'standard', 'heavy']);
+  assert.ok(r.table.roles['cad-planner']);
+  assert.ok(r.table.profiles.balanced);
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
