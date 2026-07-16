@@ -49,9 +49,9 @@ Explicit exclusions. The reason prevents scope creep later.
 | RCL-03 | Phase 1 | Complete |
 | RCL-04 | Phase 2 | Complete |
 | RCL-05 | Phase 1 | Complete |
-| CWT-01 | Phase 3 | Pending |
-| CWT-02 | Phase 3 | Pending |
-| CWT-03 | Phase 3 | Pending |
+| CWT-01 | Phase 3 | Complete |
+| CWT-02 | Phase 3 | Complete |
+| CWT-03 | Phase 3 | Complete |
 
 **Coverage:** 8 v1 requirements, 8 mapped, 0 unmapped
 
