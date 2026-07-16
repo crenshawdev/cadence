@@ -31,7 +31,7 @@
 
     "planning.commit_docs":                 { "type": "bool", "default": true, "purpose": "Commit .planning docs alongside code" },
 
-    "memory.backend":                       { "type": "enum", "values": ["none"], "default": "none", "src": "repo", "purpose": "Where notes/observations route (only 'none' wired today)" },
+    "memory.backend":                       { "type": "enum", "values": ["none", "builtin"], "default": "builtin", "src": "repo", "purpose": "Where notes/observations route: 'builtin' runs zero-dep BM25 recall over .planning/, 'none' disables recall" },
 
     "review.mode":                          { "type": "enum", "values": ["single", "panel", "adjudicated"], "default": "adjudicated", "src": "repo", "purpose": "How multiple reviewers combine (review-triggers.md \u00a7Combine)" },
     "review.reviewers":                     { "type": "array_enum", "values": ["claude-subagent", "openai", "gemini"], "default": ["claude-subagent"], "src": "repo", "purpose": "Which reviewer backends fire() resolves (review-triggers.md \u00a7Resolve)" },

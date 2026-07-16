@@ -49,11 +49,39 @@ Attempts: <count of applied fixes that did not resolve it>
 
 ## The method loop
 
+On every route into this loop - a new symptom AND a `continue <slug>` resume -
+first read the config seam once:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend review.consult.attempt_threshold
+```
+
+`memory.backend` gates the Hypothesize recall step (step 1); `review.consult.attempt_threshold`
+(T) gates the dead-end consult (see Consult). The `continue <slug>` resume enters here
+directly, bypassing the New session steps, so anchoring the read to loop entry keeps both
+gates fed on resume.
+
 Repeat until a root cause is confirmed or a dead-end is reached:
 
 1. **Hypothesize.** List 2-5 candidate causes ranked most-likely-first, but test
    risk-first when a cheap test can eliminate a whole class. Write them to
    Hypotheses. Never jump to a fix before a cause is confirmed by evidence.
+   Recall runs here because Hypothesize is the judgment moment - the point where
+   past experience should shape the candidate set. When the effective
+   `memory.backend` (read at loop entry) is `builtin`, run recall inline via Bash
+   (D-02: there is no debug subagent, the main model runs the method inline):
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the symptom / bug description>"
+   ```
+
+   Skip this entirely when the backend is `none` - do not issue the call. The
+   gate precedes the call on purpose (D-03): recall's own backend-off return is
+   a backstop for a direct caller, not this workflow's gate. Fold any matching
+   past deviations or UAT findings from recall's JSON
+   (`{ok, results:[{score, source, phase?, snippet}]}`) into the candidate
+   hypotheses, each noted in the Hypotheses list with its `source` file and
+   `phase` when present (optional - a phaseless CAPTURE item omits it).
 2. **Predict + test.** For the top untested hypothesis, state what you would
    observe if it were true, then run the CHEAPEST discriminating check (Read,
    Grep, a targeted Bash run, a log line). One variable at a time.
@@ -82,8 +110,11 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 
 Offer a consult - user-gated, one per dead-end - when an OBSERVABLE state is hit,
 never on a feeling of being stuck. The threshold T is
-`review.consult.attempt_threshold` (default 3), read through the config seam
-(`config.mjs get review.consult.attempt_threshold`) once at session start:
+`review.consult.attempt_threshold` (default 3), read at method-loop entry
+alongside the recall backend in the one
+`config.mjs get memory.backend review.consult.attempt_threshold` call (above).
+`memory.backend` gates the Hypothesize recall step; the threshold gates
+this consult:
 
 - **Attempts >= T** on the same bug (T applied fixes, still failing).
 - **Test still red after T** method-loop iterations.

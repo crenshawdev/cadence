@@ -72,6 +72,34 @@ the blocking ones via the ask-user seam first, and do NOT bake an unverified
 scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
+Recall prior-project memory before dispatching. Read the effective backend:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
+```
+
+When it is `builtin` (the schema default), run recall for the phase goal:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
+```
+
+Skip this substep entirely when the backend is `none` - do not issue the
+recall call at all. The gate precedes the call on purpose (D-03): recall's own
+backend-off return is a backstop for a direct caller, not this workflow's gate,
+so `none` means the call is never made and no recalled data reaches the pass.
+
+Parse recall's JSON line (`{ok, results:[{score, source, phase?, snippet}]}`)
+and render the top results into a `<recalled_memory>` block in the analyzer
+payload below (placed right after `<search_terms>`), one line per result
+carrying its `snippet`, `source` file, and `phase`. `phase` is optional - a
+phaseless CAPTURE.md item omits it; render it only when present, matching the
+omit-optionals convention. These snippets ride the dispatch prompt, never the
+cad-assumptions-analyzer definition (D-01 / cache discipline): they are
+volatile per-phase data, while the agent's stable instruction to consume and
+cite them lives in its cached file. On `none`, or when results are empty, omit
+the block.
+
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), timeout `workflow.subagent_timeout` from config.
 This keeps raw file contents out of the main context. Prompt payload:
@@ -82,6 +110,7 @@ Analyze the codebase for Phase {N}: {phase_name}.
 <phase_goal>{goal and description from ROADMAP.md}</phase_goal>
 <prior_decisions>{prior-decisions summary from load_priors}</prior_decisions>
 <search_terms>{key terms extracted from the phase goal}</search_terms>
+<recalled_memory>{one line per recalled result: snippet - source file, phase (when present); omit this block on `none` or empty results}</recalled_memory>
 
 Follow your output format exactly.
 ```

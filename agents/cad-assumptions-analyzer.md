@@ -18,6 +18,12 @@ Your prompt supplies:
 - The phase goal and description, from the project roadmap.
 - A summary of decisions already locked by earlier phases.
 - Starting search terms. These are hints, not a boundary - search beyond them.
+- Optionally, a `<recalled_memory>` block of prior-project snippets, each
+  tagged with a source file and phase. Treat them as prior evidence to weigh
+  against what the code shows, not as settled fact. When a recalled snippet
+  informs an assumption, cite that source file and phase on the assumption's
+  Evidence line (alongside the real file paths), or raise it as a flagged
+  assumption when the code and the recalled memory disagree.
 </input>
 
 <process>

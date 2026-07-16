@@ -26,6 +26,7 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
+import { weighAll } from './lib/surface-weight.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,7 @@ const CONTRACTS = {
     'uat status': ['--phase'],
     audit: [],
     'plan-overlap': ['--phase'],
+    recall: [],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },
@@ -72,6 +74,12 @@ const CONTRACTS = {
 
 // Subcommands whose first word takes a second word (sub-subcommand).
 const TWO_WORD = new Set(['cursor', 'uat', 'renumber']);
+
+// The canonical Claude Code tool vocabulary the agents-only tools lint checks
+// against - a FIXED set, not derived from the tree, so a single-agent fixture
+// still has a full vocabulary to test with.
+const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
+  'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite'];
 
 // --- helpers -----------------------------------------------------------------
 
@@ -193,6 +201,68 @@ function run(root) {
     if (!covered) problems.push({ kind: 'inert-config-key', file: 'cadence-core/config.schema.json', detail: key });
   }
 
+  // 4. context-weight budgets: every measured prose surface (agents/skills/
+  // workflows, via the SAME lib weight.mjs reports with, so enforced weight
+  // cannot diverge from reported weight) must have a budget entry and stay at
+  // or under it. The manifest is root-relative like config.schema.json, so a
+  // --root fixture can supply its own; an absent manifest skips the check.
+  const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
+  if (existsSync(budgetPath)) {
+    const budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
+    for (const { surface, bytes } of weighAll(root)) {
+      if (!(surface in budgets)) {
+        problems.push({ kind: 'unbudgeted-surface', file: surface, detail: 'no budget entry' });
+        continue;
+      }
+      const budget = budgets[surface];
+      if (bytes > budget) {
+        problems.push({ kind: 'budget-overrun', file: surface,
+          detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
+      }
+    }
+  }
+
+  // 5. agents-only tools-declaration lint: an agent's prose may only reference
+  // tools it declares in frontmatter `tools:`. Skills declare capability under
+  // `allowed-tools:` and are excluded (D-07). Only backtick-quoted mentions or
+  // "the <Tool> tool" phrasing count as references (D-06); bare-word uses
+  // (`| Task |`, `Task completeness`, `Write \`None.\``) are ignored, so no
+  // current prose needs editing.
+  const toolAlt = KNOWN_TOOLS.join('|');
+  const backtickRe = new RegExp('`(' + toolAlt + ')`', 'g');
+  const theToolRe = new RegExp('\\bthe (' + toolAlt + ') tool\\b', 'g');
+  const agentsDir = join(root, 'agents');
+  if (existsSync(agentsDir)) {
+    for (const e of readdirSync(agentsDir, { encoding: 'utf8' })) {
+      const file = join(agentsDir, e);
+      if (!e.endsWith('.md') || !statSync(file).isFile()) continue;
+      const text = readFileSync(file, 'utf8');
+      const rel = relative(root, file);
+      // Frontmatter is the block between the first `---` and the next `---`;
+      // the rest is the prose body the lint scans.
+      const fm = text.match(/^---\n([\s\S]*?)\n---/);
+      const declared = new Set();
+      if (fm) {
+        const toolsLine = fm[1].match(/^tools:\s*(.+)$/m);
+        if (toolsLine) {
+          for (const t of toolsLine[1].split(',')) {
+            const name = t.trim();
+            if (name) declared.add(name);
+          }
+        }
+      }
+      const body = fm ? text.slice(fm[0].length) : text;
+      const referenced = new Set();
+      for (const m of body.matchAll(backtickRe)) referenced.add(m[1]);
+      for (const m of body.matchAll(theToolRe)) referenced.add(m[1]);
+      for (const tool of referenced) {
+        if (!declared.has(tool)) {
+          problems.push({ kind: 'undeclared-tool', file: rel, detail: `${tool} not in tools:` });
+        }
+      }
+    }
+  }
+
   return problems;
 }
 
@@ -203,7 +273,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, budgets, tools', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

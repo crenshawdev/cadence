@@ -21,6 +21,8 @@
 //                                   from ROADMAP when omitted; stamps today
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
+//   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
+//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated
 'use strict';
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -32,7 +34,10 @@ import {
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
+  parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
 } from './lib/planning-files.mjs';
+import { mergeLayers } from './lib/config-merge.mjs';
+import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
@@ -489,6 +494,77 @@ function cmdPlanOverlap(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// recall - BM25 retrieval over the .planning/ artifacts Cadence writes but
+// never read back (SUMMARY deviations, CAPTURE items, UAT findings, CONTEXT
+// decisions). Zero-dep, deterministic (sorted corpus traversal + a total
+// result order, no timestamps): same corpus + same query -> byte-identical
+// output. Gated by memory.backend; `none` reports off with empty results. An
+// empty or absent corpus is ok:true with results:[] - recall never blocks the
+// spine, so it is safe to call before any phase has produced artifacts.
+// ---------------------------------------------------------------------------
+function cmdRecall(dir, query, opts) {
+  if (!query) return fail('bad-args', 'recall needs a query');
+
+  // memory.backend, effective across the config layers (repo > global);
+  // schema default is builtin, so an unset key recalls. `none` is the off
+  // switch - a successful check with a negative answer, like plan-overlap.
+  const backend = mergeLayers(join(dir, 'config.json')).config?.memory?.backend ?? 'builtin';
+  if (backend === 'none') return ok({ backend: 'none', results: [] });
+
+  // Corpus assembly in a fixed order: phases ascending (decimal-aware), each
+  // phase's SUMMARY then UAT then CONTEXT, then the top-level CAPTURE. The
+  // listing itself is guarded - an absent .planning or phases/ is empty data,
+  // never an ENOENT throw (which the dispatch catch would turn into a
+  // fail('internal'), breaking the empty-corpus contract).
+  const corpus = [];
+  const phasesDir = join(dir, 'phases');
+  if (existsSync(phasesDir)) {
+    const entries = readdirSync(phasesDir)
+      .filter((e) => /^\d+(?:\.\d+)?$/.test(e))
+      .sort((a, b) => Number(a) - Number(b));
+    for (const n of entries) {
+      const pdir = join(phasesDir, n);
+      const phase = Number(n);
+      const summary = read(join(pdir, 'SUMMARY.md'));
+      if (summary) for (const text of parseSummarySnippets(summary)) {
+        corpus.push({ text, source: `phases/${n}/SUMMARY.md`, phase });
+      }
+      const uatText = read(join(pdir, 'UAT.md'));
+      if (uatText) for (const it of parseUat(uatText).items) {
+        const text = `${it.name || ''} ${it.expected || ''}`.trim();
+        if (text) corpus.push({ text, source: `phases/${n}/UAT.md`, phase });
+      }
+      const context = read(join(pdir, 'CONTEXT.md'));
+      if (context) for (const text of parseContextDecisions(context)) {
+        corpus.push({ text, source: `phases/${n}/CONTEXT.md`, phase });
+      }
+    }
+  }
+  const capture = read(join(dir, 'CAPTURE.md'));
+  if (capture) for (const item of parseCaptureSnippets(capture)) {
+    corpus.push({ text: item.text, source: 'CAPTURE.md',
+      ...(item.phase !== undefined ? { phase: item.phase } : {}) });
+  }
+
+  if (!corpus.length) return ok({ results: [] });
+
+  // search() returns [{i, score}] in (score desc, corpus position asc) order -
+  // already total because the corpus is in sorted traversal order, so do NOT
+  // re-sort. Round the score so stdout is byte-stable across the Node matrix.
+  const index = buildIndex(corpus.map((c) => c.text));
+  const results = search(index, query).map(({ i, score }) => {
+    const c = corpus[i];
+    return {
+      score: Math.round(score * 1e4) / 1e4,
+      source: c.source,
+      ...(c.phase !== undefined ? { phase: c.phase } : {}),
+      snippet: c.text,
+    };
+  });
+  ok({ results });
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -646,6 +722,7 @@ const COMMANDS = {
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
+  recall: (dir, sub, opts) => cmdRecall(dir, sub, opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 

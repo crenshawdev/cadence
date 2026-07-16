@@ -147,6 +147,88 @@ export function setReqStatus(text, ids, status) {
 }
 
 // ---------------------------------------------------------------------------
+// Recall corpus snippets - item-level strings pulled from SUMMARY/CAPTURE/
+// CONTEXT for BM25 indexing (bin/planning.mjs cmdRecall). Absence of a
+// section is data, never a throw; template placeholders (`None...`, `<...>`)
+// are not indexable content and are skipped.
+// ---------------------------------------------------------------------------
+
+/**
+ * Isolate one `## Heading` section's body, cut at the next `## ` heading -
+ * the same idiom parseRoadmapPhases uses. Null when the heading is absent.
+ * @param {string} text @param {string} heading
+ */
+function sectionBody(text, heading) {
+  const parts = text.split(new RegExp(`^## ${heading}\\s*$`, 'm'));
+  if (parts.length < 2) return null;
+  return parts[1].split(/^## /m)[0];
+}
+
+/**
+ * SUMMARY.md item-level snippets: the `## Deviations` and `## Open items`
+ * bullets, stripped of a leading `[deviation]` tag. Placeholder lines
+ * (`None...`, `<...>`) are the template's own prose, not real content.
+ * @param {string} text @returns {string[]}
+ */
+export function parseSummarySnippets(text) {
+  const out = [];
+  for (const heading of ['Deviations', 'Open items']) {
+    const body = sectionBody(text, heading);
+    if (!body) continue;
+    for (const line of body.split('\n')) {
+      const m = line.match(/^-\s+(.*)$/);
+      if (!m) continue;
+      const raw = m[1].trim();
+      if (!raw || raw.startsWith('None') || raw.startsWith('<')) continue;
+      out.push(raw.replace(/^\[deviation\]\s*/, ''));
+    }
+  }
+  return out;
+}
+
+/**
+ * CAPTURE.md item-level snippets: every `- ` bullet under `## Todos`,
+ * `## Seeds`, `## Notes`, with a leading `[ ]` checkbox and `(phase N)` tag
+ * stripped - the tag becomes the numeric `phase` field (omitted when the
+ * bullet carries no tag; decimal phase numbers are legal).
+ * @param {string} text @returns {Array<{text:string, phase?:number}>}
+ */
+export function parseCaptureSnippets(text) {
+  const out = [];
+  for (const heading of ['Todos', 'Seeds', 'Notes']) {
+    const body = sectionBody(text, heading);
+    if (!body) continue;
+    for (const line of body.split('\n')) {
+      const m = line.match(/^-\s+(.*)$/);
+      if (!m) continue;
+      let raw = m[1].trim();
+      if (!raw) continue;
+      raw = raw.replace(/^\[ \]\s*/, '');
+      /** @type {number|undefined} */
+      let phase;
+      raw = raw.replace(/^\(phase (\d+(?:\.\d+)?)\)\s*/, (_m, n) => { phase = Number(n); return ''; });
+      out.push({ text: raw, ...(phase !== undefined ? { phase } : {}) });
+    }
+  }
+  return out;
+}
+
+/**
+ * CONTEXT.md item-level snippets: the `- D-NN (...): ...` lines under
+ * `## Decisions`, stripped of the leading `- `.
+ * @param {string} text @returns {string[]}
+ */
+export function parseContextDecisions(text) {
+  const body = sectionBody(text, 'Decisions');
+  if (!body) return [];
+  const out = [];
+  for (const line of body.split('\n')) {
+    if (/^- D-\d+(?:\.\d+)?\b/.test(line)) out.push(line.replace(/^- /, ''));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // UAT.md - the persistent checklist (templates/UAT.md).
 // ---------------------------------------------------------------------------
 

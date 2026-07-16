@@ -33,6 +33,30 @@ function fixture(proseText) {
   return root;
 }
 
+/**
+ * A fixture with agent files and/or a weight-budgets.json manifest, for the
+ * budget (CWT-02) and tools-lint (CWT-03) checks. Real schema is copied so the
+ * config-key checks stay quiet about unrelated keys.
+ * @param {{agents?:Record<string,string>, budgets?:Record<string,number>|null}} opts
+ */
+function fixtureWith({ agents = {}, budgets = null }) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  for (const [name, text] of Object.entries(agents)) {
+    writeFileSync(join(root, 'agents', name), text);
+  }
+  if (budgets) {
+    writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
+      JSON.stringify({ budgets }, null, 2));
+  }
+  return root;
+}
+
 // The load-bearing assertion: the shipped repo itself is drift-free. This is
 // the CI gate - a prose edit that invents a key, flag, or path fails here.
 test('the repo itself passes self-verification', () => {
@@ -80,4 +104,63 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`planning.commit_docs` `memory.backend`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
+});
+
+// --- context-weight budget check (CWT-02) ---
+
+test('a surface over its declared budget is flagged with the overage', () => {
+  const root = fixtureWith({
+    agents: { 'big.md': 'x'.repeat(500) },
+    budgets: { 'agents/big.md': 10 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'budget-overrun'
+    && x.file === 'agents/big.md' && /exceeds budget 10B/.test(x.detail)));
+});
+
+test('a surface at or under its budget yields no overrun', () => {
+  const body = 'hello';
+  const root = fixtureWith({
+    agents: { 'ok.md': body },
+    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 100 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'budget-overrun'));
+});
+
+test('a measured surface missing from the manifest is flagged unbudgeted', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nbody\n' },
+    budgets: { 'agents/other.md': 100 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unbudgeted-surface' && x.file === 'agents/a.md'));
+});
+
+// --- agents-only tools-declaration lint (CWT-03) ---
+
+test('a backtick/the-X-tool reference absent from tools: is flagged', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` and the Grep tool.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'undeclared-tool'
+    && x.file === 'agents/a.md' && /Bash/.test(x.detail)));
+});
+
+test('a tool referenced and declared yields no undeclared-tool', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read, Bash\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
+test('bare-word tool names (D-06 collisions) are not false positives', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\n'
+      + '| Task | Commit |\nWrite `None.` when empty.\nTask completeness matters.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
 });

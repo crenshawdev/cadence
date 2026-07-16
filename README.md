@@ -112,11 +112,16 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   phase boundary and the next command rebuilds from disk. An attempt to keep prompt-cache reuse
   high and context lean, not a magic trick.
 - **Built-in minimal memory** — `/cad-capture` keeps phase-linked todos, seeds, and notes in
-  `.planning/CAPTURE.md`. A `memory.backend` key reserves the seam for richer backends;
-  only `none` ships today.
+  `.planning/CAPTURE.md`, and `memory.backend` defaults to `builtin`: a zero-dep BM25 `recall`
+  over what `.planning/` already records (SUMMARY deviations, CAPTURE items, UAT findings,
+  CONTEXT decisions), so past decisions resurface at planning time. `none` turns recall off;
+  external backends (mem-*, a vault) stay reserved behind the same seam.
 - **Self-verifying** — CI lints the prose against the code: every config key, script
   invocation, and file path named in the workflows must actually exist, or the build fails.
-  The docs cannot quietly drift from the tool.
+  It also weighs every agent, skill, and workflow surface and fails the build when one
+  outgrows its byte budget, or when an agent's prose reaches for a tool its frontmatter
+  never declared. The docs cannot quietly drift from the tool, and its context claims are
+  measured, not asserted.
 
 ## Attribution
 

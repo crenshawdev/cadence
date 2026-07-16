@@ -32,8 +32,12 @@ Read config through the seam - one call for every key this workflow uses:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.plan_check workflow.inline_plan_threshold planning.commit_docs \
   review.triggers.plan.gate git.protected_branches git.on_protected \
-  git.base_branch
+  git.base_branch memory.backend
 ```
+
+`memory.backend` rides this same batch so the effective recall backend is read
+through the config touchpoint already here - no extra Bash round-trip. It gates
+recall in spawn_planner and inline_plan below.
 </step>
 
 <step name="load_phase">
@@ -63,6 +67,26 @@ its model + agent file through the seam's routing step (first dispatch is
 `--attempt 1`). Then wait - do not read, edit, or plan anything else while the
 subagent runs.
 
+Before assembling the prompt, recall prior-project memory when the effective
+`memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
+do not issue the call). The gate precedes the call on purpose (D-03): recall's
+own backend-off return is a backstop for a direct caller, not this workflow's
+gate, so `none` means no recall runs and no block is appended.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
+```
+
+Parse its JSON line (`{ok, results:[{score, source, phase?, snippet}]}`) and
+append a `<recalled_memory>` block at the END of the `<planning_context>` below
+(its volatile region), one line per top result carrying the `snippet`, `source`
+file, and `phase` when present (optional - phaseless CAPTURE items omit it;
+render it only when present). These snippets ride the dispatch prompt, never the
+cad-planner definition (D-01 / cache discipline): they are volatile per-phase
+data, while the planner's stable instruction to treat them as prior art and cite
+them lives in its cached file. On `none`, or when results are empty, omit the
+block.
+
 Prompt:
 
 ```markdown
@@ -89,6 +113,8 @@ honor it; if your file-independence analysis contradicts it (e.g. it asks
 for multiple plans but the slices share files), follow your analysis and
 record the deviation and its reason in your return marker and the PLAN
 Notes - never diverge silently.
+
+<recalled_memory>{one line per recalled result: snippet - source file, phase (when present); this block is present only under memory.backend builtin with non-empty results}</recalled_memory>
 </planning_context>
 
 (The return markers and report shape are the agent's own cached definition -
@@ -108,6 +134,14 @@ Follow cad-planner's methodology yourself: goal-backward truths, read the
 files the tasks will touch, task anatomy (files / action / falsifiable
 verify). Write .planning/phases/<N>/PLAN.md from the same template. One plan
 file only - inline never splits.
+
+Recall applies here too: the `--inline` under-threshold path is a real
+task-breakdown moment with no cad-planner dispatch, so it must not skip prior
+memory. When the effective `memory.backend` read in `parse` is `builtin`, run
+the same gated recall as spawn_planner and fold its results into the inline
+plan's truths and tasks, citing each recalled item's `source` file and `phase`
+(when present) in the task's Action or the plan's Notes. When the backend is
+`none`, the inline path issues no recall call, exactly like spawn_planner.
 </step>
 
 <step name="handle_return">

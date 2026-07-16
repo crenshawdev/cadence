@@ -19,7 +19,7 @@
     "create_tag": true
   },
   "planning": { "commit_docs": true },
-  "memory": { "backend": "none" },
+  "memory": { "backend": "builtin" },
   "review": {
     "mode": "adjudicated",
     "reviewers": ["claude-subagent"],
