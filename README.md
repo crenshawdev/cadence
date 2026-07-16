@@ -118,7 +118,10 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   external backends (mem-*, a vault) stay reserved behind the same seam.
 - **Self-verifying** — CI lints the prose against the code: every config key, script
   invocation, and file path named in the workflows must actually exist, or the build fails.
-  The docs cannot quietly drift from the tool.
+  It also weighs every agent, skill, and workflow surface and fails the build when one
+  outgrows its byte budget, or when an agent's prose reaches for a tool its frontmatter
+  never declared. The docs cannot quietly drift from the tool, and its context claims are
+  measured, not asserted.
 
 ## Attribution
 
