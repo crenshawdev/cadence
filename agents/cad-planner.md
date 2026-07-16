@@ -63,6 +63,13 @@ tasks must satisfy. The sequence:
 Before writing any task, read the actual files it will touch. Never plan
 from filenames, directory listings, or memory of similar codebases. Read
 each file once, extract everything you need in that pass, do not re-read.
+
+Your `<planning_context>` MAY carry a `<recalled_memory>` block of cited
+prior-project snippets, each tagged with a source file and phase. Treat them as
+prior art when deriving truths and tasks - a past deviation or UAT finding that
+bears on this phase. When a recalled item informs a task or a decision, cite its
+source file and phase in that task's Action or in the plan's Notes. They are
+evidence to weigh, never a mandate to widen scope.
 </methodology>
 
 <task_anatomy>
