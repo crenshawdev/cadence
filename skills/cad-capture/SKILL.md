@@ -1,6 +1,6 @@
 ---
 name: cad-capture
-description: "Capture without losing your place - an actionable phase-linked todo (the queue mem-* lacks), a seed idea for a future milestone, or a note. One file: .planning/CAPTURE.md. Notes route to the memory backend when one is configured"
+description: "Capture without losing your place - an actionable phase-linked todo (the queue mem-* lacks), a seed idea for a future milestone, or a note. One file: .planning/CAPTURE.md, which the builtin memory backend makes recallable at planning time"
 argument-hint: "[todo | seed | note] <text> [--phase N]"
 allowed-tools:
   - Read
@@ -16,8 +16,10 @@ kinds, one file (`.planning/CAPTURE.md`):
 - **todo** - an actionable item, tagged to a phase, so it resurfaces where it
   matters. This is the phase-linked queue mem-* lacks and the reason this exists.
 - **seed** - an idea for a future phase or milestone, parked in the backlog.
-- **note** - a free note; routes to the memory backend if `memory.backend` is
-  set, else lands in the file (built-in minimal - a generic install has no mem-*).
+- **note** - a free note; lands in the file like the rest. With
+  `memory.backend: builtin` (the default) the note becomes recallable - it is
+  still written here, `builtin` only reads `.planning/` back, never relocates
+  the write.
 </objective>
 
 <process>
@@ -33,9 +35,9 @@ kinds, one file (`.planning/CAPTURE.md`):
 3. **Append by kind:**
    - todo -> `- [ ] (phase N) <text>` under `## Todos`.
    - seed -> `- <text>` under `## Seeds`.
-   - note -> `- <YYYY-MM-DD> <text>` under `## Notes`. (`memory.backend`
-     currently wires only `none`; when a real backend ships, notes route to
-     it instead.)
+   - note -> `- <YYYY-MM-DD> <text>` under `## Notes`. (CAPTURE.md is always
+     the write path; `memory.backend: builtin` makes these notes recallable
+     via `planning.mjs recall`, and `none` turns that recall off.)
 
 4. **Persist.** Stage ONLY `.planning/CAPTURE.md` and commit `docs: capture
    <kind>` (protected-branch guard applies) - this never touches the user's
