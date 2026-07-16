@@ -44,7 +44,7 @@ the acceptance criteria (sources below), and pipe any criterion not already
 covered as a new item:
 
 ```
-node ".../planning.mjs" uat refresh --phase <N> --items -
+node ".../planning.mjs" uat refresh --phase <N>
    stdin: [{"name":"...","expected":"..."}]
 ```
 
@@ -83,7 +83,7 @@ Item rules (the model's judgment, before the seam call):
 Then create the checklist in one call:
 
 ```
-node ".../planning.mjs" uat init --phase <N> --items -
+node ".../planning.mjs" uat init --phase <N>
    stdin: [{"name":"...","expected":"..."}, ...]
 ```
 
