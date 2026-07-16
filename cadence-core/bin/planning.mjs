@@ -30,13 +30,11 @@ import {
   setPhaseBox, setReqStatus, parsePlanRequirements, shiftPhaseTokens,
   findProsePhaseRefs, cutPhaseDetail,
 } from './lib/planning-files.mjs';
+import { emit } from './lib/seam-io.mjs';
 
-const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); };
-const ok = (o) => { out({ ok: true, ...o }); process.exitCode = 0; };
-const fail = (reason, detail, hint) => {
-  out({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
-  process.exitCode = 1;
-};
+const ok = (o) => emit({ ok: true, ...o });
+const fail = (reason, detail, hint) =>
+  emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
 
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {

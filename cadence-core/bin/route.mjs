@@ -25,13 +25,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { emit as out } from './lib/seam-io.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TABLE = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-
-// Seam convention: the JSON line is the contract; the exit code mirrors ok
-// for shell-side chaining (0 ok, 1 degraded).
-const out = (o) => { process.stdout.write(JSON.stringify(o) + '\n'); process.exitCode = o.ok === false ? 1 : 0; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
