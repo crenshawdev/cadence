@@ -2,7 +2,8 @@
 // @ts-check
 // planning.mjs - the .planning state-machine seam. Deterministic reads and
 // writes of the planning file set, so workflow prose keeps judgment and this
-// script keeps invariants (design-notes/planning-mjs-interface.md).
+// script keeps invariants. The JSON shapes asserted in planning.test.mjs ARE
+// the interface contract; there is no spec file beyond them.
 //
 // Seam contract (shared with route/config/review-provider):
 //   - exactly ONE JSON object on stdout; {ok:true,...} exit 0,
