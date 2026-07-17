@@ -387,8 +387,14 @@ rewritten.
 - *Why:* UAT item 9 falsified the "a platform merge is never a push" assumption — `gh pr
   create` cannot open a PR from a local-only branch, so an honest end-to-end close
   necessarily pushes. The absolute never-push rule made the sanctioned close mechanically
-  impossible.
-  <!-- HAND-DRAFT (John): R1 product why - the deeper rationale beyond the item-9 functional trigger -->
+  impossible. The deeper reason is that Cadence is built for one developer working
+  alone, and a solo dev is the entire review board. Every cycle I was typing the same
+  manual tail by hand, open the PR, merge it, switch back to main, pull, delete the
+  branch, and none of that was a decision, it was just keystrokes. `auto_close` stays
+  off by default because publishing should be a choice. But once I have made that
+  choice, being asked to re-make it at four separate prompts is not safety, it is
+  friction wearing safety's coat. The one gate that actually matters, a blocking
+  `pre_ship` finding, still stops the chain cold.
 - *Not reversed:* the no-preselected-default sub-principle stands. `auto_close` skips the
   publish ask entirely; it installs no default mechanism. `/cad-land`'s interactive path
   still asks with no preselected default (above). The reversal removed the *absolute*, not

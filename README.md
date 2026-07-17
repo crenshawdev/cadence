@@ -4,7 +4,7 @@ Cadence is a planning and execution system for a single developer working in Cla
 
 It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that guards protected branches from ad-hoc pushes and asks how you publish rather than deciding for you, unless you opt into an autonomous close.
 
-> Cadence is a standalone planning-and-execution system for Claude Code. Its methodology descends from [GSD](https://github.com/open-gsd/gsd-core) - the discuss/plan/execute/verify loop - and everything else is its own, carrying about 3% of GSD's mass (measured 2026-07-10, GSD commit d010ea1). <!-- HAND-DRAFT (John): GSD lineage/distillation framing (crenshaw-voice); no "rewrite"/"forked" --> See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
+> Cadence's methodology descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD is what happens when that loop gets built to government standards, an elephant: hundreds of workflows, dozens of agents, a whole TypeScript product wrapped around a four-step idea. Cadence is the mouse. Same loop, its own implementation, about 3% of GSD's documentary mass (measured 2026-07-10, GSD commit d010ea1). See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
 
 ## Why Cadence
 
@@ -72,7 +72,8 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   config validation runs through small zero-dependency Node scripts (`planning.mjs`,
   `route.mjs`, `config.mjs`, `review-provider.mjs`) that speak one JSON line and never block
   the loop. Prose keeps the judgment; the scripts keep the invariants, so state transitions
-  don't drift with the model's mood.
+  don't drift with the model's mood. The decision logic sits in pure, unit-tested cores
+  behind those thin seams ([how](INTERNALS.md#pure-core-thin-seam)).
 - **22 skills, 7 agents, and nothing you didn't ask for.** No team or multi-author tooling,
   no AI-product track, no web-UI design track, no catalog-scaling, and nothing that duplicates
   a developer's own memory or graph tools. See [`LINEAGE.md`](./LINEAGE.md) for the full cut.
@@ -82,14 +83,19 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   (plan, diff, risk surface, pre-ship), each with its own gate/tier/effort switches in
   `/cad-config`. At a debugging dead-end, an optional consult brings a second model's angles
   to the table; it advises, never decides, always asks first, and is off until you enable
-  `review.consult.enabled`.
+  `review.consult.enabled`. Cross-model review is a pure function, so it runs as a direct API
+  call with provider-enforced schema output rather than a scraped CLI
+  ([why not a CLI](INTERNALS.md#review-is-a-pure-function)), and model ids are never
+  hardcoded, Cadence detects what your key can actually reach
+  ([how](INTERNALS.md#live-model-detection)).
 - **Model routing** — three canned profiles (fast / balanced / quality) plus an optional `auto`
   mode that picks model (and effort, via role) per task, with guardrails. Routing governs the
   subagents Cadence dispatches; the main session's model and effort are yours to set in Claude
   Code, and Cadence cannot set them for you. My recommendation: run the main session on the
   strongest model at high effort. The context discipline is what makes that affordable, because
   the orchestrator stays lean and reads its own prefix from cache while the heavy file work
-  happens in routed subagents.
+  happens in routed subagents. The `auto` engine works around a real platform limit, model
+  is overridable per dispatch but effort isn't ([how it works](INTERNALS.md#model-routing)).
 - **Git model** — atomic commits and a protected-branch guard enforced by the harness itself (a
   PreToolUse hook, not prose the model can talk itself out of) that blocks ad-hoc pushes, with a
   `land` step that asks how you want to publish with no preselected default instead of forcing a
@@ -100,7 +106,9 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   (`git.on_land_cleanup`, on by default). Publishing flows through one sanctioned git-publish
   seam — the single code-guarded push path Cadence uses — and an opt-in end-to-end close
   (`git.auto_close`, off by default) runs audit → tag → PR → merge → reset with no per-step
-  prompts, halting on a blocking `pre_ship` FAIL.
+  prompts, halting on a blocking `pre_ship` FAIL. That single seam exists because I deleted
+  the command-string push whitelist that could never be made safe
+  ([why](INTERNALS.md#the-push-guard-and-the-parser-i-didnt-write)).
 - **Parallel execution, gated by arithmetic** — independent plans can run concurrently in
   isolated git worktrees (`parallelization.enabled`, off by default). Parallelism is offered
   only when a deterministic file-overlap check proves the plans declare no shared files, and
