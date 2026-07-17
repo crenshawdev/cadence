@@ -63,6 +63,10 @@ const CONTRACTS = {
     '*': ['--dir'],
     decide: ['--branch'],
   },
+  'git-publish.mjs': {
+    '*': ['--dir'],
+    publish: ['--remote'],
+  },
   'land-cleanup.mjs': {
     '*': ['--dir'],
     cleanup: ['--branch', '--base', '--merged'],
