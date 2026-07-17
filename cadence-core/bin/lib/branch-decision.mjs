@@ -70,7 +70,8 @@ export function integrationBranchName(projectText, roadmapText) {
  *   still governed by git.on_protected (git-guard.mjs unchanged). `branch: null`.
  * - milestone mode on a protected base: auto -> create, off -> stay, ask -> ask,
  *   each naming the derived integration branch (its tip becomes the worktree
- *   fork point, D-06).
+ *   fork point, D-06). When no name is derivable, auto/ask downgrade to a
+ *   naming-problem `ask` (branch:null) rather than create an unnamed branch.
  * - milestone mode off a protected base: stay - creation is lazy and once per
  *   cycle, and HEAD is already off the base, so the current branch is the tip.
  *
@@ -90,6 +91,14 @@ export function decideBranch({ mode, autoBranch, currentBranch, protectedBranche
     if (!protectedList.includes(currentBranch)) {
       return { action: 'stay', branch: currentBranch ?? null,
         reason: 'already off the protected base; once-per-cycle integration-branch creation has happened, this branch tip is the worktree fork point' };
+    }
+    // A null integration name (no version derivable) must never become a silent
+    // `create` or a `checkout -b <null>`: downgrade auto/ask to a naming-problem
+    // ask so rail-1 surfaces it instead of misnaming (or failing to create) a
+    // branch. `off` still stays put regardless.
+    if (name === null && (autoBranch === 'auto' || autoBranch === 'ask')) {
+      return { action: 'ask', branch: null,
+        reason: 'naming-problem: no version in PROJECT.md ### Active or ROADMAP title, cannot name the integration branch - set the milestone version, or stay on the base / abort' };
     }
     switch (autoBranch) {
       case 'auto':

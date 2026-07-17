@@ -82,3 +82,22 @@ test('decideBranch is total: an unknown mode or auto_branch stays put, never thr
   assert.equal(decideBranch({ mode: 'milestone', autoBranch: 'weird', currentBranch: 'main',
     protectedBranches: PROTECTED, integrationName: NAME }).action, 'stay');
 });
+
+test('milestone + protected + null name: auto/ask downgrade to a naming-problem ask, never create an unnamed branch', () => {
+  // auto with no derivable version must NOT return {create, null} (rail-1 would
+  // run `git checkout -b <null>`); it downgrades to a naming-problem ask.
+  const auto = decideBranch({ mode: 'milestone', autoBranch: 'auto', currentBranch: 'main',
+    protectedBranches: PROTECTED, integrationName: null });
+  assert.equal(auto.action, 'ask');
+  assert.equal(auto.branch, null);
+  assert.match(auto.reason, /naming-problem/);
+  // ask + null name behaves the same.
+  const ask = decideBranch({ mode: 'milestone', autoBranch: 'ask', currentBranch: 'main',
+    protectedBranches: PROTECTED, integrationName: null });
+  assert.equal(ask.action, 'ask');
+  assert.equal(ask.branch, null);
+  assert.match(ask.reason, /naming-problem/);
+  // off + null name still just stays put.
+  assert.equal(decideBranch({ mode: 'milestone', autoBranch: 'off', currentBranch: 'main',
+    protectedBranches: PROTECTED, integrationName: null }).action, 'stay');
+});

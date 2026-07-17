@@ -54,9 +54,15 @@ Act on its `action`:
 - `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the
   seam's `branch` field: the per-milestone integration branch (e.g.
   `cadence/v1.1.0-rc.2`, derived from `PROJECT.md`'s `### Active` milestone,
-  falling back to the `ROADMAP.md` title).
-- `ask` -> prompt once via the ask-user seam, no preselected default: create
-  the named integration branch / stay on the base / abort.
+  falling back to the `ROADMAP.md` title). Guard: never run `checkout -b` with an
+  empty/null `branch` - the seam already downgrades an unnameable branch to
+  `ask`, so treat any `create` with a null `branch` as a naming problem too.
+- `ask` -> prompt once via the ask-user seam, no preselected default. When
+  `branch` is named: create the named integration branch / stay on the base /
+  abort. When `branch` is null (no version derivable - the seam's
+  naming-problem `ask`): tell the user no milestone version was found in
+  `PROJECT.md`'s `### Active` or the `ROADMAP.md` title, and offer to set the
+  version / stay on the base / abort - never invent a name.
 - `stay` -> do nothing (already off the base, or the mode says not to).
 
 `git.integration_branch` picks the model. `milestone` creates the integration
