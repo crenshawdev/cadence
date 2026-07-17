@@ -7,7 +7,7 @@ A single-developer rewrite descended from GSD, derived from a file-backed deep-d
 Audience assumptions (John): solo dev; Rust/CLI/backend + some COSMIC/iced UI + general
 scripts; NOT building AI/LLM products; already runs mem-* (primary memory), claude-mem,
 Obsidian vault, Codex as a genuine second model (panel-review / codex-rescue /
-codex-risk-gate), Artifact + cosmic-design for UI, rtk for tests. Claude-Code-only runtime.
+codex-risk-gate), Artifact + cosmic-design for UI. Claude-Code-only runtime.
 
 ---
 
@@ -363,14 +363,54 @@ GSD's git handling is the part that most fights John's rules; Cadence rebuilds i
   ship→PR funnel, the complete-milestone branch-merge matrix.
 - **Protected-branch guard:** if HEAD ∈ protected branches, STOP before committing and ask
   (branch first? / proceed here?). Encodes "never auto-commit on main" as a rail, not a mandate.
-- **Never auto-push.**
 - **`/cad-land`** (replaces ship): report git state, ask the publish mechanism with NO preselected
   default (direct push / open MR/PR [detect GitLab vs GitHub] / tag / leave local), execute exactly that.
 - Risk-surface commits trip the review subsystem `risk_surface` trigger before landing.
-- Config: `git { protected_branches, on_protected: ask|refuse|allow, base_branch,
-  create_tag }`. No templates, no strategy presets, no PR body sections. (An
-  `auto_push` switch was cut 2026-07-16: rail 3 says no workflow pushes, ever,
-  so a push switch could only ever be honored at false.)
+- Config: `git { protected_branches, on_protected: ask|refuse|allow, integration_branch,
+  auto_branch, base_branch, create_tag, on_land_cleanup, auto_close }`. No templates, no
+  strategy presets, no PR body sections. (An `auto_push` switch was cut 2026-07-16 for
+  contradicting the then-absolute no-push rail; a *sanctioned* push later returned as the
+  opt-in `auto_close` + git-publish seam — see the reversal subsection below and §7.)
+
+### Reversal: the no-auto-push principle and the sanctioned publish seam
+
+Two founding git principles were reversed during the v1.1.0-rc.2 cycle. Recorded here
+with what changed / when / why so the design history stays honest rather than quietly
+rewritten.
+
+**R1 — "workflows never push" → opt-in `git.auto_close` + one sanctioned publish seam.**
+- *What changed:* the absolute "no workflow ever pushes" founding principle was reversed.
+  An opt-in `git.auto_close` (default off) now runs the whole close unattended (audit →
+  tag → PR → merge → reset), and publishing flows through a single sanctioned git-publish
+  subprocess seam — the one code-guarded push path Cadence uses.
+- *When:* decided 2026-07-16, built through the rc.2 cycle, UAT 2026-07-17.
+- *Why:* UAT item 9 falsified the "a platform merge is never a push" assumption — `gh pr
+  create` cannot open a PR from a local-only branch, so an honest end-to-end close
+  necessarily pushes. The absolute never-push rule made the sanctioned close mechanically
+  impossible.
+  <!-- HAND-DRAFT (John): R1 product why - the deeper rationale beyond the item-9 functional trigger -->
+- *Not reversed:* the no-preselected-default sub-principle stands. `auto_close` skips the
+  publish ask entirely; it installs no default mechanism. `/cad-land`'s interactive path
+  still asks with no preselected default (above). The reversal removed the *absolute*, not
+  the deliberate-choice posture.
+
+**R2 — the `isPlainPush` git-guard whitelist was added, then deleted.**
+- *What changed:* a command-string whitelist (`isPlainPush`) was added to git-guard to let
+  a "plain" push through, then DELETED. git-guard now carries no push exemption at all;
+  publishing instead flows through the git-publish seam, which the Bash `PreToolUse` hook
+  cannot see.
+- *When:* added and removed during the rc.2 cycle, after four adversarial `risk_surface`
+  review rounds.
+- *Why:* a command-string whitelist is unwinnable — it cannot be made safe against `-c`
+  config-injection, env-prefix RCE, redirect-glue, and bare-push command classes. Routing
+  publish through a seam the hook never inspects retires the whole parsing-arms-race
+  surface instead of trying to out-parse an attacker.
+
+**Sequence (with R3, §7).** These reconcile with R3 — the `git.auto_push` config switch cut
+2026-07-16 (§7) — as one honest sequence, not a contradiction: `auto_push` was cut for
+contradicting the then-absolute "never push" rail; `auto_close` then reintroduced a
+*sanctioned* push, gated behind an explicit opt-in and routed through the guarded
+git-publish seam, not a free-standing config flag.
 
 ## 7. Final Cadence config.json (~110 GSD keys → ~50 leaves)
 
