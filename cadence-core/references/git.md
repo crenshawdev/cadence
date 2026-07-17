@@ -41,6 +41,39 @@ bare name would also match a tag):
 
 A `base` that resolves and shares a merge-base with HEAD -> silent pass.
 
+**Integration branch (before the first commit, once per cycle).** After the
+guards above pass, decide whether this cycle runs on a per-milestone
+integration branch. Ask the seam - it only advises, it never checks out:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" decide
+```
+
+Act on its `action`:
+
+- `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the
+  seam's `branch` field: the per-milestone integration branch (e.g.
+  `cadence/v1.1.0-rc.2`, derived from `PROJECT.md`'s `### Active` milestone,
+  falling back to the `ROADMAP.md` title).
+- `ask` -> prompt once via the ask-user seam, no preselected default: create
+  the named integration branch / stay on the base / abort.
+- `stay` -> do nothing (already off the base, or the mode says not to).
+
+`git.integration_branch` picks the model. `milestone` creates the integration
+branch: the reconciliation point parallel worktrees fork from and merge into,
+keeping merge churn off `main`. `trunk` creates nothing - commits land on the
+base, still governed by `git.on_protected` (git-guard.mjs unchanged). `git.auto_branch`
+picks how it is created at cycle start: `ask` prompts once, `auto` creates and
+switches silently, `off` stays put. Creation is lazy and once per cycle - the
+seam infers it from HEAD sitting on a protected base, so later phases already
+off the base pass silently.
+
+Because parallel worktrees already fork from HEAD and self-reap
+(`workflows/execute.md`), switching HEAD to the integration branch makes its tip
+the worktree fork point with no worktree change. `git.base_branch` stays the
+landing and guard base, distinct from the integration branch: the integration
+branch is what work merges back down to, not a repurposed worktree fork point.
+
 ## 2. Atomic conventional commits
 
 One logical change per commit: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,

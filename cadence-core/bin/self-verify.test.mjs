@@ -100,7 +100,8 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
-    '`git.protected_branches` `git.on_protected` `git.base_branch` `git.create_tag`\n' +
+    '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
+    '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
     '`planning.commit_docs` `memory.backend`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
