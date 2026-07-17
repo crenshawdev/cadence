@@ -104,3 +104,74 @@ reaped - both need a live remote + gh/glab and are human-verify. The advisory re
 found one grounded blocker on that GitHub auto_close path (the `gh pr create` push gap,
 open item 1) that should be resolved before auto_close is trusted on GitHub; the
 decision core, seam, config, and self-verify wiring are complete and green.
+
+## Gap-closure (plan 2): GitHub auto_close push seam (2026-07-17)
+
+Closes the blocking open item above (the GitHub `gh pr create` push gap, UAT
+item 9). Delivered as a dedicated `git-publish` subprocess seam that git-guard's
+Bash hook never sees, while git-guard itself now carries NO push exemption and
+asks unconditionally on every Bash `git push` (the rejected "exempt a push inside
+git-guard" approach was NOT taken). Plan: `.planning/phases/2/PLAN-gaps.md`.
+
+### What shipped
+- `cadence-core/bin/lib/publish-decision.mjs` - pure, total `decidePublish(...)`:
+  7 refuse gates (first-failing-wins); the branch is interpolated only into the
+  single `refs/heads/<b>:refs/heads/<b>` refspec token; `SAFE_BRANCH`/`REMOTE_NAME`
+  reject a leading dash, `:`, whitespace, and any path/URL; the publish argv
+  carries a `--` end-of-options separator
+  (`['push','--set-upstream','--',remote,refspec]`).
+- `cadence-core/bin/git-publish.mjs` - the one I/O seam that actually runs the
+  push, `execFileSync('git', ['-C', dir, ...argv])` argv-only (never a shell
+  string); reads `git.auto_close` from the REPO config layer only (D-08),
+  `protected_branches` from the merged config.
+- `git-guard.mjs` - `isPlainPush` and all command-string push parsing DELETED
+  (`grep -c isPlainPush cadence-core/bin/git-guard.mjs` = 0); the push rail is now
+  an unconditional `ask` moved above the config read.
+- self-verify CONTRACTS registers `git-publish.mjs publish`; cad-land SKILL.md
+  step 4b + git.md rail 3 rewritten to the seam truth (no false "gh pr create
+  pushes it"); cad-land weight budget rebudgeted 6384 -> 7476.
+
+### Commits (plan 2)
+
+| Task | Commit | Description |
+|---|---|---|
+| 1 | fab6a64 | feat(2-2): decidePublish pure decision fn (+ risk-review fix) |
+| 2 | 4bb28d0 | feat(2-2): git-publish I/O seam + bare-origin tests |
+| 3 | 6c4aa2c | feat(2-2): register git-publish in self-verify CONTRACTS |
+| 4 | 2003066 | refactor(2-2): delete git-guard isPlainPush, restore uncond ask |
+| 5 | e83a032 | docs(2-2): correct cad-land + git.md prose to the seam truth |
+| 6 | 24b58c6 | chore(2-2): rebudget cad-land SKILL.md after step-4b rewrite |
+| 7 | (none)  | full green gate - already green after task 6, no commit |
+
+### Deviations
+- The blocking `risk_surface` review (fired by cad-execute, high effort,
+  adjudicated by the orchestrator) caught a leading-dash option-injection gap:
+  `REMOTE_NAME = /^[A-Za-z0-9._-]+$/` admitted `--mirror`/`-o`/`--force` (its
+  trailing `-` is a literal class member) and, with no `--` separator, git parsed
+  such a remote as an option. Reproduced against live git, then fixed inside Task
+  1's commit: anchored the regex to `/^[A-Za-z0-9][A-Za-z0-9._-]*$/` AND added the
+  `--` end-of-options separator, with a `bad-remote` regression test. Re-verified
+  green.
+- The advisory `diff` review was treated as subsumed by that high-effort
+  adjudicated `risk_surface` review over the identical diff (non-gating); no
+  second near-identical reviewer was spawned.
+
+### Open-items status after this execution
+- [closed] Blocker - GitHub push gap (UAT item 9): closed by the seam above.
+- [already closed] `decideCleanup` null-branch guard: fixed earlier in 6d415fd.
+- [remaining] design-note ("clean base by default" tension on the non-merge
+  publish paths): adjudicated as-designed by /cad-verify 2; no change.
+- [remaining] low (`resolveReapBranch` sole-`cadence/*` fallback): documented
+  tradeoff in the code comment; note only.
+
+### Goal check (item 9)
+The GitHub arm of GIT-03 is closed at the seam / guard / prose layers, evidenced
+first-hand: `grep -c isPlainPush cadence-core/bin/git-guard.mjs` = 0; the
+git-publish seam's bare-origin test lands `refs/heads/cadence/v1.1.0-rc.2` in the
+origin only under repo `auto_close:true` and refuses (pushing nothing) on
+auto_close-off / protected / unconfigured-remote / detached-HEAD / global-only;
+every Bash `git push` still returns `permissionDecision:'ask'` (git-guard.test.mjs
+"every push still asks" regression). Full suite 217 pass / 0 fail, self-verify
+`ok:true, problems:[]`, `tsc --checkJs` clean. Unchanged from the original SUMMARY
+by design: the two LIVE end-to-end paths (real remote + `gh` running the
+unattended PR-open/merge) remain human-verify (UAT items 5/6).
