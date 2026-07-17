@@ -32,13 +32,16 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Deterministic context-weight measurement of agent/skill prose surfaces via a seam subcommand — v1.1.0-rc.1
 - ✓ self-verify budget check on context weight (blocking) — v1.1.0-rc.1
 - ✓ self-verify lint: agent prose references only tools declared in that agent's frontmatter (blocking) — v1.1.0-rc.1
+- ✓ Two-tier git branching: per-milestone integration branch (parallel-worktree reconciliation point) + `trunk` escape hatch — v1.1.0-rc.2
+- ✓ Land cleanup (`git.on_land_cleanup`) + opt-in autonomous close (`git.auto_close`), never-auto-push rail intact via the git-publish seam — v1.1.0-rc.2
+- ✓ Release mechanics: manifest version bump + changelog folded into the milestone close, idempotent — v1.1.0-rc.2
+- ✓ Release prep: public docs reconciled, DESIGN records the reversals, plugin-store metadata, `validate --strict` clean — v1.1.0-rc.2
 
 ### Active
 
-`v1.1.0-rc.2` — the "git model + release lifecycle" round:
-- [ ] Explicit two-tier git branching: a per-milestone integration branch (the reconciliation point for parallel worktrees), created at cycle start; `trunk` as the escape hatch
-- [ ] Reset-to-base + pull after every land; opt-in end-to-end autonomous close (audit → tag → PR → merge → reset), halting on a blocking review FAIL
-- [ ] Release mechanics: manifest version bump + a changelog convention folded into the close, so a plugin release stops shipping with a stale version
+`v1.1.0` — the final publish round:
+- [ ] Exercise the `auto_close` full close (audit → tag → PR → merge → reset) live end-to-end against a real remote, closing the deferred Phase-2 item-6 verification
+- [ ] Cut and publish the final `v1.1.0`: manifest to `1.1.0`, dated CHANGELOG entry, tag pushed, and the community plugin-store submission actually filed
 
 ### Out of Scope
 
@@ -86,9 +89,9 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | Tools-declaration lint is blocking | Same species as the config-key drift check; consistency in how the linter treats drift | ✓ Shipped v1.1.0-rc.1 |
 | Recall consumers: cad-context, cad-planner, cad-debug | The three moments past knowledge changes decisions: assumptions, task breakdown, hypotheses | ✓ Shipped v1.1.0-rc.1 |
 | Pre-release versioning toward v1.1.0 | v1.0.0 is public; dogfood iterations shouldn't each burn a public minor — candidates converge on one release | ✓ Adopted — `-rc.N` per iteration (rc.2 this round) |
-| Integration-branch per milestone (two-tier) | The milestone branch is the reconciliation point for parallel worktrees, keeping merge churn off `main`; worktrees are the disposable tier below it | - Pending (rc.2) |
-| Autonomous close is opt-in, never the default | Preserves cad-land's "the publish mechanism is the user's call"; `auto_close` is an explicit override that still halts on a blocking `pre_ship` FAIL | - Pending (rc.2) |
-| Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | - Pending (rc.2) |
+| Integration-branch per milestone (two-tier) | The milestone branch is the reconciliation point for parallel worktrees, keeping merge churn off `main`; worktrees are the disposable tier below it | ✓ Shipped v1.1.0-rc.2 |
+| Autonomous close is opt-in, never the default | Preserves cad-land's "the publish mechanism is the user's call"; `auto_close` is an explicit override that still halts on a blocking `pre_ship` FAIL | ✓ Shipped v1.1.0-rc.2 (live end-to-end run deferred to final v1.1.0) |
+| Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | ✓ Shipped v1.1.0-rc.2 |
 
 ---
-*Last updated: 2026-07-16 opening the v1.1.0-rc.2 round*
+*Last updated: 2026-07-17 closing v1.1.0-rc.2, opening the final v1.1.0 publish round*

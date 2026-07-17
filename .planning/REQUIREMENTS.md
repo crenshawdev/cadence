@@ -5,31 +5,19 @@
 
 ## Active
 
-Committed scope for `v1.1.0-rc.2` (the "git model + release lifecycle" round).
-Each maps to exactly one roadmap phase.
+Committed scope for the final `v1.1.0` publish round. Each maps to a roadmap
+phase once `/cad-plan` runs.
 
-### Git lifecycle (GIT)
+### Publish (PUB)
 
-- [ ] **GIT-01**: `git.integration_branch` (`milestone` default | `trunk`) plus `git.auto_branch` (`ask` | `auto` | `off`); cycle-start workflows create/switch to a per-milestone integration branch, and in `milestone` mode the parallel path's worktrees fork from its tip, not `main`
-- [ ] **GIT-02**: `git.on_land_cleanup` (default on): after a successful land/merge, return to base (`main`), pull, and reap the merged integration branch
-- [ ] **GIT-03**: `git.auto_close` (opt-in, default off): cad-milestone/cad-land run the full close (audit → tag → PR → merge → reset) without per-step prompts, halting on a blocking `pre_ship` FAIL; the default (off) preserves cad-land's no-preselected-default publish posture
-
-### Release mechanics (REL)
-
-- [ ] **REL-01**: For a distributed-plugin project, cad-milestone/cad-land bump the plugin manifest version (`.claude-plugin/plugin.json`, sibling manifests kept in sync) as part of the close, idempotently
-- [ ] **REL-02**: A CHANGELOG / release-notes convention wired into the close flow; the first entry documents the shipped v1.1.0 scope and the `memory.backend none → builtin` default flip
-
-### Release readiness (RDY)
-
-- [ ] **RDY-01**: Public docs (README, MANIFESTO, DESIGN, LINEAGE, NOTICE, CHANGELOG) reconciled to the shipped v1.1 code, with drift corrected in place (verified by `/cad-docs-verify`)
-- [ ] **RDY-02**: README surfaces the shipped v1.1 capabilities with the locked lineage/attribution (GSD, RTK) positioning; DESIGN.md honestly documents the reversed design decisions with rationale
-- [ ] **RDY-03**: The plugin clears the community plugin-store submission bar — `claude plugin validate --strict` clean, complete `.claude-plugin/plugin.json` metadata, README + CHANGELOG present, semver matching the release tag
+- [ ] **PUB-01**: The `auto_close` full close (audit → tag → PR → merge → reset) is verified live end-to-end against a real remote — HEAD returns to a pulled base with the merged integration branch reaped, and a blocking `pre_ship` finding halts before merge. Closes the deferred Phase-2 item-6, the one rc.2 acceptance never exercised live.
+- [ ] **PUB-02**: The final `v1.1.0` is published — manifest at `1.1.0`, a dated `## [1.1.0]` CHANGELOG entry, the tag pushed, and the community plugin-store submission actually filed
 
 ## Shipped
 
-Delivered and verified. Kept as rows for shipped-scope trace; the `v1.1.0-rc.1`
-tag and git history hold the full requirement text. Archived out of
-`## Traceability` so a new milestone's audit starts clean (the audit seam
+Delivered and verified. Kept as rows for shipped-scope trace; the
+release-candidate tags and git history hold the full requirement text. Archived
+out of `## Traceability` so a new milestone's audit starts clean (the audit seam
 parses only the Traceability table).
 
 | Requirement | Phase | Status | Milestone |
@@ -42,6 +30,14 @@ parses only the Traceability table).
 | CWT-01 (per-surface byte + est-token weight seam, one-line JSON) | 3 | Complete | v1.1.0-rc.1 |
 | CWT-02 (blocking self-verify budget check, names surface + overage) | 3 | Complete | v1.1.0-rc.1 |
 | CWT-03 (blocking self-verify agent tools-declaration lint) | 3 | Complete | v1.1.0-rc.1 |
+| GIT-01 (integration-branch model: `git.integration_branch` + `git.auto_branch`, worktrees fork from the integration tip) | 1 | Complete | v1.1.0-rc.2 |
+| GIT-02 (`git.on_land_cleanup`: return to base, pull, reap the merged integration branch) | 2 | Complete | v1.1.0-rc.2 |
+| GIT-03 (`git.auto_close` full close halting on `pre_ship`; live end-to-end run deferred to final v1.1.0) | 2 | Complete | v1.1.0-rc.2 |
+| REL-01 (plugin manifest version bump folded into the close, idempotent) | 3 | Complete | v1.1.0-rc.2 |
+| REL-02 (CHANGELOG convention wired into the close; v1.1 scope + `memory.backend` flip documented) | 3 | Complete | v1.1.0-rc.2 |
+| RDY-01 (public docs reconciled to shipped v1.1 code, verified by `/cad-docs-verify`) | 4 | Complete | v1.1.0-rc.2 |
+| RDY-02 (README v1.1 capabilities + lineage positioning; DESIGN reversals documented) | 4 | Complete | v1.1.0-rc.2 |
+| RDY-03 (community plugin-store bar: `validate --strict` clean, metadata, README + CHANGELOG, semver) | 4 | Complete | v1.1.0-rc.2 |
 
 ## Deferred
 
@@ -67,16 +63,11 @@ written solely by cad-verify. Shipped rows move to `## Shipped` above when a
 milestone closes, so `/cad-audit` starts each cycle clean. This section must
 remain the last in the file — the audit seam parses every row beneath it.
 
+_Empty until `/cad-plan` maps the final v1.1.0 requirements (PUB-01, PUB-02) to
+phases; cad-verify then fills each row as phases complete._
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GIT-01 | 1 | Complete |
-| GIT-02 | 2 | Complete |
-| GIT-03 | 2 | Complete |
-| REL-01 | 3 | Complete |
-| REL-02 | 3 | Complete |
-| RDY-01 | 4 | Complete |
-| RDY-02 | 4 | Complete |
-| RDY-03 | 4 | Complete |
 
 ---
-*Last updated: 2026-07-17 added Phase 4 (release prep & docs), RDY-01..03*
+*Last updated: 2026-07-17 closed v1.1.0-rc.2 (GIT/REL/RDY shipped), opened final v1.1.0 (PUB-01, PUB-02)*
