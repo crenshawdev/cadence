@@ -22,7 +22,7 @@ already fork from HEAD and self-reap, so the load-bearing new work is branch
 ## Phases
 
 - [x] **Phase 1: Integration-branch model** - a per-milestone integration branch (parallel-worktree reconciliation point), created at cycle start; `trunk` escape hatch
-- [ ] **Phase 2: Land cleanup + autonomous close** - reset-to-base + pull after land, and an opt-in end-to-end close
+- [x] **Phase 2: Land cleanup + autonomous close** - reset-to-base + pull after land, and an opt-in end-to-end close
 - [x] **Phase 3: Release mechanics** - manifest version bump folded into the lifecycle, and a changelog convention
 - [x] **Phase 4: Release prep & docs** - public docs reconciled to shipped code, settled README/lineage positioning, and a clean community plugin-store submission
 

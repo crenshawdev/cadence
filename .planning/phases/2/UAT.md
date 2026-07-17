@@ -44,8 +44,8 @@ reason: Marketplace-installed plugin is a stale 1.0.0 copy, not symlinked to thi
 
 ### 6. cad-milestone auto_close full chain
 expected: a /cad-milestone run with auto_close=true runs audit -> tag -> PR -> merge -> reset with no per-step prompts, and afterward HEAD is on base, pulled, with the integration branch reaped (human-verify: needs live remote + gh/glab merge)
-status: blocked
-reason: Deferred by /cad-verify 2 (2026-07-17, user decision): the auto_close full milestone chain cuts a real tag + merge, so verifying it and running it for real are the same act - it will be exercised when /cad-milestone runs the actual v1.1.0 auto_close close. Precondition now cleared (dev plugin installed from this branch); still needs a live remote + real merge. Not run now: phase 3 (release mechanics) precedes the cut and more work is queued.
+status: skipped
+reason: Human-verify deferred: the unattended auto_close full chain (audit->tag->PR->merge->reset) needs a live remote + real gh/glab merge, and git.auto_close is off for the rc.2 cut so it is not exercised now. Its every machine-checkable layer IS verified (item 4 gate-halt logic, item 9 git-publish push seam, 217 tests, self-verify green); only the one live end-to-end run is deferred to the real final v1.1.0 close under auto_close. Deferral accepted by user 2026-07-17 during milestone closeout.
 
 ### 7. Test suite passes
 expected: node --test passes across cadence-core/bin, including new tests for the cleanup path and the auto-close gate-halt
@@ -82,6 +82,6 @@ total: 9
 passed: 8
 failed: 0
 pending: 0
-skipped: 0
-blocked: 1
+skipped: 1
+blocked: 0
 reworked: 2
