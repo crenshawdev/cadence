@@ -86,6 +86,21 @@ No workflow pushes, ever. Publishing is a human decision made through
 `/cad-land`, which reports git state and asks the mechanism (direct push /
 MR or PR / tag / leave local) with NO preselected default.
 
+`git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
+lets `/cad-land` complete the close unattended, landing the integration branch
+on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
+`glab mr merge`). That is a platform merge, not a `git push`, so the
+never-auto-push rule holds; and because it skips the ask rather than
+preselecting a default in it, the no-preselected-default publish posture (off by
+default) holds too. A blocking `pre_ship` finding still halts the chain before
+merge.
+
+After a land/merge actually lands on this machine, `git.on_land_cleanup`
+(default on) returns HEAD to the base, pulls, and reaps the merged integration
+branch locally - advised by the `land-cleanup.mjs cleanup` seam, which reaps
+only when `git branch --merged <base>` confirms the branch is merged, and never
+via a remote-tracking delete (that would trip the push guard).
+
 ## 4. Risk surfaces
 
 At commit time, if the diff matches a risk surface (list in
