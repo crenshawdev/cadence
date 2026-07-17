@@ -3,10 +3,10 @@
 // self-verify.mjs - the prose<->code drift linter, run in CI. The 2026-07-16
 // sweep found that nearly every defect in this repo was prose describing a
 // flag, key, or path the code did not have; this script makes that whole
-// class mechanical. Three checks over the LIVE prose surfaces (workflows,
-// references, skills, agents, templates - deliberately not the historical
-// docs DESIGN/LINEAGE/CHANGELOG, which may name cut keys while explaining
-// the cut):
+// class mechanical. Checks run over the LIVE prose surfaces (workflows,
+// references, skills, agents, templates, plus README and INTERNALS -
+// deliberately not the historical docs DESIGN/LINEAGE/CHANGELOG, which may
+// name cut keys while explaining the cut):
 //
 //   1. config keys   every dotted config token in prose must exist in
 //                    config.schema.json (placeholders <t>/<name> expanded),
@@ -17,6 +17,8 @@
 //                    The table is maintained here, beside the checks; the
 //                    scripts' own tests keep the table honest.
 //   3. paths         every ${CLAUDE_PLUGIN_ROOT}/<path> must exist in-repo.
+//   3b. internals    every backticked repo path cited in INTERNALS.md (the
+//                    deep-dive "Read the code" pointers) must exist in-repo.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -115,11 +117,13 @@ function* mdFiles(root) {
       if (f.endsWith('.md') && statSync(f).isFile()) yield f;
     }
   }
-  // README names user-facing switches (consult, parallelization, ...) - it is
-  // a live surface too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out:
+  // README and INTERNALS name user-facing switches and live file paths - they
+  // are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out:
   // they legitimately name keys that were later cut, while explaining the cut.
-  const readme = join(root, 'README.md');
-  if (existsSync(readme)) yield readme;
+  for (const doc of ['README.md', 'INTERNALS.md']) {
+    const p = join(root, doc);
+    if (existsSync(p)) yield p;
+  }
 }
 
 /**
@@ -209,6 +213,22 @@ function run(root) {
     }
   }
 
+  // 3b. INTERNALS repo-path citations: every backticked repo path in
+  // INTERNALS.md ("Read the code: `cadence-core/bin/route.mjs`") must exist, so
+  // the deep-dive pointers cannot quietly go stale as the tree moves. Unlike
+  // check 3 (which only sees ${CLAUDE_PLUGIN_ROOT} paths), these are plain
+  // repo-relative paths; globs (`*-decision.mjs`) and non-path spans are skipped.
+  const internals = join(root, 'INTERNALS.md');
+  if (existsSync(internals)) {
+    for (const m of readFileSync(internals, 'utf8').matchAll(/`([^`]+)`/g)) {
+      const tok = m[1];
+      if (!/^[A-Za-z0-9_./-]+$/.test(tok) || !tok.includes('/') || tok.includes('*')) continue;
+      if (!existsSync(join(root, tok))) {
+        problems.push({ kind: 'missing-internals-path', file: 'INTERNALS.md', detail: tok });
+      }
+    }
+  }
+
   // 1b. reverse: every schema key must be referenced by some prose token -
   // exactly, or via a >=2-segment prefix like `review.providers` (a bare
   // family name alone is too weak to count as a reader).
@@ -290,7 +310,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, budgets, tools', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
