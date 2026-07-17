@@ -73,10 +73,13 @@ export function decideManifestBump(currentVersion, targetVersion) {
  * `## [<version>]` heading already exists, so a re-run never stacks a second
  * entry. Otherwise it inserts, without altering any existing entry or link
  * reference:
- * - `## [<version>] - <date>\n\n` immediately before the first `^## \[` version
- *   heading (or, if none exists, before the first `## ` heading / at end);
+ * - `## [<version>] - <date>\n\n` immediately before the first *released*
+ *   version heading, skipping a leading `## [Unreleased]` section (or, when no
+ *   released heading exists, after an Unreleased section / before the first
+ *   `## ` heading / at end);
  * - `[<version>]: <url>\n` immediately before the first `^\[...\]:` link
- *   reference (or appended at the end when none exists).
+ *   reference (or appended at the end when none exists), omitted entirely when
+ *   `url` is empty.
  * The entry's bullet prose is left for the model to author (D-06); this scaffold
  * owns the deterministic heading + link reference only.
  *
@@ -95,21 +98,42 @@ export function prependChangelogEntry(changelogText, { version, date, url } = /*
   }
 
   const heading = `## [${version}] - ${date}\n\n`;
-  const linkRef = `[${version}]: ${url}\n`;
+  // Omit the link reference entirely when no URL is derivable: an empty
+  // `[version]: ` line is a malformed markdown reference, worse than none.
+  const linkRef = url ? `[${version}]: ${url}\n` : '';
   const lines = text.split('\n');
 
-  // Insert the heading immediately before the first existing version heading;
-  // fall back to the first `## ` heading, else append after the file body.
-  let headingAt = lines.findIndex((l) => /^## \[/.test(l));
-  if (headingAt < 0) headingAt = lines.findIndex((l) => /^## /.test(l));
+  // Choose the heading anchor: insert immediately before the first *released*
+  // version heading, skipping a leading `## [Unreleased]` section (Keep a
+  // Changelog pins Unreleased at the top, so a release must land below it, not
+  // above). Fall back to just after an Unreleased section, then the first `## `
+  // heading, else append after the file body.
+  const isReleased = (l) => /^## \[/.test(l) && !/^## \[unreleased\]/i.test(l);
+  let headingAt = lines.findIndex(isReleased);
   if (headingAt < 0) {
-    // No heading anchor at all: append the heading block at the end.
+    const unreleasedAt = lines.findIndex((l) => /^## \[unreleased\]/i.test(l));
+    if (unreleasedAt >= 0) {
+      // Insert before the next `## ` heading after Unreleased (the end of its
+      // section); -1 (Unreleased is the last section) falls through to append.
+      headingAt = lines.findIndex((l, i) => i > unreleasedAt && /^## /.test(l));
+    } else {
+      headingAt = lines.findIndex((l) => /^## /.test(l));
+    }
+  }
+  if (headingAt < 0) {
+    // No usable heading anchor: append the heading block at the end.
     const base = text.endsWith('\n') || text === '' ? text : text + '\n';
     let out = base + (base.endsWith('\n\n') || base === '' ? '' : '\n') + heading;
     out += linkRef;
     return { text: out, changed: true, reason: 'appended: no heading anchor, entry added at end' };
   }
   lines.splice(headingAt, 0, heading.replace(/\n$/, ''));
+
+  // No URL -> the link reference is omitted; the heading placement is the whole
+  // change.
+  if (!linkRef) {
+    return { text: lines.join('\n'), changed: true, reason: 'inserted: heading placed, no url so link reference omitted' };
+  }
 
   // Insert the link reference immediately before the first existing link ref;
   // append at the end when none exists. Re-find on the mutated lines.

@@ -120,3 +120,51 @@ test('changelog: total on empty/missing input, no throw', () => {
   assert.match(r.text, /## \[1\.1\.0-rc\.2\]/);
   assert.equal(prependChangelogEntry(CHANGELOG_FIXTURE, /** @type {any} */ ({})).changed, false);
 });
+
+const UNRELEASED_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  '### Added',
+  '- something not yet released',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+test('changelog: a released entry lands BELOW a leading [Unreleased] section, not above it', () => {
+  const r = prependChangelogEntry(UNRELEASED_FIXTURE, {
+    version: '1.1.0', date: '2026-07-17', url: 'https://x/releases/tag/v1.1.0',
+  });
+  assert.equal(r.changed, true);
+  // Order: Unreleased, then the new 1.1.0, then 1.0.0.
+  assert.ok(r.text.indexOf('## [Unreleased]') < r.text.indexOf('## [1.1.0]'),
+    'the new release heading comes after Unreleased');
+  assert.ok(r.text.indexOf('## [1.1.0]') < r.text.indexOf('## [1.0.0]'),
+    'the new release heading comes before the older 1.0.0');
+  // The Unreleased content is untouched.
+  assert.ok(r.text.includes('- something not yet released'));
+});
+
+test('changelog: Unreleased-only file (no released heading) appends the release after it', () => {
+  const onlyUnreleased = '# Changelog\n\n## [Unreleased]\n\n### Added\n- wip\n';
+  const r = prependChangelogEntry(onlyUnreleased, { version: '1.0.0', date: '2026-07-17', url: 'https://x/releases/tag/v1.0.0' });
+  assert.equal(r.changed, true);
+  assert.ok(r.text.indexOf('## [Unreleased]') < r.text.indexOf('## [1.0.0]'),
+    'the release heading follows the Unreleased section');
+});
+
+test('changelog: empty url omits the link reference line entirely (no malformed [ver]: )', () => {
+  const r = prependChangelogEntry(CHANGELOG_FIXTURE, { version: '1.1.0-rc.2', date: '2026-07-17', url: '' });
+  assert.equal(r.changed, true);
+  assert.match(r.text, /## \[1\.1\.0-rc\.2\] - 2026-07-17/); // heading still placed
+  assert.ok(!/^\[1\.1\.0-rc\.2\]:\s*$/m.test(r.text), 'no empty link reference line is written');
+  assert.ok(!r.text.includes('[1.1.0-rc.2]: \n'), 'no trailing-empty link reference');
+  // The pre-existing [1.0.0] link reference is left intact.
+  assert.ok(r.text.includes('[1.0.0]: https://github.com/crenshawdev/cadence/releases'));
+});
