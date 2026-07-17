@@ -4,6 +4,20 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-17
+
+The stable `1.1.0`, promoting the `rc.1` and `rc.2` line to a public release. The
+full feature detail lives in those two entries below - recall, measured context,
+the two-tier git model, and the release lifecycle all shipped there and carry
+forward unchanged.
+
+This final round closed the one acceptance the candidates could not: the
+autonomous close (`git.auto_close`) was exercised live end-to-end against the
+real remote - audit, tag, PR, merge, then reset to a pulled base with the merged
+integration branch reaped - confirming the close chain the `rc.2` tests proved in
+isolation also holds in a real publish. The never-auto-push rail via the
+git-publish seam stays intact; `auto_close` remains opt-in and off by default.
+
 ## [1.1.0-rc.2] - 2026-07-17
 
 Second release candidate toward `1.1.0`, built by dogfooding Cadence on itself.
@@ -178,5 +192,6 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0
 [1.1.0-rc.2]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0-rc.2
 [1.0.0]: https://github.com/crenshawdev/cadence/releases
