@@ -30,7 +30,8 @@
     ],
     "on_protected": "ask",
     "base_branch": null,
-    "create_tag": true
+    "create_tag": true,
+    "auto_close": true
   },
   "planning": {
     "commit_docs": true
