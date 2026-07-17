@@ -1,6 +1,6 @@
 # Cadence - Design Plan
 
-A single-developer rewrite descended from GSD, derived from a file-backed deep-dive of all 69 skills,
+A single-developer distillation descended from GSD, derived from a file-backed deep-dive of all 69 skills,
 34 agents, and the `gsd-core` engine (110 workflows / 94 references / 143 node scripts /
 ~55K lines). Per-skill analyses live in `design-notes/dd-*.md` (gitignored, local only).
 
@@ -168,7 +168,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 
 ## 6. Locked decisions (2026-07-10)
 
-- **Positioning:** public distribution eventually; a trimmed **single-developer** rewrite descended from GSD,
+- **Positioning:** public distribution eventually; a trimmed **single-developer** distillation descended from GSD,
   properly licensed. Trim anything team/multi-author.
 - **Distribution model:** **SUPERSEDED (shipped as a Claude Code plugin).** User install =
   `/plugin marketplace add https://github.com/crenshawdev/cadence.git` then

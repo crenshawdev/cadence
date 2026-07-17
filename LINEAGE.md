@@ -1,6 +1,7 @@
 # Lineage: Cadence vs GSD
 
-Cadence is a ground-up rewrite whose methodology descends from [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core).
+Cadence's methodology descends from [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core), and the rest is its own.
+<!-- HAND-DRAFT (John): GSD lineage/distillation framing (crenshaw-voice); no "rewrite"/"forked" -->
 This file records the measured distance between the two, so the lineage in
 [`DESIGN.md`](./DESIGN.md) rests on numbers, not adjectives.
 
@@ -63,15 +64,15 @@ Whole categories, deleted rather than trimmed:
 - **Internationalization** (pt-BR, ja-JP translations).
 - The **giant living docs** — a 227K `CONTEXT.md`, a 172K `CHANGELOG.md`.
 
-## Why this is a rewrite, not a patched derivative
+## Why there is no patch surface to track
 
 GSD ships its own `update` / `sync-skills` / `reapply-patches` / three-way-merge
-machinery to track upstream as patches. At **~3% retained mass with the survivors
-rewritten, there is no patch surface to track** — a three-way merge has almost nothing
-to align. The tolerable-divergence ceiling is not merely low; it is gone. Cadence is
-therefore a ground-up reimplementation of GSD's core loop, not a patched derivative,
-and it owns its source as the single point of truth. Upstream ideas are cherry-picked
-by hand, adjudicated one at a time.
+machinery to track upstream as patches. At **~3% retained mass, there is no patch
+surface to track** — a three-way merge has almost nothing to align. The
+tolerable-divergence ceiling is not merely low; it is gone. Cadence owns its source as
+the single point of truth, and upstream ideas are cherry-picked by hand, adjudicated
+one at a time.
+<!-- HAND-DRAFT (John): GSD lineage/distillation framing (crenshaw-voice); no "rewrite"/"forked" -->
 
 *GSD remains the origin and the debt is acknowledged in [`LICENSE`](./LICENSE) and
 [`README.md`](./README.md). This file measures the distance; it does not diminish the
