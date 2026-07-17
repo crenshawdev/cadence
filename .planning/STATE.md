@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 4 (Land cleanup + autonomous close)
-Status: executed
-Next: /cad-context 3
+Phase: 3 of 4 (Release mechanics)
+Status: context gathered
+Next: /cad-plan 3
 Updated: 2026-07-17
