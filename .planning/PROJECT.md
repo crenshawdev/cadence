@@ -35,7 +35,10 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-- _Next iteration toward `v1.1.0` — scope to be defined (`/cad-plan`)._
+`v1.1.0-rc.2` — the "git model + release lifecycle" round:
+- [ ] Explicit two-tier git branching: a per-milestone integration branch (the reconciliation point for parallel worktrees), created at cycle start; `trunk` as the escape hatch
+- [ ] Reset-to-base + pull after every land; opt-in end-to-end autonomous close (audit → tag → PR → merge → reset), halting on a blocking review FAIL
+- [ ] Release mechanics: manifest version bump + a changelog convention folded into the close, so a plugin release stops shipping with a stale version
 
 ### Out of Scope
 
@@ -82,7 +85,10 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | Context-weight stats live in a seam + self-verify budget check | Deterministic measurement; CI catches prose bloat mechanically, same as drift | ✓ Shipped v1.1.0-rc.1 |
 | Tools-declaration lint is blocking | Same species as the config-key drift check; consistency in how the linter treats drift | ✓ Shipped v1.1.0-rc.1 |
 | Recall consumers: cad-context, cad-planner, cad-debug | The three moments past knowledge changes decisions: assumptions, task breakdown, hypotheses | ✓ Shipped v1.1.0-rc.1 |
-| Pre-release versioning toward v1.1.0 | v1.0.0 is public; dogfood iterations shouldn't each burn a public minor — candidates converge on one release | ✓ Adopted — `-rc.N` per iteration |
+| Pre-release versioning toward v1.1.0 | v1.0.0 is public; dogfood iterations shouldn't each burn a public minor — candidates converge on one release | ✓ Adopted — `-rc.N` per iteration (rc.2 this round) |
+| Integration-branch per milestone (two-tier) | The milestone branch is the reconciliation point for parallel worktrees, keeping merge churn off `main`; worktrees are the disposable tier below it | - Pending (rc.2) |
+| Autonomous close is opt-in, never the default | Preserves cad-land's "the publish mechanism is the user's call"; `auto_close` is an explicit override that still halts on a blocking `pre_ship` FAIL | - Pending (rc.2) |
+| Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | - Pending (rc.2) |
 
 ---
-*Last updated: 2026-07-16 after v1.1.0-rc.1 milestone close*
+*Last updated: 2026-07-16 opening the v1.1.0-rc.2 round*

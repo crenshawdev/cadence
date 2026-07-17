@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 1 (unplanned)
+Phase: 1 of 3 (Integration-branch model)
 Status: ready to plan
-Next: define + plan the next iteration toward v1.1.0 (/cad-plan)
-Updated: 2026-07-16
+Next: /cad-context 1 then /cad-plan 1
+Updated: 2026-07-17
