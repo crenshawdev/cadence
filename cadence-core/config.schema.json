@@ -26,6 +26,8 @@
 
     "git.protected_branches":               { "type": "array_string", "default": ["main", "master"], "purpose": "Branches Cadence won't commit to directly" },
     "git.on_protected":                     { "type": "enum", "values": ["ask", "refuse", "allow"], "default": "ask", "src": "repo", "purpose": "What to do on a protected branch (DESIGN \u00a75, git rails)" },
+    "git.integration_branch":               { "type": "enum", "values": ["milestone", "trunk"], "default": "milestone", "src": "repo", "purpose": "Two-tier branch model: 'milestone' creates a per-milestone integration branch as the reconciliation point parallel worktrees fork from and merge into; 'trunk' creates no integration branch and commits land on the base governed by on_protected" },
+    "git.auto_branch":                      { "type": "enum", "values": ["ask", "auto", "off"], "default": "ask", "src": "repo", "purpose": "How the integration branch is created at cycle start: 'ask' prompts once, 'auto' creates/switches silently, 'off' stays put" },
     "git.base_branch":                      { "type": "string_or_null", "default": null, "purpose": "Branch new work branches off (null = current)" },
     "git.create_tag":                       { "type": "bool", "default": true, "purpose": "Tag on milestone" },
 

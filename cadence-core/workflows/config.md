@@ -85,6 +85,8 @@ selectable option and its `description`.
 | **Git** |||||
 | `git.protected_branches` | list | Branches Cadence won't commit to directly | comma list, e.g. `main, master` | main, master |
 | `git.on_protected` `[repo]` | enum | What to do on a protected branch | `ask`→prompt · `refuse`→block · `allow`→proceed | ask |
+| `git.integration_branch` `[repo]` | enum | Two-tier branch model at cycle start | `milestone`→create a per-milestone integration branch (the reconciliation point worktrees fork from and merge into) · `trunk`→no integration branch, commit on the base under `on_protected` | milestone |
+| `git.auto_branch` `[repo]` | enum | How the integration branch is created at cycle start | `ask`→prompt once · `auto`→create/switch silently · `off`→stay put | ask |
 | `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
 | `git.create_tag` | bool | Tag on milestone | `true`→tag · `false`→don't | true |
 | **Planning** |||||
