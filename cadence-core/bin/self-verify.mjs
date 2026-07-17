@@ -63,6 +63,11 @@ const CONTRACTS = {
     '*': ['--dir'],
     decide: ['--branch'],
   },
+  'land-cleanup.mjs': {
+    '*': ['--dir'],
+    cleanup: ['--branch', '--base', '--merged'],
+    gate: [],
+  },
   'route.mjs': {
     '*': [],
     resolve: ['--role', '--attempt', '--files', '--ambiguity', '--file'],
