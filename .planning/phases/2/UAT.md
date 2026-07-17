@@ -37,7 +37,9 @@ evidence: close-decision.mjs:77-88; seam auto_close=true+blocker->halt w/finding
 
 ### 5. cad-land publish ask has no preselected default
 expected: with auto_close=false (default), a /cad-land run presents the publish mechanism with no preselected default (human-verify: needs live cad-land run)
-status: blocked
+status: pass
+first_pass: pass
+fix: live-verified 2026-07-17: /cad-land on dev plugin presented the step-4a publish ask (push/PR/tag/leave-local) with no preselected default; user freely chose Open PR
 reason: Marketplace-installed plugin is a stale 1.0.0 copy, not symlinked to this dev repo; the running /cad-land is old prose, so the phase-2 no-default posture can't be live-exercised here. Wiring confirmed present in local source (cad-land/SKILL.md:49-63) and unchanged by phase 2 per D-08. Needs the plugin reinstalled from this branch to verify.
 
 ### 6. cad-milestone auto_close full chain
@@ -65,21 +67,21 @@ fix: 6d415fd, retest
 
 ### 9. gh pr create does not push a local-only integration branch (GitHub auto_close)
 expected: cad-land SKILL.md:70-74 claims opening the PR pushes it, but gh pr create --base <base> --head <branch> --fill will not push a branch with no remote non-interactively, so the GitHub auto_close chain can fail at PR-open before merge. GitLab glab mr create does push, so only the GitHub path is affected.
-status: fail
+status: pass
 first_pass: fail
 source: verifier
 evidence: SKILL.md:69-75 (prose asserts gh/glab create pushes it); SUMMARY.md:66-73
 reported: cad-land SKILL.md:70-74 claims opening the PR pushes it, but gh pr create --base <base> --head <branch> --fill will not push a branch with no remote non-interactively, so the GitHub auto_close chain can fail at PR-open before merge. GitLab glab mr create does push, so only the GitHub path is affected.
 severity: major
 cause: cad-land SKILL.md:70-74 claims gh pr create --head pushes a local-only branch, but gh will not push a branch with no remote non-interactively, so the GitHub auto_close chain can fail at PR-open. Fix: add git push -u origin <branch> before gh pr create on the GitHub path. GitLab glab mr create already pushes.
-fix: routed to /cad-plan - naive git push trips git-guard ask-on-every-push (rail 3); needs auto_close/guard reconciliation
+fix: closed by git-publish seam (fab6a64..24b58c6); isPlainPush deleted, prose corrected, 217 tests green, self-verify ok
 
 ## Summary
 
 total: 9
-passed: 6
-failed: 1
+passed: 8
+failed: 0
 pending: 0
 skipped: 0
-blocked: 2
+blocked: 1
 reworked: 2
