@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 3 (Land cleanup + autonomous close)
+Phase: 2 of 4 (Land cleanup + autonomous close)
 Status: executed
-Next: /cad-verify 2
+Next: /cad-context 3
 Updated: 2026-07-17

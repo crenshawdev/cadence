@@ -19,6 +19,12 @@ Each maps to exactly one roadmap phase.
 - [ ] **REL-01**: For a distributed-plugin project, cad-milestone/cad-land bump the plugin manifest version (`.claude-plugin/plugin.json`, sibling manifests kept in sync) as part of the close, idempotently
 - [ ] **REL-02**: A CHANGELOG / release-notes convention wired into the close flow; the first entry documents the shipped v1.1.0 scope and the `memory.backend none → builtin` default flip
 
+### Release readiness (RDY)
+
+- [ ] **RDY-01**: Public docs (README, MANIFESTO, DESIGN, LINEAGE, NOTICE, CHANGELOG) reconciled to the shipped v1.1 code, with drift corrected in place (verified by `/cad-docs-verify`)
+- [ ] **RDY-02**: README surfaces the shipped v1.1 capabilities with the locked lineage/attribution (GSD, RTK) positioning; DESIGN.md honestly documents the reversed design decisions with rationale
+- [ ] **RDY-03**: The plugin clears the community plugin-store submission bar — `claude plugin validate --strict` clean, complete `.claude-plugin/plugin.json` metadata, README + CHANGELOG present, semver matching the release tag
+
 ## Shipped
 
 Delivered and verified. Kept as rows for shipped-scope trace; the `v1.1.0-rc.1`
@@ -68,6 +74,9 @@ remain the last in the file — the audit seam parses every row beneath it.
 | GIT-03 | 2 | Pending |
 | REL-01 | 3 | Pending |
 | REL-02 | 3 | Pending |
+| RDY-01 | 4 | Pending |
+| RDY-02 | 4 | Pending |
+| RDY-03 | 4 | Pending |
 
 ---
-*Last updated: 2026-07-16 opening the v1.1.0-rc.2 round*
+*Last updated: 2026-07-17 added Phase 4 (release prep & docs), RDY-01..03*

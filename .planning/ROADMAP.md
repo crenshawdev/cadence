@@ -6,13 +6,16 @@ A focused lifecycle round. Give Cadence an explicit git branching model and an
 optionally-autonomous close, plus the release mechanics (manifest version bump,
 changelog) that the v1.1.0-rc.1 cycle shipped without. The 43-item sweep backlog
 was re-triaged against `main` (35 already done); only P3 nits survive and are
-deferred. Three phases, then tag `v1.1.0-rc.2`.
+deferred. Four phases, then tag `v1.1.0-rc.2`.
 
 Phase 1 lands the two-tier branch model — a per-milestone integration branch as
 the reconciliation point that parallel worktrees fork from, off `main`. Phase 2
 builds on it: reset-to-base after every land, and the opt-in end-to-end close.
 Phase 3 folds the release mechanics into the close so a plugin release stops
-carrying a stale version. Grounded starting fact (pressure-tested): worktrees
+carrying a stale version. Phase 4 then makes the release honest and store-ready
+before the tag: public docs reconciled to the shipped code, settled
+lineage/attribution positioning, and a clean community plugin-store submission.
+Grounded starting fact (pressure-tested): worktrees
 already fork from HEAD and self-reap, so the load-bearing new work is branch
 *ownership* (auto-create at cycle start), not worktree plumbing.
 
@@ -21,6 +24,7 @@ already fork from HEAD and self-reap, so the load-bearing new work is branch
 - [x] **Phase 1: Integration-branch model** - a per-milestone integration branch (parallel-worktree reconciliation point), created at cycle start; `trunk` escape hatch
 - [ ] **Phase 2: Land cleanup + autonomous close** - reset-to-base + pull after land, and an opt-in end-to-end close
 - [ ] **Phase 3: Release mechanics** - manifest version bump folded into the lifecycle, and a changelog convention
+- [ ] **Phase 4: Release prep & docs** - public docs reconciled to shipped code, settled README/lineage positioning, and a clean community plugin-store submission
 
 ## Phase Details
 
@@ -56,3 +60,14 @@ already fork from HEAD and self-reap, so the load-bearing new work is branch
 3. The first CHANGELOG entry documents the shipped v1.1.0 scope, including the `memory.backend none → builtin` default flip
 4. Cadence's own `.claude-plugin/plugin.json` is bumped to `1.1.0-rc.2` at this round's close, and `/plugin` would report it
 5. The bump is idempotent (re-running the close does not double-bump); self-verify passes
+
+### Phase 4: Release prep & docs
+**Goal:** The v1.1.0 release is honest and store-ready - every public doc reconciled to the shipped code, the README surfaces the new capabilities with settled lineage/attribution positioning, DESIGN records the design reversals, and the plugin clears the community plugin-store submission bar
+**Depends on:** Phase 3
+**Requirements:** RDY-01, RDY-02, RDY-03
+**Success Criteria:**
+1. `/cad-docs-verify` reports no unresolved drift across README, MANIFESTO, DESIGN, LINEAGE, NOTICE, and CHANGELOG against the live v1.1 code - every flagged item corrected in place
+2. README documents the shipped v1.1 capabilities (integration-branch model, land cleanup, `auto_close`, the git-publish seam, builtin recall) with the GSD/RTK lineage and attribution positioning locked in
+3. DESIGN.md documents each made-then-reversed decision - at minimum the never-auto-push reversal (opt-in `auto_close` + the one sanctioned push seam) - with what changed, when, and why
+4. `.claude-plugin/plugin.json` carries complete submission metadata (displayName, author, homepage, repository, license, keywords) and `claude plugin validate --strict` exits clean
+5. The community plugin-store submission bar is met - kebab-case name, semver matching the release tag, README + CHANGELOG present - so the plugin is ready to submit
