@@ -89,11 +89,17 @@ MR or PR / tag / leave local) with NO preselected default.
 `git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
 lets `/cad-land` complete the close unattended, landing the integration branch
 on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
-`glab mr merge`). That is a platform merge, not a `git push`, so the
-never-auto-push rule holds; and because it skips the ask rather than
-preselecting a default in it, the no-preselected-default publish posture (off by
-default) holds too. A blocking `pre_ship` finding still halts the chain before
-merge.
+`glab mr merge`). That platform merge is not a `git push`. On the GitHub arm the
+local-only integration branch is first published by the git-publish seam - one
+sanctioned push of the current non-protected branch, run as a subprocess so the
+Bash `git push` guard never sees it and there is no prompt. The seam refuses
+unless repo `git.auto_close` is true and HEAD is a non-protected branch, and it
+pushes exactly that branch to a configured bare-name remote. Every Bash
+`git push` the guard sees still asks unconditionally (git-guard now carries NO
+push exemption); the git-publish seam is the one code-guarded exception, invoked
+only by cad-land, so the never-auto-push rule and the no-preselected-default
+posture both still hold. On GitLab `glab mr create` publishes the source branch
+itself. A blocking `pre_ship` finding still halts the chain before merge.
 
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
 (default on) returns HEAD to the base, pulls, and reaps the merged integration

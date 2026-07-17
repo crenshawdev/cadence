@@ -66,14 +66,23 @@ final review gate, asks how to publish, and executes exactly that - nothing more
    `PR -> merge`, no prompts.** Skip the 4a ask entirely (this is the single
    opt-in that lets the close run unattended; it never installs a default into
    the 4a ask). The integration branch is local-only (git.md rail 3 never
-   auto-pushes), so a merge would fail with "no PR found" - open it first, which
-   pushes it:
+   auto-pushes). On GitHub, `gh pr create --head <branch>` will NOT push a
+   remoteless branch non-interactively, so publish it first through the
+   git-publish seam:
+   - **Publish the branch (GitHub arm).** Run the seam on its own physical line:
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
+     It does ONE sanctioned `git push` of the current non-protected branch as a
+     subprocess (execFileSync argv) that git-guard's Bash push hook never sees,
+     and refuses with `ok:false` unless repo `git.auto_close` is true and HEAD is
+     a non-protected branch. On `ok:true` proceed to open the PR; on `ok:false`
+     stop and surface the reason - do NOT fall back to a raw `git push`, which
+     would hit the guard's unconditional ask.
    - **Open (or reuse) the PR/MR.** Reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` finds it, else create:
      GitHub `gh pr create --base <base> --head <branch> --fill`, GitLab
      `glab mr create --source-branch <branch> --target-branch <base> --fill`.
-     `gh`/`glab` are not `git push`, so the git-guard push hook never prompts
-     and the chain holds.
+     On GitLab `glab mr create` publishes the source branch itself, so no seam
+     call is needed there.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
      --delete-branch` (an explicit merge strategy is required or gh
      errors/prompts; `--delete-branch` removes the remote+local source). GitLab
@@ -107,8 +116,13 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. The one
-  exception is `git.auto_close` (default off), the explicit opt-in that runs
-  PR -> merge -> reset unattended; it skips the ask rather than preselecting a
+  exception is `git.auto_close` (default off), the explicit opt-in that runs the
+  close unattended: on the GitHub arm it makes ONE sanctioned publish of the
+  local-only integration branch through the git-publish seam (a subprocess push
+  git-guard does not intercept, code-guarded to the current non-protected branch
+  under repo `git.auto_close`) BEFORE opening the PR, then PR -> merge -> reset.
+  Every Bash `git push` still asks unconditionally; the seam is the only
+  code-guarded unattended publish. It skips the 4a ask rather than preselecting a
   default in it, and it still halts on a blocking `pre_ship` finding.
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.
