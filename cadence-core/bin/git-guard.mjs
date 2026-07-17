@@ -11,8 +11,11 @@
 // Rails:
 //   git push          -> permissionDecision "ask" - publishing is /cad-land's
 //                        call (references/git.md rail 3); the user decides at
-//                        the prompt, so cad-land's user-approved push still
-//                        works in one step.
+//                        the prompt. No exemption lives here: EVERY Bash `git
+//                        push` this hook sees asks unconditionally. cad-land's
+//                        sanctioned unattended publish runs through the
+//                        git-publish seam as a subprocess (execFileSync argv),
+//                        not a Bash tool call, so this hook never sees it.
 //   git commit on a   -> per config git.on_protected: ask (default) | refuse
 //   protected branch     ("deny") | allow (silent).
 //
@@ -84,6 +87,14 @@ function gitSubcommands(command) {
   return subs;
 }
 
+// The current branch name, or '' on any failure (not a repo / no commits).
+function currentBranch(cwd) {
+  try {
+    return execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch { return ''; }
+}
+
 // No process.exit() anywhere below: the decision JSON is written to stdout,
 // and exiting right after a write can truncate it on a pipe (the same rule
 // lib/seam-io.mjs pins for the seam scripts). Plain returns let the stream
@@ -100,27 +111,29 @@ function main() {
   const subs = gitSubcommands(command);
   const isPush = subs.includes('push');
   const isCommit = subs.includes('commit');
+  if (!isPush && !isCommit) return;
 
+  // A push needs no config: EVERY Bash `git push` asks unconditionally - no
+  // exemption of any kind lives here (rail 3). cad-land's sanctioned unattended
+  // publish runs through the git-publish seam as a subprocess argv push, which
+  // is not a Bash tool call, so this hook never sees it.
   if (isPush) {
     decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
       'call (references/git.md rail 3). Approve only if you are deliberately publishing.');
     return;
   }
-  if (!isCommit) return;
 
-  // git commit: enforce the protected-branch guard from config.
   const { config } = mergeLayers(join(root, '.planning', 'config.json'));
   const git = config.git || {};
   const protectedBranches = Array.isArray(git.protected_branches)
     ? git.protected_branches : ['main', 'master'];
+
+  // git commit: enforce the protected-branch guard from config.
   const onProtected = git.on_protected || 'ask';
   if (onProtected === 'allow') return;
 
-  let branch = '';
-  try {
-    branch = execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return; /* not a repo / no commits - nothing to guard */ }
+  const branch = currentBranch(cwd);
+  if (!branch) return; // not a repo / no commits - nothing to guard
 
   if (protectedBranches.includes(branch)) {
     decide(onProtected === 'refuse' ? 'deny' : 'ask',

@@ -100,7 +100,9 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
-    '`git.protected_branches` `git.on_protected` `git.base_branch` `git.create_tag`\n' +
+    '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
+    '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
+    '`git.on_land_cleanup` `git.auto_close`\n' +
     '`planning.commit_docs` `memory.backend`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
@@ -163,4 +165,22 @@ test('bare-word tool names (D-06 collisions) are not false positives', () => {
     budgets: { 'agents/a.md': 10000 },
   });
   assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
+test('INTERNALS.md: a backticked repo path that does not exist is flagged; a real one and a glob are not', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  // config.schema.json exists in the fixture; a bogus path and a glob do not.
+  writeFileSync(join(root, 'INTERNALS.md'),
+    'Read the code: `cadence-core/config.schema.json`, the `*-decision.mjs` cores, '
+    + 'and `cadence-core/bin/does-not-exist.mjs`.\n');
+  const p = run(['--root', root]).problems;
+  const internals = p.filter((x) => x.kind === 'missing-internals-path');
+  assert.equal(internals.length, 1, 'exactly the one bogus path is flagged');
+  assert.equal(internals[0].detail, 'cadence-core/bin/does-not-exist.mjs');
 });

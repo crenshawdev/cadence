@@ -21,8 +21,29 @@ not frame the close as a version cut. Do not press the user toward a tag they
 did not ask for.
 
 Otherwise confirm the version (`$ARGUMENTS`, else propose the next from
-PROJECT.md's current), create an annotated tag at HEAD (`git tag -a <version>
--m ...`), and do NOT push it - publishing the tag is /cad-land's decision.
+PROJECT.md's current).
+
+Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
+own line (add `--version <version>` when the user named one via `$ARGUMENTS`):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root>
+```
+
+The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"`
+when absent (non-plugin projects are unaffected). Otherwise it bumps the
+manifest `version` to the shipping release (and any versioned sibling) and
+scaffolds the dated `## [<version>]` CHANGELOG heading + link reference. Then
+YOU author the entry's bullet prose under that heading - what shipped this
+milestone, including any default flips - the seam owns the deterministic
+scaffold, prose owns the judgment. Commit the manifest + changelog as
+`chore: bump manifest to <version> + changelog` BEFORE the tag, so the tag
+captures the bumped manifest. This runs before step 4 evolves `### Active`, so
+derivation reads the shipping version, and the `git.auto_close` chain (step 7)
+inherits it because step 2 always runs pre-tag.
+
+Then create an annotated tag at HEAD (`git tag -a <version> -m ...`), and do
+NOT push it - publishing the tag is /cad-land's decision.
 
 ## 3. Prune completed phases + cleanup
 - Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list;
@@ -67,7 +88,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
 Commit the doc changes (`docs:`), cursor included, per references/git.md -
 never leave the tree dirty.
 
-## 7. Report
+## 7. Autonomous close (`git.auto_close` only)
+When `git.auto_close` is `false` (default), stop here: the tag stays unpushed
+and publishing is the user's separate `/cad-land` call (step 8's note). When
+`git.auto_close` is `true`, chain the publish end-to-end - invoke `/cad-land`
+via the SlashCommand tool so it runs PR -> merge -> reset with no per-step
+prompts (audit -> tag already ran above). The `pre_ship` gate-halt inside
+cad-land still applies: a surviving blocker/high finding stops the chain before
+merge (nothing is force-merged).
+
+Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
+evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
+re-derive the just-shipped branch name by version. It reaps via the
+`land-cleanup.mjs` `cadence/*`-merged fallback (resolveReapBranch): the sole
+`cadence/*` branch actually merged into base is the shipped
+`cadence/<this-version>`, so it is still reaped correctly.
+
+## 8. Report
 Tag created (unpushed) - or "no tag (non-release)" - phases pruned,
 PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next action. Note
-that publishing the tag is /cad-land.
+that publishing the tag is /cad-land (already chained when `git.auto_close` is
+on).

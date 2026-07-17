@@ -4,13 +4,93 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0-rc.2] - 2026-07-17
+
+Second release candidate toward `1.1.0`, built by dogfooding Cadence on itself.
+This line closes Cadence's biggest self-admitted gap - its write-only memory -
+turns the context-engineering claims into measured, CI-enforced facts, and gives
+the plugin an explicit git branching model plus a release lifecycle that keeps
+its own version honest. It accumulates the `rc.1` recall work and adds this
+round's git model and release mechanics. The final `1.1.0` tag is cut only at
+publish.
+
+### Recall - the write-only memory gap, closed
+
+- **`memory.backend` now defaults to `builtin`** (was the reserved, wired-to-`none`
+  socket in `1.0.0`). `none` remains the off switch. The feature's value is being
+  there without setup.
+- **Deterministic BM25 recall over `.planning/`** as a zero-dep `planning.mjs
+  recall` subcommand - same corpus and query always rank the same, no timestamps
+  and no embeddings. An empty corpus returns `{ok:true, results:[]}`, never an
+  error.
+- **Recall is injected where past knowledge changes a decision:** `/cad-context`
+  (assumptions), `/cad-plan` (task breakdown), and `/cad-debug` (hypotheses) each
+  pull cited snippets at the moment they start reasoning.
+
+### Measured context, enforced in CI
+
+- **Per-surface context-weight measurement** (byte and estimated-token weight of
+  agent and skill prose) via a deterministic seam subcommand.
+- **A blocking self-verify budget check** names the surface and its overage, so
+  prose bloat is caught mechanically, the same way drift is.
+- **A blocking tools-declaration lint:** agent prose may reference only the tools
+  declared in that agent's frontmatter.
+
+### Two-tier git model
+
+- **`git.integration_branch`** (`milestone` default, `trunk` escape hatch) plus
+  **`git.auto_branch`** (`ask` | `auto` | `off`). In `milestone` mode a
+  per-milestone integration branch is created at cycle start as the reconciliation
+  point parallel worktrees fork from and merge into, keeping merge churn off
+  `main`. `trunk` composes with the existing protected-branch guard and creates
+  nothing.
+
+### Land cleanup and opt-in autonomous close
+
+- **`git.on_land_cleanup`** (default on): after a land or merge actually lands,
+  return to base, pull, and reap the merged integration branch - never via a
+  remote-tracking delete.
+- **`git.auto_close`** (opt-in, default off): lets `/cad-milestone` and `/cad-land`
+  run the whole close - audit, tag, PR or MR, merge, reset - with no per-step
+  prompts. A blocking `pre_ship` finding still halts the chain before merge. With
+  it off (the default), `/cad-land` still asks the publish mechanism with no
+  preselected default: the opt-in never changes the default posture. The decision
+  core, gate-halt, publish seam, and guard behavior are covered by tests; the full
+  unattended chain has not yet been exercised end-to-end against a live remote, and
+  that run is the gate for the final `1.1.0`.
+- **The never-auto-push rail holds.** The GitHub arm's one sanctioned push runs
+  through a code-guarded `git-publish` subprocess seam invoked only by `/cad-land`;
+  every Bash `git push` the guard sees still asks unconditionally (the old
+  `isPlainPush` command-string exemption was deleted).
+
+### Release mechanics folded into the close
+
+- **`release-bump.mjs`** bumps a distributed plugin's own `.claude-plugin/plugin.json`
+  version and scaffolds the dated CHANGELOG heading and link reference as part of
+  the milestone close, idempotently. Non-plugin projects are unaffected (it skips
+  when no manifest is present). A plugin release stops shipping with a stale
+  version.
+
+### Release prep and store readiness
+
+- **Public docs reconciled** to the shipped code (README, MANIFESTO, DESIGN,
+  LINEAGE, NOTICE, CHANGELOG), verified by `/cad-docs-verify`.
+- **DESIGN.md records the reversed decisions** with what changed and why - the
+  never-auto-push reversal (opt-in `auto_close` plus the one sanctioned push seam)
+  and the deleted `isPlainPush` whitelist.
+- **GSD lineage framing settled** to independent distillation, with the ~3%
+  documentary-mass figure date-labelled (measured 2026-07-10, GSD commit d010ea1).
+- **Plugin-store metadata** added (`displayName`, marketplace description);
+  `claude plugin validate --strict` exits clean.
+
 ## [1.0.0] - 2026-07-16
 
 First public release. Cadence is a standalone planning-and-execution system for
 Claude Code, installed as a plugin. Its methodology descends from
 [GSD](https://github.com/open-gsd/gsd-core) (MIT) - the discuss/plan/execute/verify
-loop - but the codebase is a ground-up rewrite carrying roughly 3% of GSD's
-documentary mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance and
+loop - but the codebase is an independent distillation carrying roughly 3% of GSD's
+documentary mass (measured 2026-07-10, GSD commit d010ea1). See
+[`LINEAGE.md`](./LINEAGE.md) for the measured distance and
 [`NOTICE.md`](./NOTICE.md) for the attribution.
 
 ### The loop
@@ -98,4 +178,5 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.1.0-rc.2]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0-rc.2
 [1.0.0]: https://github.com/crenshawdev/cadence/releases

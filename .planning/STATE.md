@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 1 (unplanned)
+Phase: 1 of 2 (v1.1.0)
 Status: ready to plan
-Next: define + plan the next iteration toward v1.1.0 (/cad-plan)
-Updated: 2026-07-16
+Next: Plan the final v1.1.0 publish milestone (PUB-01, PUB-02): write its ROADMAP phases, then /cad-context 1 -> /cad-plan 1. Roadmap phases are not yet written (total is provisional).
+Updated: 2026-07-17

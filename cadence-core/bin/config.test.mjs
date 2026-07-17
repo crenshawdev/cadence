@@ -117,6 +117,8 @@ test('keys: dumps the live schema - pruned keys are really gone', () => {
   assert.deepEqual(r.keys['model.profile'].values, ['fast', 'balanced', 'quality', 'auto']);
   assert.ok(r.keys['review.consult.attempt_threshold']);   // added this cycle
   assert.ok(r.keys['review.triggers.phase_diff.gate']);    // added this cycle
+  assert.deepEqual(r.keys['git.integration_branch'].values, ['milestone', 'trunk']); // added this round
+  assert.deepEqual(r.keys['git.auto_branch'].values, ['ask', 'auto', 'off']);        // added this round
   for (const gone of ['mode', 'context_window', 'workflow.auto_advance',
     'workflow.discuss_mode', 'workflow.human_verify_mode', 'workflow.build_command',
     'git.auto_push']) {
@@ -146,6 +148,20 @@ test('get: no layers at all falls back to schema defaults for every key', () => 
   assert.equal(r.source, 'defaults');
   assert.equal(r.values['git.on_protected'], 'ask');
   assert.deepEqual(r.values['git.protected_branches'], ['main', 'master']);
+});
+
+test('git.integration_branch / git.auto_branch: defaults and enum enforcement', () => {
+  const r = run(['get', '--file', join(dir, 'absent.json'),
+    'git.integration_branch', 'git.auto_branch'], join(dir, 'also-absent.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.values['git.integration_branch'], 'milestone');
+  assert.equal(r.values['git.auto_branch'], 'ask');
+  const badMode = run(['check', 'git.integration_branch=mainline']);
+  assert.equal(badMode.ok, false);
+  assert.match(badMode.errors[0].error, /must be one of: milestone, trunk/);
+  const badAuto = run(['check', 'git.auto_branch=sometimes']);
+  assert.equal(badAuto.ok, false);
+  assert.match(badAuto.errors[0].error, /must be one of: ask, auto, off/);
 });
 
 test('get: unknown key is rejected, exit code mirrors ok', () => {

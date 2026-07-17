@@ -41,6 +41,45 @@ bare name would also match a tag):
 
 A `base` that resolves and shares a merge-base with HEAD -> silent pass.
 
+**Integration branch (before the first commit, once per cycle).** After the
+guards above pass, decide whether this cycle runs on a per-milestone
+integration branch. Ask the seam - it only advises, it never checks out:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" decide
+```
+
+Act on its `action`:
+
+- `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the
+  seam's `branch` field: the per-milestone integration branch (e.g.
+  `cadence/v1.1.0-rc.2`, derived from `PROJECT.md`'s `### Active` milestone,
+  falling back to the `ROADMAP.md` title). Guard: never run `checkout -b` with an
+  empty/null `branch` - the seam already downgrades an unnameable branch to
+  `ask`, so treat any `create` with a null `branch` as a naming problem too.
+- `ask` -> prompt once via the ask-user seam, no preselected default. When
+  `branch` is named: create the named integration branch / stay on the base /
+  abort. When `branch` is null (no version derivable - the seam's
+  naming-problem `ask`): tell the user no milestone version was found in
+  `PROJECT.md`'s `### Active` or the `ROADMAP.md` title, and offer to set the
+  version / stay on the base / abort - never invent a name.
+- `stay` -> do nothing (already off the base, or the mode says not to).
+
+`git.integration_branch` picks the model. `milestone` creates the integration
+branch: the reconciliation point parallel worktrees fork from and merge into,
+keeping merge churn off `main`. `trunk` creates nothing - commits land on the
+base, still governed by `git.on_protected` (git-guard.mjs unchanged). `git.auto_branch`
+picks how it is created at cycle start: `ask` prompts once, `auto` creates and
+switches silently, `off` stays put. Creation is lazy and once per cycle - the
+seam infers it from HEAD sitting on a protected base, so later phases already
+off the base pass silently.
+
+Because parallel worktrees already fork from HEAD and self-reap
+(`workflows/execute.md`), switching HEAD to the integration branch makes its tip
+the worktree fork point with no worktree change. `git.base_branch` stays the
+landing and guard base, distinct from the integration branch: the integration
+branch is what work merges back down to, not a repurposed worktree fork point.
+
 ## 2. Atomic conventional commits
 
 One logical change per commit: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`,
@@ -52,6 +91,27 @@ commit separately from code (`docs:` prefix) when `planning.commit_docs` is true
 No workflow pushes, ever. Publishing is a human decision made through
 `/cad-land`, which reports git state and asks the mechanism (direct push /
 MR or PR / tag / leave local) with NO preselected default.
+
+`git.auto_close` (default off) is the single sanctioned opt-in to that ask: it
+lets `/cad-land` complete the close unattended, landing the integration branch
+on base via a host-CLI PR/MR **merge** on the platform (`gh pr merge` /
+`glab mr merge`). That platform merge is not a `git push`. On the GitHub arm the
+local-only integration branch is first published by the git-publish seam - one
+sanctioned push of the current non-protected branch, run as a subprocess so the
+Bash `git push` guard never sees it and there is no prompt. The seam refuses
+unless repo `git.auto_close` is true and HEAD is a non-protected branch, and it
+pushes exactly that branch to a configured bare-name remote. Every Bash
+`git push` the guard sees still asks unconditionally (git-guard now carries NO
+push exemption); the git-publish seam is the one code-guarded exception, invoked
+only by cad-land, so the never-auto-push rule and the no-preselected-default
+posture both still hold. On GitLab `glab mr create` publishes the source branch
+itself. A blocking `pre_ship` finding still halts the chain before merge.
+
+After a land/merge actually lands on this machine, `git.on_land_cleanup`
+(default on) returns HEAD to the base, pulls, and reaps the merged integration
+branch locally - advised by the `land-cleanup.mjs cleanup` seam, which reaps
+only when `git branch --merged <base>` confirms the branch is merged, and never
+via a remote-tracking delete (that would trip the push guard).
 
 ## 4. Risk surfaces
 

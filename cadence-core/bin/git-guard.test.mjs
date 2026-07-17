@@ -66,6 +66,17 @@ test('git push always asks (publishing is /cad-land\'s call)', () => {
   assert.match(d.permissionDecisionReason, /cad-land/);
 });
 
+test('auto_close true does not exempt any push - every push still asks', () => {
+  // The direct inversion of the removed exemption: git-guard carries NO push
+  // exemption. Even the exact shape that once passed silently under repo
+  // auto_close now asks. cad-land's sanctioned publish runs through the
+  // git-publish seam as a subprocess argv push this Bash hook never sees.
+  const dir = project('cadence/v1.1.0-rc.2', { git: { auto_close: true } });
+  const d = guard('git push -u origin cadence/v1.1.0-rc.2', dir);
+  assert.notEqual(d, null);
+  assert.equal(d.permissionDecision, 'ask');
+});
+
 test('commit on a protected branch asks by default, silent on a task branch', () => {
   const d = guard('git commit -m "x"', project('main'));
   assert.equal(d.permissionDecision, 'ask');
