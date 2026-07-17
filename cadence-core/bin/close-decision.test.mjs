@@ -62,6 +62,18 @@ test('cleanup on + not merged: cleanup, reap false (never reap an unmerged branc
   assert.equal(r.returnToBase, true);
 });
 
+test('cleanup on + merged but null branch -> reap false (never git branch -D a null)', () => {
+  // GitHub auto_close: gh pr merge --delete-branch removes the branch, so the
+  // seam forces --merged true yet resolveReapBranch returns null. Reap must not
+  // fire on a null branch, or the tail `git branch -D <null>` errors.
+  const r = decideCleanup({ onLandCleanup: true, mergedIntoBase: true, branch: null });
+  assert.equal(r.action, 'cleanup');
+  assert.equal(r.reap, false);
+  assert.equal(r.branch, null);
+  assert.equal(r.returnToBase, true);
+  assert.equal(r.pull, true);
+});
+
 test('cleanup off: skip, every flag false', () => {
   const r = decideCleanup({ onLandCleanup: false, mergedIntoBase: true, branch: 'cadence/v1.1.0-rc.2' });
   assert.equal(r.action, 'skip');

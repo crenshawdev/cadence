@@ -41,9 +41,11 @@ export function resolveReapBranch(derivedName, mergedBranches) {
  *
  * - onLandCleanup !== true -> skip: leave the branch and HEAD in place.
  * - onLandCleanup === true -> cleanup: return to base and pull, and reap ONLY
- *   when `mergedIntoBase === true` (the seam confirmed the branch is merged);
- *   reap is false whenever the merge is not confirmed, so an unmerged branch is
- *   never deleted.
+ *   when `mergedIntoBase === true` (the seam confirmed the branch is merged) AND
+ *   a branch name actually resolved (`branch != null`); reap is false whenever
+ *   the merge is not confirmed OR no branch resolved, so an unmerged branch is
+ *   never deleted and `git branch -D` is never handed a null (the GitHub
+ *   auto_close path deletes the branch at merge, so re-derivation resolves null).
  *
  * @param {{ onLandCleanup?: boolean, mergedIntoBase?: boolean, branch?: string|null }} args
  * @returns {{ action:'cleanup'|'skip', returnToBase:boolean, pull:boolean, reap:boolean, branch:string|null, reason:string }}
@@ -54,11 +56,16 @@ export function decideCleanup({ onLandCleanup, mergedIntoBase, branch } = {}) {
     return { action: 'skip', returnToBase: false, pull: false, reap: false, branch: b,
       reason: 'on_land_cleanup off: leave HEAD and the integration branch in place' };
   }
-  const reap = mergedIntoBase === true;
-  return { action: 'cleanup', returnToBase: true, pull: true, reap, branch: b,
-    reason: reap
-      ? 'on_land_cleanup on and branch confirmed merged: return to base, pull, reap'
-      : 'on_land_cleanup on but branch not confirmed merged into base: return to base and pull, do not reap' };
+  const reap = mergedIntoBase === true && b !== null;
+  let reason;
+  if (reap) {
+    reason = 'on_land_cleanup on and branch confirmed merged: return to base, pull, reap';
+  } else if (mergedIntoBase === true) {
+    reason = 'on_land_cleanup on and merge confirmed but no reap branch resolved: return to base and pull, do not reap';
+  } else {
+    reason = 'on_land_cleanup on but branch not confirmed merged into base: return to base and pull, do not reap';
+  }
+  return { action: 'cleanup', returnToBase: true, pull: true, reap, branch: b, reason };
 }
 
 /**

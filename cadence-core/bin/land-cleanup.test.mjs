@@ -25,6 +25,28 @@ function fixture(gitConfig) {
   return dir;
 }
 
+/** A real git repo (over a .planning fixture) with cadence/<v> merged into main,
+ *  so `git branch --merged main` lists it and the reap target resolves for real. */
+function gitFixture(gitConfig) {
+  const dir = fixture(gitConfig);
+  const g = (...a) => execFileSync('git', ['-C', dir, ...a],
+    { stdio: 'ignore', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+  g('init', '-q');
+  g('config', 'user.email', 'test@example.com');
+  g('config', 'user.name', 'test');
+  g('config', 'commit.gpgsign', 'false');
+  g('add', '-A');
+  g('commit', '-q', '-m', 'init');
+  g('branch', '-M', 'main');
+  g('checkout', '-q', '-b', 'cadence/v1.1.0-rc.2');
+  writeFileSync(join(dir, 'work.txt'), 'x');
+  g('add', '-A');
+  g('commit', '-q', '-m', 'work');
+  g('checkout', '-q', 'main');
+  g('merge', '-q', '--no-ff', '-m', 'merge', 'cadence/v1.1.0-rc.2');
+  return dir;
+}
+
 /** Run a land-cleanup subcommand against a fixture; optional stdin string. */
 function seam(args, stdin = '') {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
@@ -38,15 +60,29 @@ function seam(args, stdin = '') {
 
 // --- cleanup ----------------------------------------------------------------
 
-test('cleanup --merged true on a default config: reap true, return to base', () => {
-  const dir = fixture({ base_branch: 'main' });
-  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+test('cleanup on a repo with the branch merged into base: reap true, return to base', () => {
+  const dir = gitFixture({ base_branch: 'main' });
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2']);
   assert.equal(r.ok, true);
   assert.equal(r.action, 'cleanup');
   assert.equal(r.returnToBase, true);
   assert.equal(r.pull, true);
   assert.equal(r.reap, true);
+  assert.equal(r.branch, 'cadence/v1.1.0-rc.2');
   assert.equal(r.base, 'main');
+});
+
+test('cleanup --merged true forced but branch not in merged list (deleted at merge): reap false, branch null', () => {
+  // The GitHub auto_close path: gh pr merge --delete-branch removes the branch,
+  // so `git branch --merged` no longer lists it and the reap target resolves
+  // null, yet the seam forces --merged true. Reap must not fire on a null branch.
+  const dir = fixture({ base_branch: 'main' });
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.equal(r.action, 'cleanup');
+  assert.equal(r.reap, false);
+  assert.equal(r.branch, null);
+  assert.equal(r.returnToBase, true);
+  assert.equal(r.pull, true);
 });
 
 test('cleanup --merged false: cleanup but reap false (never reap an unmerged branch)', () => {
