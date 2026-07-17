@@ -72,6 +72,10 @@ const CONTRACTS = {
     cleanup: ['--branch', '--base', '--merged'],
     gate: [],
   },
+  'release-bump.mjs': {
+    '*': ['--dir'],
+    bump: ['--version', '--date'],
+  },
   'route.mjs': {
     '*': [],
     resolve: ['--role', '--attempt', '--files', '--ambiguity', '--file'],
