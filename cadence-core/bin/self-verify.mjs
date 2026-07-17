@@ -59,6 +59,10 @@ const CONTRACTS = {
     get: ['--file'],
     keys: [],
   },
+  'git-branch.mjs': {
+    '*': ['--dir'],
+    decide: ['--branch'],
+  },
   'route.mjs': {
     '*': [],
     resolve: ['--role', '--attempt', '--files', '--ambiguity', '--file'],
