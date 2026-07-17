@@ -72,8 +72,8 @@ remain the last in the file — the audit seam parses every row beneath it.
 | GIT-01 | 1 | Complete |
 | GIT-02 | 2 | Pending |
 | GIT-03 | 2 | Pending |
-| REL-01 | 3 | Pending |
-| REL-02 | 3 | Pending |
+| REL-01 | 3 | Complete |
+| REL-02 | 3 | Complete |
 | RDY-01 | 4 | Pending |
 | RDY-02 | 4 | Pending |
 | RDY-03 | 4 | Pending |
