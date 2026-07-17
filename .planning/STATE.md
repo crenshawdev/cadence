@@ -1,6 +1,6 @@
 # State
 
 Phase: 4 of 4 (Release prep & docs)
-Status: executed
-Next: /cad-verify 4
+Status: phase complete
+Next: /cad-milestone
 Updated: 2026-07-17

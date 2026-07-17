@@ -74,9 +74,9 @@ remain the last in the file — the audit seam parses every row beneath it.
 | GIT-03 | 2 | Pending |
 | REL-01 | 3 | Complete |
 | REL-02 | 3 | Complete |
-| RDY-01 | 4 | Pending |
-| RDY-02 | 4 | Pending |
-| RDY-03 | 4 | Pending |
+| RDY-01 | 4 | Complete |
+| RDY-02 | 4 | Complete |
+| RDY-03 | 4 | Complete |
 
 ---
 *Last updated: 2026-07-17 added Phase 4 (release prep & docs), RDY-01..03*
