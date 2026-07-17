@@ -21,8 +21,29 @@ not frame the close as a version cut. Do not press the user toward a tag they
 did not ask for.
 
 Otherwise confirm the version (`$ARGUMENTS`, else propose the next from
-PROJECT.md's current), create an annotated tag at HEAD (`git tag -a <version>
--m ...`), and do NOT push it - publishing the tag is /cad-land's decision.
+PROJECT.md's current).
+
+Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
+own line (add `--version <version>` when the user named one via `$ARGUMENTS`):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root>
+```
+
+The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"`
+when absent (non-plugin projects are unaffected). Otherwise it bumps the
+manifest `version` to the shipping release (and any versioned sibling) and
+scaffolds the dated `## [<version>]` CHANGELOG heading + link reference. Then
+YOU author the entry's bullet prose under that heading - what shipped this
+milestone, including any default flips - the seam owns the deterministic
+scaffold, prose owns the judgment. Commit the manifest + changelog as
+`chore: bump manifest to <version> + changelog` BEFORE the tag, so the tag
+captures the bumped manifest. This runs before step 4 evolves `### Active`, so
+derivation reads the shipping version, and the `git.auto_close` chain (step 7)
+inherits it because step 2 always runs pre-tag.
+
+Then create an annotated tag at HEAD (`git tag -a <version> -m ...`), and do
+NOT push it - publishing the tag is /cad-land's decision.
 
 ## 3. Prune completed phases + cleanup
 - Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list;
