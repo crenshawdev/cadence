@@ -10,7 +10,7 @@ phase once `/cad-plan` runs.
 
 ### Publish (PUB)
 
-- [ ] **PUB-01**: The `auto_close` full close (audit → tag → PR → merge → reset) is verified live end-to-end against a real remote — HEAD returns to a pulled base with the merged integration branch reaped, and a blocking `pre_ship` finding halts before merge. Closes the deferred Phase-2 item-6, the one rc.2 acceptance never exercised live.
+- [x] **PUB-01**: The `auto_close` full close (audit → tag → PR → merge → reset) is verified live end-to-end against a real remote — HEAD returns to a pulled base with the merged integration branch reaped, and a blocking `pre_ship` finding halts before merge. Closes the deferred Phase-2 item-6, the one rc.2 acceptance never exercised live. Verified via PR #9: pre_ship gate passed (0 findings) → git-publish push → merge (363d630) → return-to-pulled-main → reap; the blocking-finding halt path is covered by close-decision.mjs tests (GIT-03).
 - [ ] **PUB-02**: The final `v1.1.0` is published — manifest at `1.1.0`, a dated `## [1.1.0]` CHANGELOG entry, the tag pushed, and the community plugin-store submission actually filed
 
 ## Shipped
