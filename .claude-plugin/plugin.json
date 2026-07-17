@@ -1,5 +1,6 @@
 {
   "name": "cadence",
+  "displayName": "Cadence",
   "description": "A planning and execution system for a single developer in Claude Code: one disciplined discuss/plan/execute/verify loop, state in files not conversation, opinionated defaults, a deliberately small surface.",
   "version": "1.0.0",
   "author": {
