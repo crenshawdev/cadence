@@ -30,6 +30,8 @@
     "git.auto_branch":                      { "type": "enum", "values": ["ask", "auto", "off"], "default": "ask", "src": "repo", "purpose": "How the integration branch is created at cycle start: 'ask' prompts once, 'auto' creates/switches silently, 'off' stays put" },
     "git.base_branch":                      { "type": "string_or_null", "default": null, "purpose": "Branch new work branches off (null = current)" },
     "git.create_tag":                       { "type": "bool", "default": true, "purpose": "Tag on milestone" },
+    "git.on_land_cleanup":                  { "type": "bool", "default": true, "purpose": "After a successful land/merge, return to the base branch, pull, and reap the merged integration branch" },
+    "git.auto_close":                       { "type": "bool", "default": false, "purpose": "Opt-in end-to-end close: cad-milestone/cad-land run audit -> tag -> PR -> merge -> reset with no per-step prompts, halting on a blocking pre_ship FAIL" },
 
     "planning.commit_docs":                 { "type": "bool", "default": true, "purpose": "Commit .planning docs alongside code" },
 
