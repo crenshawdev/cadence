@@ -67,7 +67,24 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
 Commit the doc changes (`docs:`), cursor included, per references/git.md -
 never leave the tree dirty.
 
-## 7. Report
+## 7. Autonomous close (`git.auto_close` only)
+When `git.auto_close` is `false` (default), stop here: the tag stays unpushed
+and publishing is the user's separate `/cad-land` call (step 8's note). When
+`git.auto_close` is `true`, chain the publish end-to-end - invoke `/cad-land`
+via the SlashCommand tool so it runs PR -> merge -> reset with no per-step
+prompts (audit -> tag already ran above). The `pre_ship` gate-halt inside
+cad-land still applies: a surviving blocker/high finding stops the chain before
+merge (nothing is force-merged).
+
+Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
+evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer
+re-derive the just-shipped branch name by version. It reaps via the
+`land-cleanup.mjs` `cadence/*`-merged fallback (resolveReapBranch): the sole
+`cadence/*` branch actually merged into base is the shipped
+`cadence/<this-version>`, so it is still reaped correctly.
+
+## 8. Report
 Tag created (unpushed) - or "no tag (non-release)" - phases pruned,
 PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next action. Note
-that publishing the tag is /cad-land.
+that publishing the tag is /cad-land (already chained when `git.auto_close` is
+on).
