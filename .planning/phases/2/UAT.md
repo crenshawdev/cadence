@@ -45,7 +45,7 @@ reason: Marketplace-installed plugin is a stale 1.0.0 copy, not symlinked to thi
 ### 6. cad-milestone auto_close full chain
 expected: a /cad-milestone run with auto_close=true runs audit -> tag -> PR -> merge -> reset with no per-step prompts, and afterward HEAD is on base, pulled, with the integration branch reaped (human-verify: needs live remote + gh/glab merge)
 status: blocked
-reason: Same stale-install block: installed 1.0.0 cad-land has no auto_close path to run. Also needs a live remote + gh/glab merge. Verify only after reinstalling the plugin from this branch and running against a real remote.
+reason: Deferred by /cad-verify 2 (2026-07-17, user decision): the auto_close full milestone chain cuts a real tag + merge, so verifying it and running it for real are the same act - it will be exercised when /cad-milestone runs the actual v1.1.0 auto_close close. Precondition now cleared (dev plugin installed from this branch); still needs a live remote + real merge. Not run now: phase 3 (release mechanics) precedes the cut and more work is queued.
 
 ### 7. Test suite passes
 expected: node --test passes across cadence-core/bin, including new tests for the cleanup path and the auto-close gate-halt
