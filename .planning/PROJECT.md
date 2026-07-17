@@ -40,7 +40,7 @@ context-gathering, and debugging — without any external memory system.
 ### Active
 
 `v1.1.0` — the final publish round:
-- [ ] Exercise the `auto_close` full close (audit → tag → PR → merge → reset) live end-to-end against a real remote, closing the deferred Phase-2 item-6 verification
+- [x] Exercise the `auto_close` full close (audit → tag → PR → merge → reset) live end-to-end against a real remote, closing the deferred Phase-2 item-6 verification — done via PR #9 (merge 363d630)
 - [ ] Cut and publish the final `v1.1.0`: manifest to `1.1.0`, dated CHANGELOG entry, tag pushed, and the community plugin-store submission actually filed
 
 ### Out of Scope
