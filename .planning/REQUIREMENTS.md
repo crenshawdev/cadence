@@ -63,7 +63,7 @@ remain the last in the file — the audit seam parses every row beneath it.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GIT-01 | 1 | Pending |
+| GIT-01 | 1 | Complete |
 | GIT-02 | 2 | Pending |
 | GIT-03 | 2 | Pending |
 | REL-01 | 3 | Pending |
