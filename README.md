@@ -2,7 +2,7 @@
 
 Cadence is a planning and execution system for a single developer working in Claude Code. It runs one disciplined loop, discuss then plan then execute then verify, with an atomic commit per task, opinionated defaults, and a deliberately small surface. Your state lives in files, not in the conversation, so you can `/clear` aggressively and the next command rebuilds from disk.
 
-It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that never pushes and never decides how you publish without asking.
+It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that guards protected branches from ad-hoc pushes and asks how you publish rather than deciding for you, unless you opt into an autonomous close.
 
 > Cadence is a standalone planning-and-execution system for Claude Code. Its methodology descends from [GSD](https://github.com/open-gsd/gsd-core) - the discuss/plan/execute/verify loop - but everything else is a ground-up rewrite, carrying about 3% of GSD's mass. See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
 
@@ -90,9 +90,17 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   strongest model at high effort. The context discipline is what makes that affordable, because
   the orchestrator stays lean and reads its own prefix from cache while the heavy file work
   happens in routed subagents.
-- **Git model** — atomic commits, a protected-branch guard enforced by the harness itself (a
-  PreToolUse hook, not prose the model can talk itself out of), never auto-pushes, and a `land`
-  step that asks how you want to publish instead of forcing a branch/PR flow.
+- **Git model** — atomic commits and a protected-branch guard enforced by the harness itself (a
+  PreToolUse hook, not prose the model can talk itself out of) that blocks ad-hoc pushes, with a
+  `land` step that asks how you want to publish with no preselected default instead of forcing a
+  branch/PR flow. Work runs on a two-tier branch model: a per-milestone integration branch that
+  parallel worktrees fork from and merge into (`git.integration_branch`, `milestone` by default
+  with a `trunk` escape hatch, created at cycle start per `git.auto_branch`). After a successful
+  land, cleanup returns to the base branch, pulls, and reaps the merged integration branch
+  (`git.on_land_cleanup`, on by default). Publishing flows through one sanctioned git-publish
+  seam — the single code-guarded push path Cadence uses — and an opt-in end-to-end close
+  (`git.auto_close`, off by default) runs audit → tag → PR → merge → reset with no per-step
+  prompts, halting on a blocking `pre_ship` FAIL.
 - **Parallel execution, gated by arithmetic** — independent plans can run concurrently in
   isolated git worktrees (`parallelization.enabled`, off by default). Parallelism is offered
   only when a deterministic file-overlap check proves the plans declare no shared files, and
