@@ -1,5 +1,7 @@
 # Cadence
 
+[![Listed on ClaudePluginHub](https://www.claudepluginhub.com/badge/crenshawdev-cadence)](https://www.claudepluginhub.com/plugins/crenshawdev-cadence?ref=badge)
+
 Cadence is a planning and execution system for a single developer working in Claude Code. It runs one disciplined loop, discuss then plan then execute then verify, with an atomic commit per task, opinionated defaults, and a deliberately small surface. Your state lives in files, not in the conversation, so you can `/clear` aggressively and the next command rebuilds from disk.
 
 It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that guards protected branches from ad-hoc pushes and asks how you publish rather than deciding for you, unless you opt into an autonomous close.
@@ -36,6 +38,25 @@ Cadence runs as slash commands in Claude Code, namespaced `/cadence:cad-*` (for 
 5. **`/cad-verify <phase>`** — confirm the phase delivered what it promised.
 
 `/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
+
+## A worked example
+
+Say you're starting a small CLI tool. You run `/cad-new-project` and answer the questions, what it is, why it exists, who it's for, what done looks like. Cadence writes `PROJECT.md`, `REQUIREMENTS.md`, and a phased `ROADMAP.md` into `.planning/`, and sets a state cursor at phase 1. Nothing is in the conversation that isn't also on disk.
+
+Then you work one phase at a time:
+
+```
+/cad-context 1     # lock the decisions and acceptance criteria for phase 1
+/cad-plan 1        # turn phase 1 into a checkable PLAN.md; the plan review fires here
+/cad-execute 1     # build it, one atomic commit per task
+/cad-verify 1      # confirm phase 1 delivered what it promised, recorded in UAT.md
+```
+
+Between phases you `/clear`. The window empties and you lose nothing, because the next command reads `.planning/` and git back into context. Run `/cad-progress` after a clear and it tells you that phase 1 is verified and phase 2 is next, then you plan phase 2 the same way. When you hit a wall mid-build, `/cad-debug` runs the scientific method with hypotheses that survive a clear, and `/cad-capture` parks a stray todo or idea without derailing the phase you're in.
+
+When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, tags the release, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that.
+
+That's the whole shape of it: define once, then loop `context -> plan -> execute -> verify` per phase, clearing aggressively, until the milestone is ready to cut.
 
 ## The commands
 
