@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: The command reference
+    url: https://github.com/crenshawdev/cadence/blob/main/README.md
+    about: Before opening an issue, /cad-help prints every command, and the README covers install and the loop.
+  - name: Why Cadence says no
+    url: https://github.com/crenshawdev/cadence/blob/main/MANIFESTO.md
+    about: The philosophy behind the small surface. Read this before proposing a feature.
