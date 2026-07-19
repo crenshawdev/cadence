@@ -1,10 +1,12 @@
 {
   "_meta": {
     "note": "Data table for bin/route.mjs (model routing). Editable: change the tier of a role or the model an (profile, tier) pair resolves to without touching code. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per role in agent frontmatter; escalating a low-effort role swaps to its `escalate_effort_variant` agent file.",
-    "tiers": "light < standard < heavy (order used for difficulty bumps and clamping)"
+    "tiers": "light < standard < heavy (order used for difficulty bumps and clamping)",
+    "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. `fable` is deliberately absent from the profile matrix: the profiles are a capability ladder, and placing fable on a rung would assert a ranking against opus/sonnet/haiku that is not established. It is reachable only by explicit pin, which is a user assertion, not ours."
   },
   "tier_order": ["light", "standard", "heavy"],
   "profile_order": ["fast", "balanced", "quality"],
+  "model_aliases": ["opus", "sonnet", "haiku", "fable"],
 
   "roles": {
     "cad-planner":              { "tier": "heavy",    "base_effort": "high" },

@@ -20,6 +20,7 @@
 //   model.profile          fast | balanced | quality | auto
 //   model.auto.ceiling     highest profile auto may escalate to
 //   model.auto.escalate_on_failure (bool), model.auto.max_escalations (int)
+//   model.overrides.<role> pin one role to a model alias, bypassing the matrix
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +46,7 @@ function readConfig(file) {
     ceiling: a.ceiling ?? DEFAULTS.ceiling,
     escalate_on_failure: a.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     max_escalations: a.max_escalations ?? DEFAULTS.max_escalations,
+    overrides: m.overrides ?? {},
     _source: source,
   };
 }
@@ -115,7 +117,34 @@ function resolve(opts) {
 
   const table = TABLE.profiles[profile];
   if (!table || !table[tier]) { out({ ok: false, reason: 'unresolved', role: opts.role, profile, tier }); return; }
-  out({ ok: true, role: opts.role, agent, model: table[tier], effort, tier, profile, escalated, attempt: opts.attempt || 1, reason });
+
+  // A per-role pin is an explicit user assertion, so it wins over the whole
+  // profile/tier matrix - including an `auto` escalation, which may still have
+  // raised the tier above. What it does NOT touch is effort: that is fixed per
+  // role in agent frontmatter, so a pinned role keeps its effort-variant swap
+  // (same reasoning depth, user's model). An unknown alias is reported as a
+  // warning and the routed model stands - a typo must not silently redirect
+  // the spend, nor block the spawn.
+  let model = table[tier];
+  let pinned = false;
+  let warning;
+  const pin = cfg.overrides[opts.role];
+  if (pin != null) {
+    if (TABLE.model_aliases.includes(pin)) {
+      if (pin === model) {
+        reason.push(`override ${opts.role}=${pin} (already the routed model)`);
+      } else {
+        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over ${profile}/${tier})`);
+        model = pin;
+      }
+      pinned = true;
+    } else {
+      warning = `model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`;
+      reason.push('override ignored (unknown alias)');
+    }
+  }
+
+  out({ ok: true, role: opts.role, agent, model, effort, tier, profile, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warning ? { warning } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
