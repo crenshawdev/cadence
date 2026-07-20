@@ -11,6 +11,13 @@
     "model.auto.escalate_on_failure":       { "type": "bool", "default": true, "purpose": "Bump the tier after a failed attempt" },
     "model.auto.max_escalations":           { "type": "int", "min": 0, "default": 1, "purpose": "How many times to escalate before giving up" },
 
+    "model.overrides.cad-planner":              { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the planner to one model alias, bypassing the profile matrix (null = route normally). The only way to reach `fable`, which sits on no profile rung" },
+    "model.overrides.cad-assumptions-analyzer": { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the assumptions analyzer to one model alias (null = route normally)" },
+    "model.overrides.cad-verifier":             { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the verifier to one model alias (null = route normally)" },
+    "model.overrides.cad-reviewer":             { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the claude-subagent reviewer to one model alias (null = route normally)" },
+    "model.overrides.cad-executor":             { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the executor to one model alias (null = route normally)" },
+    "model.overrides.cad-plan-checker":         { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the plan checker to one model alias (null = route normally); the effort-variant swap still applies" },
+
     "workflow.research":                    { "type": "bool", "default": false, "purpose": "Run a research pass before planning" },
     "workflow.plan_check":                  { "type": "bool", "default": true, "purpose": "Gate plans through the checker before code" },
     "workflow.verifier":                    { "type": "bool", "default": true, "purpose": "Goal-backward verification after a phase" },

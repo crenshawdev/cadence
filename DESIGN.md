@@ -345,6 +345,15 @@ lever is trigger frequency (gating), never a weak reviewer.
   so `auto` escalates on failure. `model.profile` gains `auto`; the one low-effort role
   (`cad-plan-checker`) escalates via variant file `cad-plan-checker-high`. Tests: `bin/route.test.mjs`
   (10, zero-dep `node:test`). Role tiers + matrix are data — edit `route-table.json`, not code.
+- ⚠️ **PARTIALLY REOPENED (2026-07-19):** per-agent overrides were cut above, and this restores a
+  narrow slice of them: `model.overrides.<role>` pins ONE role to ONE alias. The cut still stands
+  in substance — what GSD had was a knob *family* (`model_policy.*`, `models.*`, per-agent
+  granularities) that made routing unpredictable; this is a single escape hatch with the profile
+  matrix still the default path and every pin reported in `reason`. Motivation was concrete: a new
+  alias (`fable`) had no route to it at all, since the profiles are a capability ladder and putting
+  an unranked model on a rung would assert a comparison we cannot support. A pin is the user
+  asserting it instead. Guardrail: unknown alias → warning + routed model stands, never a silent
+  redirect of spend. If this grows a second knob, re-read the cut before adding it.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage

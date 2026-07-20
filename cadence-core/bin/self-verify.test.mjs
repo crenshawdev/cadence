@@ -96,6 +96,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
     '`review.consult.attempt_threshold` `model.profile` `model.auto.ceiling`\n' +
     '`model.auto.escalate_on_failure` `model.auto.max_escalations` `granularity`\n' +
+    '`model.overrides`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +

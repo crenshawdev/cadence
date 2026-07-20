@@ -216,3 +216,64 @@ test('layers deep-merge: global auto block + repo profile combine', () => {
   assert.equal(r.profile, 'quality'); // escalated using global's ceiling
   assert.equal(r.agent, 'cad-plan-checker-high');
 });
+
+// --- per-role model overrides ------------------------------------------------
+
+test('an override pins one role and leaves the others routed', () => {
+  const c = cfg({ profile: 'balanced', overrides: { 'cad-planner': 'fable' } }, 'ovr-planner.json');
+  const planner = resolve('cad-planner', c);
+  assert.equal(planner.ok, true);
+  assert.equal(planner.model, 'fable');   // pinned, not heavy@balanced (opus)
+  assert.equal(planner.pinned, true);
+  assert.equal(planner.tier, 'heavy');    // tier still reported honestly
+  assert.equal(planner.effort, 'high');   // effort is frontmatter, untouched
+  assert.match(planner.reason.join(' '), /override cad-planner: opus -> fable/);
+  // a sibling role is unaffected
+  const exec = resolve('cad-executor', c);
+  assert.equal(exec.model, 'sonnet');     // standard@balanced
+  assert.equal(exec.pinned, false);
+});
+
+test('fable is reachable only by pin, never by the profile matrix', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const t = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env })).table;
+  assert.ok(t.model_aliases.includes('fable'));
+  const rungs = Object.values(t.profiles).flatMap((p) => Object.values(p));
+  assert.equal(rungs.includes('fable'), false);
+});
+
+test('a pin beats auto escalation but keeps the effort-variant swap', () => {
+  const c = cfg(
+    { profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 },
+      overrides: { 'cad-plan-checker': 'fable' } },
+    'ovr-checker.json',
+  );
+  const r = resolve('cad-plan-checker', c, ['--attempt', '2']);
+  assert.equal(r.model, 'fable');                 // pin wins over the escalated profile
+  assert.equal(r.agent, 'cad-plan-checker-high'); // ...but harder reasoning still applies
+  assert.equal(r.pinned, true);
+});
+
+test('an unknown alias warns and leaves the routed model standing', () => {
+  const c = cfg({ profile: 'balanced', overrides: { 'cad-planner': 'gpt-5' } }, 'ovr-bogus.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.ok, true);      // never blocks the spawn
+  assert.equal(r.model, 'opus'); // typo does not silently redirect the spend
+  assert.equal(r.pinned, false);
+  assert.match(r.warning, /not a known alias/);
+});
+
+test('a pin matching the routed model is a no-op, still marked pinned', () => {
+  const c = cfg({ profile: 'balanced', overrides: { 'cad-planner': 'opus' } }, 'ovr-noop.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.model, 'opus');
+  assert.equal(r.pinned, true);
+  assert.match(r.reason.join(' '), /already the routed model/);
+});
+
+test('overrides layer: repo pin wins over a global pin', () => {
+  const g = cfg({ profile: 'balanced', overrides: { 'cad-planner': 'haiku' } }, 'g-ovr.json');
+  const repo = cfg({ overrides: { 'cad-planner': 'fable' } }, 'repo-ovr.json');
+  const r = resolve('cad-planner', repo, [], { global: g });
+  assert.equal(r.model, 'fable');
+});

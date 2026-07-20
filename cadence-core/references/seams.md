@@ -69,6 +69,21 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_na
   no `model` override (session default). Routing never blocks a spawn.
 - Fixed profiles (`fast`/`balanced`/`quality`) never escalate - explicit pick
   wins. Only `model.profile: auto` reacts to `--attempt`/signals.
+- **Per-role pin.** `model.overrides` maps one role to one model alias
+  (`opus`/`sonnet`/`haiku`/`fable`) and wins over the whole profile/tier matrix,
+  including an `auto` escalation. The resolver reports `pinned: true` and names
+  the swap in `reason`; effort is untouched, so a pinned role still gets its
+  effort-variant agent file. An unrecognized alias returns a `warning` and the
+  routed model stands - a typo must not silently redirect the spend. `fable` is
+  reachable ONLY this way: it sits on no profile rung, because placing it on the
+  capability ladder would assert a ranking against the others that is not
+  established. Pinning it is the user's assertion to make, not the table's.
+- **Tell the user when a pin fires.** A dispatch is approved through a UI that
+  generally shows the agent name and not the model, so a pinned dispatch looks
+  identical to a routed one at the moment of approval. When `pinned` is true,
+  say so on its own line before spawning - "dispatching cad-planner on fable
+  (pinned, routing would have picked opus)". Burying it in a preamble does not
+  count; the user cannot verify what the dialog does not show.
 
 **Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
 context that repeats across dispatches of the same role (phase/goal, shared
