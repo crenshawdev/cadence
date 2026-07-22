@@ -1,17 +1,12 @@
-# Requirements: Cadence (toward v1.1.0)
+# Requirements: Cadence
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-Committed scope for the final `v1.1.0` publish round. Each maps to a roadmap
-phase once `/cad-plan` runs.
-
-### Publish (PUB)
-
-- [x] **PUB-01**: The `auto_close` full close (audit → tag → PR → merge → reset) is verified live end-to-end against a real remote — HEAD returns to a pulled base with the merged integration branch reaped, and a blocking `pre_ship` finding halts before merge. Closes the deferred Phase-2 item-6, the one rc.2 acceptance never exercised live. Verified via PR #9: pre_ship gate passed (0 findings) → git-publish push → merge (363d630) → return-to-pulled-main → reap; the blocking-finding halt path is covered by close-decision.mjs tests (GIT-03).
-- [ ] **PUB-02**: The final `v1.1.0` is published — manifest at `1.1.0`, a dated `## [1.1.0]` CHANGELOG entry, the tag pushed, and the community plugin-store submission actually filed
+_No committed scope yet — the next milestone has not been defined. Define its
+requirements here, then `/cad-plan` maps each to a roadmap phase._
 
 ## Shipped
 
@@ -38,6 +33,8 @@ parses only the Traceability table).
 | RDY-01 (public docs reconciled to shipped v1.1 code, verified by `/cad-docs-verify`) | 4 | Complete | v1.1.0-rc.2 |
 | RDY-02 (README v1.1 capabilities + lineage positioning; DESIGN reversals documented) | 4 | Complete | v1.1.0-rc.2 |
 | RDY-03 (community plugin-store bar: `validate --strict` clean, metadata, README + CHANGELOG, semver) | 4 | Complete | v1.1.0-rc.2 |
+| PUB-01 (`auto_close` full close verified live end-to-end against a real remote; blocking `pre_ship` halts before merge) | — | Complete | v1.1.0 |
+| PUB-02 (final `v1.1.0` published: manifest `1.1.0`, dated CHANGELOG entry, `v1.1.0` tag, community plugin-store submissions filed) | — | Complete | v1.1.0 |
 
 ## Deferred
 
@@ -63,11 +60,12 @@ written solely by cad-verify. Shipped rows move to `## Shipped` above when a
 milestone closes, so `/cad-audit` starts each cycle clean. This section must
 remain the last in the file — the audit seam parses every row beneath it.
 
-_Empty until `/cad-plan` maps the final v1.1.0 requirements (PUB-01, PUB-02) to
-phases; cad-verify then fills each row as phases complete._
+_Empty — no active milestone. Fills once the next milestone's requirements are
+defined and `/cad-plan` maps them to phases; cad-verify then writes each row as
+phases complete._
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 
 ---
-*Last updated: 2026-07-17 closed v1.1.0-rc.2 (GIT/REL/RDY shipped), opened final v1.1.0 (PUB-01, PUB-02)*
+*Last updated: 2026-07-22 closed final v1.1.0 (PUB-01, PUB-02 shipped, archived to ## Shipped); no active milestone*
