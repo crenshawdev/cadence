@@ -51,9 +51,13 @@ For each reviewer in the set, in parallel where the host allows:
   ```
   with `{instruction, artifact}` on stdin. Read the one JSON line.
   - `ok:true` -> use `findings`.
-  - `ok:false` -> this reviewer is unavailable. Report `reason` (`no-key` names
-    where to set the key). Drop it from the set. If dropping it empties the set,
-    fall back to `claude-subagent` (step 3 rule) rather than return nothing.
+  - `ok:false` -> this reviewer is unavailable or unusable. Before dropping it,
+    emit one visible line naming the degradation - the reviewer and its
+    `reason` (`no-key` names where to set the key), e.g. "cross-model reviewer
+    `openai` unavailable: no-key - falling back to claude-subagent". Do not
+    swallow the reason silently. Drop the reviewer from the set. If dropping it
+    empties the set, fall back to `claude-subagent` (step 3 rule) rather than
+    return nothing.
 
 ### 5. Combine (review.mode)
 - `single` - use the first available reviewer only; its findings are the result.
