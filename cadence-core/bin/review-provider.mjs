@@ -497,8 +497,23 @@ async function main() {
   else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
 }
 // Run only when executed as a script - importing the module (tests) exports
-// the pure helpers without side effects.
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
+// the pure helpers without side effects. Compares realpaths (not just
+// path.resolve, which normalizes but does not follow symlinks) so a
+// symlinked plugin install still detects itself as the entry script; a
+// realpathSync failure on either side (e.g. ENOENT on an odd argv[1])
+// degrades to the normalized comparison rather than throwing.
+function canonicalize(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+function isRunAsScript() {
+  if (!process.argv[1]) return false;
+  return canonicalize(process.argv[1]) === canonicalize(fileURLToPath(import.meta.url));
+}
+if (isRunAsScript()) {
   main().catch((e) => {
     if (e === DONE) return; // normal ok()/fail() unwind
     emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
