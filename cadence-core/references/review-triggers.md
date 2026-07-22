@@ -54,8 +54,9 @@ For each reviewer in the set, in parallel where the host allows:
   - `ok:false` -> this reviewer is unavailable or unusable. Before dropping it,
     emit one visible line naming the degradation - the reviewer and its
     `reason` (`no-key` names where to set the key), e.g. "cross-model reviewer
-    `openai` unavailable: no-key - falling back to claude-subagent". Do not
-    swallow the reason silently. Drop the reviewer from the set. If dropping it
+    `openai` unavailable: no-key (set $OPENAI_API_KEY) - dropping it from the
+    reviewer set". Do not swallow the reason silently. Drop the reviewer from
+    the set. If dropping it
     empties the set, fall back to `claude-subagent` (step 3 rule) rather than
     return nothing.
 
