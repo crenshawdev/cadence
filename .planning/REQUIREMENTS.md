@@ -1,12 +1,24 @@
-# Requirements: Cadence
+# Requirements: Cadence (toward v1.2.0)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-_No committed scope yet — the next milestone has not been defined. Define its
-requirements here, then `/cad-plan` maps each to a roadmap phase._
+Committed scope for `v1.2.0`. Each maps to a roadmap phase once `/cad-plan` runs.
+
+### Review reliability (REV)
+
+- [ ] **REV-01**: `review-provider.mjs` runs correctly when invoked through a symlinked plugin path (the run-as-script guard compares via realpath on both sides, not as-typed `argv[1]`), so cross-model `review` / `consult` / `detect-models` no longer silently no-op. An empty provider result surfaces one line rather than silently degrading to the subagent. A regression test invokes the script through a symlink and asserts non-empty JSON. (#12, Phase 1)
+
+### Planning minimalism (SOC)
+
+- [ ] **SOC-01**: `cad-planner` carries a standing separation-of-concerns heuristic (a nudge, not a hard rule) that prefers small single-purpose tasks over a shared core and splits responsibilities that differ on trigger / size / lifecycle / failure-resume / freshness / ownership. It applies to every plan with no per-phase restatement, and never forces a split that does not earn itself. (#32, Phase 2)
+
+### Decision rigor (DEC)
+
+- [ ] **DEC-01**: `cad-context` marks a decision durable only when it passes a three-part filter (hard-to-reverse, surprising-without-context, and the result of a real trade-off). Durable decisions carry forward and resurface via recall; the rest stay phase-local. No ADR tree, no glossary import. (#26, Phase 3)
+- [ ] **DEC-02**: `/cad-decision-review <path>` runs an on-demand refute-then-adjudicate pass over one decision doc through the existing review subsystem, extending the shared finding schema with a per-objection `survives | partial | refuted` ruling and a concrete amendment list. The adjudicator verifies factual and library claims against real sources (Context7, codebase), reports its cost honestly, and never auto-fires. Single-model by default, cross-model panel when configured (the cross-model path depends on REV-01). (#28, Phase 3)
 
 ## Shipped
 
@@ -60,12 +72,11 @@ written solely by cad-verify. Shipped rows move to `## Shipped` above when a
 milestone closes, so `/cad-audit` starts each cycle clean. This section must
 remain the last in the file — the audit seam parses every row beneath it.
 
-_Empty — no active milestone. Fills once the next milestone's requirements are
-defined and `/cad-plan` maps them to phases; cad-verify then writes each row as
-phases complete._
+_Empty until `/cad-plan` maps the v1.2.0 requirements (REV-01, SOC-01, DEC-01,
+DEC-02) to phases; cad-verify then writes each row as phases complete._
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 
 ---
-*Last updated: 2026-07-22 closed final v1.1.0 (PUB-01, PUB-02 shipped, archived to ## Shipped); no active milestone*
+*Last updated: 2026-07-22 opened v1.2.0 (REV-01, SOC-01, DEC-01, DEC-02)*

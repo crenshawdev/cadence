@@ -2,22 +2,22 @@
 
 ## Overview
 
-Cadence `v1.1.0-rc.2` is tagged (release candidate, unpublished): a two-tier git
-branching model (a per-milestone integration branch as the parallel-worktree
-reconciliation point, plus a `trunk` escape hatch), land cleanup and an opt-in
-autonomous close (`auto_close`, with the never-auto-push rail intact), and release
-mechanics folded into the milestone close (manifest bump + changelog). Its four
-phases are complete and pruned from the live list — git history and the
-`v1.1.0-rc.2` tag are their archive.
+`v1.1.0` is shipped and tagged: the builtin memory backend, context-weight
+measurement, the two-tier git branching model, and the milestone-close release
+mechanics. Git history and the `v1.1.0` tag are its archive.
 
-Versioning: `v1.0.0` is the public baseline. The work toward the next public
-release ships as release candidates (`v1.1.0-rc.1`, `-rc.2`, …), one per
-iteration; the final `v1.1.0` tag is cut only at publish.
+`v1.2.0` is the active cycle. Its theme is sharpening the spine's judgment
+rather than adding surface: catch over-engineering at the point it is cheapest
+to catch, stress-test the load-bearing decisions before code commits to them,
+and repair the cross-model review seam that has been silently inert on any
+symlinked install. It is a minor, backward-compatible release: a bug fix, two
+guidance additions, and one new on-demand command.
 
-The next iteration is the final `v1.1.0` publish: exercise the deferred
-`auto_close` live end-to-end run (real remote + merge), then cut and publish
-`v1.1.0`. Its phases are not planned yet — run `/cad-plan` to write them.
+Versioning: `v1.0.0` is the public baseline and `v1.1.0` is shipped. `v1.2.0`
+is a straight minor bump cut at publish, with no release-candidate cycle.
 
 ## Phases
 
-_No active phases — the next iteration has not been planned._
+- [ ] **Phase 1: Repair the cross-model review seam** - fix `review-provider.mjs` no-opping on a symlinked path (realpath comparison, not as-typed argv), add a symlink regression test, and surface the empty-provider fallback instead of degrading silently. Foundational: unblocks every cross-model review path, including Phase 3's. (REV-01 / #12)
+- [ ] **Phase 2: Planner separation-of-concerns heuristic** - bake a standing separation-of-concerns nudge into `cad-planner` so plans prefer small, single-purpose tasks over a shared core, with no per-phase restatement. (SOC-01 / #32)
+- [ ] **Phase 3: Decision rigor** - add the decision-durability filter to `cad-context` (DEC-01 / #26), then `/cad-decision-review`, an on-demand refute-then-adjudicate pass over a load-bearing decision grounded against real sources (DEC-02 / #28). #26 names which decisions earn the expensive #28 pass.

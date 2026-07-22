@@ -41,7 +41,14 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-_No active milestone. `v1.1.0` is shipped and tagged; the next milestone's goal and scope are not defined yet._
+`v1.2.0` — sharpen the spine's judgment rather than add surface: catch
+over-engineering where it is cheapest to catch, stress-test load-bearing
+decisions before code commits to them, and repair the cross-model review seam
+that silently no-ops on symlinked installs. A backward-compatible minor bump.
+- [ ] Repair `review-provider.mjs` silently no-opping on a symlinked path so cross-model review actually runs, and surface the empty-provider fallback instead of degrading silently (#12)
+- [ ] Bake a separation-of-concerns heuristic into `cad-planner` so plans prefer small, single-purpose tasks by default, no per-phase restatement (#32)
+- [ ] Add a decision-durability filter to `cad-context` that promotes the hard-to-reverse, surprising, real-trade-off decisions worth remembering (#26)
+- [ ] Add `/cad-decision-review`: an on-demand adversarial refute-then-adjudicate pass over a load-bearing decision, grounded against real sources (#28)
 
 ### Out of Scope
 
@@ -94,4 +101,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | ✓ Shipped v1.1.0-rc.2 |
 
 ---
-*Last updated: 2026-07-22 closed final v1.1.0 (PUB-01, PUB-02 shipped); no active milestone — ready to define the next*
+*Last updated: 2026-07-22 opened v1.2.0 (judgment-sharpening cycle: #12, #32, #26, #28)*

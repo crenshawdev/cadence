@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 1 (next milestone (undefined))
+Phase: 1 of 3 (Repair the cross-model review seam)
 Status: ready to plan
-Next: Define the next milestone: set PROJECT.md ### Active goal + REQUIREMENTS.md ## Active scope, write ROADMAP phases, then /cad-plan
+Next: /cad-context 1 to gather context for Phase 1 (repair the cross-model review seam), then /cad-plan 1
 Updated: 2026-07-22
