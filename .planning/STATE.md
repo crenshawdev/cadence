@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 3 (Repair the cross-model review seam)
-Status: phase complete
-Next: /cad-context 2 (Planner separation-of-concerns heuristic)
+Phase: 2 of 3 (Planner separation-of-concerns heuristic)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-07-22
