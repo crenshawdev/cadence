@@ -36,12 +36,12 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Land cleanup (`git.on_land_cleanup`) + opt-in autonomous close (`git.auto_close`), never-auto-push rail intact via the git-publish seam — v1.1.0-rc.2
 - ✓ Release mechanics: manifest version bump + changelog folded into the milestone close, idempotent — v1.1.0-rc.2
 - ✓ Release prep: public docs reconciled, DESIGN records the reversals, plugin-store metadata, `validate --strict` clean — v1.1.0-rc.2
+- ✓ `auto_close` full close verified live end-to-end against a real remote (audit → tag → PR → merge → reset), closing the deferred Phase-2 item-6 — v1.1.0
+- ✓ Final `v1.1.0` published: manifest at `1.1.0`, dated CHANGELOG entry, `v1.1.0` tag cut, community plugin-store submissions filed — v1.1.0
 
 ### Active
 
-`v1.1.0` — the final publish round:
-- [x] Exercise the `auto_close` full close (audit → tag → PR → merge → reset) live end-to-end against a real remote, closing the deferred Phase-2 item-6 verification — done via PR #9 (merge 363d630)
-- [ ] Cut and publish the final `v1.1.0`: manifest to `1.1.0`, dated CHANGELOG entry, tag pushed, and the community plugin-store submission actually filed
+_No active milestone. `v1.1.0` is shipped and tagged; the next milestone's goal and scope are not defined yet._
 
 ### Out of Scope
 
@@ -94,4 +94,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | ✓ Shipped v1.1.0-rc.2 |
 
 ---
-*Last updated: 2026-07-17 closing v1.1.0-rc.2, opening the final v1.1.0 publish round*
+*Last updated: 2026-07-22 closed final v1.1.0 (PUB-01, PUB-02 shipped); no active milestone — ready to define the next*
