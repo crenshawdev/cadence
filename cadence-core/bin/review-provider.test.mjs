@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -181,6 +181,27 @@ test('cli: unknown command degrades to bad-command', () => {
 
 test('cli: unknown provider degrades to bad-provider', () => {
   const r = run(['detect-models', '--provider', 'skynet']);
+  assert.equal(r.reason, 'bad-provider');
+});
+
+test('cli: invoked through a symlink still runs (argv[1] vs import.meta.url divergence)', () => {
+  const linkPath = join(dir, 'review-provider-link.mjs');
+  symlinkSync(SCRIPT, linkPath);
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.OPENAI_API_KEY;
+  delete cleanEnv.GEMINI_API_KEY;
+  let stdout;
+  try {
+    stdout = execFileSync('node', [linkPath, 'detect-models', '--provider', 'skynet'],
+      { encoding: 'utf8', env: cleanEnv });
+  } catch (e) {
+    stdout = e.stdout;
+  }
+  const lines = stdout.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.ok(r);
+  assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-provider');
 });
 
