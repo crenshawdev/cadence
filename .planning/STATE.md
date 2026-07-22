@@ -1,6 +1,6 @@
 # State
 
 Phase: 2 of 3 (Planner separation-of-concerns heuristic)
-Status: executed
-Next: /cad-verify 2
+Status: phase complete
+Next: /cad-context 3
 Updated: 2026-07-22
