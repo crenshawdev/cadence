@@ -25,6 +25,7 @@ are the on-demand and standalone gates.
 | Command | What it does |
 |---|---|
 | `/cad-plan-review [N\|path]` | On-demand plan review through the `plan` trigger (for hand-written / imported / edited plans). |
+| `/cad-decision-review <path>` | On-demand refute-then-adjudicate pass over one load-bearing decision, grounded against Context7 and the codebase. |
 | `/cad-debug <symptom>` | Scientific-method debugging with `/clear`-persistent state; user-gated consult at dead-ends (`list`/`status`/`continue`/`--diagnose`). |
 | `/cad-coverage [N]` | Find requirements with zero failing-capable test coverage, then generate tests in the project's framework. |
 | `/cad-docs-verify [path]` | Verify doc claims (paths, commands, symbols, config) against the live code. Reports; never rewrites. |
