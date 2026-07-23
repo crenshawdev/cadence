@@ -56,13 +56,16 @@ provider ships is selectable even if Cadence has never heard of it.
   - `messages`: array of `{role, content}` (system instruction + user artifact).
   - Structured output: `response_format = {type:"json_object"}` (JSON mode).
     DeepSeek has NO server-side `json_schema` enforcement, so the adapter injects
-    the finding schema into the system prompt and the shape is asserted on return
-    by `validateFindings`/`validateConsult` (the same guard every adapter passes).
+    the BARE finding schema (the object to produce, not a `{name, schema}`
+    wrapper) into the system prompt, and the shape is asserted on return by
+    `validateFindings`/`validateConsult` (the same guard every adapter passes).
     json_object mode also requires the word "json" in the prompt, which the
     injected schema instruction supplies.
   - Effort: `reasoning_effort` (`low|medium|high`) - a first-class Chat
     Completions param, honored by thinking models (`deepseek-v4-pro`, the
-    `deepseek-v4-flash` thinking mode) and ignored by non-thinking ones.
+    `deepseek-v4-flash` thinking mode) and ignored by non-thinking ones. The
+    shared config effort enum also allows `minimal`, which DeepSeek rejects, so
+    the adapter clamps `minimal` up to `low`.
   - Output text: `choices[0].message.content`.
 - **Detect:** `GET /models` -> `{data:[{id, ...}]}`. IDs live in `data[].id`.
 - Model ids as of 2026-07: `deepseek-v4-pro`, `deepseek-v4-flash` (the legacy

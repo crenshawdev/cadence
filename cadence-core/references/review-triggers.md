@@ -6,8 +6,9 @@ reviewer loop. Two backends, one finding schema, so the adjudicator merges them
 blind:
 - `claude-subagent` (default, zero-dep): spawn the `cad-reviewer` agent via the
   spawn-agent seam, prompted to REFUTE the artifact.
-- cross-model (`openai` / `gemini`): the call-review-provider seam
-  (`bin/review-provider.mjs`), a provider API call.
+- cross-model (`openai` / `gemini` / `deepseek`, ... - any provider with an
+  adapter): the call-review-provider seam (`bin/review-provider.mjs`), a
+  provider API call.
 
 Every reviewer returns the same shape:
 `{ findings: [ { file, line, severity: blocker|high|medium|low, claim, failure_scenario } ] }`.
@@ -29,9 +30,12 @@ Assemble `{ instruction, artifact }` from the wiring table:
 ### 3. Resolve the reviewer set
 Start from `review.reviewers[]`. For each entry, keep only if available:
 - `claude-subagent` - always available.
-- `openai` / `gemini` - available iff `review.providers.<name>.tiers[<trigger.tier>]`
+- any cross-model provider named in `review.reviewers` (`openai`, `gemini`,
+  `deepseek`, ...) - available iff `review.providers.<name>.tiers[<trigger.tier>]`
   is a non-null model id (a key is resolved lazily by the seam; a `no-key`
-  result at call time drops it - step 4).
+  result at call time drops it - step 4). The rule is by provider `<name>`, not a
+  fixed list: any provider with an adapter in `review-provider.mjs` and a config
+  `review.providers.<name>` block resolves the same way.
 
 If the resolved set is empty (e.g. `reviewers: ["openai"]` but its `<tier>` is
 unassigned), fall back to `["claude-subagent"]` so a review always runs. Log the
@@ -42,7 +46,8 @@ For each reviewer in the set, in parallel where the host allows:
 
 - **claude-subagent**: dispatch `cad-reviewer` through the spawn-agent seam with
   the payload as its prompt. Parse the JSON object it returns.
-- **openai / gemini**: resolve `model = review.providers.<name>.tiers[trigger.tier]`
+- **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): resolve
+  `model = review.providers.<name>.tiers[trigger.tier]`
   and `effort = trigger.effort`, then run the seam:
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \

@@ -51,7 +51,8 @@ does, from `review.reviewers[]`:
 - **claude-subagent** (always available): dispatch `cad-reviewer` through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
   `{findings:[...]}`.
-- **cross-model** (`openai` / `gemini`), only when `review.reviewers` names it
+- **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
+  `deepseek`, ...), only when `review.reviewers` names it
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
   non-null model id (rests on the Phase-1 REV-01 seam repair - a symlinked
   install must run this seam for real, not no-op): run the call-review-

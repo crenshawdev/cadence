@@ -343,10 +343,13 @@ export const ADAPTERS = {
     // models; ignored by non-thinking ones).
     base: 'https://api.deepseek.com',
     authHeaders: (key) => ({ authorization: `Bearer ${key}` }),
-    structuredRequest({ model, effort, system, user, schema, schemaName }) {
-      const sys = `${system}\n\nRespond with ONLY a single JSON object` +
-        ` matching this exact JSON schema - no prose, no markdown fences:\n` +
-        JSON.stringify({ name: schemaName, schema });
+    structuredRequest({ model, effort, system, user, schema }) {
+      // Inject the BARE schema (the object the model must produce), not a
+      // {name, schema} wrapper - a wrapper invites the model to echo
+      // {name, schema} back instead of the required top-level shape.
+      const sys = `${system}\n\nRespond with ONLY a single JSON object that` +
+        ` conforms to this JSON schema - the object itself is the result, not` +
+        ` the schema; no prose, no markdown fences:\n` + JSON.stringify(schema);
       const body = {
         model,
         messages: [
@@ -355,7 +358,11 @@ export const ADAPTERS = {
         ],
         response_format: { type: 'json_object' },
       };
-      if (effort) body.reasoning_effort = effort;
+      // DeepSeek's reasoning_effort accepts low|medium|high only; the shared
+      // config effort enum also allows `minimal`, which DeepSeek 400s on - so
+      // clamp minimal up to low rather than drop the reviewer on a 400.
+      const eff = effort === 'minimal' ? 'low' : effort;
+      if (eff) body.reasoning_effort = eff;
       return { path: '/chat/completions', method: 'POST', body };
     },
     extractText(json) {

@@ -183,10 +183,11 @@ test('adapters: deepseek extractText reads choices[].message.content, extractMod
   assert.deepEqual(ADAPTERS.deepseek.extractModels({ data: [{ id: 'deepseek-v4-pro' }] }), ['deepseek-v4-pro']);
 });
 
-test('adapters: deepseek structuredRequest is chat/completions json_object with in-prompt schema', () => {
+test('adapters: deepseek structuredRequest is chat/completions json_object with the bare schema in-prompt', () => {
+  const schema = { type: 'object', required: ['findings'], properties: { findings: { type: 'array' } } };
   const req = ADAPTERS.deepseek.structuredRequest({
     model: 'deepseek-v4-pro', effort: 'high', system: 'Refute this.', user: 'the artifact',
-    schema: { type: 'object' }, schemaName: 'cadence_review',
+    schema, schemaName: 'cadence_review',
   });
   assert.equal(req.path, '/chat/completions');
   assert.equal(req.method, 'POST');
@@ -195,16 +196,22 @@ test('adapters: deepseek structuredRequest is chat/completions json_object with 
   assert.equal(req.body.reasoning_effort, 'high');
   assert.equal(req.body.messages[0].role, 'system');
   assert.equal(req.body.messages[1].content, 'the artifact');
-  // The schema is injected into the system prompt (no server-side json_schema),
-  // and the literal word "json" is present (json_object mode requires it).
   assert.match(req.body.messages[0].content, /Refute this\./);
-  assert.match(req.body.messages[0].content, /cadence_review/);
   assert.match(req.body.messages[0].content, /json/i);
-  // Effort is omitted entirely when not requested.
+  // The BARE finding schema is injected (its required `findings` key is present),
+  // NOT a {name, schema} wrapper the model could echo back verbatim.
+  assert.match(req.body.messages[0].content, /findings/);
+  assert.doesNotMatch(req.body.messages[0].content, /"name"\s*:\s*"cadence_review"/);
+  // Effort is omitted when not requested; `minimal` clamps to `low` (DeepSeek's
+  // reasoning_effort rejects minimal, which the shared config enum allows).
   const noEffort = ADAPTERS.deepseek.structuredRequest({
     model: 'deepseek-chat', system: 's', user: 'u', schema: {}, schemaName: 'x',
   });
   assert.equal('reasoning_effort' in noEffort.body, false);
+  const minimal = ADAPTERS.deepseek.structuredRequest({
+    model: 'deepseek-chat', effort: 'minimal', system: 's', user: 'u', schema: {}, schemaName: 'x',
+  });
+  assert.equal(minimal.body.reasoning_effort, 'low');
 });
 
 test('parseArgs: subcommand plus --flag value pairs', () => {
