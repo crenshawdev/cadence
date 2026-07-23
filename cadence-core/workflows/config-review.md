@@ -10,7 +10,7 @@ detected model ids, per DESIGN §6's three-layer detection (live list ->
 classify known ids -> assign per position). Model ids are never hardcoded; they
 come from the provider.
 
-Run this for each provider under `review.providers` (openai, gemini):
+Run this for each provider under `review.providers` (openai, gemini, deepseek):
 
 ### 1. Detect
 

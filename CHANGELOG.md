@@ -4,6 +4,61 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-07-22
+
+The judgment-sharpening cycle, dogfooded on Cadence itself. It repairs the
+cross-model review seam so a second opinion actually fires instead of silently
+no-opping, sharpens how the planner splits work and how context decides which
+decisions are worth remembering, adds an on-demand way to stress-test one
+load-bearing decision, and grows the cross-model roster with DeepSeek.
+
+### Cross-model review, repaired
+
+- **The run-as-script guard now compares realpaths on both sides**, so
+  `review-provider.mjs` no longer no-ops when the plugin is installed through a
+  symlink - cross-model `review` / `consult` / `detect-models` reach the real
+  provider instead of degrading to the subagent unnoticed. A symlink regression
+  test invokes the script through a link and asserts a non-empty JSON line.
+- **An empty or unusable provider result surfaces one line** in the caller
+  before falling back to `claude-subagent`, rather than degrading silently.
+
+### Sharper planning and context
+
+- **`cad-planner` carries a standing separation-of-concerns nudge** - a
+  heuristic, not a hard rule - that prefers small single-purpose tasks over a
+  shared core and splits responsibilities that differ on trigger, size,
+  lifecycle, failure-resume, freshness, or ownership. It applies to every plan
+  with no per-phase restatement and never forces a split that does not earn
+  itself.
+- **`cad-context` marks a decision durable only when it passes a three-part
+  filter** (hard-to-reverse, surprising-without-context, and the result of a
+  real trade-off). Durable decisions are written under a `## Durable decisions`
+  heading and resurface via recall; the phase-local rest stay under
+  `## Decisions`. Legacy `CONTEXT.md` files with only `## Decisions` still
+  resurface unchanged - no retrofitting.
+
+### Decision review
+
+- **`/cad-decision-review <path>`** runs an on-demand refute-then-adjudicate
+  pass over one load-bearing decision (a `CONTEXT.md` line or a `PROJECT.md` Key
+  Decisions row) through the existing review subsystem. `cad-reviewer` - and a
+  cross-model provider when one is configured - refutes the decision; the main
+  model grounds each objection against Context7 (library/API claims) and the
+  real codebase, then rules it `survives | partial | refuted` with a concrete
+  amendment list. It never auto-fires and reports its cost qualitatively. New
+  `review.decision_review.{tier,effort}` config governs the model.
+
+### DeepSeek cross-model provider
+
+- **DeepSeek is a third cross-model review provider**, via its own Chat
+  Completions adapter (not an OpenAI Responses base-URL swap). Because DeepSeek
+  has no server-side `json_schema`, the adapter uses `json_object` mode with the
+  finding schema injected into the prompt and the shared validate-on-return
+  guard, so a schema-ignoring response degrades to a structured `bad-shape`
+  rather than bad data. `reasoning_effort` maps the effort dial and keys resolve
+  via `DEEPSEEK_API_KEY`, never logged. Selectable through `review.reviewers`
+  and `review.providers.deepseek.tiers.*`.
+
 ## [1.1.0] - 2026-07-17
 
 The stable `1.1.0`, promoting the `rc.1` and `rc.2` line to a public release. The
@@ -192,6 +247,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.0
 [1.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0
 [1.1.0-rc.2]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0-rc.2
 [1.0.0]: https://github.com/crenshawdev/cadence/releases

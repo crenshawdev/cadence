@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +24,7 @@ function run(args, { env = {}, stdin } = {}) {
   const cleanEnv = { ...process.env, ...env };
   delete cleanEnv.OPENAI_API_KEY;
   delete cleanEnv.GEMINI_API_KEY;
+  delete cleanEnv.DEEPSEEK_API_KEY;
   Object.assign(cleanEnv, env);
   try {
     return JSON.parse(execFileSync('node', [SCRIPT, ...args],
@@ -165,6 +166,54 @@ test('adapters: extractModels strips the Gemini models/ prefix and filters metho
   assert.deepEqual(ADAPTERS.openai.extractModels({ data: [{ id: 'gpt-x' }] }), ['gpt-x']);
 });
 
+test('classify: deepseek families map to tiers, non-thinking gets no high_effort', () => {
+  const ds = classify('deepseek', ['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-chat', 'deepseek-reasoner']);
+  assert.deepEqual(ds[0], { id: 'deepseek-v4-pro', tier: 'flagship', high_effort: true });
+  assert.deepEqual(ds[1], { id: 'deepseek-v4-flash', tier: 'balanced', high_effort: true });
+  assert.deepEqual(ds[2], { id: 'deepseek-chat', tier: 'cheap', high_effort: false });
+  assert.deepEqual(ds[3], { id: 'deepseek-reasoner', tier: 'flagship', high_effort: true });
+});
+
+test('adapters: deepseek extractText reads choices[].message.content, extractModels reads data[].id', () => {
+  assert.equal(ADAPTERS.deepseek.extractText({
+    choices: [{ message: { role: 'assistant', content: '{"findings":[]}' } }],
+  }), '{"findings":[]}');
+  assert.equal(ADAPTERS.deepseek.extractText({ choices: [{ message: {} }] }), undefined);
+  assert.equal(ADAPTERS.deepseek.extractText({}), undefined);
+  assert.deepEqual(ADAPTERS.deepseek.extractModels({ data: [{ id: 'deepseek-v4-pro' }] }), ['deepseek-v4-pro']);
+});
+
+test('adapters: deepseek structuredRequest is chat/completions json_object with the bare schema in-prompt', () => {
+  const schema = { type: 'object', required: ['findings'], properties: { findings: { type: 'array' } } };
+  const req = ADAPTERS.deepseek.structuredRequest({
+    model: 'deepseek-v4-pro', effort: 'high', system: 'Refute this.', user: 'the artifact',
+    schema, schemaName: 'cadence_review',
+  });
+  assert.equal(req.path, '/chat/completions');
+  assert.equal(req.method, 'POST');
+  assert.equal(req.body.model, 'deepseek-v4-pro');
+  assert.equal(req.body.response_format.type, 'json_object');
+  assert.equal(req.body.reasoning_effort, 'high');
+  assert.equal(req.body.messages[0].role, 'system');
+  assert.equal(req.body.messages[1].content, 'the artifact');
+  assert.match(req.body.messages[0].content, /Refute this\./);
+  assert.match(req.body.messages[0].content, /json/i);
+  // The BARE finding schema is injected (its required `findings` key is present),
+  // NOT a {name, schema} wrapper the model could echo back verbatim.
+  assert.match(req.body.messages[0].content, /findings/);
+  assert.doesNotMatch(req.body.messages[0].content, /"name"\s*:\s*"cadence_review"/);
+  // Effort is omitted when not requested; `minimal` clamps to `low` (DeepSeek's
+  // reasoning_effort rejects minimal, which the shared config enum allows).
+  const noEffort = ADAPTERS.deepseek.structuredRequest({
+    model: 'deepseek-chat', system: 's', user: 'u', schema: {}, schemaName: 'x',
+  });
+  assert.equal('reasoning_effort' in noEffort.body, false);
+  const minimal = ADAPTERS.deepseek.structuredRequest({
+    model: 'deepseek-chat', effort: 'minimal', system: 's', user: 'u', schema: {}, schemaName: 'x',
+  });
+  assert.equal(minimal.body.reasoning_effort, 'low');
+});
+
 test('parseArgs: subcommand plus --flag value pairs', () => {
   const { cmd, opts } = parseArgs(['review', '--provider', 'openai', '--model', 'm']);
   assert.equal(cmd, 'review');
@@ -184,12 +233,42 @@ test('cli: unknown provider degrades to bad-provider', () => {
   assert.equal(r.reason, 'bad-provider');
 });
 
+test('cli: invoked through a symlink still runs (argv[1] vs import.meta.url divergence)', () => {
+  const linkPath = join(dir, 'review-provider-link.mjs');
+  symlinkSync(SCRIPT, linkPath);
+  const cleanEnv = { ...process.env };
+  delete cleanEnv.OPENAI_API_KEY;
+  delete cleanEnv.GEMINI_API_KEY;
+  delete cleanEnv.DEEPSEEK_API_KEY;
+  let stdout;
+  try {
+    stdout = execFileSync('node', [linkPath, 'detect-models', '--provider', 'skynet'],
+      { encoding: 'utf8', env: cleanEnv });
+  } catch (e) {
+    stdout = e.stdout;
+  }
+  const lines = stdout.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.ok(r);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-provider');
+});
+
 test('cli: missing key degrades to no-key naming where to set it', () => {
   const r = run(['detect-models', '--provider', 'openai',
     '--key-file', join(dir, 'absent-providers.env')]);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'no-key');
   assert.match(r.detail, /OPENAI_API_KEY/);
+});
+
+test('cli: deepseek missing key names DEEPSEEK_API_KEY', () => {
+  const r = run(['detect-models', '--provider', 'deepseek',
+    '--key-file', join(dir, 'absent-providers.env')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-key');
+  assert.match(r.detail, /DEEPSEEK_API_KEY/);
 });
 
 test('cli: malformed payload degrades to bad-payload before any network call', () => {

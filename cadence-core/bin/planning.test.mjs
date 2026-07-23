@@ -56,12 +56,25 @@ function makeTree(spec) {
       }
       writeFileSync(join(pdir, 'SUMMARY.md'), body);
     }
-    // CONTEXT: a `## Decisions` section of `- D-NN (area): text` lines when
-    // `contextDecisions` (an array of decision strings) is given.
-    if (ph.contextDecisions) {
-      const lines = ph.contextDecisions
-        .map((d, i) => `- D-${String(i + 1).padStart(2, '0')} (area): ${d}`).join('\n');
-      writeFileSync(join(pdir, 'CONTEXT.md'), `# Phase ${n} Context\n\n## Decisions\n\n${lines}\n`);
+    // CONTEXT: a `## Durable decisions` section (from `durableDecisions`) and/or
+    // a `## Decisions` section (from `contextDecisions`), both `- D-NN (area):
+    // text` lines with one continuous D-NN sequence across both when given
+    // together. Omitting `durableDecisions` entirely writes no durable heading
+    // at all (the legacy shape); `durableDecisions: []` writes a present-but-
+    // empty `## Durable decisions` heading (the v1.2 all-phase-local shape).
+    if (ph.contextDecisions || ph.durableDecisions) {
+      let k = 0;
+      const next = () => `D-${String(++k).padStart(2, '0')}`;
+      const parts = [`# Phase ${n} Context\n`];
+      if (ph.durableDecisions !== undefined) {
+        const lines = ph.durableDecisions.map((d) => `- ${next()} (area): ${d}`).join('\n');
+        parts.push(`## Durable decisions\n\n${lines}\n`);
+      }
+      if (ph.contextDecisions) {
+        const lines = ph.contextDecisions.map((d) => `- ${next()} (area): ${d}`).join('\n');
+        parts.push(`## Decisions\n\n${lines}\n`);
+      }
+      writeFileSync(join(pdir, 'CONTEXT.md'), parts.join('\n'));
     }
     if (ph.uat) {
       const items = ph.uat.map((it, i) => {
@@ -928,6 +941,53 @@ test('recall: two runs on the same corpus are byte-identical', () => {
   const b = recall('beta gamma', dir);
   assert.equal(a.raw, b.raw);
   assert.ok(a.json.results.length >= 2);
+});
+
+test('recall: durable decisions resurface; phase-local ## Decisions do not', () => {
+  const dir = makeTree({
+    phases: {
+      1: { durableDecisions: ['use foobar approach'], contextDecisions: ['phase-local baz detail'] },
+    },
+  });
+  const durable = recall('foobar', dir);
+  assert.ok(durable.json.results.some((r) => r.source === 'phases/1/CONTEXT.md'));
+  const local = recall('baz', dir);
+  assert.ok(!local.json.results.some((r) => r.source === 'phases/1/CONTEXT.md'));
+});
+
+test('recall: legacy CONTEXT.md with only ## Decisions (no durable heading) still resurfaces', () => {
+  const dir = makeTree({
+    phases: { 1: { contextDecisions: ['legacy qux decision'] } },
+  });
+  const r = recall('qux', dir);
+  assert.ok(r.json.results.some((r) => r.source === 'phases/1/CONTEXT.md'));
+});
+
+test('recall: a present-but-empty ## Durable decisions does NOT fall back to ## Decisions', () => {
+  // Constructed directly (not via makeTree's default Durable-first ordering):
+  // `sectionBody` only returns the literal empty string "" - as opposed to a
+  // truthy whitespace-only "\n" - when the heading is the LAST thing in the
+  // file, so this is the shape that actually distinguishes a `durable ===
+  // null` / `??` fallback from a naive `!durable` / `durable || ...` one; the
+  // latter treats "" as falsy and wrongly falls through to `## Decisions`.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: {} } });
+  writeFileSync(join(dir, 'phases', '1', 'CONTEXT.md'),
+    '# Phase 1 Context\n\n## Decisions\n\n- D-01 (area): phase-local baz detail\n\n' +
+    '## Durable decisions\n');
+  const r = recall('baz', dir);
+  assert.ok(!r.json.results.some((r) => r.source === 'phases/1/CONTEXT.md'));
+});
+
+test('recall: two runs over a corpus with ## Durable decisions are byte-identical', () => {
+  const dir = makeTree({
+    phases: {
+      1: { durableDecisions: ['alpha beta gamma durable'], contextDecisions: ['delta epsilon local'] },
+    },
+  });
+  const a = recall('beta gamma', dir);
+  const b = recall('beta gamma', dir);
+  assert.equal(a.raw, b.raw);
+  assert.ok(a.json.results.length >= 1);
 });
 
 test('recall: memory.backend none reports off with empty results, exit 0', () => {

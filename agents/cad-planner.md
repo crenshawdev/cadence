@@ -98,6 +98,27 @@ committable. Target 3-10 tasks for a typical phase; a task touching more
 than ~5 files is usually two tasks.
 </task_anatomy>
 
+<separation_of_concerns>
+Apply separation of concerns to the tasks and artifacts you write: prefer
+small, single-purpose tasks and artifacts over one shared core. When two
+responsibilities differ on any of the following axes, give them separate
+tasks or artifacts rather than folding them together:
+
+- trigger - what invokes the responsibility.
+- size - its context cost, how much it carries.
+- lifecycle - how often it changes and on what cadence.
+- failure-resume - how it fails and how it recovers.
+- freshness - how current its data must be.
+- ownership - which actor or layer is responsible for it.
+
+This is a nudge to weigh, not a hard rule: it never forces a split that does
+not earn itself. A genuinely single-concern phase stays one task, and
+combining responsibilities that share all six axes is correct, not a defect.
+This governs task/artifact-level decomposition within a plan, distinct from
+the PLAN-file split in `<plan_output>` below (parallel PLAN-1/PLAN-2 slices
+for independent execution) - the two are not the same decision.
+</separation_of_concerns>
+
 <plan_output>
 Write .planning/phases/<N>/PLAN.md following
 ${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PLAN.md. The frontmatter

@@ -215,11 +215,21 @@ export function parseCaptureSnippets(text) {
 
 /**
  * CONTEXT.md item-level snippets: the `- D-NN (...): ...` lines under
- * `## Decisions`, stripped of the leading `- `.
+ * `## Durable decisions` - the durable-only recall surface (D-02). Falls
+ * back to `## Decisions` ONLY when the durable heading is absent entirely
+ * (a pre-v1.2 legacy file, D-03): `sectionBody` returns `null` when a
+ * heading is missing but can return `""` when it is present-but-empty (the
+ * empty string arises only when the heading is the last thing in the file;
+ * otherwise it returns at least a residual `"\n"`, which is still truthy).
+ * The fallback must test `durable === null` (or use `??`, which coalesces
+ * only nullish) - NOT `!durable` / `durable || ...`, which would wrongly
+ * treat a present-but-empty `""` durable section as absent and fall through
+ * to `## Decisions`, resurfacing phase-local decisions.
  * @param {string} text @returns {string[]}
  */
 export function parseContextDecisions(text) {
-  const body = sectionBody(text, 'Decisions');
+  const durable = sectionBody(text, 'Durable decisions');
+  const body = durable === null ? sectionBody(text, 'Decisions') : durable;
   if (!body) return [];
   const out = [];
   for (const line of body.split('\n')) {

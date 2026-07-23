@@ -42,7 +42,8 @@
   "review": {
     "mode": "adjudicated",
     "reviewers": [
-      "claude-subagent"
+      "claude-subagent",
+      "deepseek"
     ],
     "key_file": null,
     "providers": {
@@ -58,6 +59,11 @@
           "flagship": null,
           "balanced": null,
           "cheap": null
+        }
+      },
+      "deepseek": {
+        "tiers": {
+          "flagship": "deepseek-v4-pro"
         }
       }
     },

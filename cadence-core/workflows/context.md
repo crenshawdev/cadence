@@ -177,6 +177,20 @@ Everything confirmed or corrected becomes a numbered decision (D-01, D-02,
 ...). Anything the user explicitly leaves open ("planner's call") becomes a
 flagged assumption, not a decision.
 
+**Durability filter.** Classify each decision durable only when it passes
+all three parts of this test:
+- Hard-to-reverse: undoing it later costs real rework, not a one-line edit.
+- Surprising without context: a future reader (or /cad-context on a later
+  phase) would misjudge or reverse it without knowing the reasoning.
+- The result of a real trade-off: an alternative was genuinely considered
+  and rejected, not the only option on the table.
+
+A decision failing any part of the test stays phase-local. This is workflow-
+prose judgment, applied here at confirm/write time - there is no scoring
+seam and no durability score is computed or stored; write_context (below)
+sorts confirmed decisions into `## Durable decisions` and `## Decisions` on
+this judgment.
+
 **Requirement wording drift.** If a locked decision contradicts the wording
 of a REQUIREMENTS.md row this phase serves - a corrected count or a term
 that no longer matches ("19 posts" when the decision settles 18 posts + 1
@@ -254,10 +268,19 @@ Deferred: {slices deferred by the size check or scope redirects, one line
 each with reason; "None" if empty}
 Plan shape: {one plan | multiple plans | split - deferred slice above}
 
-## Decisions
+## Durable decisions
 
 - D-01 ({area}): {decision}. Evidence: {file paths / cited docs}.
 - D-02 ...
+{decisions that pass all three parts of the durability filter above; "None
+this phase" if every decision is phase-local}
+
+## Decisions
+
+- D-03 ({area}): {decision}. Evidence: {file paths / cited docs}.
+- D-04 ...
+{the phase-local rest, continuing the same D-NN sequence; "None - all
+decisions this phase are durable" if empty}
 
 ## Acceptance criteria
 
@@ -272,8 +295,11 @@ Plan shape: {one plan | multiple plans | split - deferred slice above}
 "None - all assumptions confirmed" if empty}
 ```
 
-Four sections, nothing else. No discussion log, no interview transcript,
-no ambiguity report - git and the file itself are the record.
+Five sections, nothing else: scope boundary, durable decisions, decisions
+(phase-local), acceptance criteria, flagged assumptions - the durability
+filter splits what used to be one Decisions section into two, nothing more.
+No discussion log, no interview transcript, no ambiguity report - git and
+the file itself are the record.
 </step>
 
 <step name="update_cursor">
@@ -338,8 +364,9 @@ context loses nothing.
 - [ ] Every acceptance criterion is pass/fail observable behavior
 - [ ] Exactly one size question was asked, and its outcome is recorded as
       Plan shape
-- [ ] CONTEXT.md contains exactly: scope boundary, decisions, acceptance
-      criteria, flagged assumptions
+- [ ] CONTEXT.md contains exactly: scope boundary, durable decisions,
+      decisions (phase-local), acceptance criteria, flagged assumptions -
+      each decision classified against the durability filter
 - [ ] Committed per planning.commit_docs with the protected-branch guard
       applied; no audit artifacts written
 </success_criteria>

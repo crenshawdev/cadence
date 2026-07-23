@@ -1,12 +1,13 @@
-# Requirements: Cadence
+# Requirements: Cadence (v1.2.0 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-_No committed scope yet — the next milestone has not been defined. Define its
-requirements here, then `/cad-plan` maps each to a roadmap phase._
+No active milestone. `v1.2.0` shipped its committed scope (REV-01, SOC-01,
+DEC-01, DEC-02, REV-02) — see `## Shipped`. The next milestone's requirements are
+written when it opens.
 
 ## Shipped
 
@@ -35,6 +36,11 @@ parses only the Traceability table).
 | RDY-03 (community plugin-store bar: `validate --strict` clean, metadata, README + CHANGELOG, semver) | 4 | Complete | v1.1.0-rc.2 |
 | PUB-01 (`auto_close` full close verified live end-to-end against a real remote; blocking `pre_ship` halts before merge) | — | Complete | v1.1.0 |
 | PUB-02 (final `v1.1.0` published: manifest `1.1.0`, dated CHANGELOG entry, `v1.1.0` tag, community plugin-store submissions filed) | — | Complete | v1.1.0 |
+| REV-01 (symlink realpath guard on review-provider) | 1 | Complete | v1.2.0 |
+| SOC-01 (planner separation-of-concerns nudge) | 2 | Complete | v1.2.0 |
+| DEC-01 (durable-decision filter in cad-context) | 3 | Complete | v1.2.0 |
+| DEC-02 (`/cad-decision-review` refute-then-adjudicate) | 3 | Complete | v1.2.0 |
+| REV-02 (DeepSeek cross-model provider adapter) | 4 | Complete | v1.2.0 |
 
 ## Deferred
 
@@ -60,12 +66,11 @@ written solely by cad-verify. Shipped rows move to `## Shipped` above when a
 milestone closes, so `/cad-audit` starts each cycle clean. This section must
 remain the last in the file — the audit seam parses every row beneath it.
 
-_Empty — no active milestone. Fills once the next milestone's requirements are
-defined and `/cad-plan` maps them to phases; cad-verify then writes each row as
-phases complete._
+_Empty until the next milestone's `/cad-plan` maps its requirements to phases;
+cad-verify then writes each row as phases complete._
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 
 ---
-*Last updated: 2026-07-22 closed final v1.1.0 (PUB-01, PUB-02 shipped, archived to ## Shipped); no active milestone*
+*Last updated: 2026-07-22 closed v1.2.0 (REV-01, SOC-01, DEC-01, DEC-02, REV-02 shipped)*

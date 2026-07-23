@@ -46,11 +46,39 @@ provider ships is selectable even if Cadence has never heard of it.
   `generateContent` OR that omit the field entirely (absence is not evidence
   of inability), and strips the `models/` prefix.
 
+## DeepSeek (Chat Completions API)
+
+- Host `https://api.deepseek.com`. Auth `Authorization: Bearer $DEEPSEEK_API_KEY`.
+- OpenAI-compatible, but the **Chat Completions** shape (`choices[].message`), NOT
+  the Responses API the openai adapter uses - so it is its own adapter, not a
+  base-URL swap.
+- **Review:** `POST /chat/completions`.
+  - `messages`: array of `{role, content}` (system instruction + user artifact).
+  - Structured output: `response_format = {type:"json_object"}` (JSON mode).
+    DeepSeek has NO server-side `json_schema` enforcement, so the adapter injects
+    the BARE finding schema (the object to produce, not a `{name, schema}`
+    wrapper) into the system prompt, and the shape is asserted on return by
+    `validateFindings`/`validateConsult` (the same guard every adapter passes).
+    json_object mode also requires the word "json" in the prompt, which the
+    injected schema instruction supplies.
+  - Effort: `reasoning_effort` (`low|medium|high`) - a first-class Chat
+    Completions param, honored by thinking models (`deepseek-v4-pro`, the
+    `deepseek-v4-flash` thinking mode) and ignored by non-thinking ones. The
+    shared config effort enum also allows `minimal`, which DeepSeek rejects, so
+    the adapter clamps `minimal` up to `low`.
+  - Output text: `choices[0].message.content`.
+- **Detect:** `GET /models` -> `{data:[{id, ...}]}`. IDs live in `data[].id`.
+- Model ids as of 2026-07: `deepseek-v4-pro`, `deepseek-v4-flash` (the legacy
+  `deepseek-chat`/`deepseek-reasoner` names retire 2026-07-24). Discovered live
+  via `detect-models`; `model-hints.json` soft-classifies them.
+
 ## Notes on record
 
 - Both providers now promote newer wrapper APIs (OpenAI has always-Responses;
   Gemini tags generateContent "Legacy" and promotes an Interactions API). The
   paths above are current and fully supported; revisit if a provider deprecates them.
 - The finding schema (`file, line, severity, claim, failure_scenario`) is defined
-  once in the script (`FINDING_SCHEMA`) and sent to both providers, in each one's
-  dialect. Keep the shape we assert on return in sync with the shape we send.
+  once in the script (`FINDING_SCHEMA`) and sent to every provider in its own
+  dialect - OpenAI strict `json_schema`, Gemini `responseSchema`, DeepSeek as an
+  in-prompt schema under json_object mode. Keep the shape we assert on return in
+  sync with the shape we send.

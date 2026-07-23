@@ -5,10 +5,11 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. The v1.1.0 cycle (tagged `v1.1.0-rc.1`) closes Cadence's biggest
-self-admitted gap — its write-only memory — and turns its context-engineering
-claims into measured, CI-enforced facts. Further iterations continue as release
-candidates toward the final `v1.1.0` publish.
+subsystem. `v1.2.0` is the current release: it sharpens the spine's judgment
+(planner separation-of-concerns, durable-decision recall, on-demand decision
+review) and repairs and extends the cross-model review seam (a symlink fix plus
+a DeepSeek provider). Earlier cycles shipped file-based memory and BM25 recall
+(`v1.1.0`) on the `v1.0.0` planning baseline.
 
 ## Core Value
 
@@ -38,10 +39,16 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Release prep: public docs reconciled, DESIGN records the reversals, plugin-store metadata, `validate --strict` clean — v1.1.0-rc.2
 - ✓ `auto_close` full close verified live end-to-end against a real remote (audit → tag → PR → merge → reset), closing the deferred Phase-2 item-6 — v1.1.0
 - ✓ Final `v1.1.0` published: manifest at `1.1.0`, dated CHANGELOG entry, `v1.1.0` tag cut, community plugin-store submissions filed — v1.1.0
+- ✓ Repaired the cross-model review seam: realpath run-as-script guard so `review-provider.mjs` no longer no-ops on a symlinked install, symlink regression test, empty-provider surfacing (REV-01) — v1.2.0
+- ✓ `cad-planner` separation-of-concerns nudge: prefer small single-purpose tasks over a shared core, no per-phase restatement (SOC-01) — v1.2.0
+- ✓ `cad-context` durable-decision filter: three-part test, `## Durable decisions` heading, recall retargeting with legacy fallback (DEC-01) — v1.2.0
+- ✓ `/cad-decision-review`: on-demand refute-then-adjudicate over one decision, Context7 + codebase grounding, per-objection ruling + amendments (DEC-02) — v1.2.0
+- ✓ DeepSeek cross-model review provider: Chat Completions adapter (json_object + in-prompt schema), selectable via `review.reviewers` (REV-02) — v1.2.0
 
 ### Active
 
-_No active milestone. `v1.1.0` is shipped and tagged; the next milestone's goal and scope are not defined yet._
+No active milestone. `v1.2.0` is shipped and tagged; the next cycle's theme and
+requirements are set when the next milestone opens.
 
 ### Out of Scope
 
@@ -77,7 +84,7 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 - **Compatibility**: existing `.planning/` layouts must work unchanged; recall on a project with no SUMMARYs degrades to empty results, never an error
 - **Determinism**: same corpus + same query → same results; no timestamps, no randomness in ranking
 - **Toolchain**: Node 22/24 (CI matrix), `node --test`, `tsc --checkJs` must stay green
-- **Semver honesty**: `v1.0.0` is the public baseline (immutable). Work toward the next release ships as `v1.1.0-rc.N` candidates, one per iteration; the final `v1.1.0` tag is cut only at publish. Never retag a published version.
+- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version.
 
 ## Key Decisions
 
@@ -92,6 +99,9 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | Integration-branch per milestone (two-tier) | The milestone branch is the reconciliation point for parallel worktrees, keeping merge churn off `main`; worktrees are the disposable tier below it | ✓ Shipped v1.1.0-rc.2 |
 | Autonomous close is opt-in, never the default | Preserves cad-land's "the publish mechanism is the user's call"; `auto_close` is an explicit override that still halts on a blocking `pre_ship` FAIL | ✓ Shipped v1.1.0-rc.2 (live end-to-end run deferred to final v1.1.0) |
 | Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | ✓ Shipped v1.1.0-rc.2 |
+| `v1.2.0` cut straight, no rc cycle | A small backward-compatible minor (one bug fix, two guidance nudges, one command); the rc line was for the larger v1.1.0 scope | ✓ Shipped v1.2.0 |
+| Durability is prose judgment, not a score | The three-part filter lives in cad-context workflow prose; no scoring seam, matching "prose keeps judgment, scripts keep invariants" | ✓ Shipped v1.2.0 |
+| DeepSeek via json_object + in-prompt schema | DeepSeek has no server-side json_schema; the shared validate-on-return guard degrades a schema-ignoring response to bad-shape, not bad data | ✓ Shipped v1.2.0 |
 
 ---
-*Last updated: 2026-07-22 closed final v1.1.0 (PUB-01, PUB-02 shipped); no active milestone — ready to define the next*
+*Last updated: 2026-07-22 closed v1.2.0 (judgment-sharpening cycle shipped: REV-01, SOC-01, DEC-01, DEC-02, REV-02)*
