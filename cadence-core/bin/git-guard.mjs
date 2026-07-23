@@ -17,7 +17,7 @@
 //                        git-publish seam as a subprocess (execFileSync argv),
 //                        not a Bash tool call, so this hook never sees it.
 //   git commit on a   -> per config git.on_protected: ask (default) | refuse
-//   protected branch     ("deny") | allow (silent).
+//   protected branch     (alias: "deny") | allow (silent).
 //
 // Contract: stdin carries the hook JSON ({tool_input:{command}, cwd}); a
 // permission decision is one JSON object on stdout, exit 0. Any internal
@@ -125,11 +125,20 @@ function main() {
 
   const { config } = mergeLayers(join(root, '.planning', 'config.json'));
   const git = config.git || {};
+  // A lone string is an easy hand-edit; honor it rather than silently
+  // reverting to the default list and unprotecting the branch the user
+  // named (#38). Other non-array shapes still fall to the default.
   const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches : ['main', 'master'];
+    ? git.protected_branches
+    : typeof git.protected_branches === 'string'
+      ? [git.protected_branches]
+      : ['main', 'master'];
 
-  // git commit: enforce the protected-branch guard from config.
-  const onProtected = git.on_protected || 'ask';
+  // git commit: enforce the protected-branch guard from config. "deny" is
+  // the decision word the harness uses, so accept it as an alias of refuse
+  // instead of silently degrading the intended hard block to a soft ask (#38).
+  const raw = git.on_protected === 'deny' ? 'refuse' : git.on_protected;
+  const onProtected = raw || 'ask';
   if (onProtected === 'allow') return;
 
   const branch = currentBranch(cwd);

@@ -92,6 +92,22 @@ test('git.on_protected=refuse denies; =allow stays silent', () => {
     project('main', { git: { on_protected: 'allow' } })), null);
 });
 
+test('on_protected "deny" is an alias of refuse, not a silent soft-ask (#38)', () => {
+  const d = guard('git commit -m "x"',
+    project('main', { git: { on_protected: 'deny' } }));
+  assert.equal(d.permissionDecision, 'deny');
+});
+
+test('a string protected_branches guards THAT branch, not the default list (#38)', () => {
+  // "release" (string, not array) is an easy hand-edit; honor it instead of
+  // silently reverting to ['main','master'].
+  const d = guard('git commit -m "x"',
+    project('release', { git: { protected_branches: 'release' } }));
+  assert.equal(d.permissionDecision, 'ask');
+  assert.equal(guard('git commit -m "x"',
+    project('main', { git: { protected_branches: 'release' } })), null);
+});
+
 test('custom protected_branches list is honored', () => {
   const d = guard('git commit -m "x"',
     project('release', { git: { protected_branches: ['release'] } }));

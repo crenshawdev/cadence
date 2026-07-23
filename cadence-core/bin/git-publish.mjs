@@ -66,8 +66,13 @@ function publish(dir, remote) {
   const autoClose = repoAutoClose(dir);
   const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
+  // Same string tolerance as git-guard (#38): a lone-string hand-edit names
+  // the branch the user means to protect; do not silently swap the list.
   const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches : ['main', 'master'];
+    ? git.protected_branches
+    : typeof git.protected_branches === 'string'
+      ? [git.protected_branches]
+      : ['main', 'master'];
 
   const decision = decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes });
   if (decision.action !== 'publish') {
