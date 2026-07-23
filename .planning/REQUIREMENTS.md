@@ -10,6 +10,7 @@ Committed scope for `v1.2.0`. Each maps to a roadmap phase once `/cad-plan` runs
 ### Review reliability (REV)
 
 - [ ] **REV-01**: `review-provider.mjs` runs correctly when invoked through a symlinked plugin path (the run-as-script guard compares via realpath on both sides, not as-typed `argv[1]`), so cross-model `review` / `consult` / `detect-models` no longer silently no-op. An empty provider result surfaces one line rather than silently degrading to the subagent. A regression test invokes the script through a symlink and asserts non-empty JSON. (#12, Phase 1)
+- [ ] **REV-02**: Cadence supports DeepSeek as a third cross-model review provider through a dedicated Chat Completions adapter (its own adapter, not an OpenAI Responses base-URL swap), selectable via `review.reviewers` and `review.providers.deepseek.tiers.*`. Structured output uses json_object mode with an in-prompt schema plus the shared validate-on-return guard, since DeepSeek has no server-side `json_schema`. `reasoning_effort` maps the effort dial; keys resolve via `DEEPSEEK_API_KEY`, never logged. Built to verify DEC-02's cross-model panel against a real provider. (Phase 4)
 
 ### Planning minimalism (SOC)
 
