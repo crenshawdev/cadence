@@ -583,7 +583,11 @@ function cmdRenumber(dir, sub, opts) {
   const phases = parseRoadmapPhases(roadmapText);
   if (!phases.length) return fail('unparseable-roadmap', 'no phase lines under ## Phases');
   const total = phases.length;
-  const maxN = Math.max(...phases.map((p) => p.n));
+  // Dir-move ceiling: integer phases only. Decimals are never shifted (see
+  // below), and a decimal ceiling would walk fractional ks (2.1, 1.1, ...)
+  // past every integer dir - moving nothing it should and the one dir it
+  // must not (#36).
+  const maxN = Math.max(...phases.filter((p) => Number.isInteger(p.n)).map((p) => p.n));
 
   const at = Number(sub === 'insert' ? opts.at : opts.n);
   if (Number.isNaN(at)) return fail('bad-args', `renumber ${sub} needs --${sub === 'insert' ? 'at' : 'n'} <N>`);
