@@ -22,6 +22,14 @@
       { "match": "gemini-2",   "tier": "balanced", "high_effort": false },
       { "match": "pro",        "tier": "flagship", "high_effort": true },
       { "match": "flash",      "tier": "balanced", "high_effort": true }
+    ],
+    "deepseek": [
+      { "match": "v4-pro",   "tier": "flagship", "high_effort": true },
+      { "match": "reasoner", "tier": "flagship", "high_effort": true,
+        "note": "legacy thinking model (retires 2026-07-24); honors reasoning_effort" },
+      { "match": "v4-flash", "tier": "balanced", "high_effort": true },
+      { "match": "chat",     "tier": "cheap",    "high_effort": false,
+        "note": "legacy non-thinking model (retires 2026-07-24) - reasoning_effort is a no-op, so high_effort is false" }
     ]
   }
 }

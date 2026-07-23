@@ -14,7 +14,11 @@
 //
 // Design contract (DESIGN.md §6):
 //   - Structured output is ENFORCED by the provider (OpenAI json_schema /
-//     Gemini responseSchema), never scraped. We assert the shape on return.
+//     Gemini responseSchema), never scraped - EXCEPT DeepSeek, whose only
+//     structured mode is json_object (no server-side schema), so its adapter
+//     injects the schema into the prompt instead. Either way we assert the
+//     shape on return, so an unenforced or schema-ignoring model degrades to a
+//     structured bad-shape, never bad data.
 //   - Keys resolve env-first, then a shared 600-perm env file. Lazy, never
 //     logged. A missing key is not fatal: we emit {ok:false, reason:"no-key"}
 //     so the caller falls back to claude-subagent.
@@ -23,15 +27,15 @@
 //     the review subsystem never crashes the spine on a provider problem.
 //
 // Usage:
-//   review-provider.mjs review  --provider <openai|gemini> --model <id>
+//   review-provider.mjs review  --provider <openai|gemini|deepseek> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
 //                               [--key-file <path>]
 //       payload (stdin/file): {instruction, artifact} -> {ok, findings[]}
-//   review-provider.mjs consult --provider <openai|gemini> --model <id>
+//   review-provider.mjs consult --provider <openai|gemini|deepseek> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
 //                               [--key-file <path>]
 //       payload (stdin/file): {situation} -> {ok, angles[]}  (dead-end help)
-//   review-provider.mjs detect-models --provider <openai|gemini> [--key-file <path>]
+//   review-provider.mjs detect-models --provider <openai|gemini|deepseek> [--key-file <path>]
 //
 // --key-file overrides the shared env-file path (config review.key_file); an
 // env-set key still wins over it. Omitted -> the XDG default.
@@ -91,7 +95,7 @@ export function parseArgs(argv) {
 // shared env file at ${XDG_CONFIG_HOME:-~/.config}/cadence/providers.env.
 // Config stores only the path, never the value. Lazy + never logged.
 // ---------------------------------------------------------------------------
-const ENV_VAR = { openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY' };
+const ENV_VAR = { openai: 'OPENAI_API_KEY', gemini: 'GEMINI_API_KEY', deepseek: 'DEEPSEEK_API_KEY' };
 
 // The shared env-file path: an explicit --key-file override (config
 // `review.key_file`, passed through by the seam) else the XDG default.
@@ -324,6 +328,42 @@ export const ADAPTERS = {
         // model names come back as "models/<id>"; strip the prefix.
         .map((m) => (m.name || '').replace(/^models\//, ''));
     },
+  },
+
+  deepseek: {
+    // DeepSeek Chat Completions API - OpenAI-compatible surface, but the
+    // Chat Completions shape (choices[].message), NOT the Responses API the
+    // openai adapter uses. Its only structured mode is
+    // response_format:{type:'json_object'} (no server-side json_schema), so
+    // the schema is injected into the system prompt and the shape is asserted
+    // on return by validateFindings/validateConsult - the guard every adapter
+    // already passes through. json_object mode also requires the word "json"
+    // in the prompt, which the injected schema instruction supplies. Effort
+    // maps to the first-class `reasoning_effort` param (honored by thinking
+    // models; ignored by non-thinking ones).
+    base: 'https://api.deepseek.com',
+    authHeaders: (key) => ({ authorization: `Bearer ${key}` }),
+    structuredRequest({ model, effort, system, user, schema, schemaName }) {
+      const sys = `${system}\n\nRespond with ONLY a single JSON object` +
+        ` matching this exact JSON schema - no prose, no markdown fences:\n` +
+        JSON.stringify({ name: schemaName, schema });
+      const body = {
+        model,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: user },
+        ],
+        response_format: { type: 'json_object' },
+      };
+      if (effort) body.reasoning_effort = effort;
+      return { path: '/chat/completions', method: 'POST', body };
+    },
+    extractText(json) {
+      const content = json?.choices?.[0]?.message?.content;
+      return typeof content === 'string' ? content : undefined;
+    },
+    detectRequest() { return { path: '/models', method: 'GET' }; },
+    extractModels(json) { return (json.data || []).map((m) => m.id); },
   },
 };
 

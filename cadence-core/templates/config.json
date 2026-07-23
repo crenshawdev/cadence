@@ -30,7 +30,8 @@
     "key_file": null,
     "providers": {
       "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
-      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
+      "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
+      "deepseek": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
     },
     "triggers": {
       "plan":         { "gate": "adjudicated", "tier": "flagship", "effort": "high" },
