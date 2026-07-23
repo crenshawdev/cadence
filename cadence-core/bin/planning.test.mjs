@@ -740,6 +740,21 @@ test('renumber insert at total+1 appends: nothing shifts, only the slot opens', 
   assert.equal(cursor.total, 4); // but the denominator grew
 });
 
+test('renumber insert: integer dirs shift even when a decimal phase is highest (#36)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 2.1, name: 'Patch' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, '2.1': { plan: true } },
+  });
+  const r = run(['renumber', 'insert', '--at', '1'], dir);
+  assert.equal(r.ok, true);
+  // integers shift up (1->2, 2->3); the decimal dir NEVER moves
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['2', '2.1', '3']);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /\*\*Phase 2: One\*\*/);
+  assert.match(roadmap, /\*\*Phase 3: Two\*\*/);
+  assert.match(roadmap, /\*\*Phase 2\.1: Patch\*\*/); // decimal token untouched
+});
+
 test('renumber remove: dirs shift DOWN low-to-high (collision-safe order)', () => {
   const dir = renumberTree();
   const plan = run(['renumber', 'remove', '--n', '1', '--dry-run'], dir);
