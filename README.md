@@ -1,5 +1,6 @@
 # Cadence
 
+[![test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
 [![Listed on ClaudePluginHub](https://www.claudepluginhub.com/badge/crenshawdev-cadence)](https://www.claudepluginhub.com/plugins/crenshawdev-cadence?ref=badge)
 
 Cadence is a planning and execution system for a single developer working in Claude Code. It runs one disciplined loop, discuss then plan then execute then verify, with an atomic commit per task, opinionated defaults, and a deliberately small surface. Your state lives in files, not in the conversation, so you can `/clear` aggressively and the next command rebuilds from disk.
