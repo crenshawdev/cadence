@@ -39,6 +39,7 @@
       "phase_diff":   { "gate": "off",         "tier": "flagship", "effort": "high" },
       "pre_ship":     { "gate": "adjudicated", "tier": "flagship", "effort": "high" }
     },
-    "consult": { "enabled": false, "tier": "flagship", "effort": "high", "attempt_threshold": 3 }
+    "consult": { "enabled": false, "tier": "flagship", "effort": "high", "attempt_threshold": 3 },
+    "decision_review": { "tier": "flagship", "effort": "high" }
   }
 }

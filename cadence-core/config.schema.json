@@ -74,6 +74,9 @@
     "review.consult.enabled":               { "type": "bool", "default": false, "purpose": "Allow a second-model consult at dead-ends" },
     "review.consult.tier":                  { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for consults" },
     "review.consult.effort":                { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for consults" },
-    "review.consult.attempt_threshold":     { "type": "int", "min": 1, "default": 3, "purpose": "Failed fix attempts (or red-test iterations) on one bug before cad-debug offers a consult" }
+    "review.consult.attempt_threshold":     { "type": "int", "min": 1, "default": 3, "purpose": "Failed fix attempts (or red-test iterations) on one bug before cad-debug offers a consult" },
+
+    "review.decision_review.tier":          { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for /cad-decision-review's refute-then-adjudicate pass" },
+    "review.decision_review.effort":        { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for /cad-decision-review" }
   }
 }
