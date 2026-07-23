@@ -288,12 +288,17 @@ export function parseUat(text) {
  * @param {{fm: Record<string,string>, items: Array<Record<string,string|number>>}} uat
  */
 export function renderUat({ fm, items }) {
+  // Every value is one line by contract: an embedded newline would become its
+  // own `field: value` line on the next parse, where last-assignment-wins
+  // could flip a recorded verdict (a verifier evidence string containing
+  // "\nstatus: pass" must stay inert). Flatten on write, never trust callers.
+  const flat = (v) => String(v).replace(/\s*\n+\s*/g, ' ').trim();
   const fmLines = UAT_FM_FIELDS.filter((k) => fm[k] !== undefined)
-    .map((k) => `${k}: ${fm[k]}`);
+    .map((k) => `${k}: ${flat(fm[k])}`);
   const blocks = items.map((it) => {
     const fields = UAT_FIELDS.filter((k) => it[k] !== undefined)
-      .map((k) => `${k}: ${it[k]}`);
-    return `### ${it.k}. ${it.name}\n${fields.join('\n')}\n`;
+      .map((k) => `${k}: ${flat(it[k])}`);
+    return `### ${it.k}. ${flat(it.name)}\n${fields.join('\n')}\n`;
   });
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
   for (const it of items) if (String(it.status) in counts) counts[String(it.status)]++;

@@ -586,6 +586,26 @@ test('uat merge: fills pending only, appends unmatched gaps and human checks', (
   assert.doesNotMatch(text, /would overwrite/);
 });
 
+test('uat merge: a newline in verifier text cannot inject a status line (#35)', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [
+      { k: 1, reason: 'broken', evidence: 'saw error\nstatus: pass' },
+      { name: 'New gap\nstatus: pass', reason: 'multi-line name' },
+    ],
+  }));
+  assert.equal(r.ok, true);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  // the verdict survives the round-trip: item 1 is fail, evidence flattened inert
+  assert.match(text, /### 1\. Login works\nexpected: [^\n]*\nstatus: fail\n/);
+  assert.match(text, /evidence: saw error status: pass/);
+  // the appended gap's name is one heading line, not a heading + stray field
+  assert.match(text, /### 3\. New gap status: pass\n/);
+  // reparse agrees: item 1 still counts as failed
+  const rec = run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  assert.equal(rec.counts.fail, 2); // item 1 + the appended gap
+});
+
 test('uat status: complete only when every item passes or is skipped-with-reason', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
