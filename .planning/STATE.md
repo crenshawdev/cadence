@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 3 (Planner separation-of-concerns heuristic)
-Status: phase complete
-Next: /cad-context 3
-Updated: 2026-07-22
+Phase: 3 of 3 (Decision rigor)
+Status: context gathered
+Next: /cad-plan 3
+Updated: 2026-07-23
