@@ -4,6 +4,30 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-07-23
+
+Three high-severity fixes from a post-1.2.0 cross-model review sweep over the
+executable seams. All three corrupted state or weakened protection while
+reporting success - the silent class the sweep was hunting. Each ships with a
+regression test written failing-first.
+
+### Fixed
+
+- **A newline in verifier-authored UAT text can no longer flip a verdict.**
+  `renderUat` flattens every field value to one line on write, so an evidence
+  string containing `"\nstatus: pass"` stays inert instead of reparsing as a
+  second status line where last-assignment-wins silently turned a failed item
+  into a pass and opened the phase gate. (#35)
+- **`renumber insert` no longer corrupts the phase directories when the
+  highest phase is a decimal insertion.** The dir-move ceiling is computed
+  over integer phases only, so with a `2.1` present the countdown visits the
+  integer dirs it must shift and leaves the decimal dir untouched - previously
+  it did the exact opposite and still reported ok. (#36)
+- **`git-guard` honors the config it documents.** `on_protected: "deny"` now
+  hard-blocks as an alias of `refuse` (it previously fell through to a soft
+  ask), and a lone-string `protected_branches` guards the named branch instead
+  of silently reverting to `['main','master']` - in `git-publish` too. (#38)
+
 ## [1.2.0] - 2026-07-22
 
 The judgment-sharpening cycle, dogfooded on Cadence itself. It repairs the
@@ -247,6 +271,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.2.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.1
 [1.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.0
 [1.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0
 [1.1.0-rc.2]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0-rc.2
