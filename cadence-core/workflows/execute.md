@@ -148,15 +148,19 @@ with the completed-task table (hashes included), the checkpoint outcome, and
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan, each in its own git worktree on branch
    `cadence/phase-<N>-plan-<k>` (spawn-agent seam, worktree isolation), one
-   dispatch per message, in the background. Same prompt as sequential except
-   the mode line: "Worktree executor on branch {branch} - worktree rules
-   apply."
+   dispatch per message, in the background. Resolve the route ONCE for
+   (cad-executor, attempt 1) and reuse it for every executor in the batch -
+   identical role and attempt, so re-resolving per dispatch is wasted (seams.md
+   concurrent dispatch). Same prompt as sequential except the mode line:
+   "Worktree executor on branch {branch} - worktree rules apply."
 2. Wait for every executor in the batch (same timeout).
 3. Merge each worktree branch back sequentially: `git merge {branch}`; on
    conflict, stop and ask the user - never force, never auto-resolve.
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
-   `diff` trigger once per plan (payload: that plan's commits as a diff).
+   `diff` trigger for every plan CONCURRENTLY in one message (payload: each
+   plan's commits as a diff) - the diffs are static and independent, so the
+   per-plan reviews need not serialize (seams.md concurrent dispatch).
 6. Fire the `phase_diff` trigger (references/review-triggers.md) with
    `git diff {PHASE_START}..HEAD` as the payload. Off by default (opt-in) -
    it exists because the per-plan reviews above each see one plan's diff in
