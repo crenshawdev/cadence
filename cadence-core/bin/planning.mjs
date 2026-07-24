@@ -214,6 +214,9 @@ function cmdCursorSet(dir, opts) {
 function cmdPhaseDone(dir, opts) {
   const n = Number(opts.n);
   if (!opts.n || Number.isNaN(n)) return fail('bad-args', 'phase-done needs --n <phase>');
+  if ('reqs' in opts && typeof opts.reqs !== 'string') {
+    return fail('bad-args', 'phase-done --reqs needs a comma-separated id list');
+  }
   const undo = 'undo' in opts;
   const roadmapFile = join(dir, 'ROADMAP.md');
   const roadmapText = read(roadmapFile);

@@ -453,6 +453,21 @@ test('phase-done --reqs: explicit ids override the phase filter (even Deferred)'
   assert.match(reqs, /REQ-3 \| Phase 2 \| Complete /);
 });
 
+test('phase-done: valueless --reqs is bad-args, not internal (#45.1)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Only' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  const roadmapBefore = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const reqsBefore = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  const r = run(['phase-done', '--n', '1', '--reqs'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.notEqual(r.reason, 'internal');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), roadmapBefore);
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), reqsBefore);
+});
+
 test('phase-done: unknown phase refuses; nothing written', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
