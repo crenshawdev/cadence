@@ -72,10 +72,12 @@ the blocking ones via the ask-user seam first, and do NOT bake an unverified
 scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
-Recall prior-project memory before dispatching. Read the effective backend:
+Recall prior-project memory before dispatching. Read the config this step needs
+in ONE call - the recall gate and the dispatch timeout together (conventions.md
+Parallel work):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend workflow.subagent_timeout
 ```
 
 When it is `builtin` (the schema default), run recall for the phase goal:
@@ -101,7 +103,7 @@ cite them lives in its cached file. On `none`, or when results are empty, omit
 the block.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
-(references/seams.md), timeout `workflow.subagent_timeout` from config.
+(references/seams.md), timeout `workflow.subagent_timeout` (read above).
 This keeps raw file contents out of the main context. Prompt payload:
 
 ```
