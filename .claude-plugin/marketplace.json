@@ -3,12 +3,12 @@
   "owner": {
     "name": "John Crenshaw"
   },
-  "description": "A planning and execution system for a single developer in Claude Code: one disciplined discuss/plan/execute/verify loop, state in files not conversation, opinionated defaults, a deliberately small surface.",
+  "description": "A plan/execute/verify loop for a single developer in Claude Code, with adversarial review at every gate: plans and diffs get refuted by a fresh Claude subagent or a panel of outside models (OpenAI, Gemini, DeepSeek), not just approved. State lives in files, not the conversation, so you clear aggressively and keep both your context and your token bill lean.",
   "plugins": [
     {
       "name": "cadence",
       "source": "./",
-      "description": "A planning and execution system for a single developer in Claude Code: one disciplined discuss/plan/execute/verify loop, state in files not conversation, opinionated defaults, a deliberately small surface."
+      "description": "A plan/execute/verify loop for a single developer in Claude Code, with adversarial review at every gate: plans and diffs get refuted by a fresh Claude subagent or a panel of outside models (OpenAI, Gemini, DeepSeek), not just approved. State lives in files, not the conversation, so you clear aggressively and keep both your context and your token bill lean."
     }
   ]
 }
