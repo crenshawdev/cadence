@@ -36,8 +36,14 @@ free-typing model ids.
    - one question; its text = the knob's **Purpose**, options = the knob's Values,
    - **each option carries its Explanation as the option `description`** (the small
      line shown under the option in the selection list),
-   - **preselect the option matching the file's current value** (list it first,
-     labelled e.g. `standard (current)`),
+   - **preselect the option matching the repo file's OWN literal value** (from
+     the step-0 raw read of `.planning/config.json`, never `config.mjs get`:
+     `get` returns the *effective* value, so a knob inherited from the global
+     layer would show as `(current)` and get pinned into the repo file as if
+     chosen). A knob absent from the repo file gets NO `(current)` label - show
+     its effective/default value unlabelled, so leaving the page unchanged keeps
+     it inherited rather than writing it. List the preselected option first, e.g.
+     `standard (current)`,
    - `Other` (auto-added) is the free-type entry for numbers, strings, and lists.
 3. A page whose knobs the user leaves unchanged is a no-op; only diffs are applied.
 4. After the last page, show the changed keys as a diff and write once via the
@@ -126,7 +132,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" keys                # d
 ```
 
 `get` is how every workflow reads config - it is the only read that sees the
-global layer. Never read `.planning/config.json` raw for a value.
+global layer. Never read `.planning/config.json` raw for a value. (Lone
+exception: the interactive menu's `(current)` label needs the repo layer's
+literal value to avoid pinning an inherited global, so it reads the repo file raw
+for the label only - never for a workflow value.)
 
 Each prints one JSON line (`{ok, …}`); `--file <path>` overrides the default
 `.planning/config.json`, and `--global` targets the user-global layer at

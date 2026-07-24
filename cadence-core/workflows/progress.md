@@ -29,10 +29,14 @@ Its one JSON line carries everything this workflow reads:
   wrote - the one-line "where I was".
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`.
 
-Batch this with `git log --oneline -8` in one message - independent
-(conventions.md Parallel work). On `ok:false`, relay `reason`/`hint` (e.g.
-`no-planning-dir` -> "No Cadence project here. /cad-new-project starts one.")
-and stop, discarding the git output.
+On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
+project here. /cad-new-project starts one.") and stop.
+
+On `--stats`, branch straight to the stats step now - it derives its own commit
+timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
+and `--stats` must write nothing. Otherwise (the normal path) batch a
+`git log --oneline -8` for the report's Recent line in the SAME message as
+`status` - independent (conventions.md Parallel work).
 </step>
 
 <step name="reconcile">
