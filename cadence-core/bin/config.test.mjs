@@ -179,7 +179,21 @@ test('get: arrays replace wholesale across layers, never concatenate', () => {
   assert.deepEqual(r.values['git.protected_branches'], ['trunk']); // repo's list, whole
 });
 
-test('get: a corrupt layer is skipped, not fatal (the spine never blocks on config)', () => {
+test('get: a corrupt repo layer is skipped (values/source match no-repo-layer) AND warns naming the file (#39)', () => {
+  const gpath = join(dir, 'no-global-for-corrupt-repo.json');
+  const repo = join(dir, 'corrupt-repo.json');
+  writeFileSync(repo, '{ torn mid-write');
+  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo.json'), 'model.profile'], gpath);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.values, absentRepo.values); // byte-identical to the no-repo-layer result
+  assert.equal(r.source, absentRepo.source);     // 'defaults' - the broken layer contributed nothing
+  assert.equal(absentRepo.warnings, undefined);  // merely absent: no warning
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /corrupt-repo\.json/); // names the offending file
+});
+
+test('get: a corrupt global layer is skipped (repo still wins) AND warns naming the file (#39)', () => {
   const gpath = join(dir, 'corrupt-global.json');
   writeFileSync(gpath, '{ torn mid-write');
   const repo = join(dir, 'fine-repo.json');
@@ -188,6 +202,8 @@ test('get: a corrupt layer is skipped, not fatal (the spine never blocks on conf
   assert.equal(r.ok, true);
   assert.equal(r.values['model.profile'], 'fast');
   assert.equal(r.source, 'repo'); // the broken global layer contributed nothing
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /corrupt-global\.json/);
 });
 
 // --- cross-key warnings ---------------------------------------------------

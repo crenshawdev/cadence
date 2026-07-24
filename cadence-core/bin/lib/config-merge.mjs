@@ -24,6 +24,24 @@ export function readJSON(file) {
 }
 
 /**
+ * Parse a JSON file, distinguishing a legitimately-absent layer (silent, per
+ * D-01) from one that exists but fails to parse (surfaced via `warning`, so a
+ * corrupt layer is diagnosable instead of quietly acting identical to
+ * absence). Still never fatal - `value` is null either way, so a bad layer
+ * contributes nothing to the merge.
+ * @param {string} file
+ * @returns {{value: any, warning: string|null}}
+ */
+export function readLayer(file) {
+  try {
+    return { value: JSON.parse(readFileSync(file, 'utf8')), warning: null };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { value: null, warning: null };
+    return { value: null, warning: `config layer ${file} failed to parse and was skipped: ${e.message}` };
+  }
+}
+
+/**
  * Deep-merge `over` onto `base`: nested objects recurse, arrays and scalars
  * replace wholesale (the higher-precedence layer's list wins, no concat).
  * @param {any} base @param {any} over
@@ -38,20 +56,25 @@ export function deepMerge(base, over) {
 }
 
 /**
- * Merge the global and repo layers (repo wins). Returns {config, source}
- * where source names the layers that applied ("global+repo", "defaults"...).
+ * Merge the global and repo layers (repo wins). Returns {config, source,
+ * warnings} where source names the layers that applied ("global+repo",
+ * "defaults"...) and warnings names any layer that failed to PARSE (distinct
+ * from being legitimately absent - D-01). `config`/`source` are byte-identical
+ * to the absent case for a malformed layer; only `warnings` differs, and it
+ * is empty (not present at all) when nothing failed to parse.
  * Defaults are the caller's concern (route has DEFAULTS, config.mjs get
  * builds them from the schema) - this merges only the two file layers.
  * @param {string} repoFile
  */
 export function mergeLayers(repoFile) {
-  const global = readJSON(GLOBAL_CONFIG);
-  const repo = readJSON(repoFile);
+  const global = readLayer(GLOBAL_CONFIG);
+  const repo = readLayer(repoFile);
   const layers = [];
-  if (global) layers.push('global');
-  if (repo) layers.push('repo');
+  if (global.value) layers.push('global');
+  if (repo.value) layers.push('repo');
   return {
-    config: deepMerge(global || {}, repo || {}),
+    config: deepMerge(global.value || {}, repo.value || {}),
     source: layers.length ? layers.join('+') : 'defaults',
+    warnings: [global.warning, repo.warning].filter(Boolean),
   };
 }

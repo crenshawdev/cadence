@@ -187,7 +187,7 @@ function set(file, tokens, create) {
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
 // a flat dotted-key map, so callers read values without re-flattening.
 function get(file, keys) {
-  const { config, source } = mergeLayers(file);
+  const { config, source, warnings } = mergeLayers(file);
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};
@@ -197,7 +197,7 @@ function get(file, keys) {
   for (const k of wanted) {
     values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
   }
-  out({ ok: true, values, source });
+  out({ ok: true, values, source, ...(warnings && warnings.length ? { warnings } : {}) });
 }
 
 // --- dispatch ----------------------------------------------------------------
