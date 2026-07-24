@@ -29,10 +29,10 @@ Its one JSON line carries everything this workflow reads:
   wrote - the one-line "where I was".
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`.
 
-On `ok:false`, relay `reason` and its `hint` (e.g. `no-planning-dir` ->
-"No Cadence project here. /cad-new-project starts one.") and stop.
-
-Then `git log --oneline -8` for recent context.
+Batch this with `git log --oneline -8` in one message - independent
+(conventions.md Parallel work). On `ok:false`, relay `reason`/`hint` (e.g.
+`no-planning-dir` -> "No Cadence project here. /cad-new-project starts one.")
+and stop, discarding the git output.
 </step>
 
 <step name="reconcile">

@@ -22,8 +22,9 @@ Resolve the phase:
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
   Run /cad-plan first."
 
-Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY
-use it). Read config through the seam - one call:
+Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
+it) and the config in one message - independent (conventions.md Parallel work).
+Config through the seam - one call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
