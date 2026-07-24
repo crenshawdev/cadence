@@ -61,7 +61,10 @@ acceptance criteria, in this source order:
    `.planning/ROADMAP.md`.
 
 Also read `SUMMARY.md` if present for user-observable deliverables the
-criteria miss - each becomes an item too.
+criteria miss - each becomes an item too. Read the applicable source docs in
+ONE batch - CONTEXT.md + SUMMARY.md, or the PLAN.md + ROADMAP.md + SUMMARY.md
+fallback - not both branches; they are known independent paths (conventions.md
+Parallel work).
 
 Item rules (the model's judgment, before the seam call):
 - One item per observable behavior: name + expected (what the user should

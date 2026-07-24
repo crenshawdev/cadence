@@ -18,7 +18,11 @@ roadmap derived inline (no roadmapper/synthesizer agents).
 Parse `$ARGUMENTS`: optional `--research` flag, which forces the research
 pass on for this run regardless of config.
 
-In order:
+In order (items 2-5 are one Bash step, not four separate turns - git-init if
+needed, `mkdir -p .planning`, the config copy if absent, and the `config.mjs
+get` chained in a single script that echoes a marker when it wrote the config,
+so the coordinator knows whether to print the "Config written with defaults"
+line):
 
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
    /cad-progress shows where you are."
@@ -186,6 +190,10 @@ scope boundaries.
 - header: "[Category]" (max 12 chars)
 - question: "Which [category] features are in v1?"
 - options: the category's features, plus "None for v1"
+
+Batch the category questions ceil(N/4) per AskUserQuestion call (up to 4
+categories at once), not one blocking turn per category (conventions.md
+batch-asks).
 
 Track the outcome: selected features are v1; unselected table stakes go to
 v2; unselected differentiators go to Out of Scope.
