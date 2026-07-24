@@ -504,23 +504,38 @@ async function cmdDetect(opts) {
     fail('http', { status: res.status, body: res.json || res.raw });
   }
   const ids = adapter.extractModels(res.json);
-  ok({ provider, models: classify(provider, ids) });
+  ok(detectEnvelope(provider, ids));
+}
+
+// Load references/model-hints.json, distinguishing a legitimately-absent
+// file (silent, per D-01) from one that exists but fails to parse (surfaced
+// via `warning`, naming the file). Either way `hints` degrades to {} so the
+// caller still classifies everything unknown, nothing excluded - a broken
+// hints file is a visibility problem, never a fatal one.
+// hintsFile is injectable for tests; production always uses the shipped table.
+/** @param {string} [hintsFile] @returns {{hints: any, warning: string|null}} */
+export function readModelHints(hintsFile) {
+  const file = hintsFile || path.join(HERE, '..', 'references', 'model-hints.json');
+  try {
+    return { hints: JSON.parse(fs.readFileSync(file, 'utf8')), warning: null };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { hints: {}, warning: null };
+    return { hints: {}, warning: `model-hints file ${file} failed to parse and was ignored: ${e.message}` };
+  }
 }
 
 // Tag each detected id with a tier hint (references/model-hints.json). First
 // drop non-text modalities (embeddings, audio, image, ...) that can't do text
 // review, so the candidate list is review-usable. Then: known id ->
 // {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
-// to place it. Missing/broken hint file degrades to all-unknown, never errors.
-// hintsFile is injectable for tests; production always uses the shipped table.
+// to place it. Missing/broken hint file degrades to all-unknown, never errors
+// (fail-safe preserved - the exclude filter and candidate array are unaffected;
+// only detectEnvelope's warnings[] differs for a malformed vs. absent file).
 /** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
 export function classify(provider, ids, hintsFile) {
-  let rules = [], exclude = [];
-  try {
-    const hints = JSON.parse(fs.readFileSync(hintsFile || path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
-    rules = (hints.rules && hints.rules[provider]) || [];
-    exclude = hints.exclude || [];
-  } catch { /* no hints -> everything unknown, nothing excluded */ }
+  const { hints } = readModelHints(hintsFile);
+  const rules = (hints.rules && hints.rules[provider]) || [];
+  const exclude = hints.exclude || [];
   const excluded = (lower) => exclude.some((p) => lower.includes(String(p).toLowerCase()));
   return ids
     .filter((id) => !excluded(id.toLowerCase()))
@@ -531,6 +546,16 @@ export function classify(provider, ids, hintsFile) {
         ? { id, tier: hit.tier, high_effort: !!hit.high_effort }
         : { id, tier: null, high_effort: null };
     });
+}
+
+// The exact envelope shape cmdDetect returns, factored out pure so the
+// warnings[] contract (AC3) is provable hermetically - detect-models itself
+// needs a live key + network, which the suite forbids.
+/** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
+export function detectEnvelope(provider, ids, hintsFile) {
+  const { warning } = readModelHints(hintsFile);
+  const models = classify(provider, ids, hintsFile);
+  return warning ? { provider, models, warnings: [warning] } : { provider, models };
 }
 
 // ---------------------------------------------------------------------------
