@@ -134,7 +134,9 @@ Adaptive questioning - ask only what the analyzer could not resolve.
 **Unclear items** are the real gray areas. For each, ask ONE focused
 question (ask-user seam, structured): the analyzer's alternatives as
 options, recommended first, described by user-visible outcome, annotated
-with evidence and prior decisions. If more than ~5 items are Unclear, ask
+with evidence and prior decisions. These per-item questions are independent -
+batch them ceil(N/4) per AskUserQuestion call, not one blocking turn each
+(conventions.md batch-asks). If more than ~5 items are Unclear, ask
 the highest-consequence ones (worst "if wrong") and leave the rest as
 flagged assumptions.
 
@@ -172,7 +174,8 @@ Then ask (ask-user seam, structured):
 
 On "Correct some": multiSelect over the assumptions (label = statement,
 description = "If wrong: {consequence}"), then one focused question per
-selected item with 2-3 concrete alternatives. Corrections override the
+selected item with 2-3 concrete alternatives, batched ceil(N/4) per
+AskUserQuestion call (conventions.md batch-asks). Corrections override the
 original.
 
 Everything confirmed or corrected becomes a numbered decision (D-01, D-02,

@@ -10,9 +10,9 @@ at steps 2 and 7 rather than re-reading.
 
 ## 1. Scope + audit gate
 Identify the milestone being closed (from PROJECT.md's current version/
-milestone). Run the traceability audit (the requirement->phase->plan->verified FAIL
-gate) over
-its requirements. On FAIL - a requirement untraced, unverified, or dropped -
+milestone). Invoke `/cad-audit <milestone>` via the SlashCommand tool (the
+requirement->phase->plan->verified FAIL gate), mirroring step 7's chained
+/cad-land, rather than re-deriving the break-codes inline. On FAIL - a requirement untraced, unverified, or dropped -
 report it and STOP, unless the user explicitly overrides (a milestone must not
 ship with silent gaps). On PASS, continue.
 

@@ -14,8 +14,10 @@ leaves to judgment.
 Append a new phase after the last one (number = current total + 1). Get its
 name, one-line description, and success criteria (from args or the ask-user
 seam). No renumbering. Write the ROADMAP list line and detail section; update
-the cursor's total via `planning.mjs cursor set` (same phase/status/next,
-new total picked up from ROADMAP).
+the cursor's total: read the current cursor first (`cursor get`), then re-write
+it via `cursor set` with that same phase/status/next (the new total is
+re-derived from ROADMAP). `cursor set` requires `--phase` and does not preserve
+the prior one, so the get is not optional.
 
 ### edit <N>
 Change phase N's name, description, or success criteria in ROADMAP.md only. A
@@ -42,7 +44,9 @@ plain markdown edit - no renumbering, no dir change.
 
 ### remove <N>
 1. If `.planning/phases/<N>/` has real work (PLAN/SUMMARY), warn that removal
-   is destructive to that phase's planning docs (git still holds them).
+   is destructive to that phase's planning docs (git still holds them). (This
+   dir inspection and the step-2 `--dry-run` are independent read-only probes -
+   batch them in one message; conventions.md Parallel work.)
 2. Dry-run (`renumber remove --n <N> --dry-run`), show `ops`, the
    `orphaned_reqs` (requirements that pointed at the removed phase), any
    `in_text_refs` and `warn`. Require an explicit yes.
@@ -54,8 +58,7 @@ plain markdown edit - no renumbering, no dir change.
    Deferred), and repair reported `in_text_refs` by hand.
 
 ## Finish
-- Sanity: the seam's post-run `total` should match the ROADMAP; spot-check
-  `planning.mjs status` runs clean.
+- Sanity: spot-check `planning.mjs status` runs clean.
 - Commit atomically (`chore: <op> phase N`) honoring the protected-branch
   guard (references/git.md). Cursor committed with it; never leave the tree
   dirty.

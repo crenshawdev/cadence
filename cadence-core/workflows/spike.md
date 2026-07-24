@@ -15,8 +15,10 @@ with an OBSERVABLE outcome that decides validated vs invalidated:
 > Given <setup>, When <action>, Then <measurable result> -> validated;
 > <the opposite observation> -> invalidated.
 Vague criteria ("it feels fast enough") are not allowed - pin a number, an
-output, a behavior. Write them into a SPIKE.md before the experiment exists, so
-the result cannot be rationalized after the fact.
+output, a behavior. Derive `<slug>` now (a short kebab of the question) and write
+them into `.planning/spikes/<slug>/SPIKE.md` before the experiment exists, so the
+result cannot be rationalized after the fact - step 6 completes this same file in
+place.
 
 ## 3. Order risk-first
 Rank the criteria so the assumption most likely to KILL the approach is tested
@@ -40,7 +42,8 @@ One of, with the evidence behind it:
   spike). Say what would decide it. Do not use this to avoid an invalidated call.
 
 ## 6. Slim wrap-up
-Write ONE `.planning/spikes/<slug>/SPIKE.md` (beside the throwaway code):
+Complete the `.planning/spikes/<slug>/SPIKE.md` begun in step 2 (it lives there
+regardless of whether the throwaway code ran in the spike dir or a temp dir):
 the question, the criteria, the observed result per
 criterion, the verdict, and the recommendation for the plan (what to do given
 the answer). No five-artifact ceremony. Discard the throwaway code or note where

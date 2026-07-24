@@ -152,7 +152,8 @@ a follow-up `/cad-context` correction, `/cad-task`, etc).
       (survives | partial | refuted) and, for survives/partial, a concrete
       amendment
 - [ ] At least one library/API claim was checked against Context7 and at
-      least one factual claim against the codebase during adjudication
+      least one factual claim against the codebase during adjudication - or the
+      objection set was explicitly noted to contain none of that kind
 - [ ] The report names which reviewers/models/tier/effort ran, qualitatively
       - no fabricated token/dollar figures
 - [ ] Single-model (claude-subagent) ran when no cross-model provider was
