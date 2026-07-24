@@ -29,6 +29,22 @@ It layers repo (.planning/config.json) over the user-global file over the
 schema defaults, so a raw file read sees at most one layer and lies about the
 rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 
+## Parallel work
+
+The coordinator walks a workflow's steps in order, but ordering the STEPS does
+not mean serializing the CALLS inside them. When a step's inputs are known-path,
+read-only, and mutually independent - several file Reads, a `git` probe, a seam
+`get` whose result nothing else in the batch consumes - issue them as parallel
+tool calls in ONE message. Serialize only a call that consumes a prior call's
+output (a `git diff <a>..<b>` that needs hashes a SUMMARY read just produced, a
+follow-up read whose path a first call computed). A numbered list in a workflow
+is evaluation order, not a one-call-per-turn mandate.
+
+The same holds for the ask-user seam: independent questions over an independent
+set batch into `ceil(N/4)` AskUserQuestion calls (up to 4 questions per call),
+not one blocking turn per item. Only questions whose wording depends on an
+earlier answer stay sequential.
+
 ## State
 
 - `STATE.md` is a 4-line cursor. It is overwritten in place, never appended.

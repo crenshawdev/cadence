@@ -85,6 +85,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_na
   (pinned, routing would have picked opus)". Burying it in a preamble does not
   count; the user cannot verify what the dialog does not show.
 
+**Concurrent dispatch.** Independent dispatches over disjoint payloads (the
+per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of
+one artifact) fire concurrently in ONE message, bounded by the host's
+max-concurrent-agents. Resolve the route ONCE per (role, attempt) and reuse it
+across the batch - the payloads differ, the routing does not, so calling
+`route.mjs resolve` again per dispatch is wasted. Serialize dispatches only when
+one consumes another's returned artifact.
+
 **Prompt shape (cache discipline).** Order every dispatch prompt stable-first:
 context that repeats across dispatches of the same role (phase/goal, shared
 files to read) goes BEFORE the volatile per-dispatch specifics (this plan, this
@@ -103,6 +111,12 @@ only if it must - never echo the artifact's contents back. When there is no
 artifact, cap the structured return to what the orchestrator will act on and
 push raw evidence to a file rather than inline. This is what keeps the
 orchestrator context flat across a long run of dispatches.
+
+**Handoff read discipline.** The coordinator reads a source doc for handoff only
+when it will DISTILL it into the dispatch prompt. If the spawned agent reads the
+file whole itself, pass the pointer (the path), not the bytes - reading it in the
+orchestrator just to hand it down doubles the read and bloats the main context
+with a file the agent is about to open anyway.
 
 ## Seam: call-review-provider
 
