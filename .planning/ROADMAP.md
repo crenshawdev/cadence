@@ -18,7 +18,7 @@ Triage complete (2026-07-24): all 13 filed `[bug]` issues from the post-v1.2.0
 sweep accepted for v1.3.1, grouped into four fix-passes by shared root cause. No
 won't-fix. Per-task plans come at `/cad-plan`.
 
-- [ ] **Phase 1: Silent data-file failures** - (#39, #40, #43, #44). Goal: an
+- [x] **Phase 1: Silent data-file failures** - (#39, #40, #43, #44). Goal: an
   absent or malformed shipped data/config file is surfaced, never silently
   swallowed into defaults; the "never blocks the spine" seam contract
   (`{ok:false}`, not a raw crash) holds. #39 is the sweep's top finding.
