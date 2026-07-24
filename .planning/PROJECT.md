@@ -47,8 +47,11 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No active milestone. `v1.2.0` is shipped and tagged; the next cycle's theme and
-requirements are set when the next milestone opens.
+**v1.2.2 — Tech debt** (opened 2026-07-24). No new features. Collect every open
+bug issue, triage each one, and either fix it or record a deliberate won't-fix —
+leaving the tracker at a known, decided state after the v1.2.0/v1.2.1 releases.
+Headline asks seeded in REQUIREMENTS.md; the per-phase breakdown comes at
+`/cad-plan`.
 
 ### Out of Scope
 
@@ -104,4 +107,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | DeepSeek via json_object + in-prompt schema | DeepSeek has no server-side json_schema; the shared validate-on-return guard degrades a schema-ignoring response to bad-shape, not bad data | ✓ Shipped v1.2.0 |
 
 ---
-*Last updated: 2026-07-22 closed v1.2.0 (judgment-sharpening cycle shipped: REV-01, SOC-01, DEC-01, DEC-02, REV-02)*
+*Last updated: 2026-07-24 opened v1.2.2 (tech-debt cycle: collect + triage open bug issues, fix or won't-fix)*

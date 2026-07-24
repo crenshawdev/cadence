@@ -5,9 +5,15 @@
 
 ## Active
 
-No active milestone. `v1.2.0` shipped its committed scope (REV-01, SOC-01,
-DEC-01, DEC-02, REV-02) — see `## Shipped`. The next milestone's requirements are
-written when it opens.
+**v1.2.2 — Tech debt** (opened 2026-07-24). Milestone-level asks; per-phase
+requirements are mapped at `/cad-plan` and traced under `## Traceability` as
+phases complete.
+
+| Requirement | Milestone |
+|-------------|-----------|
+| TRI-01 (collect every open bug issue and record a fix / won't-fix triage decision for each) | v1.2.2 |
+| FIX-01 (each accepted bug fixed, with a failing-capable test guarding the regression) | v1.2.2 |
+| WNF-01 (each won't-fix carries a documented rationale on the issue, and in Out of Scope when it is a scope call) | v1.2.2 |
 
 ## Shipped
 
@@ -73,4 +79,4 @@ cad-verify then writes each row as phases complete._
 |-------------|-------|--------|
 
 ---
-*Last updated: 2026-07-22 closed v1.2.0 (REV-01, SOC-01, DEC-01, DEC-02, REV-02 shipped)*
+*Last updated: 2026-07-24 opened v1.2.2 (tech-debt cycle seeded: TRI-01, FIX-01, WNF-01)*

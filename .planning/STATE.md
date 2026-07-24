@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 4 (DeepSeek cross-model review provider)
-Status: phase complete
-Next: /cad-land to publish v1.2.0 (tag unpushed)
-Updated: 2026-07-23
+Phase: 1 of 4 (v1.2.2 — Tech debt)
+Status: ready to plan
+Next: triage the open bug issues (fix / won't-fix each)
+Updated: 2026-07-24
