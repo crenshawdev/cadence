@@ -63,6 +63,7 @@ test('the repo itself passes self-verification', () => {
   const r = run();
   assert.equal(r.ok, true);
   assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.skipped, []); // the shipped repo has every always-expected input (#44)
 });
 
 test('an invented config key is flagged', () => {
@@ -185,4 +186,39 @@ test('INTERNALS.md: a backticked repo path that does not exist is flagged; a rea
   const internals = p.filter((x) => x.kind === 'missing-internals-path');
   assert.equal(internals.length, 1, 'exactly the one bogus path is flagged');
   assert.equal(internals[0].detail, 'cadence-core/bin/does-not-exist.mjs');
+});
+
+// --- skipped-check reporting (#44) ---
+
+test('an absent always-expected surface dir is recorded in skipped, not silently passed', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
+  // Deliberately omit cadence-core/templates - a renamed/moved surface dir.
+  for (const d of ['cadence-core/workflows', 'cadence-core/references', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  const r = run(['--root', root]);
+  // A skip is a signal, not a failure - ok is driven only by problems, never
+  // flipped by a skip (the fixture has no prose, so unrelated inert-key
+  // problems are expected and irrelevant to this assertion).
+  assert.equal(r.ok, r.problems.length === 0);
+  assert.ok(r.skipped.some((s) => s.path === 'cadence-core/templates'),
+    'the absent templates dir must be named in skipped');
+});
+
+test('an absent INTERNALS.md and weight-budgets.json are both recorded in skipped', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  // No INTERNALS.md, no cadence-core/bin/weight-budgets.json written.
+  const r = run(['--root', root]);
+  assert.equal(r.ok, r.problems.length === 0);
+  assert.ok(r.skipped.some((s) => s.check === 'internals-paths' && s.path === 'INTERNALS.md'));
+  assert.ok(r.skipped.some((s) => s.check === 'context-weight-budgets'
+    && s.path === join('cadence-core', 'bin', 'weight-budgets.json')));
 });

@@ -102,15 +102,21 @@ const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
 
 // --- helpers -----------------------------------------------------------------
 
-function* mdFiles(root) {
-  const dirs = [
+// The core prose surface dirs checks 1-3 scan. Lifted to module scope so
+// `run` can test presence and RECORD a skip (#44) instead of silently
+// scanning nothing when one is renamed/moved.
+function coreSurfaceDirs(root) {
+  return [
     join(root, 'cadence-core', 'workflows'),
     join(root, 'cadence-core', 'references'),
     join(root, 'cadence-core', 'templates'),
     join(root, 'skills'),
     join(root, 'agents'),
   ];
-  for (const d of dirs) {
+}
+
+function* mdFiles(root) {
+  for (const d of coreSurfaceDirs(root)) {
     if (!existsSync(d)) continue;
     for (const e of readdirSync(d, { recursive: true, encoding: 'utf8' })) {
       const f = join(d, String(e));
@@ -146,6 +152,16 @@ function expand(token, triggers, providers) {
 
 function run(root) {
   const problems = [];
+  // Absent always-expected inputs no longer drop to zero coverage in silence
+  // (#44): each one skipped here gets an entry naming the check and the path,
+  // so a renamed/deleted surface is visible even though `ok` still tracks
+  // only `problems` (a skip is a signal, not itself a failure).
+  const skipped = [];
+  for (const d of coreSurfaceDirs(root)) {
+    if (!existsSync(d)) {
+      skipped.push({ check: 'config-keys/invocations/paths', path: relative(root, d) });
+    }
+  }
   const schema = JSON.parse(
     readFileSync(join(root, 'cadence-core', 'config.schema.json'), 'utf8')).keys;
   const schemaKeys = Object.keys(schema);
@@ -227,6 +243,8 @@ function run(root) {
         problems.push({ kind: 'missing-internals-path', file: 'INTERNALS.md', detail: tok });
       }
     }
+  } else {
+    skipped.push({ check: 'internals-paths', path: relative(root, internals) });
   }
 
   // 1b. reverse: every schema key must be referenced by some prose token -
@@ -257,6 +275,8 @@ function run(root) {
           detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
       }
     }
+  } else {
+    skipped.push({ check: 'context-weight-budgets', path: relative(root, budgetPath) });
   }
 
   // 5. agents-only tools-declaration lint: an agent's prose may only reference
@@ -298,9 +318,11 @@ function run(root) {
         }
       }
     }
+  } else {
+    skipped.push({ check: 'tools-lint', path: relative(root, agentsDir) });
   }
 
-  return problems;
+  return { problems, skipped };
 }
 
 // --- entry ---------------------------------------------------------------------
@@ -309,8 +331,8 @@ try {
   const argv = process.argv.slice(2);
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
-  const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools', problems });
+  const { problems, skipped } = run(root);
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools', problems, skipped });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
