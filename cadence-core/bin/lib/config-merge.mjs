@@ -55,13 +55,21 @@ export function deepMerge(base, over) {
   return merged;
 }
 
+/** @param {any} v */
+function isPlainObject(v) {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
 /**
  * Merge the global and repo layers (repo wins). Returns {config, source,
  * warnings} where source names the layers that applied ("global+repo",
  * "defaults"...) and warnings names any layer that failed to PARSE (distinct
- * from being legitimately absent - D-01). `config`/`source` are byte-identical
- * to the absent case for a malformed layer; only `warnings` differs, and it
- * is empty (not present at all) when nothing failed to parse.
+ * from being legitimately absent - D-01) or whose top-level parsed to
+ * something other than a JSON object (a scalar/array config is skipped, not
+ * merged in as if it were the whole config - #45.3). `config`/`source` are
+ * byte-identical to the absent case for a malformed or non-object layer;
+ * only `warnings` differs, and it is empty (not present at all) when nothing
+ * failed to parse or was skipped.
  * Defaults are the caller's concern (route has DEFAULTS, config.mjs get
  * builds them from the schema) - this merges only the two file layers.
  * @param {string} repoFile
@@ -70,11 +78,22 @@ export function mergeLayers(repoFile) {
   const global = readLayer(GLOBAL_CONFIG);
   const repo = readLayer(repoFile);
   const layers = [];
-  if (global.value) layers.push('global');
-  if (repo.value) layers.push('repo');
+  const warnings = [global.warning, repo.warning].filter(Boolean);
+  let globalValue = global.value;
+  let repoValue = repo.value;
+  if (globalValue && !isPlainObject(globalValue)) {
+    warnings.push(`config layer ${GLOBAL_CONFIG} top-level is not an object; skipped`);
+    globalValue = null;
+  }
+  if (repoValue && !isPlainObject(repoValue)) {
+    warnings.push(`config layer ${repoFile} top-level is not an object; skipped`);
+    repoValue = null;
+  }
+  if (globalValue) layers.push('global');
+  if (repoValue) layers.push('repo');
   return {
-    config: deepMerge(global.value || {}, repo.value || {}),
+    config: deepMerge(globalValue || {}, repoValue || {}),
     source: layers.length ? layers.join('+') : 'defaults',
-    warnings: [global.warning, repo.warning].filter(Boolean),
+    warnings,
   };
 }

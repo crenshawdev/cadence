@@ -100,6 +100,10 @@ function validate(file) {
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) { fail('read', `cannot read/parse ${file}: ${e.message}`); }
+  if (cfg === null || typeof cfg !== 'object' || Array.isArray(cfg)) {
+    return out({ ok: false, file, checked: 0,
+      errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }] });
+  }
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {

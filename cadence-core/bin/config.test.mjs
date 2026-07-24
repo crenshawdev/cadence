@@ -102,6 +102,23 @@ test('validate: corrupt JSON degrades to read, names the file', () => {
   assert.match(r.detail, /corrupt\.json/);
 });
 
+test('validate: a scalar top-level config fails, never ok:true checked:0 (#45.3)', () => {
+  const file = join(dir, 'scalar-config.json');
+  writeFileSync(file, '42');
+  const r = run(['validate', '--file', file], join(dir, 'no-global-scalar.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.checked, 0);
+  assert.equal(r.errors.length, 1);
+  assert.equal(r.errors[0].key, '(root)');
+  assert.match(r.errors[0].error, /must be a JSON object/);
+
+  // a normal object config still validates ok:true.
+  const normal = join(dir, 'normal-config.json');
+  writeFileSync(normal, JSON.stringify({ granularity: 'coarse' }));
+  const rn = run(['validate', '--file', normal], join(dir, 'no-global-scalar2.json'));
+  assert.equal(rn.ok, true);
+});
+
 test('check: reports per-pair errors and ok mirrors them', () => {
   const good = run(['check', 'workflow.plan_check=false', 'granularity=fine']);
   assert.equal(good.ok, true);
@@ -204,6 +221,20 @@ test('get: a corrupt global layer is skipped (repo still wins) AND warns naming 
   assert.equal(r.source, 'repo'); // the broken global layer contributed nothing
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /corrupt-global\.json/);
+});
+
+test('get: a scalar repo config falls back to defaults, never source:repo (#45.3)', () => {
+  const gpath = join(dir, 'no-global-for-scalar-repo.json');
+  const repo = join(dir, 'scalar-repo.json');
+  writeFileSync(repo, '42');
+  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo2.json'), 'model.profile'], gpath);
+  assert.equal(r.ok, true);
+  assert.notEqual(r.source, 'repo');
+  assert.deepEqual(r.values, absentRepo.values); // schema default, same as no-repo-layer
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /scalar-repo\.json/);
+  assert.match(r.warnings[0], /not an object/);
 });
 
 // --- cross-key warnings ---------------------------------------------------
