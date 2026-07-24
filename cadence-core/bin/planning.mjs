@@ -39,6 +39,7 @@ import {
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
+import { requireInt } from './lib/require-int.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -173,7 +174,12 @@ function cmdCursorSet(dir, opts) {
 
   // name/total: explicit flag > ROADMAP derivation > existing cursor > fail.
   let name = opts.name;
-  let total = opts.total ? Number(opts.total) : undefined;
+  let total;
+  if ('total' in opts) {
+    const parsed = requireInt(opts.total);
+    if (!parsed.ok) return fail('bad-args', 'cursor set --total needs an integer');
+    total = parsed.value;
+  }
   if (name === undefined || total === undefined) {
     const phases = parseRoadmapPhases(read(join(dir, 'ROADMAP.md')) || '');
     const entry = phases.find((p) => p.n === phase);

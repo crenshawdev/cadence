@@ -366,6 +366,22 @@ test('cursor set: rejects a status outside the lifecycle', () => {
   assert.equal(readdirSync(dir).includes('STATE.md'), false); // nothing written
 });
 
+test('cursor set: a non-integer --total is bad-args and writes nothing (#42)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const before = readdirSync(dir).includes('STATE.md');
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--name', 'Foo', '--total', 'abc'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.equal(JSON.stringify(r).includes('NaN'), false);
+  assert.equal(readdirSync(dir).includes('STATE.md'), before); // unchanged (still absent)
+
+  const ok = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--name', 'Foo', '--total', '4'], dir);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.cursor.total, 4);
+});
+
 test('cursor set: no ROADMAP and no flags cannot derive', () => {
   const dir = makeTree({});
   const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned', '--next', 'x'], dir);
