@@ -4,6 +4,33 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-24
+
+"liteSpeed": a flow pass over the whole `/cad-*` surface that cuts coordinator
+round-trips without changing what the workflows produce. Two shared conventions
+let the spine batch independent known-path reads into one message and fan
+independent subagent dispatches out concurrently, instead of walking them one
+turn at a time. Three correctness bugs the audit surfaced ship alongside.
+
+### Added
+
+- Parallel-work and concurrent-dispatch conventions (`references/conventions.md`,
+  `references/seams.md`), wired into ~18 workflows and skills: independent
+  known-path reads batch into one message; independent agent dispatches fire
+  concurrently, reusing one route resolution.
+- `/cad-config` detects all review providers in one concurrent batch instead of
+  serial per-provider timeouts.
+
+### Fixed
+
+- `/cad-progress --stats` no longer writes STATE.md in its documented read-only
+  mode (it walked the cursor-reconcile step before the stats stop).
+- `/cad-undo` applies the protected-branch guard before a committing revert, like
+  every other commit-producing step.
+- `/cad-config`'s interactive menu labels `(current)` from the repo file's own
+  value, not the effective (possibly global-inherited) value, so an inherited
+  global is no longer silently pinned into the repo file.
+
 ## [1.2.1] - 2026-07-23
 
 Three high-severity fixes from a post-1.2.0 cross-model review sweep over the

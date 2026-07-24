@@ -66,6 +66,12 @@ does, from `review.reviewers[]`:
   drops that reviewer (name the reason, same degradation rule as
   review-triggers.md step 4) and single-model continues.
 
+When the resolved set has more than one reviewer (claude-subagent plus a
+surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
+message - they refute the same static artifact independently, so serializing
+them only adds latency (seams.md concurrent dispatch; review-triggers.md's "in
+parallel where the host allows").
+
 If the resolved set (after any drops) is only `claude-subagent`, this is the
 single-model default; when a cross-model provider survives, this is the
 panel path. Either way, every reviewer's findings feed adjudication next -
@@ -146,7 +152,8 @@ a follow-up `/cad-context` correction, `/cad-task`, etc).
       (survives | partial | refuted) and, for survives/partial, a concrete
       amendment
 - [ ] At least one library/API claim was checked against Context7 and at
-      least one factual claim against the codebase during adjudication
+      least one factual claim against the codebase during adjudication - or the
+      objection set was explicitly noted to contain none of that kind
 - [ ] The report names which reviewers/models/tier/effort ran, qualitatively
       - no fabricated token/dollar figures
 - [ ] Single-model (claude-subagent) ran when no cross-model provider was

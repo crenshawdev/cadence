@@ -30,7 +30,9 @@ kinds, one file (`.planning/CAPTURE.md`):
    no phase tag - rather than guessing a phase or stopping.
 
 2. **Ensure the file.** If `.planning/CAPTURE.md` is absent, create it with three
-   headings: `## Todos`, `## Seeds`, `## Notes`.
+   headings: `## Todos`, `## Seeds`, `## Notes`. (When step 1 needs `cursor get`,
+   batch it with this existence check in one message - independent;
+   conventions.md Parallel work.)
 
 3. **Append by kind:**
    - todo -> `- [ ] (phase N) <text>` under `## Todos`.

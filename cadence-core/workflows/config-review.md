@@ -10,19 +10,26 @@ detected model ids, per DESIGN §6's three-layer detection (live list ->
 classify known ids -> assign per position). Model ids are never hardcoded; they
 come from the provider.
 
-Run this for each provider under `review.providers` (openai, gemini, deepseek):
+Detection is the slow part - each `detect-models` call can sit up to its full
+timeout, and the calls are independent. So detect ALL providers first in one
+concurrent batch, then walk the interactive Handle -> Assign -> Write per
+provider over the gathered results.
 
-### 1. Detect
+### 1. Detect all providers (one concurrent batch)
 
-Invoke the call-review-provider seam (this is the only place a provider call
-happens):
+Fire `detect-models` for every provider under `review.providers` (openai,
+gemini, deepseek) in ONE message (conventions.md Parallel work; seams.md
+concurrent dispatch) - not one provider at a time, or three full timeouts run
+back to back. This is the only place a provider call happens:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" detect-models \
   --provider <name> [--key-file <review.key_file, only if set>]
 ```
 
-Parse the single JSON line on stdout.
+Parse each provider's single JSON line. Steps 2-4 below then run per provider
+over these already-gathered results - that part is interactive, so it stays
+serial.
 
 ### 2. Handle the result
 

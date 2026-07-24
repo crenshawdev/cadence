@@ -35,6 +35,8 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    - empty -> the current phase from the STATE.md cursor; if that is ambiguous,
      ask (ask-user seam) which phase.
    If no plan file is found, report it and stop - there is nothing to review.
+   (Resolve the plan path and, for the empty-args case, the cursor read as one
+   batched step - independent; conventions.md Parallel work.)
 
 2. **Fire the `plan` trigger** per references/review-triggers.md with the
    resolved PLAN file(s) as the artifact. Honor `review.triggers.plan` (gate,

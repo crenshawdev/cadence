@@ -22,7 +22,10 @@ opinion and intent; target concrete, falsifiable statements:
 Record each claim with its doc + line so the report can point at it.
 
 ## 3. Verify each claim against the repo
-Use the cheapest check that decides it:
+Checks across claims are independent - batch them (path checks one pass, symbol
+Greps parallel in one message, cited-code Reads one batch), serializing only a
+check that needs a prior result (conventions.md Parallel work). Use the cheapest
+check that decides each claim:
 - Path -> does it exist (Glob / test -e)?
 - Command -> does the entrypoint/script exist (package.json scripts, a bin, the
   binary on PATH)? Where safe and read-only, run `--help` or a dry form to

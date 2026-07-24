@@ -17,8 +17,9 @@ Cross-phase audit of outstanding verification work. Loaded only when
 
    | Phase | Status | Pass | Fail | Pending | Skipped/Blocked |
 
-   For phases with open failures, read just those UAT items (the file at
-   `.planning/phases/<N>/UAT.md`) and list them: phase, item, severity.
+   For phases with open failures, read those phases' `.planning/phases/<N>/UAT.md`
+   in ONE parallel batch (the paths are already known from the status output;
+   conventions.md Parallel work) and list them: phase, item, severity.
 
 3. Pick the most consequential phase to resume: open failures of the
    highest severity first, then most pending items, then lowest phase

@@ -41,12 +41,17 @@ recall in spawn_planner and inline_plan below.
 </step>
 
 <step name="load_phase">
+Once N is known, steps 1-3 are independent reads/globs - fire them in one
+message and evaluate the stop/ask gates after they return (conventions.md
+Parallel work).
+
 1. Read this phase's entry in .planning/ROADMAP.md: name, goal, requirement
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
-2. Read .planning/phases/<N>/CONTEXT.md if present (locked decisions,
-   deferred ideas, discretion areas from /cad-context). Absent is fine -
-   plan from the roadmap goal alone. Note its `Plan shape` line (in the
-   Scope boundary) if present - it is passed to the planner as a directive.
+2. If .planning/phases/<N>/CONTEXT.md is present, extract just its `Plan shape`
+   line (grep the Scope boundary) - the planner reads the whole file itself
+   (see the dispatch prompt below), so the coordinator needs only that one
+   directive line, not the bytes (seams.md handoff read discipline). Absent is
+   fine - plan from the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
    overwrite silently.
@@ -71,7 +76,10 @@ Before assembling the prompt, recall prior-project memory when the effective
 `memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
 do not issue the call). The gate precedes the call on purpose (D-03): recall's
 own backend-off return is a backstop for a direct caller, not this workflow's
-gate, so `none` means no recall runs and no block is appended.
+gate, so `none` means no recall runs and no block is appended. When recall does
+run, batch it with the `route.mjs resolve` above in one message - both only feed
+the single dispatch and neither depends on the other (conventions.md Parallel
+work).
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"

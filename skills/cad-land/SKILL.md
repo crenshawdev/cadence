@@ -22,6 +22,11 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 </execution_context>
 
 <process>
+Read every config key this run needs in ONE `config.mjs get` up front
+(conventions.md Parallel work) - `git.base_branch git.protected_branches
+review.triggers.pre_ship.gate git.auto_close git.on_land_cleanup` - and reuse the
+values across the steps below rather than re-reading per step.
+
 1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
    exists here (git.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked

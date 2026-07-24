@@ -24,6 +24,14 @@ break them." This is a factual notice, NOT a dependency analysis (no heuristic
 dependency-guessing). Require an explicit yes (ask-user seam).
 
 ## 4. Revert
+Before a **committing** revert, apply the protected-branch guard
+(`references/git.md` rail 1, the protected-branch check): a `git revert` writes
+commits, so if HEAD is a protected branch, gate it through the ask-user seam with
+no preselected default - the same discipline every other commit-producing step
+follows. Only the protected-branch check applies; a recovery revert does not open
+an integration branch. The `--no-commit` form writes no commit, so it skips this
+guard.
+
 - **Default**: `git revert --no-edit <hashes in reverse order>` - one revert
   commit per undone commit, preserving history (the safe, auditable path).
 - **`--no-commit`**: `git revert --no-commit <hashes reverse>` - apply the

@@ -1,8 +1,10 @@
 <purpose>
 Execute a small, off-roadmap task with Cadence's two guarantees - atomic
-conventional commits and the protected-branch guard - and nothing else.
-Inline by default (no subagents, no plan files). `--plan` opts into a written
-PLAN.md for genuinely multi-step work.
+conventional commits and the git.md rail-1 guard (the protected-branch check
+plus base-integrity and the integration-branch decision, not a bare branch
+check) - and no planning apparatus beyond that: inline by default (no subagents,
+no plan files). `--plan` opts into a written PLAN.md for genuinely multi-step
+work.
 
 One command, not a fast/quick split: the skill classifies the task instead of
 making the user pick a lane.

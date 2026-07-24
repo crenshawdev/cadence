@@ -37,8 +37,11 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 
    The resume pointer is a one-line "where I was" naming the next concrete
    action (from `$ARGUMENTS`, or ask via the ask-user seam if not given).
-   This line IS the pause note /cad-progress surfaces. The seam keeps
-   `Phase:` and stamps `Updated:` itself.
+   This line IS the pause note /cad-progress surfaces. `--phase <current>` is
+   required - the seam does NOT preserve a prior `Phase:` (it fails `bad-args`
+   without it); supply the current phase from `cursor get`, which can batch with
+   step 1's protected-branch git probes (independent; conventions.md Parallel
+   work). The seam derives name/total from ROADMAP and stamps `Updated:` itself.
    Commit the cursor (`docs:`), or fold it into the WIP commit if one was made.
    Never leave the tree dirty.
 
