@@ -47,10 +47,11 @@ Parallel work).
 
 1. Read this phase's entry in .planning/ROADMAP.md: name, goal, requirement
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
-2. Read .planning/phases/<N>/CONTEXT.md if present (locked decisions,
-   deferred ideas, discretion areas from /cad-context). Absent is fine -
-   plan from the roadmap goal alone. Note its `Plan shape` line (in the
-   Scope boundary) if present - it is passed to the planner as a directive.
+2. If .planning/phases/<N>/CONTEXT.md is present, extract just its `Plan shape`
+   line (grep the Scope boundary) - the planner reads the whole file itself
+   (see the dispatch prompt below), so the coordinator needs only that one
+   directive line, not the bytes (seams.md handoff read discipline). Absent is
+   fine - plan from the roadmap goal alone.
 3. If PLAN*.md already exists in the phase dir (and not --gaps): ask
    (ask-user seam) - replan from scratch (overwrite) or abort. Never
    overwrite silently.
