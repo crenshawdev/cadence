@@ -26,10 +26,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit as out } from './lib/seam-io.mjs';
+import { emit as out, DONE } from './lib/seam-io.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TABLE = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+// TABLE is loaded lazily, inside the dispatch try block below, so a missing
+// or malformed shipped route-table.json degrades to {ok:false} instead of
+// crashing at import time. CADENCE_ROUTE_TABLE overrides the path (hermetic
+// test injection only; production always uses the shipped file).
+let TABLE;
+const TABLE_PATH = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-table.json');
+const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
@@ -163,6 +169,11 @@ function parseArgs(a) {
 }
 
 try {
+  try {
+    TABLE = JSON.parse(readFileSync(TABLE_PATH, 'utf8'));
+  } catch (e) {
+    fail('bad-table', `cannot read/parse ${TABLE_PATH}: ${e.message}`);
+  }
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   if (cmd === 'resolve') {
@@ -175,5 +186,5 @@ try {
     out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | table' });
   }
 } catch (e) {
-  out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

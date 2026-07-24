@@ -211,3 +211,37 @@ test('set: the ceiling warning rides along with a successful write', () => {
   assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).model.auto.ceiling, 'fast');
   assert.match(r.warnings[0].warning, /holds at base/);
 });
+
+// --- shipped config.schema.json absent/malformed (#40) ------------------------
+
+function runWithSchema(args, schemaPath) {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global-schema.json') };
+  if (schemaPath) env.CADENCE_CONFIG_SCHEMA = schemaPath;
+  try {
+    return { stdout: execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env }) };
+  } catch (e) {
+    return { stdout: e.stdout };
+  }
+}
+
+test('CADENCE_CONFIG_SCHEMA malformed degrades to ok:false, reason bad-schema, no stack', () => {
+  const bad = join(dir, 'bad-schema.json');
+  writeFileSync(bad, '{ not json');
+  const { stdout } = runWithSchema(['keys'], bad);
+  const lines = stdout.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-schema');
+  assert.match(r.detail, /bad-schema\.json/);
+});
+
+test('CADENCE_CONFIG_SCHEMA nonexistent degrades to ok:false, reason bad-schema, no stack', () => {
+  const missing = join(dir, 'does-not-exist-schema.json');
+  const { stdout } = runWithSchema(['keys'], missing);
+  const lines = stdout.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-schema');
+});

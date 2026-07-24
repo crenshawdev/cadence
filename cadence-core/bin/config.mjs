@@ -27,9 +27,12 @@ import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCHEMA = JSON.parse(
-  readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'),
-).keys;
+// SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
+// or malformed shipped config.schema.json degrades to {ok:false} instead of
+// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path
+// (hermetic test injection only; production always uses the shipped file).
+let SCHEMA;
+const SCHEMA_PATH = process.env.CADENCE_CONFIG_SCHEMA || join(HERE, '..', 'config.schema.json');
 
 // Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
 // dispatch unwinds without process.exit().
@@ -211,6 +214,11 @@ function optFile(tokens) {
 }
 
 try {
+  try {
+    SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')).keys;
+  } catch (e) {
+    fail('bad-schema', `cannot read/parse ${SCHEMA_PATH}: ${e.message}`);
+  }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
     const { pairs, errors } = checkPairs(rest);

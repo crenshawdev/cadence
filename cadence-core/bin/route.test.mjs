@@ -277,3 +277,35 @@ test('overrides layer: repo pin wins over a global pin', () => {
   const r = resolve('cad-planner', repo, [], { global: g });
   assert.equal(r.model, 'fable');
 });
+
+// --- shipped route-table.json absent/malformed (#40) ------------------------
+
+test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no stack', () => {
+  const bad = join(dir, 'bad-table.json');
+  writeFileSync(bad, '{ not json');
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: bad };
+  const raw = (() => {
+    try { return execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }); }
+    catch (e) { return e.stdout; }
+  })();
+  const lines = raw.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1); // exactly one JSON line, no raw stack trace
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-table');
+  assert.match(r.detail, /bad-table\.json/);
+});
+
+test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
+  const missing = join(dir, 'does-not-exist-table.json');
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: missing };
+  const raw = (() => {
+    try { return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env }); }
+    catch (e) { return e.stdout; }
+  })();
+  const lines = raw.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-table');
+});
