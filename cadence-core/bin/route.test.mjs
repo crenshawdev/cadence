@@ -271,6 +271,15 @@ test('a pin matching the routed model is a no-op, still marked pinned', () => {
   assert.match(r.reason.join(' '), /already the routed model/);
 });
 
+test('resolve against a corrupt --file config still succeeds, reason names the parse failure (#39)', () => {
+  const repo = join(dir, 'corrupt-repo.json');
+  writeFileSync(repo, '{ torn mid-write');
+  const r = resolve('cad-planner', repo);
+  assert.equal(r.ok, true);
+  assert.equal(r.profile, 'balanced'); // repo layer contributed nothing, falls to defaults
+  assert.ok(r.reason.some((line) => /config failed to parse/.test(line)));
+});
+
 test('overrides layer: repo pin wins over a global pin', () => {
   const g = cfg({ profile: 'balanced', overrides: { 'cad-planner': 'haiku' } }, 'g-ovr.json');
   const repo = cfg({ overrides: { 'cad-planner': 'fable' } }, 'repo-ovr.json');

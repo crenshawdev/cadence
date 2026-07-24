@@ -24,6 +24,23 @@ export function readJSON(file) {
 }
 
 /**
+ * Read one config layer, discriminating an absent file (ENOENT) from a
+ * present-but-unparseable one (SyntaxError / other read failure) - the
+ * absent-vs-malformed distinction #39 requires. The fail-safe stays: either
+ * outcome yields `config: null` so the caller's merge still skips the layer.
+ * @param {string} file
+ * @returns {{config: any, failed: boolean}} failed is true only when the file
+ *   exists but could not be parsed/read.
+ */
+export function readLayer(file) {
+  try { return { config: JSON.parse(readFileSync(file, 'utf8')), failed: false }; }
+  catch (e) {
+    if (e && e.code === 'ENOENT') return { config: null, failed: false };
+    return { config: null, failed: true };
+  }
+}
+
+/**
  * Deep-merge `over` onto `base`: nested objects recurse, arrays and scalars
  * replace wholesale (the higher-precedence layer's list wins, no concat).
  * @param {any} base @param {any} over
@@ -42,16 +59,31 @@ export function deepMerge(base, over) {
  * where source names the layers that applied ("global+repo", "defaults"...).
  * Defaults are the caller's concern (route has DEFAULTS, config.mjs get
  * builds them from the schema) - this merges only the two file layers.
+ *
+ * A layer that exists but failed to parse contributes nothing to `config`
+ * (the fail-safe merge is unchanged) but is no longer silent: a parenthetical
+ * note naming it rides through `source`, and one line is written to stderr
+ * naming the file - so a broken layer reads differently from an absent one.
  * @param {string} repoFile
  */
 export function mergeLayers(repoFile) {
-  const global = readJSON(GLOBAL_CONFIG);
-  const repo = readJSON(repoFile);
+  const global = readLayer(GLOBAL_CONFIG);
+  const repo = readLayer(repoFile);
   const layers = [];
-  if (global) layers.push('global');
-  if (repo) layers.push('repo');
+  if (global.config) layers.push('global');
+  if (repo.config) layers.push('repo');
+  const notes = [];
+  if (global.failed) {
+    notes.push('global config failed to parse');
+    process.stderr.write(`cadence: warning: ${GLOBAL_CONFIG} failed to parse; global config layer skipped\n`);
+  }
+  if (repo.failed) {
+    notes.push('repo config failed to parse');
+    process.stderr.write(`cadence: warning: ${repoFile} failed to parse; repo config layer skipped\n`);
+  }
+  const base = layers.length ? layers.join('+') : 'defaults';
   return {
-    config: deepMerge(global || {}, repo || {}),
-    source: layers.length ? layers.join('+') : 'defaults',
+    config: deepMerge(global.config || {}, repo.config || {}),
+    source: notes.length ? `${base} (${notes.join(', ')})` : base,
   };
 }

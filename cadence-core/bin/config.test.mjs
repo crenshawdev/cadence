@@ -179,15 +179,31 @@ test('get: arrays replace wholesale across layers, never concatenate', () => {
   assert.deepEqual(r.values['git.protected_branches'], ['trunk']); // repo's list, whole
 });
 
-test('get: a corrupt layer is skipped, not fatal (the spine never blocks on config)', () => {
+test('get: a corrupt global layer is skipped, not fatal, but surfaced in source (#39)', () => {
   const gpath = join(dir, 'corrupt-global.json');
   writeFileSync(gpath, '{ torn mid-write');
   const repo = join(dir, 'fine-repo.json');
   writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
   const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  assert.equal(r.ok, true); // fail-safe stays: still resolves via the fallback
+  assert.equal(r.values['model.profile'], 'fast'); // the broken global layer contributed nothing
+  assert.match(r.source, /global config failed to parse/); // no longer silent
+});
+
+test('get: a corrupt repo layer is skipped, not fatal, but surfaced in source (#39)', () => {
+  const repo = join(dir, 'corrupt-repo.json');
+  writeFileSync(repo, '{ torn mid-write');
+  const r = run(['get', '--file', repo, 'model.profile'], join(dir, 'no-global-corrupt-repo.json'));
   assert.equal(r.ok, true);
-  assert.equal(r.values['model.profile'], 'fast');
-  assert.equal(r.source, 'repo'); // the broken global layer contributed nothing
+  assert.equal(r.values['model.profile'], 'balanced'); // schema default, repo layer contributed nothing
+  assert.match(r.source, /repo config failed to parse/);
+});
+
+test('get: an absent layer stays clean - no parse-failure note, no warning (#39)', () => {
+  const r = run(['get', '--file', join(dir, 'truly-absent-repo.json')], join(dir, 'truly-absent-global.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.source, 'defaults');
+  assert.doesNotMatch(r.source, /failed to parse/);
 });
 
 // --- cross-key warnings ---------------------------------------------------
