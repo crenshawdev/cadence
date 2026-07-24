@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,6 +54,28 @@ function fixtureWith({ agents = {}, budgets = null }) {
     writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
       JSON.stringify({ budgets }, null, 2));
   }
+  return root;
+}
+
+/**
+ * A full-tree fixture: has `.claude-plugin/plugin.json` (the isFullTree
+ * marker) plus every always-expected input (#44) - the five core surface
+ * dirs, `cadence-core/bin/weight-budgets.json`, and `INTERNALS.md` - so a
+ * test can delete/rename exactly one and assert the gate catches it.
+ */
+function fullFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-full-'));
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  writeFileSync(join(root, '.claude-plugin', 'plugin.json'), '{}');
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
+    JSON.stringify({ budgets: {} }, null, 2));
+  writeFileSync(join(root, 'INTERNALS.md'), 'Read the code: `cadence-core/config.schema.json`.\n');
   return root;
 }
 
@@ -185,4 +207,44 @@ test('INTERNALS.md: a backticked repo path that does not exist is flagged; a rea
   const internals = p.filter((x) => x.kind === 'missing-internals-path');
   assert.equal(internals.length, 1, 'exactly the one bogus path is flagged');
   assert.equal(internals[0].detail, 'cadence-core/bin/does-not-exist.mjs');
+});
+
+// --- always-expected inputs gate (#44) ---
+
+test('a full tree missing weight-budgets.json fails ok:false naming the input', () => {
+  const root = fullFixture();
+  rmSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  const hit = r.problems.find((p) => p.kind === 'missing-input'
+    && p.file === 'cadence-core/bin/weight-budgets.json');
+  assert.ok(hit, JSON.stringify(r.problems));
+});
+
+test('a full tree with a core surface dir renamed away fails ok:false naming it', () => {
+  const root = fullFixture();
+  renameSync(join(root, 'cadence-core', 'workflows'), join(root, 'cadence-core', 'workflows-renamed'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  const hit = r.problems.find((p) => p.kind === 'missing-input' && p.file === 'cadence-core/workflows');
+  assert.ok(hit, JSON.stringify(r.problems));
+});
+
+test('a full tree missing INTERNALS.md fails ok:false naming it', () => {
+  const root = fullFixture();
+  rmSync(join(root, 'INTERNALS.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  const hit = r.problems.find((p) => p.kind === 'missing-input' && p.file === 'INTERNALS.md');
+  assert.ok(hit, JSON.stringify(r.problems));
+});
+
+test('a minimal (non-full-tree) fixture omitting optional inputs stays free of missing-input problems', () => {
+  // The plain fixture() helper never creates .claude-plugin/plugin.json and
+  // never creates weight-budgets.json/INTERNALS.md - it must NOT be treated
+  // as a broken full tree; that is what distinguishes a real install from a
+  // minimal test fixture (D-03).
+  const root = fixture('nothing special here\n');
+  const r = run(['--root', root]);
+  assert.ok(!r.problems.some((p) => p.kind === 'missing-input'), JSON.stringify(r.problems));
 });

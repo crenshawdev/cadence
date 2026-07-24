@@ -146,6 +146,12 @@ function expand(token, triggers, providers) {
 
 function run(root) {
   const problems = [];
+  // The plugin manifest is the definitive marker of a real Cadence install -
+  // a minimal test fixture never creates one, so fixtures stay lenient about
+  // always-expected inputs (D-03) while a full tree with one missing (a core
+  // surface dir, weight-budgets.json, INTERNALS.md) fails loud, not silently
+  // skips-and-stays-green (#44).
+  const isFullTree = existsSync(join(root, '.claude-plugin', 'plugin.json'));
   const schema = JSON.parse(
     readFileSync(join(root, 'cadence-core', 'config.schema.json'), 'utf8')).keys;
   const schemaKeys = Object.keys(schema);
@@ -160,6 +166,18 @@ function run(root) {
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
 
   const seenTokens = new Set();
+
+  // 0. always-expected core surface dirs (#44): a full tree missing one of
+  // these is a real break (a renamed/deleted dir), not a fixture omitting an
+  // optional input - so it is only a hard failure when isFullTree.
+  if (isFullTree) {
+    for (const d of ['cadence-core/workflows', 'cadence-core/references',
+      'cadence-core/templates', 'skills', 'agents']) {
+      if (!existsSync(join(root, d))) {
+        problems.push({ kind: 'missing-input', file: d, detail: 'core surface dir absent' });
+      }
+    }
+  }
 
   for (const file of mdFiles(root)) {
     const text = readFileSync(file, 'utf8');
@@ -227,6 +245,8 @@ function run(root) {
         problems.push({ kind: 'missing-internals-path', file: 'INTERNALS.md', detail: tok });
       }
     }
+  } else if (isFullTree) {
+    problems.push({ kind: 'missing-input', file: 'INTERNALS.md', detail: 'always-expected input absent' });
   }
 
   // 1b. reverse: every schema key must be referenced by some prose token -
@@ -257,6 +277,8 @@ function run(root) {
           detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
       }
     }
+  } else if (isFullTree) {
+    problems.push({ kind: 'missing-input', file: 'cadence-core/bin/weight-budgets.json', detail: 'always-expected input absent' });
   }
 
   // 5. agents-only tools-declaration lint: an agent's prose may only reference
