@@ -504,23 +504,40 @@ async function cmdDetect(opts) {
     fail('http', { status: res.status, body: res.json || res.raw });
   }
   const ids = adapter.extractModels(res.json);
-  ok({ provider, models: classify(provider, ids) });
+  ok(buildDetectResult(provider, ids));
+}
+
+// Load references/model-hints.json, distinguishing a legitimately ABSENT file
+// (ENOENT - stay silent, the benign-absence case existing callers rely on)
+// from a PRESENT file that failed to parse/read (surfaced: `warning` names the
+// file, and the same line is written to stderr) - the #43 fix. Either failure
+// mode still degrades to empty rules/exclude so classify() never blocks.
+// hintsFile is injectable for tests; production always uses the shipped table.
+/** @param {string} [hintsFile] @returns {{rules:any[], exclude:any[], warning:string|null}} */
+export function loadHints(hintsFile) {
+  const file = hintsFile || path.join(HERE, '..', 'references', 'model-hints.json');
+  try {
+    const hints = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return { rules: (hints.rules) || [], exclude: hints.exclude || [], warning: null };
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return { rules: [], exclude: [], warning: null };
+    const warning = `model-hints.json failed to load: ${e && e.message ? e.message : String(e)} (${file})`;
+    process.stderr.write(`cadence: warning: ${warning}\n`);
+    return { rules: [], exclude: [], warning };
+  }
 }
 
 // Tag each detected id with a tier hint (references/model-hints.json). First
 // drop non-text modalities (embeddings, audio, image, ...) that can't do text
 // review, so the candidate list is review-usable. Then: known id ->
 // {tier, high_effort}; unknown text id -> tier:null so cad-config asks the user
-// to place it. Missing/broken hint file degrades to all-unknown, never errors.
-// hintsFile is injectable for tests; production always uses the shipped table.
+// to place it. Missing hint file degrades to all-unknown, never errors; a
+// present-but-broken file also degrades the same way but is surfaced via
+// loadHints' warning (see buildDetectResult).
 /** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
 export function classify(provider, ids, hintsFile) {
-  let rules = [], exclude = [];
-  try {
-    const hints = JSON.parse(fs.readFileSync(hintsFile || path.join(HERE, '..', 'references', 'model-hints.json'), 'utf8'));
-    rules = (hints.rules && hints.rules[provider]) || [];
-    exclude = hints.exclude || [];
-  } catch { /* no hints -> everything unknown, nothing excluded */ }
+  const { rules: allRules, exclude } = loadHints(hintsFile);
+  const rules = (allRules && allRules[provider]) || [];
   const excluded = (lower) => exclude.some((p) => lower.includes(String(p).toLowerCase()));
   return ids
     .filter((id) => !excluded(id.toLowerCase()))
@@ -531,6 +548,17 @@ export function classify(provider, ids, hintsFile) {
         ? { id, tier: hit.tier, high_effort: !!hit.high_effort }
         : { id, tier: null, high_effort: null };
     });
+}
+
+// Network-free assembly of the detect-models result, given already-fetched
+// `ids` - so a test can drive the operator-facing #43 deliverable (the
+// `hints_warning` field) without a real HTTP round-trip. cmdDetect does the
+// live fetch, then delegates here.
+/** @param {string} provider @param {string[]} ids @param {string} [hintsFile] */
+export function buildDetectResult(provider, ids, hintsFile) {
+  const { warning } = loadHints(hintsFile);
+  const models = classify(provider, ids, hintsFile);
+  return { provider, models, ...(warning ? { hints_warning: warning } : {}) };
 }
 
 // ---------------------------------------------------------------------------

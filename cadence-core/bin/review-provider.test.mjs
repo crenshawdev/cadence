@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseArgs, parseEnvFile, stripAdditionalProperties,
   validateFindings, validateConsult, classify, ADAPTERS,
+  loadHints, buildDetectResult,
 } from './review-provider.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
@@ -142,6 +143,36 @@ test('classify: broken or missing hints degrade to all-unknown, nothing excluded
       { id: 'text-embedding-3-large', tier: null, high_effort: null }, // exclude list gone too
     ]);
   }
+});
+
+test('loadHints: a corrupt file warns and names the file; an absent file stays silent (#43)', () => {
+  const broken = join(dir, 'hints-loadhints-broken.json');
+  writeFileSync(broken, '{ not json');
+  const brokenResult = loadHints(broken);
+  assert.ok(brokenResult.warning, 'a present-but-broken hints file must warn');
+  assert.match(brokenResult.warning, /hints-loadhints-broken\.json/);
+  assert.deepEqual(brokenResult.rules, []);
+  assert.deepEqual(brokenResult.exclude, []);
+
+  const absentResult = loadHints(join(dir, 'hints-loadhints-absent.json'));
+  assert.equal(absentResult.warning, null, 'a legitimately absent hints file must stay silent');
+});
+
+test('buildDetectResult: hints_warning surfaces on a corrupt hints file, absent on clean/absent (#43)', () => {
+  const broken = join(dir, 'hints-detect-broken.json');
+  writeFileSync(broken, '{ not json');
+  const brokenOut = buildDetectResult('openai', ['gpt-5.2'], broken);
+  assert.ok(brokenOut.hints_warning, 'the operator-facing detect-models output must carry the warning');
+  assert.match(brokenOut.hints_warning, /hints-detect-broken\.json/);
+  assert.deepEqual(brokenOut.models, [{ id: 'gpt-5.2', tier: null, high_effort: null }]);
+
+  const cleanHints = join(dir, 'hints-detect-clean.json');
+  writeFileSync(cleanHints, JSON.stringify({ exclude: [], rules: { openai: [] } }));
+  const cleanOut = buildDetectResult('openai', ['gpt-5.2'], cleanHints);
+  assert.equal('hints_warning' in cleanOut, false);
+
+  const absentOut = buildDetectResult('openai', ['gpt-5.2'], join(dir, 'hints-detect-absent.json'));
+  assert.equal('hints_warning' in absentOut, false);
 });
 
 test('adapters: extractText handles both OpenAI response shapes and Gemini parts', () => {
