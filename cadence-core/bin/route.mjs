@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
+import { requireInt } from './lib/require-int.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // TABLE is loaded lazily, inside the dispatch try block below, so a missing
@@ -160,7 +161,12 @@ function parseArgs(a) {
   for (let i = 0; i < a.length; i++) {
     const k = a[i];
     if (k === '--role') o.role = a[++i];
-    else if (k === '--attempt') o.attempt = parseInt(a[++i], 10);
+    else if (k === '--attempt') {
+      const raw = a[++i];
+      const parsed = requireInt(raw);
+      if (parsed.ok) o.attempt = parsed.value;
+      else { o.attempt = raw; o.attemptInvalid = true; }
+    }
     else if (k === '--files') o.files = parseInt(a[++i], 10);
     else if (k === '--ambiguity') o.ambiguity = parseFloat(a[++i]);
     else if (k === '--file') o.file = a[++i];
@@ -179,6 +185,7 @@ try {
   if (cmd === 'resolve') {
     const o = parseArgs(argv.slice(1));
     if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--files N] [--ambiguity 0..1]' }); }
+    else if (o.attemptInvalid) { out({ ok: false, reason: 'usage', detail: 'resolve --attempt must be an integer' }); }
     else resolve(o);
   } else if (cmd === 'table') {
     out({ ok: true, table: TABLE });

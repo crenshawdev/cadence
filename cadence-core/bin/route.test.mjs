@@ -156,6 +156,16 @@ test('bad enum string in config degrades to unresolved, never crashes', () => {
   assert.equal(r.profile, 'ludicrous'); // names the value that failed to resolve
 });
 
+test('resolve: a non-integer --attempt is usage, not silently coerced (#45.2)', () => {
+  const r = resolve('cad-planner', cfg({ profile: 'fast' }), ['--attempt', 'abc']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+
+  const ok = resolve('cad-planner', cfg({ profile: 'fast' }), ['--attempt', '2']);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.attempt, 2);
+});
+
 test('usage degradation: missing --role and unknown subcommand', () => {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
   const bare = (args) => {
