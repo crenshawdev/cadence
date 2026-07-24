@@ -7,6 +7,7 @@ import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadDataFile } from './lib/load-data.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
@@ -285,4 +286,56 @@ test('overrides layer: repo pin wins over a global pin', () => {
   const repo = cfg({ overrides: { 'cad-planner': 'fable' } }, 'repo-ovr.json');
   const r = resolve('cad-planner', repo, [], { global: g });
   assert.equal(r.model, 'fable');
+});
+
+// --- shipped data-file guard (#40) --------------------------------------------
+
+test('a corrupt CADENCE_ROUTE_TABLE degrades to {ok:false, reason:"data-file"}, not a crash', () => {
+  const badTable = join(dir, 'bad-route-table.json');
+  writeFileSync(badTable, '{ not json at all');
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: badTable };
+  let r;
+  try {
+    r = JSON.parse(execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env }));
+  } catch (e) {
+    r = JSON.parse(e.stdout);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'data-file');
+  assert.match(r.detail, /bad-route-table\.json/);
+});
+
+test('a missing CADENCE_ROUTE_TABLE also degrades to {ok:false, reason:"data-file"}', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: join(dir, 'does-not-exist-table.json') };
+  let r;
+  try {
+    r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  } catch (e) {
+    r = JSON.parse(e.stdout);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'data-file');
+});
+
+test('the real shipped route-table.json still loads fine (no env override)', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  delete env.CADENCE_ROUTE_TABLE;
+  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  assert.equal(r.ok, true);
+  assert.ok(r.table.roles['cad-planner']);
+});
+
+test('loadDataFile: unit-level discrimination of corrupt/absent/valid', () => {
+  const bad = join(dir, 'unit-bad.json');
+  writeFileSync(bad, '{ nope');
+  const corrupt = loadDataFile(bad);
+  assert.equal(corrupt.ok, false);
+  assert.match(corrupt.detail, /unit-bad\.json/);
+  const absent = loadDataFile(join(dir, 'unit-absent.json'));
+  assert.equal(absent.ok, false);
+  const good = join(dir, 'unit-good.json');
+  writeFileSync(good, JSON.stringify({ a: 1 }));
+  const valid = loadDataFile(good);
+  assert.equal(valid.ok, true);
+  assert.deepEqual(valid.data, { a: 1 });
 });

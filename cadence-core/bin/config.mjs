@@ -23,13 +23,15 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers } from './lib/config-merge.mjs';
+import { loadDataFile } from './lib/load-data.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCHEMA = JSON.parse(
-  readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'),
-).keys;
+// Loaded inside the dispatch try (below), not at module top - a missing or
+// corrupt shipped schema must degrade to {ok:false}, never a raw SyntaxError
+// crash (#40).
+let SCHEMA;
 
 // Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
 // dispatch unwinds without process.exit().
@@ -211,6 +213,11 @@ function optFile(tokens) {
 }
 
 try {
+  const schemaPath = process.env.CADENCE_CONFIG_SCHEMA || join(HERE, '..', 'config.schema.json');
+  const loaded = loadDataFile(schemaPath);
+  if (!loaded.ok) fail('data-file', loaded.detail);
+  SCHEMA = loaded.data.keys;
+
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
     const { pairs, errors } = checkPairs(rest);

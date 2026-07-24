@@ -22,14 +22,17 @@
 //   model.auto.escalate_on_failure (bool), model.auto.max_escalations (int)
 //   model.overrides.<role> pin one role to a model alias, bypassing the matrix
 
-import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { emit as out } from './lib/seam-io.mjs';
+import { loadDataFile } from './lib/load-data.mjs';
+import { DONE, emit as out } from './lib/seam-io.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const TABLE = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+// Loaded inside the dispatch try (below), not at module top - a missing or
+// corrupt shipped route table must degrade to {ok:false}, never a raw
+// SyntaxError crash (#40).
+let TABLE;
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
@@ -163,6 +166,11 @@ function parseArgs(a) {
 }
 
 try {
+  const tablePath = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-table.json');
+  const loaded = loadDataFile(tablePath);
+  if (!loaded.ok) { out({ ok: false, reason: 'data-file', detail: loaded.detail }); throw DONE; }
+  TABLE = loaded.data;
+
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   if (cmd === 'resolve') {
@@ -175,5 +183,5 @@ try {
     out({ ok: false, reason: 'usage', detail: 'subcommand: resolve | table' });
   }
 } catch (e) {
-  out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  if (e !== DONE) out({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

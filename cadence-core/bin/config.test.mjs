@@ -227,3 +227,38 @@ test('set: the ceiling warning rides along with a successful write', () => {
   assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).model.auto.ceiling, 'fast');
   assert.match(r.warnings[0].warning, /holds at base/);
 });
+
+// --- shipped data-file guard (#40) --------------------------------------------
+
+test('a corrupt CADENCE_CONFIG_SCHEMA degrades to {ok:false, reason:"data-file"}, not a crash', () => {
+  const badSchema = join(dir, 'bad-schema.json');
+  writeFileSync(badSchema, '{ not json at all');
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global-schema.json'), CADENCE_CONFIG_SCHEMA: badSchema };
+  let r;
+  try {
+    r = JSON.parse(execFileSync('node', [CONFIG, 'keys'], { encoding: 'utf8', env }));
+  } catch (e) {
+    r = JSON.parse(e.stdout);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'data-file');
+  assert.match(r.detail, /bad-schema\.json/);
+});
+
+test('a missing CADENCE_CONFIG_SCHEMA also degrades to {ok:false, reason:"data-file"}', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global-schema2.json'), CADENCE_CONFIG_SCHEMA: join(dir, 'does-not-exist-schema.json') };
+  let r;
+  try {
+    r = JSON.parse(execFileSync('node', [CONFIG, 'keys'], { encoding: 'utf8', env }));
+  } catch (e) {
+    r = JSON.parse(e.stdout);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'data-file');
+});
+
+test('the real shipped config.schema.json still loads fine (no env override)', () => {
+  const r = run(['keys']);
+  assert.equal(r.ok, true);
+  assert.ok(r.keys['model.profile']);
+});
