@@ -503,6 +503,39 @@ test('phase-done: valueless --reqs is bad-args, not internal (#45.1)', () => {
   assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), reqsBefore);
 });
 
+// `--reqs "$IDS"` with IDS unset used to pass the shape guard and then fall
+// through the truthiness test to the bulk phase-filter branch, flipping every
+// non-Deferred row it was never told to touch.
+for (const empty of ['', '   ', ',', ',,']) {
+  test(`phase-done: --reqs "${empty}" refuses instead of flipping the phase`, () => {
+    const dir = makeTree({
+      roadmap: [{ n: 1, name: 'Only' }],
+      reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 1, 'Pending']],
+    });
+    const roadmapBefore = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    const reqsBefore = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+    const r = run(['phase-done', '--n', '1', '--reqs', empty], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), roadmapBefore);
+    assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), reqsBefore);
+  });
+}
+
+test('phase-done: --reqs names exactly the rows it flips; omitting it closes the phase', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Only' }],
+    reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 1, 'Pending'], ['REQ-3', 1, 'Deferred']],
+  });
+  const named = run(['phase-done', '--n', '1', '--reqs', 'REQ-1'], dir);
+  assert.equal(named.ok, true);
+  assert.deepEqual(named.reqs, ['REQ-1']);
+
+  const all = run(['phase-done', '--n', '1'], dir);
+  assert.equal(all.ok, true);
+  assert.deepEqual(all.reqs, ['REQ-1', 'REQ-2']); // Deferred still exempt
+});
+
 test('phase-done: unknown phase refuses; nothing written', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');

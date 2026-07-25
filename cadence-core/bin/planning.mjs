@@ -218,8 +218,19 @@ function cmdCursorSet(dir, opts) {
 function cmdPhaseDone(dir, opts) {
   const n = Number(opts.n);
   if (!opts.n || Number.isNaN(n)) return fail('bad-args', 'phase-done needs --n <phase>');
-  if ('reqs' in opts && typeof opts.reqs !== 'string') {
-    return fail('bad-args', 'phase-done --reqs needs a comma-separated id list');
+  // An explicit --reqs means "exactly these rows". An empty one is almost
+  // always an unset variable (`--reqs "$IDS"`), and treating it as "flag
+  // absent" would silently widen that to every non-Deferred row of the phase -
+  // the opposite of the caller's intent - so it fails here instead.
+  let namedReqs = null;
+  if ('reqs' in opts) {
+    if (typeof opts.reqs !== 'string') {
+      return fail('bad-args', 'phase-done --reqs needs a comma-separated id list');
+    }
+    namedReqs = opts.reqs.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!namedReqs.length) {
+      return fail('bad-args', 'phase-done --reqs is empty; omit it to close the whole phase');
+    }
   }
   const undo = 'undo' in opts;
   const roadmapFile = join(dir, 'ROADMAP.md');
@@ -234,9 +245,8 @@ function cmdPhaseDone(dir, opts) {
   let newReqText = null;
   if (reqText !== null) {
     const rows = parseRequirements(reqText);
-    const ids = opts.reqs
-      ? opts.reqs.split(',').map((s) => s.trim())
-      : rows.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
+    const ids = namedReqs
+      ?? rows.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
     const res = setReqStatus(reqText, ids, undo ? 'Pending' : 'Complete');
     reqs = res.changed;
     newReqText = res.text;
