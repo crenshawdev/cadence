@@ -39,7 +39,7 @@ import {
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { requireInt } from './lib/require-int.mjs';
+import { requireCursorNumber } from './lib/require-int.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -165,8 +165,12 @@ function cmdCursorGet(dir) {
 
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
-  const phase = Number(opts.phase);
-  if (!opts.phase || Number.isNaN(phase)) return fail('bad-args', 'cursor set needs --phase <N>');
+  if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
+  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
+  }
+  const phase = parsedPhase.value;
   if (!opts.status || !opts.next) return fail('bad-args', 'cursor set needs --status and --next');
   if (!CURSOR_STATUSES.includes(opts.status)) {
     return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`);
@@ -176,8 +180,8 @@ function cmdCursorSet(dir, opts) {
   let name = opts.name;
   let total;
   if ('total' in opts) {
-    const parsed = requireInt(opts.total);
-    if (!parsed.ok) return fail('bad-args', 'cursor set --total needs an integer');
+    const parsed = requireCursorNumber(opts.total);
+    if (!parsed.ok) return fail('bad-args', 'cursor set --total needs a non-negative integer');
     total = parsed.value;
   }
   if (name === undefined || total === undefined) {

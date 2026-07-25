@@ -382,6 +382,41 @@ test('cursor set: a non-integer --total is bad-args and writes nothing (#42)', (
   assert.equal(ok.cursor.total, 4);
 });
 
+// The integer guard is not the file contract: parseCursor reads unsigned
+// decimals only, so these all used to write a STATE.md the next `cursor get`
+// rejected as unparseable-cursor.
+for (const [flag, value] of [
+  ['--total', '-2'], ['--total', '1e21'], ['--total', '1.5'],
+  ['--phase', '-1'], ['--phase', '1e21'],
+]) {
+  test(`cursor set: ${flag} ${value} is bad-args and leaves a readable cursor`, () => {
+    const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+    const seed = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+      '--next', '/cad-execute 1', '--name', 'Foo', '--total', '4'], dir);
+    assert.equal(seed.ok, true);
+    const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+
+    const args = ['cursor', 'set', '--phase', '1', '--status', 'planned',
+      '--next', '/cad-execute 1', '--name', 'Foo', '--total', '4'];
+    args[args.indexOf(flag) + 1] = value;
+    const r = run(args, dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before);
+    // The real regression: the cursor stays readable by its own parser.
+    assert.equal(run(['cursor', 'get'], dir).ok, true);
+  });
+}
+
+test('cursor set: a decimal phase insertion (2.1) is still accepted', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const r = run(['cursor', 'set', '--phase', '2.1', '--status', 'planned',
+    '--next', '/cad-execute 2.1', '--name', 'Insert', '--total', '4'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.phase, 2.1);
+  assert.equal(run(['cursor', 'get'], dir).phase, 2.1);
+});
+
 test('cursor set: no ROADMAP and no flags cannot derive', () => {
   const dir = makeTree({});
   const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned', '--next', 'x'], dir);
