@@ -153,15 +153,19 @@ independently valid. Use `--global` for machine-wide defaults (e.g. a preferred
 
 For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
 - Validate and write in one shot through the **Validation seam**:
-  `config.mjs set <key=value>…`. It rejects an unknown key, a bad value, or a
-  target file whose top level is not a JSON object (`{ok:false,
+  `config.mjs set <key=value>…`. It rejects an unknown key, a bad value, a
+  target file whose top level is not a JSON object, or a dotted path running
+  through a container that already holds a non-object (`{ok:false,
   reason:"invalid", detail:[…]}`) atomically - nothing is written unless every
   pair is valid - and echoes `{ok:true, changed:[…]}` on success.
 - On rejection, surface the seam's `detail` (the invalid keys and why). For a
   per-key detail, look up the allowed values via `config.mjs keys`; for a
   `(root)` detail, that lookup returns nothing - the remediation instead is
   that the target file's top level is not a JSON object (repair or replace the
-  file). Do not retry with a malformed config.
+  file). A `cannot set through "…"` detail carries its own remediation: that
+  container holds an array or a scalar and must be removed or replaced first -
+  the seam will not overwrite it, because doing so would discard its contents.
+  Do not retry with a malformed config.
 
 ## Review provider setup (cold branch)
 

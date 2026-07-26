@@ -135,14 +135,48 @@ test('set: a scalar top-level config is rejected as invalid, never reason:intern
   assert.equal(written.model.profile, 'fast');
 });
 
-test('set: an array parent container cannot swallow a reported change', () => {
-  const file = join(dir, 'w-arr-parent.json');
-  writeFileSync(file, JSON.stringify({ git: ['a'] }));
-  const r = run(['set', '--file', file, 'git.on_protected=allow'], join(dir, 'no-global-w-arr-parent.json'));
+// Rewritten per CONTEXT D-04 (Phase-1 D-05 lineage): the previous version of
+// this test asserted ok:true AND that the key persisted, which can only hold if
+// the parent container is thrown away. Neither half of "lose the change, keep
+// the data" / "lose the data, keep the change" is the contract - refusing is.
+test('set: a non-object parent container is refused, not overwritten', () => {
+  for (const [label, parent] of [['array', ['main', 'master']], ['scalar', 0], ['string', 'x']]) {
+    const file = join(dir, `w-${label}-parent.json`);
+    const bytes = JSON.stringify({ git: parent });
+    writeFileSync(file, bytes);
+    const r = run(['set', '--file', file, 'git.on_protected=allow'], join(dir, `no-global-w-${label}-parent.json`));
+    assert.equal(r.ok, false, label);
+    assert.equal(r.reason, 'invalid', label);
+    assert.notEqual(r.reason, 'internal', label);
+    assert.equal(r.detail[0].key, 'git.on_protected', label);
+    assert.match(r.detail[0].error, /cannot set through "git"/, label);
+    // the container survives byte-for-byte: no reported-but-destructive write
+    assert.equal(readFileSync(file, 'utf8'), bytes, label);
+  }
+});
+
+test('set: an absent or null parent is still auto-created', () => {
+  const file = join(dir, 'w-vivify-parent.json');
+  writeFileSync(file, JSON.stringify({ granularity: 'coarse', model: null }));
+  const r = run(['set', '--file', file, 'git.on_protected=allow', 'model.profile=fast'],
+    join(dir, 'no-global-w-vivify.json'));
   assert.equal(r.ok, true);
-  assert.equal(r.changed[0].key, 'git.on_protected');
   const written = JSON.parse(readFileSync(file, 'utf8'));
-  assert.equal(written.git.on_protected, 'allow'); // failing-capable: HEAD leaves this absent
+  assert.equal(written.git.on_protected, 'allow');   // absent parent
+  assert.equal(written.model.profile, 'fast');       // null parent holds no data
+  assert.equal(written.granularity, 'coarse');
+});
+
+test('set: one bad path refuses the whole multi-pair write (all-or-nothing)', () => {
+  const file = join(dir, 'w-mixed-pairs.json');
+  const bytes = JSON.stringify({ git: ['main'] });
+  writeFileSync(file, bytes);
+  const r = run(['set', '--file', file, 'granularity=fine', 'git.on_protected=allow'],
+    join(dir, 'no-global-w-mixed.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  // the valid pair must not have landed either - checkPaths runs before setInto
+  assert.equal(readFileSync(file, 'utf8'), bytes);
 });
 
 test('validate: a scalar top-level config fails, never ok:true checked:0 (#45.3)', () => {

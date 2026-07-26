@@ -157,11 +157,40 @@ function crossWarnings(pairs) {
   return warnings;
 }
 
+// A dotted key writes through intermediate containers. Auto-vivifying one that
+// is ABSENT (missing, or an explicit null holding no data) is the point of
+// `set`; silently replacing one that already holds an array or a scalar throws
+// its contents away, which is the same data loss the `(root)` check refuses at
+// depth 0. checkPaths refuses it the same way and BEFORE any pair is applied,
+// so a multi-pair set is all-or-nothing rather than half-written.
+function checkPaths(cfg, pairs) {
+  const errors = [];
+  for (const { key } of pairs) {
+    const parts = key.split('.');
+    let node = cfg;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const next = node[parts[i]];
+      if (next === undefined || next === null) break;   // absent -> setInto creates it
+      if (!isPlainObject(next)) {
+        errors.push({
+          key,
+          error: `cannot set through "${parts.slice(0, i + 1).join('.')}": ` +
+            'it holds a non-object; remove or replace it first',
+          value: next,
+        });
+        break;
+      }
+      node = next;
+    }
+  }
+  return errors;
+}
+
 function setInto(obj, dotted, value) {
   const parts = dotted.split('.');
   let node = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (node[parts[i]] === undefined || node[parts[i]] === null || !isPlainObject(node[parts[i]])) node[parts[i]] = {};
+    if (node[parts[i]] === undefined || node[parts[i]] === null) node[parts[i]] = {};
     node = node[parts[i]];
   }
   node[parts[parts.length - 1]] = value;
@@ -179,6 +208,8 @@ function set(file, tokens, create) {
     else fail('read', `cannot read/parse ${file}: ${e.message}`);
   }
   if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }]);
+  const pathErrors = checkPaths(cfg, pairs);
+  if (pathErrors.length) fail('invalid', pathErrors);
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
   // atomicWrite (temp + rename), not a bare write: config is a live layer
