@@ -363,6 +363,30 @@ test('get: an absent layer stays silent and an unparseable layer warns exactly o
   assert.doesNotMatch(rZero.warnings[0], /not an object/);
 });
 
+test('get: one file resolving as both layers warns once, not twice', () => {
+  // mergeLayers reads the global and repo layers independently, so a file that
+  // IS both was reported twice - one broken file, two identical diagnostics.
+  for (const [label, bytes, pattern] of [
+    ['non-object', 'null', /not an object/],
+    ['unparseable', '{ torn', /failed to parse/],
+  ]) {
+    const shared = join(dir, `shared-both-layers-${label}.json`);
+    writeFileSync(shared, bytes);
+    const r = run(['get', '--file', shared, 'model.profile'], shared);
+    assert.equal(r.ok, true, label);
+    assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
+    assert.match(r.warnings[0], pattern, label);
+  }
+
+  // two genuinely different broken layers still get one entry each
+  const g = join(dir, 'two-broken-global.json');
+  const repo = join(dir, 'two-broken-repo.json');
+  writeFileSync(g, '0');
+  writeFileSync(repo, '[1,2]');
+  const r2 = run(['get', '--file', repo, 'model.profile'], g);
+  assert.equal(r2.warnings.length, 2);
+});
+
 // --- cross-key warnings ---------------------------------------------------
 
 test('check: ceiling at/below the auto base profile warns but stays valid', () => {
