@@ -2,7 +2,7 @@
 status: testing
 phase: 2
 started: 2026-07-25
-updated: 2026-07-25
+updated: 2026-07-26
 ---
 
 ## Items
@@ -73,32 +73,52 @@ fix: 68061f5, retest
 
 ### 9. config write face still unguarded: a reported write that did not happen
 expected: #45.3 closed the validate and read faces; `set` was not covered. The goal's 'or pass config validation' half therefore holds on two faces of three, and the scalar case reproduces exactly the raw-JS-error-as-internal class D-04 set out to eliminate.
-status: fail
+status: pass
 first_pass: fail
 source: verifier
-evidence: Array config: set --file w-arr.json granularity=fine -> {"ok":true,"changed":[{"key":"granularity","value":"fine"}]} exit=0, file still [1,2,3] - key never persisted. Scalar config: same command -> {"ok":false,"reason":"internal","detail":"Cannot create property 'granularity' on number '42'"}.
+evidence: Retest at HEAD (9a99a07): set --file arr.json granularity=fine on [1,2,3] -> {"ok":false,"reason":"invalid","detail":[{"key":"(root)",...}]} exit=1, md5 f1e46f32 unchanged across the call. Scalar 42 -> same shape, md5 a1d0c6e8 unchanged, NOT reason:internal. Control {"granularity":"standard"} -> ok:true and the key persisted.
 reported: #45.3 closed the validate and read faces; `set` was not covered. The goal's 'or pass config validation' half therefore holds on two faces of three, and the scalar case reproduces exactly the raw-JS-error-as-internal class D-04 set out to eliminate.
 severity: major
 cause: D-02 scoped #45.3 to the validate and read paths; cmdSet re-serializes the parsed top-level without an object-shape check, so an array round-trips (dropping the key while reporting changed) and a scalar throws a raw TypeError surfaced as reason:internal.
-fix: routed to /cad-plan - config write face (set), out of #45.3's validate+read scope
+fix: 9a99a07, retest
 
 ### 10. Falsy non-object config layer is skipped with no warning at all
 expected: The read-face warning is gated on truthiness, so the layers most likely to appear from a truncated write are the ones that warn least. Inconsistent with validate, which reports the same files broken.
-status: fail
+status: pass
 first_pass: fail
 source: verifier
-evidence: With .planning/config.json set to null, 0, false, and "" in turn: get granularity -> {"ok":true,"values":{"granularity":"standard"},"source":"global"} every time, no warnings key - whereas a truthy 42 does emit the warning. lib/config-merge.mjs:84,88
+evidence: Retest at HEAD (346c2b0): .planning/config.json = null, 0, false, "" each -> get granularity returns source:"global" with exactly one warnings[] entry "config layer .planning/config.json top-level is not an object; skipped" - identical to the truthy 42 case. Absent file -> no warnings key at all. Valid object -> source:"global+repo", no warning.
 reported: The read-face warning is gated on truthiness, so the layers most likely to appear from a truncated write are the ones that warn least. Inconsistent with validate, which reports the same files broken.
 severity: minor
 cause: lib/config-merge.mjs:84,88 gates the skip-warning on layer truthiness, so null/0/false/'' take the silent path while a truthy scalar warns.
-fix: routed to /cad-plan - falsy-layer warning, adjacent to the phase-1 malformed-layer residue
+fix: 346c2b0, retest
+
+### 11. config set does not destroy a non-object container below the top level
+expected: With F = {"git":["main","master"]}, `config.mjs set --file F git.on_protected=allow` refuses (ok:false naming the path) and leaves F byte-identical - it does NOT report ok:true while replacing the array with {"on_protected":"allow"}. Same for a scalar parent {"git":0}.
+status: pass
+first_pass: fail
+evidence: Retest at 2b50d5b: set --file r.json git.on_protected=allow on {"git":["main","master"]} -> {"ok":false,"reason":"invalid","detail":[{"key":"git.on_protected","error":"cannot set through \"git\": it holds a non-object; remove or replace it first","value":["main","master"]}]} exit=1, md5 475c1932 unchanged, both branch names intact. Scalar {"git":0} and string parents same. Absent/null parent still auto-creates. Multi-pair set is all-or-nothing. Both refusal tests fail against pre-fix source (29 pass/2 fail in a HEAD worktree).
+reported: set --file nest.json git.on_protected=allow on {"git":["main","master"]} returns ok:true changed:[git.on_protected] and rewrites the file as {"git":{"on_protected":"allow"}} - both branch names gone, nothing in changed[] or warnings saying a container was discarded. {"git":0} behaves the same.
+severity: major
+cause: setInto (config.mjs:164) walks the path creating objects, and replaces any non-object it finds mid-path instead of refusing. 9a99a07 added the shape check at depth 0 only, so depth >= 1 inherited the opposite behavior: at 66aed5d the array survived and the change was dropped; at HEAD the change lands and the data is destroyed.
+fix: 2b50d5b, retest
+
+### 12. One non-object layer produces exactly one warning
+expected: A single file resolving as both the global and the repo layer emits ONE warnings[] entry, not two: with CADENCE_GLOBAL_CONFIG=/path/g.json containing null, `config.mjs get --global granularity` reports that file once.
+status: pass
+first_pass: fail
+evidence: Retest at 28bd532: CADENCE_GLOBAL_CONFIG=g.json (null) with get --global granularity -> exactly one warnings[] entry, was two. Two genuinely different broken layers still yield 2. Test fails against pre-fix source (31 pass/1 fail in a HEAD worktree). Suite 295 pass/0 fail, tsc clean, self-verify ok:true problems:[].
+reported: CADENCE_GLOBAL_CONFIG=/path/g.json containing null -> get --global granularity returns two identical warnings[] entries naming the same file once each.
+severity: cosmetic
+cause: mergeLayers (lib/config-merge.mjs:92) reads GLOBAL_CONFIG and repoFile as independent layers with no identity check, so one file resolving as both warns twice. Pre-existing for truthy scalars; 346c2b0 present-gate extended the doubling to falsy layers, which previously produced zero entries.
+fix: 28bd532, retest
 
 ## Summary
 
-total: 10
-passed: 8
-failed: 2
+total: 12
+passed: 12
+failed: 0
 pending: 0
 skipped: 0
 blocked: 0
-reworked: 4
+reworked: 6

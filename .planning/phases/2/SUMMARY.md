@@ -71,6 +71,8 @@ top-level config is rejected on all three faces - validate, read/merge, and
 | - | - | 68061f5 | refuse an empty `phase-done --reqs` instead of closing the whole phase |
 | 2 | 1 | 9a99a07 | reject a non-object top-level config on the `set` write face |
 | 2 | 2 | 346c2b0 | warn on a falsy non-object config layer, not just a truthy one |
+| - | - | 2b50d5b | refuse a non-object parent container instead of overwriting it |
+| - | - | 28bd532 | report one warning per broken config layer, not one per read |
 
 ## Deviations
 
@@ -96,7 +98,7 @@ Found by the `diff` review trigger on 66aed5d..HEAD (advisory gate,
 `adjudicated` mode - each claim re-run against the code here, not taken on the
 reviewer's word):
 
-- **REGRESSION, introduced by 9a99a07, severity HIGH: `setInto` destroys a
+- ~~**REGRESSION, introduced by 9a99a07, severity HIGH: `setInto` destroys a
   non-object container one level below the one it now protects.** With
   `F = {"git":["main","master"]}`, `config.mjs set --file F git.on_protected=allow`
   returns `{"ok":true,"changed":[{"key":"git.on_protected","value":"allow"}]}`
@@ -105,25 +107,35 @@ reviewer's word):
   (`cadence-core/bin/config.mjs:164`). At 66aed5d the same command left the
   array intact and silently dropped the change instead. So the phase traded
   "lose the change, keep the data" for "lose the data, keep the change" at
-  depth >= 1, under exactly the condition it now refuses at depth 0. The fix is
-  to make the mid-path container check fail the way the top-level one does:
-  `ok:false` naming the path, file untouched.
-  **Three independent confirmations:** `cad-reviewer` raised it; it was
-  reproduced live here against a `66aed5d` worktree; and after the openai tier
-  was repaired (below), the same diff was replayed through
+  depth >= 1, under exactly the condition it now refuses at depth 0.~~
+  **CLOSED 2026-07-26 at UAT (item 11, commit 2b50d5b).** `checkPaths` applies
+  the same refusal the `(root)` check applies and runs before any pair is
+  written, so a multi-pair set is all-or-nothing; an absent or `null` parent
+  still auto-creates, since neither holds data to lose. Verified live: the
+  array, scalar and string parent cases all return `ok:false` naming the path
+  with the file byte-identical (md5 unchanged across the call).
+  **Three independent confirmations before the fix:** `cad-reviewer` raised it;
+  it was reproduced live against a `66aed5d` worktree; and after the openai
+  tier was repaired (below), the same diff was replayed through
   `openai/gpt-5.4-mini` on a clean context, which re-found it unprompted at
   severity `high` and named the scalar parent case (`{"git":0}`) too. Reviewer
   convergence on a defect neither reviewer saw the other report is the strongest
-  signal this phase produced - treat it as confirmed, not suspected.
-- **A single file that resolves as BOTH the global and the repo layer warns
+  signal this phase produced. Note for the record: `config.test.mjs` had
+  ALSO encoded the defect as a passing assertion (`ok:true` plus the persisted
+  key, a pair that can only hold if the container is discarded); it was
+  rewritten per CONTEXT D-04 rather than supplemented.
+- ~~**A single file that resolves as BOTH the global and the repo layer warns
   twice.** `mergeLayers` reads `GLOBAL_CONFIG` and `repoFile` as independent
   layers with no identity check (`lib/config-merge.mjs:92`), so with
   `CADENCE_GLOBAL_CONFIG=/tmp/g.json` containing `null`,
   `config.mjs get --global granularity` returns two identical
   `warnings[]` entries for one file. Pre-existing for truthy scalars; 346c2b0's
   `present` gate extends the doubling to falsy layers, which previously produced
-  zero entries. Cosmetic (no data or resolution effect), but it breaks the
-  "exactly one entry per non-object layer" property the change is built on.
+  zero entries.~~ **CLOSED 2026-07-26 at UAT (item 12, commit 28bd532).** Every
+  warning names its own file, so identical strings mean the same layer and
+  collapse; two genuinely broken layers still get one entry each, restoring the
+  "exactly one entry per non-object layer" property the `present` gate is built
+  on. `config` and `source` are untouched.
 - Minor, carried from plan 1: `planning.test.mjs:376`'s
   `JSON.stringify(r).includes('NaN') === false` is vacuous - `JSON.stringify`
   renders NaN as `null`, so it passes on unpatched code too. The test stays
@@ -168,12 +180,17 @@ returns `source:"global"` with no `warnings` key at all - UAT item 10's
 presence-vs-truthiness distinction. `cursor set --total -2 / --phase -1` and
 `phase-done --reqs ""` (the two post-UAT gaps) are refused with `bad-args`
 leaving STATE.md byte-identical. `node --test cadence-core/bin/*.test.mjs`
-reports 292 pass / 0 fail and `tsc -p tsconfig.ci.json` exits clean, both re-run
-here at HEAD. The honest remaining gap is that the goal's generalization - "no
-bad flag can corrupt STATE.md or pass config validation" - is now violated one
-level deeper than it was: 9a99a07 closed the top-level write face but introduced
-a path where a non-object container at depth >= 1 is silently replaced and its
-contents lost (`{"git":["main","master"]}` -> `{"git":{"on_protected":"allow"}}`,
-`ok:true`, verified live at HEAD against 66aed5d). The phase closes its four
-named requirements and both UAT gaps; it does not yet close the class those
-requirements were drawn from, and it added one new instance of that class.
+reports 295 pass / 0 fail, `tsc -p tsconfig.ci.json` exits clean, and
+`self-verify.mjs` reports `ok:true, problems:[]`, all re-run at UAT close.
+
+The gap this section recorded at execution close - that 9a99a07 shut the
+top-level write face while opening a deeper one, so a non-object container at
+depth >= 1 was silently replaced and its contents lost - was fixed during
+verification (item 11, 2b50d5b) rather than carried. `config.mjs set` now
+refuses a non-object container at any depth, naming the path and leaving the
+file byte-identical, so the goal's generalization holds on the write face
+uniformly instead of at depth 0 only. Both UAT items the gaps plan was written
+for pass on retest, and the two defects UAT itself surfaced (items 11, 12) were
+fixed and retested in the same session. The phase closes its four named
+requirements, both planned gaps, and both verification-found defects with no
+open items.

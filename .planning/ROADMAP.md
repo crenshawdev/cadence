@@ -22,7 +22,7 @@ won't-fix. Per-task plans come at `/cad-plan`.
   absent or malformed shipped data/config file is surfaced, never silently
   swallowed into defaults; the "never blocks the spine" seam contract
   (`{ok:false}`, not a raw crash) holds. #39 is the sweep's top finding.
-- [ ] **Phase 2: Seam input validation** - (#42, #45). Goal: a shared seam-flag
+- [x] **Phase 2: Seam input validation** - (#42, #45). Goal: a shared seam-flag
   validator rejects bad input types (NaN `--total`, valueless `--reqs`, bad
   `--attempt`, scalar config) with a clean `bad-args`/`usage` result before any
   write, so no bad flag can corrupt STATE.md or pass config validation.
