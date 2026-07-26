@@ -280,6 +280,55 @@ test('get: a scalar repo config falls back to defaults, never source:repo (#45.3
   assert.match(r.warnings[0], /not an object/);
 });
 
+test('get: a falsy non-object repo layer warns like a truthy one', () => {
+  const gpath = join(dir, 'no-global-for-falsy-repo.json');
+  for (const content of ['null', '0', 'false', '""']) {
+    const repo = join(dir, `falsy-repo-${content.replace(/[^a-z0-9]/gi, '_')}.json`);
+    writeFileSync(repo, content);
+    const r = run(['get', '--file', repo, 'model.profile'], gpath);
+    const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo3.json'), 'model.profile'], gpath);
+    assert.equal(r.ok, true, `content ${content}`);
+    assert.equal(r.warnings.length, 1, `content ${content}`);
+    assert.match(r.warnings[0], new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(r.warnings[0], /not an object/);
+    assert.deepEqual(r.values, absentRepo.values, `content ${content}`);
+    assert.equal(r.source, absentRepo.source, `content ${content}`);
+  }
+});
+
+test('get: a falsy non-object global layer warns too', () => {
+  const gpath = join(dir, 'falsy-global.json');
+  writeFileSync(gpath, '0');
+  const repo = join(dir, 'fine-repo-for-falsy-global.json');
+  writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
+  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.source, 'repo'); // repo value still wins
+  assert.equal(r.values['model.profile'], 'fast');
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /falsy-global\.json/);
+});
+
+test('get: an absent layer stays silent and an unparseable layer warns exactly once', () => {
+  const gpath = join(dir, 'no-global-for-absent-vs-corrupt.json');
+  const absent = run(['get', '--file', join(dir, 'truly-absent-repo4.json'), 'model.profile'], gpath);
+  assert.equal(absent.warnings, undefined);
+
+  const torn = join(dir, 'torn-mid-write.json');
+  writeFileSync(torn, '{ torn mid-write');
+  const rTorn = run(['get', '--file', torn, 'model.profile'], gpath);
+  assert.equal(rTorn.warnings.length, 1);
+  assert.match(rTorn.warnings[0], /failed to parse/);
+  assert.doesNotMatch(rTorn.warnings[0], /not an object/);
+
+  const zeroByte = join(dir, 'zero-byte.json');
+  writeFileSync(zeroByte, '');
+  const rZero = run(['get', '--file', zeroByte, 'model.profile'], gpath);
+  assert.equal(rZero.warnings.length, 1);
+  assert.match(rZero.warnings[0], /failed to parse/);
+  assert.doesNotMatch(rZero.warnings[0], /not an object/);
+});
+
 // --- cross-key warnings ---------------------------------------------------
 
 test('check: ceiling at/below the auto base profile warns but stays valid', () => {

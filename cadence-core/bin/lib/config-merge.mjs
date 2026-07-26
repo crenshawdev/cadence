@@ -28,16 +28,19 @@ export function readJSON(file) {
  * D-01) from one that exists but fails to parse (surfaced via `warning`, so a
  * corrupt layer is diagnosable instead of quietly acting identical to
  * absence). Still never fatal - `value` is null either way, so a bad layer
- * contributes nothing to the merge.
+ * contributes nothing to the merge. `present` is true only when the file was
+ * read and parsed successfully - whatever the parsed value (`null`, `0`,
+ * `false`, `""` included) - so callers can gate a "not an object" warning on
+ * presence rather than truthiness without double-warning a parse failure.
  * @param {string} file
- * @returns {{value: any, warning: string|null}}
+ * @returns {{value: any, warning: string|null, present: boolean}}
  */
 export function readLayer(file) {
   try {
-    return { value: JSON.parse(readFileSync(file, 'utf8')), warning: null };
+    return { value: JSON.parse(readFileSync(file, 'utf8')), warning: null, present: true };
   } catch (e) {
-    if (e && e.code === 'ENOENT') return { value: null, warning: null };
-    return { value: null, warning: `config layer ${file} failed to parse and was skipped: ${e.message}` };
+    if (e && e.code === 'ENOENT') return { value: null, warning: null, present: false };
+    return { value: null, warning: `config layer ${file} failed to parse and was skipped: ${e.message}`, present: false };
   }
 }
 
@@ -65,11 +68,12 @@ export function isPlainObject(v) {
  * warnings} where source names the layers that applied ("global+repo",
  * "defaults"...) and warnings names any layer that failed to PARSE (distinct
  * from being legitimately absent - D-01) or whose top-level parsed to
- * something other than a JSON object (a scalar/array config is skipped, not
- * merged in as if it were the whole config - #45.3). `config`/`source` are
- * byte-identical to the absent case for a malformed or non-object layer;
- * only `warnings` differs, and it is empty (not present at all) when nothing
- * failed to parse or was skipped.
+ * something other than a JSON object - present but not a JSON object, so a
+ * falsy parse (`null`, `0`, `false`, `""`) warns exactly like a truthy scalar
+ * (a scalar/array config is skipped, not merged in as if it were the whole
+ * config - #45.3). `config`/`source` are byte-identical to the absent case
+ * for a malformed or non-object layer; only `warnings` differs, and it is
+ * empty (not present at all) when nothing failed to parse or was skipped.
  * Defaults are the caller's concern (route has DEFAULTS, config.mjs get
  * builds them from the schema) - this merges only the two file layers.
  * @param {string} repoFile
@@ -81,11 +85,11 @@ export function mergeLayers(repoFile) {
   const warnings = [global.warning, repo.warning].filter(Boolean);
   let globalValue = global.value;
   let repoValue = repo.value;
-  if (globalValue && !isPlainObject(globalValue)) {
+  if (global.present && !isPlainObject(globalValue)) {
     warnings.push(`config layer ${GLOBAL_CONFIG} top-level is not an object; skipped`);
     globalValue = null;
   }
-  if (repoValue && !isPlainObject(repoValue)) {
+  if (repo.present && !isPlainObject(repoValue)) {
     warnings.push(`config layer ${repoFile} top-level is not an object; skipped`);
     repoValue = null;
   }
