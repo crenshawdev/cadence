@@ -99,10 +99,15 @@ export function mergeLayers(repoFile) {
     config: deepMerge(globalValue || {}, repoValue || {}),
     source: layers.length ? layers.join('+') : 'defaults',
     // One file can resolve as BOTH layers (CADENCE_GLOBAL_CONFIG pointed at the
-    // repo file, or a symlink between them). Merging it onto itself is a no-op,
-    // so only the diagnostics doubled - one broken file reported twice. Every
-    // warning names its file, so identical strings mean the same layer and
-    // collapse; two genuinely broken layers still get one entry each.
+    // repo file). Merging it onto itself is a no-op, so the damage is confined
+    // to reporting: every warning names its file, so identical strings mean the
+    // same layer and collapse, while two genuinely broken layers still get one
+    // entry each. This keys on the RENDERED path, so it collapses an exact
+    // string match only - a symlink or an absolute-vs-relative alias for the
+    // same file still doubles, and `source` still labels one shared file
+    // "global+repo" in every one of those cases. Closing both arms needs a
+    // realpath/inode identity check on the two layer paths before they are
+    // read, not a string compare here.
     warnings: [...new Set(warnings)],
   };
 }
