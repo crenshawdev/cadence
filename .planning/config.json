@@ -1,7 +1,6 @@
 {
   "granularity": "standard",
   "model": {
-    "profile": "auto",
     "auto": {
       "ceiling": "quality",
       "escalate_on_failure": true,
@@ -18,10 +17,10 @@
     "test_command": null
   },
   "parallelization": {
-    "enabled": false,
     "max_concurrent_agents": 3,
     "min_plans_for_parallel": 2,
-    "use_worktrees": true
+    "use_worktrees": true,
+    "enabled": true
   },
   "git": {
     "protected_branches": [
@@ -41,32 +40,6 @@
   },
   "review": {
     "mode": "adjudicated",
-    "reviewers": [
-      "claude-subagent",
-      "deepseek"
-    ],
-    "key_file": null,
-    "providers": {
-      "openai": {
-        "tiers": {
-          "flagship": null,
-          "balanced": null,
-          "cheap": null
-        }
-      },
-      "gemini": {
-        "tiers": {
-          "flagship": null,
-          "balanced": null,
-          "cheap": null
-        }
-      },
-      "deepseek": {
-        "tiers": {
-          "flagship": "deepseek-v4-pro"
-        }
-      }
-    },
     "triggers": {
       "plan": {
         "gate": "adjudicated",
