@@ -96,8 +96,8 @@ Found by the `diff` review trigger on 66aed5d..HEAD (advisory gate,
 `adjudicated` mode - each claim re-run against the code here, not taken on the
 reviewer's word):
 
-- **REGRESSION, introduced by 9a99a07: `setInto` destroys a non-object
-  container one level below the one it now protects.** With
+- **REGRESSION, introduced by 9a99a07, severity HIGH: `setInto` destroys a
+  non-object container one level below the one it now protects.** With
   `F = {"git":["main","master"]}`, `config.mjs set --file F git.on_protected=allow`
   returns `{"ok":true,"changed":[{"key":"git.on_protected","value":"allow"}]}`
   and rewrites F as `{"git":{"on_protected":"allow"}}` - both branch names gone,
@@ -108,6 +108,13 @@ reviewer's word):
   depth >= 1, under exactly the condition it now refuses at depth 0. The fix is
   to make the mid-path container check fail the way the top-level one does:
   `ok:false` naming the path, file untouched.
+  **Three independent confirmations:** `cad-reviewer` raised it; it was
+  reproduced live here against a `66aed5d` worktree; and after the openai tier
+  was repaired (below), the same diff was replayed through
+  `openai/gpt-5.4-mini` on a clean context, which re-found it unprompted at
+  severity `high` and named the scalar parent case (`{"git":0}`) too. Reviewer
+  convergence on a defect neither reviewer saw the other report is the strongest
+  signal this phase produced - treat it as confirmed, not suspected.
 - **A single file that resolves as BOTH the global and the repo layer warns
   twice.** `mergeLayers` reads `GLOBAL_CONFIG` and `repoFile` as independent
   layers with no identity check (`lib/config-merge.mjs:92`), so with
@@ -122,11 +129,21 @@ reviewer's word):
   renders NaN as `null`, so it passes on unpatched code too. The test stays
   failing-capable through its `r.ok`/STATE.md assertions, so this is a wart,
   not a coverage hole.
-- Tooling, not code: the `openai` cross-model reviewer could not run this phase
-  either - `review.providers.openai.tiers.balanced` is pinned to
+- ~~Tooling, not code: the `openai` cross-model reviewer could not run this
+  phase either - `review.providers.openai.tiers.balanced` was pinned to
   `gpt-5.1-codex-mini`, which the provider returns
-  `404 model_not_found / deprecated` for. The review ran with `claude-subagent`
-  + `deepseek` only. Re-point the tier via `/cad-config`.
+  `404 model_not_found / deprecated` for, so the phase's diff review ran with
+  `claude-subagent` + `deepseek` only.~~ **RESOLVED 2026-07-26 via
+  `/cad-config`.** The dead pin lived in the GLOBAL layer
+  (`~/.claude/cadence/config.json`), not this repo's config, which is why it
+  survived a repo-level review of the settings. Now `balanced=gpt-5.4-mini`,
+  `cheap=gpt-5.4-nano`; flagship `gpt-5.3-codex` was smoke-tested and kept, so
+  the blocking gates (`plan`, `risk_surface`, `pre_ship`) were never degraded -
+  only the advisory `diff` trigger lost a voice. Note for future triage: the
+  provider's models endpoint still LISTS deprecated ids, so it is not a
+  usability check - `gpt-5.1-codex-mini` and `gpt-5.2-codex` both appear in
+  `detect-models` output while 404-ing on use. Verify a candidate with a real
+  call before writing it to a tier.
 
 Reviewer claims that did NOT survive adjudication:
 
