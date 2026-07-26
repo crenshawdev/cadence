@@ -56,7 +56,7 @@ export function deepMerge(base, over) {
 }
 
 /** @param {any} v */
-function isPlainObject(v) {
+export function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 

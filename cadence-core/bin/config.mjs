@@ -22,7 +22,7 @@
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { GLOBAL_CONFIG, mergeLayers } from './lib/config-merge.mjs';
+import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -100,7 +100,7 @@ function validate(file) {
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) { fail('read', `cannot read/parse ${file}: ${e.message}`); }
-  if (cfg === null || typeof cfg !== 'object' || Array.isArray(cfg)) {
+  if (!isPlainObject(cfg)) {
     return out({ ok: false, file, checked: 0,
       errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }] });
   }
@@ -161,7 +161,7 @@ function setInto(obj, dotted, value) {
   const parts = dotted.split('.');
   let node = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (node[parts[i]] === undefined || node[parts[i]] === null || typeof node[parts[i]] !== 'object') node[parts[i]] = {};
+    if (node[parts[i]] === undefined || node[parts[i]] === null || !isPlainObject(node[parts[i]])) node[parts[i]] = {};
     node = node[parts[i]];
   }
   node[parts[parts.length - 1]] = value;
@@ -178,6 +178,7 @@ function set(file, tokens, create) {
     if (create && e.code === 'ENOENT') cfg = {};
     else fail('read', `cannot read/parse ${file}: ${e.message}`);
   }
+  if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }]);
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
   // atomicWrite (temp + rename), not a bare write: config is a live layer

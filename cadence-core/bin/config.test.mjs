@@ -102,6 +102,49 @@ test('validate: corrupt JSON degrades to read, names the file', () => {
   assert.match(r.detail, /corrupt\.json/);
 });
 
+test('set: an array top-level config is rejected, nothing written (write face)', () => {
+  const file = join(dir, 'w-arr.json');
+  const bytes = '[1,2,3]';
+  writeFileSync(file, bytes);
+  const r = run(['set', '--file', file, 'granularity=fine'], join(dir, 'no-global-w-arr.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, '(root)');
+  assert.match(r.detail[0].error, /must be a JSON object/);
+  assert.equal(readFileSync(file, 'utf8'), bytes); // byte-identical: nothing written
+});
+
+test('set: a scalar top-level config is rejected as invalid, never reason:internal', () => {
+  const file = join(dir, 'w-scalar.json');
+  const bytes = '42';
+  writeFileSync(file, bytes);
+  const r = run(['set', '--file', file, 'granularity=fine'], join(dir, 'no-global-w-scalar.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.notEqual(r.reason, 'internal');
+  assert.equal(r.detail[0].key, '(root)');
+  assert.equal(readFileSync(file, 'utf8'), bytes); // byte-identical: nothing written
+
+  // the happy path still holds for a well-formed object config.
+  const sibling = join(dir, 'w-sibling.json');
+  writeFileSync(sibling, JSON.stringify({ granularity: 'coarse' }));
+  const rs = run(['set', '--file', sibling, 'model.profile=fast'], join(dir, 'no-global-w-sibling.json'));
+  assert.equal(rs.ok, true);
+  const written = JSON.parse(readFileSync(sibling, 'utf8'));
+  assert.equal(written.granularity, 'coarse');
+  assert.equal(written.model.profile, 'fast');
+});
+
+test('set: an array parent container cannot swallow a reported change', () => {
+  const file = join(dir, 'w-arr-parent.json');
+  writeFileSync(file, JSON.stringify({ git: ['a'] }));
+  const r = run(['set', '--file', file, 'git.on_protected=allow'], join(dir, 'no-global-w-arr-parent.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.changed[0].key, 'git.on_protected');
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(written.git.on_protected, 'allow'); // failing-capable: HEAD leaves this absent
+});
+
 test('validate: a scalar top-level config fails, never ok:true checked:0 (#45.3)', () => {
   const file = join(dir, 'scalar-config.json');
   writeFileSync(file, '42');
