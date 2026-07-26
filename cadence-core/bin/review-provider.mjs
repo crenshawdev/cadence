@@ -51,6 +51,7 @@ import path from 'node:path';
 import https from 'node:https';
 import { fileURLToPath } from 'node:url';
 import { DONE, emit } from './lib/seam-io.mjs';
+import { mergeLayers } from './lib/config-merge.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -144,15 +145,49 @@ function resolveKey(provider, keyFile) {
 // stalled/black-hole connection (TCP accepted, no bytes) still rejects, so the
 // caller degrades to a structured {ok:false} instead of hanging the spine.
 // ---------------------------------------------------------------------------
-const REQUEST_TIMEOUT_MS = 120000;
+// node's `timeout` is a socket INACTIVITY timeout, and a provider response is
+// not streamed - no bytes arrive until the model stops thinking - so this
+// effectively caps total thinking time. 120000 was below what a high-effort
+// review actually costs (measured: 292s for a flagship model on a 12.7KB diff),
+// which silently dropped cross-model reviewers from the blocking gates. Hence
+// the higher default and the config override.
+const DEFAULT_REQUEST_TIMEOUT_MS = 600000;
+
+// Pure so the unit tests can exercise it without touching config or the network.
+// Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
+// back to the default rather than throwing: a bad timeout must never sink a
+// review, same degrade-never-crash contract as the rest of this seam.
+export function resolveTimeoutMs(configured) {
+  return Number.isInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
+// Lazy + memoized on purpose: review-provider.test.mjs imports the pure helpers
+// straight from this module, so a module-level read would do config I/O inside
+// unit tests. One read per process, and a broken config layer degrades to the
+// default (mergeLayers already skips a non-object layer).
+let timeoutCache = null;
+function requestTimeoutMs() {
+  if (timeoutCache === null) {
+    let configured;
+    try {
+      const { config } = mergeLayers('.planning/config.json');
+      configured = config && config.review ? config.review.request_timeout_ms : undefined;
+    } catch { configured = undefined; }
+    timeoutCache = resolveTimeoutMs(configured);
+  }
+  return timeoutCache;
+}
 
 function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const payload = body == null ? null : JSON.stringify(body);
+    const timeoutMs = requestTimeoutMs();
     const req = https.request(url, {
       method,
-      timeout: REQUEST_TIMEOUT_MS,
+      timeout: timeoutMs,
       headers: {
         ...headers,
         ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
@@ -169,7 +204,7 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
     req.on('error', reject);
     // 'timeout' fires on inactivity but does not abort; destroy to force an
     // 'error' (ECONNRESET-style) so the promise rejects down the transport path.
-    req.on('timeout', () => req.destroy(new Error(`request timed out after ${REQUEST_TIMEOUT_MS}ms`)));
+    req.on('timeout', () => req.destroy(new Error(`request timed out after ${timeoutMs}ms`)));
     if (payload) req.write(payload);
     req.end();
   });
