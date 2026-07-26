@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseArgs, parseEnvFile, stripAdditionalProperties,
   validateFindings, validateConsult, classify, ADAPTERS,
-  readModelHints, detectEnvelope,
+  readModelHints, detectEnvelope, resolveTimeoutMs,
 } from './review-provider.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
@@ -47,6 +47,30 @@ test('parseEnvFile: comments, quotes, export prefix, blank lines', () => {
   assert.equal(parsed.SINGLE, 'sq');
   assert.equal(parsed.SPACED, 'padded');
   assert.equal('NOEQ' in parsed, false);
+});
+
+test('resolveTimeoutMs: a usable configured value wins', () => {
+  assert.equal(resolveTimeoutMs(3000), 3000);
+  assert.equal(resolveTimeoutMs(900000), 900000);
+  assert.equal(resolveTimeoutMs(1), 1);          // schema min
+});
+
+test('resolveTimeoutMs: anything unusable falls back to the default, never throws', () => {
+  const DEFAULT = 600000;
+  // The default must clear a real high-effort review: a flagship model on a
+  // ~13KB diff was measured at 292s, and 120000 (the old hardcoded value)
+  // silently dropped cross-model reviewers from the blocking gates.
+  assert.equal(resolveTimeoutMs(undefined), DEFAULT);   // key absent
+  assert.equal(resolveTimeoutMs(null), DEFAULT);        // layer skipped
+  assert.equal(resolveTimeoutMs(0), DEFAULT);           // would abort instantly
+  assert.equal(resolveTimeoutMs(-1), DEFAULT);
+  assert.equal(resolveTimeoutMs(1.5), DEFAULT);         // non-integer
+  assert.equal(resolveTimeoutMs(NaN), DEFAULT);
+  assert.equal(resolveTimeoutMs(Infinity), DEFAULT);
+  assert.equal(resolveTimeoutMs('3000'), DEFAULT);      // string, not coerced
+  assert.equal(resolveTimeoutMs({}), DEFAULT);
+  assert.equal(resolveTimeoutMs([3000]), DEFAULT);
+  assert.ok(resolveTimeoutMs(undefined) > 292000, 'default must clear a measured high-effort review');
 });
 
 test('parseEnvFile quirks: = in values, asymmetric quotes, inline comments kept', () => {
