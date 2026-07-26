@@ -366,6 +366,57 @@ test('cursor set: rejects a status outside the lifecycle', () => {
   assert.equal(readdirSync(dir).includes('STATE.md'), false); // nothing written
 });
 
+test('cursor set: a non-integer --total is bad-args and writes nothing (#42)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const before = readdirSync(dir).includes('STATE.md');
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--name', 'Foo', '--total', 'abc'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.equal(JSON.stringify(r).includes('NaN'), false);
+  assert.equal(readdirSync(dir).includes('STATE.md'), before); // unchanged (still absent)
+
+  const ok = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--name', 'Foo', '--total', '4'], dir);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.cursor.total, 4);
+});
+
+// The integer guard is not the file contract: parseCursor reads unsigned
+// decimals only, so these all used to write a STATE.md the next `cursor get`
+// rejected as unparseable-cursor.
+for (const [flag, value] of [
+  ['--total', '-2'], ['--total', '1e21'], ['--total', '1.5'],
+  ['--phase', '-1'], ['--phase', '1e21'],
+]) {
+  test(`cursor set: ${flag} ${value} is bad-args and leaves a readable cursor`, () => {
+    const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+    const seed = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+      '--next', '/cad-execute 1', '--name', 'Foo', '--total', '4'], dir);
+    assert.equal(seed.ok, true);
+    const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+
+    const args = ['cursor', 'set', '--phase', '1', '--status', 'planned',
+      '--next', '/cad-execute 1', '--name', 'Foo', '--total', '4'];
+    args[args.indexOf(flag) + 1] = value;
+    const r = run(args, dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before);
+    // The real regression: the cursor stays readable by its own parser.
+    assert.equal(run(['cursor', 'get'], dir).ok, true);
+  });
+}
+
+test('cursor set: a decimal phase insertion (2.1) is still accepted', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const r = run(['cursor', 'set', '--phase', '2.1', '--status', 'planned',
+    '--next', '/cad-execute 2.1', '--name', 'Insert', '--total', '4'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.phase, 2.1);
+  assert.equal(run(['cursor', 'get'], dir).phase, 2.1);
+});
+
 test('cursor set: no ROADMAP and no flags cannot derive', () => {
   const dir = makeTree({});
   const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned', '--next', 'x'], dir);
@@ -435,6 +486,54 @@ test('phase-done --reqs: explicit ids override the phase filter (even Deferred)'
   assert.match(reqs, /REQ-1 \| Phase 1 \| Pending /);   // phase row NOT auto-flipped
   assert.match(reqs, /REQ-2 \| Phase 1 \| Complete /);  // Deferred flipped when named
   assert.match(reqs, /REQ-3 \| Phase 2 \| Complete /);
+});
+
+test('phase-done: valueless --reqs is bad-args, not internal (#45.1)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Only' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  const roadmapBefore = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const reqsBefore = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  const r = run(['phase-done', '--n', '1', '--reqs'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.notEqual(r.reason, 'internal');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), roadmapBefore);
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), reqsBefore);
+});
+
+// `--reqs "$IDS"` with IDS unset used to pass the shape guard and then fall
+// through the truthiness test to the bulk phase-filter branch, flipping every
+// non-Deferred row it was never told to touch.
+for (const empty of ['', '   ', ',', ',,']) {
+  test(`phase-done: --reqs "${empty}" refuses instead of flipping the phase`, () => {
+    const dir = makeTree({
+      roadmap: [{ n: 1, name: 'Only' }],
+      reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 1, 'Pending']],
+    });
+    const roadmapBefore = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    const reqsBefore = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+    const r = run(['phase-done', '--n', '1', '--reqs', empty], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), roadmapBefore);
+    assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), reqsBefore);
+  });
+}
+
+test('phase-done: --reqs names exactly the rows it flips; omitting it closes the phase', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Only' }],
+    reqs: [['REQ-1', 1, 'Pending'], ['REQ-2', 1, 'Pending'], ['REQ-3', 1, 'Deferred']],
+  });
+  const named = run(['phase-done', '--n', '1', '--reqs', 'REQ-1'], dir);
+  assert.equal(named.ok, true);
+  assert.deepEqual(named.reqs, ['REQ-1']);
+
+  const all = run(['phase-done', '--n', '1'], dir);
+  assert.equal(all.ok, true);
+  assert.deepEqual(all.reqs, ['REQ-1', 'REQ-2']); // Deferred still exempt
 });
 
 test('phase-done: unknown phase refuses; nothing written', () => {

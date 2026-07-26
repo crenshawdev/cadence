@@ -156,6 +156,16 @@ test('bad enum string in config degrades to unresolved, never crashes', () => {
   assert.equal(r.profile, 'ludicrous'); // names the value that failed to resolve
 });
 
+test('resolve: a non-integer --attempt is usage, not silently coerced (#45.2)', () => {
+  const r = resolve('cad-planner', cfg({ profile: 'fast' }), ['--attempt', 'abc']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+
+  const ok = resolve('cad-planner', cfg({ profile: 'fast' }), ['--attempt', '2']);
+  assert.equal(ok.ok, true);
+  assert.equal(ok.attempt, 2);
+});
+
 test('usage degradation: missing --role and unknown subcommand', () => {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
   const bare = (args) => {
@@ -276,4 +286,36 @@ test('overrides layer: repo pin wins over a global pin', () => {
   const repo = cfg({ overrides: { 'cad-planner': 'fable' } }, 'repo-ovr.json');
   const r = resolve('cad-planner', repo, [], { global: g });
   assert.equal(r.model, 'fable');
+});
+
+// --- shipped route-table.json absent/malformed (#40) ------------------------
+
+test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no stack', () => {
+  const bad = join(dir, 'bad-table.json');
+  writeFileSync(bad, '{ not json');
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: bad };
+  const raw = (() => {
+    try { return execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }); }
+    catch (e) { return e.stdout; }
+  })();
+  const lines = raw.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1); // exactly one JSON line, no raw stack trace
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-table');
+  assert.match(r.detail, /bad-table\.json/);
+});
+
+test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
+  const missing = join(dir, 'does-not-exist-table.json');
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: missing };
+  const raw = (() => {
+    try { return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env }); }
+    catch (e) { return e.stdout; }
+  })();
+  const lines = raw.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-table');
 });

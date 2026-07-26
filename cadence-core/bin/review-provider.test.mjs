@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseArgs, parseEnvFile, stripAdditionalProperties,
   validateFindings, validateConsult, classify, ADAPTERS,
+  readModelHints, detectEnvelope,
 } from './review-provider.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
@@ -132,16 +133,48 @@ test('classify: injected hints prove first-match-wins mechanics', () => {
   ]);
 });
 
-test('classify: broken or missing hints degrade to all-unknown, nothing excluded', () => {
+test('broken or missing hints: classify STILL degrades to all-unknown (fail-safe), but the envelope now distinguishes them via warnings[] (#43)', () => {
   const broken = join(dir, 'hints-broken.json');
   writeFileSync(broken, '{ not json');
-  for (const hintsFile of [broken, join(dir, 'hints-absent.json')]) {
+  const absent = join(dir, 'hints-absent.json');
+
+  // classify()'s array return is byte-identical for broken vs. absent -
+  // D-04's fail-safe: a bad hints file never disables the exclude filter or
+  // blocks candidate classification, only visibility (below) changes.
+  for (const hintsFile of [broken, absent]) {
     const out = classify('openai', ['gpt-5.2', 'text-embedding-3-large'], hintsFile);
     assert.deepEqual(out, [
       { id: 'gpt-5.2', tier: null, high_effort: null },
       { id: 'text-embedding-3-large', tier: null, high_effort: null }, // exclude list gone too
     ]);
   }
+
+  // readModelHints distinguishes WHY: a parse failure warns naming the file
+  // (D-01); legitimate absence (ENOENT) stays silent.
+  const bad = readModelHints(broken);
+  assert.deepEqual(bad.hints, {});
+  assert.match(bad.warning, new RegExp(broken.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const missing = readModelHints(absent);
+  assert.deepEqual(missing.hints, {});
+  assert.equal(missing.warning, null);
+
+  // detectEnvelope (the exact shape cmdDetect emits) carries warnings[] only
+  // for the malformed file - not for absence, and not for a successfully-
+  // parsed but empty (valid-ruleless) file, which is the case a future
+  // over-eager readModelHints edit could wrongly flag.
+  const brokenEnv = detectEnvelope('openai', ['gpt-5.2'], broken);
+  assert.ok(Array.isArray(brokenEnv.warnings) && brokenEnv.warnings.length === 1);
+  assert.match(brokenEnv.warnings[0], /hints-broken\.json/);
+  assert.deepEqual(brokenEnv.models, [{ id: 'gpt-5.2', tier: null, high_effort: null }]);
+
+  const ruleless = join(dir, 'hints-ruleless.json');
+  writeFileSync(ruleless, JSON.stringify({ rules: {} }));
+  const rulelessEnv = detectEnvelope('openai', ['gpt-5.2'], ruleless);
+  assert.equal('warnings' in rulelessEnv, false);
+  assert.deepEqual(rulelessEnv.models, [{ id: 'gpt-5.2', tier: null, high_effort: null }]);
+
+  const absentEnv = detectEnvelope('openai', ['gpt-5.2'], absent);
+  assert.equal('warnings' in absentEnv, false);
 });
 
 test('adapters: extractText handles both OpenAI response shapes and Gemini parts', () => {

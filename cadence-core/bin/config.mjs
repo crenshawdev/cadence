@@ -27,9 +27,12 @@ import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCHEMA = JSON.parse(
-  readFileSync(join(HERE, '..', 'config.schema.json'), 'utf8'),
-).keys;
+// SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
+// or malformed shipped config.schema.json degrades to {ok:false} instead of
+// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path
+// (hermetic test injection only; production always uses the shipped file).
+let SCHEMA;
+const SCHEMA_PATH = process.env.CADENCE_CONFIG_SCHEMA || join(HERE, '..', 'config.schema.json');
 
 // Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
 // dispatch unwinds without process.exit().
@@ -97,6 +100,10 @@ function validate(file) {
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) { fail('read', `cannot read/parse ${file}: ${e.message}`); }
+  if (cfg === null || typeof cfg !== 'object' || Array.isArray(cfg)) {
+    return out({ ok: false, file, checked: 0,
+      errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }] });
+  }
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {
@@ -184,7 +191,7 @@ function set(file, tokens, create) {
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
 // a flat dotted-key map, so callers read values without re-flattening.
 function get(file, keys) {
-  const { config, source } = mergeLayers(file);
+  const { config, source, warnings } = mergeLayers(file);
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};
@@ -194,7 +201,7 @@ function get(file, keys) {
   for (const k of wanted) {
     values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
   }
-  out({ ok: true, values, source });
+  out({ ok: true, values, source, ...(warnings && warnings.length ? { warnings } : {}) });
 }
 
 // --- dispatch ----------------------------------------------------------------
@@ -211,6 +218,11 @@ function optFile(tokens) {
 }
 
 try {
+  try {
+    SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8')).keys;
+  } catch (e) {
+    fail('bad-schema', `cannot read/parse ${SCHEMA_PATH}: ${e.message}`);
+  }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
     const { pairs, errors } = checkPairs(rest);

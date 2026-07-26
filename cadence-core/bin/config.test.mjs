@@ -102,6 +102,23 @@ test('validate: corrupt JSON degrades to read, names the file', () => {
   assert.match(r.detail, /corrupt\.json/);
 });
 
+test('validate: a scalar top-level config fails, never ok:true checked:0 (#45.3)', () => {
+  const file = join(dir, 'scalar-config.json');
+  writeFileSync(file, '42');
+  const r = run(['validate', '--file', file], join(dir, 'no-global-scalar.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.checked, 0);
+  assert.equal(r.errors.length, 1);
+  assert.equal(r.errors[0].key, '(root)');
+  assert.match(r.errors[0].error, /must be a JSON object/);
+
+  // a normal object config still validates ok:true.
+  const normal = join(dir, 'normal-config.json');
+  writeFileSync(normal, JSON.stringify({ granularity: 'coarse' }));
+  const rn = run(['validate', '--file', normal], join(dir, 'no-global-scalar2.json'));
+  assert.equal(rn.ok, true);
+});
+
 test('check: reports per-pair errors and ok mirrors them', () => {
   const good = run(['check', 'workflow.plan_check=false', 'granularity=fine']);
   assert.equal(good.ok, true);
@@ -179,7 +196,21 @@ test('get: arrays replace wholesale across layers, never concatenate', () => {
   assert.deepEqual(r.values['git.protected_branches'], ['trunk']); // repo's list, whole
 });
 
-test('get: a corrupt layer is skipped, not fatal (the spine never blocks on config)', () => {
+test('get: a corrupt repo layer is skipped (values/source match no-repo-layer) AND warns naming the file (#39)', () => {
+  const gpath = join(dir, 'no-global-for-corrupt-repo.json');
+  const repo = join(dir, 'corrupt-repo.json');
+  writeFileSync(repo, '{ torn mid-write');
+  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo.json'), 'model.profile'], gpath);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.values, absentRepo.values); // byte-identical to the no-repo-layer result
+  assert.equal(r.source, absentRepo.source);     // 'defaults' - the broken layer contributed nothing
+  assert.equal(absentRepo.warnings, undefined);  // merely absent: no warning
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /corrupt-repo\.json/); // names the offending file
+});
+
+test('get: a corrupt global layer is skipped (repo still wins) AND warns naming the file (#39)', () => {
   const gpath = join(dir, 'corrupt-global.json');
   writeFileSync(gpath, '{ torn mid-write');
   const repo = join(dir, 'fine-repo.json');
@@ -188,6 +219,22 @@ test('get: a corrupt layer is skipped, not fatal (the spine never blocks on conf
   assert.equal(r.ok, true);
   assert.equal(r.values['model.profile'], 'fast');
   assert.equal(r.source, 'repo'); // the broken global layer contributed nothing
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /corrupt-global\.json/);
+});
+
+test('get: a scalar repo config falls back to defaults, never source:repo (#45.3)', () => {
+  const gpath = join(dir, 'no-global-for-scalar-repo.json');
+  const repo = join(dir, 'scalar-repo.json');
+  writeFileSync(repo, '42');
+  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo2.json'), 'model.profile'], gpath);
+  assert.equal(r.ok, true);
+  assert.notEqual(r.source, 'repo');
+  assert.deepEqual(r.values, absentRepo.values); // schema default, same as no-repo-layer
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /scalar-repo\.json/);
+  assert.match(r.warnings[0], /not an object/);
 });
 
 // --- cross-key warnings ---------------------------------------------------
@@ -210,4 +257,38 @@ test('set: the ceiling warning rides along with a successful write', () => {
   assert.equal(r.ok, true);
   assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).model.auto.ceiling, 'fast');
   assert.match(r.warnings[0].warning, /holds at base/);
+});
+
+// --- shipped config.schema.json absent/malformed (#40) ------------------------
+
+function runWithSchema(args, schemaPath) {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global-schema.json') };
+  if (schemaPath) env.CADENCE_CONFIG_SCHEMA = schemaPath;
+  try {
+    return { stdout: execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env }) };
+  } catch (e) {
+    return { stdout: e.stdout };
+  }
+}
+
+test('CADENCE_CONFIG_SCHEMA malformed degrades to ok:false, reason bad-schema, no stack', () => {
+  const bad = join(dir, 'bad-schema.json');
+  writeFileSync(bad, '{ not json');
+  const { stdout } = runWithSchema(['keys'], bad);
+  const lines = stdout.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-schema');
+  assert.match(r.detail, /bad-schema\.json/);
+});
+
+test('CADENCE_CONFIG_SCHEMA nonexistent degrades to ok:false, reason bad-schema, no stack', () => {
+  const missing = join(dir, 'does-not-exist-schema.json');
+  const { stdout } = runWithSchema(['keys'], missing);
+  const lines = stdout.split('\n').filter(Boolean);
+  assert.equal(lines.length, 1);
+  const r = JSON.parse(lines[0]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-schema');
 });

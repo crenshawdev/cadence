@@ -39,6 +39,7 @@ import {
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
+import { requireCursorNumber } from './lib/require-int.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -164,8 +165,12 @@ function cmdCursorGet(dir) {
 
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
-  const phase = Number(opts.phase);
-  if (!opts.phase || Number.isNaN(phase)) return fail('bad-args', 'cursor set needs --phase <N>');
+  if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
+  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  if (!parsedPhase.ok) {
+    return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
+  }
+  const phase = parsedPhase.value;
   if (!opts.status || !opts.next) return fail('bad-args', 'cursor set needs --status and --next');
   if (!CURSOR_STATUSES.includes(opts.status)) {
     return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`);
@@ -173,7 +178,12 @@ function cmdCursorSet(dir, opts) {
 
   // name/total: explicit flag > ROADMAP derivation > existing cursor > fail.
   let name = opts.name;
-  let total = opts.total ? Number(opts.total) : undefined;
+  let total;
+  if ('total' in opts) {
+    const parsed = requireCursorNumber(opts.total);
+    if (!parsed.ok) return fail('bad-args', 'cursor set --total needs a non-negative integer');
+    total = parsed.value;
+  }
   if (name === undefined || total === undefined) {
     const phases = parseRoadmapPhases(read(join(dir, 'ROADMAP.md')) || '');
     const entry = phases.find((p) => p.n === phase);
@@ -208,6 +218,20 @@ function cmdCursorSet(dir, opts) {
 function cmdPhaseDone(dir, opts) {
   const n = Number(opts.n);
   if (!opts.n || Number.isNaN(n)) return fail('bad-args', 'phase-done needs --n <phase>');
+  // An explicit --reqs means "exactly these rows". An empty one is almost
+  // always an unset variable (`--reqs "$IDS"`), and treating it as "flag
+  // absent" would silently widen that to every non-Deferred row of the phase -
+  // the opposite of the caller's intent - so it fails here instead.
+  let namedReqs = null;
+  if ('reqs' in opts) {
+    if (typeof opts.reqs !== 'string') {
+      return fail('bad-args', 'phase-done --reqs needs a comma-separated id list');
+    }
+    namedReqs = opts.reqs.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!namedReqs.length) {
+      return fail('bad-args', 'phase-done --reqs is empty; omit it to close the whole phase');
+    }
+  }
   const undo = 'undo' in opts;
   const roadmapFile = join(dir, 'ROADMAP.md');
   const roadmapText = read(roadmapFile);
@@ -221,9 +245,8 @@ function cmdPhaseDone(dir, opts) {
   let newReqText = null;
   if (reqText !== null) {
     const rows = parseRequirements(reqText);
-    const ids = opts.reqs
-      ? opts.reqs.split(',').map((s) => s.trim())
-      : rows.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
+    const ids = namedReqs
+      ?? rows.filter((r) => r.phase === n && r.status !== 'Deferred').map((r) => r.id);
     const res = setReqStatus(reqText, ids, undo ? 'Pending' : 'Complete');
     reqs = res.changed;
     newReqText = res.text;
