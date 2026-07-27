@@ -705,6 +705,34 @@ test('uat merge: a newline in verifier text cannot inject a status line (#35)', 
   assert.equal(rec.counts.fail, 2); // item 1 + the appended gap
 });
 
+test('uat: a hand-added ### section mints no item and survives rewrites (#46.1)', () => {
+  const dir = uatTree();
+  const file = join(dir, 'phases', '1', 'UAT.md');
+  const notes = '### Manual notes\n\n1. check the logs';
+  writeFileSync(file, readFileSync(file, 'utf8').replace('## Summary', `${notes}\n\n## Summary`));
+
+  // The numbered line inside a NON-item chunk used to mint a phantom item (a
+  // second k:1, statusless) that the next write then materialized. Asserting
+  // on item COUNT, not `uat status` counts: a phantom carries no `status:`,
+  // so `counts` is byte-identical pre- and post-fix and cannot witness this.
+  const r = run(['uat', 'refresh', '--phase', '1'], dir, '[]');
+  assert.equal(r.ok, true);
+  assert.equal(r.total, 2); // pre-fix 3
+
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  const text = readFileSync(file, 'utf8');
+  // Occurs-once, not a bare includes: a per-cycle re-emission bug duplicates
+  // the section while still satisfying `includes`.
+  assert.equal(text.split(notes).length - 1, 1);
+  assert.equal(text.split('### 1. ').length - 1, 1);       // no duplicate k
+  assert.doesNotMatch(text, /^### \d+\. check the logs/m); // never materialized
+  assert.match(text, /total: 2/);
+
+  // Round-trip idempotence: a second cycle neither drops nor duplicates it.
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(readFileSync(file, 'utf8').split(notes).length - 1, 1);
+});
+
 test('uat status: complete only when every item passes or is skipped-with-reason', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);

@@ -263,6 +263,15 @@ const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
 /**
  * Parse UAT: full frontmatter + items with their field lines. Counts are
  * always recomputed from the items, never read from Summary.
+ *
+ * An item head is anchored to the FIRST line of its `### ` chunk. A numbered
+ * line deeper in a chunk (`1. check the logs` inside a hand-written
+ * `### Manual notes`) is prose, not an item, and must never mint one.
+ *
+ * UAT.md is therefore partly USER-owned (D-02): a `### ` chunk whose first
+ * line is not `N. Name` is a hand-added section, returned verbatim in
+ * `extras` and re-emitted by renderUat, so the next `uat record` does not
+ * destroy it. Items themselves stay machine-owned and append-only.
  * @param {string} text
  */
 export function parseUat(text) {
@@ -276,10 +285,24 @@ export function parseUat(text) {
     }
   }
   const items = [];
+  /** @type {string[]} Hand-added `### ` sections, preserved verbatim. */
+  const extras = [];
   const parts = text.split(/^### /m).slice(1);
   for (const part of parts) {
-    const head = part.match(/^(\d+)\.\s+(.+?)\s*$/m);
-    if (!head) continue;
+    const head = part.split('\n', 1)[0].match(/^(\d+)\.\s+(.+?)\s*$/);
+    if (!head) {
+      // A hand-added section. Keep its lines to the same `## ` bound the
+      // field loop uses; trailing whitespace is trimmed so repeated
+      // parse/render cycles are byte-stable.
+      const kept = [];
+      for (const line of part.split('\n')) {
+        if (/^## /.test(line)) break;
+        kept.push(line);
+      }
+      const extra = `### ${kept.join('\n')}`.replace(/\s+$/, '');
+      if (extra !== '###') extras.push(extra);
+      continue;
+    }
     /** @type {Record<string, string|number>} */
     const item = { k: Number(head[1]), name: head[2] };
     for (const line of part.split('\n').slice(1)) {
@@ -291,16 +314,21 @@ export function parseUat(text) {
   }
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
   for (const it of items) if (it.status in counts) counts[String(it.status)]++;
-  return { status: fm.status || null, phase: fm.phase || null, fm, items, counts };
+  return { status: fm.status || null, phase: fm.phase || null, fm, items, counts, extras };
 }
 
 /**
  * Render a UAT file from frontmatter + items, recomputing the Summary from
  * the items (reworked = items whose first_pass is fail). Round-trips with
  * parseUat.
- * @param {{fm: Record<string,string>, items: Array<Record<string,string|number>>}} uat
+ *
+ * `extras` are the hand-added `### ` sections parseUat preserved (D-02):
+ * emitted verbatim between the item blocks and `## Summary`, never
+ * flattened, renumbered or reformatted. UAT.md is partly user-owned this
+ * way; items remain machine-owned and append-only.
+ * @param {{fm: Record<string,string>, items: Array<Record<string,string|number>>, extras?: string[]}} uat
  */
-export function renderUat({ fm, items }) {
+export function renderUat({ fm, items, extras = [] }) {
   // Every value is one line by contract: an embedded newline would become its
   // own `field: value` line on the next parse, where last-assignment-wins
   // could flip a recorded verdict (a verifier evidence string containing
@@ -318,7 +346,8 @@ export function renderUat({ fm, items }) {
   const reworked = items.filter((i) => i.first_pass === 'fail').length;
   const summary = `total: ${items.length}\npassed: ${counts.pass}\nfailed: ${counts.fail}\n` +
     `pending: ${counts.pending}\nskipped: ${counts.skipped}\nblocked: ${counts.blocked}\nreworked: ${reworked}`;
-  return `---\n${fmLines.join('\n')}\n---\n\n## Items\n\n${blocks.join('\n')}\n## Summary\n\n${summary}\n`;
+  const kept = extras.map((e) => `\n${e}\n`).join('');
+  return `---\n${fmLines.join('\n')}\n---\n\n## Items\n\n${blocks.join('\n')}${kept}\n## Summary\n\n${summary}\n`;
 }
 
 /**
