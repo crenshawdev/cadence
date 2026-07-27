@@ -112,14 +112,16 @@ reported: Tested live at John's request. A backslash continuation followed by an
 
 ### 15. Run the suite on the Node 22 and 24 CI matrix
 expected: All 336 tests pass on Node 22 and 24, in particular the ELOOP/EACCES symlink fixtures. CONTEXT flags that these were confirmed on Node 26 only; this machine has no other Node installed. Local runtime is green.
-status: pending
+status: pass
+first_pass: pass
+reported: CI run 30282605896 on headSha 0780ef875 (draft PR #58): node-test (22) success, node-test (24) success, self-verify success, typecheck success. Discharges CONTEXT's flagged assumption that ELOOP/EACCES and readdirSync recursive symlink semantics were confirmed on Node 26 only.
 
 ## Summary
 
 total: 15
-passed: 12
+passed: 13
 failed: 0
-pending: 1
+pending: 0
 skipped: 2
 blocked: 0
 reworked: 2

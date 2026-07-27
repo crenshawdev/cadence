@@ -1,6 +1,6 @@
 # State
 
 Phase: 4 of 4 (renumber & git-guard hardening)
-Status: executed
-Next: /cad-verify 4
+Status: phase complete
+Next: /cad-milestone - the audit gate precedes any ship; draft PR #58 is open with CI green
 Updated: 2026-07-27

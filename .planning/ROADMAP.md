@@ -31,7 +31,7 @@ won't-fix. Per-task plans come at `/cad-plan`.
   `/cad-audit` FAIL), stop silently truncating multi-word recall queries, index
   completed captures cleanly, and read block-YAML lists and name-less phase
   headings.
-- [ ] **Phase 4: renumber & git-guard hardening** - (#37, #49, #50). Goal:
+- [x] **Phase 4: renumber & git-guard hardening** - (#37, #49, #50). Goal:
   renumber applies the decimal-cursor carve-out (warns instead of desyncing the
   cursor), refuses a colliding destination before any write, and reports which
   ops completed when an apply fails partway (a report, not a rollback - the
