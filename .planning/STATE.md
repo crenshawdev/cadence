@@ -1,6 +1,6 @@
 # State
 
 Phase: 4 of 4 (renumber & git-guard hardening)
-Status: context gathered
-Next: /cad-plan 4
+Status: planned
+Next: /cad-execute 4
 Updated: 2026-07-27

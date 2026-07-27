@@ -33,6 +33,9 @@ won't-fix. Per-task plans come at `/cad-plan`.
   headings.
 - [ ] **Phase 4: renumber & git-guard hardening** - (#37, #49, #50). Goal:
   renumber applies the decimal-cursor carve-out (warns instead of desyncing the
-  cursor) and reports/rolls back a partial apply; one dangling symlink can't
+  cursor), refuses a colliding destination before any write, and reports which
+  ops completed when an apply fails partway (a report, not a rollback - the
+  remove destroys a directory first, so rollback would advertise a guarantee
+  the code lacks: phase-4 CONTEXT D-03); one dangling symlink can't
   sink a self-verify/weigh run; git-guard joins backslash line-continuations so
   the push rail sees a wrapped `git push` as a push.
