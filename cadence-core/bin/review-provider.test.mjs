@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import {
   parseArgs, parseEnvFile, stripAdditionalProperties,
   validateFindings, validateConsult, classify, ADAPTERS,
-  readModelHints, detectEnvelope,
+  readModelHints, detectEnvelope, resolveTimeoutMs,
 } from './review-provider.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
@@ -47,6 +47,51 @@ test('parseEnvFile: comments, quotes, export prefix, blank lines', () => {
   assert.equal(parsed.SINGLE, 'sq');
   assert.equal(parsed.SPACED, 'padded');
   assert.equal('NOEQ' in parsed, false);
+});
+
+const DEFAULT_TIMEOUT = 540000;
+const MAX_TIMEOUT = 600000;
+
+test('resolveTimeoutMs: a usable configured value wins', () => {
+  assert.equal(resolveTimeoutMs(3000), 3000);
+  assert.equal(resolveTimeoutMs(1), 1);                 // schema min
+  assert.equal(resolveTimeoutMs(MAX_TIMEOUT), MAX_TIMEOUT);
+});
+
+test('resolveTimeoutMs: anything unusable falls back to the default, never throws', () => {
+  assert.equal(resolveTimeoutMs(undefined), DEFAULT_TIMEOUT);   // key absent
+  assert.equal(resolveTimeoutMs(null), DEFAULT_TIMEOUT);        // layer skipped
+  assert.equal(resolveTimeoutMs(0), DEFAULT_TIMEOUT);           // would abort instantly
+  assert.equal(resolveTimeoutMs(-1), DEFAULT_TIMEOUT);
+  assert.equal(resolveTimeoutMs(1.5), DEFAULT_TIMEOUT);         // non-integer
+  assert.equal(resolveTimeoutMs(NaN), DEFAULT_TIMEOUT);
+  assert.equal(resolveTimeoutMs(Infinity), DEFAULT_TIMEOUT);
+  assert.equal(resolveTimeoutMs('3000'), DEFAULT_TIMEOUT);      // string, not coerced
+  assert.equal(resolveTimeoutMs({}), DEFAULT_TIMEOUT);
+  assert.equal(resolveTimeoutMs([3000]), DEFAULT_TIMEOUT);
+});
+
+test('resolveTimeoutMs: an oversized value is clamped, never left to overflow', () => {
+  // node stores a socket timeout in a 32-bit signed int, so anything past
+  // 2147483647 is truncated there and the timer effectively never fires - a
+  // black-hole connection would hang ~24.8 days instead of rejecting, which is
+  // the exact guarantee this timeout exists to provide. The schema enforces
+  // only `min`, so these all validate clean and the bound must live in code.
+  assert.equal(resolveTimeoutMs(999999999999), MAX_TIMEOUT);
+  assert.equal(resolveTimeoutMs(2147483648), MAX_TIMEOUT);      // past node's int32
+  assert.equal(resolveTimeoutMs(600000000), MAX_TIMEOUT);       // one extra zero group
+  assert.equal(resolveTimeoutMs(MAX_TIMEOUT + 1), MAX_TIMEOUT);
+  assert.ok(resolveTimeoutMs(999999999999) <= 2147483647, 'must stay inside node int32');
+});
+
+test('resolveTimeoutMs: the default fits between a real review and the host ceiling', () => {
+  // Lower bound: a flagship model on a ~13KB diff measured 292s, and the old
+  // hardcoded 120000 silently dropped reviewers from the BLOCKING gates.
+  // Upper bound: the execution host caps a command at 600000 and a host kill
+  // prints nothing at all, so the seam must abort first and own the output.
+  assert.ok(DEFAULT_TIMEOUT > 292000, 'must clear a measured high-effort review');
+  assert.ok(DEFAULT_TIMEOUT < MAX_TIMEOUT, 'seam must abort before the host kills it');
+  assert.equal(resolveTimeoutMs(undefined), DEFAULT_TIMEOUT);
 });
 
 test('parseEnvFile quirks: = in values, asymmetric quotes, inline comments kept', () => {
