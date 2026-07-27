@@ -516,11 +516,20 @@ export function findProsePhaseRefs(text, from) {
 /**
  * Cut phase N's `### Phase N: ...` detail section out of ROADMAP text (from
  * its heading to the next ### / ## heading). Returns the text unchanged when
- * the section is absent.
+ * the section is absent. A name-less heading (exactly `### Phase N:`) is
+ * matched too, so a bare heading and its body are not left behind.
+ *
+ * That tolerance is scoped to THIS function only (D-08). `PHASE_LINE`,
+ * `setPhaseBox` and the `renumber remove` list-line filter keep requiring a
+ * name: unifying every `Phase N:` matcher "for consistency" would change what
+ * counts as a phase for `status`, `audit`, `phase-done` and the cursor's
+ * `total` - a state-machine change smuggled in as a parser fix. The colon
+ * stays immediately after the escaped number, so `### Phase 21:` still cannot
+ * match n = 2.
  * @param {string} text @param {number} n
  */
 export function cutPhaseDetail(text, n) {
-  const re = new RegExp(`^### Phase ${escN(n)}: .*$`, 'm');
+  const re = new RegExp(`^### Phase ${escN(n)}:(?: .*)?$`, 'm');
   const start = text.search(re);
   if (start === -1) return text;
   const headingEnd = text.indexOf('\n', start);

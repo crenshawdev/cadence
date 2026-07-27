@@ -1052,6 +1052,23 @@ test('renumber remove: a detail heading as the last line (no trailing newline) s
   assert.match(roadmap, /### Phase 1: One/);
 });
 
+test('renumber remove: a name-less `### Phase N:` detail heading still cuts (#48.2)', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    '# Roadmap\n\n## Phases\n\n- [ ] **Phase 1: One** - a\n- [ ] **Phase 2: Two** - b\n\n' +
+    // The list line carries a name (the list-line grammar is unchanged); only
+    // the detail heading is bare - exactly the filed case.
+    '## Phase Details\n\n### Phase 1: One\n**Goal:** g1\n\n### Phase 2:\n**Goal:** g2\n');
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.total, 1);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(roadmap, /### Phase 2/);
+  assert.doesNotMatch(roadmap, /\*\*Goal:\*\* g2/); // the body went with it
+  assert.match(roadmap, /### Phase 1: One/);        // the named section survives
+  assert.match(roadmap, /\*\*Goal:\*\* g1/);
+});
+
 test('renumber: prose phase refs are reported, never rewritten; key absent when none', () => {
   // The structured-only fixture has no lowercase refs -> no in_text_refs key.
   const clean = run(['renumber', 'remove', '--n', '2', '--dry-run'], renumberTree());
