@@ -22,7 +22,10 @@
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
-//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated
+//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
+//                                   Bare words after `recall` are joined into
+//                                   one query, so an unquoted multi-word call
+//                                   searches all of it, not just the first word
 'use strict';
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -359,13 +362,28 @@ function cmdUat(dir, sub, opts) {
   if (sub === 'merge') {
     // Verifier findings: {passes:[{k|name, evidence}], gaps:[{k|name, reason,
     // evidence?}], human_checks:[{name, expected}]}. Fills only pending items.
+    //
+    // Merge is PARTIAL-SUCCESS, deliberately unlike init/refresh (which reject
+    // a whole payload on one bad element): an unusable entry is set aside and
+    // counted, the rest merges. verify-deep's deep pass is an accelerator,
+    // never a gate - the strict form would discard twenty good findings over
+    // one nameless gap. Two counts, always present even at zero:
+    //   skipped  - the finding conflicts with an already-recorded result. The
+    //              invariant stands; the drop just stops being silent.
+    //   rejected - the entry resolves to no usable item at all, so it can
+    //              never be applied to one or appended as one.
     const f = readStdinJson();
     if (f === null) return;
     const uat = loadUat(dir, n);
     if (!uat) return;
     const find = (ref) => uat.items.find((i) =>
       (ref.k !== undefined && Number(i.k) === Number(ref.k)) || i.name === ref.name);
-    let auto = 0, gaps = 0, added = 0;
+    // Guard the shape the CONSUMER accepts - a name that renders a heading -
+    // not the reported input. Without it an entry carrying neither a matching
+    // `k` nor a name was appended as `### N. undefined`, a phantom at status
+    // fail/pending that blocks phase completion permanently.
+    const usableName = (e) => (typeof e.name === 'string' && e.name.trim() ? e.name.trim() : null);
+    let auto = 0, gaps = 0, added = 0, skipped = 0, rejected = 0;
     for (const p of f.passes || []) {
       const it = find(p);
       if (it && it.status === 'pending') {
@@ -373,7 +391,8 @@ function cmdUat(dir, sub, opts) {
         if (p.evidence) it.evidence = p.evidence;
         if (it.first_pass === undefined) it.first_pass = 'pass';
         auto++;
-      }
+      } else if (it) skipped++;
+      else rejected++; // a pass matching no item can never be applied
     }
     let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
     for (const g of f.gaps || []) {
@@ -385,8 +404,14 @@ function cmdUat(dir, sub, opts) {
         it.severity = g.severity || 'major';
         if (it.first_pass === undefined) it.first_pass = 'fail';
         gaps++;
-      } else if (!it) {
-        uat.items.push({ k: ++k, name: g.name, expected: g.expected || g.reason || '',
+      } else if (it) skipped++;
+      else {
+        const name = usableName(g);
+        // `gaps` counts gaps actually recorded in the file, so a rejected
+        // entry that wrote nothing must not inflate it - otherwise the
+        // envelope reports three gaps found for one item written.
+        if (!name) { rejected++; continue; }
+        uat.items.push({ k: ++k, name, expected: g.expected || g.reason || '',
           status: 'fail', source: 'verifier', severity: g.severity || 'major',
           ...(g.reason ? { reported: g.reason } : {}),
           ...(g.evidence ? { evidence: g.evidence } : {}), first_pass: 'fail' });
@@ -394,13 +419,14 @@ function cmdUat(dir, sub, opts) {
       }
     }
     for (const h of f.human_checks || []) {
-      if (!find(h)) {
-        uat.items.push({ k: ++k, name: h.name, expected: h.expected || '', status: 'pending' });
-        added++;
-      }
+      if (find(h)) continue;
+      const name = usableName(h);
+      if (!name) { rejected++; continue; } // appends the identical phantom, at pending
+      uat.items.push({ k: ++k, name, expected: h.expected || '', status: 'pending' });
+      added++;
     }
     writeUat(dir, n, uat);
-    return ok({ auto_passed: auto, gaps, added, next: nextPending(uat.items) });
+    return ok({ auto_passed: auto, gaps, added, skipped, rejected, next: nextPending(uat.items) });
   }
 
   if (sub === 'status') {
@@ -738,6 +764,10 @@ function parseArgs(argv) {
   return { words, opts };
 }
 
+// Handlers take the trailing positional words as a 4th argument; only
+// `recall` needs it (its query is free text, not a fixed subcommand), and
+// widening the signature beats special-casing one command in the dispatcher.
+/** @type {Record<string, (dir: string, sub: string, opts: any, rest: string[]) => void>} */
 const COMMANDS = {
   status: (dir, _sub, _opts) => cmdStatus(dir),
   cursor: (dir, sub, opts) => {
@@ -749,7 +779,11 @@ const COMMANDS = {
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
-  recall: (dir, sub, opts) => cmdRecall(dir, sub, opts),
+  // Bare words are JOINED, never rejected: every workflow caller quotes, so
+  // rejecting extras would turn a today-degraded interactive call into a hard
+  // failure. tokenize() splits on non-alphanumerics, so the separator is
+  // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
+  recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 
@@ -759,7 +793,7 @@ try {
   const dir = opts.dir || '.planning';
   const handler = COMMANDS[cmd];
   if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(dir, sub, opts);
+  else handler(dir, sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }

@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 4 (Seam input validation)
+Phase: 4 of 4 (renumber & git-guard hardening)
 Status: planned
-Next: /cad-execute 2
-Updated: 2026-07-25
+Next: /cad-execute 4
+Updated: 2026-07-27

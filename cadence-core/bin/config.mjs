@@ -22,7 +22,7 @@
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { GLOBAL_CONFIG, mergeLayers } from './lib/config-merge.mjs';
+import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -43,7 +43,7 @@ const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DON
 
 // Validate a single already-parsed value against a schema spec.
 // Returns null if ok, else an error string.
-/** @param {{type:string, min?:number, values?:any[]}} spec @param {any} v */
+/** @param {{type:string, min?:number, max?:number, values?:any[]}} spec @param {any} v */
 function checkValue(spec, v) {
   switch (spec.type) {
     case 'bool':
@@ -51,6 +51,7 @@ function checkValue(spec, v) {
     case 'int':
       if (!Number.isInteger(v)) return 'expected an integer';
       if (spec.min !== undefined && v < spec.min) return `must be >= ${spec.min}`;
+      if (spec.max !== undefined && v > spec.max) return `must be <= ${spec.max}`;
       return null;
     case 'string':
       return typeof v === 'string' ? null : 'expected a string';
@@ -100,7 +101,7 @@ function validate(file) {
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) { fail('read', `cannot read/parse ${file}: ${e.message}`); }
-  if (cfg === null || typeof cfg !== 'object' || Array.isArray(cfg)) {
+  if (!isPlainObject(cfg)) {
     return out({ ok: false, file, checked: 0,
       errors: [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }] });
   }
@@ -157,11 +158,40 @@ function crossWarnings(pairs) {
   return warnings;
 }
 
+// A dotted key writes through intermediate containers. Auto-vivifying one that
+// is ABSENT (missing, or an explicit null holding no data) is the point of
+// `set`; silently replacing one that already holds an array or a scalar throws
+// its contents away, which is the same data loss the `(root)` check refuses at
+// depth 0. checkPaths refuses it the same way and BEFORE any pair is applied,
+// so a multi-pair set is all-or-nothing rather than half-written.
+function checkPaths(cfg, pairs) {
+  const errors = [];
+  for (const { key } of pairs) {
+    const parts = key.split('.');
+    let node = cfg;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const next = node[parts[i]];
+      if (next === undefined || next === null) break;   // absent -> setInto creates it
+      if (!isPlainObject(next)) {
+        errors.push({
+          key,
+          error: `cannot set through "${parts.slice(0, i + 1).join('.')}": ` +
+            'it holds a non-object; remove or replace it first',
+          value: next,
+        });
+        break;
+      }
+      node = next;
+    }
+  }
+  return errors;
+}
+
 function setInto(obj, dotted, value) {
   const parts = dotted.split('.');
   let node = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (node[parts[i]] === undefined || node[parts[i]] === null || typeof node[parts[i]] !== 'object') node[parts[i]] = {};
+    if (node[parts[i]] === undefined || node[parts[i]] === null) node[parts[i]] = {};
     node = node[parts[i]];
   }
   node[parts[parts.length - 1]] = value;
@@ -178,6 +208,9 @@ function set(file, tokens, create) {
     if (create && e.code === 'ENOENT') cfg = {};
     else fail('read', `cannot read/parse ${file}: ${e.message}`);
   }
+  if (!isPlainObject(cfg)) fail('invalid', [{ key: '(root)', error: 'top-level config must be a JSON object', value: cfg }]);
+  const pathErrors = checkPaths(cfg, pairs);
+  if (pathErrors.length) fail('invalid', pathErrors);
   for (const { key, value } of pairs) setInto(cfg, key, value);
   if (create) mkdirSync(dirname(file), { recursive: true });
   // atomicWrite (temp + rename), not a bare write: config is a live layer

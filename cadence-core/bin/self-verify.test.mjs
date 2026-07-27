@@ -115,6 +115,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
   const root = fixture(
     '`review.triggers.<t>.gate` `review.triggers.<t>.tier` `review.triggers.<t>.effort`\n' +
     '`review.providers.<name>.tiers` `review.mode` `review.reviewers` `review.key_file`\n' +
+    '`review.request_timeout_ms`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
     '`review.consult.attempt_threshold` `review.decision_review.tier`\n' +
     '`review.decision_review.effort` `model.profile` `model.auto.ceiling`\n' +

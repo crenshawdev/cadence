@@ -72,6 +72,9 @@ reworked: [N]
 - Items are append-only; a status field is overwritten when the user
   answers or a fix lands (fail -> pending for retest). Never delete an
   item or a recorded result.
+- A hand-added `### ` section that is not a numbered item (e.g.
+  `### Manual notes`) is preserved verbatim across seam rewrites - a
+  numbered line inside it is prose, never an item.
 - `first_pass`: the item's FIRST non-pending result (`pass` or `fail`),
   written once and never overwritten. It preserves whether an item passed
   clean or only after a fix, since `status` is later overwritten to `pass`
