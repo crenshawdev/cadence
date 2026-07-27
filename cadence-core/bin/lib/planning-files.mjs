@@ -275,6 +275,39 @@ const UAT_FIELDS = ['expected', 'status', 'first_pass', 'source', 'evidence',
 const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
 
 /**
+ * Index of the first `## ` line in `lines` that sits OUTSIDE a fenced code
+ * block, or -1 if there is none.
+ *
+ * The bound cannot be a bare `/^## /` test: a `## build output` line inside a
+ * ```sh block truncated the section mid-fence, destroying the closing fence
+ * and everything after it, and left an odd fence count so the regenerated
+ * `## Summary` rendered as code - contradicting UAT.md's promise (D-02) that a
+ * hand-added section survives a seam rewrite verbatim.
+ *
+ * Fence rules follow CommonMark closely enough for the job: up to three spaces
+ * of indent, a run of three or more backticks or tildes, and a closer that
+ * matches the opener's character, is at least as long, and carries no info
+ * string.
+ * @param {string[]} lines
+ * @returns {number}
+ */
+function sectionBound(lines) {
+  /** @type {{char: string, len: number}|null} */
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const f = lines[i].match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
+    if (f) {
+      const char = f[1][0], len = f[1].length;
+      if (fence === null) fence = { char, len };
+      else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
+      continue;
+    }
+    if (fence === null && /^## /.test(lines[i])) return i;
+  }
+  return -1;
+}
+
+/**
  * Parse UAT: full frontmatter + items with their field lines. Counts are
  * always recomputed from the items, never read from Summary.
  *
@@ -303,24 +336,22 @@ export function parseUat(text) {
   const extras = [];
   const parts = text.split(/^### /m).slice(1);
   for (const part of parts) {
-    const head = part.split('\n', 1)[0].match(/^(\d+)\.\s+(.+?)\s*$/);
+    const lines = part.split('\n');
+    // Both loops stop at the same bound, and it is fence-aware: a `## ` inside
+    // a code block is content, not the start of the next section.
+    const bound = sectionBound(lines);
+    const body = bound === -1 ? lines : lines.slice(0, bound);
+    const head = lines[0].match(/^(\d+)\.\s+(.+?)\s*$/);
     if (!head) {
-      // A hand-added section. Keep its lines to the same `## ` bound the
-      // field loop uses; trailing whitespace is trimmed so repeated
-      // parse/render cycles are byte-stable.
-      const kept = [];
-      for (const line of part.split('\n')) {
-        if (/^## /.test(line)) break;
-        kept.push(line);
-      }
-      const extra = `### ${kept.join('\n')}`.replace(/\s+$/, '');
+      // A hand-added section, kept verbatim; trailing whitespace is trimmed so
+      // repeated parse/render cycles are byte-stable.
+      const extra = `### ${body.join('\n')}`.replace(/\s+$/, '');
       if (extra !== '###') extras.push(extra);
       continue;
     }
     /** @type {Record<string, string|number>} */
     const item = { k: Number(head[1]), name: head[2] };
-    for (const line of part.split('\n').slice(1)) {
-      if (/^## /.test(line)) break;
+    for (const line of body.slice(1)) {
       const f = line.match(/^(\w+):\s*(.+?)\s*$/);
       if (f) item[f[1]] = f[2];
     }

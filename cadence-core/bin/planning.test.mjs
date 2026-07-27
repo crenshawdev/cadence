@@ -789,6 +789,31 @@ test('uat: a hand-added ### section mints no item and survives rewrites (#46.1)'
   assert.equal(readFileSync(file, 'utf8').split(notes).length - 1, 1);
 });
 
+test('uat: a `## ` inside a fenced block does not truncate a preserved section', () => {
+  const dir = uatTree();
+  const file = join(dir, 'phases', '1', 'UAT.md');
+  // A `## ` line inside a code block used to bound the section, so the closing
+  // fence and the trailing prose were destroyed. The odd fence count left the
+  // regenerated `## Summary` rendering as code.
+  const notes = ['### Repro notes', '', 'Steps to reproduce:', '', '```sh',
+    'make build', '## build output', 'make test', '```', '',
+    'Still fails on the third run.'].join('\n');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('## Summary', `${notes}\n\n## Summary`));
+
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  const text = readFileSync(file, 'utf8');
+  assert.equal(text.split(notes).length - 1, 1);            // verbatim, once
+  assert.equal((text.match(/^```/gm) || []).length % 2, 0);  // fences still balanced
+  assert.match(text, /^## Summary$/m);                       // and not inside one
+
+  // The fenced `## build output` is content, so it must never bound the item
+  // block either: fields after it still parse.
+  assert.match(text, /^total: 2$/m);
+  // Round-trip idempotence, same as the plain-section case.
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  assert.equal(readFileSync(file, 'utf8').split(notes).length - 1, 1);
+});
+
 test('uat status: complete only when every item passes or is skipped-with-reason', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
