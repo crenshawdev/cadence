@@ -60,7 +60,8 @@ function planningRoot(start) {
 // The git subcommand(s) a shell command actually invokes: for each simple
 // command containing a `git` word, the first word after it that is not a
 // global option (or that option's argument). Backslash line-continuations
-// are joined FIRST, ahead of quote-stripping - order is load-bearing: the
+// are joined FIRST (parity-aware - see below), ahead of quote-stripping -
+// order is load-bearing: the
 // double-quote pattern's `\\.` arm cannot match a backslash-newline, so a
 // quoted string split across a continuation would survive the strip intact
 // and its embedded `\n` would then be cut into a bare trailing command by
@@ -79,9 +80,23 @@ const GIT_OPT_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree',
 
 function gitSubcommands(command) {
   const stripped = String(command)
-    .replace(/\\\r?\n[ \t]*/g, ' ')
-    .replace(/"(?:[^"\\]|\\.)*"/g, ' ')
-    .replace(/'[^']*'/g, ' ');
+    // Join continuations, but only where the backslash is actually one: a
+    // trailing RUN of backslashes continues the line only when its length is
+    // ODD (`\\` at EOL is a literal backslash argument and the newline still
+    // ends the command). Joining on an even run splices two independent
+    // commands into one segment, and the scan below reads only the first
+    // git word per segment - so `git add -A \\` + newline + `git push` would
+    // resolve to `add` alone and a real push would go unprompted.
+    .replace(/(\\+)(\r?\n)[ \t]*/g, (_m, slashes, nl) => (slashes.length % 2
+      ? `${slashes.slice(0, -1)} `   // odd: last one continues the line
+      : `${slashes}${nl}`))          // even: literal, keep the separator
+    // ONE left-to-right pass over both quote forms, never two sequential
+    // passes: a `"` inside a single-quoted word (`awk -F'"'`) is not a
+    // delimiter, and stripping double quotes first pairs it with the next
+    // `"` on the line, deleting everything between - including a real
+    // `; git push origin main ;`. The alternation makes whichever quote
+    // opens FIRST win, which is what the shell does.
+    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, ' ');
   const subs = [];
   for (const segment of stripped.split(/&&|\|\||[;|\n]/)) {
     const words = segment.trim().split(/\s+/).filter(Boolean);

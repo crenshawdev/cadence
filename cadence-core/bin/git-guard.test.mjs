@@ -173,6 +173,35 @@ test('the join does not swallow the command separator: a blank line after a cont
   assert.equal(d.permissionDecision, 'ask');
 });
 
+test('an EVEN run of trailing backslashes is a literal argument, not a continuation - the push on the next line still asks', () => {
+  // `\\` at EOL is an escaped backslash: bash passes a literal `\` to `git
+  // add` and the newline still ends the command, so the second line is a
+  // REAL `git push`. A parity-blind join splices both into one segment,
+  // where the scan reads only the first git word (`add`) and the push goes
+  // unprompted - caught at c4ab89f, silently missed by the first cut of #50.
+  const p = project('feature');
+  assert.deepEqual(
+    guard('git add -A \\\\\ngit push origin main', p),
+    guard('git push origin main', p),
+  );
+  assert.equal(guard('git commit -m msg \\\\\ngit push origin main', p).permissionDecision, 'ask');
+});
+
+test('a double quote inside a single-quoted word is not a delimiter - a real push beside it still asks', () => {
+  // Two sequential strips let the `"` inside `-F'"'` pair with the `"` before
+  // `done`, deleting `; git push origin main ; echo ` wholesale. The
+  // backslash-newline used to block that match by accident, so joining first
+  // (D-08) exposed it: caught at c4ab89f, silently missed once the join
+  // landed. One alternating left-to-right pass gives the shell's own
+  // whichever-opens-first precedence.
+  const p = project('feature');
+  const d = guard('awk -F\'"\' \'{print $2}\' f.txt \\\n  ; git push origin main ; echo "done"', p);
+  assert.equal(d.permissionDecision, 'ask');
+  // The mirror case must stay silent: a `'` inside double quotes is likewise
+  // not a delimiter, so the quoted push is still stripped whole.
+  assert.equal(guard('echo "it\'s just git push text"', project('main')), null);
+});
+
 test('compound command still catches the push half', () => {
   const d = guard('git add . && git push', project('feature'));
   assert.equal(d.permissionDecision, 'ask');
