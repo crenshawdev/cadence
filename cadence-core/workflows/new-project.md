@@ -216,9 +216,9 @@ user-centric, and atomic. Push vague ones until they pass:
   the recipient's browser"
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/REQUIREMENTS.md` and write
-`.planning/REQUIREMENTS.md`: v1 by category with REQ-IDs, v2 deferred, Out
-of Scope with reasons, Traceability table left as headers (filled by the
-roadmap step).
+`.planning/REQUIREMENTS.md`: v1 requirements as `## Active` bullets by
+category with REQ-IDs, v2 deferred, Out of Scope with reasons, Traceability
+table left as bare headers (seeded per phase by `/cad-plan`, never here).
 
 **Present the full v1 list** (every requirement, not counts) and confirm:
 "Does this capture what you're building?" If adjustments are needed, return
@@ -245,8 +245,9 @@ Derivation rules:
 6. Order by dependency; state each phase's `Depends on` explicitly.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
-`.planning/ROADMAP.md`. Then update the Traceability table in
-REQUIREMENTS.md: every REQ-ID mapped to its phase, coverage counts filled.
+`.planning/ROADMAP.md`. Leave REQUIREMENTS.md's Traceability table as bare
+headers - `/cad-plan` seeds each row when its phase is planned
+(`references/req-traceability.md`); do not hand-author a row here.
 
 **Present the roadmap** inline: a table (phase, goal, REQ-IDs, criteria
 count), then per-phase details with their success criteria.
@@ -330,7 +331,8 @@ transcript need not be carried forward.
       v1 / v2 / Out of Scope explicit, exclusions carry reasons
 - [ ] ROADMAP.md: every v1 requirement mapped to exactly one phase; 2-5
       falsifiable success criteria per phase; user approved it
-- [ ] Traceability table shows 100% v1 coverage
+- [ ] Every `## Active` id appears in a ROADMAP phase (100% coverage);
+      Traceability table left as bare headers for `/cad-plan` to seed
 - [ ] STATE.md is a 4-line cursor pointing at phase 1
 - [ ] Commits follow references/git.md (guard before first commit, docs:
       prefix, specific files, no push) and respect planning.commit_docs

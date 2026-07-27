@@ -77,8 +77,10 @@ changelog.
   the detail; the live file keeps the trace.
 - Carry forward any deferred/unmet requirement into the new milestone.
 - Seed the next milestone's headline requirements from the PROJECT.md evolution
-  and the user's intent. Deep per-phase requirements come later via /cad-plan;
-  keep this to the milestone's top-level asks.
+  and the user's intent, as `## Active` bullets in the `- **<ID>**: <one line>`
+  form (`references/req-traceability.md`) - the section `/cad-plan`'s seeding
+  step reads. Deep per-phase requirements come later via /cad-plan; keep this
+  to the milestone's top-level asks.
 
 ## 6. Reset the cursor
 Point the cursor at the new cycle through the seam:
