@@ -407,99 +407,175 @@ export function uatComplete(uat) {
 }
 
 // ---------------------------------------------------------------------------
-// PLAN.md frontmatter - the `requirements: [..]` list (templates/PLAN.md).
+// PLAN.md frontmatter - the `requirements: [..]` / `files: [..]` grammar
+// (templates/PLAN.md). Stated in full at
+// cadence-core/references/plan-frontmatter.md; this section is that
+// grammar's single implementation.
 // ---------------------------------------------------------------------------
 
 /**
- * Read one frontmatter key as a string list. ONE reader for both
- * `requirements:` and `files:` (D-07) - two copies of the same pattern would
- * drift, and the audit would then accept a plan shape the parallel-safety
- * overlap check rejects, in the very file that declares one grammar per
- * format.
- *
- * The lookup is BOUNDED to the leading `---`-fenced block (D-06). The other
- * parsers here scan the whole body, so this reads as inconsistent without
- * the reason: an unbounded key scan plus a permissive block reader lets a
- * prose `requirements:` line in the plan body swallow the following bullets
- * as ids, surfacing as fabricated `orphans.plan_ids` in audit - trading an
- * under-read for a worse over-read.
- *
- * The grammar is deliberately minimal - no nesting, no flow-in-block, no
- * comment-only lines. Three cases for the remainder after `key:`:
- *   `[a, b]`  inline list, split on commas. Never comment-stripped: the
- *             template writes `requirements: []     # phase requirement IDs`.
- *   (empty)   block list - the contiguous following `- item` lines, stopping
- *             at the first line that is not one. A remainder that is ITSELF
- *             a comment counts as empty.
- *   scalar    anything else non-empty: a one-element list. Explicitly NOT a
- *             fall-through to the block reader, which would discard the value
- *             AND swallow whatever `- ` lines follow it.
- * A trailing comment is stripped only on a WHITESPACE-preceded `#`, never a
- * bare one - this repo's own requirement ids are `#41`-shaped. That rule alone
- * cannot see a remainder that is ENTIRELY a comment: `^key:\s*(.*)$` has
- * already eaten the whitespace before the `#`, so `requirements:   # note`
- * arrives here as `# note` with nothing left to strip. Discriminate on what
- * FOLLOWS the `#` - whitespace or end-of-line is a comment (empty value, fall
- * through to the block reader), a non-space character is a `#41`-shaped id (a
- * scalar). Taking such a remainder as a scalar is the over-read D-06 bounds
- * against: it returns the comment text as a fabricated id AND discards the
- * block list beneath it.
- * @param {string} text @param {string} key @returns {string[]}
+ * @typedef {{line: number, code: string, text: string}} Issue
  */
-function readFrontmatterList(text, key) {
-  const fm = text.match(/^---\n([\s\S]*?)\n---/);
-  if (!fm) return [];
-  const lines = fm[1].split('\n');
-  const head = new RegExp(`^${key}:\\s*(.*)$`);
-  const at = lines.findIndex((l) => head.test(l));
-  if (at === -1) return [];
+
+/**
+ * Strip one leading U+FEFF byte-order mark and normalize line endings
+ * (`\r\n` and lone `\r`) to `\n`. PARSE PATH ONLY (D-05): wired into the
+ * frontmatter reader below, deliberately NOT into planning.mjs's `read()`,
+ * whose text is written back verbatim by `phase-done` and `renumber` - doing
+ * it there would silently rewrite a user's CRLF ROADMAP.md/REQUIREMENTS.md
+ * wholesale on the next edit, a byte-level rewrite of files Cadence promises
+ * to touch surgically. Phase 4 adopts this for the roadmap grammar it owns.
+ * @param {string} text
+ */
+export function normalize(text) {
+  const noBom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  return noBom.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/** Trim and truncate an offending line to 120 chars with a trailing `...`. */
+function issueText(line) {
+  const t = line.trim();
+  return t.length > 120 ? `${t.slice(0, 120)}...` : t;
+}
+
+// Any line at column 0 shaped like `key:` or `key: value` - the anchor for a
+// key's value AND (from Task 3 on) the block-list terminator it doubles as.
+const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/;
+const FENCE_LINE = /^---\s*$/;
+const BLANK_LINE = /^\s*$/;
+
+/**
+ * Classify every line of a PLAN.md's leading frontmatter block in ONE pass
+ * and return every key's resolved value list alongside every line that fell
+ * outside the grammar (D-02, D-03). This is the single implementation
+ * `references/plan-frontmatter.md` names; `readFrontmatterList` below is a
+ * thin selector over it, never a second scan.
+ *
+ * ONE pass over the whole block, not one scan per key, because the
+ * structural diagnostics must not depend on which key the caller asked for:
+ * `audit` reads only `requirements` and `plan-overlap` reads only `files`, so
+ * a per-key scan could report a stray line to only ONE of the two envelopes -
+ * and under the shipped template's inline `requirements: []` / `files: []`
+ * form, no block scan runs at all, so a stray line would reach NEITHER.
+ *
+ * The fence is normalized first (D-05): a leading BOM is stripped, `\r\n`/
+ * lone `\r` become `\n`, and leading blank lines are tolerated before the
+ * opening `---`. Anything other than a bare `---` as the first non-blank
+ * line means the file has no frontmatter at all - empty items and NO issue,
+ * since `audit`'s `no-plan` and `plan-overlap`'s `undeclared` already make
+ * that loud. An opening fence with no closing fence returns empty items plus
+ * one issue `unterminated-frontmatter` at the opening fence's line.
+ *
+ * A key line is an exact column-0 match (`KEY_LINE`), never an interpolated
+ * per-key regex; the first occurrence of a given key wins. THIS TASK keeps
+ * the pre-existing value-arm behavior and block-reader behavior BYTE FOR
+ * BYTE (including their defects) - Task 2 replaces the value arms with a
+ * quote-aware scanner and Task 3 replaces the block reader with a stated
+ * terminator set; this task is scaffolding only (normalize, the exact fence
+ * anchor, and one pass covering every key so the diagnostic can reach both
+ * envelopes regardless of which key's list a stray line sits under).
+ * @param {string} text
+ * @returns {{keys: Map<string, string[]>, issues: Issue[]}}
+ */
+export function parseFrontmatter(text) {
+  const norm = normalize(text);
+  const lines = norm.split('\n');
+  let i = 0;
+  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
+  if (i >= lines.length || !FENCE_LINE.test(lines[i])) {
+    return { keys: new Map(), issues: [] };
+  }
+  const fenceStartLine = i + 1;
+  let j = i + 1;
+  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
+  if (j >= lines.length) {
+    return {
+      keys: new Map(),
+      issues: [{ line: fenceStartLine, code: 'unterminated-frontmatter', text: issueText(lines[i]) }],
+    };
+  }
+
+  const keys = new Map();
+  const issues = [];
+  // Task 2 replaces this pair with a quote-aware scanner; kept byte-for-byte
+  // here so this task's diff is scaffolding only.
   const clean = (s) => s.replace(/\s+#.*$/, '').replace(/["']/g, '').trim();
-  const remainder = (lines[at].match(head) || ['', ''])[1].trim();
 
-  if (remainder.startsWith('[')) {
-    const inline = remainder.match(/\[(.*)\]/);
-    // The inline payload is never comment-stripped - the template itself
-    // writes `requirements: []     # phase requirement IDs...`.
-    return (inline ? inline[1].split(',') : [])
-      .map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
-  }
+  for (let k = i + 1; k < j; k++) {
+    const line = lines[k];
+    const km = line.match(KEY_LINE);
+    if (!km) continue;
+    const key = km[1];
+    if (keys.has(key)) continue; // first occurrence wins
+    const remainder = line.slice(key.length + 1).trim();
 
-  /** @type {string[]} */
-  let raw;
-  // `# `/bare `#` is a comment, `#41` is an id (see the note above). The
-  // whitespace-preceded strip cannot fire on a remainder that is entirely a
-  // comment, so that case is tested first rather than falling to the scalar arm.
-  const commentOnly = /^#(\s|$)/.test(remainder);
-  const bare = commentOnly ? '' : remainder.replace(/\s+#.*$/, '').trim();
-  if (bare === '') {
-    raw = [];
-    for (const line of lines.slice(at + 1)) {
-      const item = line.match(/^\s*-\s+(.+?)\s*$/);
-      if (!item) break; // contiguous only; the first non-item line ends it
-      raw.push(item[1]);
+    if (remainder.startsWith('[')) {
+      const inline = remainder.match(/\[(.*)\]/);
+      const raw = (inline ? inline[1].split(',') : [])
+        .map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
+      keys.set(key, raw);
+      continue;
     }
-  } else {
-    raw = [bare]; // a scalar value - deliberately NOT a block fall-through
+
+    const commentOnly = /^#(\s|$)/.test(remainder);
+    const bare = commentOnly ? '' : remainder.replace(/\s+#.*$/, '').trim();
+    if (bare === '') {
+      const raw = [];
+      let m = k + 1;
+      for (; m < j; m++) {
+        const item = lines[m].match(/^\s*-\s+(.+?)\s*$/);
+        if (!item) break; // Task 3 replaces this break with the stated terminator set
+        raw.push(item[1]);
+      }
+      keys.set(key, raw.map(clean).filter(Boolean));
+      k = m - 1; // resume the outer loop after the consumed block
+    } else {
+      keys.set(key, [bare].map(clean).filter(Boolean));
+    }
   }
-  return raw.map(clean).filter(Boolean);
+
+  return { keys, issues };
 }
 
 /**
- * Extract the requirement IDs a plan commits to deliver.
- * @param {string} text
+ * Read one frontmatter key as a string list plus the WHOLE pass's issues
+ * (never a key-scoped subset, D-02) - a thin selector over
+ * `parseFrontmatter`, the single implementation this grammar has (D-03). ONE
+ * reader for both `requirements:` and `files:`: two copies of the same
+ * pattern would drift, and audit would then accept a plan shape the
+ * parallel-safety overlap check rejects, in the file that declares one
+ * grammar per format.
+ *
+ * See `cadence-core/references/plan-frontmatter.md` for the full stated
+ * grammar (normalization, fence, key line, the three value forms, block-list
+ * skip/terminator rules, quoting, and every diagnostic code).
+ * @param {string} text @param {string} key
+ * @returns {{items: string[], issues: Issue[]}}
+ */
+export function readFrontmatterList(text, key) {
+  const { keys, issues } = parseFrontmatter(text);
+  return { items: keys.get(key) ?? [], issues };
+}
+
+/**
+ * Extract the requirement IDs a plan commits to deliver, plus any
+ * frontmatter grammar issues from the pass that read them.
+ * @param {string} text @returns {{ids: string[], issues: Issue[]}}
  */
 export function parsePlanRequirements(text) {
-  return readFrontmatterList(text, 'requirements');
+  const { items, issues } = readFrontmatterList(text, 'requirements');
+  return { ids: items, issues };
 }
 
 /**
  * Extract the file paths a plan declares it touches: the frontmatter
- * `files:` list (inline or block, via readFrontmatterList) unioned with
- * every task's `- **Files:** a, b` line
- * (either source alone can go stale; the union is what the parallel-safety
- * overlap check trusts). Trailing parentheticals ("src/a.rs (new)") and
- * backticks are stripped; template placeholders ({...}) are ignored.
- * @param {string} text @returns {string[]}
+ * `files:` list (via `readFrontmatterList`) unioned with every task's
+ * `- **Files:** a, b` line (either source alone can go stale; the union is
+ * what the parallel-safety overlap check trusts) - plus the frontmatter arm's
+ * issues (D-09: the task-line arm is untouched this phase and reported
+ * nowhere). Trailing parentheticals ("src/a.rs (new)") and backticks are
+ * stripped; template placeholders ({...}) are ignored.
+ * @param {string} text @returns {{files: string[], issues: Issue[]}}
  */
 export function parsePlanFiles(text) {
   const files = new Set();
@@ -507,11 +583,12 @@ export function parsePlanFiles(text) {
     const f = raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
     if (f && !f.startsWith('{')) files.add(f);
   };
-  for (const f of readFrontmatterList(text, 'files')) add(f);
+  const { items, issues } = readFrontmatterList(text, 'files');
+  for (const f of items) add(f);
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
     for (const f of m[1].split(',')) add(f);
   }
-  return [...files];
+  return { files: [...files], issues };
 }
 
 // ---------------------------------------------------------------------------

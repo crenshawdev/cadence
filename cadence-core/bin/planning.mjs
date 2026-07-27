@@ -469,15 +469,17 @@ function cmdAudit(dir) {
   // requirement id -> the plan file that carries it, per phase dir.
   const planByReq = new Map();
   const planIds = new Map(); // plan file -> ids (for orphan detection)
+  const frontmatterIssues = []; // [{file, issues}], plan-file order, omitted when empty
   for (const [n] of roadmap) {
     const pdir = join(dir, 'phases', String(n));
     let files = [];
     try { files = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); } catch { /* unplanned */ }
     for (const f of files) {
       const rel = `phases/${n}/${f}`;
-      const ids = parsePlanRequirements(read(join(pdir, f)) || '');
+      const { ids, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
       planIds.set(rel, ids);
       for (const id of ids) if (!planByReq.has(id)) planByReq.set(id, rel);
+      if (issues.length) frontmatterIssues.push({ file: rel, issues });
     }
   }
 
@@ -512,6 +514,7 @@ function cmdAudit(dir) {
   ok({
     requirements,
     ...(orphanPlans.length ? { orphans: { plan_ids: orphanPlans } } : {}),
+    ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
     ...(deferred.length ? { deferred } : {}),
     counts: { total: rows.length, traced: requirements.length - broken, broken, deferred: deferred.length },
   });
@@ -531,10 +534,25 @@ function cmdPlanOverlap(dir, opts) {
   let planFiles = [];
   try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
   catch { return fail('no-phase-dir', `${pdir} not found`); }
+
+  // Parsed BEFORE the fewer-than-two-plans early return, so a one-plan
+  // phase's grammar diagnostic still reaches this envelope instead of being
+  // skipped along with the intersection this early return has nothing to do.
+  const declared = planFiles.map((f) => {
+    const { files, issues } = parsePlanFiles(read(join(pdir, f)) || '');
+    return { plan: f, files, issues };
+  });
+  const frontmatterIssues = declared
+    .filter((d) => d.issues.length)
+    .map((d) => ({ plan: d.plan, issues: d.issues }));
+
   if (planFiles.length < 2) {
-    return ok({ phase: n, plans: [], overlaps: [], note: 'fewer than two plans - nothing to intersect' });
+    return ok({
+      phase: n, plans: [], overlaps: [],
+      note: 'fewer than two plans - nothing to intersect',
+      ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+    });
   }
-  const declared = planFiles.map((f) => ({ plan: f, files: parsePlanFiles(read(join(pdir, f)) || '') }));
   const overlaps = [];
   for (let i = 0; i < declared.length; i++) {
     for (let j = i + 1; j < declared.length; j++) {
@@ -550,6 +568,7 @@ function cmdPlanOverlap(dir, opts) {
     // A plan declaring no files cannot be proven independent - the check is
     // only as strong as the declarations. The caller treats these as unsafe.
     ...(undeclared.length ? { undeclared } : {}),
+    ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
   });
 }
 

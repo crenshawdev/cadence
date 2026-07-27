@@ -998,6 +998,81 @@ test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () =>
   assert.equal(run(['audit'], noRoadmap).reason, 'no-roadmap');
 });
 
+// --- frontmatter grammar: normalization + the diagnostic's both envelopes ---
+
+test('audit + plan-overlap: a CRLF-checked-out PLAN.md reads identically to its LF twin', () => {
+  const build = (dir) => {
+    const pdir = join(dir, 'phases', '1');
+    writeFileSync(join(pdir, 'PLAN-1.md'),
+      '---\nphase: 1\nplan: 1\nrequirements: ["#41", "#46"]\nfiles:\n  - src/a.rs\n  - src/shared.rs\n---\n# Plan 1\n');
+    writeFileSync(join(pdir, 'PLAN-2.md'),
+      '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - src/shared.rs\n  - src/c.rs\n---\n# Plan 2\n');
+  };
+  const spec = {
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+    reqs: [['#41', 1, 'Pending'], ['#46', 1, 'Pending']],
+  };
+  const lf = makeTree(spec);
+  build(lf);
+  const crlf = makeTree(spec);
+  build(crlf);
+  // Only PLAN-1.md is checked out CRLF - the sibling parsers stay out (D-10).
+  const plan1 = join(crlf, 'phases', '1', 'PLAN-1.md');
+  writeFileSync(plan1, readFileSync(plan1, 'utf8').replace(/\n/g, '\r\n'));
+
+  const lfAudit = run(['audit'], lf);
+  const crlfAudit = run(['audit'], crlf);
+  assert.deepEqual(
+    crlfAudit.requirements.map((r) => [r.id, r.break]).sort(),
+    lfAudit.requirements.map((r) => [r.id, r.break]).sort(),
+  );
+  assert.equal(crlfAudit.frontmatter_issues, undefined);
+
+  // The files path, not only the ids: plan-overlap reaches PLAN-1.md's CRLF
+  // files: block list identically to the LF twin's.
+  const lfOverlap = run(['plan-overlap', '--phase', '1'], lf);
+  const crlfOverlap = run(['plan-overlap', '--phase', '1'], crlf);
+  assert.deepEqual(crlfOverlap.overlaps, lfOverlap.overlaps);
+  assert.deepEqual(crlfOverlap.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
+  assert.equal(crlfOverlap.frontmatter_issues, undefined);
+});
+
+test('audit: a BOM + leading blank line PLAN.md reads identically to its plain twin', () => {
+  const plain = blockPlanTree('requirements: ["#41", "#46"]\nfiles: []');
+  const bomDir = blockPlanTree('requirements: ["#41", "#46"]\nfiles: []');
+  const planPath = join(bomDir, 'phases', '1', 'PLAN.md');
+  // The BOM must be the file's actual first byte; the leading blank line
+  // follows it.
+  writeFileSync(planPath, `﻿\n${readFileSync(planPath, 'utf8')}`);
+  const plainAudit = run(['audit'], plain);
+  const bomAudit = run(['audit'], bomDir);
+  assert.deepEqual(
+    bomAudit.requirements.map((r) => [r.id, r.break]).sort(),
+    plainAudit.requirements.map((r) => [r.id, r.break]).sort(),
+  );
+  assert.equal(bomAudit.frontmatter_issues, undefined);
+});
+
+test('audit + plan-overlap: an unterminated frontmatter fence reports on both envelopes, audit stays ok:true', () => {
+  // blockPlanTree writes exactly one PLAN.md, so plan-overlap hits its
+  // fewer-than-two-plans early return - deliberately, since that envelope
+  // must carry the diagnostic too. Overwrite it with a fence that never
+  // closes.
+  const dir = blockPlanTree('requirements: ["#41", "#46"]\nfiles: []');
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: ["#41", "#46"]\nfiles: []\n\n# Plan 1 (fence never closes)\n');
+  const a = run(['audit'], dir);
+  assert.equal(a.ok, true);
+  assert.deepEqual(a.frontmatter_issues,
+    [{ file: 'phases/1/PLAN.md', issues: [{ line: 1, code: 'unterminated-frontmatter', text: '---' }] }]);
+  const o = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(o.ok, true);
+  assert.equal(o.note, 'fewer than two plans - nothing to intersect');
+  assert.deepEqual(o.frontmatter_issues,
+    [{ plan: 'PLAN.md', issues: [{ line: 1, code: 'unterminated-frontmatter', text: '---' }] }]);
+});
+
 // --- renumber ------------------------------------------------------------------
 
 function renumberTree() {
