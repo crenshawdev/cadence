@@ -7,6 +7,7 @@ import { readFileSync, existsSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 
 const CONFIG = join(dirname(fileURLToPath(import.meta.url)), 'config.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-config-'));
@@ -100,6 +101,83 @@ test('validate: corrupt JSON degrades to read, names the file', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'read');
   assert.match(r.detail, /corrupt\.json/);
+});
+
+test('set: an array top-level config is rejected, nothing written (write face)', () => {
+  const file = join(dir, 'w-arr.json');
+  const bytes = '[1,2,3]';
+  writeFileSync(file, bytes);
+  const r = run(['set', '--file', file, 'granularity=fine'], join(dir, 'no-global-w-arr.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, '(root)');
+  assert.match(r.detail[0].error, /must be a JSON object/);
+  assert.equal(readFileSync(file, 'utf8'), bytes); // byte-identical: nothing written
+});
+
+test('set: a scalar top-level config is rejected as invalid, never reason:internal', () => {
+  const file = join(dir, 'w-scalar.json');
+  const bytes = '42';
+  writeFileSync(file, bytes);
+  const r = run(['set', '--file', file, 'granularity=fine'], join(dir, 'no-global-w-scalar.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.notEqual(r.reason, 'internal');
+  assert.equal(r.detail[0].key, '(root)');
+  assert.equal(readFileSync(file, 'utf8'), bytes); // byte-identical: nothing written
+
+  // the happy path still holds for a well-formed object config.
+  const sibling = join(dir, 'w-sibling.json');
+  writeFileSync(sibling, JSON.stringify({ granularity: 'coarse' }));
+  const rs = run(['set', '--file', sibling, 'model.profile=fast'], join(dir, 'no-global-w-sibling.json'));
+  assert.equal(rs.ok, true);
+  const written = JSON.parse(readFileSync(sibling, 'utf8'));
+  assert.equal(written.granularity, 'coarse');
+  assert.equal(written.model.profile, 'fast');
+});
+
+// Rewritten per CONTEXT D-04 (Phase-1 D-05 lineage): the previous version of
+// this test asserted ok:true AND that the key persisted, which can only hold if
+// the parent container is thrown away. Neither half of "lose the change, keep
+// the data" / "lose the data, keep the change" is the contract - refusing is.
+test('set: a non-object parent container is refused, not overwritten', () => {
+  for (const [label, parent] of [['array', ['main', 'master']], ['scalar', 0], ['string', 'x']]) {
+    const file = join(dir, `w-${label}-parent.json`);
+    const bytes = JSON.stringify({ git: parent });
+    writeFileSync(file, bytes);
+    const r = run(['set', '--file', file, 'git.on_protected=allow'], join(dir, `no-global-w-${label}-parent.json`));
+    assert.equal(r.ok, false, label);
+    assert.equal(r.reason, 'invalid', label);
+    assert.notEqual(r.reason, 'internal', label);
+    assert.equal(r.detail[0].key, 'git.on_protected', label);
+    assert.match(r.detail[0].error, /cannot set through "git"/, label);
+    // the container survives byte-for-byte: no reported-but-destructive write
+    assert.equal(readFileSync(file, 'utf8'), bytes, label);
+  }
+});
+
+test('set: an absent or null parent is still auto-created', () => {
+  const file = join(dir, 'w-vivify-parent.json');
+  writeFileSync(file, JSON.stringify({ granularity: 'coarse', model: null }));
+  const r = run(['set', '--file', file, 'git.on_protected=allow', 'model.profile=fast'],
+    join(dir, 'no-global-w-vivify.json'));
+  assert.equal(r.ok, true);
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(written.git.on_protected, 'allow');   // absent parent
+  assert.equal(written.model.profile, 'fast');       // null parent holds no data
+  assert.equal(written.granularity, 'coarse');
+});
+
+test('set: one bad path refuses the whole multi-pair write (all-or-nothing)', () => {
+  const file = join(dir, 'w-mixed-pairs.json');
+  const bytes = JSON.stringify({ git: ['main'] });
+  writeFileSync(file, bytes);
+  const r = run(['set', '--file', file, 'granularity=fine', 'git.on_protected=allow'],
+    join(dir, 'no-global-w-mixed.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  // the valid pair must not have landed either - checkPaths runs before setInto
+  assert.equal(readFileSync(file, 'utf8'), bytes);
 });
 
 test('validate: a scalar top-level config fails, never ok:true checked:0 (#45.3)', () => {
@@ -235,6 +313,113 @@ test('get: a scalar repo config falls back to defaults, never source:repo (#45.3
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /scalar-repo\.json/);
   assert.match(r.warnings[0], /not an object/);
+});
+
+test('get: a falsy non-object repo layer warns like a truthy one', () => {
+  const gpath = join(dir, 'no-global-for-falsy-repo.json');
+  for (const content of ['null', '0', 'false', '""']) {
+    const repo = join(dir, `falsy-repo-${content.replace(/[^a-z0-9]/gi, '_')}.json`);
+    writeFileSync(repo, content);
+    const r = run(['get', '--file', repo, 'model.profile'], gpath);
+    const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo3.json'), 'model.profile'], gpath);
+    assert.equal(r.ok, true, `content ${content}`);
+    assert.equal(r.warnings.length, 1, `content ${content}`);
+    assert.match(r.warnings[0], new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(r.warnings[0], /not an object/);
+    assert.deepEqual(r.values, absentRepo.values, `content ${content}`);
+    assert.equal(r.source, absentRepo.source, `content ${content}`);
+  }
+});
+
+test('get: a falsy non-object global layer warns too', () => {
+  const gpath = join(dir, 'falsy-global.json');
+  writeFileSync(gpath, '0');
+  const repo = join(dir, 'fine-repo-for-falsy-global.json');
+  writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
+  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.source, 'repo'); // repo value still wins
+  assert.equal(r.values['model.profile'], 'fast');
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /falsy-global\.json/);
+});
+
+test('get: an absent layer stays silent and an unparseable layer warns exactly once', () => {
+  const gpath = join(dir, 'no-global-for-absent-vs-corrupt.json');
+  const absent = run(['get', '--file', join(dir, 'truly-absent-repo4.json'), 'model.profile'], gpath);
+  assert.equal(absent.warnings, undefined);
+
+  const torn = join(dir, 'torn-mid-write.json');
+  writeFileSync(torn, '{ torn mid-write');
+  const rTorn = run(['get', '--file', torn, 'model.profile'], gpath);
+  assert.equal(rTorn.warnings.length, 1);
+  assert.match(rTorn.warnings[0], /failed to parse/);
+  assert.doesNotMatch(rTorn.warnings[0], /not an object/);
+
+  const zeroByte = join(dir, 'zero-byte.json');
+  writeFileSync(zeroByte, '');
+  const rZero = run(['get', '--file', zeroByte, 'model.profile'], gpath);
+  assert.equal(rZero.warnings.length, 1);
+  assert.match(rZero.warnings[0], /failed to parse/);
+  assert.doesNotMatch(rZero.warnings[0], /not an object/);
+});
+
+test('check: an int key with a max rejects above it and accepts at it', () => {
+  // review.request_timeout_ms is bounded because node truncates a socket
+  // timeout past int32, which would leave a stalled provider hanging instead
+  // of rejecting. Without a schema max, `set` accepted 999999999999 clean and
+  // only the seam's clamp saved it - so `get` reported a value the seam never
+  // used. The bound belongs at the write face too.
+  const over = run(['check', 'review.request_timeout_ms=999999999999']);
+  assert.equal(over.ok, false);
+  assert.match(over.errors[0].error, /must be <= 600000/);
+
+  const typo = run(['check', 'review.request_timeout_ms=600000000']);
+  assert.equal(typo.ok, false);                       // one extra zero group
+
+  assert.equal(run(['check', 'review.request_timeout_ms=600000']).ok, true);   // at the ceiling
+  assert.equal(run(['check', 'review.request_timeout_ms=1']).ok, true);        // at the min
+  assert.equal(run(['check', 'review.request_timeout_ms=0']).ok, false);       // min still holds
+
+  // a min-only int key is unaffected by the new max branch
+  assert.equal(run(['check', 'workflow.subagent_timeout=999999999999']).ok, true);
+});
+
+test('readLayer(""): an unresolvable layer path is a SILENT absence', () => {
+  // Load-bearing for config-merge's homedir() fallback: where os.homedir()
+  // throws (uid with no passwd entry and HOME unset - `docker run -u 12345`),
+  // GLOBAL_CONFIG becomes '' rather than crashing every importer at module
+  // load. That degradation is only correct if '' behaves as "no global layer"
+  // and not as a broken one, i.e. no warning and present:false.
+  const r = readLayer('');
+  assert.equal(r.value, null);
+  assert.equal(r.warning, null);
+  assert.equal(r.present, false);
+  assert.equal(typeof GLOBAL_CONFIG, 'string');   // never undefined, never throws
+});
+
+test('get: one file resolving as both layers warns once, not twice', () => {
+  // mergeLayers reads the global and repo layers independently, so a file that
+  // IS both was reported twice - one broken file, two identical diagnostics.
+  for (const [label, bytes, pattern] of [
+    ['non-object', 'null', /not an object/],
+    ['unparseable', '{ torn', /failed to parse/],
+  ]) {
+    const shared = join(dir, `shared-both-layers-${label}.json`);
+    writeFileSync(shared, bytes);
+    const r = run(['get', '--file', shared, 'model.profile'], shared);
+    assert.equal(r.ok, true, label);
+    assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
+    assert.match(r.warnings[0], pattern, label);
+  }
+
+  // two genuinely different broken layers still get one entry each
+  const g = join(dir, 'two-broken-global.json');
+  const repo = join(dir, 'two-broken-repo.json');
+  writeFileSync(g, '0');
+  writeFileSync(repo, '[1,2]');
+  const r2 = run(['get', '--file', repo, 'model.profile'], g);
+  assert.equal(r2.warnings.length, 2);
 });
 
 // --- cross-key warnings ---------------------------------------------------

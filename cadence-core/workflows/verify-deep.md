@@ -32,9 +32,10 @@ VERIFIED rows that carry a UAT item number (k + evidence); `gaps` and
 Entries match existing items by `k` or exact `name`; unmatched gaps append.
 
 The seam enforces the merge rules structurally: verifier results only fill
-`pending` items (a user-recorded result is never overwritten - conflicting
-verifier findings are dropped), unmatched gaps append as new failed items,
-human checks append as pending. Failed items route through verify.md
-`route_failures` exactly like user-reported failures.
+`pending` items (a user-recorded result is never overwritten - a conflicting
+finding is skipped and counted), unmatched gaps append as new failed items,
+human checks append as pending. An entry resolving to no usable item name is
+rejected and counted, never appended as a nameless item. Failed items route
+through verify.md `route_failures` exactly like user-reported failures.
 
-Report the seam's one-line summary (`auto_passed`, `gaps`, `added`).
+Report the seam's one-line summary (`auto_passed`, `gaps`, `added`, `skipped`, `rejected`).

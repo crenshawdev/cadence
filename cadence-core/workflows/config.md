@@ -105,6 +105,7 @@ selectable option and its `description`.
 | `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model | claude-subagent |
 | `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |
 | `review.key_file` | str\|null | Path override for the provider key env file | path, or empty→`null` (default location) | null |
+| `review.request_timeout_ms` | int | ms before a provider request is aborted | e.g. `540000` (9 min); clamped to the 600000 host ceiling | 540000 |
 | `review.consult.enabled` | bool | Allow a second-model consult at dead-ends | `true`→offer consult · `false`→don't | false |
 | `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
 | `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
@@ -153,11 +154,19 @@ independently valid. Use `--global` for machine-wide defaults (e.g. a preferred
 
 For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
 - Validate and write in one shot through the **Validation seam**:
-  `config.mjs set <key=value>…`. It rejects an unknown key or bad value
-  (`{ok:false, reason:"invalid", detail:[…]}`) atomically - nothing is written
-  unless every pair is valid - and echoes `{ok:true, changed:[…]}` on success.
-- On rejection, surface the seam's `detail` (the invalid keys and why) and the
-  allowed values from `config.mjs keys`; do not retry with a malformed config.
+  `config.mjs set <key=value>…`. It rejects an unknown key, a bad value, a
+  target file whose top level is not a JSON object, or a dotted path running
+  through a container that already holds a non-object (`{ok:false,
+  reason:"invalid", detail:[…]}`) atomically - nothing is written unless every
+  pair is valid - and echoes `{ok:true, changed:[…]}` on success.
+- On rejection, surface the seam's `detail` (the invalid keys and why). For a
+  per-key detail, look up the allowed values via `config.mjs keys`; for a
+  `(root)` detail, that lookup returns nothing - the remediation instead is
+  that the target file's top level is not a JSON object (repair or replace the
+  file). A `cannot set through "…"` detail carries its own remediation: that
+  container holds an array or a scalar and must be removed or replaced first -
+  the seam will not overwrite it, because doing so would discard its contents.
+  Do not retry with a malformed config.
 
 ## Review provider setup (cold branch)
 
