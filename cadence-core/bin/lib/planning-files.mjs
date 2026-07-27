@@ -438,6 +438,96 @@ function issueText(line) {
   return t.length > 120 ? `${t.slice(0, 120)}...` : t;
 }
 
+/**
+ * Scan a frontmatter value left to right tracking quote state: a quote
+ * character (`"` or `'`) opens a span when none is open and closes it when
+ * it matches the open quote; an UNQUOTED `#` ends the value at that index
+ * (D-01: quoting decides, with no `# ` vs `#x` discrimination and no
+ * whitespace-preceded rule - `requirements: #TODO fill this in` and
+ * `requirements: #41` both scan to an empty value, `"#41"` is data); end of
+ * string also ends the value. The result is right-trimmed. Ending the scan
+ * still inside a quote span yields code `unterminated-quote` and an empty
+ * value - callers must not fall through to any other arm on that code: an
+ * apostrophe that never closes (`files: [src/it's-a-file.md]`) has no honest
+ * item boundary, so yielding nothing (not a half-read) is the only sound
+ * result.
+ * @param {string} s @returns {{value: string, code: string|null}}
+ */
+function scanValue(s) {
+  let quote = null;
+  let cut = s.length;
+  for (let idx = 0; idx < s.length; idx++) {
+    const c = s[idx];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === '#') { cut = idx; break; }
+  }
+  if (quote) return { value: '', code: 'unterminated-quote' };
+  return { value: s.slice(0, cut).replace(/\s+$/, ''), code: null };
+}
+
+/**
+ * D-08's WRAPPING-quote strip: remove exactly the first and last character
+ * when the trimmed string is at least 2 characters and starts/ends with the
+ * SAME quote character. Never a global `["']` replace - that both mangles a
+ * real path (`src/it's-a-file.md`) and destroys the quoting signal D-01 now
+ * reads.
+ * @param {string} s
+ */
+function unwrap(s) {
+  const t = s.trim();
+  if (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[t.length - 1] === t[0]) {
+    return t.slice(1, -1);
+  }
+  return t;
+}
+
+/**
+ * Split a string on commas at quote depth 0 - a comma inside a quoted span
+ * is literal, never a separator.
+ * @param {string} s @returns {string[]}
+ */
+function splitDepth0(s) {
+  const out = [];
+  let quote = null, start = 0;
+  for (let idx = 0; idx < s.length; idx++) {
+    const c = s[idx];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === ',') { out.push(s.slice(start, idx)); start = idx + 1; }
+  }
+  out.push(s.slice(start));
+  return out;
+}
+
+/**
+ * Parse an inline flow list value - already comment-stripped by `scanValue`
+ * and confirmed by the caller to start with `[`. Finds the closing `]` at
+ * quote depth 0 (a quoted `]` is literal, never the closer) by the same
+ * left-to-right scan, never a `\[(.*)\]` capture (greedy or not - neither
+ * can see quoting, and the greedy form is the defect three reviewers found
+ * independently). Splits the payload on commas at quote depth 0 and unwraps
+ * each element. No closing bracket yields no items plus code
+ * `unterminated-inline-list`. Non-whitespace after the closing bracket
+ * yields code `trailing-inline-content`, with the payload still parsed -
+ * never a fall-through that discards it.
+ * @param {string} value @returns {{items: string[], code: string|null}}
+ */
+function parseInlineList(value) {
+  let quote = null, closeIdx = -1;
+  for (let idx = 1; idx < value.length; idx++) {
+    const c = value[idx];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === ']') { closeIdx = idx; break; }
+  }
+  if (closeIdx === -1) return { items: [], code: 'unterminated-inline-list' };
+  const payload = value.slice(1, closeIdx);
+  const trailing = value.slice(closeIdx + 1);
+  const items = splitDepth0(payload).map((s) => unwrap(s.trim())).filter(Boolean);
+  return { items, code: trailing.trim() ? 'trailing-inline-content' : null };
+}
+
 // Any line at column 0 shaped like `key:` or `key: value` - the anchor for a
 // key's value AND (from Task 3 on) the block-list terminator it doubles as.
 const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/;
@@ -467,13 +557,15 @@ const BLANK_LINE = /^\s*$/;
  * one issue `unterminated-frontmatter` at the opening fence's line.
  *
  * A key line is an exact column-0 match (`KEY_LINE`), never an interpolated
- * per-key regex; the first occurrence of a given key wins. THIS TASK keeps
- * the pre-existing value-arm behavior and block-reader behavior BYTE FOR
- * BYTE (including their defects) - Task 2 replaces the value arms with a
- * quote-aware scanner and Task 3 replaces the block reader with a stated
- * terminator set; this task is scaffolding only (normalize, the exact fence
- * anchor, and one pass covering every key so the diagnostic can reach both
- * envelopes regardless of which key's list a stray line sits under).
+ * per-key regex; the first occurrence of a given key wins. The value arms
+ * (inline list / block / scalar) and block-item payloads are resolved by
+ * `scanValue` + `unwrap` (+ `parseInlineList` for the inline form) - the
+ * quote-aware scanner D-01 requires, so the two paths cannot drift and every
+ * code either arm produces reaches `issues` with its line number. THE BLOCK
+ * READER'S TERMINATION is still Task 1's contiguous "first non-item line
+ * ends it" rule byte for byte; Task 3 replaces it with the stated terminator
+ * set (fence / key line / end of block) that skips blank and comment lines
+ * instead of stopping at them.
  * @param {string} text
  * @returns {{keys: Map<string, string[]>, issues: Issue[]}}
  */
@@ -497,41 +589,54 @@ export function parseFrontmatter(text) {
 
   const keys = new Map();
   const issues = [];
-  // Task 2 replaces this pair with a quote-aware scanner; kept byte-for-byte
-  // here so this task's diff is scaffolding only.
-  const clean = (s) => s.replace(/\s+#.*$/, '').replace(/["']/g, '').trim();
 
   for (let k = i + 1; k < j; k++) {
     const line = lines[k];
+    const lineNo = k + 1;
     const km = line.match(KEY_LINE);
     if (!km) continue;
     const key = km[1];
-    if (keys.has(key)) continue; // first occurrence wins
+    const first = !keys.has(key);
     const remainder = line.slice(key.length + 1).trim();
+    const scanned = scanValue(remainder);
 
-    if (remainder.startsWith('[')) {
-      const inline = remainder.match(/\[(.*)\]/);
-      const raw = (inline ? inline[1].split(',') : [])
-        .map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
-      keys.set(key, raw);
+    if (scanned.code) {
+      issues.push({ line: lineNo, code: scanned.code, text: issueText(line) });
+      if (first) keys.set(key, []);
       continue;
     }
 
-    const commentOnly = /^#(\s|$)/.test(remainder);
-    const bare = commentOnly ? '' : remainder.replace(/\s+#.*$/, '').trim();
-    if (bare === '') {
+    const value = scanned.value;
+    let items, code = null;
+    if (value.startsWith('[')) {
+      const r = parseInlineList(value);
+      items = r.items;
+      code = r.code;
+    } else if (value !== '') {
+      items = [unwrap(value)].filter(Boolean);
+    } else {
+      // Empty remainder (including one that was entirely a comment): the
+      // block reader, still Task 1's contiguous "first non-item line ends
+      // it" rule - Task 3 replaces this with the stated terminator set.
       const raw = [];
       let m = k + 1;
       for (; m < j; m++) {
-        const item = lines[m].match(/^\s*-\s+(.+?)\s*$/);
-        if (!item) break; // Task 3 replaces this break with the stated terminator set
-        raw.push(item[1]);
+        const itemM = lines[m].match(/^\s*-\s+(.+?)\s*$/);
+        if (!itemM) break;
+        const scannedItem = scanValue(itemM[1]);
+        if (scannedItem.code) {
+          issues.push({ line: m + 1, code: scannedItem.code, text: issueText(lines[m]) });
+          continue;
+        }
+        if (scannedItem.value === '') continue; // comment-only item: D-01 cost, not an issue
+        const it = unwrap(scannedItem.value);
+        if (it) raw.push(it);
       }
-      keys.set(key, raw.map(clean).filter(Boolean));
+      items = raw;
       k = m - 1; // resume the outer loop after the consumed block
-    } else {
-      keys.set(key, [bare].map(clean).filter(Boolean));
     }
+    if (code) issues.push({ line: lineNo, code, text: issueText(line) });
+    if (first) keys.set(key, items);
   }
 
   return { keys, issues };

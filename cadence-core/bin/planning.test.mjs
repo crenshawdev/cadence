@@ -919,8 +919,10 @@ function blockPlanTree(frontmatter, body = '') {
 }
 
 test('audit: a block-YAML requirements list reads as ids, not zero (#48.1)', () => {
+  // Under D-01 an unquoted `#41` is a comment, not an id - the block items
+  // must be quoted to read as the ids `#41`/`#46`.
   const dir = blockPlanTree(
-    'requirements:\n  - #41\n  - #46  # with a comment\nfiles: []',
+    'requirements:\n  - "#41"\n  - "#46"  # with a comment\nfiles: []',
     // A prose `requirements:` line OUTSIDE the fence must contribute nothing -
     // an unbounded key scan would swallow the bullets below it as ids.
     '\nrequirements: these prose ids:\n\n- NOT-AN-ID\n');
@@ -936,10 +938,13 @@ test('audit: a block-YAML requirements list reads as ids, not zero (#48.1)', () 
   assert.equal(r.orphans, undefined); // the body list contributed no ids
 });
 
-test('audit: the inline requirements form with a trailing comment still reads', () => {
-  const dir = blockPlanTree('requirements: ["#41", "#46"]   # phase requirement IDs\nfiles: []');
+test('audit: the inline requirements form with a bracketed trailing comment still reads exactly two ids', () => {
+  // The comment itself contains brackets - the greedy `\[(.*)\]` defect three
+  // reviewers found would pull "see [D-06]" into the payload as bogus entries.
+  const dir = blockPlanTree('requirements: ["#41", "#46"]  # ids, see [D-06]\nfiles: []');
   const r = run(['audit'], dir);
   assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements.map((q) => q.id).sort(), ['#41', '#46']);
   const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
   assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
   assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
@@ -963,10 +968,24 @@ test('audit: a comment-only requirements: value falls through to the block list'
   assert.equal(r.orphans, undefined); // the comment text minted no id
 });
 
-test('audit: a bare `#41`-shaped scalar requirements: value still reads as an id', () => {
-  // The comment/id discrimination must not swallow this repo's own id spelling:
-  // `#` followed by a non-space is a value, only `# `/bare `#` is a comment.
-  const dir = blockPlanTree('requirements: #41\nfiles: []');
+test('audit: a no-space `#TODO` comment on the key line still falls through to the block list', () => {
+  // D-01 INVERTS the old bare-`#41`-is-an-id rule: an unquoted `#` always
+  // starts a comment, with no `# ` vs `#x` discrimination, so `#TODO` (no
+  // space) is a comment exactly like `# TODO` would be.
+  const dir = blockPlanTree('requirements: #TODO fill this in\n  - "#41"\n  - "#46"\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.notEqual(byId['#46'].break, 'no-plan');
+  assert.equal(r.orphans, undefined);
+  assert.ok(!JSON.stringify(r).includes('TODO'));
+});
+
+test('audit: a quoted scalar requirements: value reads as the single id', () => {
+  const dir = blockPlanTree('requirements: "#41"\nfiles: []');
   const r = run(['audit'], dir);
   assert.equal(r.ok, true);
   const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
