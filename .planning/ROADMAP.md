@@ -26,7 +26,7 @@ won't-fix. Per-task plans come at `/cad-plan`.
   validator rejects bad input types (NaN `--total`, valueless `--reqs`, bad
   `--attempt`, scalar config) with a clean `bad-args`/`usage` result before any
   write, so no bad flag can corrupt STATE.md or pass config validation.
-- [ ] **Phase 3: planning-files parser robustness** - (#41, #46, #47, #48). Goal:
+- [x] **Phase 3: planning-files parser robustness** - (#41, #46, #47, #48). Goal:
   the shared parsers stop minting phantom requirement rows (no false
   `/cad-audit` FAIL), stop silently truncating multi-word recall queries, index
   completed captures cleanly, and read block-YAML lists and name-less phase

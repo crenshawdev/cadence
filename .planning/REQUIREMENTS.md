@@ -80,10 +80,10 @@ the rows of this section only, bounded at the next `## ` heading.
 | #44 | Phase 1 | Complete |
 | #42 | Phase 2 | Complete |
 | #45 | Phase 2 | Complete |
-| #41 | Phase 3 | Pending |
-| #46 | Phase 3 | Pending |
-| #47 | Phase 3 | Pending |
-| #48 | Phase 3 | Pending |
+| #41 | Phase 3 | Complete |
+| #46 | Phase 3 | Complete |
+| #47 | Phase 3 | Complete |
+| #48 | Phase 3 | Complete |
 
 ---
 *Last updated: 2026-07-24 opened v1.3.1 (tech-debt cycle seeded: TRI-01, FIX-01, WNF-01)*
