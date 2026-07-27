@@ -82,9 +82,16 @@ classified:
 - **Item** (`/^\s*-\s+(.*)$/`, any indent - the grammar has no nesting
   concept) - the payload is resolved the same way a key line's value is (see
   Value resolution below). A payload that is itself entirely a comment
-  (`- # stray`, and under the comment rule also an unquoted `- #41`) or a
-  bare `-` with no payload contributes NOTHING and is NOT an issue - the
-  accepted cost of the comment rule, not a defect.
+  (`- # stray`, and under the comment rule also an unquoted `- #41`) or an
+  EMPTY payload (`- ` - a dash, whitespace, nothing else) contributes
+  NOTHING and is NOT an issue - the accepted cost of the comment rule, not a
+  defect. A BARE `-` with no trailing whitespace is different: the item
+  pattern requires the whitespace, so that line is not an item at all and
+  falls through to `unknown-line`. The distinction is the WHITESPACE, and
+  any whitespace serves - `-` followed by a tab is an empty item exactly as
+  `- ` is. Every other dash spelling reports `unknown-line`: a dash with
+  nothing after it, and equally a dash followed directly by non-whitespace
+  (`-src/a.rs`, `--`), since neither matches the item pattern either.
 - **An item with no open key** - an item line (resolved to a non-empty
   value) arriving while no block key is open - before any key line at all,
   or under a key that took the inline or scalar arm - records
@@ -154,9 +161,20 @@ DROPS the payload it read, the ids or files that line would have
 contributed are simply absent, so `audit` can report `no-plan` and
 `counts.broken` can move for that reason, with the diagnostic beside it
 naming why. The Payload column states exactly what each code keeps or
-drops; a code marked "preserves" never moves `counts` by itself, and a code
-marked "drops" can - through the ordinary absence of what it dropped, not
-because the diagnostic itself flipped anything.
+drops; a code marked "drops" can move `counts` - through the ordinary
+absence of what it dropped, not because the diagnostic itself flipped
+anything.
+
+"Preserves" is a statement about what the code ITSELF discards, not a
+promise that the value still matches anything. A preserving code adds no
+truncation of its own, but the value it hands on may already be a fragment
+that an earlier rule cut, and a fragment matches no id: a backticked `#41`
+arrives as a lone `` ` ``, so on `requirements:` the requirement goes
+untraced and `counts.broken` moves anyway. The codes where that applies say
+so in their own row and are marked CONDITIONAL. Read the row, not the class.
+
+`files:` is never read by `audit`, so NO code moves `counts` through a
+`files:` value. A counts claim is only meaningful about `requirements:`.
 
 | Code | Means | Payload | Cleared by |
 |---|---|---|---|
@@ -170,6 +188,7 @@ because the diagnostic itself flipped anything.
 | `unknown-line` | A frontmatter-block line is neither a key line, a block item, a comment, blank, nor a terminator. | CONDITIONAL - the one code whose payload behavior depends on the line: drops nothing when the line was never data (a stray prose line between items leaves the items above and below intact), but drops a whole key's worth of ids when the line WAS malformed data that fell through here, e.g. `1requirements: ["#41"]` (fails `malformed-key-line`'s own `/^[A-Za-z_]/` start) or a block-item line missing its `- ` under an open key. | Turn it into a `- item`, a `# comment`, or a valid key line. |
 | `trailing-value-content` | Non-whitespace follows a resolved scalar or block-item value. | Preserves the value resolved before it. | Remove the trailing content, quote the whole value, or move the extra text into a comment. |
 | `residual-quote` | The resolved value still contains a backslash, or the same quote character that wrapped it. | Preserves the payload (D-20: escapes are detected, never implemented). | Remove the stray quote/backslash, or rewrite the value without needing one. |
+| `backtick-wrapped-value` | The resolved value STARTS or ENDS with a backtick - markdown formatting that leaked into data. Boundary, not containment and not a matched pair: a backtick INSIDE a value (`` lib/a`b.mjs ``) is a legal path character and is NOT reported, while every near-miss wrap is (`` `src/a.rs `` half-wrapped, `` `src/a.rs`, `` wrap-plus-punctuation, and a lone `` ` `` left when the `#` rule cut `` `#41` `` down to it). | CONDITIONAL, and this code never REPAIRS what it reports. It adds no truncation of its own, but it frequently fires on a value an EARLIER rule already cut: the `#` rule reduces `` `#41` `` to a lone `` ` `` and the whitespace rule reduces `` `src/my file.rs` `` to `` `src/my `` before this test runs, so the delivered payload is that fragment, not the bytes the author wrote. Whatever survives is passed on unrewritten (D-19). Counts follow from that: a fragment is not a real id, so on `requirements:` the requirement goes untraced and `counts.broken` moves. `files:` never feeds `counts` for ANY code, so read the `requirements:` behavior as the code's real signature. | Remove the backticks. |
 
 ## What is out of scope
 

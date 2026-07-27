@@ -527,6 +527,25 @@ function resolveValue(raw) {
   const residual = value.includes('\\') ||
     (quoted ? value.includes(raw[0]) : (value.includes('"') || value.includes("'")));
   if (residual) codes.push('residual-quote');
+  // A backtick at the START or END of a resolved value is markdown formatting
+  // that leaked into data. The grammar has no backtick rule, so the value
+  // stands byte-exact (D-19) and is reported rather than rewritten - `add()`'s
+  // old backtick strip is exactly the silent path rewriting D-19 removed.
+  //
+  // Boundary, not containment, and not a matched pair. Containment would fire
+  // on a real path like lib/a`b.mjs, which overlaps correctly today - the same
+  // over-fire the same-quote restriction above exists to prevent. But requiring
+  // a MATCHED pair misses every near-miss spelling, each of which is just as
+  // silent and just as unmatchable: a half wrap (`src/a.rs), a wrap plus
+  // punctuation (`src/a.rs`,), a wrap the whitespace rule already cut in half
+  // (`src/my file.rs -> `src/my), and - the sharpest one - a backtick-wrapped
+  // ID, where scanValue's unquoted-# rule (D-01) cuts `#41` down to a lone
+  // backtick BEFORE this runs, minting a one-character phantom id that audit
+  // reports as an orphan. Boundary catches all four; a matched-pair test
+  // catches none of them.
+  if (value.startsWith('`') || value.endsWith('`')) {
+    codes.push('backtick-wrapped-value');
+  }
   return { value, codes };
 }
 
@@ -612,9 +631,14 @@ const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/;
 const FENCE_LINE = /^---\s*$/;
 const BLANK_LINE = /^\s*$/;
 const COMMENT_LINE = /^\s*#/;
-// A block-list item: any indent, then `-`, one or more spaces, then payload
-// (payload may be empty - a bare `-` line contributes nothing, same as a
-// comment-only item). No indentation/nesting rule - the grammar has none.
+// A block-list item: any indent, then `-`, one or more WHITESPACE characters
+// (a space or a tab - `\s+`, not a literal space), then payload. An empty
+// payload contributes nothing, same as a comment-only item. Note the
+// whitespace is REQUIRED: a bare `-` with nothing after it does not match
+// here at all, so it falls through to `unknown-line` rather than reading as
+// an empty item. The distinction is the whitespace, and it is stated in
+// references/plan-frontmatter.md the same way. No indentation/nesting rule -
+// the grammar has none.
 const ITEM_LINE = /^\s*-\s+(.*)$/;
 // A column-0 line that is key-SHAPED (D-16) but fails KEY_LINE's `(\s|$)`
 // requirement after the colon - `requirements:["#41"]` matches this, not
@@ -756,7 +780,7 @@ export function parseFrontmatter(text) {
         pushIssues(issues, lineNo, line, [scanned.code]);
         continue;
       }
-      if (scanned.value === '') continue; // comment-only item / bare `-`: D-01 cost, not an issue
+      if (scanned.value === '') continue; // comment-only item / empty `- ` payload: D-01 cost, not an issue
       const resolved = resolveValue(scanned.value);
       pushIssues(issues, lineNo, line, resolved.codes);
       if (currentKey) {

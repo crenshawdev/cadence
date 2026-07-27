@@ -246,6 +246,63 @@ const ROWS = [
     text: fence('files: ["a\\"b.md", "c\\"d.md"]'),
     key: 'files', items: ['a\\'], issues: ['trailing-value-content', 'residual-quote'],
   },
+  {
+    name: 'a backtick-WRAPPED value is reported, payload kept byte-exact (UAT-21)',
+    text: fence('files:\n  - `src/shared.rs`'),
+    key: 'files', items: ['`src/shared.rs`'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a backtick INSIDE a value is a legal path character - no diagnostic (UAT-21 over-fire guard)',
+    text: fence('files:\n  - lib/a`b.mjs'),
+    key: 'files', items: ['lib/a`b.mjs'], issues: [],
+  },
+  // The near-miss wraps: each is just as unmatchable and just as silent as the
+  // matched pair, so the test is a BOUNDARY test, not a matched-pair test.
+  {
+    name: 'a half-wrapped value (leading backtick only) is reported (UAT-21)',
+    text: fence('files:\n  - `src/shared.rs'),
+    key: 'files', items: ['`src/shared.rs'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a half-wrapped value (trailing backtick only) is reported (UAT-21)',
+    text: fence('files:\n  - src/shared.rs`'),
+    key: 'files', items: ['src/shared.rs`'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a backtick wrap followed by punctuation is reported (UAT-21)',
+    text: fence('files:\n  - `src/shared.rs`,'),
+    key: 'files', items: ['`src/shared.rs`,'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a backtick-wrapped id survives the # rule as a lone backtick and is reported, not minted silently (UAT-21)',
+    text: fence('requirements:\n  - `#41`'),
+    key: 'requirements', items: ['`'], issues: ['backtick-wrapped-value'],
+  },
+  {
+    name: 'a backtick-wrapped path containing a space reports both its codes (UAT-21)',
+    text: fence('files:\n  - `src/my file.rs`'),
+    key: 'files', items: ['`src/my'], issues: ['trailing-value-content', 'backtick-wrapped-value'],
+  },
+  {
+    name: 'a bare `-` with no trailing whitespace is not an item - unknown-line (UAT-12)',
+    text: fence('files:\n  -\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: ['unknown-line'],
+  },
+  {
+    name: 'a `- ` with a trailing space is an empty item - contributes nothing, no issue (UAT-12)',
+    text: fence('files:\n  - \n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: [],
+  },
+  {
+    name: 'a `-` followed by a TAB is an empty item too - any whitespace serves (UAT-12)',
+    text: fence('files:\n  -\t\n  - src/a.rs'),
+    key: 'files', items: ['src/a.rs'], issues: [],
+  },
+  {
+    name: 'a dash followed directly by non-whitespace is not an item either - unknown-line (UAT-12)',
+    text: fence('files:\n  -src/a.rs\n  - src/b.rs'),
+    key: 'files', items: ['src/b.rs'], issues: ['unknown-line'],
+  },
 
   // --- Task 2: an item with no open key is diagnosed and dropped (D-13) ---
   {

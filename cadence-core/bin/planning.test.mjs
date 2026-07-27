@@ -1238,6 +1238,26 @@ test('audit: the per-code payload table is falsifiable - each dropping code move
   assert.equal(malformedData.ok, true);
   assert.ok(malformedData.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'));
   assert.ok(malformedData.counts.broken > twin.counts.broken);
+
+  // backtick-wrapped-value is the second CONDITIONAL code, and for a different
+  // reason than unknown-line: it always PRESERVES its bytes, but "preserves"
+  // is a claim about bytes, not about tracing. On files: nothing traces, so
+  // counts cannot move ...
+  const backtickFile = run(['audit'], oneIdPlanTree('requirements:\n  - "#41"\nfiles:\n  - `src/shared.rs`'));
+  assert.equal(backtickFile.ok, true);
+  assert.ok(backtickFile.frontmatter_issues[0].issues.some((i) => i.code === 'backtick-wrapped-value'));
+  assert.equal(backtickFile.counts.broken, twin.counts.broken);
+
+  // ... but the same preserved bytes on requirements: are not a real id, so
+  // the requirement goes untraced and counts.broken moves anyway. This row is
+  // twin-shaped (same single id, same key as the twin) so it can actually
+  // fail - the files: row above cannot, which is why one row alone would be
+  // a test that passes by construction.
+  const backtickId = run(['audit'], oneIdPlanTree('requirements:\n  - `#41`\nfiles: []'));
+  assert.equal(backtickId.ok, true);
+  assert.ok(backtickId.frontmatter_issues[0].issues.some((i) => i.code === 'backtick-wrapped-value'));
+  assert.ok(backtickId.counts.broken > twin.counts.broken,
+    'backtick-wrapped-value on requirements: must move counts.broken - a preserved `#41` is not the id #41');
 });
 
 test('plan-overlap: a trailing-annotated block item still overlaps, with the diagnostic naming which plan (UAT-9)', () => {
@@ -1256,6 +1276,28 @@ test('plan-overlap: a trailing-annotated block item still overlaps, with the dia
   assert.deepEqual(r.frontmatter_issues, [{
     plan: 'PLAN-1.md',
     issues: [{ line: 6, code: 'trailing-value-content', text: '- "src/shared.rs" (new)' }],
+  }]);
+});
+
+test('plan-overlap: a backtick-wrapped path does not silently miss a real collision (UAT-21)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - `src/shared.rs`\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - src/shared.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  // The path stays byte-exact (D-19), so the two spellings genuinely do not
+  // overlap - but the diagnostic is what keeps that from being SILENT, and
+  // choose_path routes a phase carrying frontmatter_issues to sequential.
+  assert.deepEqual(r.overlaps, []);
+  assert.deepEqual(r.frontmatter_issues, [{
+    plan: 'PLAN-1.md',
+    issues: [{ line: 6, code: 'backtick-wrapped-value', text: '- `src/shared.rs`' }],
   }]);
 });
 
