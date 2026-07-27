@@ -24,7 +24,7 @@
 // Usage: self-verify.mjs [--root <repo root>]
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, readlinkSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
@@ -112,9 +112,30 @@ function* mdFiles(root) {
   ];
   for (const d of dirs) {
     if (!existsSync(d)) continue;
-    for (const e of readdirSync(d, { recursive: true, encoding: 'utf8' })) {
+    // The walker never drops an entry it cannot inspect - it yields the
+    // path so run()'s read-guard can report it as an unreadable surface,
+    // rather than the whole run collapsing to one opaque internal error
+    // (#49.1). An unreadable directory is itself the unreadable surface.
+    let list;
+    try {
+      list = readdirSync(d, { recursive: true, encoding: 'utf8' });
+    } catch {
+      yield d;
+      continue;
+    }
+    for (const e of list) {
       const f = join(d, String(e));
-      if (f.endsWith('.md') && statSync(f).isFile()) yield f;
+      if (!f.endsWith('.md')) continue;
+      // Deliberately optimistic on the throw: a symlink that fails the
+      // stat (dangling, cycle) still reaches the reporter as a file,
+      // rather than vanishing silently from the walk.
+      let isFile;
+      try {
+        isFile = statSync(f).isFile();
+      } catch {
+        isFile = true;
+      }
+      if (isFile) yield f;
     }
   }
   // README and INTERNALS name user-facing switches and live file paths - they
@@ -180,8 +201,25 @@ function run(root) {
   }
 
   for (const file of mdFiles(root)) {
-    const text = readFileSync(file, 'utf8');
     const rel = relative(root, file);
+    let text;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      // Name the link target when there is one - costs one line here and
+      // saves the operator an `ls -l` on a rare failure. Use e.code rather
+      // than the full message when a target is known, so the detail stays
+      // free of machine-specific absolute paths.
+      let target = null;
+      try {
+        target = readlinkSync(file);
+      } catch { /* not a symlink, or target unreadable too */ }
+      const detail = target
+        ? `unreadable symlink -> ${target} (${e.code || e.message})`
+        : (e.code || e.message);
+      problems.push({ kind: 'unreadable-surface', file: rel, detail });
+      continue;
+    }
 
     // 1. config-key tokens: family-rooted dotted identifiers.
     for (const m of text.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
@@ -290,12 +328,37 @@ function run(root) {
   const toolAlt = KNOWN_TOOLS.join('|');
   const backtickRe = new RegExp('`(' + toolAlt + ')`', 'g');
   const theToolRe = new RegExp('\\bthe (' + toolAlt + ') tool\\b', 'g');
+  // This site runs AFTER the budget check, on the same agents/ directory
+  // the filed repro (#49.1) targets - guarding only mdFiles and the shared
+  // surfaces() walker (D-13) would leave the exact repro reachable here,
+  // one check later. mdFiles already reported the same file as an
+  // unreadable-surface problem, so this loop pushes NO problem of its own
+  // for an unreadable entry - just skips it, to avoid double-counting one
+  // broken link.
   const agentsDir = join(root, 'agents');
   if (existsSync(agentsDir)) {
-    for (const e of readdirSync(agentsDir, { encoding: 'utf8' })) {
+    let agentFiles;
+    try {
+      agentFiles = readdirSync(agentsDir, { encoding: 'utf8' });
+    } catch {
+      agentFiles = [];
+    }
+    for (const e of agentFiles) {
       const file = join(agentsDir, e);
-      if (!e.endsWith('.md') || !statSync(file).isFile()) continue;
-      const text = readFileSync(file, 'utf8');
+      if (!e.endsWith('.md')) continue;
+      let isFile;
+      try {
+        isFile = statSync(file).isFile();
+      } catch {
+        continue;
+      }
+      if (!isFile) continue;
+      let text;
+      try {
+        text = readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
       const rel = relative(root, file);
       // Frontmatter is the block between the first `---` and the next `---`;
       // the rest is the prose body the lint scans.

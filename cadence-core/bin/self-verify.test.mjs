@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -190,6 +190,42 @@ test('bare-word tool names (D-06 collisions) are not false positives', () => {
     budgets: { 'agents/a.md': 10000 },
   });
   assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
+// --- unreadable-surface resilience (#49.1) ---
+
+test('#49.1: a dangling symlink under agents/ is reported loudly, not collapsed to internal', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  symlinkSync('nowhere.md', join(root, 'agents', 'dangling.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, undefined);
+  assert.ok(r.problems.some((p) =>
+    p.kind === 'unreadable-surface' && p.file === 'agents/dangling.md'));
+  // Proof the LAST check (the agents tools-declaration lint, D-13's third
+  // site) still ran after the unreadable entry.
+  assert.ok(r.problems.some((p) =>
+    p.kind === 'undeclared-tool' && /Bash/.test(p.detail)));
+  // Proof the lib stayed silent (D-05): no unbudgeted-surface for the link.
+  assert.ok(!r.problems.some((p) =>
+    p.kind === 'unbudgeted-surface' && p.file === 'agents/dangling.md'));
+});
+
+test('#49.1: a symlink cycle under agents/ is reported loudly too', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  rmSync(join(root, 'agents', 'a.md'));
+  symlinkSync('b.md', join(root, 'agents', 'a.md'));
+  symlinkSync('a.md', join(root, 'agents', 'b.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.ok(r.problems.some((p) =>
+    p.kind === 'unreadable-surface' && p.file === 'agents/a.md'));
 });
 
 test('INTERNALS.md: a backticked repo path that does not exist is flagged; a real one and a glob are not', () => {
