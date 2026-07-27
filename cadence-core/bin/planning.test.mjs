@@ -1206,6 +1206,51 @@ test('renumber: refuses to operate ON a decimal phase', () => {
   assert.equal(run(['renumber', 'insert', '--at', '1.5'], dir).reason, 'bad-args');
 });
 
+// A tree with an out-of-roadmap decimal Phase 2.1 and a cursor parked on it -
+// mirrors the decimal test above rather than passing n:2.1 to makeTree, whose
+// `**Depends on:** Phase ${p.n - 1}` line would render a float artifact.
+function decimalCursorTree() {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true } },
+    cursor: { phase: 2.1, total: 4, name: 'Patch', status: 'planned', next: '/cad-execute 2.1', updated: '2026-01-01' },
+  });
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8').replace(
+    '- [ ] **Phase 3: Three**',
+    '- [ ] **Phase 2.1: Patch** - see phases/2.1/ notes\n- [ ] **Phase 3: Three**');
+  writeFileSync(join(dir, 'ROADMAP.md'), roadmap);
+  mkdirSync(join(dir, 'phases', '2.1'), { recursive: true });
+  return dir;
+}
+
+test('renumber: a decimal cursor is warned about, never shifted (#37)', () => {
+  const dir1 = decimalCursorTree();
+  const r1 = run(['renumber', 'remove', '--n', '1'], dir1);
+  assert.equal(r1.ok, true);
+  assert.match(r1.warn, /2\.1/);
+  assert.match(r1.warn, /re-point/);
+  const cursor1 = run(['cursor', 'get'], dir1);
+  assert.equal(cursor1.phase, 2.1);
+  assert.equal(cursor1.total, 3);
+  assert.match(readFileSync(join(dir1, 'ROADMAP.md'), 'utf8'), /\*\*Phase 2\.1: Patch\*\*/);
+  assert.ok(existsSync(join(dir1, 'phases', '2.1')));
+
+  const dir2 = decimalCursorTree();
+  const r2 = run(['renumber', 'insert', '--at', '2'], dir2);
+  assert.equal(r2.ok, true);
+  const cursor2 = run(['cursor', 'get'], dir2);
+  assert.equal(cursor2.phase, 2.1);
+  assert.equal(cursor2.total, 5);
+  assert.ok(r2.warn);
+
+  const dir3 = decimalCursorTree();
+  const r3 = run(['renumber', 'remove', '--n', '3'], dir3);
+  assert.equal(r3.ok, true);
+  assert.equal(r3.warn, undefined); // shift point sits above the cursor - nothing moved (D-10)
+  const cursor3 = run(['cursor', 'get'], dir3);
+  assert.equal(cursor3.phase, 2.1);
+});
+
 test('phase-done: a decimal phase flips its own line, dot not a wildcard', () => {
   // Phase 291 must NOT be flipped by --n 2.1 (the unescaped-regex bug).
   const dir = makeTree({

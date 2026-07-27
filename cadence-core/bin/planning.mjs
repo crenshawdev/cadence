@@ -694,7 +694,22 @@ function cmdRenumber(dir, sub, opts) {
   let warn;
   if (cursor) {
     newCursor = { ...cursor, total: total + delta };
-    if (cursor.phase >= shiftFrom) newCursor.phase = cursor.phase + delta;
+    // The phase NUMBER only ever shifts for an integer cursor. A decimal
+    // cursor's own ROADMAP token and phases/<phase>/ dir are never shifted
+    // either (see decimalPhases below), so moving just the cursor's number
+    // would desync it from the phase it actually names - shifting nowhere
+    // else is exactly why the number stays put here too. total still moves:
+    // the roadmap genuinely gained or lost a phase, so the denominator is
+    // still true even while the numerator is left for the caller to re-point.
+    if (cursor.phase >= shiftFrom) {
+      if (Number.isInteger(cursor.phase)) {
+        newCursor.phase = cursor.phase + delta;
+      } else {
+        warn = `cursor sits on decimal phase ${cursor.phase}, which renumber ` +
+          `never shifts (its ROADMAP token and phases/${cursor.phase}/ did not ` +
+          `move either); total is now ${total + delta} - re-point it (cursor set)`;
+      }
+    }
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
     }
