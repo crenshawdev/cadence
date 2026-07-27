@@ -24,8 +24,6 @@ Its one JSON line carries everything this workflow reads:
   **planned** (PLAN, no SUMMARY) -> **executed** (SUMMARY, UAT not fully
   passed) -> **complete**, with UAT counts where a checklist exists.
 - `current` - the lowest non-complete phase (null when all are complete).
-- `cycle` - `"none"` only between milestones (phases pruned, next cycle
-  unplanned): `phases[]` empty, `current` null. Not an error.
 - `cursor` - the parsed STATE.md hint, with `agrees` already computed.
   When its status is `paused`, its `next` is the resume pointer /cad-pause
   wrote - the one-line "where I was".
@@ -80,9 +78,6 @@ Compact status, no banners:
 Recent: {2-3 recent commit subjects}
 Paused: {the cursor's Next line}   (only when Status is paused)
 ```
-
-On `cycle: none` there is no phase list: print
-`# {project} - {milestone} shipped, next cycle not planned` plus Recent.
 </step>
 
 <step name="route">
@@ -91,15 +86,11 @@ only:
 
 | Condition | Next step |
 |---|---|
-| `cycle` is `none` (between milestones) | /cad-plan 1 for the new cycle |
 | Paused cursor pointing at the current phase | resume at the cursor's next action |
 | Lowest **planned** phase | /cad-execute {N} |
 | Lowest **executed** phase | /cad-verify {N} |
 | `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when `workflow.skip_discuss` is true |
 | `current` is null (all complete) | /cad-milestone |
-
-`cycle: none` is checked FIRST - its `current` is null too, so the
-all-complete row would otherwise loop a just-closed milestone back.
 
 The planned/executed rows scan ALL phases lowest-first, not just the
 cursor's phase - this recovers a mid-execution session death even when the

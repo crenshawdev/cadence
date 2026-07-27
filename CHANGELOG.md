@@ -82,16 +82,6 @@ file, a bad flag value, an unreadable symlink and a backslash-wrapped
   alternating quote strip stops a real push beside a quote character from going
   silent, and a push inside a quoted multi-line string still produces no prompt.
 
-**Off-roadmap, fixed at the milestone close** (not part of the planned 13)
-
-- `planning.mjs status` treated an empty `## Phases` as `unparseable-roadmap`,
-  so `/cad-progress` was broken in the window between a milestone close, which
-  prunes the shipped phases, and the next `/cad-plan` that writes new ones. An
-  empty section is now `cycle: "none"`, while a missing `## Phases` section and
-  one holding phase-shaped lines that do not parse both still fail. Same
-  absent-versus-broken distinction as #39 and #44, which is why it ships here
-  rather than waiting for the next cycle.
-
 ### Known gaps
 
 Recorded rather than hidden, both confirmed during phase-4 verification and

@@ -46,29 +46,32 @@ context-gathering, and debugging — without any external memory system.
 - ✓ `/cad-decision-review`: on-demand refute-then-adjudicate over one decision, Context7 + codebase grounding, per-objection ruling + amendments (DEC-02) — v1.2.0
 - ✓ DeepSeek cross-model review provider: Chat Completions adapter (json_object + in-prompt schema), selectable via `review.reviewers` (REV-02) — v1.2.0
 - ✓ Every open bug from the post-v1.2.0 sweep triaged and fixed, no won't-fix: silent data-file failures surfaced (#39, #40, #43, #44), seam flag inputs validated before any write (#42, #45), planning parsers de-phantomed and widened (#41, #46, #47, #48), renumber and git-guard hardened (#37, #49, #50) — v1.3.1
-- ✓ An empty `## Phases` reads as a closed milestone (`cycle: none`) rather than `unparseable-roadmap`, so /cad-progress survives the gap between a close and the next plan — v1.3.1
 
 ### Active
 
-**None open.** `v1.3.1` shipped 2026-07-27; its phases are pruned and the
-roadmap is deliberately empty. This is a supported resting state, not a
-half-finished one: `planning.mjs status` reports `cycle: none` and
-`/cad-progress` routes to `/cad-plan 1` for whatever the next cycle turns out
-to be.
+**None open.** `v1.3.1` shipped 2026-07-27 and its phases are pruned, so
+`## Phases` is empty. Known consequence until it is fixed: `planning.mjs status`
+returns `unparseable-roadmap` on an empty roadmap, so `/cad-progress` does not
+work until the next cycle's phases exist. Use `/cad-phase add` or `/cad-plan`
+to open the cycle rather than `/cad-progress`.
 
 The next milestone's scope is not set. Candidates, in the order the evidence
 argues for them:
 
-1. **The regressions this cycle introduced.** Phase 3's own commits left a HIGH
+1. **The empty-roadmap state itself.** A fix was written and reverted at this
+   close after `pre_ship` confirmed two HIGH findings (see CAPTURE.md). It needs
+   a real answer to "what is a phase-shaped line" and a routing destination that
+   exists, not a heuristic.
+2. **The regressions this cycle introduced.** Phase 3's own commits left a HIGH
    (`readFrontmatterList` reads a trailing comment as the whole value and
    discards the block list) and two MEDIUMs, all open in CAPTURE.md.
-2. **The Traceability seeding step that has now failed to fire at two
+3. **The Traceability seeding step that has now failed to fire at two
    consecutive milestone closes** (v1.2.0 and v1.3.1), each time requiring a
    hand-populated table before /cad-audit could pass.
-3. **The two phase-sized rewrites CAPTURE argues for**: one quote-state
+4. **The two phase-sized rewrites CAPTURE argues for**: one quote-state
    tokenizer closing the six known git-guard rail-3 holes, and streaming
    provider responses so review timeouts stop being a fixed-number guess.
-4. **The 11 open `[enhancement]` issues** (#14-#31, #54).
+5. **The 11 open `[enhancement]` issues** (#14-#31, #54).
 
 ### Out of Scope
 
@@ -120,8 +123,7 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | Autonomous close is opt-in, never the default | Preserves cad-land's "the publish mechanism is the user's call"; `auto_close` is an explicit override that still halts on a blocking `pre_ship` FAIL | ✓ Shipped v1.1.0-rc.2 (live end-to-end run deferred to final v1.1.0) |
 | Reset-to-base + pull after every land | A cycle always ends on an up-to-date `main`, so the next starts clean; removes the manual return step | ✓ Shipped v1.1.0-rc.2 |
 | `v1.2.0` cut straight, no rc cycle | A small backward-compatible minor (one bug fix, two guidance nudges, one command); the rc line was for the larger v1.1.0 scope | ✓ Shipped v1.2.0 |
-| An empty roadmap is a state, not an error | Closing a milestone prunes its phases, so the between-milestones tree is normal and the seam must report it rather than fail; only a missing section or unparseable phase lines are faults | ✓ Shipped v1.3.1 |
-| The v1.3.1 close carried one off-roadmap fix | Same absent-vs-broken class as #39/#44 and it broke the very handoff the release ends on; disclosed in CHANGELOG and the tag rather than folded in silently, with the traceability table left at the 13 planned rows | ✓ Shipped v1.3.1 |
+| A close-time fix still goes through the ship gate | An empty-roadmap fix written during the v1.3.1 close looked small, passed 340 tests, and was reverted when `pre_ship` confirmed two HIGH findings: its heuristic reported a broken roadmap as a cleanly closed milestone, and it routed users to a workflow that refuses phases absent from ROADMAP | ✗ Reverted at the v1.3.1 close; requeued as a designed phase |
 | Durability is prose judgment, not a score | The three-part filter lives in cad-context workflow prose; no scoring seam, matching "prose keeps judgment, scripts keep invariants" | ✓ Shipped v1.2.0 |
 | DeepSeek via json_object + in-prompt schema | DeepSeek has no server-side json_schema; the shared validate-on-return guard degrades a schema-ignoring response to bad-shape, not bad data | ✓ Shipped v1.2.0 |
 

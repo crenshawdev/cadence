@@ -57,7 +57,6 @@ parses only the Traceability table).
 | #37 (decimal STATE cursor carved out of the renumber shift) | 4 | Complete | v1.3.1 |
 | #49 (unreadable symlink survivable; renumber collision and partial-apply reported) | 4 | Complete | v1.3.1 |
 | #50 (git-guard joins backslash line-continuations before parsing) | 4 | Complete | v1.3.1 |
-| (off-roadmap) empty `## Phases` reads as `cycle: none`, not `unparseable-roadmap` | — | Complete | v1.3.1 |
 
 ## Deferred
 
