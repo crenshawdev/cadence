@@ -100,6 +100,13 @@ test('a phantom flag on a real subcommand is flagged (the --items regression)', 
   assert.ok(p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
 });
 
+test('#50: a CRLF backslash continuation joins like an LF one (the --items regression, CRLF spelling)', () => {
+  const root = fixture(
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase 1 \\\r\n  --items -\r\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
+});
+
 test('an unknown subcommand and a missing path are flagged', () => {
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" frobnicate\n' +

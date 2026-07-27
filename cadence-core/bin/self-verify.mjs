@@ -239,8 +239,16 @@ function run(root) {
     }
 
     // 2. script invocations.
-    // Join backslash continuations so multi-line commands read as one.
-    const joined = text.replace(/\\\n\s*/g, ' ');
+    // Join backslash continuations so multi-line commands read as one. The
+    // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF
+    // one - git-guard.mjs carries the identical regex for the same reason,
+    // so the two seams stay one idiom rather than two spellings (D-15). The
+    // trailing class is `[ \t]*`, not `\s*`: `\s` matches `\n`, so `\s*`
+    // would swallow the newline that ends the continued line and merge the
+    // NEXT line into the joined command, letting the flag-checking regex
+    // below (bounded by `[^\n]*`) read words that were never on that
+    // command line.
+    const joined = text.replace(/\\\r?\n[ \t]*/g, ' ');
     for (const m of joined.matchAll(/([a-z-]+\.mjs)"?\s+([a-z-]+)(?:\s+([a-z-]+))?([^\n]*)/g)) {
       const [, script, w1, w2, restRaw] = m;
       const contract = CONTRACTS[script];
