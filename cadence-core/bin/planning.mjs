@@ -625,21 +625,29 @@ function gitMv(from, to) {
 }
 
 /**
- * Files under `dirPath` that `git rm -r` will NOT remove: untracked (`??`)
- * and ignored (`!!`). `git rm` exits 0 and leaves them, so the directory
- * survives a removal that reported success.
+ * Every path under `relPath` carrying uncommitted state - untracked (`??`),
+ * ignored (`!!`), modified, staged, or deleted. All of them make a `remove`
+ * unsafe, for two different reasons:
+ *   - `??`/`!!`: `git rm -r` exits 0 and LEAVES them, so the directory
+ *     survives a removal that reported success and the next move nests into
+ *     it.
+ *   - modified/staged: `git rm -r` REFUSES ("file has local modifications")
+ *     and the caller's `rmSync` fallback then deletes the work anyway, with
+ *     no copy in the object store to recover from.
+ * Refusing on any porcelain output covers both, and leaves git's own
+ * safety check intact instead of overriding it.
  * Outside a git repo the call fails and this returns [] - correctly, since
- * the `rmSync` fallback there removes the directory whole and no residue can
- * survive to be nested into.
+ * nothing is tracked there, the `rmSync` fallback removes the directory
+ * whole, and no residue can survive to be nested into.
  * `relPath` is relative to `cwd`, so this works whether the caller's `--dir`
  * is absolute or relative.
  * @param {string} cwd @param {string} relPath @returns {string[]}
  */
-function unremovableUnder(cwd, relPath) {
+function uncommittedUnder(cwd, relPath) {
   try {
     const out = execFileSync('git', ['status', '--porcelain', '--ignored', '--', relPath],
       { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return out.split('\n').filter((l) => /^(\?\?|!!)/.test(l)).map((l) => l.slice(3).trim());
+    return out.split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim());
   } catch {
     return [];
   }
@@ -721,10 +729,10 @@ function cmdRenumber(dir, sub, opts) {
   // residue: it is the caller's uncommitted work, and `remove` is not a
   // licence to discard it.
   if (sub === 'remove' && existingDir(at)) {
-    const residue = unremovableUnder(dir, join('phases', String(at)));
-    if (residue.length) {
-      return fail('untracked-residue',
-        `phases/${at} holds ${residue.length} untracked or ignored file(s) that git rm will not remove (e.g. ${residue[0]}) - commit or delete them first`,
+    const dirty = uncommittedUnder(dir, join('phases', String(at)));
+    if (dirty.length) {
+      return fail('uncommitted-work',
+        `phases/${at} holds ${dirty.length} file(s) with uncommitted state (e.g. ${dirty[0]}) - commit or discard them first; removing the phase would destroy work git cannot recover`,
         `git status --porcelain --ignored -- .planning/phases/${at}`);
     }
   }

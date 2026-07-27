@@ -1173,7 +1173,7 @@ test('renumber remove: a dangling symlink at phases/<at> collides instead of dyi
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
-test('renumber remove: untracked residue in phases/<at> is refused before any write', () => {
+test('renumber remove: uncommitted work in phases/<at> is refused before any write', () => {
   // `git rm -r -q` exits 0 while leaving untracked/ignored files, so
   // phases/<at> SURVIVES a removal that reported success, the first move
   // nests the next phase inside it (phases/1/2/PLAN.md), and the command
@@ -1194,7 +1194,7 @@ test('renumber remove: untracked residue in phases/<at> is refused before any wr
   const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
   const r = run(['renumber', 'remove', '--n', '1'], dir);
   assert.equal(r.ok, false);
-  assert.equal(r.reason, 'untracked-residue');
+  assert.equal(r.reason, 'uncommitted-work');
   assert.match(r.detail, /NOTES\.md/);
   // Nothing moved, nothing nested, nothing rewritten.
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
@@ -1202,8 +1202,22 @@ test('renumber remove: untracked residue in phases/<at> is refused before any wr
   assert.ok(existsSync(join(dir, 'phases', '1', 'PLAN.md')));
   assert.ok(!existsSync(join(dir, 'phases', '1', '2')));
 
-  // With the residue gone the same call succeeds and does NOT nest.
+  // A MODIFIED tracked file is the other half of the same principle, and the
+  // more dangerous one: `git rm -r` REFUSES it ("file has local
+  // modifications"), and the rmSync fallback then deletes the work anyway
+  // with no copy in the object store. Verified live before this guard: the
+  // command returned ok:true and the edit was unrecoverable.
   rmSync(join(dir, 'phases', '1', 'NOTES.md'));
+  const plan1 = join(dir, 'phases', '1', 'PLAN.md');
+  const edited = '# Plan 1\n\nuncommitted edit\n';
+  writeFileSync(plan1, edited);
+  const rMod = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(rMod.ok, false);
+  assert.equal(rMod.reason, 'uncommitted-work');
+  assert.equal(readFileSync(plan1, 'utf8'), edited, 'the uncommitted edit must survive');
+
+  // With the tree clean the same call succeeds and does NOT nest.
+  g(['checkout', '--', '.']);
   const r2 = run(['renumber', 'remove', '--n', '1'], dir);
   assert.equal(r2.ok, true);
   assert.ok(!existsSync(join(dir, 'phases', '1', '2')));
