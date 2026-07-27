@@ -1557,6 +1557,64 @@ test('plan-overlap: task **Files:** lines count even when frontmatter omits them
   assert.deepEqual(r.overlaps[0].files, ['src/a.rs']);
 });
 
+test('plan-overlap: a task **Files:** annotation still normalizes to the bare path - the frontmatter narrowing is scoped to one arm (D-19)', () => {
+  // PLAN-1's frontmatter declares the bare path; PLAN-2 declares it only on
+  // an annotated task line. No frontmatter twin exists for the raw
+  // "src/a.rs (edit)" form, so only the normalized path overlaps.
+  const r = run(['plan-overlap', '--phase', '1'],
+    overlapTree(['src/a.rs'], [], 'src/a.rs (edit)'));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/a.rs'] }]);
+});
+
+test('plan-overlap: frontmatter-declared paths with parens or a backtick overlap byte-exact, unmangled by add() (acceptance criterion 5)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  const body = (p) => `---\nphase: 1\nplan: ${p}\nrequirements: []\nfiles:\n  - src/x(1)\n  - lib/a\`b.mjs\n---\n# Plan ${p}\n`;
+  writeFileSync(join(pdir, 'PLAN-1.md'), body(1));
+  writeFileSync(join(pdir, 'PLAN-2.md'), body(2));
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps,
+    [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/x(1)', 'lib/a`b.mjs'] }]);
+  assert.equal(r.frontmatter_issues, undefined);
+});
+
+test('plan-overlap: a frontmatter path with parens overlaps its raw twin declared only on a task line (the cross-arm bridge)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - src/x(1)\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles: []\n---\n# Plan 2\n\n' +
+    '### Task 1: t\n\n- **Files:** src/x(1)\n- **Action:** x\n- **Verify:** y\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/x(1)'] }]);
+});
+
+test('plan-overlap: a frontmatter backtick-bearing path overlaps its raw twin declared only on a task line (the cross-arm bridge, other direction)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles: []\n---\n# Plan 1\n\n' +
+    '### Task 1: t\n\n- **Files:** lib/a`b.mjs\n- **Action:** x\n- **Verify:** y\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - lib/a`b.mjs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['lib/a`b.mjs'] }]);
+});
+
 test('plan-overlap: a plan with no declared files is flagged undeclared', () => {
   const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/a.rs'], []));
   assert.deepEqual(r.overlaps, []);

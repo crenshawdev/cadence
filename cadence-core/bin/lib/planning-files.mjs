@@ -824,12 +824,37 @@ export function parsePlanRequirements(text) {
 
 /**
  * Extract the file paths a plan declares it touches: the frontmatter
- * `files:` list (via `readFrontmatterList`) unioned with every task's
- * `- **Files:** a, b` line (either source alone can go stale; the union is
- * what the parallel-safety overlap check trusts) - plus the frontmatter arm's
- * issues (D-09: the task-line arm is untouched this phase and reported
- * nowhere). Trailing parentheticals ("src/a.rs (new)") and backticks are
- * stripped; template placeholders ({...}) are ignored.
+ * `files:` list unioned with every task's `- **Files:** a, b` line (either
+ * source alone can go stale; the union is what the parallel-safety overlap
+ * check trusts) - plus the frontmatter arm's issues (`plan-overlap` reports
+ * nowhere else; the task-line arm is a separate, already CRLF-tolerant regex
+ * outside this grammar).
+ *
+ * The two arms normalize DIFFERENTLY (D-19; D-09 superseded). The
+ * frontmatter arm's items are already grammar-resolved - comment-stripped,
+ * quote-resolved, trailing content diagnosed - so re-processing them through
+ * `add()`'s parenthetical/backtick strip is a second, silent route to a
+ * wrong `overlaps`: `src/x(1)` -> `src/x`, `` a`b.mjs `` -> `ab.mjs`, each a
+ * phantom or missed overlap reported as authoritative with no
+ * `frontmatter_issues` entry. The frontmatter arm therefore adds its items
+ * VERBATIM, byte for byte as the plan declared them (skipping only the
+ * empty string); the task-line arm keeps `add()`'s parenthetical strip,
+ * backtick strip and `{`-placeholder filter exactly as before.
+ *
+ * The task-line arm ALSO adds its raw, un-normalized trimmed form (skipping
+ * empties and `{`-placeholders on both forms) - the cross-arm bridge this
+ * narrowing requires: once the two arms normalize differently, the SAME
+ * declared path would otherwise reach the shared `Set` as two different
+ * strings depending on which arm a plan used (PLAN-1 declaring `src/x(1)`
+ * in frontmatter, PLAN-2 declaring it only on a `- **Files:**` task line,
+ * would yield `src/x(1)` vs `src/x` - no overlap, no `undeclared`, no
+ * `frontmatter_issues`, and `plan-overlap` would greenlight two plans
+ * writing one file). Adding both forms can only ADD Set entries, never
+ * remove one, so its failure direction is a phantom overlap routing
+ * sequential - the safe direction for a parallel-safety gate. Accepted
+ * cost: an annotated task line contributes a non-path string
+ * (`src/a.rs (edit)`) to that plan's files list, which can appear in
+ * `overlaps` output as a duplicate beside its normalized twin.
  * @param {string} text @returns {{files: string[], issues: Issue[]}}
  */
 export function parsePlanFiles(text) {
@@ -839,9 +864,13 @@ export function parsePlanFiles(text) {
     if (f && !f.startsWith('{')) files.add(f);
   };
   const { items, issues } = readFrontmatterList(text, 'files');
-  for (const f of items) add(f);
+  for (const f of items) if (f) files.add(f); // verbatim - no post-grammar rewriting (D-19)
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
-    for (const f of m[1].split(',')) add(f);
+    for (const raw of m[1].split(',')) {
+      add(raw); // the normalized form, D-19's task-line arm
+      const trimmed = raw.trim();
+      if (trimmed && !trimmed.startsWith('{')) files.add(trimmed); // + the raw form, the cross-arm bridge
+    }
   }
   return { files: [...files], issues };
 }
