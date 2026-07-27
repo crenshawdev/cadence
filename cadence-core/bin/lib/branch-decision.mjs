@@ -69,11 +69,13 @@ export function integrationBranchName(projectText, roadmapText) {
  * - trunk mode: never create an integration branch; commits land on the base,
  *   still governed by git.on_protected (git-guard.mjs unchanged). `branch: null`.
  * - milestone mode on a protected base: auto -> create, off -> stay, ask -> ask,
- *   each naming the derived integration branch (its tip becomes the worktree
- *   fork point, D-06). When no name is derivable, auto/ask downgrade to a
- *   naming-problem `ask` (branch:null) rather than create an unnamed branch.
+ *   each naming the derived integration branch - what parallel worktree
+ *   branches merge back into; where the host forks them from is not
+ *   Cadence's to guarantee. When no name is derivable, auto/ask downgrade to
+ *   a naming-problem `ask` (branch:null) rather than create an unnamed branch.
  * - milestone mode off a protected base: stay - creation is lazy and once per
- *   cycle, and HEAD is already off the base, so the current branch is the tip.
+ *   cycle, and HEAD is already off the base, so the current branch is the one
+ *   worktrees merge back into.
  *
  * @param {{ mode?: string, autoBranch?: string, currentBranch?: string,
  *   protectedBranches?: string[], integrationName?: string | null }} args
@@ -90,7 +92,7 @@ export function decideBranch({ mode, autoBranch, currentBranch, protectedBranche
   if (mode === 'milestone') {
     if (!protectedList.includes(currentBranch)) {
       return { action: 'stay', branch: currentBranch ?? null,
-        reason: 'already off the protected base; once-per-cycle integration-branch creation has happened, this branch tip is the worktree fork point' };
+        reason: 'already off the protected base; once-per-cycle integration-branch creation has happened, this is the branch worktrees merge back into - where the host forks them from is not Cadence\'s to guarantee' };
     }
     // A null integration name (no version derivable) must never become a silent
     // `create` or a `checkout -b <null>`: downgrade auto/ask to a naming-problem

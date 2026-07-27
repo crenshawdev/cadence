@@ -53,7 +53,7 @@ test('milestone + protected + auto: create and switch to the integration branch'
   const r = decideBranch({ mode: 'milestone', autoBranch: 'auto', currentBranch: 'main',
     protectedBranches: PROTECTED, integrationName: NAME });
   assert.equal(r.action, 'create');
-  assert.equal(r.branch, NAME); // the worktree fork point (D-06)
+  assert.equal(r.branch, NAME); // what worktree branches merge back into
 });
 
 test('milestone + protected + off: stay on the base', () => {
@@ -73,7 +73,7 @@ test('milestone + already off the base: stay (lazy, once per cycle)', () => {
   const r = decideBranch({ mode: 'milestone', autoBranch: 'auto', currentBranch: 'cadence/v1.1.0-rc.2',
     protectedBranches: PROTECTED, integrationName: NAME });
   assert.equal(r.action, 'stay');
-  assert.equal(r.branch, 'cadence/v1.1.0-rc.2'); // the current tip is the fork point
+  assert.equal(r.branch, 'cadence/v1.1.0-rc.2'); // what worktree branches merge back into
 });
 
 test('decideBranch is total: an unknown mode or auto_branch stays put, never throws', () => {

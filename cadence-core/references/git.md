@@ -66,19 +66,24 @@ Act on its `action`:
 - `stay` -> do nothing (already off the base, or the mode says not to).
 
 `git.integration_branch` picks the model. `milestone` creates the integration
-branch: the reconciliation point parallel worktrees fork from and merge into,
-keeping merge churn off `main`. `trunk` creates nothing - commits land on the
-base, still governed by `git.on_protected` (git-guard.mjs unchanged). `git.auto_branch`
+branch: the integration branch is what parallel worktree branches merge back
+into; where the host forks them from is not Cadence's to guarantee. It keeps
+merge churn off `main`. `trunk` creates nothing - commits land on the base,
+still governed by `git.on_protected` (git-guard.mjs unchanged). `git.auto_branch`
 picks how it is created at cycle start: `ask` prompts once, `auto` creates and
 switches silently, `off` stays put. Creation is lazy and once per cycle - the
 seam infers it from HEAD sitting on a protected base, so later phases already
 off the base pass silently.
 
-Because parallel worktrees already fork from HEAD and self-reap
-(`workflows/execute.md`), switching HEAD to the integration branch makes its tip
-the worktree fork point with no worktree change. `git.base_branch` stays the
-landing and guard base, distinct from the integration branch: the integration
-branch is what work merges back down to, not a repurposed worktree fork point.
+Cadence issues no `git worktree add` anywhere in its own code, so it cannot pin
+where a worktree forks from; the host provides that isolation
+(`references/seams.md`, spawn-agent, Worktree isolation). `git.base_branch`
+stays the landing and guard base, distinct from the integration branch: the
+integration branch is what work merges back down to, not a claimed worktree
+fork point. A worktree branched from an older merge point can be missing a
+phase's plans and CONTEXT entirely - which is why `agents/cad-executor.md`'s
+worktree mode asserts its own plan file before task 1 rather than assuming the
+fork point.
 
 ## 2. Atomic conventional commits
 

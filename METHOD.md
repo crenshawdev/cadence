@@ -485,10 +485,11 @@ protected-branch guard when work would land on a protected branch. A nudge there
 is a bug, not a convenience.
 
 Work runs on two tiers. A per-milestone integration branch is what parallel
-worktrees fork from and merge back into, created at cycle start per
-`git.auto_branch` and named by `git.integration_branch` (`milestone` by default,
-with a `trunk` escape hatch). After a successful land, `git.on_land_cleanup`
-returns to the base branch, pulls, and reaps the merged integration branch.
+worktree branches merge back into - where the host forks a worktree from is
+not Cadence's to guarantee - created at cycle start per `git.auto_branch` and
+named by `git.integration_branch` (`milestone` by default, with a `trunk`
+escape hatch). After a successful land, `git.on_land_cleanup` returns to the
+base branch, pulls, and reaps the merged integration branch.
 
 Everything else is atomic: one conventional commit per task, specific files
 staged individually. Publishing flows through a single sanctioned seam, which
