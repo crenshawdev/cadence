@@ -96,6 +96,36 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-health`** — a quick planning-health check.
 - **`/cad-help`** — the command reference.
 
+## What it enforces that you didn't ask for
+
+The commands are the surface. Underneath them is a working method that is mostly
+not configurable, because most of it is not a preference. A few examples of what
+runs whether or not you thought to ask:
+
+- **A definition of coverage that most tools get wrong.** Covered means a test
+  whose failure would signal that this requirement regressed. A test that imports
+  or runs the code but would still pass if the behavior were wrong is not
+  coverage, so the audit reads assertions rather than counting test files.
+- **Verification climbs four levels** — exists, substantive, wired, behaves —
+  because a stub satisfies existence and orphaned code satisfies everything up to
+  wiring. Truths that only a human can settle count toward neither side of the
+  score, so ambiguity is never laundered into success.
+- **The executor states the output it expects before running a check**, and
+  records a surprise as a deviation even when the surprise is a passing result.
+- **Scope reduction is a lint.** Plans may not contain "v1", "for now",
+  "simplified", or "placeholder"; there are exactly three legitimate reasons to
+  cut something and each is an explicit return, never a quiet trim.
+- **A failed package install is never auto-fixed**, never retried under a similar
+  name, and never substituted, because a failed install can mean a hallucinated
+  or squatted package. It stops for a human.
+- **Nothing silently passes.** A reviewer that could not run never passes a gate,
+  a dropped reviewer names its reason, and a clean review reports what it
+  grounded rather than "no findings" — because a check that did not happen and a
+  check that passed are indistinguishable unless the tool makes them different.
+
+[`METHOD.md`](./METHOD.md) is the full account: what the planner, executor,
+verifier and reviewers actually do, and where each rule is enforced.
+
 ## What's inside
 
 - **Claude Code only** — one clean runtime, no multi-host shim. Portability-ready seams
@@ -106,12 +136,12 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
   the loop. Prose keeps the judgment; the scripts keep the invariants, so state transitions
   don't drift with the model's mood. The decision logic sits in pure, unit-tested cores
   behind those thin seams ([how](INTERNALS.md#pure-core-thin-seam)).
-- **22 skills, 7 agents, and nothing you didn't ask for.** No team or multi-author tooling,
+- **23 skills, 7 agents, and nothing you didn't ask for.** No team or multi-author tooling,
   no AI-product track, no web-UI design track, no catalog-scaling, and nothing that duplicates
   a developer's own memory or graph tools. See [`LINEAGE.md`](./LINEAGE.md) for the full cut.
 - **Adversarial review is a first-class, configurable subsystem** — a fresh-context Claude
-  reviewer by default, with pluggable cross-model reviewers (OpenAI and Gemini, direct API
-  calls with provider-enforced structured output). Four review gates fire along the loop
+  reviewer by default, with pluggable cross-model reviewers (OpenAI, Gemini and DeepSeek,
+  direct API calls with provider-enforced structured output). Four review gates fire along the loop
   (plan, diff, risk surface, pre-ship), each with its own gate/tier/effort switches in
   `/cad-config`. At a debugging dead-end, an optional consult brings a second model's angles
   to the table; it advises, never decides, always asks first, and is off until you enable
