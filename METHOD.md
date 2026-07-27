@@ -148,6 +148,23 @@ Executors never push, never force-push, never write `STATE.md`, `ROADMAP.md` or
 `SUMMARY.md`, and never spawn their own reviewer. A checkpoint means stop: never
 fabricate the answer, never guess and proceed.
 
+### Parallelism is offered only when arithmetic proves it safe
+
+`cadence-core/workflows/execute.md`
+
+Sequential is the default. The parallel path opens only when every condition
+holds, and the load-bearing one is not a judgment call: the seam intersects the
+plans' declared file lists pairwise, and any overlap forces sequential. A plan
+that declares no files also forces sequential, because a plan declaring nothing
+cannot be proven independent, and a check that could not run forces it too.
+Unproven independence is never treated as independence.
+
+Because per-plan reviews each see one plan's diff in isolation, a bug in the
+interaction of two merged plans is invisible to them until pre-ship. That is
+what the opt-in `phase_diff` trigger exists to catch, and it is parallel-path
+only: on the sequential path each diff review already sees a tree holding every
+prior plan's work.
+
 ### Worktree safety
 
 In parallel mode the executor verifies it is on its assigned branch before every
@@ -467,11 +484,19 @@ reordering toward one: the publish mechanism in `/cad-land`, and the
 protected-branch guard when work would land on a protected branch. A nudge there
 is a bug, not a convenience.
 
+Work runs on two tiers. A per-milestone integration branch is what parallel
+worktrees fork from and merge back into, created at cycle start per
+`git.auto_branch` and named by `git.integration_branch` (`milestone` by default,
+with a `trunk` escape hatch). After a successful land, `git.on_land_cleanup`
+returns to the base branch, pulls, and reaps the merged integration branch.
+
 Everything else is atomic: one conventional commit per task, specific files
 staged individually. Publishing flows through a single sanctioned seam, which
 exists because a command-string push whitelist was built, defeated four ways by
 adversarial review, and then deleted rather than patched. `/cad-land` asks how you
-want to publish and does exactly that.
+want to publish and does exactly that, unless you opted into the end-to-end
+`git.auto_close`, which runs audit through merge with no per-step prompts and
+halts on a blocking `pre_ship` FAIL.
 
 ---
 
