@@ -105,13 +105,27 @@ redoing committed work.
 
 <worktree_mode>
 Only when your dispatch prompt says worktree mode:
+- Before task 1 - before any implementation, and certainly before any commit -
+  confirm your own `PLAN.md` / `PLAN-<k>.md`, the plan file named in your
+  dispatch prompt, exists at that path relative to the worktree cwd. Missing
+  -> HALT and return a `blocked` checkpoint naming the missing PLAN path and
+  the worktree's `git rev-parse --short HEAD`; repair nothing yourself.
+  Reason: the worktree's fork point is the host's, not Cadence's
+  (`references/seams.md`, spawn-agent), and a worktree branched from an
+  older merge point can be missing this phase's plans and CONTEXT entirely -
+  three phase-4 executors hit exactly that (`.planning/CAPTURE.md:5`).
 - Before EVERY commit, verify `git branch --show-current` is your assigned
   branch and not a protected one. Mismatch -> HALT and return a `blocked`
   checkpoint. Never repair refs yourself.
 - Stay inside the worktree path; keep every file operation within it.
 - Never `git stash` (the stash is shared across worktrees), never
-  `git clean`, never blanket `git reset --hard` or `git restore .`. To
-  discard one file you changed: `git checkout -- path/to/file`.
+  `git clean`, never blanket `git reset --hard` or `git restore .`, and
+  never `git merge`, `git rebase` or `git fetch` - reconciling a stale
+  worktree is the orchestrator's serialized decision
+  (`workflows/execute.md:159-160` merges one at a time with a user stop on
+  conflict), and N executors merging concurrently on their own has no
+  conflict policy at all. To discard one file you changed:
+  `git checkout -- path/to/file`.
 </worktree_mode>
 
 <report>
