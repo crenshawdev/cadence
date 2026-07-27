@@ -200,13 +200,15 @@ const ROWS = [
   },
 ];
 
-test(`planning-files: the frontmatter grammar table (${ROWS.length} rows)`, () => {
-  for (const row of ROWS) {
+// One test() per row, not one loop inside one test(): a row that fails
+// reports its own name and does not abort the rows below it.
+for (const row of ROWS) {
+  test(`grammar: ${row.name}`, () => {
     const { items, issues } = readFrontmatterList(row.text, row.key);
-    assert.deepEqual(items, row.items, `${row.name} - items`);
-    assert.deepEqual(issues.map((i) => i.code), row.issues, `${row.name} - issue codes`);
-  }
-});
+    assert.deepEqual(items, row.items, 'items');
+    assert.deepEqual(issues.map((i) => i.code), row.issues, 'issue codes');
+  });
+}
 
 test('planning-files: unknown-line issue carries the correct line number and text', () => {
   const text = fence('requirements:\n  - "#41"\n  a stray line\n  - "#46"');
@@ -229,8 +231,8 @@ const NORMALIZE_ROWS = [
   { name: 'plain LF text is returned unchanged', input: 'a\nb\n', expected: 'a\nb\n' },
 ];
 
-test('normalize: CRLF, lone CR, BOM, and plain LF', () => {
-  for (const row of NORMALIZE_ROWS) {
-    assert.equal(normalize(row.input), row.expected, row.name);
-  }
-});
+for (const row of NORMALIZE_ROWS) {
+  test(`normalize: ${row.name}`, () => {
+    assert.equal(normalize(row.input), row.expected);
+  });
+}
