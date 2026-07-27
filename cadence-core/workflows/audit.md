@@ -21,8 +21,10 @@ One JSON line returns the full requirement -> phase -> plan -> verified
 chain: per requirement a `break` code where the chain fails (`no-phase` |
 `phase-missing` | `no-plan` | `not-verified` | `drift`), `orphans.plan_ids`
 (plan frontmatter referencing unknown REQ-IDs - scope creep, weigh lighter
-than a dropped requirement), `deferred` (rows whose Status is `Deferred` -
-the one pinned marker), and `counts`.
+than a dropped requirement), `frontmatter_issues` (a plan file whose
+`requirements:` frontmatter fell outside the stated grammar -
+`references/plan-frontmatter.md`), `deferred` (rows whose Status is
+`Deferred` - the one pinned marker), and `counts`.
 
 If a milestone scope was given, filter the returned requirements to that
 milestone's IDs before judging; the seam always traces the whole file.
@@ -46,6 +48,11 @@ milestone filter):
 - **FAIL** - any requirement is untraced, unverified, dropped, or in drift.
   List each failing requirement with exactly where its chain breaks. This gate
   is meant to block a ship; do not soften it or mark it PASS-with-warnings.
+
+A `frontmatter_issues` entry is orthogonal to this verdict - it names a plan
+file whose frontmatter fell outside the grammar and is reported alongside the
+trace, but it neither creates nor clears a `break`, so it can never turn a
+PASS into a third, softened state.
 
 Report: the one-line verdict, the trace table (requirement | phase | plan |
 verified), the dropped/unmapped/drift lists, and - on FAIL - the concrete next
