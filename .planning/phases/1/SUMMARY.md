@@ -198,6 +198,7 @@ Range: `605947c..e0e9026`, 5 commits, 7 files, +591/-80.
 
 ## Open items
 
+**CLOSED at `822c477` during the UAT round** (see `## UAT round` below):
 - **[medium] A backtick-wrapped frontmatter path is read verbatim with no
   diagnostic** (`cadence-core/bin/lib/planning-files.mjs`, the frontmatter arm
   of `parsePlanFiles`). Verified live: `files:` / ``  - `src/shared.rs` ``
@@ -262,3 +263,88 @@ one remaining input that reads outside the grammar without saying so. It is
 narrower than anything pass 1 left open - not a shipped form, and correct in
 what it returns rather than wrong - but it sits on the same goal surface, so it
 is named here rather than folded away. `/cad-verify 1` should falsify it first.
+
+---
+
+# UAT round
+
+23/23 items pass. The goal-backward `cad-verifier` pass auto-verified 9 items
+with cited evidence and confirmed pass 1's items 1-7 still hold at HEAD; it also
+found one gap nobody had caught, and the user answered the two human checks.
+Two items were fixed and retested in one commit, `822c477`.
+
+## Fixed during UAT
+
+| Item | Was | Fix |
+|---|---|---|
+| 21 | A backtick-wrapped frontmatter path read to a value that could never match a sibling's plain spelling, with `issues: []` and no `frontmatter_issues` key, so `plan-overlap` handed `choose_path` a false `overlaps: []` on two plans that both write the file | `822c477` - new `backtick-wrapped-value` code, tested on the BOUNDARY of the resolved value |
+| 12 | `references/plan-frontmatter.md` claimed a bare `-` "contributes NOTHING and is NOT an issue"; the parser reports `unknown-line` for it. Introduced by pass 2's own `e0e9026`, in the file whose purpose is stating what the parser does | `822c477` - prose corrected, two stale source comments with it, four dash spellings pinned by grammar rows |
+
+The `risk_surface` gate (blocking) FAILED the first version of the item-21 fix
+and is the reason the shipped rule is what it is. That version tested for a
+MATCHED PAIR of backticks; two reviewers converged on HIGH that it missed four
+spellings that are just as silent and just as unmatchable - a half wrap
+(`` `src/a.rs ``), a wrap plus punctuation (`` `src/a.rs`, ``), a wrap the
+whitespace rule had already cut in half, and the sharpest one, a
+backtick-wrapped ID, where `scanValue`'s unquoted-`#` rule (D-01) reduces
+`` `#41` `` to a LONE backtick before the test runs, minting a one-character
+phantom id that `audit` reports as an orphan with no diagnostic. The boundary
+test (starts OR ends with a backtick) catches all four; the matched-pair test
+caught none. The re-fired gate passed.
+
+That round also corrected the code's classification. It was filed as purely
+payload-preserving, which the reviewers falsified: "preserves" is a claim about
+what the code itself discards, not a promise the value still matches anything,
+and a backticked id arrives as a fragment that traces to nothing, so
+`counts.broken` moves on `requirements:` anyway. It is now CONDITIONAL in the
+reference, and the seam test carries a twin-shaped `requirements:` row that can
+actually fail beside the counts-neutral `files:` row - the original single row
+sat on `files:`, which never feeds `counts` for any code, so it passed by
+construction and could not falsify the column it existed to falsify.
+
+## Open items
+
+- **[medium] `backtick-wrapped-value` fires on ANY key's scalar**, including
+  prose keys no seam reads (`goal:` carrying ordinary markdown). Verified: two
+  plans with disjoint file lists still get a `frontmatter_issues` entry, and
+  `execute.md`'s "any entry -> sequential" costs the phase its parallel
+  dispatch. Fails safe (performance, not correctness) and the shipped template
+  has no prose scalar keys. Scoping it to `requirements:`/`files:` would make
+  `parseFrontmatter` key-aware, cutting against the key-agnostic design D-14's
+  reasoning leans on - a design call, not a patch.
+- **[medium] Markdown decoration other than a boundary backtick still leaks in
+  silently.** A code span nested inside other decoration touches neither
+  boundary: `` - **`src/shared.rs`** `` returns `issues: []` and no overlap
+  against a sibling declaring `src/shared.rs`. Chasing each shape is the
+  accreted-arm pattern D-03 forbids; the real question is whether the grammar
+  wants one stated "a value containing markdown syntax is outside the grammar"
+  rule. Hard boundary found while fixing UAT-21: an INTERIOR backtick
+  (`` src/`shared`.rs ``) cannot be flagged without also flagging
+  `` lib/a`b.mjs ``, which items 17/18 require to stay clean - structurally
+  identical inputs.
+- **[note] Acceptance criterion 6's narrowing was priced and ACCEPTED** by the
+  user at this UAT (item 22), as was D-14's observable over-read (item 23).
+
+## Goal check
+
+The phase goal holds at `822c477`, including the half the second pass existed to
+close. Every input the two review rounds produced that read outside the grammar
+now says so, confirmed at the seam rather than the parser alone: the
+backtick-wrapped path that started this round returns
+`frontmatter_issues:[{plan:"PLAN-1.md",issues:[{code:"backtick-wrapped-value"}]}]`
+where it previously returned `overlaps:[]` with no key at all, and the four
+near-miss spellings the blocking gate surfaced each report the same code while
+the two guard cases (`` lib/a`b.mjs `` mid-string, and a `-` followed by any
+whitespace) stay diagnostic-free. `node --test cadence-core/bin/*.test.mjs` is
+423/423, `npx tsc -p tsconfig.ci.json` exits 0, `self-verify` reports
+`problems:[]`, and `audit` on Cadence's own `.planning` still emits no
+`frontmatter_issues` key, so nothing added across the whole phase over-fires on
+a shipped plan file.
+
+What remains open is one honest class rather than a list of defects: markdown
+decoration that touches neither boundary of a value. It is narrower than
+anything either pass left open, it fails safe where it fails, and closing it
+properly means stating one rule about markdown in values rather than adding a
+sixth arm - which is the next cycle's decision, not this phase's. The phase
+goal says report what falls outside the grammar; that is met for every form the
+grammar's own value resolution can see.

@@ -26,7 +26,7 @@ tokenizer over six more regex arms, and the empty-roadmap fix reverted at that
 close failed for the same reason one layer up. Per-task plans come at
 `/cad-plan`.
 
-- [ ] **Phase 1: The plan-file frontmatter grammar** - Goal: `readFrontmatterList`
+- [x] **Phase 1: The plan-file frontmatter grammar** - Goal: `readFrontmatterList`
   reads every shipped PLAN.md form (inline, block, scalar; a comment on the key
   line, heading the block, or as a block item; `#` with and without a following
   space; CRLF checkouts; a leading blank line or BOM) to exactly the ids and
