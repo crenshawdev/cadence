@@ -56,11 +56,6 @@
         "tier": "flagship",
         "effort": "high"
       },
-      "phase_diff": {
-        "gate": "off",
-        "tier": "flagship",
-        "effort": "high"
-      },
       "pre_ship": {
         "gate": "adjudicated",
         "tier": "flagship",
