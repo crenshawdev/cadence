@@ -105,5 +105,55 @@ Deviations:
   than failing two assertions. It still cannot pass without the change.
 - **`review.request_timeout_ms` bounds one request, not a whole panel.** Three
   reviewers firing in parallel each get the full budget, so a `blocking` gate's
-  worst case is now ~10 min rather than ~2. Not a regression (the old cap had
-  the same shape), but worth knowing before lowering it.
+  worst case is ~9 min rather than ~2. Not a regression (the old cap had the
+  same shape), but worth knowing before lowering it.
+
+## Post-review round (risk_surface FAILED the first cut)
+
+Firing `risk_surface` on the feature returned three surviving findings and the
+gate failed. All were verified here, not taken on the reviewers' word.
+
+| Commit | Fix |
+|---|---|
+| `fc42c48` | `homedir()` at module load crashed every config-merge importer where the uid has no passwd entry and HOME is unset |
+| `0c40c40` | the 600000 budget was unreachable through the host, and the maximum was unbounded |
+
+- **The feature was largely inert as first shipped.** The Bash tool running the
+  seam caps a command at 600000ms and defaults to 120000ms, and `fire()` never
+  told callers to raise it, so the host killed the call at ~120s before the
+  seam's own timer fired - printing NOTHING, which is worse than the structured
+  `transport` error it replaced. Default now 540000 so the seam aborts first
+  and owns the output; `references/review-triggers.md` states the requirement.
+- **Unbounded maximum, raised by all three reviewers.** Past 2147483647 node
+  truncates the socket timeout and it effectively never fires, so a black-hole
+  connection hangs ~24.8 days instead of rejecting. Clamped in
+  `resolveTimeoutMs`, plus a schema `max` (the int validator gained `max`,
+  symmetric with `min`) so `get` cannot report a value the seam never uses.
+- **The crash was mine but the bug was not.** `route.mjs` and `config.mjs` were
+  already dying in that environment at `059dd05`; importing `mergeLayers` only
+  extended it to `review-provider.mjs`. Fixed in config-merge for all importers.
+- **openai's blocker did not survive.** It claimed an oversized value fires
+  *immediately*; that is `setTimeout` semantics ("set to 1"). `https.request`
+  truncates instead, so the real behavior is a hang. Right defect, wrong
+  mechanism.
+- **The fix is still unvalidated end to end.** The openai call in that review
+  returned in 118s, under the old 120s cap, so it would have passed unpatched.
+  The 292s measurement remains the only evidence the cap ever bit.
+- **Process note:** a `&&` chain let a tsc failure through into a commit. Caught
+  and amended before pushing, but the verification command was at fault, not the
+  code.
+
+## Known-unfixed (the real fix, deliberately not attempted here)
+
+Raising a number treats the symptom. The seam issues a NON-STREAMED request and
+then uses a socket INACTIVITY timer as a total-duration budget, so any
+sufficiently slow reasoning call trips a timer meant to detect dead
+connections. Evidence it is not vendor-specific: `deepseek-v4-pro` at high
+effort returned in 106s on the same payload where openai took 118s - 88% of the
+old cap, one larger diff from failing too. And the same model at the same effort
+measured 292s on one payload and 118s on another, a 2.5x spread, so no fixed
+number is ever right.
+
+Streaming would make inactivity mean what it says and leave thinking time
+unbounded. It is a rewrite of the adapters and response handling - phase-sized.
+Note the host's 600000ms command ceiling still caps total wall-clock regardless.
