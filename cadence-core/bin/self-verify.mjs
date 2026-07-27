@@ -138,10 +138,10 @@ function* mdFiles(root) {
       if (isFile) yield f;
     }
   }
-  // README and INTERNALS name user-facing switches and live file paths - they
-  // are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out:
-  // they legitimately name keys that were later cut, while explaining the cut.
-  for (const doc of ['README.md', 'INTERNALS.md']) {
+  // README, INTERNALS and METHOD name user-facing switches and live file paths -
+  // they are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay
+  // out: they legitimately name keys that were later cut, while explaining the cut.
+  for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
     const p = join(root, doc);
     if (existsSync(p)) yield p;
   }

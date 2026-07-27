@@ -3,29 +3,29 @@
 [![test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
 [![Listed on ClaudePluginHub](https://www.claudepluginhub.com/badge/crenshawdev-cadence)](https://www.claudepluginhub.com/plugins/crenshawdev-cadence?ref=badge)
 
-Cadence is a planning and execution system for a single developer working in Claude Code. It runs one disciplined loop, discuss then plan then execute then verify, with an atomic commit per task, opinionated defaults, and a deliberately small surface. Your state lives in files, not in the conversation, so you can `/clear` aggressively and the next command rebuilds from disk.
+The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
 
-It is built to say no. One runtime, no team tooling, no feature catalog. What it keeps, it keeps sharp: model routing that spends tokens like a budget, review gates that stop bad work before it lands, and a git model that guards protected branches from ad-hoc pushes and asks how you publish rather than deciding for you, unless you opt into an autonomous close.
+## What it costs you
 
-> Cadence's methodology descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD is what happens when that loop gets built to government standards, an elephant: hundreds of workflows, dozens of agents, a whole TypeScript product wrapped around a four-step idea. Cadence is the mouse. Same loop, its own implementation, about 3% of GSD's documentary mass (measured 2026-07-10, GSD commit d010ea1). See [`LINEAGE.md`](./LINEAGE.md) for the measured distance, [`MANIFESTO.md`](./MANIFESTO.md) for the why, and [`DESIGN.md`](./DESIGN.md) for the full design.
+Cadence is slower than not using Cadence. It makes you gather context before you plan and plan before you build, it stops you at gates you did not ask for, and it says no to things you did ask for. Most of it is not configurable, because most of it is not a preference.
 
-## What makes it different
+That trade pays off when the code has to keep working. When somebody maintains it later, when it touches money or auth or user data, when a quiet failure costs you more than the extra twenty minutes cost you. If you are sketching something you will throw away Thursday, the ceremony is pure friction and you should skip it. Nobody needs a blocking review gate on a script that renames photos.
 
-Plenty of tools will run you through a plan-and-build loop. What Cadence puts at every gate is an adversarial reviewer whose job is to break the work, not bless it. A plan or a diff gets handed to a reviewer that goes looking for the input, the state, or the sequence that makes it produce a wrong result, and hands back findings in a fixed shape, file, line, severity, the claim, and the exact failure scenario. By default that reviewer is a fresh-context Claude subagent and needs no API key at all. Give Cadence an OpenAI, Gemini, or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema, so you can convene a panel of up to four independent voices on one artifact, a local subagent alongside two or three outside models, and let your main session adjudicate, opening the cited code to kill false positives and treating anything two reviewers caught independently as high confidence. It isn't a command you have to remember either. Four gates fire along the loop on their own, before a plan is built against, on the diff once it exists, on anything that trips a risk surface, and again before you publish.
+## How it works
 
-The git model is guarded by the harness rather than by good intentions. A PreToolUse hook stops every push to a protected branch, no exceptions, a real hook the model cannot talk its way around instead of a paragraph of instructions it can rationalize away. I got there the hard way, I built a predicate to wave safe pushes through, four rounds of adversarial review found four ways around it, so I deleted the thing I would have had to keep parsing and routed the one sanctioned push somewhere the hook never has to trust a command string.
+Cadence assumes the model will fail. Not that it is bad at the job, that it will now and then hand you something that looks finished and is not, and that you will not always catch it by reading. Everything else follows from that assumption, the same way it would for anything you cannot fully trust. Keep the state somewhere durable. Make the workers disposable. Put the rails where the worker cannot argue with them. Never let a check that did not run look like one that passed.
 
-## Why Cadence
+Nothing important lives in the conversation. The roadmap, the per-phase plan, the summary, the verification checklist, the four-line state cursor, all of it sits in `.planning/` and in git history, and the working window carries almost nothing a file does not already hold. Clear at any phase boundary and the next command rebuilds what it needs from disk. The subagents are disposable on purpose. There is no resume and no continue-where-you-left-off, a continuation is a fresh spawn that reads the prior artifact off disk and picks up from the task table it was handed. That one decision is what everything else rests on.
 
-Most of what makes AI-assisted development expensive is not the model, it is the mess. Context piles up, the same files get read again and again, the conversation drags a week of history into every single turn, and the bill follows the clutter.
+A check that could not run never passes a gate. A reviewer that failed says why out loud instead of quietly dropping out of the set. The verifier scores every claim as verified, failed, or uncertain, and uncertain counts toward neither side, so ambiguity cannot launder itself into a pass. A test file that exists proves nothing and a named test that passes proves one thing, which is why the coverage audit reads the assertions instead of counting files. A test that would still pass if the behavior were wrong is not coverage.
 
-Cadence is built the other way around. One loop, discuss then plan then execute then verify. State lives in files, not in the conversation. Clear between steps and you lose nothing. Every task lands as one commit. The heavy reading happens in fresh-context subagents that hand back a short answer instead of emptying a file into your window. Small batches, clean state, tight loops, the same discipline that has always separated software that scales from software that seizes up.
+The git rails are a PreToolUse hook, not a paragraph of instructions. A model will talk itself around a paragraph. It will not talk itself around a hook. Every push it tries to run stops and asks you first.
 
-The effect shows up in what a unit of work costs, not in a cache statistic. These are measurements of my own real usage, taken from my account's usage data, not telemetry the tool collects. Cadence ships no instrumentation and phones nothing home.
+I learned the shape of that one the hard way. I wanted an opt-in autonomous close that could open a PR and merge it without me sitting there, and that needs exactly one push to publish the branch. I taught the guard to recognize a safe push and wave it through, a predicate called `isPlainPush`, very clever. Four rounds of adversarial review found four ways around it. A `-c core.sshCommand=` prefix turns a push into arbitrary command execution, an environment prefix does the same, and I was going to be patching that parser until one of us died. I deleted it instead. The one sanctioned push now runs through a separate subprocess the hook never sees, built from an argument vector instead of a shell string, and every push the hook can see still asks. Do not try to out-parse an attacker, delete the thing you would have had to parse.
 
-Measured 2026-07-26 across 7,548 requests, 2,845 of them Cadence. A request on the main thread inside a Cadence project carries about 92k of context and costs about 28 cents. The main thread on my freeform work, same machine, same models, same me, carries about 133k and costs about 36 cents. Cadence also routes about 27% of its subagent work to Sonnet and Haiku where the job does not need Opus, against about 8% on my freeform work. Less context per turn and cheaper models on the cheap jobs, which is what falls out of keeping state on disk and doing the heavy reading in a fresh subagent that hands back an answer instead of a file.
+Every gate hands the work to a reviewer whose job is to break it, not to bless it. The default is a fresh-context Claude subagent and needs no API key at all. Give it an OpenAI, Gemini, or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema, which lets you put up to four independent voices on one plan and have your main session adjudicate, opening the cited code and killing the false positives. Every backend returns the same shape, and that part is deliberate. The adjudicator cannot tell which finding came from the free local reviewer and which came from the one you are paying for, and it cannot discount a finding for being cheap. The single signal treated as strong is convergence. Two reviewers landing on the same defect independently is the whole reason to pay for a second voice.
 
-Read that carefully, because it is a comparison between two piles of my own sessions and not a controlled experiment. I reach for Cadence on the big multi-phase jobs, so a Cadence session is usually a heavier session overall. The claim is not that your bill goes down. It is that each turn drags less history behind it, and you stop paying full freight to re-read your own conversation.
+[`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier, and reviewers actually do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: model routing, the publish seam, live provider detection, and why the decision cores are pure functions.
 
 ## Install
 
@@ -40,7 +40,7 @@ Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cad
 
 ## The loop
 
-Cadence runs as slash commands in Claude Code, namespaced `/cadence:cad-*` (for example `/cadence:cad-new-project`). They are written below without the `cadence:` prefix for brevity. A project moves through five steps, each its own command:
+Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadence:cad-new-project`). They are written below without the `cadence:` prefix for brevity. A project moves through five steps, each its own command:
 
 1. **`/cad-new-project`** — define the project through deep questioning: what, why, who, done.
 2. **`/cad-context <phase>`** — gather locked decisions and acceptance criteria before planning.
@@ -75,6 +75,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 
 **Review & quality**
 - **`/cad-plan-review`** — adversarial review of a plan before any code is written.
+- **`/cad-decision-review`** — stress-test one load-bearing decision, grounded against live docs and the real repo.
 - **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification. Catches silently-dropped work.
 - **`/cad-coverage`** — find a phase's requirements that have zero failing-capable test coverage, then close the gaps.
 - **`/cad-docs-verify`** — check factual claims in docs against the live codebase.
@@ -88,92 +89,25 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
-- **`/cad-config`** — the config: workflow toggles, model routing, review gates and providers,
-  parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly.
+- **`/cad-config`** — workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly.
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
 - **`/cad-health`** — a quick planning-health check.
 - **`/cad-help`** — the command reference.
 
-## What's inside
+## What it costs to run
 
-- **Claude Code only** — one clean runtime, no multi-host shim. Portability-ready seams
-  (ask-user / spawn-agent / review-provider) if a contributor ever adds a runtime.
-- **Deterministic seams** — every read and write of `.planning/` state, model routing, and
-  config validation runs through small zero-dependency Node scripts (`planning.mjs`,
-  `route.mjs`, `config.mjs`, `review-provider.mjs`) that speak one JSON line and never block
-  the loop. Prose keeps the judgment; the scripts keep the invariants, so state transitions
-  don't drift with the model's mood. The decision logic sits in pure, unit-tested cores
-  behind those thin seams ([how](INTERNALS.md#pure-core-thin-seam)).
-- **22 skills, 7 agents, and nothing you didn't ask for.** No team or multi-author tooling,
-  no AI-product track, no web-UI design track, no catalog-scaling, and nothing that duplicates
-  a developer's own memory or graph tools. See [`LINEAGE.md`](./LINEAGE.md) for the full cut.
-- **Adversarial review is a first-class, configurable subsystem** — a fresh-context Claude
-  reviewer by default, with pluggable cross-model reviewers (OpenAI and Gemini, direct API
-  calls with provider-enforced structured output). Four review gates fire along the loop
-  (plan, diff, risk surface, pre-ship), each with its own gate/tier/effort switches in
-  `/cad-config`. At a debugging dead-end, an optional consult brings a second model's angles
-  to the table; it advises, never decides, always asks first, and is off until you enable
-  `review.consult.enabled`. Cross-model review is a pure function, so it runs as a direct API
-  call with provider-enforced schema output rather than a scraped CLI
-  ([why not a CLI](INTERNALS.md#review-is-a-pure-function)), and model ids are never
-  hardcoded, Cadence detects what your key can actually reach
-  ([how](INTERNALS.md#live-model-detection)).
-- **Model routing** — three canned profiles (fast / balanced / quality) plus an optional `auto`
-  mode that picks model (and effort, via role) per task, with guardrails. Routing governs the
-  subagents Cadence dispatches; the main session's model and effort are yours to set in Claude
-  Code, and Cadence cannot set them for you. My recommendation: run the main session on the
-  strongest model at high effort. The context discipline is what makes that affordable, because
-  the orchestrator stays lean and reads its own prefix from cache while the heavy file work
-  happens in routed subagents. The `auto` engine works around a real platform limit, model
-  is overridable per dispatch but effort isn't ([how it works](INTERNALS.md#model-routing)).
-- **Git model** — atomic commits and a protected-branch guard enforced by the harness itself (a
-  PreToolUse hook, not prose the model can talk itself out of) that blocks ad-hoc pushes, with a
-  `land` step that asks how you want to publish with no preselected default instead of forcing a
-  branch/PR flow. Work runs on a two-tier branch model: a per-milestone integration branch that
-  parallel worktrees fork from and merge into (`git.integration_branch`, `milestone` by default
-  with a `trunk` escape hatch, created at cycle start per `git.auto_branch`). After a successful
-  land, cleanup returns to the base branch, pulls, and reaps the merged integration branch
-  (`git.on_land_cleanup`, on by default). Publishing flows through one sanctioned git-publish
-  seam — the single code-guarded push path Cadence uses — and an opt-in end-to-end close
-  (`git.auto_close`, off by default) runs audit → tag → PR → merge → reset with no per-step
-  prompts, halting on a blocking `pre_ship` FAIL. That single seam exists because I deleted
-  the command-string push whitelist that could never be made safe
-  ([why](INTERNALS.md#the-push-guard-and-the-parser-i-didnt-write)).
-- **Parallel execution, gated by arithmetic** — independent plans can run concurrently in
-  isolated git worktrees (`parallelization.enabled`, off by default). Parallelism is offered
-  only when a deterministic file-overlap check proves the plans declare no shared files, and
-  an opt-in `phase_diff` review can inspect the merged result as one diff, since per-plan
-  reviews cannot see cross-plan interactions.
-- **A working method, baked in** — plans are ordered skeleton-first, so a wired end-to-end
-  tracer bullet exists by the second or third commit; the executor states the output it
-  expects before running each verification and records any surprise as a deviation instead
-  of rationalizing it; and every goal-check claim carries file:line or command-output
-  evidence. Generalized from Andrej Karpathy's "A Recipe for Training Neural Networks":
-  make no assumptions, failures are silent, verify, don't trust. There is no switch for
-  this. It is simply how Cadence plans and builds.
-- **Lean `.planning/`** — ROADMAP + per-phase PLAN/SUMMARY/UAT + a ~4-line state cursor. No
-  audit logs duplicating git.
-- **Context-frugal by design** — durable state lives in `.planning/` files and git, and every
-  plan/review/execution runs in a fresh subagent, so you can `/clear` aggressively: clear at any
-  phase boundary and the next command rebuilds from disk. An attempt to keep prompt-cache reuse
-  high and context lean, not a magic trick.
-- **Built-in minimal memory** — `/cad-capture` keeps phase-linked todos, seeds, and notes in
-  `.planning/CAPTURE.md`, and `memory.backend` defaults to `builtin`: a zero-dep BM25 `recall`
-  over what `.planning/` already records (SUMMARY deviations, CAPTURE items, UAT findings,
-  CONTEXT decisions), so past decisions resurface at planning time. `none` turns recall off;
-  external backends (mem-*, a vault) stay reserved behind the same seam.
-- **Self-verifying** — CI lints the prose against the code: every config key, script
-  invocation, and file path named in the workflows must actually exist, or the build fails.
-  It also weighs every agent, skill, and workflow surface and fails the build when one
-  outgrows its byte budget, or when an agent's prose reaches for a tool its frontmatter
-  never declared. The docs cannot quietly drift from the tool, and its context claims are
-  measured, not asserted.
+Most of what makes AI-assisted development expensive is not the model, it is the mess. Context piles up, the same files get read again and again, the conversation drags a week of history into every single turn, and the bill follows the clutter. Keeping durable state on disk and doing the heavy reading in a fresh subagent that hands back an answer instead of a file is the fix for that, and it shows up in what a unit of work costs rather than in a cache statistic.
 
-## Attribution
+These are measurements of my own real usage, taken from my account's usage data, not telemetry the tool collects. Cadence ships no instrumentation and phones nothing home. Measured 2026-07-26 across 7,548 requests, 2,845 of them Cadence. A request on the main thread inside a Cadence project carries about 92k of context and costs about 28 cents. The main thread on my freeform work, same machine, same models, same me, carries about 133k and costs about 36 cents. Cadence also routes about 27% of its subagent work to Sonnet and Haiku where the job does not need Opus, against about 8% on my freeform work.
 
-Cadence is a derivative work of GSD by Open GSD, used under the MIT License. The original
-copyright is retained in [`LICENSE`](./LICENSE) and the lineage is spelled out in
-[`NOTICE`](./NOTICE.md). Cadence is maintained by John Crenshaw and distributed
-under the MIT License.
+Read that carefully, because it is a comparison between two piles of my own sessions and not a controlled experiment. I reach for Cadence on the big multi-phase jobs, so a Cadence session is usually a heavier session overall. The claim is not that your bill goes down. It is that each turn drags less history behind it, and you stop paying full freight to re-read your own conversation.
+
+## Where it came from
+
+Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence is 23 skills, 7 agents, and about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1.
+
+Every one of those cuts was made by hand and written down. [`DESIGN.md`](./DESIGN.md) numbers the locked decisions and the reversals, [`INTERNALS.md`](./INTERNALS.md) walks the handful that took more than one try to get right, [`LINEAGE.md`](./LINEAGE.md) publishes the counts and tells you how to reproduce them, and [`MANIFESTO.md`](./MANIFESTO.md) is the why. CI fails the build when the prose drifts from the code, because every config key, script flag, and file path named in these docs has to actually exist. There is nothing in here that nobody read.
+
+Cadence is a derivative work of GSD by Open GSD, used under the MIT License. The original copyright is retained in [`LICENSE`](./LICENSE) and the lineage is spelled out in [`NOTICE`](./NOTICE.md). Cadence is maintained by John Crenshaw and distributed under the MIT License.
