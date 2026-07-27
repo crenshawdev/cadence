@@ -33,7 +33,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
 import {
-  CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
+  CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases, roadmapPhasesState,
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
@@ -90,7 +90,17 @@ function cmdStatus(dir) {
   const roadmapText = read(join(dir, 'ROADMAP.md'));
   if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
   const roadmap = parseRoadmapPhases(roadmapText);
-  if (!roadmap.length) return fail('unparseable-roadmap', 'no `- [ ] **Phase N: ...**` lines under ## Phases');
+  // An empty `## Phases` is the between-milestones state, not a parse failure:
+  // /cad-milestone prunes the shipped phases and the next cycle's are not
+  // written until /cad-plan. Only the two real faults still fail.
+  const roadmapState = roadmap.length ? 'ok' : roadmapPhasesState(roadmapText);
+  if (roadmapState === 'no-section') {
+    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md');
+  }
+  if (roadmapState === 'unparseable') {
+    return fail('unparseable-roadmap', 'no `- [ ] **Phase N: ...**` lines under ## Phases');
+  }
+  const noCycle = roadmapState === 'empty';
 
   const derived = derivePhases(dir, roadmap);
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
@@ -128,6 +138,10 @@ function cmdStatus(dir) {
   if (parsed) {
     let agrees;
     if (parsed.status === 'paused') agrees = true; // legal at any point
+    // With no cycle on the roadmap there is no derivation to contradict: a
+    // cursor resting on the closed milestone or already pointing at the next
+    // one are both correct, so neither is drift.
+    else if (noCycle) agrees = true;
     else if (current === null) agrees = parsed.status === 'phase complete';
     else agrees = parsed.phase === current &&
       (AGREE[currentEntry.status] || []).includes(parsed.status);
@@ -143,6 +157,7 @@ function cmdStatus(dir) {
 
   ok({
     current, total: derived.length,
+    ...(noCycle ? { cycle: 'none' } : {}),
     phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
       // plans listed only when they deviate from a single PLAN.md

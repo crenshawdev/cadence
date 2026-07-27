@@ -156,9 +156,59 @@ test('status: missing ROADMAP.md is no-roadmap', () => {
   assert.equal(r.reason, 'no-roadmap');
 });
 
-test('status: roadmap without phase lines is unparseable-roadmap', () => {
+// An empty `## Phases` is the between-milestones state /cad-milestone leaves
+// behind (shipped phases pruned, next cycle not yet planned), not a parse
+// failure. The two real faults below still are.
+test('status: an empty ## Phases section is cycle:none, not an error', () => {
   const dir = makeTree({});
   writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n(nothing)\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cycle, 'none');
+  assert.equal(r.current, null);
+  assert.equal(r.total, 0);
+  assert.deepEqual(r.phases, []);
+});
+
+test('status: a cursor pointing at the next cycle is not drift when cycle:none', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n(nothing)\n');
+  writeFileSync(join(dir, 'STATE.md'),
+    'Phase: 1 of 1 (next)\nStatus: ready to plan\nNext: /cad-plan 1\nUpdated: 2026-07-27\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.agrees, true);
+  assert.equal(r.drift, undefined);
+});
+
+// Regression guard: passes before and after the cycle:none change. Pins that
+// the empty-section carve-out did not widen to a roadmap with no section.
+test('status: a roadmap with no ## Phases section is unparseable-roadmap', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Overview\n\nx\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-roadmap');
+  assert.match(r.detail, /## Phases/);
+});
+
+// Regression guard: passes before and after. The case the blanket error was
+// really for - phase-SHAPED lines that do not parse (here a stray checkbox and
+// a CRLF-mangled bullet) must stay a fault, or a malformed roadmap would read
+// as "nothing left to do".
+test('status: phase-shaped lines that do not parse stay unparseable-roadmap', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    '# Roadmap\n\n## Phases\n\n- [ ] **Phase 1: Broken\n- [x] not a phase at all\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-roadmap');
+});
+
+test('status: a CRLF-mangled phase bullet is unparseable, not an empty cycle', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    '# Roadmap\r\n\r\n## Phases\r\n\r\n- [ ] **Phase 1: Real** - desc\r\n');
   const r = run(['status'], dir);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'unparseable-roadmap');

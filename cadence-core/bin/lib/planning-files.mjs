@@ -69,6 +69,34 @@ export function parseRoadmapPhases(text) {
   return phases.sort((a, b) => a.n - b.n);
 }
 
+// A line phase-shaped enough that failing to parse it is a fault, not an empty
+// list: a checkbox bullet, or any `**Phase` token. Deliberately looser than
+// PHASE_LINE - that gap is the whole signal (a CRLF-mangled or malformed
+// bullet matches this and not PHASE_LINE).
+const PHASE_HINT = /^\s*-\s*\[|\*\*Phase\b/;
+
+/**
+ * Why `parseRoadmapPhases` came back empty. Separates the one benign case from
+ * the two faults, so a caller that can act on "no phases" stops treating it as
+ * a parse error:
+ * - `ok`          - phases parsed; nothing to explain.
+ * - `empty`       - a `## Phases` section holding no phase-shaped line. The
+ *                   between-milestones state: everything shipped and pruned,
+ *                   the next cycle not yet planned.
+ * - `no-section`  - no `## Phases` heading at all. A malformed roadmap.
+ * - `unparseable` - the section holds lines that LOOK like phases but do not
+ *                   parse. The real fault the old blanket error was for.
+ * @param {string} text
+ * @returns {'ok'|'empty'|'no-section'|'unparseable'}
+ */
+export function roadmapPhasesState(text) {
+  const section = text.split(/^## Phases\s*$/m)[1];
+  if (section === undefined) return 'no-section';
+  if (parseRoadmapPhases(text).length) return 'ok';
+  const body = section.split(/^## /m)[0];
+  return body.split('\n').some((l) => PHASE_HINT.test(l)) ? 'unparseable' : 'empty';
+}
+
 // ---------------------------------------------------------------------------
 // REQUIREMENTS.md - the Traceability table.
 // ---------------------------------------------------------------------------
