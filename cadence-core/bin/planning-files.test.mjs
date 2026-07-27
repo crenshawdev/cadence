@@ -263,6 +263,33 @@ const ROWS = [
     text: fence('files: [src/a.rs]  # comment\n  - src/shared.rs'),
     key: 'files', items: ['src/a.rs'], issues: ['item-without-key'],
   },
+
+  // --- Task 3: the two key-line near-misses (D-14, D-16) ------------------
+  {
+    name: 'a no-space key line is malformed-key-line, not silently parsed or unknown-line',
+    text: fence('requirements:["#41"]'),
+    key: 'requirements', items: [], issues: ['malformed-key-line'],
+  },
+  {
+    name: 'a commented-out key line folds the next key\'s items into the previous key (D-14 accepted cost), pinned exactly',
+    text: fence('requirements:\n- "#41"\n# files:\n  - src/shared.rs'),
+    key: 'requirements', items: ['#41', 'src/shared.rs'], issues: ['commented-key-line'],
+  },
+  {
+    name: 'an ordinary prose comment that happens to be key-shaped reports commented-key-line too, accepted noise',
+    text: fence('requirements:\n  - "#41"\n  # TODO: fill this in\n  - "#46"'),
+    key: 'requirements', items: ['#41', '#46'], issues: ['commented-key-line'],
+  },
+  {
+    name: 'a column-0 bare URL is malformed-key-line, never parsed as key http value //example.com',
+    text: fence('http://example.com'),
+    key: 'requirements', items: [], issues: ['malformed-key-line'],
+  },
+  {
+    name: 'a comment-only line that is NOT key-shaped does not over-fire commented-key-line',
+    text: fence('files:\n  - "#41"\n  # shared with plan 2\n  - "#46"'),
+    key: 'files', items: ['#41', '#46'], issues: [],
+  },
 ];
 
 // One test() per row, not one loop inside one test(): a row that fails
@@ -279,6 +306,12 @@ test('planning-files: unknown-line issue carries the correct line number and tex
   const text = fence('requirements:\n  - "#41"\n  a stray line\n  - "#46"');
   const { issues } = readFrontmatterList(text, 'requirements');
   assert.deepEqual(issues, [{ line: 4, code: 'unknown-line', text: 'a stray line' }]);
+});
+
+test('planning-files: malformed-key-line issue carries the correct line number and text', () => {
+  const text = fence('requirements:["#41"]');
+  const { issues } = readFrontmatterList(text, 'requirements');
+  assert.deepEqual(issues, [{ line: 2, code: 'malformed-key-line', text: 'requirements:["#41"]' }]);
 });
 
 test('planning-files: unterminated-frontmatter issue carries the opening fence line number', () => {

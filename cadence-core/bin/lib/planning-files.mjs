@@ -616,6 +616,12 @@ const COMMENT_LINE = /^\s*#/;
 // (payload may be empty - a bare `-` line contributes nothing, same as a
 // comment-only item). No indentation/nesting rule - the grammar has none.
 const ITEM_LINE = /^\s*-\s+(.*)$/;
+// A column-0 line that is key-SHAPED (D-16) but fails KEY_LINE's `(\s|$)`
+// requirement after the colon - `requirements:["#41"]` matches this, not
+// KEY_LINE. Never widened to require the space: that would parse every
+// stray colon-bearing column-0 line (a bare `http://example.com`) as a
+// key/value pair.
+const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
 
 /**
  * Classify every line of a PLAN.md's leading frontmatter block in ONE pass
@@ -724,7 +730,24 @@ export function parseFrontmatter(text) {
       continue;
     }
 
-    if (BLANK_LINE.test(line) || COMMENT_LINE.test(line)) continue; // skip, never a terminator
+    if (BLANK_LINE.test(line)) continue; // skip, never a terminator
+
+    if (COMMENT_LINE.test(line)) {
+      // D-14: a comment-only line whose body - after stripping leading
+      // whitespace, the run of `#` characters, and any following spaces - is
+      // itself key-shaped earns `commented-key-line` but is NOT promoted to
+      // a terminator: once the `#` is stripped, an ordinary prose comment
+      // (`# TODO: fill this in`) also satisfies KEY_LINE, so promoting would
+      // let prose truncate a real block - the exact silent under-read D-04
+      // exists to close. Accepted cost, stated plainly: `requirements:` /
+      // `- "#41"` / `# files:` / `  - src/shared.rs` still folds
+      // `src/shared.rs` into `requirements` and audit still mints it as an
+      // orphan - but now with this diagnostic beside it and `choose_path`
+      // routing sequential, so it is no longer silent.
+      const body = line.replace(/^\s*#+\s*/, '');
+      if (KEY_LINE.test(body)) issues.push({ line: lineNo, code: 'commented-key-line', text: issueText(line) });
+      continue; // skip either way, never a terminator
+    }
 
     const im = line.match(ITEM_LINE);
     if (im) {
@@ -749,8 +772,20 @@ export function parseFrontmatter(text) {
       continue;
     }
 
-    // Neither item, comment, blank, nor terminator: recorded and SKIPPED -
-    // it does not stop an active block, so nothing below it is lost (D-04).
+    if (MALFORMED_KEY_LINE.test(line)) {
+      // D-16: key-shaped at column 0 but missing the whitespace-or-EOL after
+      // its colon (`requirements:["#41"]`) - names the actual repair (add a
+      // space) instead of falling through to the generic `unknown-line`.
+      // KEY_LINE itself stays strict; dropping its `(\s|$)` group would read
+      // this form at the cost of parsing a bare `http://example.com` as key
+      // `http`, value `//example.com`.
+      issues.push({ line: lineNo, code: 'malformed-key-line', text: issueText(line) });
+      continue;
+    }
+
+    // Neither item, comment, blank, key, malformed key, nor terminator:
+    // recorded and SKIPPED - it does not stop an active block, so nothing
+    // below it is lost (D-04).
     issues.push({ line: lineNo, code: 'unknown-line', text: issueText(line) });
   }
 
