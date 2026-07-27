@@ -4,6 +4,99 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-07-27
+
+A tech-debt cycle. Every open bug filed by the post-v1.2.0 review sweep was
+triaged, all thirteen were accepted, and all thirteen are fixed here. No new
+features, no config keys, no workflow changes. The theme running through them is
+that a seam which used to fail quietly now says so: a malformed shipped data
+file, a bad flag value, an unreadable symlink and a backslash-wrapped
+`git push` each used to degrade into something that looked like success.
+
+### Fixed
+
+**Silent data-file failures** (#39, #40, #43, #44)
+
+- A malformed global or repo config layer is now skipped and named in a new
+  `warnings[]` field rather than silently reverting every setting to its
+  default, which was indistinguishable from the file being absent. `values` and
+  `source` stay byte-identical to the absent case, and a merely-absent layer
+  stays silent (`lib/config-merge.mjs`, `config.mjs get`).
+- `route.mjs` and `config.mjs` read their shipped `route-table.json` /
+  `config.schema.json` inside the dispatch guard, so a corrupt or missing one
+  degrades to `{ok:false, reason:"bad-table"|"bad-schema"}` on one JSON line
+  instead of throwing at module load. `CADENCE_ROUTE_TABLE` and
+  `CADENCE_CONFIG_SCHEMA` inject fixtures hermetically.
+- A corrupt `model-hints.json` surfaces a warning in the detect envelope instead
+  of silently disabling `classify()`'s non-text-model exclude filter, which had
+  been failing open (`review-provider.mjs`).
+- `self-verify` treats an absent core surface dir, `weight-budgets.json` or
+  `INTERNALS.md` as a failure on a full tree rather than skipping it and
+  reporting green with zero coverage. Keyed on `.claude-plugin/plugin.json`, so
+  minimal `--root` fixtures are unaffected.
+
+**Seam input validation** (#42, #45)
+
+- A shared `requireInt` guard (`lib/require-int.mjs`) rejects bad numeric flags
+  before any write. `cursor set --total` no longer writes an unparseable
+  STATE.md while reporting `ok:true`; `route.mjs resolve --attempt` no longer
+  coerces NaN to `attempt:1`.
+- `phase-done --reqs` keys off flag presence rather than truthiness, so the
+  valueless form and an empty interpolated `--reqs ""` are both refused instead
+  of bulk-closing the entire phase.
+- A scalar or array top-level config is rejected on all three faces: `validate`
+  errors at `(root)`, the read path skips it with a warning rather than
+  returning the scalar at `source:"repo"`, and `config.mjs set` refuses to write
+  over it.
+
+**planning-files parser robustness** (#41, #46, #47, #48)
+
+- `parseRequirements` bounds the Traceability section at the next `## ` heading
+  and skips GFM alignment cells, so colon-aligned separators stop minting
+  phantom requirement rows and failing `/cad-audit` for no reason.
+- UAT items anchor on the first line and hand-added `### ` sections round-trip
+  verbatim through a new `extras[]` channel; `uat merge` reports partial success
+  with `skipped`/`rejected` counts instead of dropping appended items silently.
+- `recall` joins an unquoted multi-word query instead of searching only its
+  first word, and indexes completed captures with their phase and a `[closed] `
+  marker instead of as junk.
+- One `readFrontmatterList` serves both `requirements:` and `files:` in inline,
+  block and scalar YAML forms, and a name-less `### Phase N:` heading parses.
+
+**renumber and git-guard hardening** (#37, #49, #50)
+
+- `renumber` leaves a decimal-phase STATE cursor where it is and emits a `warn`
+  naming it, instead of silently shifting it onto a phase that does not exist.
+- A colliding renumber destination is refused before any write, including the
+  case where `git rm -r -q` exits 0 while leaving untracked or modified tracked
+  files behind, which had let the next phase nest inside the removed one.
+- A renumber apply that dies partway reports the ops that completed and the one
+  that failed, rather than a bare `{ok:false, reason:"internal"}`. This is a
+  report, not a rollback: the remove destroys a directory first, so a rollback
+  would promise a guarantee the code does not have.
+- One dangling or unreadable `.md` symlink no longer collapses a whole
+  `self-verify` or `weigh` run. The walker skips it, and `self-verify` reports
+  it as an `unreadable-surface` problem while finishing the rest of the lint.
+- `git-guard` joins backslash line-continuations before parsing subcommands, so
+  a wrapped `git \` + newline + `push` reaches the push rail. A single-pass
+  alternating quote strip stops a real push beside a quote character from going
+  silent, and a push inside a quoted multi-line string still produces no prompt.
+
+### Known gaps
+
+Recorded rather than hidden, both confirmed during phase-4 verification and
+deferred by explicit decision:
+
+- `weight.mjs` under-reports an entire subtree when one descendant is
+  unreadable. `self-verify` still goes red, so CI does not pass silently. The
+  fix wants per-entry recursion, not a wider catch.
+- An `unreadable-surface` detail emits `readlinkSync`'s raw absolute target,
+  contradicting the comment two lines above it. Cosmetic.
+- Six pre-existing `git-guard` rail-3 holes (`git -C "my repo" push`, `&` as a
+  separator, `$(git push)`, subshells, escaped quotes, `bash -c`) are silent
+  both before and after this cycle and stay out of scope. They want one
+  quote-state tokenizer, not more regex arms.
+
 ## [1.3.0] - 2026-07-24
 
 "liteSpeed": a flow pass over the whole `/cad-*` surface that cuts coordinator
@@ -298,6 +391,8 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.3.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.1
+[1.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.0
 [1.2.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.1
 [1.2.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.0
 [1.1.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.1.0
