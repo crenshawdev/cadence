@@ -59,9 +59,19 @@ function planningRoot(start) {
 
 // The git subcommand(s) a shell command actually invokes: for each simple
 // command containing a `git` word, the first word after it that is not a
-// global option (or that option's argument). Quoted strings are stripped
-// first, so `git log --grep "push"` or `echo "git push"` never look like a
-// push, and `git stash push` resolves to `stash`, not `push`. Conservative
+// global option (or that option's argument). Backslash line-continuations
+// are joined FIRST, ahead of quote-stripping - order is load-bearing: the
+// double-quote pattern's `\\.` arm cannot match a backslash-newline, so a
+// quoted string split across a continuation would survive the strip intact
+// and its embedded `\n` would then be cut into a bare trailing command by
+// the segment split below, manufacturing a phantom subcommand out of quoted
+// text (D-08). Joining first collapses the continued line so the strip
+// removes a continued quoted string whole. A wrapped `git push` therefore
+// reaches the push rail as the push it is, and - deliberately, since the two
+// rails must agree on what a wrapped command IS - a wrapped `git commit` on
+// a protected branch starts prompting too (D-07). Quoted strings are then
+// stripped, so `git log --grep "push"` or `echo "git push"` never look like
+// a push, and `git stash push` resolves to `stash`, not `push`. Conservative
 // by construction: an unrecognized shape yields no subcommand and the guard
 // stays silent - it must never block normal work.
 const GIT_OPT_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree',
@@ -69,6 +79,7 @@ const GIT_OPT_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree',
 
 function gitSubcommands(command) {
   const stripped = String(command)
+    .replace(/\\\r?\n[ \t]*/g, ' ')
     .replace(/"(?:[^"\\]|\\.)*"/g, ' ')
     .replace(/'[^']*'/g, ' ');
   const subs = [];

@@ -132,6 +132,47 @@ test('global git options are skipped when finding the subcommand', () => {
   assert.equal(d.permissionDecision, 'ask');
 });
 
+test('a backslash-continued wrapped push reaches the push rail like the unwrapped form (#50)', () => {
+  const p = project('feature');
+  const wrapped = guard('git \\\n  push origin main', p);
+  const unwrapped = guard('git push origin main', p);
+  assert.deepEqual(wrapped, unwrapped);
+});
+
+test('a CRLF-continued wrapped push reaches the push rail like the unwrapped form (#50)', () => {
+  const p = project('feature');
+  const wrapped = guard('git \\\r\n push origin main', p);
+  const unwrapped = guard('git push origin main', p);
+  assert.deepEqual(wrapped, unwrapped);
+});
+
+test('the commit rail widens with the join too (D-07): a wrapped commit on a protected branch asks', () => {
+  const d = guard('git \\\n commit -m "x"', project('main'));
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /protected/);
+});
+
+test('join runs before the quote-strip (D-08): a continued quoted string never manufactures a phantom push', () => {
+  // This exact shape prompts on the pre-fix code (the strip cannot match a
+  // backslash-newline inside the quotes, so the quoted "push" text survives
+  // and is read as a bare trailing command) - closing that false positive.
+  assert.equal(guard('echo "foo \\\n git push bar"', project('main')), null);
+});
+
+test('a wrapped stash push is still a stash, not a publish (regression guard, holds before and after the fix)', () => {
+  assert.equal(guard('git stash \\\n push -m wip', project('main')), null);
+});
+
+test('the join does not swallow the command separator: a blank line after a continuation still splits two commands (#50)', () => {
+  const p = project('feature');
+  const wrapped = guard('git add -A \\\n\ngit push origin main', p);
+  const unwrapped = guard('git push origin main', p);
+  assert.deepEqual(wrapped, unwrapped);
+
+  const d = guard('git commit -m "wip" \\\n   \ngit push', p);
+  assert.equal(d.permissionDecision, 'ask');
+});
+
 test('compound command still catches the push half', () => {
   const d = guard('git add . && git push', project('feature'));
   assert.equal(d.permissionDecision, 'ask');
