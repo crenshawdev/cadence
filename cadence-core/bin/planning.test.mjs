@@ -951,13 +951,14 @@ test('audit: the inline requirements form with a bracketed trailing comment stil
   assert.equal(r.orphans, undefined);
 });
 
-test('audit: a comment-only requirements: value falls through to the block list', () => {
+test('audit: a comment-only requirements: value falls through to a block list surviving a heading comment, a splitting comment, and a blank line', () => {
   // `^key:\s*(.*)$` eats the whitespace before the `#`, so the whitespace-preceded
   // comment strip can never fire on a remainder that is ITSELF a comment. Read as
   // a scalar (the pre-fix behaviour) this returns the comment text as a fabricated
-  // id AND discards both real ids beneath it.
+  // id AND discards both real ids beneath it. D-04: the block SKIPS blank and
+  // comment-only lines rather than stopping at the first one.
   const dir = blockPlanTree(
-    'requirements:   # phase requirement IDs this plan covers - never empty\n  - "#41"\n  - "#46"\nfiles: []');
+    'requirements:   # ids\n  # covers auth\n  - "#41"\n  # a splitting comment\n\n  - "#46"\nfiles: []');
   const r = run(['audit'], dir);
   assert.equal(r.ok, true);
   const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
@@ -1008,6 +1009,65 @@ test('plan-overlap: block-form files: lists intersect like inline ones (#48.1)',
   assert.equal(r.ok, true);
   assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
   assert.equal(r.undeclared, undefined); // both plans declared files
+});
+
+test('plan-overlap: a comment line inside each files: block list does not truncate it - both share src/shared.rs (D-04 acceptance criterion)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - src/a.rs\n  # shared with plan 2\n  - src/shared.rs\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  # also touches plan 1\'s file\n  - src/shared.rs\n  - src/c.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
+  assert.equal(r.undeclared, undefined);
+});
+
+test('audit + plan-overlap: a stray line BETWEEN two block ids is reported and skipped, not a terminator', () => {
+  const withStray = blockPlanTree('requirements:\n  - "#41"\n  this line is not an item\n  - "#46"\nfiles: []');
+  const clean = blockPlanTree('requirements:\n  - "#41"\n  - "#46"\nfiles: []');
+
+  const a = run(['audit'], withStray);
+  assert.equal(a.ok, true);
+  const byId = Object.fromEntries(a.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  assert.deepEqual(a.frontmatter_issues, [{
+    file: 'phases/1/PLAN.md',
+    issues: [{ line: 6, code: 'unknown-line', text: 'this line is not an item' }],
+  }]);
+  assert.deepEqual(a.counts, run(['audit'], clean).counts);
+
+  const o = run(['plan-overlap', '--phase', '1'], withStray);
+  assert.equal(o.ok, true);
+  assert.deepEqual(o.frontmatter_issues, [{
+    plan: 'PLAN.md',
+    issues: [{ line: 6, code: 'unknown-line', text: 'this line is not an item' }],
+  }]);
+});
+
+test('audit + plan-overlap: the frontmatter_issues diagnostic is not key-scoped', () => {
+  // A stray line under `requirements:` (which plan-overlap never reads) must
+  // still reach plan-overlap's envelope - the diagnostic is whole-pass, not
+  // per-key.
+  const underRequirements = blockPlanTree('requirements:\n  - "#41"\n  - "#46"\n  stray under requirements\nfiles: []');
+  const o1 = run(['plan-overlap', '--phase', '1'], underRequirements);
+  assert.equal(o1.ok, true);
+  assert.equal(o1.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'), true);
+
+  // A stray line between two INLINE keys - the shipped template shape, where
+  // no block scan runs at all - must reach BOTH envelopes.
+  const betweenInline = blockPlanTree('requirements: ["#41", "#46"]\nstray between inline keys\nfiles: []');
+  const a = run(['audit'], betweenInline);
+  assert.equal(a.ok, true);
+  assert.equal(a.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'), true);
+  const o2 = run(['plan-overlap', '--phase', '1'], betweenInline);
+  assert.equal(o2.ok, true);
+  assert.equal(o2.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'), true);
 });
 
 test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () => {

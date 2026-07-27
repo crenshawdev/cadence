@@ -529,10 +529,16 @@ function parseInlineList(value) {
 }
 
 // Any line at column 0 shaped like `key:` or `key: value` - the anchor for a
-// key's value AND (from Task 3 on) the block-list terminator it doubles as.
+// key's value AND one of the block-list terminator set's three members
+// (D-04): fence, key line, end of block.
 const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/;
 const FENCE_LINE = /^---\s*$/;
 const BLANK_LINE = /^\s*$/;
+const COMMENT_LINE = /^\s*#/;
+// A block-list item: any indent, then `-`, one or more spaces, then payload
+// (payload may be empty - a bare `-` line contributes nothing, same as a
+// comment-only item). No indentation/nesting rule - the grammar has none.
+const ITEM_LINE = /^\s*-\s+(.*)$/;
 
 /**
  * Classify every line of a PLAN.md's leading frontmatter block in ONE pass
@@ -561,11 +567,15 @@ const BLANK_LINE = /^\s*$/;
  * (inline list / block / scalar) and block-item payloads are resolved by
  * `scanValue` + `unwrap` (+ `parseInlineList` for the inline form) - the
  * quote-aware scanner D-01 requires, so the two paths cannot drift and every
- * code either arm produces reaches `issues` with its line number. THE BLOCK
- * READER'S TERMINATION is still Task 1's contiguous "first non-item line
- * ends it" rule byte for byte; Task 3 replaces it with the stated terminator
- * set (fence / key line / end of block) that skips blank and comment lines
- * instead of stopping at them.
+ * code either arm produces reaches `issues` with its line number.
+ *
+ * A key whose remainder is empty opens a block: `currentKey` stays set while
+ * we walk forward, SKIPPING blank and comment-only lines and pushing each
+ * item's scanned/unwrapped value (D-04) - until the stated terminator set:
+ * another key line, the closing fence, or the end of the block. Anything
+ * else is recorded as an `unknown-line` issue and SKIPPED, never treated as
+ * a fourth terminator - an unknown line must not truncate a list any item
+ * below it still belongs to (the phase-3 regression this grammar closes).
  * @param {string} text
  * @returns {{keys: Map<string, string[]>, issues: Issue[]}}
  */
@@ -589,54 +599,64 @@ export function parseFrontmatter(text) {
 
   const keys = new Map();
   const issues = [];
+  /** @type {string|null} the key currently accepting block items, or null */
+  let currentKey = null;
 
   for (let k = i + 1; k < j; k++) {
     const line = lines[k];
     const lineNo = k + 1;
-    const km = line.match(KEY_LINE);
-    if (!km) continue;
-    const key = km[1];
-    const first = !keys.has(key);
-    const remainder = line.slice(key.length + 1).trim();
-    const scanned = scanValue(remainder);
 
-    if (scanned.code) {
-      issues.push({ line: lineNo, code: scanned.code, text: issueText(line) });
-      if (first) keys.set(key, []);
+    const km = line.match(KEY_LINE);
+    if (km) {
+      currentKey = null; // a key line is always a terminator for the prior block
+      const key = km[1];
+      const first = !keys.has(key);
+      const remainder = line.slice(key.length + 1).trim();
+      const scanned = scanValue(remainder);
+
+      if (scanned.code) {
+        issues.push({ line: lineNo, code: scanned.code, text: issueText(line) });
+        if (first) keys.set(key, []);
+        continue;
+      }
+
+      const value = scanned.value;
+      let items, code = null;
+      if (value.startsWith('[')) {
+        const r = parseInlineList(value);
+        items = r.items;
+        code = r.code;
+      } else if (value !== '') {
+        items = [unwrap(value)].filter(Boolean);
+      } else {
+        items = [];
+        if (first) currentKey = key; // block-eligible; items collected below
+      }
+      if (code) issues.push({ line: lineNo, code, text: issueText(line) });
+      if (first) keys.set(key, items);
       continue;
     }
 
-    const value = scanned.value;
-    let items, code = null;
-    if (value.startsWith('[')) {
-      const r = parseInlineList(value);
-      items = r.items;
-      code = r.code;
-    } else if (value !== '') {
-      items = [unwrap(value)].filter(Boolean);
-    } else {
-      // Empty remainder (including one that was entirely a comment): the
-      // block reader, still Task 1's contiguous "first non-item line ends
-      // it" rule - Task 3 replaces this with the stated terminator set.
-      const raw = [];
-      let m = k + 1;
-      for (; m < j; m++) {
-        const itemM = lines[m].match(/^\s*-\s+(.+?)\s*$/);
-        if (!itemM) break;
-        const scannedItem = scanValue(itemM[1]);
-        if (scannedItem.code) {
-          issues.push({ line: m + 1, code: scannedItem.code, text: issueText(lines[m]) });
-          continue;
-        }
-        if (scannedItem.value === '') continue; // comment-only item: D-01 cost, not an issue
-        const it = unwrap(scannedItem.value);
-        if (it) raw.push(it);
+    if (BLANK_LINE.test(line) || COMMENT_LINE.test(line)) continue; // skip, never a terminator
+
+    const im = line.match(ITEM_LINE);
+    if (im) {
+      const scanned = scanValue(im[1]);
+      if (scanned.code) {
+        issues.push({ line: lineNo, code: scanned.code, text: issueText(line) });
+        continue;
       }
-      items = raw;
-      k = m - 1; // resume the outer loop after the consumed block
+      if (scanned.value === '') continue; // comment-only item / bare `-`: D-01 cost, not an issue
+      if (currentKey) {
+        const item = unwrap(scanned.value);
+        if (item) keys.get(currentKey).push(item);
+      }
+      continue;
     }
-    if (code) issues.push({ line: lineNo, code, text: issueText(line) });
-    if (first) keys.set(key, items);
+
+    // Neither item, comment, blank, nor terminator: recorded and SKIPPED -
+    // it does not stop an active block, so nothing below it is lost (D-04).
+    issues.push({ line: lineNo, code: 'unknown-line', text: issueText(line) });
   }
 
   return { keys, issues };
