@@ -7,6 +7,7 @@
 // same defects reach an observable. Only node: builtins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalize, readFrontmatterList } from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
@@ -245,6 +246,23 @@ const ROWS = [
     text: fence('files: ["a\\"b.md", "c\\"d.md"]'),
     key: 'files', items: ['a\\'], issues: ['trailing-value-content', 'residual-quote'],
   },
+
+  // --- Task 2: an item with no open key is diagnosed and dropped (D-13) ---
+  {
+    name: 'items under an inline [] key report item-without-key, one per line',
+    text: fence('files: []            # files this plan touches\n  - src/shared.rs\n  - src/a.rs'),
+    key: 'files', items: [], issues: ['item-without-key', 'item-without-key'],
+  },
+  {
+    name: 'a block item with no key at all',
+    text: fence('- "#41"'),
+    key: 'requirements', items: [], issues: ['item-without-key'],
+  },
+  {
+    name: 'a non-empty inline list key followed by a block item still opens no block',
+    text: fence('files: [src/a.rs]  # comment\n  - src/shared.rs'),
+    key: 'files', items: ['src/a.rs'], issues: ['item-without-key'],
+  },
 ];
 
 // One test() per row, not one loop inside one test(): a row that fails
@@ -267,6 +285,20 @@ test('planning-files: unterminated-frontmatter issue carries the opening fence l
   const text = '---\nrequirements: ["#41"]\n# no closing fence\n';
   const { issues } = readFrontmatterList(text, 'requirements');
   assert.deepEqual(issues, [{ line: 1, code: 'unterminated-frontmatter', text: '---' }]);
+});
+
+// --- the shipped template reads to exactly what it declares (Task 2) -------
+
+test('planning-files: the shipped templates/PLAN.md frontmatter reads empty and clean', () => {
+  const text = readFileSync(new URL('../templates/PLAN.md', import.meta.url), 'utf8');
+  assert.deepEqual(readFrontmatterList(text, 'requirements'), { items: [], issues: [] });
+  assert.deepEqual(readFrontmatterList(text, 'files'), { items: [], issues: [] });
+});
+
+test('planning-files: a path added under the template\'s bare files: block key is read, not dropped', () => {
+  const text = readFileSync(new URL('../templates/PLAN.md', import.meta.url), 'utf8')
+    .replace(/^(files:.*)$/m, '$1\n  - src/a.rs');
+  assert.deepEqual(readFrontmatterList(text, 'files'), { items: ['src/a.rs'], issues: [] });
 });
 
 // --- normalize alone ---------------------------------------------------------

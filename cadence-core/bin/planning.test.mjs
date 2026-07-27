@@ -1171,6 +1171,31 @@ test('plan-overlap: a trailing-annotated block item still overlaps, with the dia
   }]);
 });
 
+test('plan-overlap: a block item under an inline files: key is diagnosed and dropped on both plans, not overlapped (D-13)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles: [src/a.rs]  # comment\n  - src/shared.rs\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles: [src/b.rs]  # comment\n  - src/shared.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, []);
+  assert.equal(r.undeclared, undefined);
+  const byPlan = Object.fromEntries(r.frontmatter_issues.map((d) => [d.plan, d.issues]));
+  assert.ok(byPlan['PLAN-1.md'].some((i) => i.code === 'item-without-key'));
+  assert.ok(byPlan['PLAN-2.md'].some((i) => i.code === 'item-without-key'));
+  // The dropped line is absent from the FILES LISTS specifically, never a
+  // whole-envelope substring check (false by construction: the diagnostic
+  // itself quotes the dropped line, since text: issueText(line) reaches the
+  // envelope verbatim - naming the dropped line is the point of it).
+  const plans = run(['plan-overlap', '--phase', '1'], dir).plans;
+  assert.deepEqual(plans, [{ plan: 'PLAN-1.md', files: 1 }, { plan: 'PLAN-2.md', files: 1 }]);
+});
+
 // --- renumber ------------------------------------------------------------------
 
 function renumberTree() {

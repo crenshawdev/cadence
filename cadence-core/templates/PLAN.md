@@ -1,8 +1,8 @@
 ---
 phase: {N}
 plan: 1              # only meaningful when the phase splits (PLAN-1.md, PLAN-2.md)
-requirements: []     # phase requirement IDs this plan covers - never empty; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
-files: []            # files this plan touches; split plans must not overlap; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
+requirements:        # phase requirement IDs this plan covers - never empty; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
+files:               # files this plan touches; split plans must not overlap; quote a #-shaped id ("#41"); see references/plan-frontmatter.md
 ---
 
 # Phase {N}: {name} - Plan

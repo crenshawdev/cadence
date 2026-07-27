@@ -642,17 +642,25 @@ const ITEM_LINE = /^\s*-\s+(.*)$/;
  * A key line is an exact column-0 match (`KEY_LINE`), never an interpolated
  * per-key regex; the first occurrence of a given key wins. The value arms
  * (inline list / block / scalar) and block-item payloads are resolved by
- * `scanValue` + `unwrap` (+ `parseInlineList` for the inline form) - the
- * quote-aware scanner D-01 requires, so the two paths cannot drift and every
- * code either arm produces reaches `issues` with its line number.
+ * `scanValue` + `resolveValue` (+ `parseInlineList` for the inline form) -
+ * the quote-aware scanner D-01 requires, so the two paths cannot drift and
+ * every code either arm produces reaches `issues` with its line number.
  *
  * A key whose remainder is empty opens a block: `currentKey` stays set while
  * we walk forward, SKIPPING blank and comment-only lines and pushing each
- * item's scanned/unwrapped value (D-04) - until the stated terminator set:
+ * item's scanned/resolved value (D-04) - until the stated terminator set:
  * another key line, the closing fence, or the end of the block. Anything
  * else is recorded as an `unknown-line` issue and SKIPPED, never treated as
  * a fourth terminator - an unknown line must not truncate a list any item
  * below it still belongs to (the phase-3 regression this grammar closes).
+ * An item arriving while NO block key is open - either before any key line,
+ * or under a key that took the inline/scalar arm - is diagnosed
+ * `item-without-key` and its payload DROPPED (D-13): it never back-attaches
+ * to the most recent key line whatever arm that key took, since merging an
+ * inline value with a following block would fuse two separate statements
+ * under a merge rule this grammar does not state. A repeated key line does
+ * not reopen a block either (first occurrence wins, above), so items under a
+ * second `files:` line report the same code.
  * @param {string} text
  * @returns {{keys: Map<string, string[]>, issues: Issue[]}}
  */
@@ -730,6 +738,13 @@ export function parseFrontmatter(text) {
       pushIssues(issues, lineNo, line, resolved.codes);
       if (currentKey) {
         if (resolved.value) keys.get(currentKey).push(resolved.value);
+      } else {
+        // No block key is open (D-13): an item under an inline/scalar key,
+        // or before any key at all, is diagnosed and DROPPED - never
+        // back-attached to the most recent key line whatever arm that key
+        // took, whether or not a REPEATED key name reopens it (it does not,
+        // `:690` first-occurrence-wins).
+        issues.push({ line: lineNo, code: 'item-without-key', text: issueText(line) });
       }
       continue;
     }
