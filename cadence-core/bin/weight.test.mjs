@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,36 @@ test('empty tree: no surface dirs yields ok true and surfaces []', () => {
   const j = run(root);
   assert.equal(j.ok, true);
   assert.deepEqual(j.surfaces, []);
+});
+
+test('#49.1: a dangling symlink or symlink cycle under a measured surface is skipped, not thrown', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-weight-symlink-'));
+  mkdirSync(join(root, 'agents'), { recursive: true });
+  mkdirSync(join(root, 'skills', 'x'), { recursive: true });
+  mkdirSync(join(root, 'skills', 'y'), { recursive: true });
+  mkdirSync(join(root, 'cadence-core', 'workflows'), { recursive: true });
+  // One readable control per walker branch, so a regression where the new
+  // catch-all wrapper swallows an ENTIRE tree (returning [] for all of
+  // skills or all of workflows) is caught - with only agents/good.md present
+  // that regression would pass this test unnoticed.
+  writeFileSync(join(root, 'agents', 'good.md'), 'agent body');
+  writeFileSync(join(root, 'skills', 'y', 'SKILL.md'), 'skill body');
+  writeFileSync(join(root, 'cadence-core', 'workflows', 'good.md'), 'workflow body');
+  // One dangling/cycle symlink per stat site.
+  symlinkSync('nowhere.md', join(root, 'agents', 'dangling.md'));
+  symlinkSync('b.md', join(root, 'agents', 'a.md'));
+  symlinkSync('a.md', join(root, 'agents', 'b.md'));
+  symlinkSync('nowhere.md', join(root, 'skills', 'x', 'SKILL.md'));
+  symlinkSync('nowhere.md', join(root, 'cadence-core', 'workflows', 'w.md'));
+
+  const j = run(root);
+  assert.equal(j.ok, true);
+  assert.deepEqual(Object.keys(j).sort(), ['checked', 'ok', 'surfaces']);
+  assert.deepEqual(j.surfaces.map((s) => s.surface).sort(), [
+    'agents/good.md',
+    'cadence-core/workflows/good.md',
+    'skills/y/SKILL.md',
+  ]);
 });
 
 test('chars/4: estTokens and bytes match the measurement proxy', () => {
