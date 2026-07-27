@@ -49,10 +49,11 @@ milestone filter):
   List each failing requirement with exactly where its chain breaks. This gate
   is meant to block a ship; do not soften it or mark it PASS-with-warnings.
 
-A `frontmatter_issues` entry is orthogonal to this verdict - it names a plan
-file whose frontmatter fell outside the grammar and is reported alongside the
-trace, but it neither creates nor clears a `break`, so it can never turn a
-PASS into a third, softened state.
+A `frontmatter_issues` entry is additive, not itself a `break` - but a
+payload-dropping diagnostic code can still leave a requirement untraced;
+`references/plan-frontmatter.md` states per code which ones drop. Either way
+there is no third, softened state: a broken requirement still fails this
+gate.
 
 Report: the one-line verdict, the trace table (requirement | phase | plan |
 verified), the dropped/unmapped/drift lists, and - on FAIL - the concrete next

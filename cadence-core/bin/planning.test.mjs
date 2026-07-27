@@ -918,6 +918,26 @@ function blockPlanTree(frontmatter, body = '') {
   return dir;
 }
 
+// Like blockPlanTree, but seeds a SINGLE requirement (#41) - Task 5's
+// per-code payload table test needs every fixture and its twin to declare
+// the SAME id count, or a delta in counts.broken measures the fixture's id
+// count rather than the code's payload behavior. #41 is Complete against a
+// CHECKED phase box, so a fixture that maps it cleanly is fully traced
+// (counts.broken: 0) and a fixture that drops the mapping is `no-plan`
+// (counts.broken: 1) - a Pending row against an unchecked box would be
+// `not-verified` (also broken:1) whether or not the id was ever dropped,
+// which would make every fixture indistinguishable from the twin.
+function oneIdPlanTree(frontmatter, body = '') {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One', checked: true }],
+    phases: { 1: { plan: true } },
+    reqs: [['#41', 1, 'Complete']],
+  });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'),
+    `---\nphase: 1\nplan: 1\n${frontmatter}\n---\n\n# Plan 1\n${body}`);
+  return dir;
+}
+
 test('audit: a block-YAML requirements list reads as ids, not zero (#48.1)', () => {
   // Under D-01 an unquoted `#41` is a comment, not an id - the block items
   // must be quoted to read as the ids `#41`/`#46`.
@@ -1150,6 +1170,74 @@ test('audit + plan-overlap: an unterminated frontmatter fence reports on both en
   assert.equal(o.note, 'fewer than two plans - nothing to intersect');
   assert.deepEqual(o.frontmatter_issues,
     [{ plan: 'PLAN.md', issues: [{ line: 1, code: 'unterminated-frontmatter', text: '---' }] }]);
+});
+
+// Task 5: falsify `references/plan-frontmatter.md`'s per-code Payload column
+// at the audit seam - not a reading of the prose. Every fixture and the twin
+// declare the SAME single id (#41) so a delta in counts.broken is
+// attributable only to the code under test (see oneIdPlanTree).
+test('audit: the per-code payload table is falsifiable - each dropping code moves counts.broken, each preserving code does not', () => {
+  const twin = run(['audit'], oneIdPlanTree('requirements:\n  - "#41"\nfiles: []'));
+  assert.equal(twin.ok, true);
+  assert.equal(twin.frontmatter_issues, undefined);
+
+  const dropping = {
+    'unterminated-inline-list': 'requirements: ["#41"\nfiles: []',
+    'unterminated-quote': 'requirements: ["#41]\nfiles: []',
+    'malformed-key-line': 'requirements:["#41"]\nfiles: []',
+    'item-without-key': 'requirements: []\n  - "#41"\nfiles: []',
+  };
+  for (const [code, frontmatter] of Object.entries(dropping)) {
+    const r = run(['audit'], oneIdPlanTree(frontmatter));
+    assert.equal(r.ok, true, code);
+    assert.ok(r.frontmatter_issues[0].issues.some((i) => i.code === code), `${code}: missing from frontmatter_issues`);
+    assert.ok(r.counts.broken > twin.counts.broken, `${code}: expected counts.broken > twin (payload dropped)`);
+  }
+
+  const preserving = {
+    'trailing-inline-content': 'requirements: ["#41"] stray\nfiles: []',
+    'trailing-value-content': 'requirements:\n  - "#41" stray\nfiles: []',
+    'residual-quote': 'requirements:\n  - "#41"\nfiles: ["a\\"]',
+  };
+  for (const [code, frontmatter] of Object.entries(preserving)) {
+    const r = run(['audit'], oneIdPlanTree(frontmatter));
+    assert.equal(r.ok, true, code);
+    assert.ok(r.frontmatter_issues[0].issues.some((i) => i.code === code), `${code}: missing from frontmatter_issues`);
+    assert.equal(r.counts.broken, twin.counts.broken, `${code}: expected counts.broken === twin (payload preserved)`);
+  }
+
+  // commented-key-line drops nothing itself, but does not terminate the open
+  // block, so the id still folds through - equal broken, and the folded
+  // orphan (D-14's stated, accepted over-read) is provably present.
+  const commented = run(['audit'], oneIdPlanTree('requirements:\n- "#41"\n# files:\n  - src/shared.rs'));
+  assert.equal(commented.ok, true);
+  assert.ok(commented.frontmatter_issues[0].issues.some((i) => i.code === 'commented-key-line'));
+  assert.equal(commented.counts.broken, twin.counts.broken);
+  assert.ok(commented.orphans.plan_ids.some((p) => p.ids.includes('src/shared.rs')));
+
+  // unterminated-frontmatter drops the WHOLE block.
+  const unterminatedDir = oneIdPlanTree('requirements: ["#41"]\nfiles: []');
+  writeFileSync(join(unterminatedDir, 'phases', '1', 'PLAN.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: ["#41"]\nfiles: []\n\n# Plan 1 (fence never closes)\n');
+  const unterminated = run(['audit'], unterminatedDir);
+  assert.equal(unterminated.ok, true);
+  assert.ok(unterminated.frontmatter_issues[0].issues.some((i) => i.code === 'unterminated-frontmatter'));
+  assert.ok(unterminated.counts.broken > twin.counts.broken);
+
+  // unknown-line is the one CONDITIONAL code (D-15) - two rows, since one
+  // row of either shape would pin half the behavior and read as the whole
+  // of it: a stray prose line drops nothing (equal to the twin) ...
+  const strayProse = run(['audit'], oneIdPlanTree('requirements:\n  - "#41"\n  this line is not an item\nfiles: []'));
+  assert.equal(strayProse.ok, true);
+  assert.ok(strayProse.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'));
+  assert.equal(strayProse.counts.broken, twin.counts.broken);
+
+  // ... but a data-carrying malformed line that falls through to unknown-line
+  // (fails malformed-key-line's own `/^[A-Za-z_]/` start) drops a whole key.
+  const malformedData = run(['audit'], oneIdPlanTree('1requirements: ["#41"]\nfiles: []'));
+  assert.equal(malformedData.ok, true);
+  assert.ok(malformedData.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'));
+  assert.ok(malformedData.counts.broken > twin.counts.broken);
 });
 
 test('plan-overlap: a trailing-annotated block item still overlaps, with the diagnostic naming which plan (UAT-9)', () => {
