@@ -72,11 +72,18 @@ written solely by cad-verify. Shipped rows move to `## Shipped` above when a
 milestone closes, so `/cad-audit` starts each cycle clean. The audit seam reads
 the rows of this section only, bounded at the next `## ` heading.
 
-_Empty until the next milestone's `/cad-plan` maps its requirements to phases;
-cad-verify then writes each row as phases complete._
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| #39 | Phase 1 | Complete |
+| #40 | Phase 1 | Complete |
+| #43 | Phase 1 | Complete |
+| #44 | Phase 1 | Complete |
+| #42 | Phase 2 | Complete |
+| #45 | Phase 2 | Complete |
+| #41 | Phase 3 | Pending |
+| #46 | Phase 3 | Pending |
+| #47 | Phase 3 | Pending |
+| #48 | Phase 3 | Pending |
 
 ---
 *Last updated: 2026-07-24 opened v1.3.1 (tech-debt cycle seeded: TRI-01, FIX-01, WNF-01)*
