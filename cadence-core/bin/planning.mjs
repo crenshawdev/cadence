@@ -458,6 +458,35 @@ function cmdUat(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// listPlanFiles - one phase directory's plan files, split into conforming
+// (`PLAN.md`, `PLAN-N.md`) and non-conforming (any other `PLAN*.md`, e.g. a
+// `PLAN-gaps.md` shipped by name - phase-1 D-21: invisible to status, audit,
+// plan-overlap and executor dispatch alike, so its requirements and files
+// were read by nothing while everything reported success).
+//
+// `missing: true` reports that `pdir` could not be read at all - load-bearing,
+// not decoration: cmdAudit and cmdPlanOverlap have OPPOSITE absent-directory
+// contracts today (audit swallows it to mean "unplanned"; plan-overlap
+// returns `fail('no-phase-dir', ...)`), and a helper with no channel for that
+// would turn an absent phase dir into plan-overlap's clean-pass shape, which
+// `execute.md`'s choose_path (routes sequential only on `ok:false`) would then
+// read as clearance to run parallel. Each caller keeps its own behavior on
+// `missing`; this helper only reports it.
+// ---------------------------------------------------------------------------
+function listPlanFiles(pdir) {
+  let entries;
+  try { entries = readdirSync(pdir); }
+  catch { return { plans: [], nonconforming: [], missing: true }; }
+  const plans = [];
+  const nonconforming = [];
+  for (const f of entries) {
+    if (/^PLAN(-\d+)?\.md$/.test(f)) plans.push(f);
+    else if (f.startsWith('PLAN') && f.endsWith('.md')) nonconforming.push(f);
+  }
+  return { plans: plans.sort(), nonconforming: nonconforming.sort() };
+}
+
+// ---------------------------------------------------------------------------
 // audit - the requirement -> phase -> plan -> verified trace, as data. The
 // ship-blocking verdict stays the model's sentence; this makes it arithmetic.
 // break codes: no-phase | phase-missing | no-plan | not-verified | drift.
@@ -473,10 +502,11 @@ function cmdAudit(dir) {
   const planByReq = new Map();
   const planIds = new Map(); // plan file -> ids (for orphan detection)
   const frontmatterIssues = []; // [{file, issues}], plan-file order, omitted when empty
+  const nonconformingPlans = []; // phases/<n>/<file>, phase order, omitted when empty
   for (const [n] of roadmap) {
     const pdir = join(dir, 'phases', String(n));
-    let files = [];
-    try { files = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); } catch { /* unplanned */ }
+    const { plans: files, nonconforming } = listPlanFiles(pdir);
+    for (const f of nonconforming) nonconformingPlans.push(`phases/${n}/${f}`);
     for (const f of files) {
       const rel = `phases/${n}/${f}`;
       const { ids, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
@@ -513,12 +543,27 @@ function cmdAudit(dir) {
     if (unknown.length) orphanPlans.push({ file, ids: unknown });
   }
 
+  // Additive diagnostic (D-07): a Traceability table with zero rows at all
+  // gets `unseeded`, naming the `## Active` ids that should have a row - the
+  // blind spot verified live where audit.md:43-46's `counts.broken == 0`
+  // PASSes an empty table. Never coerce parseActiveIds' null to [] - that
+  // would collapse "milestone never opened" (a pre-v1.4.0 `## v1
+  // Requirements` project) into "declared but never seeded", the exact
+  // datum this field exists to carry. Neither a count nor the verdict moves.
+  let unseeded;
+  if (rows.length === 0) {
+    const activeIds = parseActiveIds(reqText);
+    unseeded = { active_ids: activeIds || [], ...(activeIds === null ? { no_active_section: true } : {}) };
+  }
+
   const broken = requirements.filter((r) => r.break).length;
   ok({
     requirements,
     ...(orphanPlans.length ? { orphans: { plan_ids: orphanPlans } } : {}),
     ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+    ...(nonconformingPlans.length ? { nonconforming_plans: nonconformingPlans } : {}),
     ...(deferred.length ? { deferred } : {}),
+    ...(unseeded ? { unseeded } : {}),
     counts: { total: rows.length, traced: requirements.length - broken, broken, deferred: deferred.length },
   });
 }
@@ -534,9 +579,8 @@ function cmdPlanOverlap(dir, opts) {
   const n = Number(opts.phase);
   if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'plan-overlap needs --phase <N>');
   const pdir = join(dir, 'phases', String(n));
-  let planFiles = [];
-  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
-  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  const { plans: planFiles, nonconforming, missing } = listPlanFiles(pdir);
+  if (missing) return fail('no-phase-dir', `${pdir} not found`);
 
   // Parsed BEFORE the fewer-than-two-plans early return, so a one-plan
   // phase's grammar diagnostic still reaches this envelope instead of being
@@ -553,6 +597,7 @@ function cmdPlanOverlap(dir, opts) {
     return ok({
       phase: n, plans: [], overlaps: [],
       note: 'fewer than two plans - nothing to intersect',
+      ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
       ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
     });
   }
@@ -571,6 +616,7 @@ function cmdPlanOverlap(dir, opts) {
     // A plan declaring no files cannot be proven independent - the check is
     // only as strong as the declarations. The caller treats these as unsafe.
     ...(undeclared.length ? { undeclared } : {}),
+    ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
     ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
   });
 }

@@ -23,7 +23,10 @@ chain: per requirement a `break` code where the chain fails (`no-phase` |
 (plan frontmatter referencing unknown REQ-IDs - scope creep, weigh lighter
 than a dropped requirement), `frontmatter_issues` (a plan file whose
 `requirements:` frontmatter fell outside the stated grammar -
-`references/plan-frontmatter.md`), `deferred` (rows whose Status is
+`references/plan-frontmatter.md`), `unseeded` (the Traceability table has no
+rows at all - names the `## Active` ids that should have one, seeded by
+`/cad-plan`), `nonconforming_plans` (a `PLAN*.md` filename no seam and no
+executor reads, e.g. `PLAN-gaps.md`), `deferred` (rows whose Status is
 `Deferred` - the one pinned marker), and `counts`.
 
 If a milestone scope was given, filter the returned requirements to that
@@ -51,9 +54,11 @@ milestone filter):
 
 A `frontmatter_issues` entry is additive, not itself a `break` - but a
 payload-dropping diagnostic code can still leave a requirement untraced;
-`references/plan-frontmatter.md` states per code which ones drop. Either way
-there is no third, softened state: a broken requirement still fails this
-gate.
+`references/plan-frontmatter.md` states per code which ones drop. `unseeded`
+and `nonconforming_plans` are additive too and change neither `counts` nor the
+verdict - they name a gap for `/cad-plan` (or a rename) to close, not a break
+to fix here. Either way there is no third, softened state: a broken
+requirement still fails this gate.
 
 Report: the one-line verdict, the trace table (requirement | phase | plan |
 verified), the dropped/unmapped/drift lists, and - on FAIL - the concrete next

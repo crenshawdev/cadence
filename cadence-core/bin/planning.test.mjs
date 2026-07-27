@@ -1090,6 +1090,84 @@ test('audit + plan-overlap: the frontmatter_issues diagnostic is not key-scoped'
   assert.equal(o2.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'), true);
 });
 
+// --- audit: unseeded (D-07) and nonconforming_plans (D-13) additive diagnostics
+
+test('audit: unseeded is additive - counts, requirements and orphans keep their pre-existing shape', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true, planReqs: ['X'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **X**: desc\n\n## Traceability\n\n' +
+    '| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements, []);
+  assert.deepEqual(r.orphans, { plan_ids: [{ file: 'phases/1/PLAN.md', ids: ['X'] }] });
+  assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
+  assert.deepEqual(r.unseeded, { active_ids: ['X'] });
+});
+
+test('audit: unseeded reports no_active_section: true when the ## Active heading itself is absent', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.unseeded, { active_ids: [], no_active_section: true });
+});
+
+test('audit: unseeded is omitted once the table has at least one row', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['REQ-1'] } },
+    reqs: [['REQ-1', 1, 'Complete']],
+  });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.unseeded, undefined);
+});
+
+test('audit + plan-overlap: a PLAN-gaps.md is reported as nonconforming_plans; PLAN-2.md is not, overlaps unchanged', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN.md', 'PLAN-2.md'] } },
+    reqs: [],
+  });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN-gaps.md'),
+    '---\nphase: 1\nrequirements: []\nfiles: []\n---\n# Gaps\n');
+  const a = run(['audit'], dir);
+  assert.equal(a.ok, true);
+  assert.deepEqual(a.nonconforming_plans, ['phases/1/PLAN-gaps.md']);
+
+  const o = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(o.ok, true);
+  assert.deepEqual(o.nonconforming_plans, ['PLAN-gaps.md']);
+  assert.deepEqual(o.overlaps, []);
+  assert.equal(o.plans.some((p) => p.plan === 'PLAN-gaps.md'), false);
+});
+
+test('plan-overlap: a phase with no directory still returns no-phase-dir, exit 1 (regression pin across the listPlanFiles refactor)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const r = run(['plan-overlap', '--phase', '99'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.equal(r._exit, 1);
+});
+
+test('audit: a roadmap phase with no directory is still treated as unplanned, ok:true (regression pin across the listPlanFiles refactor)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    reqs: [['REQ-1', 1, 'Pending']],
+  });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements.find((q) => q.id === 'REQ-1').break, 'no-plan');
+});
+
 test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () => {
   const noReqs = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   assert.equal(run(['audit'], noReqs).reason, 'no-requirements');
