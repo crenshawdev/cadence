@@ -58,6 +58,9 @@ plain markdown edit - no renumbering, no dir change.
    Deferred), and repair reported `in_text_refs` by hand.
 
 ## Finish
+- A failed apply (`ok:false` with a `completed` list) leaves the tree partly
+  renumbered - the seam is not transactional - reconcile those ops by hand
+  before committing anything.
 - Sanity: spot-check `planning.mjs status` runs clean.
 - Commit atomically (`chore: <op> phase N`) honoring the protected-branch
   guard (references/git.md). Cursor committed with it; never leave the tree
