@@ -679,10 +679,47 @@ test('uat merge: fills pending only, appends unmatched gaps and human checks', (
   assert.equal(r.auto_passed, 1); // only the pending item; user result untouched
   assert.equal(r.gaps, 1);
   assert.equal(r.added, 2); // the gap + the human check
+  assert.equal(r.skipped, 1); // the `Logout works` pass conflicts with a user result
+  assert.equal(r.rejected, 0);
   const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
   assert.match(text, /### 3\. Rate limiting/);
   assert.match(text, /### 4\. Email renders in dark mode/);
   assert.doesNotMatch(text, /would overwrite/);
+});
+
+test('uat merge: an entry with no usable name is rejected, never written (#46.2)', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [
+      { reason: 'no k, no name' },              // nothing to name a heading with
+      { k: 99, reason: 'k matches nothing' },   // a k that resolves to no item
+      { name: 'Rate limiting', reason: 'no limiter' }, // the one valid entry
+    ],
+    human_checks: [{ expected: 'nameless' }],   // appends the identical phantom
+  }));
+  assert.equal(r.ok, true);          // partial success: merge the rest (D-03)
+  assert.equal(r.added, 1);
+  assert.equal(r.rejected, 3);
+  assert.equal(r.gaps, 1);           // gaps counts what was actually recorded
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 3\. Rate limiting/);
+  assert.doesNotMatch(text, /undefined/); // `### N. undefined` can never be written
+});
+
+test('uat merge: a finding conflicting with a recorded result is skipped and counted (#46.3)', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir); // user result
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    passes: [{ k: 1, evidence: 'x' }],
+    gaps: [{ k: 1, reason: 'y' }],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.skipped, 2);     // the drop stops being silent
+  assert.equal(r.auto_passed, 0); // the invariant still stands
+  assert.equal(r.gaps, 0);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 1\. Login works\nexpected: [^\n]*\nstatus: pass/);
+  assert.doesNotMatch(text, /reported:/);
 });
 
 test('uat merge: a newline in verifier text cannot inject a status line (#35)', () => {
