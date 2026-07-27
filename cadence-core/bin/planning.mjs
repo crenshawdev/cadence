@@ -28,7 +28,7 @@
 //                                   searches all of it, not just the first word
 'use strict';
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
@@ -624,6 +624,12 @@ function gitMv(from, to) {
   catch { renameSync(from, to); return 'fs'; }
 }
 
+// `existsSync` alone follows a symlink and reads a DANGLING one as free -
+// the pre-flight would then pass and the apply dies mid-flight (renameSync
+// onto a dangling symlink throws ENOTDIR). `lstatSync` catches the link
+// itself even when its target is gone.
+function occupied(p) { return existsSync(p) || !!lstatSync(p, { throwIfNoEntry: false }); }
+
 function cmdRenumber(dir, sub, opts) {
   if (sub !== 'insert' && sub !== 'remove') return fail('usage', 'renumber <insert --at N | remove --n N> [--dry-run]');
   const roadmapFile = join(dir, 'ROADMAP.md');
@@ -657,6 +663,26 @@ function cmdRenumber(dir, sub, opts) {
     for (let k = maxN; k >= at; k--) if (existingDir(k)) dirMoves.push([k, k + 1]);
   } else {
     for (let k = at + 1; k <= maxN; k++) if (existingDir(k)) dirMoves.push([k, k - 1]);
+  }
+
+  // Pre-flight: refuse before any write if a move's destination is occupied
+  // by something this renumber does not itself vacate (D-04). `vacated`
+  // tracks numbers freed by moves already checked (plus `at` on a remove,
+  // freed by the rm before any move runs) - without it, an ordinary insert's
+  // OWN chain of destinations (e.g. 3->4 then 2->3, where phases/3 exists at
+  // check time as move 1's still-unmoved source) would refuse itself. This
+  // must run before the `git rm` below: on a remove, the rm destroys a phase
+  // directory before the first move, so a check placed after it would report
+  // the collision only once the data is already gone.
+  const vacated = new Set(sub === 'remove' ? [String(at)] : []);
+  for (const [f, t] of dirMoves) {
+    const dest = join(dir, 'phases', String(t));
+    if (occupied(dest) && !vacated.has(String(t))) {
+      return fail('collision',
+        `phases/${t} already exists and is not a phase this renumber vacates - move or delete it first`,
+        'ls .planning/phases');
+    }
+    vacated.add(String(f));
   }
 
   // File edits, computed up front.

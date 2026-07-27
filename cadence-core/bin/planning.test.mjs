@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1119,6 +1119,39 @@ test('renumber: out-of-range and unknown phase refuse', () => {
   const dir = renumberTree();
   assert.equal(run(['renumber', 'insert', '--at', '9'], dir).reason, 'out-of-range');
   assert.equal(run(['renumber', 'remove', '--n', '9'], dir).reason, 'unknown-phase');
+});
+
+test('renumber: refuses a colliding destination before any write (#49.2)', () => {
+  const dir = renumberTree();
+  mkdirSync(join(dir, 'phases', '4'), { recursive: true });
+  writeFileSync(join(dir, 'phases', '4', 'PLAN.md'), '# stray\n');
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+
+  const dry = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  assert.equal(dry.ok, false);
+  assert.equal(dry.reason, 'collision');
+  assert.match(dry.detail, /phases\/4/);
+
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'collision');
+  assert.match(r.detail, /phases\/4/);
+
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3', '4']);
+  assert.ok(!existsSync(join(dir, 'phases', '4', '3')));
+  assert.match(readFileSync(join(dir, 'phases', '4', 'PLAN.md'), 'utf8'), /# stray/);
+});
+
+test('renumber: a dangling symlink at the destination still collides (#49.2)', () => {
+  const dir = renumberTree();
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  symlinkSync('nowhere', join(dir, 'phases', '4'));
+
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'collision');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
 // --- plan-overlap: the parallel-safety gate ------------------------------------
