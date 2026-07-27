@@ -28,7 +28,7 @@ backslash-continued `git push` as the push it is.
 - Parity-aware continuation join, shared verbatim by
   `cadence-core/bin/git-guard.mjs` and `cadence-core/bin/self-verify.mjs` (D-15)
 - Single-pass alternating quote strip in `cadence-core/bin/git-guard.mjs`
-- 16 net-new tests; suite 320 -> 336
+- 22 net-new tests; suite 314 -> 336
 
 ## Commits
 
