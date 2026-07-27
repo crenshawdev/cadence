@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 4 (planning-files parser robustness)
-Status: phase complete
-Next: /cad-context 4
+Phase: 4 of 4 (renumber & git-guard hardening)
+Status: context gathered
+Next: /cad-plan 4
 Updated: 2026-07-27
