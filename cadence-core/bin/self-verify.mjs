@@ -247,8 +247,14 @@ function run(root) {
     // would swallow the newline that ends the continued line and merge the
     // NEXT line into the joined command, letting the flag-checking regex
     // below (bounded by `[^\n]*`) read words that were never on that
-    // command line.
-    const joined = text.replace(/\\\r?\n[ \t]*/g, ' ');
+    // command line. Parity matters here for the same reason it does there: a
+    // trailing RUN of backslashes continues the line only when its length is
+    // ODD, so `\\` at EOL is a literal backslash and the newline still ends
+    // the command. Joining anyway merges the next line in and reports a flag
+    // that was never on this command (a false unknown-flag).
+    const joined = text.replace(/(\\+)(\r?\n)[ \t]*/g, (_m, slashes, nl) => (slashes.length % 2
+      ? `${slashes.slice(0, -1)} `
+      : `${slashes}${nl}`));
     for (const m of joined.matchAll(/([a-z-]+\.mjs)"?\s+([a-z-]+)(?:\s+([a-z-]+))?([^\n]*)/g)) {
       const [, script, w1, w2, restRaw] = m;
       const contract = CONTRACTS[script];

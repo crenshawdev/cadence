@@ -817,7 +817,9 @@ function cmdRenumber(dir, sub, opts) {
         // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
         // a remove it would rm phases/<at>, which now holds the NEXT phase's
         // work, and exit ok:true having destroyed it. Verified live.
-        hint: 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory',
+        hint: completed.length
+          ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
+          : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
       });
     }
     completed.push(op);

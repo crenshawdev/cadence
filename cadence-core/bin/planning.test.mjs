@@ -1201,6 +1201,28 @@ test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   assert.match(r.hint, /destroy/);
 });
 
+test('renumber remove: a failure before ANY step says so, rather than claiming a half-renumbered tree', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  // completed: [] means nothing was written and the tree still matches
+  // ROADMAP - the opposite of the partial case, and safe to re-run. An
+  // unconditional "the tree is partly renumbered" hint would send the caller
+  // hand-reconciling a tree that was never touched.
+  const dir = renumberTree();
+  chmodSync(join(dir, 'phases'), 0o555); // the rm (step one) cannot unlink
+  let r;
+  try {
+    r = run(['renumber', 'remove', '--n', '1'], dir);
+  } finally {
+    chmodSync(join(dir, 'phases'), 0o755);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'partial-apply');
+  assert.deepEqual(r.completed, []);
+  assert.match(r.hint, /nothing was written/);
+  assert.doesNotMatch(r.hint, /partly renumbered/);
+});
+
 // --- plan-overlap: the parallel-safety gate ------------------------------------
 
 /** A two-plan phase whose PLAN files declare the given file lists. */
