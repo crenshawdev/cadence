@@ -1173,6 +1173,43 @@ test('renumber remove: a dangling symlink at phases/<at> collides instead of dyi
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
+test('renumber remove: untracked residue in phases/<at> is refused before any write', () => {
+  // `git rm -r -q` exits 0 while leaving untracked/ignored files, so
+  // phases/<at> SURVIVES a removal that reported success, the first move
+  // nests the next phase inside it (phases/1/2/PLAN.md), and the command
+  // still exits ok:true with ROADMAP naming a phase whose dir has no plan.
+  // Every other renumber fixture is a bare tmpdir, where gitMv/git rm always
+  // fall back to fs calls that cannot nest - so this arm needs a REAL repo.
+  const dir = renumberTree();
+  const repo = join(dir, '..');
+  const g = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+  g(['init', '-q', '.']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 'T']);
+  g(['add', '-A']);
+  g(['commit', '-qm', 'init']);
+  writeFileSync(join(dir, 'phases', '1', 'NOTES.md'), 'untracked\n');
+
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'untracked-residue');
+  assert.match(r.detail, /NOTES\.md/);
+  // Nothing moved, nothing nested, nothing rewritten.
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+  assert.ok(existsSync(join(dir, 'phases', '1', 'PLAN.md')));
+  assert.ok(!existsSync(join(dir, 'phases', '1', '2')));
+
+  // With the residue gone the same call succeeds and does NOT nest.
+  rmSync(join(dir, 'phases', '1', 'NOTES.md'));
+  const r2 = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r2.ok, true);
+  assert.ok(!existsSync(join(dir, 'phases', '1', '2')));
+  assert.match(readFileSync(join(dir, 'phases', '1', 'PLAN.md'), 'utf8'), /Plan 2/);
+});
+
 test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
 }, () => {

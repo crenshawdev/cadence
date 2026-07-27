@@ -624,6 +624,27 @@ function gitMv(from, to) {
   catch { renameSync(from, to); return 'fs'; }
 }
 
+/**
+ * Files under `dirPath` that `git rm -r` will NOT remove: untracked (`??`)
+ * and ignored (`!!`). `git rm` exits 0 and leaves them, so the directory
+ * survives a removal that reported success.
+ * Outside a git repo the call fails and this returns [] - correctly, since
+ * the `rmSync` fallback there removes the directory whole and no residue can
+ * survive to be nested into.
+ * `relPath` is relative to `cwd`, so this works whether the caller's `--dir`
+ * is absolute or relative.
+ * @param {string} cwd @param {string} relPath @returns {string[]}
+ */
+function unremovableUnder(cwd, relPath) {
+  try {
+    const out = execFileSync('git', ['status', '--porcelain', '--ignored', '--', relPath],
+      { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return out.split('\n').filter((l) => /^(\?\?|!!)/.test(l)).map((l) => l.slice(3).trim());
+  } catch {
+    return [];
+  }
+}
+
 // `existsSync` alone follows a symlink and reads a DANGLING one as free -
 // the pre-flight would then pass and the apply dies mid-flight (renameSync
 // onto a dangling symlink throws ENOTDIR). `lstatSync` catches the link
@@ -688,6 +709,24 @@ function cmdRenumber(dir, sub, opts) {
         'ls .planning/phases');
     }
     vacated.add(String(f));
+  }
+
+  // The `vacated` seeding above assumes the rm actually FREES phases/<at>.
+  // `git rm -r -q` breaks that assumption silently: it exits 0 while leaving
+  // untracked and ignored files behind, so the directory survives, the first
+  // move NESTS the next phase inside it (phases/1/2/PLAN.md), and the command
+  // still exits ok:true with ROADMAP naming a phase whose dir has no plan -
+  // the exact D-04 nesting hazard, reached through the rm rather than a stray
+  // dir. Verified live. Refuse before any write instead of deleting the
+  // residue: it is the caller's uncommitted work, and `remove` is not a
+  // licence to discard it.
+  if (sub === 'remove' && existingDir(at)) {
+    const residue = unremovableUnder(dir, join('phases', String(at)));
+    if (residue.length) {
+      return fail('untracked-residue',
+        `phases/${at} holds ${residue.length} untracked or ignored file(s) that git rm will not remove (e.g. ${residue[0]}) - commit or delete them first`,
+        `git status --porcelain --ignored -- .planning/phases/${at}`);
+    }
   }
 
   // File edits, computed up front.
