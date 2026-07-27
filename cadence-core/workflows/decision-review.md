@@ -93,9 +93,18 @@ the main model grounds it before ruling:
   currently does or does not do, verify it with Read/Grep/Bash against the
   real repo, not the objection's paraphrase.
 - Every run must ground at least one library/API claim against Context7 and
-  at least one factual claim against the codebase; if an objection set has
+  at least one factual claim against the codebase; if the claim set has
   none of one kind, say so explicitly rather than skipping the requirement
   silently.
+
+**Zero objections (a clean pass).** With no findings there is nothing to
+ground, so the requirement above would lapse exactly when the result is most
+flattering. It retargets instead: ground the DECISION'S OWN load-bearing
+claims - the assertions in its statement and `Evidence:` clause which, if
+false, would invalidate it - by the same two rules. Report each `confirmed`
+or `contradicted` with its citation. A `contradicted` claim is a finding the
+refutation missed: rule it `survives` and amend it like any objection. If the
+decision rests on no claim of one kind, name which and why.
 
 Rule each objection exactly one of:
 - `survives` - grounded and correct; the decision has a real, uncorrected gap.
@@ -124,10 +133,17 @@ figures, so never fabricate one):
 <step name="present">
 Present, per objection: the ruling (`survives | partial | refuted`), the
 grounding that produced it (the Context7 doc or codebase citation), and the
-amendment (when ruled `survives`/`partial`). Close with the qualitative cost
-line from `report_cost`. Do NOT edit the decision doc - this is a review, not
-an auto-apply; the user decides what to amend and does it themselves (or via
-a follow-up `/cad-context` correction, `/cad-task`, etc).
+amendment (when ruled `survives`/`partial`).
+
+On a clean pass, present the grounded load-bearing claims instead, each
+`confirmed`/`contradicted` with its citation, and say no reviewer objected.
+Never report it as a bare "no findings" - that reads identically to a review
+that never ran.
+
+Close with the qualitative cost line from `report_cost`. Do NOT edit the
+decision doc - this is a review, not an auto-apply; the user decides what to
+amend and does it themselves (or via a follow-up `/cad-context` correction,
+`/cad-task`, etc).
 </step>
 
 </process>
@@ -151,9 +167,11 @@ a follow-up `/cad-context` correction, `/cad-task`, etc).
 - [ ] Every objection from `refute` receives exactly one ruling
       (survives | partial | refuted) and, for survives/partial, a concrete
       amendment
+- [ ] On zero objections, the decision's own load-bearing claims were
+      grounded instead - never a bare "no findings"
 - [ ] At least one library/API claim was checked against Context7 and at
-      least one factual claim against the codebase during adjudication - or the
-      objection set was explicitly noted to contain none of that kind
+      least one factual claim against the codebase, on whichever claim set
+      applied - or that set was noted to contain none of that kind
 - [ ] The report names which reviewers/models/tier/effort ran, qualitatively
       - no fabricated token/dollar figures
 - [ ] Single-model (claude-subagent) ran when no cross-model provider was
