@@ -674,7 +674,12 @@ function cmdRenumber(dir, sub, opts) {
   // must run before the `git rm` below: on a remove, the rm destroys a phase
   // directory before the first move, so a check placed after it would report
   // the collision only once the data is already gone.
-  const vacated = new Set(sub === 'remove' ? [String(at)] : []);
+  // Seeded only when the rm will actually RUN: `existingDir` is existsSync,
+  // which is false for a dangling symlink at phases/<at>, so seeding
+  // unconditionally waved through exactly the occupant `occupied()`/lstatSync
+  // was added to catch - the apply then died on the first move and reported a
+  // half-renumbered tree when nothing had been written at all.
+  const vacated = new Set(sub === 'remove' && existingDir(at) ? [String(at)] : []);
   for (const [f, t] of dirMoves) {
     const dest = join(dir, 'phases', String(t));
     if (occupied(dest) && !vacated.has(String(t))) {
@@ -771,8 +776,13 @@ function cmdRenumber(dir, sub, opts) {
   };
   if ('dry-run' in opts) return ok({ dry_run: true, ...result });
 
-  // Apply: an ordered step list, run under one guard, in the same order as
-  // `ops` above (remove first, then moves, then the file edits). This is a
+  // Apply: an ordered step list, run under one guard. NOTE the order is the
+  // rm first, then the moves - which is NOT the order `ops` above displays
+  // (it lists moves first, and a shipped test pins that). `ops` is the plan
+  // shown at the dry-run gate; `completed` below is the record of what
+  // actually ran, and it is the authority when the two disagree. Replaying
+  // the printed `ops` order by hand on a remove would `git mv` onto a
+  // still-present directory and NEST it (the D-04 hazard). This is a
   // partial-state REPORT, not a rollback - `remove` destroys phases/<at>
   // before the first move runs, so step one can never be undone. Advertising
   // a rollback the code lacks would be worse than a generic failure, because
@@ -803,7 +813,11 @@ function cmdRenumber(dir, sub, opts) {
       return emit({
         ok: false, reason: 'partial-apply', completed, failed: op,
         detail: e && e.message ? e.message : String(e),
-        hint: 'the tree is partly renumbered - reconcile the completed ops by hand, then re-run',
+        // Deliberately does NOT say "re-run". The half-applied tree no longer
+        // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
+        // a remove it would rm phases/<at>, which now holds the NEXT phase's
+        // work, and exit ok:true having destroyed it. Verified live.
+        hint: 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory',
       });
     }
     completed.push(op);

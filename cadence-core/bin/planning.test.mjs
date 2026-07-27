@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1154,6 +1154,25 @@ test('renumber: a dangling symlink at the destination still collides (#49.2)', (
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
+test('renumber remove: a dangling symlink at phases/<at> collides instead of dying mid-apply (#49.2)', () => {
+  // The remove direction of the arm above. `vacated` used to be seeded with
+  // `at` on every remove, but the rm that frees that slot is gated on
+  // existingDir (existsSync), which is FALSE for a dangling symlink - so the
+  // pre-flight waved through the very occupant occupied()/lstatSync exists to
+  // catch, and the apply then died on the first move with completed: [] and a
+  // hint asserting a half-renumbered tree when nothing had been written.
+  const dir = renumberTree();
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  rmSync(join(dir, 'phases', '2'), { recursive: true });
+  symlinkSync('nowhere', join(dir, 'phases', '2'));
+
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'collision');
+  assert.match(r.detail, /phases\/2/);
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+});
+
 test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
 }, () => {
@@ -1174,6 +1193,12 @@ test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   ]);
   assert.deepEqual(r.failed, { edit: 'ROADMAP.md' });
   assert.match(r.detail, /ROADMAP/);
+  // The hint must never PRESCRIBE a re-run: the half-applied tree no longer
+  // matches ROADMAP, so a re-run rm's phases/1 - which now holds the ORIGINAL
+  // phase 2's work - and exits ok:true having destroyed it. It may mention
+  // re-running, but only to warn against it.
+  assert.doesNotMatch(r.hint, /by hand,\s*then re-run/);
+  assert.match(r.hint, /destroy/);
 });
 
 // --- plan-overlap: the parallel-safety gate ------------------------------------
