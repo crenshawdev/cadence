@@ -21,6 +21,8 @@
 //                                   from ROADMAP when omitted; stamps today
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
+//   seed-reqs --phase N             insert Traceability rows for a phase's
+//                                   plan-declared, ## Active-bounded req ids
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
 //                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
@@ -38,6 +40,7 @@ import {
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
+  parseActiveIds, insertReqRows,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -573,6 +576,72 @@ function cmdPlanOverlap(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// seed-reqs - insert Traceability rows for the requirement ids a phase's
+// plan(s) declare, bounded by ## Active (D-02/D-04/D-05/D-06). Called by
+// /cad-plan right where the plan is written - the write path this table
+// never had (git log -S Traceability shows status-flip-only since c34ec8a).
+// ---------------------------------------------------------------------------
+function cmdSeedReqs(dir, opts) {
+  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
+  const n = parsedPhase.value;
+
+  // #42/#45 rail: the flag is validated before any read.
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const reqText = read(reqFile);
+  if (reqText === null) return fail('no-requirements', `${reqFile} not found`);
+
+  const pdir = join(dir, 'phases', String(n));
+  let planFiles = [];
+  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
+  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${n}`);
+
+  // Ids in plan-file order, union first-occurrence-wins across the phase's
+  // plan(s); frontmatter issues carried in the same {file, issues} shape
+  // cmdAudit emits, so a malformed requirements: line is loud at the moment
+  // its ids are being written, not only at the next audit.
+  const ids = [];
+  const seenIds = new Set();
+  const frontmatterIssues = [];
+  for (const f of planFiles) {
+    const { ids: fileIds, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
+    for (const id of fileIds) if (!seenIds.has(id)) { seenIds.add(id); ids.push(id); }
+    if (issues.length) frontmatterIssues.push({ file: `phases/${n}/${f}`, issues });
+  }
+
+  // Bound by ## Active (D-06): an id with no bullet there is scope creep or
+  // a typo and stays an orphans.plan_ids entry on purpose, never seeded.
+  const activeIds = parseActiveIds(reqText);
+  const noActiveSection = activeIds === null;
+  const activeSet = new Set(activeIds || []);
+  const rows = [];
+  const orphanIds = [];
+  for (const id of ids) {
+    if (activeSet.has(id)) rows.push({ id, phase: n });
+    else orphanIds.push(id);
+  }
+
+  const res = insertReqRows(reqText, rows);
+  if (res.error) return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`);
+  if (res.inserted.length) atomicWrite(reqFile, res.text);
+
+  // seeded/skipped are ALWAYS present, even empty - contrary to the
+  // envelope's omit-empty convention and deliberately so (uat merge's
+  // always-present counts precedent): a bookkeeping step that has now
+  // failed twice by writing nothing must report writing nothing.
+  ok({
+    phase: n,
+    seeded: res.inserted,
+    skipped: res.skipped,
+    ...(res.mismatched.length ? { mismatched: res.mismatched } : {}),
+    ...(orphanIds.length ? { orphan_ids: orphanIds } : {}),
+    ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+    ...(noActiveSection ? { no_active_section: true } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // recall - BM25 retrieval over the .planning/ artifacts Cadence writes but
 // never read back (SUMMARY deviations, CAPTURE items, UAT findings, CONTEXT
 // decisions). Zero-dep, deterministic (sorted corpus traversal + a total
@@ -940,6 +1009,7 @@ const COMMANDS = {
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
+  'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so
   // rejecting extras would turn a today-degraded interactive call into a hard
   // failure. tokenize() splits on non-alphanumerics, so the separator is
