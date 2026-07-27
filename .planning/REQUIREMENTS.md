@@ -5,9 +5,21 @@
 
 ## Active
 
-**None.** `v1.3.1` shipped 2026-07-27 and no milestone is open. The next
-cycle's headline asks get seeded here when it opens; see PROJECT.md `### Active`
-for the candidate scopes and the evidence behind them.
+`v1.4.0 — Stated grammars` (opened 2026-07-27). `/cad-plan` seeds each id's
+Traceability row below when its phase is planned - which is why TOK-01 and
+RDM-01 (phases 3 and 4) have no row yet.
+
+- **GRM-01**: Every shipped PLAN.md frontmatter form reads to exactly the ids
+  and files declared; anything outside the grammar is reported, never
+  silently over- or under-read.
+- **SPN-01**: /cad-plan seeds the Traceability row for every requirement a
+  plan covers, and a worktree executor asserts its own plan file before
+  task 1.
+- **TOK-01**: One quote-state tokenizer closes the six verified git-guard
+  rail-3 push holes.
+- **RDM-01**: The roadmap phase list has a stated grammar, so an empty
+  `## Phases` is a derived closed-milestone state rather than
+  `unparseable-roadmap`.
 
 ## Shipped
 
@@ -86,12 +98,13 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| GRM-01 | Phase 1 | Complete |
+| SPN-01 | Phase 2 | Pending |
 
-Empty: v1.3.1's rows are archived under `## Shipped` and no milestone is open.
-`/cad-plan` seeds this table for the next cycle. That seeding step has now
-failed to fire at two consecutive closes (v1.2.0 and v1.3.1), each time needing
-a hand-populated table before `/cad-audit` could pass, so check it explicitly
-next cycle rather than assuming it ran.
+Seeded by `/cad-plan`'s `seed-reqs` call, one row per phase's `## Active` id
+as its plan lands - not hand-populated. TOK-01 and RDM-01 (phases 3 and 4)
+gain rows only once those phases are planned; until then they are correctly
+absent, not dropped.
 
 ---
-*Last updated: 2026-07-27 shipped v1.3.1; Traceability cleared for the next cycle*
+*Last updated: 2026-07-27 phase 2 (SPN-01 pending, phase 2 not yet verified)*

@@ -1,7 +1,7 @@
 ---
 phase: 1
 plan: 1
-requirements: []
+requirements: [GRM-01]
 files:
   - cadence-core/bin/lib/planning-files.mjs
   - cadence-core/bin/planning.mjs
