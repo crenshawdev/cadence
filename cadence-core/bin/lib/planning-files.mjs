@@ -201,9 +201,21 @@ export function parseSummarySnippets(text) {
 
 /**
  * CAPTURE.md item-level snippets: every `- ` bullet under `## Todos`,
- * `## Seeds`, `## Notes`, with a leading `[ ]` checkbox and `(phase N)` tag
+ * `## Seeds`, `## Notes`, with a leading checkbox and `(phase N)` tag
  * stripped - the tag becomes the numeric `phase` field (omitted when the
  * bullet carries no tag; decimal phase numbers are legal).
+ *
+ * ANY checkbox state is stripped (`[ ]`, `[x]`, `[X]`), and stripped BEFORE
+ * the `(phase N)` extraction, which a checked box used to block - a closed
+ * capture lost its phase attribution and kept `[x]` in the indexed text.
+ * Completed captures stay in the corpus rather than being skipped or
+ * de-weighted (D-04): a closed item carries the reasoning that produced the
+ * fix, which is exactly the prior evidence recall exists to surface.
+ *
+ * A closed capture is marked with a literal `[closed] ` prefix on the text
+ * (D-05). The signal rides the string rather than growing a `done` field on
+ * the result shape: without a marker a planner reads a shipped fix as live
+ * prior evidence and re-plans closed work.
  * @param {string} text @returns {Array<{text:string, phase?:number}>}
  */
 export function parseCaptureSnippets(text) {
@@ -216,11 +228,13 @@ export function parseCaptureSnippets(text) {
       if (!m) continue;
       let raw = m[1].trim();
       if (!raw) continue;
-      raw = raw.replace(/^\[ \]\s*/, '');
+      const box = raw.match(/^\[([ xX])\]\s*/);
+      const closed = box ? box[1] !== ' ' : false;
+      if (box) raw = raw.slice(box[0].length);
       /** @type {number|undefined} */
       let phase;
       raw = raw.replace(/^\(phase (\d+(?:\.\d+)?)\)\s*/, (_m, n) => { phase = Number(n); return ''; });
-      out.push({ text: raw, ...(phase !== undefined ? { phase } : {}) });
+      out.push({ text: closed ? `[closed] ${raw}` : raw, ...(phase !== undefined ? { phase } : {}) });
     }
   }
   return out;

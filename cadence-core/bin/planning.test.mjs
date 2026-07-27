@@ -1226,6 +1226,28 @@ test('recall: two runs over a corpus with ## Durable decisions are byte-identica
   assert.ok(a.json.results.length >= 1);
 });
 
+test('recall: a completed capture keeps its phase and gains a closed marker (#47.1)', () => {
+  // makeTree's capture builder only ever writes `[ ]`, so the checked line is
+  // written raw - the shape the builder cannot express.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  writeFileSync(join(dir, 'CAPTURE.md'),
+    '## Todos\n\n- [x] (phase 3) tokenkiller carve-out closed by abc1234\n' +
+    '- [ ] (phase 1) tokenkiller live item\n');
+  const r = recall('tokenkiller', dir);
+  assert.equal(r.json.ok, true);
+  const closed = r.json.results.find((x) => /carve-out/.test(x.snippet));
+  const live = r.json.results.find((x) => /live item/.test(x.snippet));
+  // Pre-fix the `[x]` prefix blocked the `(phase N)` extraction entirely: no
+  // phase field, and the checkbox stayed in the indexed text.
+  assert.equal(closed.phase, 3);
+  assert.doesNotMatch(closed.snippet, /\[x\]/);
+  assert.ok(closed.snippet.startsWith('[closed] '),
+    `closed snippet lacks the marker: ${closed.snippet}`);
+  // An open capture is unchanged: phase extracted, no marker.
+  assert.equal(live.phase, 1);
+  assert.doesNotMatch(live.snippet, /\[closed\]/);
+});
+
 test('recall: memory.backend none reports off with empty results, exit 0', () => {
   const dir = makeTree({
     phases: { 1: { summaryBody: { deviations: ['findable term here'] } } },
