@@ -20,7 +20,9 @@ review capability lives entirely in cadence-core/workflows/decision-review.md:
 decision through the review subsystem's reviewer resolution; the main model
 then grounds each objection against Context7 (library/API claims) and the
 real codebase (factual claims) and rules it `survives | partial | refuted`
-with a concrete amendment where the decision needs one.
+with a concrete amendment where the decision needs one. When refutation
+returns nothing, the grounding retargets onto the decision's own load-bearing
+claims rather than lapsing, so a clean pass still rests on checked facts.
 
 This is a manual, on-demand entry point only - it never auto-fires and there
 is no review-trigger wiring for it. Durability (cad-context's `## Durable
@@ -42,8 +44,9 @@ invoking this skill is the user's call, not a mechanical handoff.
    resolution), then adjudicate (Context7 + codebase grounding, per-objection
    ruling and amendments), then the qualitative cost report.
 
-3. **Present** the per-objection rulings, groundings, and amendments, plus
-   which providers/models/tier/effort ran. Do NOT auto-apply any amendment -
-   this is a review, not an edit; the user decides what to change and does it
-   themselves.
+3. **Present** the per-objection rulings, groundings, and amendments - or, on
+   a clean pass, the grounded load-bearing claims, never a bare "no findings"
+   - plus which providers/models/tier/effort ran. Do NOT auto-apply any
+   amendment - this is a review, not an edit; the user decides what to change
+   and does it themselves.
 </process>
