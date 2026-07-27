@@ -77,10 +77,12 @@ Explicit exclusions. The reason prevents scope creep later.
 
 ## Traceability
 
-Live requirement → phase → plan → verified trace for the **current** milestone,
-written solely by cad-verify. Shipped rows move to `## Shipped` above when a
-milestone closes, so `/cad-audit` starts each cycle clean. The audit seam reads
-the rows of this section only, bounded at the next `## ` heading.
+Live requirement → phase → plan → verified trace for the **current** milestone.
+`/cad-plan` creates a row per requirement (always at `Pending`); no writer but
+cad-verify ever sets a Status beyond it (`references/req-traceability.md`).
+Shipped rows move to `## Shipped` above when a milestone closes, so
+`/cad-audit` starts each cycle clean. The audit seam reads the rows of this
+section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|

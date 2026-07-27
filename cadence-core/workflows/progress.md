@@ -52,9 +52,9 @@ and `--stats` must write nothing. Otherwise (the normal path) batch a
   executed -> `executed`; all complete -> `phase complete` (with `--phase`
   = the last phase). A `paused` cursor always agrees - leave it.
 - Drift kinds `roadmap-box` / `req-status`: do NOT edit those files here -
-  cad-verify is their single writer. Note the drift in the report
-  ("ROADMAP shows phase N open but it is complete") and route to
-  `/cad-verify N` to repair it.
+  cad-verify is the only writer of a ROADMAP checkbox or a Traceability
+  Status beyond `Pending`. Note the drift in the report ("ROADMAP shows
+  phase N open but it is complete") and route to `/cad-verify N` to repair it.
 </step>
 
 <step name="stats">

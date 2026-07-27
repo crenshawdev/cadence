@@ -4,7 +4,9 @@ Pre-ship traceability audit. Prove every requirement was delivered and verified,
 and that no work is unmapped. Read-only: it reports and gates, it never edits
 status. The persisted status is the REQUIREMENTS traceability table
 (Requirement | Phase | Status: Pending/Complete) and the ROADMAP `## Phases`
-checkbox, both written solely by cad-verify.
+checkbox. `/cad-plan` creates a table row (always at Pending); no writer but
+cad-verify ever sets a Status beyond it, and the ROADMAP checkbox is
+cad-verify's alone (`references/req-traceability.md`).
 
 ## 1. Scope
 `$ARGUMENTS` = a milestone (audit its requirements), else all active

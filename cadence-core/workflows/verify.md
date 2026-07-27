@@ -175,8 +175,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat status --phase <N
 `result: complete` means every item passed or was skipped with a reason;
 anything else is `partial`.
 
-On **complete**, this skill is the single writer of persisted phase status.
-Two seam calls, then one commit:
+On **complete**, this skill is the only writer of a persisted phase status
+TRANSITION - row creation at `Pending` belongs to `/cad-plan`'s seeding step;
+this skill is the only writer of any Status beyond it. Two seam calls, then
+one commit:
 
 1. `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" phase-done --n <N>` - checks the phase's
    ROADMAP box and flips its traceability rows to Complete (Deferred rows
@@ -218,8 +220,9 @@ hold the result and the next command starts fresh.
 - No internal fixer or reviewer loops; second opinions only via the
   review-trigger interface, fixes only with user approval.
 - Never ask severity - infer it, default major.
-- Phase status (cursor, ROADMAP box, REQUIREMENTS rows) is written only on
-  full pass, only via phase-done + cursor set.
+- Phase status TRANSITIONS (cursor, ROADMAP box, REQUIREMENTS row Status
+  beyond Pending) are written only on full pass, only via phase-done + cursor
+  set - row creation at Pending is `/cad-plan`'s seeding step, not this one.
 </guardrails>
 
 <success_criteria>
