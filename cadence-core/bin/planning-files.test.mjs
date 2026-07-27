@@ -198,6 +198,53 @@ const ROWS = [
     text: fence('requirements: ["#41"]\na stray line\nfiles: []'),
     key: 'requirements', items: ['#41'], issues: ['unknown-line'],
   },
+
+  // --- Task 1: value resolution - trailing content and residual quotes ----
+  {
+    name: 'a quoted block item with a trailing annotation',
+    text: fence('files:\n  - "src/shared.rs" (new)'),
+    key: 'files', items: ['src/shared.rs'], issues: ['trailing-value-content'],
+  },
+  {
+    name: 'an unquoted block item with a trailing annotation (D-18 symmetry)',
+    text: fence('files:\n  - src/a.rs (new)'),
+    key: 'files', items: ['src/a.rs'], issues: ['trailing-value-content'],
+  },
+  {
+    name: 'a quoted #-shaped block item with stray trailing content',
+    text: fence('requirements:\n  - "#41" stray'),
+    key: 'requirements', items: ['#41'], issues: ['trailing-value-content'],
+  },
+  {
+    name: 'a quoted #-shaped scalar with stray trailing content',
+    text: fence('requirements: "#41" stray'),
+    key: 'requirements', items: ['#41'], issues: ['trailing-value-content'],
+  },
+  {
+    name: 'an inline list element with stray trailing content dedupes to one issue',
+    text: fence('requirements: ["#41" stray, "#46"]'),
+    key: 'requirements', items: ['#41', '#46'], issues: ['trailing-value-content'],
+  },
+  {
+    name: 'an apostrophe inside a double-quoted value is in the grammar - no residual-quote',
+    text: fence("files: [\"src/it's-a-file.md\"]"),
+    key: 'files', items: ["src/it's-a-file.md"], issues: [],
+  },
+  {
+    name: 'a one-element backslash escape is detected, not silently fabricated (D-20)',
+    text: fence('files: ["a\\"]'),
+    key: 'files', items: ['a\\'], issues: ['residual-quote'],
+  },
+  {
+    name: 'an unquoted value containing either quote character (D-20)',
+    text: fence("requirements: [\"#41\", a'b'c]"),
+    key: 'requirements', items: ['#41', "a'b'c"], issues: ['residual-quote'],
+  },
+  {
+    name: 'the D-20 two-element escape case reports both codes on the one fabricated fragment',
+    text: fence('files: ["a\\"b.md", "c\\"d.md"]'),
+    key: 'files', items: ['a\\'], issues: ['trailing-value-content', 'residual-quote'],
+  },
 ];
 
 // One test() per row, not one loop inside one test(): a row that fails

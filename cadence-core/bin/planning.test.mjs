@@ -1152,6 +1152,25 @@ test('audit + plan-overlap: an unterminated frontmatter fence reports on both en
     [{ plan: 'PLAN.md', issues: [{ line: 1, code: 'unterminated-frontmatter', text: '---' }] }]);
 });
 
+test('plan-overlap: a trailing-annotated block item still overlaps, with the diagnostic naming which plan (UAT-9)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - "src/shared.rs" (new)\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - src/shared.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
+  assert.deepEqual(r.frontmatter_issues, [{
+    plan: 'PLAN-1.md',
+    issues: [{ line: 6, code: 'trailing-value-content', text: '- "src/shared.rs" (new)' }],
+  }]);
+});
+
 // --- renumber ------------------------------------------------------------------
 
 function renumberTree() {

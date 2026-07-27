@@ -467,19 +467,83 @@ function scanValue(s) {
 }
 
 /**
- * D-08's WRAPPING-quote strip: remove exactly the first and last character
- * when the trimmed string is at least 2 characters and starts/ends with the
- * SAME quote character. Never a global `["']` replace - that both mangles a
- * real path (`src/it's-a-file.md`) and destroys the quoting signal D-01 now
- * reads.
- * @param {string} s
+ * Resolve one already-comment-stripped, trimmed candidate (an inline list
+ * element, a block-item payload, or a key line's scalar remainder) at its
+ * own boundary (D-17/D-18/D-20), superseding `unwrap` (deleted - no dead
+ * helper, no second resolution path).
+ *
+ * An empty `raw` resolves to `{value:'', codes:[]}`. When `raw[0]` is a
+ * quote character, the value ends at the NEXT occurrence of that SAME
+ * character (`raw.indexOf(raw[0], 1)`) - none found yields
+ * `{value:'', codes:['unterminated-quote']}` (mirroring `scanValue`'s own
+ * fail-loud rule, since a caller can pass a whole-value scan result unwound
+ * one boundary further in). Otherwise the value ends at the first whitespace
+ * character (`raw.search(/\s/)`, the whole string when there is none) - the
+ * accepted cost stated plainly: an unquoted value can no longer contain a
+ * space, so quote a value that does (checked against 21 commits of plan
+ * frontmatter - every shipped value is a single token, so no shipped form
+ * regresses).
+ *
+ * Whatever follows the value (D-17, symmetric with D-18 on the unquoted
+ * form) is the "rest"; when the rest is non-whitespace, `trailing-value-
+ * content` is pushed and the value BEFORE it still stands (parse-then-
+ * diagnose, matching `trailing-inline-content`'s precedent).
+ *
+ * Finally, per D-20, the residual test: a resolved value that could only
+ * have been written with an escape rule this grammar does not have gets
+ * `residual-quote`, payload KEPT. It fires on a value containing a
+ * backslash (the only way a ONE-element escape like `files: ["a\"]` is
+ * detectable at all - it has no trailing rest and no surviving quote, so the
+ * other two codes both miss it), OR the SAME quote character that wrapped
+ * it (for an unquoted value, either quote character) - deliberately NOT a
+ * bare "contains a quote" test, which would fire on the grammar's own
+ * prescribed spelling of an apostrophe-bearing path
+ * (`"src/it's-a-file.md"`, `references/plan-frontmatter.md:96-99`) and
+ * leave that conforming file with no diagnostic-free form.
+ *
+ * No escape state is added here or at any of this function's three call
+ * sites' surrounding scanners (`scanValue`, `splitDepth0`, `parseInlineList`
+ * stay untouched) - this is a test on the RESOLVED value, detection, not an
+ * escape rule.
+ * @param {string} raw @returns {{value: string, codes: string[]}}
  */
-function unwrap(s) {
-  const t = s.trim();
-  if (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[t.length - 1] === t[0]) {
-    return t.slice(1, -1);
+function resolveValue(raw) {
+  if (!raw) return { value: '', codes: [] };
+  const codes = [];
+  const quoted = raw[0] === '"' || raw[0] === "'";
+  let value, rest;
+  if (quoted) {
+    const q = raw[0];
+    const close = raw.indexOf(q, 1);
+    if (close === -1) return { value: '', codes: ['unterminated-quote'] };
+    value = raw.slice(1, close);
+    rest = raw.slice(close + 1);
+  } else {
+    const ws = raw.search(/\s/);
+    if (ws === -1) { value = raw; rest = ''; }
+    else { value = raw.slice(0, ws); rest = raw.slice(ws); }
   }
-  return t;
+  if (rest.trim()) codes.push('trailing-value-content');
+  const residual = value.includes('\\') ||
+    (quoted ? value.includes(raw[0]) : (value.includes('"') || value.includes("'")));
+  if (residual) codes.push('residual-quote');
+  return { value, codes };
+}
+
+/**
+ * Push one `{line, code, text}` issue per DISTINCT code in `codes`, in
+ * first-occurrence order - a five-element inline list with five annotated
+ * elements reports `trailing-value-content` once for its line, not five
+ * times.
+ * @param {Issue[]} issues @param {number} lineNo @param {string} lineText @param {string[]} codes
+ */
+function pushIssues(issues, lineNo, lineText, codes) {
+  const seen = new Set();
+  for (const code of codes) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    issues.push({ line: lineNo, code, text: issueText(lineText) });
+  }
 }
 
 /**
@@ -506,12 +570,17 @@ function splitDepth0(s) {
  * quote depth 0 (a quoted `]` is literal, never the closer) by the same
  * left-to-right scan, never a `\[(.*)\]` capture (greedy or not - neither
  * can see quoting, and the greedy form is the defect three reviewers found
- * independently). Splits the payload on commas at quote depth 0 and unwraps
- * each element. No closing bracket yields no items plus code
- * `unterminated-inline-list`. Non-whitespace after the closing bracket
- * yields code `trailing-inline-content`, with the payload still parsed -
- * never a fall-through that discards it.
- * @param {string} value @returns {{items: string[], code: string|null}}
+ * independently). No closing bracket yields no items plus codes
+ * `['unterminated-inline-list']`. Non-whitespace after the closing bracket
+ * yields `trailing-inline-content` (bracket-level, pushed first), with the
+ * payload still parsed - never a fall-through that discards it. The payload
+ * is split on commas at quote depth 0 (a comma inside a quoted span is
+ * literal - and per D-20, no escape state, so a quote span an escaped quote
+ * was meant to keep open still closes at the FIRST matching character) and
+ * each trimmed, non-empty element is resolved by `resolveValue`; every
+ * element's codes are appended after the bracket-level code, in order,
+ * un-deduplicated here (the caller dedupes per line).
+ * @param {string} value @returns {{items: string[], codes: string[]}}
  */
 function parseInlineList(value) {
   let quote = null, closeIdx = -1;
@@ -521,11 +590,19 @@ function parseInlineList(value) {
     if (c === '"' || c === "'") { quote = c; continue; }
     if (c === ']') { closeIdx = idx; break; }
   }
-  if (closeIdx === -1) return { items: [], code: 'unterminated-inline-list' };
+  if (closeIdx === -1) return { items: [], codes: ['unterminated-inline-list'] };
   const payload = value.slice(1, closeIdx);
   const trailing = value.slice(closeIdx + 1);
-  const items = splitDepth0(payload).map((s) => unwrap(s.trim())).filter(Boolean);
-  return { items, code: trailing.trim() ? 'trailing-inline-content' : null };
+  const codes = trailing.trim() ? ['trailing-inline-content'] : [];
+  const items = [];
+  for (const raw of splitDepth0(payload)) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const resolved = resolveValue(trimmed);
+    codes.push(...resolved.codes);
+    if (resolved.value) items.push(resolved.value);
+  }
+  return { items, codes };
 }
 
 // Any line at column 0 shaped like `key:` or `key: value` - the anchor for a
@@ -615,24 +692,26 @@ export function parseFrontmatter(text) {
       const scanned = scanValue(remainder);
 
       if (scanned.code) {
-        issues.push({ line: lineNo, code: scanned.code, text: issueText(line) });
+        pushIssues(issues, lineNo, line, [scanned.code]);
         if (first) keys.set(key, []);
         continue;
       }
 
       const value = scanned.value;
-      let items, code = null;
+      let items, codes = [];
       if (value.startsWith('[')) {
         const r = parseInlineList(value);
         items = r.items;
-        code = r.code;
+        codes = r.codes;
       } else if (value !== '') {
-        items = [unwrap(value)].filter(Boolean);
+        const r = resolveValue(value);
+        items = r.value ? [r.value] : [];
+        codes = r.codes;
       } else {
         items = [];
         if (first) currentKey = key; // block-eligible; items collected below
       }
-      if (code) issues.push({ line: lineNo, code, text: issueText(line) });
+      pushIssues(issues, lineNo, line, codes);
       if (first) keys.set(key, items);
       continue;
     }
@@ -643,13 +722,14 @@ export function parseFrontmatter(text) {
     if (im) {
       const scanned = scanValue(im[1]);
       if (scanned.code) {
-        issues.push({ line: lineNo, code: scanned.code, text: issueText(line) });
+        pushIssues(issues, lineNo, line, [scanned.code]);
         continue;
       }
       if (scanned.value === '') continue; // comment-only item / bare `-`: D-01 cost, not an issue
+      const resolved = resolveValue(scanned.value);
+      pushIssues(issues, lineNo, line, resolved.codes);
       if (currentKey) {
-        const item = unwrap(scanned.value);
-        if (item) keys.get(currentKey).push(item);
+        if (resolved.value) keys.get(currentKey).push(resolved.value);
       }
       continue;
     }
