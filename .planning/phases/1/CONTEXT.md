@@ -1,229 +1,301 @@
 # Phase 1: The plan-file frontmatter grammar - Context
 
-Gathered: 2026-07-27
+Gathered: 2026-07-27 (second pass - re-gathered after UAT)
 Feeds: /cad-plan 1
+
+The first pass shipped `7b58a80..766c307` (5 commits, +846/-96) and was UAT'd at
+10 pass / 5 fail. The grammar spine landed and is sound; the open half of the
+goal - "reports anything outside the grammar instead of silently over- or
+under-reading it" - is what this pass closes. D-01 through D-12 are the first
+pass's decisions, carried forward and still binding except where noted.
+D-13 onward are new.
 
 ## Scope boundary
 
-In: `readFrontmatterList` and its `clean()` helper in
-`cadence-core/bin/lib/planning-files.mjs` are replaced by an explicit line
-classifier written against a stated grammar, closing the nine open CAPTURE
-items in that function: the HIGH comment-on-key-line regression from `ef75864`
-(a trailing comment read as the whole scalar value, discarding the block list),
-the greedy inline `\[(.*)\]` three reviewers found independently, the block
-reader that breaks at the first non-item line, a block item that is itself a
-comment, the `#TODO` no-space comment form, the byte-0 fence anchor (leading
-blank line / BOM), and total failure on a CRLF checkout. A shared
-`normalize(text)` lands on the parse path. Both consumer envelopes
-(`audit`, `plan-overlap`) gain an additive diagnostic field so a PARTIAL read
-stops being invisible. The four existing frontmatter tests are rewritten as the
-new grammar's acceptance set, and a parser-level `planning-files.test.mjs`
-carries the grammar table.
+In: the five failing UAT items (8-12), closed in one `PLAN-2.md`. A block item
+arriving with no open block key is diagnosed and dropped rather than silently
+discarded (`planning-files.mjs:650`); text following a closing quote yields the
+quoted span plus a diagnostic rather than a quote-bearing fabricated value
+(`:477-483`); a commented-out key line earns its own diagnostic
+(`:640`); a key-shaped line rejected for the missing space after its colon gets
+a code that names the actual repair (`:534`); backslash escapes are declared out
+of the grammar and made detectable (`:456-467`); `add()`'s post-grammar path
+rewriting comes off the frontmatter arm (`:707-715`, superseding D-09); and the
+diagnostic-versus-verdict invariant in `references/plan-frontmatter.md` and
+`workflows/audit.md` is amended to match what the four data-dropping codes
+actually do. `templates/PLAN.md` moves its two `[]` lines to bare block keys.
 
-Out: the task-line arm of `parsePlanFiles` (`- **Files:** a, b`) and its `add()`
-helper (D-09). The sibling parsers' CRLF/BOM exposure - `PHASE_LINE`, the
-snippet parsers, `parseUat`'s fence - which stays unfixed this phase; `PHASE_LINE`
-and `parseRoadmapPhases` belong to phase 4 (D-10). Any relaxation of what counts
-as a phase-shaped line. Any new feature.
+Out: the `- **Files:**` task-line arm keeps its `add()` normalization (D-19
+narrows the reach, it does not delete the helper). Escapes are not implemented,
+only detected (D-20). The sibling parsers' CRLF/BOM exposure stays unfixed:
+`PHASE_LINE` and `parseRoadmapPhases` belong to phase 4 (D-10). Any new feature.
 
 Deferred: None
-Plan shape: one plan
+Plan shape: one plan - `PLAN-2.md`, alongside the executed `PLAN.md` (D-21)
 
 ## Durable decisions
 
 - D-01 (`#` discrimination, quoting decides): an unquoted `#` after `key:`
-  always starts a comment; `"#41"` is data. This is real YAML's own rule, and it
-  is the only candidate that is a stated rule rather than a heuristic, which is
-  the milestone's whole premise. It matches 100% of live plan files - every
-  `#`-shaped id in this repo's history appears double-quoted - and
-  `templates/REQUIREMENTS.md:59` documents the id format as `CATEGORY-NUMBER`
-  and never uses `#` at all; the `#NN` spelling exists only because Cadence
-  dogfoods against its own GitHub issue numbers. Chosen over "`#` followed by a
-  digit is an id" (closes `#TODO` but silently loses a non-numeric `#auth-1` id
-  to the comment arm, so audit reports `no-plan` on a requirement a plan
-  genuinely covers) and over keeping `#` + non-space = id with an added id-shape
-  test (no test inverts, but the grammar stays two rules instead of one).
-  Accepted cost: the `requirements: #41` case inverts and its test is rewritten,
-  and a hand-written unquoted `- #41` block item reads as a comment. Evidence:
+  always starts a comment; `"#41"` is data. Real YAML's own rule, and the only
+  candidate that is a stated rule rather than a heuristic, which is the
+  milestone's whole premise. Matches 100% of live plan files. Chosen over "`#`
+  followed by a digit is an id" (silently loses a non-numeric `#auth-1`) and
+  over `#` + non-space = id with an added id-shape test (no test inverts, but
+  the grammar stays two rules instead of one). Accepted cost: a hand-written
+  unquoted `- #41` block item reads as a comment. Evidence:
   `cadence-core/bin/lib/planning-files.mjs:472`,
-  `cadence-core/bin/planning.test.mjs:966-976`,
-  `cadence-core/templates/REQUIREMENTS.md:59`, `.planning/REQUIREMENTS.md` history.
-- D-02 (the reporting channel; phase-3 D-14 RE-OPENED): the reader reports what
-  falls outside the grammar through an additive, omitted-when-empty diagnostic
-  field on both the `audit` and `plan-overlap` envelopes, following the existing
-  `orphans` / `undeclared` shape. D-14 held that no `warnings[]` was needed
-  because phase-1 D-01's convention covers a file that fails to PARSE while
-  every phase-3 case was an under-read of a file that parsed cleanly; that
-  reasoning does not survive this phase's goal, which requires the reader to
-  report rather than absorb. The gap being closed is specifically the PARTIAL
-  read: a total under-read is already loud (`no-plan` breaks, or `undeclared`
-  routing execute to sequential), but a truncated-but-nonempty `files:` list
-  leaves a plan neither `undeclared` nor overlapping, so the parallel gate
-  greenlights two plans that write the same path - the one failure with no
-  observable at all. Never `{ok:false}`: that would turn one odd frontmatter
-  line into a total audit failure across every phase, violating the seam
-  contract's never-blocks-the-spine rule. Chosen over making the grammar total
-  so nothing falls outside it (cheapest, no envelope or budget change, but a
-  genuinely malformed input still yields a silent partial read) and over a
-  `plan-overlap`-only `{ok:false, reason:"unparseable-plan"}` (targets the
-  parallel-safety case but leaves a fabricated audit orphan undiagnosed, and is
-  asymmetric between two callers of one reader). Evidence:
-  `cadence-core/bin/planning.mjs:9-14,512-517,545-553,832`,
-  `cadence-core/bin/lib/config-merge.mjs:93-125`,
-  `cadence-core/workflows/execute.md:73`, `cadence-core/workflows/audit.md:23`.
-- D-03 (rewrite, not a tenth arm): the function body is replaced by an explicit
-  line classifier against a written-down grammar, not patched with more regex
-  arms. `readFrontmatterList` was introduced whole at `ef75864` and patched once
-  at `2470e95`, and that patch moved the comment-only case from an over-read to
-  an under-read rather than closing it - the second failed regex round on a
-  36-line function now carrying nine open defects. The same accretion pattern
-  produced phase 4's two push-rail regressions. Chosen over targeted per-defect
-  fixes, which is the cheaper diff and the reason the defect list is this long.
-  Evidence: commits `ef75864`, `2470e95`;
-  `cadence-core/bin/lib/planning-files.mjs:447-486`.
-- D-04 (block termination; phase-3 D-07 RE-OPENED): a block list SKIPS blank and
-  comment-only lines and terminates on a stated terminator set - the closing
-  `---` fence, a following `key:` line at column 0, or EOF - rather than
-  breaking at the first non-`- ` line. D-07's minimal grammar ("contiguous
-  `- item` lines, terminating at the first non-`- ` line, no comment-only
-  lines") is precisely what makes a comment heading or splitting a list truncate
-  it silently, and D-07's own flagged assumptions predicted this as its failure
-  point. Every live block list terminates at the fence (`21114c8`, `f828beb`) or
-  at a following key line (`155378f`, `f0ce954`), so the terminator set covers
-  every shipped case with no widening risk. Chosen over treating a comment line
-  as an item that yields nothing (same effect, smaller statement, but leaves
-  termination undefined for anything else) and over indentation-based
-  termination (introduces a nesting concept the grammar deliberately lacks).
-  Evidence: `cadence-core/bin/lib/planning-files.mjs:476-480`; phase-3 CONTEXT.md
-  at commit `d8f5903` (D-07).
+  `cadence-core/templates/REQUIREMENTS.md:59`. SHIPPED first pass.
+- D-02 (the reporting channel): the reader reports what falls outside the
+  grammar through an additive, omitted-when-empty `frontmatter_issues` field on
+  both the `audit` and `plan-overlap` envelopes, following the existing
+  `orphans` / `undeclared` shape. Never `{ok:false}`: one odd frontmatter line
+  must not become a total audit failure across every phase. The gap being closed
+  is the PARTIAL read - a total under-read is already loud, but a
+  truncated-but-nonempty `files:` list leaves a plan neither `undeclared` nor
+  overlapping, so the parallel gate greenlights two plans writing one path.
+  Evidence: `cadence-core/bin/planning.mjs:9-14,512-517,545-553,832`,
+  `cadence-core/workflows/execute.md:73`. SHIPPED first pass.
+- D-03 (rewrite, not a tenth arm): the reader is an explicit line classifier
+  against a written-down grammar, not accreted regex arms. The accretion pattern
+  is what produced the nine-defect list and phase 4's two push-rail regressions.
+  This binds the SECOND pass too: the five remaining defects are closed by
+  extending the stated grammar and its code table, not by special-casing inputs.
+  Evidence: commits `ef75864`, `2470e95`. SHIPPED first pass.
+- D-04 (block termination): a block list SKIPS blank and comment-only lines and
+  terminates on a stated three-member terminator set - the closing `---` fence,
+  a following `key:` line at column 0, or EOF. Every live block list terminates
+  at the fence or a following key line, so the set covers every shipped case
+  with no widening risk. D-14 confirms the set stays at three members.
+  Evidence: `cadence-core/bin/lib/planning-files.mjs:476-480`;
+  `cadence-core/references/plan-frontmatter.md:70-91`. SHIPPED first pass.
 - D-05 (where normalization lives): a shared `normalize(text)` in
-  `planning-files.mjs` runs on the PARSE path only, wired to this reader, with
-  phase 4 adopting it for the roadmap grammar it already owns. Explicitly NOT in
-  `planning.mjs`'s `read()`, which is the obvious chokepoint and the wrong one:
-  the text `read()` returns is written back verbatim by `phase-done`
-  (`planning.mjs:240,246,259-260`) and `renumber` (`:676,762`), so normalizing
-  there would silently convert a user's CRLF `ROADMAP.md` and `REQUIREMENTS.md`
-  wholesale to LF on the next `phase-done` - a byte-level rewrite of files
-  Cadence promises to touch surgically (`setPhaseBox` returns "everything else
-  byte-preserved"). Known risk, accepted: a shared helper wired to one caller
-  can read as though the whole file is CRLF-safe when `status` still degrades to
-  `unparseable-roadmap` on a CRLF checkout; phase 4 owning adoption is what
-  closes it, and D-10 records the boundary. Evidence:
-  `cadence-core/bin/planning.mjs:52,240,246,259-260,676,762`,
-  `cadence-core/bin/lib/planning-files.mjs:125-135`.
-- D-06 (parser-level tests; phase-3 D-15 RE-OPENED): a new
-  `cadence-core/bin/planning-files.test.mjs` carries the grammar table,
-  ALONGSIDE - not instead of - the seam-level `audit` and `plan-overlap` tests
-  that prove the defects reach an observable. D-15 barred a parser-only unit
-  file on the grounds that it would pass while the defect never reached
-  `cmdAudit`; that holds for a per-defect fix and not for a stated grammar,
-  where the acceptance set is the artifact and every seam case costs a
-  `mkdtempSync` tree plus an `execFileSync` process spawn. The table is 20+
-  cases (shipped forms, nine defects, CRLF/BOM/blank-line variants). Precedent
-  is already in the repo: six of ten `lib/` modules have unit test files, and CI
-  globs `cadence-core/bin/*.test.mjs`, so the file is picked up with no config
-  change. Chosen over holding D-15 (20+ process spawns) and over exporting the
-  reader to table-drive it from inside `planning.test.mjs` (one file, but breaks
-  that file's seam-only framing). Evidence:
-  `cadence-core/bin/planning.test.mjs:25-123,126-136`,
-  `cadence-core/bin/require-int.test.mjs`, `cadence-core/bin/bm25.test.mjs`,
-  `cadence-core/bin/branch-decision.test.mjs`, `.github/workflows/test.yml:27`.
+  `planning-files.mjs` runs on the PARSE path only. Explicitly NOT in
+  `planning.mjs`'s `read()`, whose text is written back verbatim by `phase-done`
+  and `renumber`, so normalizing there would silently convert a user's CRLF
+  `ROADMAP.md` wholesale to LF - a byte-level rewrite of files Cadence promises
+  to touch surgically. Evidence:
+  `cadence-core/bin/planning.mjs:52,240,246,259-260,676,762`. SHIPPED first pass.
+- D-06 (parser-level tests): `cadence-core/bin/planning-files.test.mjs` carries
+  the grammar table ALONGSIDE - not instead of - the seam-level `audit` and
+  `plan-overlap` tests that prove a defect reaches an observable. Every seam case
+  costs a `mkdtempSync` tree plus an `execFileSync` spawn; the table is where
+  breadth is affordable. CI globs `cadence-core/bin/*.test.mjs`, so the file is
+  picked up with no config change. Evidence: `.github/workflows/test.yml:27`.
+  SHIPPED first pass (33 rows; the one-test-per-row fix landed at `afccec8`).
+- D-13 (an orphan block item is diagnosed and dropped, never back-attached): a
+  block item arriving while no block key is open records a diagnostic and drops
+  its payload; it never attaches to the most recent key line whatever arm that
+  key took. `templates/PLAN.md` moves its `requirements: []` / `files: []` lines
+  to bare block keys to match. UAT-8 overstates its own severity - the
+  template's exact `files: []` plus items shape already yields
+  `undeclared:["PLAN-1.md","PLAN-2.md"]` and `execute.md:73` routes `undeclared`
+  to sequential - but the genuinely unguarded case is a NON-EMPTY inline list
+  plus items: `files: [src/a.rs]  # comment` / `  - src/shared.rs` in two plans
+  returns `overlaps:[]` with no `undeclared` and no diagnostic while both plans
+  write `src/shared.rs`. Diagnose-and-drop closes both shapes; adopting only
+  when the inline value was `[]` closes the harmless one and leaves the
+  dangerous one open. Chosen over that, and over adopting into the most recent
+  key whatever arm it took (which merges an inline list with a block, turning
+  the plan's two separate statements into one under a merge rule D-04 does not
+  state). Evidence: `cadence-core/bin/lib/planning-files.mjs:650,625-634`;
+  `cadence-core/references/plan-frontmatter.md:49-68`; 20 plans in git history
+  write the bare block key, zero use `[]` plus items.
+- D-14 (a commented-out key line is diagnosed, not promoted to a terminator):
+  the terminator set stays at three members; a comment-only line whose body is
+  key-shaped earns a `commented-key-line` diagnostic and is otherwise skipped.
+  The decisive hazard is that once the `#` is stripped, an ordinary prose
+  comment like `# TODO: fill this in` also satisfies
+  `/^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/`, so promoting commented key lines to
+  terminators makes prose truncate a block - the exact silent under-read D-04
+  exists to close. Both branches fire a diagnostic on both inputs; the choice is
+  only which input reads correctly, and truncating a real list is worse than
+  folding one. Accepted cost, stated plainly: `requirements:` / `- "#41"` /
+  `# files:` / `  - src/shared.rs` still folds `src/shared.rs` into
+  `requirements` and audit still mints it as an orphan - but with a diagnostic
+  beside it and `choose_path` routing sequential, so it is no longer silent.
+  Chosen over a fourth terminator member, and over restricting the promotion to
+  comments naming a KNOWN key, which teaches two key names to a
+  `parseFrontmatter` that is deliberately key-agnostic (`:543-556`). Evidence:
+  `cadence-core/bin/lib/planning-files.mjs:640,534`;
+  `cadence-core/references/plan-frontmatter.md:70-91`; `.planning/CAPTURE.md:29`.
+- D-15 (the stated invariant moves, not the classification): the claim at
+  `references/plan-frontmatter.md:113-115` that a diagnostic "never changes
+  `counts`, and never adds or clears an audit `break`", duplicated at
+  `workflows/audit.md:52-55`, is amended to state per-code whether the code
+  drops its payload. It is falsified by FOUR of the five shipped codes, not only
+  by the no-space key form UAT-11 names: `unterminated-inline-list`,
+  `unterminated-quote`, `unterminated-frontmatter` and `unknown-line` each
+  return `counts:{total:1,traced:0,broken:1}` with `break:"no-plan"` alongside
+  their diagnostic; only `trailing-inline-content` preserves its payload.
+  Widening `KEY_LINE` would therefore close one of four paths and leave the
+  reference asserting something three other codes still falsify. Evidence:
+  verified at the audit seam against a one-requirement tree;
+  `cadence-core/bin/planning.mjs:479-482,499,513-519`;
+  `cadence-core/bin/lib/planning-files.mjs:596,617-621,624-628`.
+- D-16 (`KEY_LINE` stays strict; the rejection gets a name): `key:value` with no
+  space after the colon is not a legal key line, and a column-0 line that is
+  key-shaped but fails only that test gets a new `malformed-key-line` code
+  instead of the generic `unknown-line`. Strictness matches real YAML, which is
+  D-01's whole premise, and keeps a column-0 bare URL (`http://example.com`)
+  reported rather than parsed as key `http` with value `//example.com`. The data
+  is still dropped and audit still reports `no-plan` - D-15 is what makes that
+  honest rather than contradictory. Chosen over dropping the `(\s|$)` group,
+  which reads a hand-written `requirements:["#41"]` correctly at the cost of
+  turning every stray colon-bearing line at column 0 into a silently accepted
+  key/value pair. Evidence: `cadence-core/bin/lib/planning-files.mjs:534`;
+  `cadence-core/references/plan-frontmatter.md:33-37`.
+- D-17 (trailing content after a closing quote is parse-then-diagnose): the
+  quoted span becomes the value and a trailing-content code is recorded, so
+  `- "src/shared.rs" (new)` yields `src/shared.rs` and `- "#41" stray` yields
+  `#41`, each with a diagnostic. Mirrors the established precedent at
+  `references/plan-frontmatter.md:121` ("the payload before it is still
+  parsed"), and completes D-08's wrapping-quote strip, which UAT-9 shows is
+  currently half-applied. Chosen over yielding no value plus the diagnostic
+  (matching `unterminated-quote`'s fail-loud shape, but discarding a path the
+  author plainly declared) and over keeping the raw quote-bearing string and
+  merely diagnosing (reports the problem while leaving the false `overlaps:[]`
+  intact). Evidence: `cadence-core/bin/lib/planning-files.mjs:477-483,526-528`.
+- D-19 (`add()` narrows off the frontmatter arm; D-09 SUPERSEDED): a
+  grammar-exact frontmatter read is no longer post-processed by `add()`'s
+  parenthetical and backtick strips; the `- **Files:**` task-line arm keeps its
+  normalization. D-09 deferred this as file-not-fix, and that deferral does not
+  survive: it leaves a second silent route to a wrong `overlaps` on the very arm
+  this phase claims to have closed, and it is why UAT-12 stays false, since the
+  reference documents no post-grammar path rewriting at all. Correcting the
+  filed CAPTURE evidence: `src/a (new).mjs` is NOT mangled, because
+  `/\s*\(.*\)\s*$/` is end-anchored. The real mangles are paths ending in `)` or
+  containing a backtick - `src/x(1)` -> `src/x`, `lib/(x)/y)` -> `lib/`,
+  `docs/notes (draft)` -> `docs/notes`, `` a`b.mjs `` -> `ab.mjs` - and zero
+  paths of any of those shapes appear in 21 commits of plan frontmatter. Chosen
+  over fixing `add()`'s regex while keeping it on both arms (anchoring the strip
+  to a whitespace-preceded group, dropping the unconditional backtick strip) and
+  over holding D-09 and closing UAT-12 by documenting the post-processing as a
+  stated limit. Evidence:
+  `cadence-core/bin/lib/planning-files.mjs:698-702,707-715`;
+  `cadence-core/bin/planning.test.mjs:1508-1514`; `.planning/CAPTURE.md:53`.
+- D-20 (backslash escapes are OUT of the grammar AND detectable): the grammar
+  states no escape rule and the three scanners gain no escape state, but a
+  resolved value that still contains a `"` or `'` after unwrapping is outside
+  the grammar and gets a diagnostic. Declaring escapes out of scope WITHOUT a
+  diagnostic would leave exactly the silent misread the open half of the goal
+  names: `files: ["a\"b.md", "c\"d.md"]` currently returns one fabricated path
+  with `issues:[]` and loses both real ones, so `plan-overlap` returns
+  `overlaps:[]` on two plans that both write the two real paths. Chosen over
+  implementing YAML's double-quoted escape rule in all three scanners, which
+  drags YAML's single-versus-double asymmetry into a grammar deliberately
+  smaller than YAML. Evidence:
+  `cadence-core/bin/lib/planning-files.mjs:456-467,490-501,516-529`;
+  `.planning/CAPTURE.md:59`.
 
 ## Decisions
 
-- D-07 (the accepted set is fixed by what Cadence writes): the grammar must
-  accept inline quoted (`requirements: ["#39", "#40"]`), inline unquoted
-  (`requirements: [CWT-01, CWT-02]`), two-space-indented block lists, and a key
-  line carrying a trailing `#` comment - the template's own two lines. No live
-  plan uses a scalar, a comment-only key line, a comment inside a block, CRLF,
-  BOM, or a leading blank line, so those are widenings rather than shapes at
-  risk. Non-greedy `\[([^\]]*)\]` newly rejects nothing: no historical PLAN file
-  has a bracket in a frontmatter comment. Evidence:
-  `cadence-core/templates/PLAN.md:1-6`; PLAN files at `bfdafc2`, `155378f`,
-  `f0ce954`, `21114c8`, `c4ab89f`, `f828beb` and twelve others;
-  `cadence-core/bin/planning.test.mjs:43`; `cadence-core/agents/cad-planner.md:122-127`.
+- D-07 (the accepted set is fixed by what Cadence writes): the grammar accepts
+  inline quoted, inline unquoted, two-space-indented block lists, and a key line
+  carrying a trailing `#` comment. Evidence: `cadence-core/templates/PLAN.md:1-6`
+  and twenty PLAN files across history. SHIPPED first pass.
 - D-08 (`clean()`'s quote strip narrows, forced by D-01): the global `["']`
-  strip becomes a WRAPPING-quote strip. Under D-01 quotes carry meaning, so a
-  strip that fires anywhere in the value is no longer merely lossy - it also
-  destroys the signal the grammar now reads. It is lossy today regardless:
-  `src/it's-a-file.md` is silently rewritten to `src/its-a-file.md`. The
-  `#`-at-index-0 block-item defect is likewise a `clean()` bug, not a line-loop
-  bug. Evidence: `cadence-core/bin/lib/planning-files.mjs:456`.
-- D-09 (the task-line arm stays out): `parsePlanFiles`' second source
-  (`- **Files:** a, b`, `planning-files.mjs:511-513`) is a `/gm` regex, already
-  CRLF-tolerant, and shares none of the reader's exposure, so it is not restated
-  here. Its `add()` helper does mangle real inputs (`lib/(x)/y)` yields `lib/`),
-  which no CAPTURE item files - that gets filed as a new capture item in this
-  phase rather than fixed. Known consequence: `plan-overlap` trusts the union of
-  both sources, so a mangled task-line path remains a second route to a false
-  `overlaps: []`. Evidence:
-  `cadence-core/bin/lib/planning-files.mjs:504-515,507,511-513`.
+  strip is a WRAPPING-quote strip, because under D-01 quotes carry meaning and a
+  strip firing anywhere in the value destroys the signal the grammar reads.
+  D-17 completes the half of this that UAT-9 found missing. Evidence:
+  `cadence-core/bin/lib/planning-files.mjs:456`. SHIPPED first pass.
+- D-09 (SUPERSEDED by D-19): held the task-line arm and `add()` entirely out of
+  scope, filing `add()`'s mangling as a capture item rather than fixing it. The
+  frontmatter half of that deferral is reversed; the task-line half stands.
 - D-10 (sibling parsers stay out; phase 4 adopts `normalize`): `PHASE_LINE`
   (`:52`) and the snippet parsers (`:192,227`) fail on a CRLF line, and
-  `parseUat`'s fence (`:325`) is the identical expression to this reader's
-  (`:450`) and fails on both CRLF and BOM. None is repaired this phase.
+  `parseUat`'s fence (`:325`) fails on both CRLF and BOM. None is repaired here;
   `PHASE_LINE` / `parseRoadmapPhases` are phase 4's by roadmap, and phase-3 D-08
   bars unifying matchers "for consistency" as a state-machine change smuggled
-  into a parser fix. `parseCursor`, `parseRequirements` and
-  `parseContextDecisions` are already CRLF-tolerant and need nothing.
-- D-11 (budgets move with the prose; the grammar is written where it costs
-  nothing): `audit.md` (2599) and `execute.md` (12140) sit at exactly their
-  budget, so `weight-budgets.json` moves in the same change - the phase-3 D-13
-  pattern - or CI fails `budget-overrun`. `audit.md:48` forbids
-  PASS-with-warnings, so the new prose must state that a grammar diagnostic is
-  orthogonal to the verdict rather than a third state. The grammar itself is
-  written into `references/` and `templates/PLAN.md`, which
-  `lib/surface-weight.mjs:53-78` does not measure, so stating it costs no
-  budget. Evidence: `cadence-core/bin/weight-budgets.json`,
-  `cadence-core/bin/self-verify.mjs:346-350`,
-  `cadence-core/bin/lib/surface-weight.mjs:53-78`,
-  `cadence-core/workflows/audit.md:48`.
-- D-12 (the return shape widens under the typecheck): `readFrontmatterList` no
-  longer returns a bare `string[]`, which propagates through
-  `parsePlanRequirements` / `parsePlanFiles` JSDoc and is enforced by the
-  required CI typecheck; the diagnostic must survive `parsePlanFiles`' `Set`
-  merge with its second source. Evidence:
-  `cadence-core/bin/lib/planning-files.mjs:447,490,503-515` (`// @ts-check`),
-  `tsconfig.ci.json`, `.github/workflows/test.yml:50`.
+  into a parser fix.
+- D-11 (RESTATED by D-22): budgets move with the prose. The original figures
+  (audit.md 2599, execute.md 12140) are pre-first-pass; see D-22.
+- D-12 (the return shape is enforced by the typecheck): `readFrontmatterList`
+  does not return a bare `string[]`; the diagnostic must survive
+  `parsePlanFiles`' `Set` merge with its second source, under
+  `// @ts-check` and the required CI typecheck. New codes added this pass are
+  unconstrained by the type contract - `Issue` is
+  `{line:number, code:string, text:string}` at `:417` - so only the reference's
+  code table and the two workflow surfaces must move with them. Evidence:
+  `cadence-core/bin/planning.mjs:517,553,571`; `tsconfig.ci.json`.
+- D-18 (an unquoted item's trailing annotation is treated symmetrically with
+  D-17's quoted case): this falls out of D-19 rather than standing on its own.
+  With `add()` off the frontmatter arm, `- src/a.rs (new)` would otherwise yield
+  the literal `src/a.rs (new)` while the quoted form yields a clean
+  `src/a.rs` - so the asymmetry the annotation already has gets worse, not
+  better. Treating trailing content the same way on both forms closes it, and
+  tells authors to stop writing the annotation in frontmatter. Nothing in
+  `agents/`, `cadence-core/` or `skills/` prose ever teaches it: grepping for
+  `(new)` across all three returns nothing.
+- D-21 (the second plan lands as `PLAN-2.md`): it matches
+  `/^PLAN(-\d+)?\.md$/`, so `audit`, `plan-overlap` and `status` all see it and
+  the requirements it covers trace. `PLAN-gaps.md` - the phase-2 precedent at
+  `eb6db8f` - does NOT match that pattern, so a gaps plan is invisible to all
+  three seams, which is the bookkeeping failure phase 2 of this very cycle
+  exists to fix. Overwriting `PLAN.md` was rejected: it destroys the executed
+  plan that the SUMMARY commit table and `workflows/verify.md:59`'s
+  UAT-regeneration fallback both point at. Known consequence, accepted:
+  `plan-overlap --phase 1` will report a real and correct overlap with
+  `PLAN.md` on `planning-files.mjs`, and `status` reads phase 1 as a split
+  phase. Evidence: `cadence-core/bin/planning.mjs:66,476,535`.
+- D-22 (budgets move in the same commit; current figures): `workflows/audit.md`
+  is 3002 bytes against budget 3002 and `workflows/execute.md` is 12292 against
+  12292 - zero headroom on both, so any byte added to either requires
+  `weight-budgets.json` in the same change or CI fails `budget-overrun`.
+  Shrinking is free (`self-verify.mjs:341-351` flags only `bytes > budget`).
+  `references/` and `templates/` are not walked by
+  `lib/surface-weight.mjs:53-78`, so stating the grammar there costs nothing.
+  Evidence: `cadence-core/bin/weight-budgets.json:11,19`; `self-verify` is
+  currently `{"ok":true,"problems":[]}`.
 
 ## Acceptance criteria
 
-- [ ] `audit` against a PLAN.md whose `requirements:` key line carries a
-      trailing comment above a block list returns both declared ids, with zero
-      `orphans.plan_ids` entries and no `no-plan` break.
-- [ ] `plan-overlap` against two plans whose `files:` block lists each contain a
-      comment line and share a path reports that path in `overlaps`.
-- [ ] `requirements: ["#41"]  # see [D-06]` parses to exactly `["#41"]` - no
-      entry containing `]`, `#`, or `see`.
-- [ ] `requirements: #TODO fill this in` above a block list of two quoted ids
-      returns exactly those two ids and mints nothing containing `TODO`; a block
-      item `- "#41"` still reads as the id `#41`.
-- [ ] The CRLF, leading-blank-line, and BOM variants of one PLAN.md each return
-      ids and files identical to its plain-LF equivalent.
-- [ ] A frontmatter line that is neither item, comment, blank, nor terminator
-      appears in the new diagnostic field on both `audit` and `plan-overlap`
-      output, and its presence does not change the audit PASS/FAIL verdict.
+- [ ] `plan-overlap` against two plans each shaped `files: [src/a.rs]  # comment`
+      followed by `  - src/shared.rs` reports a `frontmatter_issues` entry for
+      both plans, and neither plan's files list contains `src/shared.rs`.
+- [ ] A block item `- "src/shared.rs" (new)` returns the path `src/shared.rs`
+      with a trailing-content diagnostic, and `- src/a.rs (new)` returns
+      `src/a.rs` with the same code; no value returned from either contains a
+      `"` character.
+- [ ] `requirements:["#41"]` produces a `malformed-key-line` diagnostic naming
+      that line, and `requirements:` / `- "#41"` / `# files:` /
+      `  - src/shared.rs` produces a `commented-key-line` diagnostic.
+- [ ] `files: ["a\"b.md", "c\"d.md"]` produces a diagnostic rather than
+      `issues: []`.
+- [ ] `plan-overlap` reports a path `src/x(1)` and a backtick-bearing path, each
+      declared in two plans' `files:` frontmatter, as overlapping byte-exact as
+      written - while a `- **Files:** src/a.rs (edit)` task line still
+      normalizes to `src/a.rs`.
+- [ ] `references/plan-frontmatter.md` and `workflows/audit.md` state for every
+      diagnostic code whether it changes `counts` or adds a break, and each
+      code's stated behavior matches what the audit seam actually returns for
+      that code.
 - [ ] `node --test cadence-core/bin/*.test.mjs` and
       `npx tsc -p tsconfig.ci.json` both pass, `self-verify` reports no
-      `budget-overrun`, and the four rewritten frontmatter tests plus the new
-      parser-level grammar table are among the passing set.
+      `budget-overrun`, and the new grammar rows for criteria 1-5 are among the
+      passing set.
 
 ## Flagged assumptions
 
-- Whether Claude Code's Write tool or a Windows `core.autocrlf` checkout
-  actually produces CRLF or BOM bytes in a `.planning` file is unrecorded
-  anywhere in this repo - Unclear; if wrong, the normalization in D-05 is dead
-  code. Harmless either way, and criterion 5 pins the behavior regardless, but
-  do not cite it as a fixed live defect.
+- Downstream frontmatter-consumer behavior on the shapes this decision set
+  touches (`key:value` with no space, `[]` followed by block items, a
+  `#`-commented key line inside a block) is untested - Likely harmless; D-01 and
+  D-16 both align the grammar WITH real YAML rather than away from it, so the
+  risk is reduced rather than measured. No `gray-matter`/`js-yaml` consumer,
+  editor highlighter, or static-site parser was tried, and the repo has no YAML
+  dependency to inspect. Carried forward from the first pass, unchanged.
+- YAML 1.2's exact escape semantics for double- versus single-quoted scalars
+  were not verified against the spec - Confident this does not block: D-20 puts
+  escapes explicitly OUT of the grammar, so no escape rule is being asserted,
+  only detected. Would matter only if a later cycle takes escapes in.
+- Whether CRLF or BOM bytes ever really reach a `.planning` file remains
+  unrecorded - Unclear, and now resolved as defensive-only by UAT item 15. The
+  normalization is not dead code by test, but it has no confirmed live producer.
 - A hand-written unquoted `- #41` block item reads as a comment under D-01 and
-  is silently dropped - Confident, and an accepted cost rather than a defect; if
-  a user does write unquoted `#`-ids, audit reports `no-plan` on a requirement a
-  plan genuinely covers. Nothing in the shipped templates or the repo's own
-  history writes that form.
-- `add()`'s path mangling in the task-line arm (D-09) is a live defect being
-  filed rather than fixed - Confident; if deferring is wrong, `plan-overlap`
-  keeps a second route to a false `overlaps: []`, which is the exact failure
-  class this phase exists to close.
-- D-01 aligns the grammar WITH real YAML on comments and quoting, so the
-  downstream-tooling risk the analyzer raised is reduced rather than measured -
-  Likely; no specific editor or `gray-matter`-style consumer was tested.
+  is silently dropped - Confident, an accepted cost rather than a defect.
+  Nothing in the shipped templates or the repo's own history writes that form.
+- D-14 leaves a known over-read in place: a commented-out key line still folds
+  the next key's items into the previous key, and audit still mints the
+  fabricated orphan - Confident, and deliberate, because the alternative lets a
+  prose `# TODO:` comment truncate a real list. It is diagnosed rather than
+  silent, which is what the goal requires; it is not correct, which the goal
+  does not promise for input outside the grammar.
