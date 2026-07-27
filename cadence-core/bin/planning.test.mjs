@@ -902,6 +902,35 @@ test('audit: the inline requirements form with a trailing comment still reads', 
   assert.equal(r.orphans, undefined);
 });
 
+test('audit: a comment-only requirements: value falls through to the block list', () => {
+  // `^key:\s*(.*)$` eats the whitespace before the `#`, so the whitespace-preceded
+  // comment strip can never fire on a remainder that is ITSELF a comment. Read as
+  // a scalar (the pre-fix behaviour) this returns the comment text as a fabricated
+  // id AND discards both real ids beneath it.
+  const dir = blockPlanTree(
+    'requirements:   # phase requirement IDs this plan covers - never empty\n  - "#41"\n  - "#46"\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.notEqual(byId['#46'].break, 'no-plan');
+  assert.equal(r.orphans, undefined); // the comment text minted no id
+});
+
+test('audit: a bare `#41`-shaped scalar requirements: value still reads as an id', () => {
+  // The comment/id discrimination must not swallow this repo's own id spelling:
+  // `#` followed by a non-space is a value, only `# `/bare `#` is a comment.
+  const dir = blockPlanTree('requirements: #41\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.equal(r.orphans, undefined);
+});
+
 test('plan-overlap: block-form files: lists intersect like inline ones (#48.1)', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'One' }],

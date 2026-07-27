@@ -398,12 +398,21 @@ export function uatComplete(uat) {
  *   `[a, b]`  inline list, split on commas. Never comment-stripped: the
  *             template writes `requirements: []     # phase requirement IDs`.
  *   (empty)   block list - the contiguous following `- item` lines, stopping
- *             at the first line that is not one.
+ *             at the first line that is not one. A remainder that is ITSELF
+ *             a comment counts as empty.
  *   scalar    anything else non-empty: a one-element list. Explicitly NOT a
  *             fall-through to the block reader, which would discard the value
  *             AND swallow whatever `- ` lines follow it.
  * A trailing comment is stripped only on a WHITESPACE-preceded `#`, never a
- * bare one - this repo's own requirement ids are `#41`-shaped.
+ * bare one - this repo's own requirement ids are `#41`-shaped. That rule alone
+ * cannot see a remainder that is ENTIRELY a comment: `^key:\s*(.*)$` has
+ * already eaten the whitespace before the `#`, so `requirements:   # note`
+ * arrives here as `# note` with nothing left to strip. Discriminate on what
+ * FOLLOWS the `#` - whitespace or end-of-line is a comment (empty value, fall
+ * through to the block reader), a non-space character is a `#41`-shaped id (a
+ * scalar). Taking such a remainder as a scalar is the over-read D-06 bounds
+ * against: it returns the comment text as a fabricated id AND discards the
+ * block list beneath it.
  * @param {string} text @param {string} key @returns {string[]}
  */
 function readFrontmatterList(text, key) {
@@ -426,7 +435,11 @@ function readFrontmatterList(text, key) {
 
   /** @type {string[]} */
   let raw;
-  const bare = remainder.replace(/\s+#.*$/, '').trim();
+  // `# `/bare `#` is a comment, `#41` is an id (see the note above). The
+  // whitespace-preceded strip cannot fire on a remainder that is entirely a
+  // comment, so that case is tested first rather than falling to the scalar arm.
+  const commentOnly = /^#(\s|$)/.test(remainder);
+  const bare = commentOnly ? '' : remainder.replace(/\s+#.*$/, '').trim();
   if (bare === '') {
     raw = [];
     for (const line of lines.slice(at + 1)) {
