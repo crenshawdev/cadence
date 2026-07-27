@@ -56,12 +56,17 @@ For each reviewer in the set, in parallel where the host allows:
   ```
   with `{instruction, artifact}` on stdin. Read the one JSON line.
   - `ok:true` -> use `findings`.
-  Each provider call is bounded by `review.request_timeout_ms` (default
-  600000). A high-effort review legitimately takes minutes - a flagship model
-  on a ~13KB diff has been measured at ~292s - and the bound is a socket
-  INACTIVITY timeout on an unstreamed response, so it caps total thinking
-  time. Set it too low and the blocking gates lose their cross-model voices
-  to `reason:"transport"` while still reporting PASS.
+  **Run this with an explicit command timeout of at least
+  `review.request_timeout_ms`** (default 540000; the host's own default is
+  120000 and its ceiling 600000). Without one the host kills the command
+  first, and a host kill prints NOTHING - the "one JSON line" below is then an
+  empty string, strictly worse than the `{ok:false, reason:"transport"}` this
+  seam degrades to on its own timer. A high-effort review legitimately takes
+  minutes: the same flagship model on a ~13KB diff measured 292s once and 118s
+  another time, and the bound is a socket INACTIVITY timeout on an unstreamed
+  response, so it caps total thinking time rather than detecting a dead
+  connection. Set it too low and the blocking gates lose their cross-model
+  voices to `reason:"transport"` while still reporting PASS.
   - `ok:false` -> this reviewer is unavailable or unusable. Before dropping it,
     emit one visible line naming the degradation - the reviewer and its
     `reason` (`no-key` names where to set the key), e.g. "cross-model reviewer

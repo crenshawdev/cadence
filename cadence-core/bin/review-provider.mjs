@@ -151,16 +151,32 @@ function resolveKey(provider, keyFile) {
 // review actually costs (measured: 292s for a flagship model on a 12.7KB diff),
 // which silently dropped cross-model reviewers from the blocking gates. Hence
 // the higher default and the config override.
-const DEFAULT_REQUEST_TIMEOUT_MS = 600000;
+// The execution host bounds this from above and we cannot exceed it: the Bash
+// tool that runs this seam caps a command at 600000ms. So MAX is that ceiling,
+// and the default sits a minute under it, because whoever aborts first owns the
+// output - if the host kills us we print NOTHING and the caller's "read the one
+// JSON line" gets an empty string, strictly worse than the {ok:false,
+// reason:"transport"} we are supposed to degrade to. The host's DEFAULT is only
+// 120000, so fire() must pass an explicit Bash timeout (see
+// references/review-triggers.md); this constant alone cannot buy the time.
+const DEFAULT_REQUEST_TIMEOUT_MS = 540000;
+const MAX_REQUEST_TIMEOUT_MS = 600000;
 
 // Pure so the unit tests can exercise it without touching config or the network.
 // Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
 // back to the default rather than throwing: a bad timeout must never sink a
 // review, same degrade-never-crash contract as the rest of this seam.
+//
+// An oversized value is CLAMPED, not rejected, and this is the load-bearing
+// half: node stores a socket timeout in a 32-bit signed int, so anything past
+// 2147483647 is truncated there and the timer effectively never fires - a
+// black-hole connection would hang ~24.8 days instead of rejecting, defeating
+// the exact guarantee this timeout exists to provide. The schema enforces only
+// `min`, so `set review.request_timeout_ms=600000000` (a plausible extra zero)
+// validates clean; the bound has to live here.
 export function resolveTimeoutMs(configured) {
-  return Number.isInteger(configured) && configured > 0
-    ? configured
-    : DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!Number.isInteger(configured) || configured <= 0) return DEFAULT_REQUEST_TIMEOUT_MS;
+  return Math.min(configured, MAX_REQUEST_TIMEOUT_MS);
 }
 
 // Lazy + memoized on purpose: review-provider.test.mjs imports the pure helpers

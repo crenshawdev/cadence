@@ -43,7 +43,7 @@ const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DON
 
 // Validate a single already-parsed value against a schema spec.
 // Returns null if ok, else an error string.
-/** @param {{type:string, min?:number, values?:any[]}} spec @param {any} v */
+/** @param {{type:string, min?:number, max?:number, values?:any[]}} spec @param {any} v */
 function checkValue(spec, v) {
   switch (spec.type) {
     case 'bool':
@@ -51,6 +51,7 @@ function checkValue(spec, v) {
     case 'int':
       if (!Number.isInteger(v)) return 'expected an integer';
       if (spec.min !== undefined && v < spec.min) return `must be >= ${spec.min}`;
+      if (spec.max !== undefined && v > spec.max) return `must be <= ${spec.max}`;
       return null;
     case 'string':
       return typeof v === 'string' ? null : 'expected a string';

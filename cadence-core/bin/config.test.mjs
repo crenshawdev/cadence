@@ -364,6 +364,27 @@ test('get: an absent layer stays silent and an unparseable layer warns exactly o
   assert.doesNotMatch(rZero.warnings[0], /not an object/);
 });
 
+test('check: an int key with a max rejects above it and accepts at it', () => {
+  // review.request_timeout_ms is bounded because node truncates a socket
+  // timeout past int32, which would leave a stalled provider hanging instead
+  // of rejecting. Without a schema max, `set` accepted 999999999999 clean and
+  // only the seam's clamp saved it - so `get` reported a value the seam never
+  // used. The bound belongs at the write face too.
+  const over = run(['check', 'review.request_timeout_ms=999999999999']);
+  assert.equal(over.ok, false);
+  assert.match(over.errors[0].error, /must be <= 600000/);
+
+  const typo = run(['check', 'review.request_timeout_ms=600000000']);
+  assert.equal(typo.ok, false);                       // one extra zero group
+
+  assert.equal(run(['check', 'review.request_timeout_ms=600000']).ok, true);   // at the ceiling
+  assert.equal(run(['check', 'review.request_timeout_ms=1']).ok, true);        // at the min
+  assert.equal(run(['check', 'review.request_timeout_ms=0']).ok, false);       // min still holds
+
+  // a min-only int key is unaffected by the new max branch
+  assert.equal(run(['check', 'workflow.subagent_timeout=999999999999']).ok, true);
+});
+
 test('readLayer(""): an unresolvable layer path is a SILENT absence', () => {
   // Load-bearing for config-merge's homedir() fallback: where os.homedir()
   // throws (uid with no passwd entry and HOME unset - `docker run -u 12345`),
