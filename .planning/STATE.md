@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 4 (renumber & git-guard hardening)
-Status: phase complete
-Next: v1.3.1 tagged and closed; no milestone open. NOTE: /cad-progress does not work until phases exist (empty roadmap -> unparseable-roadmap). Open the next cycle with /cad-phase add, then /cad-plan 1. See PROJECT.md ### Active.
+Phase: 1 of 4 (The plan-file frontmatter grammar)
+Status: ready to plan
+Next: Open v1.4.0: /cad-context 1 (the plan-file frontmatter grammar), then /cad-plan 1. One semantic call is the user's at context time: whether '#' followed by a digit is the id test.
 Updated: 2026-07-27

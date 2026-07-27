@@ -49,29 +49,28 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**None open.** `v1.3.1` shipped 2026-07-27 and its phases are pruned, so
-`## Phases` is empty. Known consequence until it is fixed: `planning.mjs status`
-returns `unparseable-roadmap` on an empty roadmap, so `/cad-progress` does not
-work until the next cycle's phases exist. Use `/cad-phase add` or `/cad-plan`
-to open the cycle rather than `/cad-progress`.
+**v1.4.0 — Stated grammars** is the active cycle, opened 2026-07-27 on the
+CAPTURE.md backlog left open at the v1.3.1 close. The theme: Cadence parses
+formats it owns with accreted heuristic regexes, and each one fails silently in
+both directions. An over-read fabricates a requirement id that surfaces as an
+`/cad-audit` orphan; an under-read drops a real path and hands the
+parallel-safety gate a false `overlaps: []`. Both look like success. Four
+phases in ROADMAP.md: the plan-file frontmatter grammar (nine capture items in
+one function, including the HIGH phase 3 introduced), the spine's own
+bookkeeping (Traceability seeding, worktree plan-file assertion), one
+quote-state tokenizer for the six git-guard rail-3 holes, and a stated grammar
+for the roadmap phase list — which is why the v1.3.1 empty-roadmap fix was
+reverted, and which lands last so this cycle's close exercises it.
 
-The next milestone's scope is not set. Candidates, in the order the evidence
-argues for them:
+Deferred out of this cycle, with reasons:
 
-1. **The empty-roadmap state itself.** A fix was written and reverted at this
-   close after `pre_ship` confirmed two HIGH findings (see CAPTURE.md). It needs
-   a real answer to "what is a phase-shaped line" and a routing destination that
-   exists, not a heuristic.
-2. **The regressions this cycle introduced.** Phase 3's own commits left a HIGH
-   (`readFrontmatterList` reads a trailing comment as the whole value and
-   discards the block list) and two MEDIUMs, all open in CAPTURE.md.
-3. **The Traceability seeding step that has now failed to fire at two
-   consecutive milestone closes** (v1.2.0 and v1.3.1), each time requiring a
-   hand-populated table before /cad-audit could pass.
-4. **The two phase-sized rewrites CAPTURE argues for**: one quote-state
-   tokenizer closing the six known git-guard rail-3 holes, and streaming
-   provider responses so review timeouts stop being a fixed-number guess.
-5. **The 11 open `[enhancement]` issues** (#14-#31, #54).
+- **Streaming provider responses.** The evidence is good (the same model at the
+  same effort measured 292s and 118s on two payloads, so no fixed timeout is
+  ever right), but `review.request_timeout_ms` at 540000 plus the 600000ms Bash
+  ceiling bounds the damage, and the rewrite touches every adapter, response
+  handling, and the structured-output assertion. It is a cycle, not a phase.
+- **The 12 open `[enhancement]` issues** (#14-#31, #54) — features, not
+  correctness.
 
 ### Out of Scope
 
