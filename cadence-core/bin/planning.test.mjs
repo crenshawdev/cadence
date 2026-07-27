@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -679,10 +679,47 @@ test('uat merge: fills pending only, appends unmatched gaps and human checks', (
   assert.equal(r.auto_passed, 1); // only the pending item; user result untouched
   assert.equal(r.gaps, 1);
   assert.equal(r.added, 2); // the gap + the human check
+  assert.equal(r.skipped, 1); // the `Logout works` pass conflicts with a user result
+  assert.equal(r.rejected, 0);
   const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
   assert.match(text, /### 3\. Rate limiting/);
   assert.match(text, /### 4\. Email renders in dark mode/);
   assert.doesNotMatch(text, /would overwrite/);
+});
+
+test('uat merge: an entry with no usable name is rejected, never written (#46.2)', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [
+      { reason: 'no k, no name' },              // nothing to name a heading with
+      { k: 99, reason: 'k matches nothing' },   // a k that resolves to no item
+      { name: 'Rate limiting', reason: 'no limiter' }, // the one valid entry
+    ],
+    human_checks: [{ expected: 'nameless' }],   // appends the identical phantom
+  }));
+  assert.equal(r.ok, true);          // partial success: merge the rest (D-03)
+  assert.equal(r.added, 1);
+  assert.equal(r.rejected, 3);
+  assert.equal(r.gaps, 1);           // gaps counts what was actually recorded
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 3\. Rate limiting/);
+  assert.doesNotMatch(text, /undefined/); // `### N. undefined` can never be written
+});
+
+test('uat merge: a finding conflicting with a recorded result is skipped and counted (#46.3)', () => {
+  const dir = uatTree();
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir); // user result
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    passes: [{ k: 1, evidence: 'x' }],
+    gaps: [{ k: 1, reason: 'y' }],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.skipped, 2);     // the drop stops being silent
+  assert.equal(r.auto_passed, 0); // the invariant still stands
+  assert.equal(r.gaps, 0);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 1\. Login works\nexpected: [^\n]*\nstatus: pass/);
+  assert.doesNotMatch(text, /reported:/);
 });
 
 test('uat merge: a newline in verifier text cannot inject a status line (#35)', () => {
@@ -703,6 +740,34 @@ test('uat merge: a newline in verifier text cannot inject a status line (#35)', 
   // reparse agrees: item 1 still counts as failed
   const rec = run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
   assert.equal(rec.counts.fail, 2); // item 1 + the appended gap
+});
+
+test('uat: a hand-added ### section mints no item and survives rewrites (#46.1)', () => {
+  const dir = uatTree();
+  const file = join(dir, 'phases', '1', 'UAT.md');
+  const notes = '### Manual notes\n\n1. check the logs';
+  writeFileSync(file, readFileSync(file, 'utf8').replace('## Summary', `${notes}\n\n## Summary`));
+
+  // The numbered line inside a NON-item chunk used to mint a phantom item (a
+  // second k:1, statusless) that the next write then materialized. Asserting
+  // on item COUNT, not `uat status` counts: a phantom carries no `status:`,
+  // so `counts` is byte-identical pre- and post-fix and cannot witness this.
+  const r = run(['uat', 'refresh', '--phase', '1'], dir, '[]');
+  assert.equal(r.ok, true);
+  assert.equal(r.total, 2); // pre-fix 3
+
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  const text = readFileSync(file, 'utf8');
+  // Occurs-once, not a bare includes: a per-cycle re-emission bug duplicates
+  // the section while still satisfying `includes`.
+  assert.equal(text.split(notes).length - 1, 1);
+  assert.equal(text.split('### 1. ').length - 1, 1);       // no duplicate k
+  assert.doesNotMatch(text, /^### \d+\. check the logs/m); // never materialized
+  assert.match(text, /total: 2/);
+
+  // Round-trip idempotence: a second cycle neither drops nor duplicates it.
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(readFileSync(file, 'utf8').split(notes).length - 1, 1);
 });
 
 test('uat status: complete only when every item passes or is skipped-with-reason', () => {
@@ -757,6 +822,129 @@ test('audit: traces every break kind, orphans, and deferred', () => {
   assert.deepEqual(r.deferred, ['REQ-9']);
   assert.deepEqual(r.orphans.plan_ids, [{ file: 'phases/1/PLAN.md', ids: ['REQ-99'] }]);
   assert.deepEqual(r.counts, { total: 7, traced: 1, broken: 5, deferred: 1 });
+});
+
+// The fixture builder hardcodes `|---|---|---|`, so both of these write
+// REQUIREMENTS.md raw after makeTree - the shapes the builder cannot express.
+const auditSpec = () => ({
+  roadmap: [{ n: 1, name: 'Done', checked: true }],
+  phases: { 1: { plan: true, planReqs: ['REQ-1'] } },
+  reqs: [['REQ-1', 1, 'Complete']],
+});
+
+test('audit: a colon-aligned separator row is not a requirement (#41.1)', () => {
+  const plain = makeTree(auditSpec());
+  const aligned = makeTree(auditSpec());
+  // GFM alignment cells (`:---`, `:--:`, `---:`) are a legal spelling of the
+  // same delimiter row - the parse must be byte-equivalent to the plain form.
+  writeFileSync(join(aligned, 'REQUIREMENTS.md'),
+    readFileSync(join(aligned, 'REQUIREMENTS.md'), 'utf8')
+      .replace('|---|---|---|', '|:---|:--:|---:|'));
+  const a = run(['audit'], plain);
+  const b = run(['audit'], aligned);
+  assert.equal(b.ok, true);
+  assert.deepEqual(b.counts, a.counts);
+  // The phantom the alignment cells used to mint: an id made of dashes/colons.
+  assert.equal(b.requirements.some((q) => /^[-:\s]+$/.test(q.id)), false);
+});
+
+test('audit: rows under a ## section AFTER Traceability are not requirements (#41.2)', () => {
+  const bare = makeTree(auditSpec());
+  const appended = makeTree(auditSpec());
+  writeFileSync(join(appended, 'REQUIREMENTS.md'),
+    `${readFileSync(join(appended, 'REQUIREMENTS.md'), 'utf8')}\n## Appendix\n\n` +
+    '| Requirement | Phase | Status |\n|---|---|---|\n| GHOST-1 | Phase 1 | Complete |\n');
+  const a = run(['audit'], bare);
+  const r = run(['audit'], appended);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements.some((q) => q.id === 'GHOST-1'), false);
+  assert.equal(r.counts.total, a.counts.total);
+});
+
+// A one-phase tree whose PLAN.md frontmatter is written raw, plus REQUIREMENTS
+// rows for #41/#46. `frontmatter` is spliced between the --- fences.
+function blockPlanTree(frontmatter, body = '') {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+    reqs: [['#41', 1, 'Pending'], ['#46', 1, 'Pending']],
+  });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'),
+    `---\nphase: 1\nplan: 1\n${frontmatter}\n---\n\n# Plan 1\n${body}`);
+  return dir;
+}
+
+test('audit: a block-YAML requirements list reads as ids, not zero (#48.1)', () => {
+  const dir = blockPlanTree(
+    'requirements:\n  - #41\n  - #46  # with a comment\nfiles: []',
+    // A prose `requirements:` line OUTSIDE the fence must contribute nothing -
+    // an unbounded key scan would swallow the bullets below it as ids.
+    '\nrequirements: these prose ids:\n\n- NOT-AN-ID\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  // `not-verified` is the expected state for a Pending row on an open phase;
+  // `no-plan` is what the block form used to produce by reading as zero.
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.notEqual(byId['#46'].break, 'no-plan');
+  assert.equal(r.orphans, undefined); // the body list contributed no ids
+});
+
+test('audit: the inline requirements form with a trailing comment still reads', () => {
+  const dir = blockPlanTree('requirements: ["#41", "#46"]   # phase requirement IDs\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  assert.equal(r.orphans, undefined);
+});
+
+test('audit: a comment-only requirements: value falls through to the block list', () => {
+  // `^key:\s*(.*)$` eats the whitespace before the `#`, so the whitespace-preceded
+  // comment strip can never fire on a remainder that is ITSELF a comment. Read as
+  // a scalar (the pre-fix behaviour) this returns the comment text as a fabricated
+  // id AND discards both real ids beneath it.
+  const dir = blockPlanTree(
+    'requirements:   # phase requirement IDs this plan covers - never empty\n  - "#41"\n  - "#46"\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.notEqual(byId['#46'].break, 'no-plan');
+  assert.equal(r.orphans, undefined); // the comment text minted no id
+});
+
+test('audit: a bare `#41`-shaped scalar requirements: value still reads as an id', () => {
+  // The comment/id discrimination must not swallow this repo's own id spelling:
+  // `#` followed by a non-space is a value, only `# `/bare `#` is a comment.
+  const dir = blockPlanTree('requirements: #41\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.equal(r.orphans, undefined);
+});
+
+test('plan-overlap: block-form files: lists intersect like inline ones (#48.1)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - src/a.rs\n  - src/shared.rs\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - src/shared.rs\n  - src/c.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
+  assert.equal(r.undeclared, undefined); // both plans declared files
 });
 
 test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () => {
@@ -893,6 +1081,23 @@ test('renumber remove: a detail heading as the last line (no trailing newline) s
   assert.match(roadmap, /### Phase 1: One/);
 });
 
+test('renumber remove: a name-less `### Phase N:` detail heading still cuts (#48.2)', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    '# Roadmap\n\n## Phases\n\n- [ ] **Phase 1: One** - a\n- [ ] **Phase 2: Two** - b\n\n' +
+    // The list line carries a name (the list-line grammar is unchanged); only
+    // the detail heading is bare - exactly the filed case.
+    '## Phase Details\n\n### Phase 1: One\n**Goal:** g1\n\n### Phase 2:\n**Goal:** g2\n');
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.total, 1);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.doesNotMatch(roadmap, /### Phase 2/);
+  assert.doesNotMatch(roadmap, /\*\*Goal:\*\* g2/); // the body went with it
+  assert.match(roadmap, /### Phase 1: One/);        // the named section survives
+  assert.match(roadmap, /\*\*Goal:\*\* g1/);
+});
+
 test('renumber: prose phase refs are reported, never rewritten; key absent when none', () => {
   // The structured-only fixture has no lowercase refs -> no in_text_refs key.
   const clean = run(['renumber', 'remove', '--n', '2', '--dry-run'], renumberTree());
@@ -914,6 +1119,159 @@ test('renumber: out-of-range and unknown phase refuse', () => {
   const dir = renumberTree();
   assert.equal(run(['renumber', 'insert', '--at', '9'], dir).reason, 'out-of-range');
   assert.equal(run(['renumber', 'remove', '--n', '9'], dir).reason, 'unknown-phase');
+});
+
+test('renumber: refuses a colliding destination before any write (#49.2)', () => {
+  const dir = renumberTree();
+  mkdirSync(join(dir, 'phases', '4'), { recursive: true });
+  writeFileSync(join(dir, 'phases', '4', 'PLAN.md'), '# stray\n');
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+
+  const dry = run(['renumber', 'insert', '--at', '3', '--dry-run'], dir);
+  assert.equal(dry.ok, false);
+  assert.equal(dry.reason, 'collision');
+  assert.match(dry.detail, /phases\/4/);
+
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'collision');
+  assert.match(r.detail, /phases\/4/);
+
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3', '4']);
+  assert.ok(!existsSync(join(dir, 'phases', '4', '3')));
+  assert.match(readFileSync(join(dir, 'phases', '4', 'PLAN.md'), 'utf8'), /# stray/);
+});
+
+test('renumber: a dangling symlink at the destination still collides (#49.2)', () => {
+  const dir = renumberTree();
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  symlinkSync('nowhere', join(dir, 'phases', '4'));
+
+  const r = run(['renumber', 'insert', '--at', '3'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'collision');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+});
+
+test('renumber remove: a dangling symlink at phases/<at> collides instead of dying mid-apply (#49.2)', () => {
+  // The remove direction of the arm above. `vacated` used to be seeded with
+  // `at` on every remove, but the rm that frees that slot is gated on
+  // existingDir (existsSync), which is FALSE for a dangling symlink - so the
+  // pre-flight waved through the very occupant occupied()/lstatSync exists to
+  // catch, and the apply then died on the first move with completed: [] and a
+  // hint asserting a half-renumbered tree when nothing had been written.
+  const dir = renumberTree();
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  rmSync(join(dir, 'phases', '2'), { recursive: true });
+  symlinkSync('nowhere', join(dir, 'phases', '2'));
+
+  const r = run(['renumber', 'remove', '--n', '2'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'collision');
+  assert.match(r.detail, /phases\/2/);
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+});
+
+test('renumber remove: uncommitted work in phases/<at> is refused before any write', () => {
+  // `git rm -r -q` exits 0 while leaving untracked/ignored files, so
+  // phases/<at> SURVIVES a removal that reported success, the first move
+  // nests the next phase inside it (phases/1/2/PLAN.md), and the command
+  // still exits ok:true with ROADMAP naming a phase whose dir has no plan.
+  // Every other renumber fixture is a bare tmpdir, where gitMv/git rm always
+  // fall back to fs calls that cannot nest - so this arm needs a REAL repo.
+  const dir = renumberTree();
+  const repo = join(dir, '..');
+  const g = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+  g(['init', '-q', '.']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 'T']);
+  g(['add', '-A']);
+  g(['commit', '-qm', 'init']);
+  writeFileSync(join(dir, 'phases', '1', 'NOTES.md'), 'untracked\n');
+
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'uncommitted-work');
+  assert.match(r.detail, /NOTES\.md/);
+  // Nothing moved, nothing nested, nothing rewritten.
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+  assert.ok(existsSync(join(dir, 'phases', '1', 'PLAN.md')));
+  assert.ok(!existsSync(join(dir, 'phases', '1', '2')));
+
+  // A MODIFIED tracked file is the other half of the same principle, and the
+  // more dangerous one: `git rm -r` REFUSES it ("file has local
+  // modifications"), and the rmSync fallback then deletes the work anyway
+  // with no copy in the object store. Verified live before this guard: the
+  // command returned ok:true and the edit was unrecoverable.
+  rmSync(join(dir, 'phases', '1', 'NOTES.md'));
+  const plan1 = join(dir, 'phases', '1', 'PLAN.md');
+  const edited = '# Plan 1\n\nuncommitted edit\n';
+  writeFileSync(plan1, edited);
+  const rMod = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(rMod.ok, false);
+  assert.equal(rMod.reason, 'uncommitted-work');
+  assert.equal(readFileSync(plan1, 'utf8'), edited, 'the uncommitted edit must survive');
+
+  // With the tree clean the same call succeeds and does NOT nest.
+  g(['checkout', '--', '.']);
+  const r2 = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r2.ok, true);
+  assert.ok(!existsSync(join(dir, 'phases', '1', '2')));
+  assert.match(readFileSync(join(dir, 'phases', '1', 'PLAN.md'), 'utf8'), /Plan 2/);
+});
+
+test('renumber remove: a partial apply reports which ops completed (#49.2)', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  const dir = renumberTree();
+  chmodSync(dir, 0o555); // .planning root read-only; phases/ stays writable
+  let r;
+  try {
+    r = run(['renumber', 'remove', '--n', '1'], dir);
+  } finally {
+    chmodSync(dir, 0o755);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'partial-apply');
+  assert.deepEqual(r.completed, [
+    { rm: 'phases/1' },
+    { git_mv: ['phases/2', 'phases/1'] },
+    { git_mv: ['phases/3', 'phases/2'] },
+  ]);
+  assert.deepEqual(r.failed, { edit: 'ROADMAP.md' });
+  assert.match(r.detail, /ROADMAP/);
+  // The hint must never PRESCRIBE a re-run: the half-applied tree no longer
+  // matches ROADMAP, so a re-run rm's phases/1 - which now holds the ORIGINAL
+  // phase 2's work - and exits ok:true having destroyed it. It may mention
+  // re-running, but only to warn against it.
+  assert.doesNotMatch(r.hint, /by hand,\s*then re-run/);
+  assert.match(r.hint, /destroy/);
+});
+
+test('renumber remove: a failure before ANY step says so, rather than claiming a half-renumbered tree', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  // completed: [] means nothing was written and the tree still matches
+  // ROADMAP - the opposite of the partial case, and safe to re-run. An
+  // unconditional "the tree is partly renumbered" hint would send the caller
+  // hand-reconciling a tree that was never touched.
+  const dir = renumberTree();
+  chmodSync(join(dir, 'phases'), 0o555); // the rm (step one) cannot unlink
+  let r;
+  try {
+    r = run(['renumber', 'remove', '--n', '1'], dir);
+  } finally {
+    chmodSync(join(dir, 'phases'), 0o755);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'partial-apply');
+  assert.deepEqual(r.completed, []);
+  assert.match(r.hint, /nothing was written/);
+  assert.doesNotMatch(r.hint, /partly renumbered/);
 });
 
 // --- plan-overlap: the parallel-safety gate ------------------------------------
@@ -1001,6 +1359,51 @@ test('renumber: refuses to operate ON a decimal phase', () => {
   assert.equal(run(['renumber', 'insert', '--at', '1.5'], dir).reason, 'bad-args');
 });
 
+// A tree with an out-of-roadmap decimal Phase 2.1 and a cursor parked on it -
+// mirrors the decimal test above rather than passing n:2.1 to makeTree, whose
+// `**Depends on:** Phase ${p.n - 1}` line would render a float artifact.
+function decimalCursorTree() {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 3, name: 'Three' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 3: { plan: true } },
+    cursor: { phase: 2.1, total: 4, name: 'Patch', status: 'planned', next: '/cad-execute 2.1', updated: '2026-01-01' },
+  });
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8').replace(
+    '- [ ] **Phase 3: Three**',
+    '- [ ] **Phase 2.1: Patch** - see phases/2.1/ notes\n- [ ] **Phase 3: Three**');
+  writeFileSync(join(dir, 'ROADMAP.md'), roadmap);
+  mkdirSync(join(dir, 'phases', '2.1'), { recursive: true });
+  return dir;
+}
+
+test('renumber: a decimal cursor is warned about, never shifted (#37)', () => {
+  const dir1 = decimalCursorTree();
+  const r1 = run(['renumber', 'remove', '--n', '1'], dir1);
+  assert.equal(r1.ok, true);
+  assert.match(r1.warn, /2\.1/);
+  assert.match(r1.warn, /re-point/);
+  const cursor1 = run(['cursor', 'get'], dir1);
+  assert.equal(cursor1.phase, 2.1);
+  assert.equal(cursor1.total, 3);
+  assert.match(readFileSync(join(dir1, 'ROADMAP.md'), 'utf8'), /\*\*Phase 2\.1: Patch\*\*/);
+  assert.ok(existsSync(join(dir1, 'phases', '2.1')));
+
+  const dir2 = decimalCursorTree();
+  const r2 = run(['renumber', 'insert', '--at', '2'], dir2);
+  assert.equal(r2.ok, true);
+  const cursor2 = run(['cursor', 'get'], dir2);
+  assert.equal(cursor2.phase, 2.1);
+  assert.equal(cursor2.total, 5);
+  assert.ok(r2.warn);
+
+  const dir3 = decimalCursorTree();
+  const r3 = run(['renumber', 'remove', '--n', '3'], dir3);
+  assert.equal(r3.ok, true);
+  assert.equal(r3.warn, undefined); // shift point sits above the cursor - nothing moved (D-10)
+  const cursor3 = run(['cursor', 'get'], dir3);
+  assert.equal(cursor3.phase, 2.1);
+});
+
 test('phase-done: a decimal phase flips its own line, dot not a wildcard', () => {
   // Phase 291 must NOT be flipped by --n 2.1 (the unescaped-regex bug).
   const dir = makeTree({
@@ -1020,11 +1423,14 @@ test('phase-done: a decimal phase flips its own line, dot not a wildcard', () =>
 // nonexistent path (D-10) or a developer's real ~/.claude/cadence/config.json
 // would flip results locally while CI stayed green. Returns the parsed JSON
 // AND the raw stdout (the determinism test byte-compares the raw string).
+// `query` may be an array to express the UNQUOTED form (bare words as
+// separate argv elements) - a single string cannot say that at all.
 function recall(query, dir) {
   let raw;
   let code = 0;
+  const qargs = Array.isArray(query) ? query : [query];
   try {
-    raw = execFileSync('node', [PLANNING, 'recall', query, '--dir', dir], {
+    raw = execFileSync('node', [PLANNING, 'recall', ...qargs, '--dir', dir], {
       encoding: 'utf8',
       env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
     });
@@ -1122,6 +1528,46 @@ test('recall: two runs over a corpus with ## Durable decisions are byte-identica
   const b = recall('beta gamma', dir);
   assert.equal(a.raw, b.raw);
   assert.ok(a.json.results.length >= 1);
+});
+
+test('recall: bare words after the query are joined, not truncated (#47.2)', () => {
+  // The corpus separates the two words, so a first-word-only search can only
+  // reach phase 1 - the quoted run reaches both.
+  const dir = makeTree({
+    phases: {
+      1: { summaryBody: { deviations: ['decimal cursor carve-out'] } },
+      2: { summaryBody: { deviations: ['renumber phases desync report'] } },
+    },
+  });
+  const bare = recall(['decimal', 'phases'], dir);
+  const quoted = recall('decimal phases', dir);
+  assert.equal(bare.json.ok, true);
+  const sources = bare.json.results.map((x) => x.source);
+  assert.ok(sources.includes('phases/1/SUMMARY.md'), `missing phase 1: ${sources}`);
+  assert.ok(sources.includes('phases/2/SUMMARY.md'), `missing phase 2: ${sources}`);
+  assert.equal(bare.raw, quoted.raw); // byte-identical to the quoted form
+});
+
+test('recall: a completed capture keeps its phase and gains a closed marker (#47.1)', () => {
+  // makeTree's capture builder only ever writes `[ ]`, so the checked line is
+  // written raw - the shape the builder cannot express.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  writeFileSync(join(dir, 'CAPTURE.md'),
+    '## Todos\n\n- [x] (phase 3) tokenkiller carve-out closed by abc1234\n' +
+    '- [ ] (phase 1) tokenkiller live item\n');
+  const r = recall('tokenkiller', dir);
+  assert.equal(r.json.ok, true);
+  const closed = r.json.results.find((x) => /carve-out/.test(x.snippet));
+  const live = r.json.results.find((x) => /live item/.test(x.snippet));
+  // Pre-fix the `[x]` prefix blocked the `(phase N)` extraction entirely: no
+  // phase field, and the checkbox stayed in the indexed text.
+  assert.equal(closed.phase, 3);
+  assert.doesNotMatch(closed.snippet, /\[x\]/);
+  assert.ok(closed.snippet.startsWith('[closed] '),
+    `closed snippet lacks the marker: ${closed.snippet}`);
+  // An open capture is unchanged: phase extracted, no marker.
+  assert.equal(live.phase, 1);
+  assert.doesNotMatch(live.snippet, /\[closed\]/);
 });
 
 test('recall: memory.backend none reports off with empty results, exit 0', () => {

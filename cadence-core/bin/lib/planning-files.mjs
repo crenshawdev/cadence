@@ -76,18 +76,31 @@ export function parseRoadmapPhases(text) {
 /**
  * Parse traceability rows: [{id, phase, status}]. `phase` is null when the
  * cell names no phase (a dropped requirement - audit's concern, not an
- * error here). Header and separator rows are skipped.
+ * error here).
+ *
+ * The section is BOUNDED at the next `## ` heading - the same idiom
+ * parseRoadmapPhases/sectionBody use, and exactly the extent setReqStatus
+ * already writes with, so the reader and the writer of this one table agree.
+ * A table under any later `## ` section is somebody else's data.
+ *
+ * Header and separator rows are skipped. The separator skip is deliberately
+ * a BLACKLIST - a cell made only of dashes, colons and spaces, a strict
+ * superset of every legal GFM delimiter spelling (`---`, `:---`, `:--:`,
+ * `---:`) - and NOT a positive requirement-id whitelist: a genuinely
+ * malformed id must still reach audit as a `no-phase` break rather than be
+ * silently dropped from the count.
  * @param {string} text
  */
 export function parseRequirements(text) {
   const section = text.split(/^## Traceability\s*$/m)[1];
   if (!section) return [];
+  const body = section.split(/^## /m)[0];
   const rows = [];
-  for (const line of section.split('\n')) {
+  for (const line of body.split('\n')) {
     const cells = line.match(/^\|([^|]*)\|([^|]*)\|([^|]*)\|/);
     if (!cells) continue;
     const id = cells[1].replace(/\*/g, '').trim();
-    if (!id || id === 'Requirement' || /^-+$/.test(id)) continue;
+    if (!id || id === 'Requirement' || /^[-:\s]+$/.test(id)) continue;
     const phaseM = cells[2].match(/(\d+(?:\.\d+)?)/);
     rows.push({ id, phase: phaseM ? Number(phaseM[1]) : null, status: cells[3].trim() });
   }
@@ -188,9 +201,21 @@ export function parseSummarySnippets(text) {
 
 /**
  * CAPTURE.md item-level snippets: every `- ` bullet under `## Todos`,
- * `## Seeds`, `## Notes`, with a leading `[ ]` checkbox and `(phase N)` tag
+ * `## Seeds`, `## Notes`, with a leading checkbox and `(phase N)` tag
  * stripped - the tag becomes the numeric `phase` field (omitted when the
  * bullet carries no tag; decimal phase numbers are legal).
+ *
+ * ANY checkbox state is stripped (`[ ]`, `[x]`, `[X]`), and stripped BEFORE
+ * the `(phase N)` extraction, which a checked box used to block - a closed
+ * capture lost its phase attribution and kept `[x]` in the indexed text.
+ * Completed captures stay in the corpus rather than being skipped or
+ * de-weighted (D-04): a closed item carries the reasoning that produced the
+ * fix, which is exactly the prior evidence recall exists to surface.
+ *
+ * A closed capture is marked with a literal `[closed] ` prefix on the text
+ * (D-05). The signal rides the string rather than growing a `done` field on
+ * the result shape: without a marker a planner reads a shipped fix as live
+ * prior evidence and re-plans closed work.
  * @param {string} text @returns {Array<{text:string, phase?:number}>}
  */
 export function parseCaptureSnippets(text) {
@@ -203,11 +228,13 @@ export function parseCaptureSnippets(text) {
       if (!m) continue;
       let raw = m[1].trim();
       if (!raw) continue;
-      raw = raw.replace(/^\[ \]\s*/, '');
+      const box = raw.match(/^\[([ xX])\]\s*/);
+      const closed = box ? box[1] !== ' ' : false;
+      if (box) raw = raw.slice(box[0].length);
       /** @type {number|undefined} */
       let phase;
       raw = raw.replace(/^\(phase (\d+(?:\.\d+)?)\)\s*/, (_m, n) => { phase = Number(n); return ''; });
-      out.push({ text: raw, ...(phase !== undefined ? { phase } : {}) });
+      out.push({ text: closed ? `[closed] ${raw}` : raw, ...(phase !== undefined ? { phase } : {}) });
     }
   }
   return out;
@@ -250,6 +277,15 @@ const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
 /**
  * Parse UAT: full frontmatter + items with their field lines. Counts are
  * always recomputed from the items, never read from Summary.
+ *
+ * An item head is anchored to the FIRST line of its `### ` chunk. A numbered
+ * line deeper in a chunk (`1. check the logs` inside a hand-written
+ * `### Manual notes`) is prose, not an item, and must never mint one.
+ *
+ * UAT.md is therefore partly USER-owned (D-02): a `### ` chunk whose first
+ * line is not `N. Name` is a hand-added section, returned verbatim in
+ * `extras` and re-emitted by renderUat, so the next `uat record` does not
+ * destroy it. Items themselves stay machine-owned and append-only.
  * @param {string} text
  */
 export function parseUat(text) {
@@ -263,10 +299,24 @@ export function parseUat(text) {
     }
   }
   const items = [];
+  /** @type {string[]} Hand-added `### ` sections, preserved verbatim. */
+  const extras = [];
   const parts = text.split(/^### /m).slice(1);
   for (const part of parts) {
-    const head = part.match(/^(\d+)\.\s+(.+?)\s*$/m);
-    if (!head) continue;
+    const head = part.split('\n', 1)[0].match(/^(\d+)\.\s+(.+?)\s*$/);
+    if (!head) {
+      // A hand-added section. Keep its lines to the same `## ` bound the
+      // field loop uses; trailing whitespace is trimmed so repeated
+      // parse/render cycles are byte-stable.
+      const kept = [];
+      for (const line of part.split('\n')) {
+        if (/^## /.test(line)) break;
+        kept.push(line);
+      }
+      const extra = `### ${kept.join('\n')}`.replace(/\s+$/, '');
+      if (extra !== '###') extras.push(extra);
+      continue;
+    }
     /** @type {Record<string, string|number>} */
     const item = { k: Number(head[1]), name: head[2] };
     for (const line of part.split('\n').slice(1)) {
@@ -278,16 +328,21 @@ export function parseUat(text) {
   }
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
   for (const it of items) if (it.status in counts) counts[String(it.status)]++;
-  return { status: fm.status || null, phase: fm.phase || null, fm, items, counts };
+  return { status: fm.status || null, phase: fm.phase || null, fm, items, counts, extras };
 }
 
 /**
  * Render a UAT file from frontmatter + items, recomputing the Summary from
  * the items (reworked = items whose first_pass is fail). Round-trips with
  * parseUat.
- * @param {{fm: Record<string,string>, items: Array<Record<string,string|number>>}} uat
+ *
+ * `extras` are the hand-added `### ` sections parseUat preserved (D-02):
+ * emitted verbatim between the item blocks and `## Summary`, never
+ * flattened, renumbered or reformatted. UAT.md is partly user-owned this
+ * way; items remain machine-owned and append-only.
+ * @param {{fm: Record<string,string>, items: Array<Record<string,string|number>>, extras?: string[]}} uat
  */
-export function renderUat({ fm, items }) {
+export function renderUat({ fm, items, extras = [] }) {
   // Every value is one line by contract: an embedded newline would become its
   // own `field: value` line on the next parse, where last-assignment-wins
   // could flip a recorded verdict (a verifier evidence string containing
@@ -305,7 +360,8 @@ export function renderUat({ fm, items }) {
   const reworked = items.filter((i) => i.first_pass === 'fail').length;
   const summary = `total: ${items.length}\npassed: ${counts.pass}\nfailed: ${counts.fail}\n` +
     `pending: ${counts.pending}\nskipped: ${counts.skipped}\nblocked: ${counts.blocked}\nreworked: ${reworked}`;
-  return `---\n${fmLines.join('\n')}\n---\n\n## Items\n\n${blocks.join('\n')}\n## Summary\n\n${summary}\n`;
+  const kept = extras.map((e) => `\n${e}\n`).join('');
+  return `---\n${fmLines.join('\n')}\n---\n\n## Items\n\n${blocks.join('\n')}${kept}\n## Summary\n\n${summary}\n`;
 }
 
 /**
@@ -324,18 +380,91 @@ export function uatComplete(uat) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Read one frontmatter key as a string list. ONE reader for both
+ * `requirements:` and `files:` (D-07) - two copies of the same pattern would
+ * drift, and the audit would then accept a plan shape the parallel-safety
+ * overlap check rejects, in the very file that declares one grammar per
+ * format.
+ *
+ * The lookup is BOUNDED to the leading `---`-fenced block (D-06). The other
+ * parsers here scan the whole body, so this reads as inconsistent without
+ * the reason: an unbounded key scan plus a permissive block reader lets a
+ * prose `requirements:` line in the plan body swallow the following bullets
+ * as ids, surfacing as fabricated `orphans.plan_ids` in audit - trading an
+ * under-read for a worse over-read.
+ *
+ * The grammar is deliberately minimal - no nesting, no flow-in-block, no
+ * comment-only lines. Three cases for the remainder after `key:`:
+ *   `[a, b]`  inline list, split on commas. Never comment-stripped: the
+ *             template writes `requirements: []     # phase requirement IDs`.
+ *   (empty)   block list - the contiguous following `- item` lines, stopping
+ *             at the first line that is not one. A remainder that is ITSELF
+ *             a comment counts as empty.
+ *   scalar    anything else non-empty: a one-element list. Explicitly NOT a
+ *             fall-through to the block reader, which would discard the value
+ *             AND swallow whatever `- ` lines follow it.
+ * A trailing comment is stripped only on a WHITESPACE-preceded `#`, never a
+ * bare one - this repo's own requirement ids are `#41`-shaped. That rule alone
+ * cannot see a remainder that is ENTIRELY a comment: `^key:\s*(.*)$` has
+ * already eaten the whitespace before the `#`, so `requirements:   # note`
+ * arrives here as `# note` with nothing left to strip. Discriminate on what
+ * FOLLOWS the `#` - whitespace or end-of-line is a comment (empty value, fall
+ * through to the block reader), a non-space character is a `#41`-shaped id (a
+ * scalar). Taking such a remainder as a scalar is the over-read D-06 bounds
+ * against: it returns the comment text as a fabricated id AND discards the
+ * block list beneath it.
+ * @param {string} text @param {string} key @returns {string[]}
+ */
+function readFrontmatterList(text, key) {
+  const fm = text.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return [];
+  const lines = fm[1].split('\n');
+  const head = new RegExp(`^${key}:\\s*(.*)$`);
+  const at = lines.findIndex((l) => head.test(l));
+  if (at === -1) return [];
+  const clean = (s) => s.replace(/\s+#.*$/, '').replace(/["']/g, '').trim();
+  const remainder = (lines[at].match(head) || ['', ''])[1].trim();
+
+  if (remainder.startsWith('[')) {
+    const inline = remainder.match(/\[(.*)\]/);
+    // The inline payload is never comment-stripped - the template itself
+    // writes `requirements: []     # phase requirement IDs...`.
+    return (inline ? inline[1].split(',') : [])
+      .map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
+  }
+
+  /** @type {string[]} */
+  let raw;
+  // `# `/bare `#` is a comment, `#41` is an id (see the note above). The
+  // whitespace-preceded strip cannot fire on a remainder that is entirely a
+  // comment, so that case is tested first rather than falling to the scalar arm.
+  const commentOnly = /^#(\s|$)/.test(remainder);
+  const bare = commentOnly ? '' : remainder.replace(/\s+#.*$/, '').trim();
+  if (bare === '') {
+    raw = [];
+    for (const line of lines.slice(at + 1)) {
+      const item = line.match(/^\s*-\s+(.+?)\s*$/);
+      if (!item) break; // contiguous only; the first non-item line ends it
+      raw.push(item[1]);
+    }
+  } else {
+    raw = [bare]; // a scalar value - deliberately NOT a block fall-through
+  }
+  return raw.map(clean).filter(Boolean);
+}
+
+/**
  * Extract the requirement IDs a plan commits to deliver.
  * @param {string} text
  */
 export function parsePlanRequirements(text) {
-  const m = text.match(/^requirements:\s*\[(.*)\]/m);
-  if (!m) return [];
-  return m[1].split(',').map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
+  return readFrontmatterList(text, 'requirements');
 }
 
 /**
  * Extract the file paths a plan declares it touches: the frontmatter
- * `files: [...]` list unioned with every task's `- **Files:** a, b` line
+ * `files:` list (inline or block, via readFrontmatterList) unioned with
+ * every task's `- **Files:** a, b` line
  * (either source alone can go stale; the union is what the parallel-safety
  * overlap check trusts). Trailing parentheticals ("src/a.rs (new)") and
  * backticks are stripped; template placeholders ({...}) are ignored.
@@ -347,8 +476,7 @@ export function parsePlanFiles(text) {
     const f = raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
     if (f && !f.startsWith('{')) files.add(f);
   };
-  const fm = text.match(/^files:\s*\[(.*)\]/m);
-  if (fm) for (const f of fm[1].split(',')) add(f.replace(/["']/g, ''));
+  for (const f of readFrontmatterList(text, 'files')) add(f);
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
     for (const f of m[1].split(',')) add(f);
   }
@@ -401,11 +529,20 @@ export function findProsePhaseRefs(text, from) {
 /**
  * Cut phase N's `### Phase N: ...` detail section out of ROADMAP text (from
  * its heading to the next ### / ## heading). Returns the text unchanged when
- * the section is absent.
+ * the section is absent. A name-less heading (exactly `### Phase N:`) is
+ * matched too, so a bare heading and its body are not left behind.
+ *
+ * That tolerance is scoped to THIS function only (D-08). `PHASE_LINE`,
+ * `setPhaseBox` and the `renumber remove` list-line filter keep requiring a
+ * name: unifying every `Phase N:` matcher "for consistency" would change what
+ * counts as a phase for `status`, `audit`, `phase-done` and the cursor's
+ * `total` - a state-machine change smuggled in as a parser fix. The colon
+ * stays immediately after the escaped number, so `### Phase 21:` still cannot
+ * match n = 2.
  * @param {string} text @param {number} n
  */
 export function cutPhaseDetail(text, n) {
-  const re = new RegExp(`^### Phase ${escN(n)}: .*$`, 'm');
+  const re = new RegExp(`^### Phase ${escN(n)}:(?: .*)?$`, 'm');
   const start = text.search(re);
   if (start === -1) return text;
   const headingEnd = text.indexOf('\n', start);

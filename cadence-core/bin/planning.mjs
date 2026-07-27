@@ -22,10 +22,13 @@
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
-//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated
+//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
+//                                   Bare words after `recall` are joined into
+//                                   one query, so an unquoted multi-word call
+//                                   searches all of it, not just the first word
 'use strict';
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
@@ -359,13 +362,28 @@ function cmdUat(dir, sub, opts) {
   if (sub === 'merge') {
     // Verifier findings: {passes:[{k|name, evidence}], gaps:[{k|name, reason,
     // evidence?}], human_checks:[{name, expected}]}. Fills only pending items.
+    //
+    // Merge is PARTIAL-SUCCESS, deliberately unlike init/refresh (which reject
+    // a whole payload on one bad element): an unusable entry is set aside and
+    // counted, the rest merges. verify-deep's deep pass is an accelerator,
+    // never a gate - the strict form would discard twenty good findings over
+    // one nameless gap. Two counts, always present even at zero:
+    //   skipped  - the finding conflicts with an already-recorded result. The
+    //              invariant stands; the drop just stops being silent.
+    //   rejected - the entry resolves to no usable item at all, so it can
+    //              never be applied to one or appended as one.
     const f = readStdinJson();
     if (f === null) return;
     const uat = loadUat(dir, n);
     if (!uat) return;
     const find = (ref) => uat.items.find((i) =>
       (ref.k !== undefined && Number(i.k) === Number(ref.k)) || i.name === ref.name);
-    let auto = 0, gaps = 0, added = 0;
+    // Guard the shape the CONSUMER accepts - a name that renders a heading -
+    // not the reported input. Without it an entry carrying neither a matching
+    // `k` nor a name was appended as `### N. undefined`, a phantom at status
+    // fail/pending that blocks phase completion permanently.
+    const usableName = (e) => (typeof e.name === 'string' && e.name.trim() ? e.name.trim() : null);
+    let auto = 0, gaps = 0, added = 0, skipped = 0, rejected = 0;
     for (const p of f.passes || []) {
       const it = find(p);
       if (it && it.status === 'pending') {
@@ -373,7 +391,8 @@ function cmdUat(dir, sub, opts) {
         if (p.evidence) it.evidence = p.evidence;
         if (it.first_pass === undefined) it.first_pass = 'pass';
         auto++;
-      }
+      } else if (it) skipped++;
+      else rejected++; // a pass matching no item can never be applied
     }
     let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
     for (const g of f.gaps || []) {
@@ -385,8 +404,14 @@ function cmdUat(dir, sub, opts) {
         it.severity = g.severity || 'major';
         if (it.first_pass === undefined) it.first_pass = 'fail';
         gaps++;
-      } else if (!it) {
-        uat.items.push({ k: ++k, name: g.name, expected: g.expected || g.reason || '',
+      } else if (it) skipped++;
+      else {
+        const name = usableName(g);
+        // `gaps` counts gaps actually recorded in the file, so a rejected
+        // entry that wrote nothing must not inflate it - otherwise the
+        // envelope reports three gaps found for one item written.
+        if (!name) { rejected++; continue; }
+        uat.items.push({ k: ++k, name, expected: g.expected || g.reason || '',
           status: 'fail', source: 'verifier', severity: g.severity || 'major',
           ...(g.reason ? { reported: g.reason } : {}),
           ...(g.evidence ? { evidence: g.evidence } : {}), first_pass: 'fail' });
@@ -394,13 +419,14 @@ function cmdUat(dir, sub, opts) {
       }
     }
     for (const h of f.human_checks || []) {
-      if (!find(h)) {
-        uat.items.push({ k: ++k, name: h.name, expected: h.expected || '', status: 'pending' });
-        added++;
-      }
+      if (find(h)) continue;
+      const name = usableName(h);
+      if (!name) { rejected++; continue; } // appends the identical phantom, at pending
+      uat.items.push({ k: ++k, name, expected: h.expected || '', status: 'pending' });
+      added++;
     }
     writeUat(dir, n, uat);
-    return ok({ auto_passed: auto, gaps, added, next: nextPending(uat.items) });
+    return ok({ auto_passed: auto, gaps, added, skipped, rejected, next: nextPending(uat.items) });
   }
 
   if (sub === 'status') {
@@ -598,6 +624,41 @@ function gitMv(from, to) {
   catch { renameSync(from, to); return 'fs'; }
 }
 
+/**
+ * Every path under `relPath` carrying uncommitted state - untracked (`??`),
+ * ignored (`!!`), modified, staged, or deleted. All of them make a `remove`
+ * unsafe, for two different reasons:
+ *   - `??`/`!!`: `git rm -r` exits 0 and LEAVES them, so the directory
+ *     survives a removal that reported success and the next move nests into
+ *     it.
+ *   - modified/staged: `git rm -r` REFUSES ("file has local modifications")
+ *     and the caller's `rmSync` fallback then deletes the work anyway, with
+ *     no copy in the object store to recover from.
+ * Refusing on any porcelain output covers both, and leaves git's own
+ * safety check intact instead of overriding it.
+ * Outside a git repo the call fails and this returns [] - correctly, since
+ * nothing is tracked there, the `rmSync` fallback removes the directory
+ * whole, and no residue can survive to be nested into.
+ * `relPath` is relative to `cwd`, so this works whether the caller's `--dir`
+ * is absolute or relative.
+ * @param {string} cwd @param {string} relPath @returns {string[]}
+ */
+function uncommittedUnder(cwd, relPath) {
+  try {
+    const out = execFileSync('git', ['status', '--porcelain', '--ignored', '--', relPath],
+      { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return out.split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim());
+  } catch {
+    return [];
+  }
+}
+
+// `existsSync` alone follows a symlink and reads a DANGLING one as free -
+// the pre-flight would then pass and the apply dies mid-flight (renameSync
+// onto a dangling symlink throws ENOTDIR). `lstatSync` catches the link
+// itself even when its target is gone.
+function occupied(p) { return existsSync(p) || !!lstatSync(p, { throwIfNoEntry: false }); }
+
 function cmdRenumber(dir, sub, opts) {
   if (sub !== 'insert' && sub !== 'remove') return fail('usage', 'renumber <insert --at N | remove --n N> [--dry-run]');
   const roadmapFile = join(dir, 'ROADMAP.md');
@@ -631,6 +692,49 @@ function cmdRenumber(dir, sub, opts) {
     for (let k = maxN; k >= at; k--) if (existingDir(k)) dirMoves.push([k, k + 1]);
   } else {
     for (let k = at + 1; k <= maxN; k++) if (existingDir(k)) dirMoves.push([k, k - 1]);
+  }
+
+  // Pre-flight: refuse before any write if a move's destination is occupied
+  // by something this renumber does not itself vacate (D-04). `vacated`
+  // tracks numbers freed by moves already checked (plus `at` on a remove,
+  // freed by the rm before any move runs) - without it, an ordinary insert's
+  // OWN chain of destinations (e.g. 3->4 then 2->3, where phases/3 exists at
+  // check time as move 1's still-unmoved source) would refuse itself. This
+  // must run before the `git rm` below: on a remove, the rm destroys a phase
+  // directory before the first move, so a check placed after it would report
+  // the collision only once the data is already gone.
+  // Seeded only when the rm will actually RUN: `existingDir` is existsSync,
+  // which is false for a dangling symlink at phases/<at>, so seeding
+  // unconditionally waved through exactly the occupant `occupied()`/lstatSync
+  // was added to catch - the apply then died on the first move and reported a
+  // half-renumbered tree when nothing had been written at all.
+  const vacated = new Set(sub === 'remove' && existingDir(at) ? [String(at)] : []);
+  for (const [f, t] of dirMoves) {
+    const dest = join(dir, 'phases', String(t));
+    if (occupied(dest) && !vacated.has(String(t))) {
+      return fail('collision',
+        `phases/${t} already exists and is not a phase this renumber vacates - move or delete it first`,
+        'ls .planning/phases');
+    }
+    vacated.add(String(f));
+  }
+
+  // The `vacated` seeding above assumes the rm actually FREES phases/<at>.
+  // `git rm -r -q` breaks that assumption silently: it exits 0 while leaving
+  // untracked and ignored files behind, so the directory survives, the first
+  // move NESTS the next phase inside it (phases/1/2/PLAN.md), and the command
+  // still exits ok:true with ROADMAP naming a phase whose dir has no plan -
+  // the exact D-04 nesting hazard, reached through the rm rather than a stray
+  // dir. Verified live. Refuse before any write instead of deleting the
+  // residue: it is the caller's uncommitted work, and `remove` is not a
+  // licence to discard it.
+  if (sub === 'remove' && existingDir(at)) {
+    const dirty = uncommittedUnder(dir, join('phases', String(at)));
+    if (dirty.length) {
+      return fail('uncommitted-work',
+        `phases/${at} holds ${dirty.length} file(s) with uncommitted state (e.g. ${dirty[0]}) - commit or discard them first; removing the phase would destroy work git cannot recover`,
+        `git status --porcelain --ignored -- .planning/phases/${at}`);
+    }
   }
 
   // File edits, computed up front.
@@ -668,7 +772,22 @@ function cmdRenumber(dir, sub, opts) {
   let warn;
   if (cursor) {
     newCursor = { ...cursor, total: total + delta };
-    if (cursor.phase >= shiftFrom) newCursor.phase = cursor.phase + delta;
+    // The phase NUMBER only ever shifts for an integer cursor. A decimal
+    // cursor's own ROADMAP token and phases/<phase>/ dir are never shifted
+    // either (see decimalPhases below), so moving just the cursor's number
+    // would desync it from the phase it actually names - shifting nowhere
+    // else is exactly why the number stays put here too. total still moves:
+    // the roadmap genuinely gained or lost a phase, so the denominator is
+    // still true even while the numerator is left for the caller to re-point.
+    if (cursor.phase >= shiftFrom) {
+      if (Number.isInteger(cursor.phase)) {
+        newCursor.phase = cursor.phase + delta;
+      } else {
+        warn = `cursor sits on decimal phase ${cursor.phase}, which renumber ` +
+          `never shifts (its ROADMAP token and phases/${cursor.phase}/ did not ` +
+          `move either); total is now ${total + delta} - re-point it (cursor set)`;
+      }
+    }
     if (sub === 'remove' && cursor.phase === at) {
       warn = `cursor points at removed phase ${at}; number left as-is - re-point it (cursor set)`;
     }
@@ -704,16 +823,54 @@ function cmdRenumber(dir, sub, opts) {
   };
   if ('dry-run' in opts) return ok({ dry_run: true, ...result });
 
-  // Apply: remove first (rm), then moves in the computed collision-safe order,
-  // then the file edits.
+  // Apply: an ordered step list, run under one guard. NOTE the order is the
+  // rm first, then the moves - which is NOT the order `ops` above displays
+  // (it lists moves first, and a shipped test pins that). `ops` is the plan
+  // shown at the dry-run gate; `completed` below is the record of what
+  // actually ran, and it is the authority when the two disagree. Replaying
+  // the printed `ops` order by hand on a remove would `git mv` onto a
+  // still-present directory and NEST it (the D-04 hazard). This is a
+  // partial-state REPORT, not a rollback - `remove` destroys phases/<at>
+  // before the first move runs, so step one can never be undone. Advertising
+  // a rollback the code lacks would be worse than a generic failure, because
+  // the caller would stop checking the tree by hand (D-03).
+  /** @type {Array<[Record<string, any>, () => void]>} */
+  const steps = [];
   if (sub === 'remove' && existingDir(at)) {
-    try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
-    catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+    steps.push([{ rm: `phases/${at}` }, () => {
+      try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
+      catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+    }]);
   }
-  for (const [f, t] of dirMoves) gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)));
-  atomicWrite(roadmapFile, newRoadmap);
-  if (newReqText !== null) atomicWrite(reqFile, newReqText);
-  if (newCursor) atomicWrite(stateFile, renderCursor(newCursor));
+  for (const [f, t] of dirMoves) {
+    steps.push([{ git_mv: [`phases/${f}`, `phases/${t}`] },
+      () => gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)))]);
+  }
+  steps.push([{ edit: 'ROADMAP.md' }, () => atomicWrite(roadmapFile, newRoadmap)]);
+  if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
+  if (newCursor) steps.push([{ edit: 'STATE.md' }, () => atomicWrite(stateFile, renderCursor(newCursor))]);
+
+  const completed = [];
+  for (const [op, runStep] of steps) {
+    try { runStep(); }
+    catch (e) {
+      // Bypasses the dispatch-level catch (which flattens to `internal`) and
+      // fail()'s reason/detail/hint-only shape - a completed-ops list needs
+      // its own emit (D-11).
+      return emit({
+        ok: false, reason: 'partial-apply', completed, failed: op,
+        detail: e && e.message ? e.message : String(e),
+        // Deliberately does NOT say "re-run". The half-applied tree no longer
+        // matches ROADMAP, and a re-run recomputes its plan FROM ROADMAP: on
+        // a remove it would rm phases/<at>, which now holds the NEXT phase's
+        // work, and exit ok:true having destroyed it. Verified live.
+        hint: completed.length
+          ? 'the tree is partly renumbered and no longer matches ROADMAP - reconcile the completed ops by hand before any further renumber; re-running this command against the half-applied tree can destroy a phase directory'
+          : 'nothing was written - the first step failed, so the tree is unchanged and safe to re-run once the cause is fixed',
+      });
+    }
+    completed.push(op);
+  }
 
   // Sanity recount: every ROADMAP phase maps to at most one dir, none stray.
   const after = parseRoadmapPhases(read(roadmapFile) || '');
@@ -738,6 +895,10 @@ function parseArgs(argv) {
   return { words, opts };
 }
 
+// Handlers take the trailing positional words as a 4th argument; only
+// `recall` needs it (its query is free text, not a fixed subcommand), and
+// widening the signature beats special-casing one command in the dispatcher.
+/** @type {Record<string, (dir: string, sub: string, opts: any, rest: string[]) => void>} */
 const COMMANDS = {
   status: (dir, _sub, _opts) => cmdStatus(dir),
   cursor: (dir, sub, opts) => {
@@ -749,7 +910,11 @@ const COMMANDS = {
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
-  recall: (dir, sub, opts) => cmdRecall(dir, sub, opts),
+  // Bare words are JOINED, never rejected: every workflow caller quotes, so
+  // rejecting extras would turn a today-degraded interactive call into a hard
+  // failure. tokenize() splits on non-alphanumerics, so the separator is
+  // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
+  recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 
@@ -759,7 +924,7 @@ try {
   const dir = opts.dir || '.planning';
   const handler = COMMANDS[cmd];
   if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(dir, sub, opts);
+  else handler(dir, sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }

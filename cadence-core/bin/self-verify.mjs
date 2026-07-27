@@ -24,7 +24,7 @@
 // Usage: self-verify.mjs [--root <repo root>]
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, readlinkSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
@@ -112,9 +112,30 @@ function* mdFiles(root) {
   ];
   for (const d of dirs) {
     if (!existsSync(d)) continue;
-    for (const e of readdirSync(d, { recursive: true, encoding: 'utf8' })) {
+    // The walker never drops an entry it cannot inspect - it yields the
+    // path so run()'s read-guard can report it as an unreadable surface,
+    // rather than the whole run collapsing to one opaque internal error
+    // (#49.1). An unreadable directory is itself the unreadable surface.
+    let list;
+    try {
+      list = readdirSync(d, { recursive: true, encoding: 'utf8' });
+    } catch {
+      yield d;
+      continue;
+    }
+    for (const e of list) {
       const f = join(d, String(e));
-      if (f.endsWith('.md') && statSync(f).isFile()) yield f;
+      if (!f.endsWith('.md')) continue;
+      // Deliberately optimistic on the throw: a symlink that fails the
+      // stat (dangling, cycle) still reaches the reporter as a file,
+      // rather than vanishing silently from the walk.
+      let isFile;
+      try {
+        isFile = statSync(f).isFile();
+      } catch {
+        isFile = true;
+      }
+      if (isFile) yield f;
     }
   }
   // README and INTERNALS name user-facing switches and live file paths - they
@@ -180,8 +201,25 @@ function run(root) {
   }
 
   for (const file of mdFiles(root)) {
-    const text = readFileSync(file, 'utf8');
     const rel = relative(root, file);
+    let text;
+    try {
+      text = readFileSync(file, 'utf8');
+    } catch (e) {
+      // Name the link target when there is one - costs one line here and
+      // saves the operator an `ls -l` on a rare failure. Use e.code rather
+      // than the full message when a target is known, so the detail stays
+      // free of machine-specific absolute paths.
+      let target = null;
+      try {
+        target = readlinkSync(file);
+      } catch { /* not a symlink, or target unreadable too */ }
+      const detail = target
+        ? `unreadable symlink -> ${target} (${e.code || e.message})`
+        : (e.code || e.message);
+      problems.push({ kind: 'unreadable-surface', file: rel, detail });
+      continue;
+    }
 
     // 1. config-key tokens: family-rooted dotted identifiers.
     for (const m of text.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
@@ -201,8 +239,22 @@ function run(root) {
     }
 
     // 2. script invocations.
-    // Join backslash continuations so multi-line commands read as one.
-    const joined = text.replace(/\\\n\s*/g, ' ');
+    // Join backslash continuations so multi-line commands read as one. The
+    // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF
+    // one - git-guard.mjs carries the identical regex for the same reason,
+    // so the two seams stay one idiom rather than two spellings (D-15). The
+    // trailing class is `[ \t]*`, not `\s*`: `\s` matches `\n`, so `\s*`
+    // would swallow the newline that ends the continued line and merge the
+    // NEXT line into the joined command, letting the flag-checking regex
+    // below (bounded by `[^\n]*`) read words that were never on that
+    // command line. Parity matters here for the same reason it does there: a
+    // trailing RUN of backslashes continues the line only when its length is
+    // ODD, so `\\` at EOL is a literal backslash and the newline still ends
+    // the command. Joining anyway merges the next line in and reports a flag
+    // that was never on this command (a false unknown-flag).
+    const joined = text.replace(/(\\+)(\r?\n)[ \t]*/g, (_m, slashes, nl) => (slashes.length % 2
+      ? `${slashes.slice(0, -1)} `
+      : `${slashes}${nl}`));
     for (const m of joined.matchAll(/([a-z-]+\.mjs)"?\s+([a-z-]+)(?:\s+([a-z-]+))?([^\n]*)/g)) {
       const [, script, w1, w2, restRaw] = m;
       const contract = CONTRACTS[script];
@@ -238,7 +290,19 @@ function run(root) {
   // repo-relative paths; globs (`*-decision.mjs`) and non-path spans are skipped.
   const internals = join(root, 'INTERNALS.md');
   if (existsSync(internals)) {
-    for (const m of readFileSync(internals, 'utf8').matchAll(/`([^`]+)`/g)) {
+    // Guarded for the same reason the walkers are (#49.1): a read that throws
+    // AFTER the walk unwinds run() entirely, and the dispatch catch flattens
+    // it to {ok:false,reason:"internal"} with `problems` absent - discarding
+    // every problem found so far. Guarding only the walk closes half the
+    // class; `chmod 000 INTERNALS.md` still collapsed the whole run.
+    // No problem is pushed here: mdFiles yields INTERNALS.md too (:144), so
+    // the read-guard above has already reported it and a second entry would
+    // double-count one file - the same call the agents lint makes.
+    let internalsText = null;
+    try {
+      internalsText = readFileSync(internals, 'utf8');
+    } catch { /* already reported by the mdFiles read-guard */ }
+    for (const m of (internalsText || '').matchAll(/`([^`]+)`/g)) {
       const tok = m[1];
       if (!/^[A-Za-z0-9_./-]+$/.test(tok) || !tok.includes('/') || tok.includes('*')) continue;
       if (!existsSync(join(root, tok))) {
@@ -265,8 +329,16 @@ function run(root) {
   // --root fixture can supply its own; an absent manifest skips the check.
   const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
   if (existsSync(budgetPath)) {
-    const budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
-    for (const { surface, bytes } of weighAll(root)) {
+    // Same guard as INTERNALS.md above: unreadable OR malformed JSON here
+    // used to sink the entire run rather than report one problem.
+    let budgets = null;
+    try {
+      budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: 'cadence-core/bin/weight-budgets.json',
+        detail: e.code || e.message });
+    }
+    for (const { surface, bytes } of (budgets ? weighAll(root) : [])) {
       if (!(surface in budgets)) {
         problems.push({ kind: 'unbudgeted-surface', file: surface, detail: 'no budget entry' });
         continue;
@@ -290,12 +362,37 @@ function run(root) {
   const toolAlt = KNOWN_TOOLS.join('|');
   const backtickRe = new RegExp('`(' + toolAlt + ')`', 'g');
   const theToolRe = new RegExp('\\bthe (' + toolAlt + ') tool\\b', 'g');
+  // This site runs AFTER the budget check, on the same agents/ directory
+  // the filed repro (#49.1) targets - guarding only mdFiles and the shared
+  // surfaces() walker (D-13) would leave the exact repro reachable here,
+  // one check later. mdFiles already reported the same file as an
+  // unreadable-surface problem, so this loop pushes NO problem of its own
+  // for an unreadable entry - just skips it, to avoid double-counting one
+  // broken link.
   const agentsDir = join(root, 'agents');
   if (existsSync(agentsDir)) {
-    for (const e of readdirSync(agentsDir, { encoding: 'utf8' })) {
+    let agentFiles;
+    try {
+      agentFiles = readdirSync(agentsDir, { encoding: 'utf8' });
+    } catch {
+      agentFiles = [];
+    }
+    for (const e of agentFiles) {
       const file = join(agentsDir, e);
-      if (!e.endsWith('.md') || !statSync(file).isFile()) continue;
-      const text = readFileSync(file, 'utf8');
+      if (!e.endsWith('.md')) continue;
+      let isFile;
+      try {
+        isFile = statSync(file).isFile();
+      } catch {
+        continue;
+      }
+      if (!isFile) continue;
+      let text;
+      try {
+        text = readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
       const rel = relative(root, file);
       // Frontmatter is the block between the first `---` and the next `---`;
       // the rest is the prose body the lint scans.

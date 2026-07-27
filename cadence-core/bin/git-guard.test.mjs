@@ -132,6 +132,76 @@ test('global git options are skipped when finding the subcommand', () => {
   assert.equal(d.permissionDecision, 'ask');
 });
 
+test('a backslash-continued wrapped push reaches the push rail like the unwrapped form (#50)', () => {
+  const p = project('feature');
+  const wrapped = guard('git \\\n  push origin main', p);
+  const unwrapped = guard('git push origin main', p);
+  assert.deepEqual(wrapped, unwrapped);
+});
+
+test('a CRLF-continued wrapped push reaches the push rail like the unwrapped form (#50)', () => {
+  const p = project('feature');
+  const wrapped = guard('git \\\r\n push origin main', p);
+  const unwrapped = guard('git push origin main', p);
+  assert.deepEqual(wrapped, unwrapped);
+});
+
+test('the commit rail widens with the join too (D-07): a wrapped commit on a protected branch asks', () => {
+  const d = guard('git \\\n commit -m "x"', project('main'));
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /protected/);
+});
+
+test('join runs before the quote-strip (D-08): a continued quoted string never manufactures a phantom push', () => {
+  // This exact shape prompts on the pre-fix code (the strip cannot match a
+  // backslash-newline inside the quotes, so the quoted "push" text survives
+  // and is read as a bare trailing command) - closing that false positive.
+  assert.equal(guard('echo "foo \\\n git push bar"', project('main')), null);
+});
+
+test('a wrapped stash push is still a stash, not a publish (regression guard, holds before and after the fix)', () => {
+  assert.equal(guard('git stash \\\n push -m wip', project('main')), null);
+});
+
+test('the join does not swallow the command separator: a blank line after a continuation still splits two commands (#50)', () => {
+  const p = project('feature');
+  const wrapped = guard('git add -A \\\n\ngit push origin main', p);
+  const unwrapped = guard('git push origin main', p);
+  assert.deepEqual(wrapped, unwrapped);
+
+  const d = guard('git commit -m "wip" \\\n   \ngit push', p);
+  assert.equal(d.permissionDecision, 'ask');
+});
+
+test('an EVEN run of trailing backslashes is a literal argument, not a continuation - the push on the next line still asks', () => {
+  // `\\` at EOL is an escaped backslash: bash passes a literal `\` to `git
+  // add` and the newline still ends the command, so the second line is a
+  // REAL `git push`. A parity-blind join splices both into one segment,
+  // where the scan reads only the first git word (`add`) and the push goes
+  // unprompted - caught at c4ab89f, silently missed by the first cut of #50.
+  const p = project('feature');
+  assert.deepEqual(
+    guard('git add -A \\\\\ngit push origin main', p),
+    guard('git push origin main', p),
+  );
+  assert.equal(guard('git commit -m msg \\\\\ngit push origin main', p).permissionDecision, 'ask');
+});
+
+test('a double quote inside a single-quoted word is not a delimiter - a real push beside it still asks', () => {
+  // Two sequential strips let the `"` inside `-F'"'` pair with the `"` before
+  // `done`, deleting `; git push origin main ; echo ` wholesale. The
+  // backslash-newline used to block that match by accident, so joining first
+  // (D-08) exposed it: caught at c4ab89f, silently missed once the join
+  // landed. One alternating left-to-right pass gives the shell's own
+  // whichever-opens-first precedence.
+  const p = project('feature');
+  const d = guard('awk -F\'"\' \'{print $2}\' f.txt \\\n  ; git push origin main ; echo "done"', p);
+  assert.equal(d.permissionDecision, 'ask');
+  // The mirror case must stay silent: a `'` inside double quotes is likewise
+  // not a delimiter, so the quoted push is still stripped whole.
+  assert.equal(guard('echo "it\'s just git push text"', project('main')), null);
+});
+
 test('compound command still catches the push half', () => {
   const d = guard('git add . && git push', project('feature'));
   assert.equal(d.permissionDecision, 'ask');

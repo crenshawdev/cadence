@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,6 +100,26 @@ test('a phantom flag on a real subcommand is flagged (the --items regression)', 
   assert.ok(p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
 });
 
+test('#50: a CRLF backslash continuation joins like an LF one (the --items regression, CRLF spelling)', () => {
+  const root = fixture(
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase 1 \\\r\n  --items -\r\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
+});
+
+test('#50: an EVEN backslash run does NOT continue the line - the next line is a separate command (D-15 parity, shared with git-guard)', () => {
+  // `\\` at EOL is a literal backslash, not a continuation, so `--items` sits
+  // on a line of its own and belongs to no planning.mjs invocation. A
+  // parity-blind join merges it in and invents an unknown-flag that the prose
+  // never wrote. git-guard.mjs carries the identical parity-aware regex - the
+  // two seams stay ONE idiom (D-15), and being wrong in lockstep is not what
+  // that decision asked for.
+  const root = fixture(
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase 1 \\\\\n--items -\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
+});
+
 test('an unknown subcommand and a missing path are flagged', () => {
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" frobnicate\n' +
@@ -115,6 +135,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
   const root = fixture(
     '`review.triggers.<t>.gate` `review.triggers.<t>.tier` `review.triggers.<t>.effort`\n' +
     '`review.providers.<name>.tiers` `review.mode` `review.reviewers` `review.key_file`\n' +
+    '`review.request_timeout_ms`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
     '`review.consult.attempt_threshold` `review.decision_review.tier`\n' +
     '`review.decision_review.effort` `model.profile` `model.auto.ceiling`\n' +
@@ -189,6 +210,74 @@ test('bare-word tool names (D-06 collisions) are not false positives', () => {
     budgets: { 'agents/a.md': 10000 },
   });
   assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
+// --- unreadable-surface resilience (#49.1) ---
+
+test('#49.1: a dangling symlink under agents/ is reported loudly, not collapsed to internal', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  symlinkSync('nowhere.md', join(root, 'agents', 'dangling.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, undefined);
+  assert.ok(r.problems.some((p) =>
+    p.kind === 'unreadable-surface' && p.file === 'agents/dangling.md'));
+  // Proof the LAST check (the agents tools-declaration lint, D-13's third
+  // site) still ran after the unreadable entry.
+  assert.ok(r.problems.some((p) =>
+    p.kind === 'undeclared-tool' && /Bash/.test(p.detail)));
+  // Proof the lib stayed silent (D-05): no unbudgeted-surface for the link.
+  assert.ok(!r.problems.some((p) =>
+    p.kind === 'unbudgeted-surface' && p.file === 'agents/dangling.md'));
+});
+
+test('#49.1: a symlink cycle under agents/ is reported loudly too', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  rmSync(join(root, 'agents', 'a.md'));
+  symlinkSync('b.md', join(root, 'agents', 'a.md'));
+  symlinkSync('a.md', join(root, 'agents', 'b.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.ok(r.problems.some((p) =>
+    p.kind === 'unreadable-surface' && p.file === 'agents/a.md'));
+});
+
+test('#49.1: a malformed weight-budgets.json reports one problem instead of collapsing the run', () => {
+  // The walkers were guarded, but the reads that run AFTER the walk were not.
+  // An unreadable or malformed weight-budgets.json / INTERNALS.md unwound
+  // run() and the dispatch catch flattened it to {ok:false,reason:'internal'}
+  // with `problems` absent - the same #49.1 collapse, one check later.
+  const root = fullFixture();
+  writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'), '{ not json');
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.problems.filter((p) => p.kind === 'unreadable-surface'
+    && p.file === 'cadence-core/bin/weight-budgets.json').length, 1);
+});
+
+test('#49.1: an unreadable INTERNALS.md is reported exactly once, not twice', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0
+    ? 'root bypasses mode bits' : false,
+}, () => {
+  const root = fullFixture();
+  const internals = join(root, 'INTERNALS.md');
+  chmodSync(internals, 0o000);
+  try {
+    const r = run(['--root', root]);
+    assert.equal(r.reason, undefined);
+    // mdFiles yields INTERNALS.md too, so the 3b read-guard must NOT push a
+    // second entry - one broken file, one problem.
+    assert.equal(r.problems.filter((p) => p.kind === 'unreadable-surface'
+      && p.file === 'INTERNALS.md').length, 1);
+  } finally {
+    chmodSync(internals, 0o644);
+  }
 });
 
 test('INTERNALS.md: a backticked repo path that does not exist is flagged; a real one and a glob are not', () => {
