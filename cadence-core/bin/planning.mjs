@@ -22,7 +22,10 @@
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
-//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated
+//                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
+//                                   Bare words after `recall` are joined into
+//                                   one query, so an unquoted multi-word call
+//                                   searches all of it, not just the first word
 'use strict';
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
@@ -761,6 +764,10 @@ function parseArgs(argv) {
   return { words, opts };
 }
 
+// Handlers take the trailing positional words as a 4th argument; only
+// `recall` needs it (its query is free text, not a fixed subcommand), and
+// widening the signature beats special-casing one command in the dispatcher.
+/** @type {Record<string, (dir: string, sub: string, opts: any, rest: string[]) => void>} */
 const COMMANDS = {
   status: (dir, _sub, _opts) => cmdStatus(dir),
   cursor: (dir, sub, opts) => {
@@ -772,7 +779,11 @@ const COMMANDS = {
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
-  recall: (dir, sub, opts) => cmdRecall(dir, sub, opts),
+  // Bare words are JOINED, never rejected: every workflow caller quotes, so
+  // rejecting extras would turn a today-degraded interactive call into a hard
+  // failure. tokenize() splits on non-alphanumerics, so the separator is
+  // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
+  recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 
@@ -782,7 +793,7 @@ try {
   const dir = opts.dir || '.planning';
   const handler = COMMANDS[cmd];
   if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(dir, sub, opts);
+  else handler(dir, sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }

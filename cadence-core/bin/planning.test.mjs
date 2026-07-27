@@ -1122,11 +1122,14 @@ test('phase-done: a decimal phase flips its own line, dot not a wildcard', () =>
 // nonexistent path (D-10) or a developer's real ~/.claude/cadence/config.json
 // would flip results locally while CI stayed green. Returns the parsed JSON
 // AND the raw stdout (the determinism test byte-compares the raw string).
+// `query` may be an array to express the UNQUOTED form (bare words as
+// separate argv elements) - a single string cannot say that at all.
 function recall(query, dir) {
   let raw;
   let code = 0;
+  const qargs = Array.isArray(query) ? query : [query];
   try {
-    raw = execFileSync('node', [PLANNING, 'recall', query, '--dir', dir], {
+    raw = execFileSync('node', [PLANNING, 'recall', ...qargs, '--dir', dir], {
       encoding: 'utf8',
       env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
     });
@@ -1224,6 +1227,24 @@ test('recall: two runs over a corpus with ## Durable decisions are byte-identica
   const b = recall('beta gamma', dir);
   assert.equal(a.raw, b.raw);
   assert.ok(a.json.results.length >= 1);
+});
+
+test('recall: bare words after the query are joined, not truncated (#47.2)', () => {
+  // The corpus separates the two words, so a first-word-only search can only
+  // reach phase 1 - the quoted run reaches both.
+  const dir = makeTree({
+    phases: {
+      1: { summaryBody: { deviations: ['decimal cursor carve-out'] } },
+      2: { summaryBody: { deviations: ['renumber phases desync report'] } },
+    },
+  });
+  const bare = recall(['decimal', 'phases'], dir);
+  const quoted = recall('decimal phases', dir);
+  assert.equal(bare.json.ok, true);
+  const sources = bare.json.results.map((x) => x.source);
+  assert.ok(sources.includes('phases/1/SUMMARY.md'), `missing phase 1: ${sources}`);
+  assert.ok(sources.includes('phases/2/SUMMARY.md'), `missing phase 2: ${sources}`);
+  assert.equal(bare.raw, quoted.raw); // byte-identical to the quoted form
 });
 
 test('recall: a completed capture keeps its phase and gains a closed marker (#47.1)', () => {
