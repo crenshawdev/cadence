@@ -1,19 +1,13 @@
-# Requirements: Cadence (v1.2.0 shipped)
+# Requirements: Cadence (v1.3.1 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**v1.3.1 — Tech debt** (opened 2026-07-24). Milestone-level asks; per-phase
-requirements are mapped at `/cad-plan` and traced under `## Traceability` as
-phases complete.
-
-| Requirement | Milestone |
-|-------------|-----------|
-| TRI-01 (collect every open bug issue and record a fix / won't-fix triage decision for each) | v1.3.1 |
-| FIX-01 (each accepted bug fixed, with a failing-capable test guarding the regression) | v1.3.1 |
-| WNF-01 (each won't-fix carries a documented rationale on the issue, and in Out of Scope when it is a scope call) | v1.3.1 |
+**None.** `v1.3.1` shipped 2026-07-27 and no milestone is open. The next
+cycle's headline asks get seeded here when it opens; see PROJECT.md `### Active`
+for the candidate scopes and the evidence behind them.
 
 ## Shipped
 
@@ -47,6 +41,23 @@ parses only the Traceability table).
 | DEC-01 (durable-decision filter in cad-context) | 3 | Complete | v1.2.0 |
 | DEC-02 (`/cad-decision-review` refute-then-adjudicate) | 3 | Complete | v1.2.0 |
 | REV-02 (DeepSeek cross-model provider adapter) | 4 | Complete | v1.2.0 |
+| TRI-01 (every open bug issue collected and triaged; all 13 accepted, no won't-fix) | — | Complete | v1.3.1 |
+| FIX-01 (each accepted bug fixed with a failing-capable regression test) | — | Complete | v1.3.1 |
+| WNF-01 (won't-fix rationale documented) | — | Complete | v1.3.1 |
+| #39 (malformed config layer named in `warnings[]`, not silently defaulted) | 1 | Complete | v1.3.1 |
+| #40 (route/config data-file parse inside the dispatch guard) | 1 | Complete | v1.3.1 |
+| #43 (corrupt model-hints.json surfaced, exclude filter no longer fails open) | 1 | Complete | v1.3.1 |
+| #44 (absent surfaces/budgets/internals fail a full tree instead of reporting green) | 1 | Complete | v1.3.1 |
+| #42 (`cursor set --total` NaN-validated before any write) | 2 | Complete | v1.3.1 |
+| #45 (seam flag inputs validated: `--attempt`, `--reqs`, scalar config) | 2 | Complete | v1.3.1 |
+| #41 (`parseRequirements` bounded and de-phantomed; no false /cad-audit FAIL) | 3 | Complete | v1.3.1 |
+| #46 (UAT parser and merge robustness: phantom items, gaps, dropped merges) | 3 | Complete | v1.3.1 |
+| #47 (recall: closed captures indexed, multi-word query joined) | 3 | Complete | v1.3.1 |
+| #48 (block-YAML lists and name-less phase headings parsed) | 3 | Complete | v1.3.1 |
+| #37 (decimal STATE cursor carved out of the renumber shift) | 4 | Complete | v1.3.1 |
+| #49 (unreadable symlink survivable; renumber collision and partial-apply reported) | 4 | Complete | v1.3.1 |
+| #50 (git-guard joins backslash line-continuations before parsing) | 4 | Complete | v1.3.1 |
+| (off-roadmap) empty `## Phases` reads as `cycle: none`, not `unparseable-roadmap` | — | Complete | v1.3.1 |
 
 ## Deferred
 
@@ -74,19 +85,12 @@ the rows of this section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| #39 | Phase 1 | Complete |
-| #40 | Phase 1 | Complete |
-| #43 | Phase 1 | Complete |
-| #44 | Phase 1 | Complete |
-| #42 | Phase 2 | Complete |
-| #45 | Phase 2 | Complete |
-| #41 | Phase 3 | Complete |
-| #46 | Phase 3 | Complete |
-| #47 | Phase 3 | Complete |
-| #48 | Phase 3 | Complete |
-| #37 | Phase 4 | Complete |
-| #49 | Phase 4 | Complete |
-| #50 | Phase 4 | Complete |
+
+Empty: v1.3.1's rows are archived under `## Shipped` and no milestone is open.
+`/cad-plan` seeds this table for the next cycle. That seeding step has now
+failed to fire at two consecutive closes (v1.2.0 and v1.3.1), each time needing
+a hand-populated table before `/cad-audit` could pass, so check it explicitly
+next cycle rather than assuming it ran.
 
 ---
-*Last updated: 2026-07-24 opened v1.3.1 (tech-debt cycle seeded: TRI-01, FIX-01, WNF-01)*
+*Last updated: 2026-07-27 shipped v1.3.1; Traceability cleared for the next cycle*
