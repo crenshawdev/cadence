@@ -32,7 +32,7 @@ function isFile(f) {
   }
 }
 
-/** @param {string} dir @param {object} opts @returns {string[]} */
+/** @param {string} dir @param {{ encoding: 'utf8', recursive?: boolean }} opts @returns {string[]} */
 function entries(dir, opts) {
   try {
     return readdirSync(dir, opts);
