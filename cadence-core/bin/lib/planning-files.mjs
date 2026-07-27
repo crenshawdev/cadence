@@ -160,6 +160,128 @@ export function setReqStatus(text, ids, status) {
 }
 
 // ---------------------------------------------------------------------------
+// REQUIREMENTS.md - the `## Active` grammar and the Traceability insert
+// path. Stated in full at cadence-core/references/req-traceability.md; this
+// section is that grammar's single implementation, the same relationship
+// plan-frontmatter.md has to the block above.
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the `## Active` section's committed-scope bullets: every
+ * `- **<ID>**: ...` line (an optional leading checkbox tolerated), ids
+ * trimmed and de-duplicated first-occurrence-wins. Returns `null` - NOT
+ * `[]` - when the heading is ABSENT, so a caller can tell "no milestone
+ * scope declared" from "declared, nothing matched": the same
+ * `=== null`-not-`!body` warning `parseContextDecisions` carries above,
+ * because `sectionBody` returns `""` for a present-but-empty heading, which
+ * is falsy but not absent. A bullet with no bold span declares no id BY
+ * DESIGN - no fallback that guesses an id out of unbolded prose; the id
+ * list this seam reports back is what makes a mis-typed bullet visible.
+ * @param {string} text @returns {string[]|null}
+ */
+export function parseActiveIds(text) {
+  const body = sectionBody(text, 'Active');
+  if (body === null) return null;
+  const ids = [];
+  const seen = new Set();
+  for (const line of body.split('\n')) {
+    const m = line.match(/^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/);
+    if (!m) continue;
+    const id = m[1].trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Insert `## Traceability` rows for `rows: [{id, phase}]` that have no row
+ * yet, at Status `Pending` - the literal string, NOT a parameter: the seam
+ * must be incapable of creating a row at any other status, which is what
+ * keeps "no writer but cad-verify ever writes a non-`Pending` Status" true
+ * by construction.
+ *
+ * The section is bounded at the next `## ` heading, exactly as
+ * `parseRequirements`/`setReqStatus` already do - a table under a later
+ * section is somebody else's data. Inside that bound, the header row's
+ * all-dashes/colons separator is located; with no separator found, the text
+ * is returned UNCHANGED alongside `error: 'no-traceability-table'` - never
+ * fabricate a table.
+ *
+ * Existing ids are read through `parseRequirements(text)`, so the reader and
+ * the writer of this one table cannot drift. An id that already has a row is
+ * pushed to `skipped`; when that row's Phase cell differs from the requested
+ * one, it is ALSO pushed to `mismatched` as `{id, row_phase}` - a renumber or
+ * a moved requirement leaving the row pointing elsewhere must not pass as a
+ * clean skip.
+ *
+ * New rows land after the LAST contiguous line starting with `|` at or below
+ * the separator (the empty-table case lands directly under the separator
+ * itself), so a trailing prose paragraph under the table survives byte
+ * identical. Each row renders as `| ${id} | Phase ${phase} | Pending |` -
+ * the `Phase N` spelling is mandatory: `shiftPhaseTokens` shifts only
+ * `Phase K` tokens and `phases/K/` paths, and `renumber remove`'s
+ * orphan-blanking regex tests `\bPhase ${at}\b`, so a bare-number phase cell
+ * would silently desync the whole table on the next phase insert or removal.
+ * The anchor line's line ending is preserved - a CRLF anchor gets a CRLF row -
+ * since this is a write path and normalize() stays off write paths (D-05).
+ * @param {string} text @param {Array<{id: string, phase: number}>} rows
+ * @returns {{text: string, inserted: string[], skipped: string[], mismatched: Array<{id: string, row_phase: number|null}>, error?: string}}
+ */
+export function insertReqRows(text, rows) {
+  const lines = text.split('\n');
+  let start = -1, end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Traceability\s*$/.test(lines[i])) { start = i; continue; }
+    if (start !== -1 && i > start && /^## /.test(lines[i])) { end = i; break; }
+  }
+  if (start === -1) {
+    return { text, inserted: [], skipped: [], mismatched: [], error: 'no-traceability-table' };
+  }
+
+  // The separator: a `|`-bounded row whose every cell is only dashes,
+  // colons and whitespace - a strict superset of every legal GFM delimiter
+  // spelling, the same blacklist parseRequirements uses to skip it.
+  let sepLine = -1;
+  for (let i = start + 1; i < end; i++) {
+    if (!lines[i].startsWith('|')) continue;
+    const cells = lines[i].split('|').slice(1, -1);
+    if (cells.length >= 2 && cells.every((c) => /^[-:\s]+$/.test(c))) { sepLine = i; break; }
+  }
+  if (sepLine === -1) {
+    return { text, inserted: [], skipped: [], mismatched: [], error: 'no-traceability-table' };
+  }
+
+  const existing = new Map(parseRequirements(text).map((r) => [r.id, r]));
+  const inserted = [], skipped = [], mismatched = [];
+  const toInsert = [];
+  for (const { id, phase } of rows) {
+    const row = existing.get(id);
+    if (row) {
+      skipped.push(id);
+      if (row.phase !== phase) mismatched.push({ id, row_phase: row.phase });
+      continue;
+    }
+    inserted.push(id);
+    toInsert.push({ id, phase });
+  }
+  if (!toInsert.length) {
+    return { text, inserted, skipped, mismatched };
+  }
+
+  let anchor = sepLine;
+  for (let i = sepLine + 1; i < end; i++) {
+    if (lines[i].startsWith('|')) anchor = i;
+    else break;
+  }
+  const eol = lines[anchor].endsWith('\r') ? '\r' : '';
+  const newLines = toInsert.map(({ id, phase }) => `| ${id} | Phase ${phase} | Pending |${eol}`);
+  lines.splice(anchor + 1, 0, ...newLines);
+  return { text: lines.join('\n'), inserted, skipped, mismatched };
+}
+
+// ---------------------------------------------------------------------------
 // Recall corpus snippets - item-level strings pulled from SUMMARY/CAPTURE/
 // CONTEXT for BM25 indexing (bin/planning.mjs cmdRecall). Absence of a
 // section is data, never a throw; template placeholders (`None...`, `<...>`)

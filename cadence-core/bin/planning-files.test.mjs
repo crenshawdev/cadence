@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalize, readFrontmatterList } from './lib/planning-files.mjs';
+import { normalize, readFrontmatterList, parseActiveIds, insertReqRows } from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
 const fence = (body) => `---\n${body}\n---\n# Plan\n`;
@@ -405,3 +405,101 @@ for (const row of NORMALIZE_ROWS) {
     assert.equal(normalize(row.input), row.expected);
   });
 }
+
+// --- parseActiveIds ----------------------------------------------------------
+
+test('parseActiveIds: a plain bullet', () => {
+  const text = '## Active\n\n- **GRM-01**: grammar work\n';
+  assert.deepEqual(parseActiveIds(text), ['GRM-01']);
+});
+
+test('parseActiveIds: a checkbox bullet', () => {
+  const text = '## Active\n\n- [ ] **SPN-01**: bookkeeping\n';
+  assert.deepEqual(parseActiveIds(text), ['SPN-01']);
+});
+
+test('parseActiveIds: an unbolded bullet is ignored, no fallback guess', () => {
+  const text = '## Active\n\n- SPN-01: bookkeeping (not bolded)\n';
+  assert.deepEqual(parseActiveIds(text), []);
+});
+
+test('parseActiveIds: a duplicate id is de-duplicated first-occurrence-wins', () => {
+  const text = '## Active\n\n- **GRM-01**: first\n- **GRM-01**: second, dup\n';
+  assert.deepEqual(parseActiveIds(text), ['GRM-01']);
+});
+
+test('parseActiveIds: an absent ## Active heading returns null, not []', () => {
+  const text = '## Shipped\n\n- **GRM-01**: shipped already\n';
+  assert.equal(parseActiveIds(text), null);
+});
+
+test('parseActiveIds: a present-but-empty ## Active heading returns []', () => {
+  const text = '## Active\n\n**None.**\n\n## Shipped\n';
+  assert.deepEqual(parseActiveIds(text), []);
+});
+
+test('parseActiveIds: a ## Active-shaped list under a later heading is not read', () => {
+  const text = '## Active\n\n- **GRM-01**: real\n\n## Shipped\n\n- **OLD-01**: not active scope\n';
+  assert.deepEqual(parseActiveIds(text), ['GRM-01']);
+});
+
+// --- insertReqRows -----------------------------------------------------------
+
+const TABLE = (rows) => '## Traceability\n\n' +
+  '| Requirement | Phase | Status |\n|-------------|-------|--------|\n' +
+  rows + '\nEmpty: prose paragraph after the table.\n';
+
+test('insertReqRows: insertion into an empty table lands directly under the separator, prose byte-identical after', () => {
+  const text = TABLE('');
+  const res = insertReqRows(text, [{ id: 'SPN-01', phase: 2 }]);
+  assert.deepEqual(res.inserted, ['SPN-01']);
+  assert.deepEqual(res.skipped, []);
+  assert.deepEqual(res.mismatched, []);
+  assert.equal(res.text, '## Traceability\n\n' +
+    '| Requirement | Phase | Status |\n|-------------|-------|--------|\n' +
+    '| SPN-01 | Phase 2 | Pending |\n\nEmpty: prose paragraph after the table.\n');
+});
+
+test('insertReqRows: insertion after existing rows appends below the last one', () => {
+  const text = TABLE('| GRM-01 | Phase 1 | Complete |\n');
+  const res = insertReqRows(text, [{ id: 'SPN-01', phase: 2 }]);
+  assert.deepEqual(res.inserted, ['SPN-01']);
+  assert.equal(res.text, '## Traceability\n\n' +
+    '| Requirement | Phase | Status |\n|-------------|-------|--------|\n' +
+    '| GRM-01 | Phase 1 | Complete |\n| SPN-01 | Phase 2 | Pending |\n\n' +
+    'Empty: prose paragraph after the table.\n');
+});
+
+test('insertReqRows: a re-insert of the same id reports skipped and returns byte-identical text', () => {
+  const text = TABLE('| SPN-01 | Phase 2 | Pending |\n');
+  const res = insertReqRows(text, [{ id: 'SPN-01', phase: 2 }]);
+  assert.deepEqual(res.inserted, []);
+  assert.deepEqual(res.skipped, ['SPN-01']);
+  assert.deepEqual(res.mismatched, []);
+  assert.equal(res.text, text);
+});
+
+test('insertReqRows: a differing phase is reported in mismatched, and the row is still skipped', () => {
+  const text = TABLE('| SPN-01 | Phase 1 | Pending |\n');
+  const res = insertReqRows(text, [{ id: 'SPN-01', phase: 2 }]);
+  assert.deepEqual(res.skipped, ['SPN-01']);
+  assert.deepEqual(res.mismatched, [{ id: 'SPN-01', row_phase: 1 }]);
+  assert.equal(res.text, text);
+});
+
+test('insertReqRows: a CRLF fixture gets a CRLF row', () => {
+  const text = TABLE('').replace(/\n/g, '\r\n');
+  const res = insertReqRows(text, [{ id: 'SPN-01', phase: 2 }]);
+  assert.deepEqual(res.inserted, ['SPN-01']);
+  assert.ok(res.text.includes('| SPN-01 | Phase 2 | Pending |\r\n'));
+});
+
+test('insertReqRows: a table with no separator returns no-traceability-table, text unchanged', () => {
+  const text = '## Traceability\n\n| Requirement | Phase | Status |\n\nno separator here\n';
+  const res = insertReqRows(text, [{ id: 'SPN-01', phase: 2 }]);
+  assert.equal(res.error, 'no-traceability-table');
+  assert.deepEqual(res.inserted, []);
+  assert.deepEqual(res.skipped, []);
+  assert.deepEqual(res.mismatched, []);
+  assert.equal(res.text, text);
+});
