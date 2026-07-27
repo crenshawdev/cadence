@@ -76,18 +76,31 @@ export function parseRoadmapPhases(text) {
 /**
  * Parse traceability rows: [{id, phase, status}]. `phase` is null when the
  * cell names no phase (a dropped requirement - audit's concern, not an
- * error here). Header and separator rows are skipped.
+ * error here).
+ *
+ * The section is BOUNDED at the next `## ` heading - the same idiom
+ * parseRoadmapPhases/sectionBody use, and exactly the extent setReqStatus
+ * already writes with, so the reader and the writer of this one table agree.
+ * A table under any later `## ` section is somebody else's data.
+ *
+ * Header and separator rows are skipped. The separator skip is deliberately
+ * a BLACKLIST - a cell made only of dashes, colons and spaces, a strict
+ * superset of every legal GFM delimiter spelling (`---`, `:---`, `:--:`,
+ * `---:`) - and NOT a positive requirement-id whitelist: a genuinely
+ * malformed id must still reach audit as a `no-phase` break rather than be
+ * silently dropped from the count.
  * @param {string} text
  */
 export function parseRequirements(text) {
   const section = text.split(/^## Traceability\s*$/m)[1];
   if (!section) return [];
+  const body = section.split(/^## /m)[0];
   const rows = [];
-  for (const line of section.split('\n')) {
+  for (const line of body.split('\n')) {
     const cells = line.match(/^\|([^|]*)\|([^|]*)\|([^|]*)\|/);
     if (!cells) continue;
     const id = cells[1].replace(/\*/g, '').trim();
-    if (!id || id === 'Requirement' || /^-+$/.test(id)) continue;
+    if (!id || id === 'Requirement' || /^[-:\s]+$/.test(id)) continue;
     const phaseM = cells[2].match(/(\d+(?:\.\d+)?)/);
     rows.push({ id, phase: phaseM ? Number(phaseM[1]) : null, status: cells[3].trim() });
   }

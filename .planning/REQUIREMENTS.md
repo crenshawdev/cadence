@@ -69,8 +69,8 @@ Explicit exclusions. The reason prevents scope creep later.
 
 Live requirement → phase → plan → verified trace for the **current** milestone,
 written solely by cad-verify. Shipped rows move to `## Shipped` above when a
-milestone closes, so `/cad-audit` starts each cycle clean. This section must
-remain the last in the file — the audit seam parses every row beneath it.
+milestone closes, so `/cad-audit` starts each cycle clean. The audit seam reads
+the rows of this section only, bounded at the next `## ` heading.
 
 _Empty until the next milestone's `/cad-plan` maps its requirements to phases;
 cad-verify then writes each row as phases complete._

@@ -759,6 +759,43 @@ test('audit: traces every break kind, orphans, and deferred', () => {
   assert.deepEqual(r.counts, { total: 7, traced: 1, broken: 5, deferred: 1 });
 });
 
+// The fixture builder hardcodes `|---|---|---|`, so both of these write
+// REQUIREMENTS.md raw after makeTree - the shapes the builder cannot express.
+const auditSpec = () => ({
+  roadmap: [{ n: 1, name: 'Done', checked: true }],
+  phases: { 1: { plan: true, planReqs: ['REQ-1'] } },
+  reqs: [['REQ-1', 1, 'Complete']],
+});
+
+test('audit: a colon-aligned separator row is not a requirement (#41.1)', () => {
+  const plain = makeTree(auditSpec());
+  const aligned = makeTree(auditSpec());
+  // GFM alignment cells (`:---`, `:--:`, `---:`) are a legal spelling of the
+  // same delimiter row - the parse must be byte-equivalent to the plain form.
+  writeFileSync(join(aligned, 'REQUIREMENTS.md'),
+    readFileSync(join(aligned, 'REQUIREMENTS.md'), 'utf8')
+      .replace('|---|---|---|', '|:---|:--:|---:|'));
+  const a = run(['audit'], plain);
+  const b = run(['audit'], aligned);
+  assert.equal(b.ok, true);
+  assert.deepEqual(b.counts, a.counts);
+  // The phantom the alignment cells used to mint: an id made of dashes/colons.
+  assert.equal(b.requirements.some((q) => /^[-:\s]+$/.test(q.id)), false);
+});
+
+test('audit: rows under a ## section AFTER Traceability are not requirements (#41.2)', () => {
+  const bare = makeTree(auditSpec());
+  const appended = makeTree(auditSpec());
+  writeFileSync(join(appended, 'REQUIREMENTS.md'),
+    `${readFileSync(join(appended, 'REQUIREMENTS.md'), 'utf8')}\n## Appendix\n\n` +
+    '| Requirement | Phase | Status |\n|---|---|---|\n| GHOST-1 | Phase 1 | Complete |\n');
+  const a = run(['audit'], bare);
+  const r = run(['audit'], appended);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements.some((q) => q.id === 'GHOST-1'), false);
+  assert.equal(r.counts.total, a.counts.total);
+});
+
 test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () => {
   const noReqs = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   assert.equal(run(['audit'], noReqs).reason, 'no-requirements');
