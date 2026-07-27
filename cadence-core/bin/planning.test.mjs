@@ -861,6 +861,63 @@ test('audit: rows under a ## section AFTER Traceability are not requirements (#4
   assert.equal(r.counts.total, a.counts.total);
 });
 
+// A one-phase tree whose PLAN.md frontmatter is written raw, plus REQUIREMENTS
+// rows for #41/#46. `frontmatter` is spliced between the --- fences.
+function blockPlanTree(frontmatter, body = '') {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+    reqs: [['#41', 1, 'Pending'], ['#46', 1, 'Pending']],
+  });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'),
+    `---\nphase: 1\nplan: 1\n${frontmatter}\n---\n\n# Plan 1\n${body}`);
+  return dir;
+}
+
+test('audit: a block-YAML requirements list reads as ids, not zero (#48.1)', () => {
+  const dir = blockPlanTree(
+    'requirements:\n  - #41\n  - #46  # with a comment\nfiles: []',
+    // A prose `requirements:` line OUTSIDE the fence must contribute nothing -
+    // an unbounded key scan would swallow the bullets below it as ids.
+    '\nrequirements: these prose ids:\n\n- NOT-AN-ID\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  // `not-verified` is the expected state for a Pending row on an open phase;
+  // `no-plan` is what the block form used to produce by reading as zero.
+  assert.notEqual(byId['#41'].break, 'no-plan');
+  assert.notEqual(byId['#46'].break, 'no-plan');
+  assert.equal(r.orphans, undefined); // the body list contributed no ids
+});
+
+test('audit: the inline requirements form with a trailing comment still reads', () => {
+  const dir = blockPlanTree('requirements: ["#41", "#46"]   # phase requirement IDs\nfiles: []');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['#41'].plan, 'phases/1/PLAN.md');
+  assert.equal(byId['#46'].plan, 'phases/1/PLAN.md');
+  assert.equal(r.orphans, undefined);
+});
+
+test('plan-overlap: block-form files: lists intersect like inline ones (#48.1)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - src/a.rs\n  - src/shared.rs\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - src/shared.rs\n  - src/c.rs\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
+  assert.equal(r.undeclared, undefined); // both plans declared files
+});
+
 test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () => {
   const noReqs = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   assert.equal(run(['audit'], noReqs).reason, 'no-requirements');

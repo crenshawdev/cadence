@@ -380,18 +380,78 @@ export function uatComplete(uat) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Read one frontmatter key as a string list. ONE reader for both
+ * `requirements:` and `files:` (D-07) - two copies of the same pattern would
+ * drift, and the audit would then accept a plan shape the parallel-safety
+ * overlap check rejects, in the very file that declares one grammar per
+ * format.
+ *
+ * The lookup is BOUNDED to the leading `---`-fenced block (D-06). The other
+ * parsers here scan the whole body, so this reads as inconsistent without
+ * the reason: an unbounded key scan plus a permissive block reader lets a
+ * prose `requirements:` line in the plan body swallow the following bullets
+ * as ids, surfacing as fabricated `orphans.plan_ids` in audit - trading an
+ * under-read for a worse over-read.
+ *
+ * The grammar is deliberately minimal - no nesting, no flow-in-block, no
+ * comment-only lines. Three cases for the remainder after `key:`:
+ *   `[a, b]`  inline list, split on commas. Never comment-stripped: the
+ *             template writes `requirements: []     # phase requirement IDs`.
+ *   (empty)   block list - the contiguous following `- item` lines, stopping
+ *             at the first line that is not one.
+ *   scalar    anything else non-empty: a one-element list. Explicitly NOT a
+ *             fall-through to the block reader, which would discard the value
+ *             AND swallow whatever `- ` lines follow it.
+ * A trailing comment is stripped only on a WHITESPACE-preceded `#`, never a
+ * bare one - this repo's own requirement ids are `#41`-shaped.
+ * @param {string} text @param {string} key @returns {string[]}
+ */
+function readFrontmatterList(text, key) {
+  const fm = text.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm) return [];
+  const lines = fm[1].split('\n');
+  const head = new RegExp(`^${key}:\\s*(.*)$`);
+  const at = lines.findIndex((l) => head.test(l));
+  if (at === -1) return [];
+  const clean = (s) => s.replace(/\s+#.*$/, '').replace(/["']/g, '').trim();
+  const remainder = (lines[at].match(head) || ['', ''])[1].trim();
+
+  if (remainder.startsWith('[')) {
+    const inline = remainder.match(/\[(.*)\]/);
+    // The inline payload is never comment-stripped - the template itself
+    // writes `requirements: []     # phase requirement IDs...`.
+    return (inline ? inline[1].split(',') : [])
+      .map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
+  }
+
+  /** @type {string[]} */
+  let raw;
+  const bare = remainder.replace(/\s+#.*$/, '').trim();
+  if (bare === '') {
+    raw = [];
+    for (const line of lines.slice(at + 1)) {
+      const item = line.match(/^\s*-\s+(.+?)\s*$/);
+      if (!item) break; // contiguous only; the first non-item line ends it
+      raw.push(item[1]);
+    }
+  } else {
+    raw = [bare]; // a scalar value - deliberately NOT a block fall-through
+  }
+  return raw.map(clean).filter(Boolean);
+}
+
+/**
  * Extract the requirement IDs a plan commits to deliver.
  * @param {string} text
  */
 export function parsePlanRequirements(text) {
-  const m = text.match(/^requirements:\s*\[(.*)\]/m);
-  if (!m) return [];
-  return m[1].split(',').map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
+  return readFrontmatterList(text, 'requirements');
 }
 
 /**
  * Extract the file paths a plan declares it touches: the frontmatter
- * `files: [...]` list unioned with every task's `- **Files:** a, b` line
+ * `files:` list (inline or block, via readFrontmatterList) unioned with
+ * every task's `- **Files:** a, b` line
  * (either source alone can go stale; the union is what the parallel-safety
  * overlap check trusts). Trailing parentheticals ("src/a.rs (new)") and
  * backticks are stripped; template placeholders ({...}) are ignored.
@@ -403,8 +463,7 @@ export function parsePlanFiles(text) {
     const f = raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
     if (f && !f.startsWith('{')) files.add(f);
   };
-  const fm = text.match(/^files:\s*\[(.*)\]/m);
-  if (fm) for (const f of fm[1].split(',')) add(f.replace(/["']/g, ''));
+  for (const f of readFrontmatterList(text, 'files')) add(f);
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
     for (const f of m[1].split(',')) add(f);
   }
