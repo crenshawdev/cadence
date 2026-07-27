@@ -284,7 +284,19 @@ function run(root) {
   // repo-relative paths; globs (`*-decision.mjs`) and non-path spans are skipped.
   const internals = join(root, 'INTERNALS.md');
   if (existsSync(internals)) {
-    for (const m of readFileSync(internals, 'utf8').matchAll(/`([^`]+)`/g)) {
+    // Guarded for the same reason the walkers are (#49.1): a read that throws
+    // AFTER the walk unwinds run() entirely, and the dispatch catch flattens
+    // it to {ok:false,reason:"internal"} with `problems` absent - discarding
+    // every problem found so far. Guarding only the walk closes half the
+    // class; `chmod 000 INTERNALS.md` still collapsed the whole run.
+    // No problem is pushed here: mdFiles yields INTERNALS.md too (:144), so
+    // the read-guard above has already reported it and a second entry would
+    // double-count one file - the same call the agents lint makes.
+    let internalsText = null;
+    try {
+      internalsText = readFileSync(internals, 'utf8');
+    } catch { /* already reported by the mdFiles read-guard */ }
+    for (const m of (internalsText || '').matchAll(/`([^`]+)`/g)) {
       const tok = m[1];
       if (!/^[A-Za-z0-9_./-]+$/.test(tok) || !tok.includes('/') || tok.includes('*')) continue;
       if (!existsSync(join(root, tok))) {
@@ -311,8 +323,16 @@ function run(root) {
   // --root fixture can supply its own; an absent manifest skips the check.
   const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
   if (existsSync(budgetPath)) {
-    const budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
-    for (const { surface, bytes } of weighAll(root)) {
+    // Same guard as INTERNALS.md above: unreadable OR malformed JSON here
+    // used to sink the entire run rather than report one problem.
+    let budgets = null;
+    try {
+      budgets = JSON.parse(readFileSync(budgetPath, 'utf8')).budgets || {};
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: 'cadence-core/bin/weight-budgets.json',
+        detail: e.code || e.message });
+    }
+    for (const { surface, bytes } of (budgets ? weighAll(root) : [])) {
       if (!(surface in budgets)) {
         problems.push({ kind: 'unbudgeted-surface', file: surface, detail: 'no budget entry' });
         continue;

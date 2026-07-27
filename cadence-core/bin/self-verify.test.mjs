@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -233,6 +233,38 @@ test('#49.1: a symlink cycle under agents/ is reported loudly too', () => {
   assert.equal(r.reason, undefined);
   assert.ok(r.problems.some((p) =>
     p.kind === 'unreadable-surface' && p.file === 'agents/a.md'));
+});
+
+test('#49.1: a malformed weight-budgets.json reports one problem instead of collapsing the run', () => {
+  // The walkers were guarded, but the reads that run AFTER the walk were not.
+  // An unreadable or malformed weight-budgets.json / INTERNALS.md unwound
+  // run() and the dispatch catch flattened it to {ok:false,reason:'internal'}
+  // with `problems` absent - the same #49.1 collapse, one check later.
+  const root = fullFixture();
+  writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'), '{ not json');
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.problems.filter((p) => p.kind === 'unreadable-surface'
+    && p.file === 'cadence-core/bin/weight-budgets.json').length, 1);
+});
+
+test('#49.1: an unreadable INTERNALS.md is reported exactly once, not twice', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0
+    ? 'root bypasses mode bits' : false,
+}, () => {
+  const root = fullFixture();
+  const internals = join(root, 'INTERNALS.md');
+  chmodSync(internals, 0o000);
+  try {
+    const r = run(['--root', root]);
+    assert.equal(r.reason, undefined);
+    // mdFiles yields INTERNALS.md too, so the 3b read-guard must NOT push a
+    // second entry - one broken file, one problem.
+    assert.equal(r.problems.filter((p) => p.kind === 'unreadable-surface'
+      && p.file === 'INTERNALS.md').length, 1);
+  } finally {
+    chmodSync(internals, 0o644);
+  }
 });
 
 test('INTERNALS.md: a backticked repo path that does not exist is flagged; a real one and a glob are not', () => {
