@@ -1154,6 +1154,28 @@ test('renumber: a dangling symlink at the destination still collides (#49.2)', (
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
+test('renumber remove: a partial apply reports which ops completed (#49.2)', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  const dir = renumberTree();
+  chmodSync(dir, 0o555); // .planning root read-only; phases/ stays writable
+  let r;
+  try {
+    r = run(['renumber', 'remove', '--n', '1'], dir);
+  } finally {
+    chmodSync(dir, 0o755);
+  }
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'partial-apply');
+  assert.deepEqual(r.completed, [
+    { rm: 'phases/1' },
+    { git_mv: ['phases/2', 'phases/1'] },
+    { git_mv: ['phases/3', 'phases/2'] },
+  ]);
+  assert.deepEqual(r.failed, { edit: 'ROADMAP.md' });
+  assert.match(r.detail, /ROADMAP/);
+});
+
 // --- plan-overlap: the parallel-safety gate ------------------------------------
 
 /** A two-plan phase whose PLAN files declare the given file lists. */

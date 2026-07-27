@@ -771,16 +771,43 @@ function cmdRenumber(dir, sub, opts) {
   };
   if ('dry-run' in opts) return ok({ dry_run: true, ...result });
 
-  // Apply: remove first (rm), then moves in the computed collision-safe order,
-  // then the file edits.
+  // Apply: an ordered step list, run under one guard, in the same order as
+  // `ops` above (remove first, then moves, then the file edits). This is a
+  // partial-state REPORT, not a rollback - `remove` destroys phases/<at>
+  // before the first move runs, so step one can never be undone. Advertising
+  // a rollback the code lacks would be worse than a generic failure, because
+  // the caller would stop checking the tree by hand (D-03).
+  /** @type {Array<[Record<string, any>, () => void]>} */
+  const steps = [];
   if (sub === 'remove' && existingDir(at)) {
-    try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
-    catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+    steps.push([{ rm: `phases/${at}` }, () => {
+      try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
+      catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+    }]);
   }
-  for (const [f, t] of dirMoves) gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)));
-  atomicWrite(roadmapFile, newRoadmap);
-  if (newReqText !== null) atomicWrite(reqFile, newReqText);
-  if (newCursor) atomicWrite(stateFile, renderCursor(newCursor));
+  for (const [f, t] of dirMoves) {
+    steps.push([{ git_mv: [`phases/${f}`, `phases/${t}`] },
+      () => gitMv(join(dir, 'phases', String(f)), join(dir, 'phases', String(t)))]);
+  }
+  steps.push([{ edit: 'ROADMAP.md' }, () => atomicWrite(roadmapFile, newRoadmap)]);
+  if (newReqText !== null) steps.push([{ edit: 'REQUIREMENTS.md' }, () => atomicWrite(reqFile, newReqText)]);
+  if (newCursor) steps.push([{ edit: 'STATE.md' }, () => atomicWrite(stateFile, renderCursor(newCursor))]);
+
+  const completed = [];
+  for (const [op, runStep] of steps) {
+    try { runStep(); }
+    catch (e) {
+      // Bypasses the dispatch-level catch (which flattens to `internal`) and
+      // fail()'s reason/detail/hint-only shape - a completed-ops list needs
+      // its own emit (D-11).
+      return emit({
+        ok: false, reason: 'partial-apply', completed, failed: op,
+        detail: e && e.message ? e.message : String(e),
+        hint: 'the tree is partly renumbered - reconcile the completed ops by hand, then re-run',
+      });
+    }
+    completed.push(op);
+  }
 
   // Sanity recount: every ROADMAP phase maps to at most one dir, none stray.
   const after = parseRoadmapPhases(read(roadmapFile) || '');
