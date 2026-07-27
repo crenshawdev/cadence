@@ -376,13 +376,24 @@ function cmdUat(dir, sub, opts) {
     if (f === null) return;
     const uat = loadUat(dir, n);
     if (!uat) return;
-    const find = (ref) => uat.items.find((i) =>
-      (ref.k !== undefined && Number(i.k) === Number(ref.k)) || i.name === ref.name);
     // Guard the shape the CONSUMER accepts - a name that renders a heading -
     // not the reported input. Without it an entry carrying neither a matching
     // `k` nor a name was appended as `### N. undefined`, a phantom at status
     // fail/pending that blocks phase completion permanently.
     const usableName = (e) => (typeof e.name === 'string' && e.name.trim() ? e.name.trim() : null);
+    // Match through the SAME normalizer the append path uses. Matching raw
+    // (`i.name === ref.name`) while appending trimmed meant a ref named
+    // `Login works ` missed the stored `Login works` and appended a
+    // byte-identical duplicate that no later merge could reach by name - so
+    // its fail/pending status blocked uatComplete permanently. That is the
+    // phantom usableName exists to prevent, reached from the read side.
+    // A null name matches nothing: an unnamed ref stays rejected rather than
+    // colliding with the first item.
+    const find = (ref) => uat.items.find((i) => {
+      if (ref.k !== undefined && Number(i.k) === Number(ref.k)) return true;
+      const name = usableName(i);
+      return name !== null && name === usableName(ref);
+    });
     let auto = 0, gaps = 0, added = 0, skipped = 0, rejected = 0;
     for (const p of f.passes || []) {
       const it = find(p);

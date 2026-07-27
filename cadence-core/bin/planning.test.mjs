@@ -706,6 +706,25 @@ test('uat merge: an entry with no usable name is rejected, never written (#46.2)
   assert.doesNotMatch(text, /undefined/); // `### N. undefined` can never be written
 });
 
+test('uat merge: an untrimmed name fills the pending item, never appends a duplicate', () => {
+  const dir = uatTree();
+  // A trailing space is routine in verifier output. The append path trims, so
+  // matching untrimmed appended `### 3. Login works` alongside the existing
+  // `### 1. Login works` - unreachable by name on every later merge, so its
+  // fail status blocked uatComplete permanently.
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [{ name: 'Login works ', reason: 'no redirect' }],
+    human_checks: [{ name: '  Logout works', expected: 'session cleared' }],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.gaps, 1);
+  assert.equal(r.added, 0);    // both matched an existing item; nothing appended
+  assert.equal(r.rejected, 0);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.equal(text.match(/^### \d+\. Login works$/gm)?.length, 1);
+  assert.equal(text.match(/^### \d+\. Logout works$/gm)?.length, 1);
+});
+
 test('uat merge: a finding conflicting with a recorded result is skipped and counted (#46.3)', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir); // user result
@@ -767,6 +786,31 @@ test('uat: a hand-added ### section mints no item and survives rewrites (#46.1)'
 
   // Round-trip idempotence: a second cycle neither drops nor duplicates it.
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(readFileSync(file, 'utf8').split(notes).length - 1, 1);
+});
+
+test('uat: a `## ` inside a fenced block does not truncate a preserved section', () => {
+  const dir = uatTree();
+  const file = join(dir, 'phases', '1', 'UAT.md');
+  // A `## ` line inside a code block used to bound the section, so the closing
+  // fence and the trailing prose were destroyed. The odd fence count left the
+  // regenerated `## Summary` rendering as code.
+  const notes = ['### Repro notes', '', 'Steps to reproduce:', '', '```sh',
+    'make build', '## build output', 'make test', '```', '',
+    'Still fails on the third run.'].join('\n');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('## Summary', `${notes}\n\n## Summary`));
+
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  const text = readFileSync(file, 'utf8');
+  assert.equal(text.split(notes).length - 1, 1);            // verbatim, once
+  assert.equal((text.match(/^```/gm) || []).length % 2, 0);  // fences still balanced
+  assert.match(text, /^## Summary$/m);                       // and not inside one
+
+  // The fenced `## build output` is content, so it must never bound the item
+  // block either: fields after it still parse.
+  assert.match(text, /^total: 2$/m);
+  // Round-trip idempotence, same as the plain-section case.
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
   assert.equal(readFileSync(file, 'utf8').split(notes).length - 1, 1);
 });
 
