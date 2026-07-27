@@ -706,6 +706,25 @@ test('uat merge: an entry with no usable name is rejected, never written (#46.2)
   assert.doesNotMatch(text, /undefined/); // `### N. undefined` can never be written
 });
 
+test('uat merge: an untrimmed name fills the pending item, never appends a duplicate', () => {
+  const dir = uatTree();
+  // A trailing space is routine in verifier output. The append path trims, so
+  // matching untrimmed appended `### 3. Login works` alongside the existing
+  // `### 1. Login works` - unreachable by name on every later merge, so its
+  // fail status blocked uatComplete permanently.
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [{ name: 'Login works ', reason: 'no redirect' }],
+    human_checks: [{ name: '  Logout works', expected: 'session cleared' }],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.gaps, 1);
+  assert.equal(r.added, 0);    // both matched an existing item; nothing appended
+  assert.equal(r.rejected, 0);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.equal(text.match(/^### \d+\. Login works$/gm)?.length, 1);
+  assert.equal(text.match(/^### \d+\. Logout works$/gm)?.length, 1);
+});
+
 test('uat merge: a finding conflicting with a recorded result is skipped and counted (#46.3)', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir); // user result
