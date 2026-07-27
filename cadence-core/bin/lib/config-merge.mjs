@@ -10,8 +10,20 @@ import { join } from 'node:path';
 
 // User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps
 // tests hermetic); otherwise ~/.claude/cadence/config.json.
-export const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG ||
-  join(homedir(), '.claude', 'cadence', 'config.json');
+//
+// homedir() THROWS where the uid has no passwd entry and HOME is unset - the
+// ordinary `docker run -u 12345` / OpenShift arbitrary-UID case. This runs at
+// module load, so an unguarded throw kills every importer before it can emit
+// its structured {ok:false} line, with a raw stack and nothing on stdout. An
+// unresolvable home just means there is no global layer to read: '' fails the
+// readLayer open as ENOENT, which is already the silent legitimately-absent
+// path, so the merge degrades to repo + defaults exactly as if the file were
+// missing.
+function defaultGlobalConfig() {
+  try { return join(homedir(), '.claude', 'cadence', 'config.json'); }
+  catch { return ''; }
+}
+export const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG || defaultGlobalConfig();
 
 /**
  * Parse a JSON file, or null if missing/unreadable/invalid - a bad layer is

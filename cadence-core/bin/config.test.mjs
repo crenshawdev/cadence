@@ -7,6 +7,7 @@ import { readFileSync, existsSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 
 const CONFIG = join(dirname(fileURLToPath(import.meta.url)), 'config.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-config-'));
@@ -361,6 +362,19 @@ test('get: an absent layer stays silent and an unparseable layer warns exactly o
   assert.equal(rZero.warnings.length, 1);
   assert.match(rZero.warnings[0], /failed to parse/);
   assert.doesNotMatch(rZero.warnings[0], /not an object/);
+});
+
+test('readLayer(""): an unresolvable layer path is a SILENT absence', () => {
+  // Load-bearing for config-merge's homedir() fallback: where os.homedir()
+  // throws (uid with no passwd entry and HOME unset - `docker run -u 12345`),
+  // GLOBAL_CONFIG becomes '' rather than crashing every importer at module
+  // load. That degradation is only correct if '' behaves as "no global layer"
+  // and not as a broken one, i.e. no warning and present:false.
+  const r = readLayer('');
+  assert.equal(r.value, null);
+  assert.equal(r.warning, null);
+  assert.equal(r.present, false);
+  assert.equal(typeof GLOBAL_CONFIG, 'string');   // never undefined, never throws
 });
 
 test('get: one file resolving as both layers warns once, not twice', () => {
