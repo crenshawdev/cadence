@@ -4,6 +4,31 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-07-28
+
+Two internally-inconsistent contracts, both closed by subtraction.
+
+### Fixed
+
+- `cad-executor`'s `<process>` ended by requiring a success-criteria check
+  whose output the same contract gave nowhere to put: the `<report>` block has
+  no field for it and `execute.md` never mentions it. The next orchestrator
+  step, `goal_check`, already redoes that assessment with the full phase diff
+  in view and an articulated purpose. The instruction is deleted rather than
+  wired, because the consumer that would have justified it already exists one
+  step later. The per-task predict-then-verify at process step 2 is untouched:
+  that one has a consumer, a contract, and it is what makes a SUMMARY's claims
+  trustworthy. (#65)
+- `cadence-core/references/conventions.md` opened with "Shared rules every
+  skill and workflow follows. Referenced, not repeated." It is `@`-included by
+  exactly one skill and named in prose by 18 other files, so its rules reached
+  a model only when something happened to read the file. The header now states
+  the reach the file actually has, an on-demand reference cited by path where a
+  rule is relevant or `@`-included where a workflow needs the whole set, and
+  says plainly that nothing in it reaches an agent that has not read it. The
+  alternative, including it everywhere, was rejected: it would spend resident
+  context in every session on rules most invocations never need. (#67)
+
 ## [1.4.0] - 2026-07-28
 
 Stated grammars. Cadence parsed four formats it owns with accreted heuristic
