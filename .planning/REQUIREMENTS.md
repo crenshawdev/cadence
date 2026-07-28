@@ -16,7 +16,8 @@ and AUD-01 (phases 3, 4 and 5) have no row yet.
   plan covers, and a worktree executor asserts its own plan file before
   task 1.
 - **TOK-01**: One quote-state tokenizer closes the six verified git-guard
-  rail-3 push holes.
+  rail-3 push holes and the `eval`/`zsh`/`dash` wrapper shapes in the same
+  family.
 - **RDM-01**: The roadmap phase list has a stated grammar, so an empty
   `## Phases` is a derived closed-milestone state rather than
   `unparseable-roadmap`.
