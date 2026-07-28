@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -304,6 +304,44 @@ test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no s
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-table');
   assert.match(r.detail, /bad-table\.json/);
+});
+
+// --- reported effort == the frontmatter that actually runs (#64) ------------
+
+// route.mjs REPORTS effort; it cannot SET it. Effort is definition-time
+// frontmatter on the spawn-agent seam (seams.md), so the only thing that makes
+// the reported value true is the agent file agreeing with the table. Prose in
+// references/review-triggers.md now tells the user which effort a
+// claude-subagent review actually runs at (`cad-reviewer` = high), so that
+// claim gets a test rather than a promise.
+const AGENTS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agents');
+const SHIPPED_TABLE = JSON.parse(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'route-table.json'), 'utf8'),
+);
+
+/** Frontmatter `effort:` of a shipped agent file. */
+function frontmatterEffort(agentName) {
+  const src = readFileSync(join(AGENTS, `${agentName}.md`), 'utf8');
+  const fm = src.split(/^---$/m)[1] ?? '';
+  return (fm.match(/^effort:\s*(\S+)\s*$/m) || [])[1];
+}
+
+test('every role base_effort matches the agent file frontmatter that runs it', () => {
+  for (const [role, spec] of Object.entries(SHIPPED_TABLE.roles)) {
+    assert.equal(frontmatterEffort(role), spec.base_effort, `${role} base_effort`);
+  }
+  // cad-reviewer is the one the review subsystem documents by value: the
+  // per-trigger `effort` config key cannot reach it, so the docs name what it
+  // does run at. Pin that literal.
+  assert.equal(frontmatterEffort('cad-reviewer'), 'high');
+});
+
+test('an escalate_effort_variant file really carries the high effort route.mjs reports', () => {
+  const variants = Object.values(SHIPPED_TABLE.roles)
+    .map((r) => r.escalate_effort_variant).filter(Boolean);
+  assert.ok(variants.length > 0);
+  // route.mjs hardcodes effort='high' on the variant swap; the file must agree.
+  for (const v of variants) assert.equal(frontmatterEffort(v), 'high', `${v} frontmatter`);
 });
 
 test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
