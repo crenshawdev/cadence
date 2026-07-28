@@ -760,6 +760,29 @@ const ACTIVE_ROWS = [
     text: activeDoc('- **AUD-01:** the colon belongs outside the span'),
     ids: ['AUD-01:'], codes: ['active-non-id-bullet'],
   },
+  // A second id-shaped bold span on one bullet. The grammar reads only the
+  // first, so without this the rest vanish with `issues: []` - the silent
+  // under-read this file exists to prevent. Reported, never counted.
+  {
+    name: 'active-multi-id-bullet: a second id-shaped bold span is reported, not dropped silently',
+    text: activeDoc('- **AUTH-01** and **AUTH-02**: both sides of the login flow'),
+    ids: ['AUTH-01'], codes: ['active-multi-id-bullet'],
+  },
+  {
+    name: 'active-multi-id-bullet: three ids report ONCE for the line, not once per extra span',
+    text: activeDoc('- **AUTH-01**, **AUTH-02** and **AUTH-03**: the whole flow'),
+    ids: ['AUTH-01'], codes: ['active-multi-id-bullet'],
+  },
+  {
+    name: 'active-multi-id-bullet: ordinary emphasis is NOT an extra id - nothing is dropped, nothing reported',
+    text: activeDoc('- **GRM-01**: the **core** path stays byte-exact'),
+    ids: ['GRM-01'], codes: [],
+  },
+  {
+    name: 'active-multi-id-bullet: the issue-form `#41` counts as an extra id too',
+    text: activeDoc('- **GRM-01** and **#41**: the frontmatter reader'),
+    ids: ['GRM-01'], codes: ['active-multi-id-bullet'],
+  },
   {
     name: 'active-non-id-bullet: a bold span carrying the id plus prose',
     text: activeDoc('- **AUD-01 (the audit gate)**: text'),

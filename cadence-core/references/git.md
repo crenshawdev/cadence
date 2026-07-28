@@ -284,6 +284,9 @@ tokenizer actually has, so none of them is a silent unknown:
 | Aliases and shell functions (`gp origin main`) | Only the words present are read, so a call to an alias or function defined elsewhere is SILENT. A function DEFINITION whose body holds `git push` asks, because the body's words are present. |
 | Variable indirection (`CMD="git push"; $CMD`, `eval $CMD`) | Not expanded, and no `git` token survives outside the assignment word, so this is SILENT - the same limit as `${...}`. |
 | Remote execution (`ssh host "git push origin main"`) | `ssh` is not in the wrapper set, so the quoted command stays word content and this is SILENT. It also pushes from another machine, which is outside what a local rail can see. |
+| Redirect-both (`git &>/dev/null push origin main`, `git &>>out push`) | The `&` separator is read before `&>` can be recognized as a redirection operator, so the command splits at it and `git` is left with no subcommand: SILENT. The trailing-`&` form is unaffected (`git 2>&1 push origin main` reads `push`). This is a real push, and it predates the tokenizer - the strip-and-split arms were silent on it too. |
+| A brace list in the SUBCOMMAND slot (`git {push,fetch} origin main`) | Not expanded, so the subcommand reads as the literal word `{push,fetch}`, which is not a known subcommand: SILENT. Bash really runs `git push fetch origin main`. This is the case the brace-expansion row above does NOT cover - braces in later ARGUMENTS (`git push origin {main,dev}`) are genuinely harmless, braces in the subcommand slot are not. |
+| Negation or a pattern glued to a subshell (`!(git push)`) | A `(` opens a descended region only when it STARTS a word, so the leading `!` glues it into the word `!(git`, which is not a git word: SILENT. Bash runs `git push`. A bare `(git push)` and `( git push )` both read `push` normally. |
 
 ## 4. Risk surfaces
 

@@ -289,6 +289,15 @@ function idTokensIn(s) {
   return [...s.matchAll(REQ_ID_TOKEN_G)].map((m) => m[0].slice(m[0].search(/[A-Z#]/)));
 }
 
+// Every bold span on a line, in order. `ACTIVE_BULLET` reads only the FIRST,
+// so this is what makes a second one visible rather than silent.
+const BOLD_SPAN_G = /\*\*([^*]+)\*\*/g;
+
+/** Every bold span in `s` AFTER the first, trimmed. */
+function trailingBoldSpans(s) {
+  return [...s.matchAll(BOLD_SPAN_G)].slice(1).map((m) => m[1].trim());
+}
+
 /**
  * Classify the `## Active` section: the ids it declares, plus the lines that
  * LOOK like they declare one but fall outside `ACTIVE_BULLET`. This is a
@@ -378,6 +387,18 @@ export function classifyActiveSection(text) {
       // In grammar, but the span is not an id: reported, never counted.
       if (id && !isRequirementId(id)) {
         found.push({ issue: { line: i + 1, code: 'active-non-id-bullet', text: issueText(line) }, prose: null });
+      }
+      // A SECOND id-shaped bold span on the same bullet. `ACTIVE_BULLET` reads
+      // only the first, so the rest would vanish with `issues: []` - the silent
+      // under-read this grammar exists to prevent. Reported, never counted:
+      // widening the grammar to take every bold span is the fix that looks
+      // obvious and mints an id out of ordinary emphasis
+      // (`- **GRM-01**: the **core** path` would declare `core`), which is the
+      // same silent failure pointed the other way. Only id-SHAPED extra spans
+      // are reported, so emphasis costs nothing.
+      const extra = trailingBoldSpans(line).filter(isRequirementId);
+      if (extra.length > 0) {
+        found.push({ issue: { line: i + 1, code: 'active-multi-id-bullet', text: issueText(line) }, prose: null });
       }
       continue;
     }
