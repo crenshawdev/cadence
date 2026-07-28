@@ -6,6 +6,38 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Self-verify asserts every preloaded agent contract resolves.** A `skills:`
+  entry naming a skill that does not exist is skipped by the host *silently*,
+  with only a debug-log warning, which leaves an agent running with no contract
+  at all - a failure that reads as an agent ignoring its instructions rather
+  than as a typo. The new `agent-skills` check fails loudly instead, and also
+  flags a resolved skill that sets `disable-model-invocation: true`, which
+  cannot be preloaded and produces the same end state by a different route.
+  The tools lint now scans preloaded contracts as agent prose, so moving the
+  contracts out of the agent bodies did not silently empty its input.
+
+### Changed
+
+- **Each agent's contract is stored once, as a skill preloaded through the
+  `skills:` frontmatter field.** The seven files in `agents/` are now
+  frontmatter plus a pointer, between 464 and 592 bytes each, down from as
+  much as 8786. Six contract skills hold the prose, one per role rather than
+  per file: `cad-plan-checker` and `cad-plan-checker-high` share one, which is
+  what that pair always claimed to be. They carry `user-invocable: false`, so
+  they never appear in the slash-command menu. Behaviour is unchanged; five of
+  the six moved byte-identical. The exception is the plan-checker pair, whose
+  high variant carried real behaviour of its own - shipping behaviour in a file
+  whose only job is to name a rung is the failure this design exists to
+  prevent, so it moved into the shared contract as a `<rung>` section and both
+  files now state only which rung they are.
+- **`cad-plan-checker-high` no longer reads another agent file at runtime.**
+  The `@`-include workaround is retired. The file itself stays, because it
+  exists to carry `effort: high` - frozen in frontmatter, and named by string
+  in `route-table.json`'s `escalate_effort_variant` - and retiring it needs a
+  rung ladder that does not exist yet.
+
 ### Fixed
 
 - **The worktree fork point is selectable, and v1.4.0 said it was not.**
