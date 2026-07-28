@@ -4,6 +4,31 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The worktree fork point is selectable, and v1.4.0 said it was not.**
+  `seams.md` called it host-owned and NOT caller-controllable, and five other
+  surfaces restated that binding on the strength of it. The host's
+  `worktree.baseRef` setting decides it: `fresh` (the default) forks from the
+  remote default branch, `head` forks from the local HEAD and carries the
+  integration branch's unpushed work - which is the documented use case for
+  isolating subagents on in-progress work. The `fresh` default is the whole
+  cause of the phase-4 failure the false claim was written to explain. Every
+  surface now states the setting, the version it holds for (Claude Code
+  >= 2.1.208), and the nuance that inside a worktree `head` is that
+  worktree's own HEAD.
+- **/cad-execute no longer parallelizes into worktrees that lack its plans.**
+  `choose_path` runs a new read-only seam, `cadence-core/bin/worktree-base.mjs`,
+  which resolves the effective `worktree.baseRef` through the Claude Code
+  settings cascade; under `fresh`, unset, or an unreadable answer the phase
+  runs sequentially and names the fix. `/cad-config` offers to set `"head"` in
+  the project's or the user's settings file - offers, and never writes a
+  user's settings without being told to. The executor's `<worktree_mode>`
+  assertion stays either way: a setting the user can change back, and a
+  session CLI override no script can see, are not guarantees.
+
 ## [1.4.1] - 2026-07-28
 
 Two internally-inconsistent contracts, both closed by subtraction.
