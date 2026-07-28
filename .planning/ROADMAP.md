@@ -59,7 +59,7 @@ close failed for the same reason one layer up. Per-task plans come at
   that got the v1.3.1 attempt reverted are the design brief; each must be
   closed by construction, not by another heuristic. Landing it late means this
   cycle's own close exercises it.
-- [ ] **Phase 5: An audit armed in the partially-planned state** - Goal:
+- [x] **Phase 5: An audit armed in the partially-planned state** - Goal:
   `audit` counts an `## Active` requirement that no phase has picked up, so the
   traceability gate holds in the state a milestone spends most of its life in,
   not only against a zero-row table. `unseeded` fires only when

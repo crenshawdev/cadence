@@ -106,7 +106,7 @@ section only, bounded at the next `## ` heading.
 | SPN-01 | Phase 2 | Complete |
 | TOK-01 | Phase 3 | Complete |
 | RDM-01 | Phase 4 | Complete |
-| AUD-01 | Phase 5 | Pending |
+| AUD-01 | Phase 5 | Complete |
 
 Seeded by `/cad-plan`'s `seed-reqs` call, one row per phase's `## Active` id
 as its plan lands - not hand-populated. TOK-01, RDM-01 and AUD-01 (phases 3,
