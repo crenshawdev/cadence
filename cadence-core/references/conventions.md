@@ -1,6 +1,9 @@
 # Cadence conventions
 
-Shared rules every skill and workflow follows. Referenced, not repeated.
+The reference a skill or workflow reads when one of these rules applies to
+what it is doing. Loaded on demand, not preloaded: cite it by path where a
+rule is relevant, or `@`-include it where a workflow needs the whole set.
+Nothing here reaches an agent that has not read it.
 
 ## Paths
 
