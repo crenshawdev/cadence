@@ -250,6 +250,103 @@ export function setReqStatus(text, ids, status) {
 // plan-frontmatter.md has to the block above.
 // ---------------------------------------------------------------------------
 
+// THE `## Active` bullet grammar - `- **<ID>**: ...`, an optional leading
+// checkbox tolerated. Byte-identical to the regex `parseActiveIds` carried
+// before `classifyActiveSection` existed: the classifier below REPORTS lines
+// outside this grammar, it never widens it (phase-5 D-05).
+const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
+
+// A requirement id as this project spells one, in both shipped forms: the
+// `PREFIX-N` form (`TRI-01`, `GRM-01`) and the v1.3.1 issue form (`#41`). Used
+// ONLY to decide whether an out-of-grammar line is worth reporting - a line
+// with no id token declares nothing and is ordinary section prose.
+const REQ_ID_TOKEN = /\b[A-Z][A-Z0-9]{1,7}-\d+\b|(?:^|[^\w#])#\d+\b/;
+
+/**
+ * Classify the `## Active` section: the ids it declares, plus the lines that
+ * LOOK like they declare one but fall outside `ACTIVE_BULLET`. This is a
+ * CLASSIFIER, not a wider parser - `ACTIVE_BULLET` above is byte-identical to
+ * the shipped regex and still decides what `seed-reqs` and `audit` treat as a
+ * declared id (D-05). Pure and total: no I/O, no throw.
+ *
+ * Rules, in order:
+ *
+ *   1. Split the RAW text on `\n` - deliberately NOT through
+ *      `normalize`/`normalizeCrlf`, unlike the roadmap grammar. REQUIREMENTS.md
+ *      has write paths (`insertReqRows`, `setReqStatus`) that split raw bytes,
+ *      the same asymmetry `normalizeCrlf`'s own comment states, and a CRLF file
+ *      already parses here because every bold span closes before the `\r`.
+ *   2. No `^## Active$` line -> `{ids: null, issues: []}`. An absent heading is
+ *      NOT an out-of-grammar report: it is the datum `audit`'s
+ *      `no_active_section` already carries, and every project scaffolded before
+ *      v1.4.0 is in that state (D-06).
+ *   3. Otherwise walk from that heading to the next `^## ` - the same bound
+ *      `sectionBody` cuts at, so `## Deferred` is never read (D-07). A line
+ *      matching `ACTIVE_BULLET` contributes its trimmed bold span as an id
+ *      (de-duplicated first-occurrence-wins, empty skipped) and NEVER produces
+ *      an issue.
+ *   4. Every other line is scanned for `REQ_ID_TOKEN`. No token, no issue. A
+ *      token yields at most ONE issue for that line, code by the line's shape:
+ *      `active-table-row`, `active-unbolded-bullet`, `active-ordered-item`,
+ *      `active-heading`, or the catch-all `active-prose-line`.
+ *   5. The four entry-shaped codes fire REGARDLESS of how many bullets parsed -
+ *      deliberately unlike `classifyPhaseList`'s near-miss suppression, because
+ *      a table row or an unbolded bullet beside real bullets is the mixed
+ *      authoring case this diagnostic exists to catch (an id half-declared).
+ *      `active-prose-line` is the one conditional code: emitted only when the
+ *      section declared ZERO ids, so an ordinary intro paragraph naming ids
+ *      beside a real bullet list stays quiet, while a section authored entirely
+ *      as prose is still never silent.
+ *
+ * The sharp edge the unchanged grammar keeps: a BOLD span that is not id-shaped
+ * is still read as an id - `- **Note**: scope is frozen` declares the id
+ * `Note`. Narrowing the span to id-shaped text was rejected for the mirror of
+ * the reason widening was: it would change what `seed-reqs` treats as declared.
+ * Under `audit`'s `unpicked` break that phantom is loud and named rather than
+ * silent, which is the tolerable failure.
+ * @param {string} text
+ * @returns {{ids: string[]|null, issues: Issue[]}}
+ */
+export function classifyActiveSection(text) {
+  const lines = text.split('\n');
+  let heading = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Active\s*$/.test(lines[i])) { heading = i; break; }
+  }
+  if (heading === -1) return { ids: null, issues: [] };
+
+  const ids = [];
+  const seen = new Set();
+  /** @type {Array<{issue: Issue, conditional: boolean}>} */
+  const found = [];
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^## /.test(line)) break;
+    const m = line.match(ACTIVE_BULLET);
+    if (m) {
+      const id = m[1].trim();
+      if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+      continue;
+    }
+    if (!REQ_ID_TOKEN.test(line)) continue;
+    let code = 'active-prose-line'; // the catch-all: outside the grammar, never silent
+    if (/^\s*\|/.test(line)) code = 'active-table-row';
+    else if (/^\s*[-*+]\s/.test(line)) code = 'active-unbolded-bullet';
+    else if (/^\s*\d+[.)]\s/.test(line)) code = 'active-ordered-item';
+    else if (/^#{1,6}\s/.test(line)) code = 'active-heading';
+    found.push({
+      issue: { line: i + 1, code, text: issueText(line) },
+      conditional: code === 'active-prose-line',
+    });
+  }
+  // Prose candidates survive only in a section that declared nothing; the
+  // filter runs at the end, so the surviving issues stay in line order.
+  const issues = found
+    .filter((f) => !f.conditional || ids.length === 0)
+    .map((f) => f.issue);
+  return { ids, issues };
+}
+
 /**
  * Parse the `## Active` section's committed-scope bullets: every
  * `- **<ID>**: ...` line (an optional leading checkbox tolerated), ids
@@ -257,26 +354,17 @@ export function setReqStatus(text, ids, status) {
  * `[]` - when the heading is ABSENT, so a caller can tell "no milestone
  * scope declared" from "declared, nothing matched": the same
  * `=== null`-not-`!body` warning `parseContextDecisions` carries above,
- * because `sectionBody` returns `""` for a present-but-empty heading, which
- * is falsy but not absent. A bullet with no bold span declares no id BY
- * DESIGN - no fallback that guesses an id out of unbolded prose; the id
- * list this seam reports back is what makes a mis-typed bullet visible.
+ * because a present-but-empty heading yields `[]`, which is falsy-adjacent
+ * but not absent. A bullet with no bold span declares no id BY DESIGN - no
+ * fallback that guesses an id out of unbolded prose; `classifyActiveSection`'s
+ * `issues` is what makes such a line visible instead of silent.
+ *
+ * Delegates so the id extraction has exactly ONE implementation and
+ * `seed-reqs`' declared-id set cannot drift from `audit`'s.
  * @param {string} text @returns {string[]|null}
  */
 export function parseActiveIds(text) {
-  const body = sectionBody(text, 'Active');
-  if (body === null) return null;
-  const ids = [];
-  const seen = new Set();
-  for (const line of body.split('\n')) {
-    const m = line.match(/^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/);
-    if (!m) continue;
-    const id = m[1].trim();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
-  }
-  return ids;
+  return classifyActiveSection(text).ids;
 }
 
 /**

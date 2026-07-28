@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
+  classifyActiveSection,
 } from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
@@ -669,6 +670,149 @@ test('parseActiveIds: a present-but-empty ## Active heading returns []', () => {
 test('parseActiveIds: a ## Active-shaped list under a later heading is not read', () => {
   const text = '## Active\n\n- **GRM-01**: real\n\n## Shipped\n\n- **OLD-01**: not active scope\n';
   assert.deepEqual(parseActiveIds(text), ['GRM-01']);
+});
+
+// --- classifyActiveSection ---------------------------------------------------
+// The `## Active` grammar table cadence-core/references/req-traceability.md
+// states in prose: the bullet forms that declare an id, and the id-shaped lines
+// outside the grammar that `audit` reports in `active_issues` instead of
+// dropping. `parseActiveIds` delegates here, so these rows also pin what
+// `seed-reqs` treats as declared.
+
+/** A REQUIREMENTS-shaped doc: `## Active` at line 3, `body` from line 5. */
+const activeDoc = (body) =>
+  `# Requirements: Test\n\n## Active\n\n${body}\n\n## Traceability\n`;
+
+// The v1.3.1 milestone-ask TABLE - the real shape this repo shipped at 6feef38,
+// which parses to zero ids and used to be silent.
+const V131_TABLE = '| Requirement | Milestone |\n|-------------|-----------|\n' +
+  '| TRI-01 (triage every open bug) | v1.3.1 |\n' +
+  '| FIX-01 (each accepted bug fixed) | v1.3.1 |';
+
+// Each row: {name, text, ids, codes}. `ids` is the declared id list (null for
+// an absent heading); `codes` is the issue codes in line order.
+const ACTIVE_ROWS = [
+  // --- in grammar: the bullet forms, never an issue -------------------------
+  {
+    name: 'a plain bold bullet declares its id',
+    text: activeDoc('- **GRM-01**: grammar work'),
+    ids: ['GRM-01'], codes: [],
+  },
+  {
+    name: 'an unchecked `- [ ]` bullet declares its id',
+    text: activeDoc('- [ ] **SPN-01**: bookkeeping'),
+    ids: ['SPN-01'], codes: [],
+  },
+  {
+    name: 'a checked `- [x]` bullet declares its id',
+    text: activeDoc('- [x] **SPN-01**: bookkeeping'),
+    ids: ['SPN-01'], codes: [],
+  },
+  {
+    name: 'a duplicate id is de-duplicated first-occurrence-wins',
+    text: activeDoc('- **GRM-01**: first\n- **GRM-01**: second, dup'),
+    ids: ['GRM-01'], codes: [],
+  },
+  {
+    name: 'an absent ## Active heading is ids null, NOT [] and NOT an issue',
+    text: '# Requirements: Test\n\n## Shipped\n\n- **GRM-01**: shipped already\n',
+    ids: null, codes: [],
+  },
+  {
+    name: 'a present-but-empty ## Active heading is [] with no issues',
+    text: '## Active\n\n**None.**\n\n## Shipped\n',
+    ids: [], codes: [],
+  },
+  {
+    name: 'an ## Active-shaped list under a LATER ## heading is not read',
+    text: '## Active\n\n- **GRM-01**: real\n\n## Shipped\n\n- **OLD-01**: not active scope\n',
+    ids: ['GRM-01'], codes: [],
+  },
+  {
+    name: 'a CRLF checkout parses its bold bullet with no issue',
+    text: activeDoc('- **GRM-01**: grammar work').replace(/\n/g, '\r\n'),
+    ids: ['GRM-01'], codes: [],
+  },
+  {
+    name: 'a bold span that is not id-shaped is STILL an id - the sharp edge the unchanged grammar keeps',
+    text: activeDoc('- **Note**: scope is frozen for AUD-01'),
+    ids: ['Note'], codes: [],
+  },
+  {
+    name: 'an indented continuation line naming another id is not an issue',
+    text: activeDoc('- **GRM-01**: grammar work, see\n  RDM-01 for the roadmap half'),
+    ids: ['GRM-01'], codes: [],
+  },
+
+  // --- out of grammar: one row per diagnostic code --------------------------
+  {
+    name: 'active-table-row: the v1.3.1 milestone-ask table parses to NO ids and reports every row',
+    text: activeDoc(V131_TABLE),
+    ids: [], codes: ['active-table-row', 'active-table-row'],
+  },
+  {
+    name: 'active-table-row: that same table BESIDE a real bullet - the id parses AND both rows still report',
+    text: activeDoc(`- **GRM-01**: grammar work\n\n${V131_TABLE}`),
+    ids: ['GRM-01'], codes: ['active-table-row', 'active-table-row'],
+  },
+  {
+    name: 'active-table-row: the `#41` issue-id spelling is an id token too',
+    text: activeDoc('| Requirement | Milestone |\n|---|---|\n| #41 (silent data-file failure) | v1.3.1 |'),
+    ids: [], codes: ['active-table-row'],
+  },
+  {
+    name: 'active-unbolded-bullet: `- AUD-01: text` declares nothing and says so',
+    text: activeDoc('- AUD-01: an unbolded bullet'),
+    ids: [], codes: ['active-unbolded-bullet'],
+  },
+  {
+    name: 'an unbolded bullet carrying NO id token is ordinary prose, no issue',
+    text: activeDoc('- see references/req-traceability.md for the grammar'),
+    ids: [], codes: [],
+  },
+  {
+    name: 'active-ordered-item: `1. AUD-01: text`',
+    text: activeDoc('1. AUD-01: the audit gate'),
+    ids: [], codes: ['active-ordered-item'],
+  },
+  {
+    name: 'active-heading: a `### AUTH-01` sub-heading inside the section',
+    text: activeDoc('### AUTH-01\n\nLog in and out.'),
+    ids: [], codes: ['active-heading'],
+  },
+  {
+    name: 'active-prose-line: a section authored entirely as prose is never silent',
+    text: activeDoc('Scope for v1.4.0: TOK-01 and RDM-01 are planned, AUD-01 is not.'),
+    ids: [], codes: ['active-prose-line'],
+  },
+  {
+    name: 'the SAME prose line beside real bullets reports NOTHING - the intro-paragraph guard',
+    text: activeDoc('Scope for v1.4.0: TOK-01 and RDM-01 are planned, AUD-01 is not.\n\n' +
+      '- **TOK-01**: the tokenizer\n- **RDM-01**: the roadmap grammar'),
+    ids: ['TOK-01', 'RDM-01'], codes: [],
+  },
+  {
+    name: 'one issue per line, in line order, across mixed shapes',
+    text: activeDoc('1. AUD-01: ordered\n- AUD-02: unbolded\n\n### AUD-03'),
+    ids: [], codes: ['active-ordered-item', 'active-unbolded-bullet', 'active-heading'],
+  },
+];
+
+for (const row of ACTIVE_ROWS) {
+  test(`active-section: ${row.name}`, () => {
+    const res = classifyActiveSection(row.text);
+    assert.deepEqual(res.ids, row.ids, 'ids');
+    assert.deepEqual(res.issues.map((i) => i.code), row.codes, 'issue codes');
+    // parseActiveIds delegates - the id extraction has ONE implementation.
+    assert.deepEqual(parseActiveIds(row.text), row.ids, 'parseActiveIds delegation');
+  });
+}
+
+test('classifyActiveSection: the v1.3.1 table issues carry their exact line, code and text', () => {
+  assert.deepEqual(classifyActiveSection(activeDoc(V131_TABLE)).issues, [
+    { line: 7, code: 'active-table-row', text: '| TRI-01 (triage every open bug) | v1.3.1 |' },
+    { line: 8, code: 'active-table-row', text: '| FIX-01 (each accepted bug fixed) | v1.3.1 |' },
+  ]);
 });
 
 // --- insertReqRows -----------------------------------------------------------
