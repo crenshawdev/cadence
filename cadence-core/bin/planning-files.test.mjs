@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
-  classifyActiveSection,
+  classifyActiveSection, isRequirementId,
 } from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
@@ -734,14 +734,46 @@ const ACTIVE_ROWS = [
     ids: ['GRM-01'], codes: [],
   },
   {
-    name: 'a bold span that is not id-shaped is STILL an id - the sharp edge the unchanged grammar keeps',
-    text: activeDoc('- **Note**: scope is frozen for AUD-01'),
-    ids: ['Note'], codes: [],
-  },
-  {
     name: 'an indented continuation line naming another id is not an issue',
     text: activeDoc('- **GRM-01**: grammar work, see\n  RDM-01 for the roadmap half'),
     ids: ['GRM-01'], codes: [],
+  },
+
+  // --- in grammar, but the bold span is not an id: reported, never counted ---
+  // The upgrade-regression pins. `ACTIVE_BULLET` reads ANY bold span as an id,
+  // so `ids` still carries these (that is `seed-reqs`' declared set, unchanged);
+  // `audit` holds them out of the arithmetic with `isRequirementId`. Without
+  // both halves, every existing project with a prose bold-bullet in `## Active`
+  // starts FAILing its audit on upgrade, named for an id that does not exist.
+  {
+    name: 'active-non-id-bullet: a prose bold bullet is STILL an id - the sharp edge, reported',
+    text: activeDoc('- **Note**: scope is frozen for AUD-01'),
+    ids: ['Note'], codes: ['active-non-id-bullet'],
+  },
+  {
+    name: 'active-non-id-bullet: a prose bold bullet naming NO id token at all still reports',
+    text: activeDoc('- **Note**: scope frozen 2026-07-01'),
+    ids: ['Note'], codes: ['active-non-id-bullet'],
+  },
+  {
+    name: 'active-non-id-bullet: a colon INSIDE the bold span - the id is not normalized, it is reported',
+    text: activeDoc('- **AUD-01:** the colon belongs outside the span'),
+    ids: ['AUD-01:'], codes: ['active-non-id-bullet'],
+  },
+  {
+    name: 'active-non-id-bullet: a bold span carrying the id plus prose',
+    text: activeDoc('- **AUD-01 (the audit gate)**: text'),
+    ids: ['AUD-01 (the audit gate)'], codes: ['active-non-id-bullet'],
+  },
+  {
+    name: 'the `#41` issue spelling IS id-shaped in a bold span - no issue',
+    text: activeDoc('- **#41**: silent data-file failure'),
+    ids: ['#41'], codes: [],
+  },
+  {
+    name: 'a non-id bold bullet BESIDE real ones: the real ids parse, only the phantom reports',
+    text: activeDoc('- **GRM-01**: grammar work\n- **Note**: scope is frozen\n- **RDM-01**: roadmap'),
+    ids: ['GRM-01', 'Note', 'RDM-01'], codes: ['active-non-id-bullet'],
   },
 
   // --- out of grammar: one row per diagnostic code --------------------------
@@ -770,6 +802,30 @@ const ACTIVE_ROWS = [
     text: activeDoc('- see references/req-traceability.md for the grammar'),
     ids: [], codes: [],
   },
+  // Each bullet code names why THAT line is unread, so the remedy it implies
+  // actually changes something: an indented bullet is unread because it is
+  // indented (it is already bolded - bolding it again fixes nothing), and a
+  // `*` bullet because the grammar reads `-` only.
+  {
+    name: 'active-indented-bullet: a BOLDED sub-bullet is unread for its indent, not its bolding',
+    text: activeDoc('- **GRM-01**: grammar\n  - **RDM-01**: a sub-bullet, bolded and still unread'),
+    ids: ['GRM-01'], codes: ['active-indented-bullet'],
+  },
+  {
+    name: 'active-indented-bullet: an unbolded indented bullet reports the indent too',
+    text: activeDoc('- **GRM-01**: grammar\n  - RDM-01: sub-bullet'),
+    ids: ['GRM-01'], codes: ['active-indented-bullet'],
+  },
+  {
+    name: 'active-nondash-bullet: a column-0 `*` bullet is legal GFM the grammar does not read',
+    text: activeDoc('* **RDM-01**: star-bulleted and bolded'),
+    ids: [], codes: ['active-nondash-bullet'],
+  },
+  {
+    name: 'active-nondash-bullet: a `+` marker reports the same way',
+    text: activeDoc('+ **RDM-01**: plus-bulleted'),
+    ids: [], codes: ['active-nondash-bullet'],
+  },
   {
     name: 'active-ordered-item: `1. AUD-01: text`',
     text: activeDoc('1. AUD-01: the audit gate'),
@@ -783,6 +839,23 @@ const ACTIVE_ROWS = [
   {
     name: 'active-prose-line: a section authored entirely as prose is never silent',
     text: activeDoc('Scope for v1.4.0: TOK-01 and RDM-01 are planned, AUD-01 is not.'),
+    ids: [], codes: ['active-prose-line'],
+  },
+  {
+    name: 'active-prose-line: a CLOSED milestone naming its shipped ids reports NOTHING',
+    // The real v1.2.0 shape (`git archive v1.2.0`): a correct-as-written
+    // section whose prose names only ids the file already records under
+    // `## Shipped`. Nothing is lost, so nothing is reported.
+    text: '# Requirements: Test\n\n## Active\n\nNo active milestone. `v1.2.0` shipped its committed\n' +
+      'scope (REV-01, SOC-01) - see `## Shipped`.\n\n## Shipped\n\n' +
+      '| REV-01 (symlink guard) | 1 | Complete | v1.2.0 |\n' +
+      '| SOC-01 (planner nudge) | 2 | Complete | v1.2.0 |\n',
+    ids: [], codes: [],
+  },
+  {
+    name: 'active-prose-line: prose naming ONE id the file records nowhere else still reports',
+    text: '# Requirements: Test\n\n## Active\n\nNo active milestone. `v1.2.0` shipped REV-01 and\n' +
+      'AUD-01 - see `## Shipped`.\n\n## Shipped\n\n| REV-01 (symlink guard) | 1 | Complete | v1.2.0 |\n',
     ids: [], codes: ['active-prose-line'],
   },
   {
@@ -807,6 +880,19 @@ for (const row of ACTIVE_ROWS) {
     assert.deepEqual(parseActiveIds(row.text), row.ids, 'parseActiveIds delegation');
   });
 }
+
+// The admission test `audit` asks before an `## Active` id may break the
+// verdict. Anchored on purpose - `REQ_ID_TOKEN` beside it is unanchored because
+// it SCANS prose; conflating the two is what let `Note` and `AUD-01:` in.
+test('isRequirementId: the whole string and nothing else, in both shipped spellings', () => {
+  for (const yes of ['AUD-01', 'GRM-01', 'AB-1', 'ABCDEFGH-12', '#41']) {
+    assert.equal(isRequirementId(yes), true, yes);
+  }
+  for (const no of ['Note', 'AUD-01:', 'AUD-01 (the gate)', 'aud-01', 'A-01', 'ABCDEFGHI-1',
+    'AUD-01 ', '#41.', 'see AUD-01', '']) {
+    assert.equal(isRequirementId(no), false, no);
+  }
+});
 
 test('classifyActiveSection: the v1.3.1 table issues carry their exact line, code and text', () => {
   assert.deepEqual(classifyActiveSection(activeDoc(V131_TABLE)).issues, [

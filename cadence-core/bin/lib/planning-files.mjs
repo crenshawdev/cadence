@@ -259,8 +259,35 @@ const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
 // A requirement id as this project spells one, in both shipped forms: the
 // `PREFIX-N` form (`TRI-01`, `GRM-01`) and the v1.3.1 issue form (`#41`). Used
 // ONLY to decide whether an out-of-grammar line is worth reporting - a line
-// with no id token declares nothing and is ordinary section prose.
+// with no id token declares nothing and is ordinary section prose. Deliberately
+// UNanchored: it SCANS arbitrary prose, and `isRequirementId` below is the
+// anchored question. Do not add anchors here.
 const REQ_ID_TOKEN = /\b[A-Z][A-Z0-9]{1,7}-\d+\b|(?:^|[^\w#])#\d+\b/;
+const REQ_ID_TOKEN_G = new RegExp(REQ_ID_TOKEN.source, 'g');
+
+// The FULL-STRING form of the same two spellings. `ACTIVE_BULLET` reads any
+// bold span as an id (`- **Note**: ...` declares `Note`) and must keep doing
+// so - that is what `seed-reqs` treats as declared, and narrowing it would
+// change the writer's behavior, the mirror of the reason D-05 refuses to widen
+// it. So the narrowing lives HERE instead, as a question `audit` asks before
+// letting an id break the verdict: a bold bullet whose span is not id-shaped is
+// REPORTED (`active-non-id-bullet`) and never counted.
+const REQ_ID_EXACT = /^(?:[A-Z][A-Z0-9]{1,7}-\d+|#\d+)$/;
+
+/**
+ * Is `id` exactly a requirement id, the whole string and nothing else? The
+ * admission test for anything that moves `audit`'s arithmetic: `AUTH-01` yes,
+ * `AUTH-01:` no (the colon belongs outside the bold span), `Note` no.
+ * @param {string} id @returns {boolean}
+ */
+export function isRequirementId(id) {
+  return REQ_ID_EXACT.test(id);
+}
+
+/** Every requirement-id token in `s`, its leading delimiter stripped. */
+function idTokensIn(s) {
+  return [...s.matchAll(REQ_ID_TOKEN_G)].map((m) => m[0].slice(m[0].search(/[A-Z#]/)));
+}
 
 /**
  * Classify the `## Active` section: the ids it declares, plus the lines that
@@ -283,27 +310,46 @@ const REQ_ID_TOKEN = /\b[A-Z][A-Z0-9]{1,7}-\d+\b|(?:^|[^\w#])#\d+\b/;
  *   3. Otherwise walk from that heading to the next `^## ` - the same bound
  *      `sectionBody` cuts at, so `## Deferred` is never read (D-07). A line
  *      matching `ACTIVE_BULLET` contributes its trimmed bold span as an id
- *      (de-duplicated first-occurrence-wins, empty skipped) and NEVER produces
- *      an issue.
+ *      (de-duplicated first-occurrence-wins, empty skipped). It produces an
+ *      issue ONLY when that span is not id-shaped by `isRequirementId`
+ *      (`active-non-id-bullet`) - see the sharp edge below.
  *   4. Every other line is scanned for `REQ_ID_TOKEN`. No token, no issue. A
- *      token yields at most ONE issue for that line, code by the line's shape:
- *      `active-table-row`, `active-unbolded-bullet`, `active-ordered-item`,
- *      `active-heading`, or the catch-all `active-prose-line`.
- *   5. The four entry-shaped codes fire REGARDLESS of how many bullets parsed -
+ *      token yields at most ONE issue for that line, code by the line's shape,
+ *      each naming the actual cause and implying a remedy that changes it:
+ *        - `^\s*\|`            -> `active-table-row`
+ *        - a bullet marker with LEADING WHITESPACE -> `active-indented-bullet`
+ *          (a sub-bullet or continuation; the grammar reads column-0 bullets
+ *          only, so bolding it changes nothing - it has to move to column 0)
+ *        - a column-0 `*`/`+` marker -> `active-nondash-bullet` (legal GFM,
+ *          but the grammar reads `-` only)
+ *        - a column-0 `-` bullet whose id is not in a bold span immediately
+ *          after the marker -> `active-unbolded-bullet`
+ *        - `^\s*\d+[.)]\s`     -> `active-ordered-item`
+ *        - `^#{1,6}\s`         -> `active-heading`
+ *        - anything else       -> `active-prose-line`
+ *   5. The entry-shaped codes fire REGARDLESS of how many bullets parsed -
  *      deliberately unlike `classifyPhaseList`'s near-miss suppression, because
  *      a table row or an unbolded bullet beside real bullets is the mixed
  *      authoring case this diagnostic exists to catch (an id half-declared).
- *      `active-prose-line` is the one conditional code: emitted only when the
- *      section declared ZERO ids, so an ordinary intro paragraph naming ids
- *      beside a real bullet list stays quiet, while a section authored entirely
- *      as prose is still never silent.
+ *      `active-prose-line` is the one conditional code, on two counts: the
+ *      section must declare ZERO ids (so an ordinary intro paragraph naming ids
+ *      beside a real bullet list stays quiet), AND the line must name at least
+ *      one id that appears NOWHERE else in the file. A closed milestone's
+ *      `## Active` ("No active milestone. `v1.2.0` shipped its scope (REV-01,
+ *      ...) - see `## Shipped`") names only ids the file already records, so
+ *      nothing is lost and nothing is reported; a section that opens a
+ *      milestone in prose names ids the file records nowhere, and is still
+ *      never silent.
  *
- * The sharp edge the unchanged grammar keeps: a BOLD span that is not id-shaped
- * is still read as an id - `- **Note**: scope is frozen` declares the id
- * `Note`. Narrowing the span to id-shaped text was rejected for the mirror of
- * the reason widening was: it would change what `seed-reqs` treats as declared.
- * Under `audit`'s `unpicked` break that phantom is loud and named rather than
- * silent, which is the tolerable failure.
+ * The sharp edge the unchanged grammar keeps, and where it is now blunted: a
+ * BOLD span that is not id-shaped is still READ as an id - `- **Note**: ...`
+ * declares `Note` - because narrowing `ACTIVE_BULLET` would change what
+ * `seed-reqs` treats as declared, the mirror of the reason D-05 refuses to
+ * widen it. So `ids` still carries it and `parseActiveIds` is unchanged, but it
+ * is reported as `active-non-id-bullet`, and `audit` admits only `isRequirementId`
+ * ids into its `unpicked` break. Without that admission test every project with
+ * a prose bold-bullet in `## Active` (`- **Note**: scope frozen`) would start
+ * FAILing its audit on upgrade, by a phantom id name.
  * @param {string} text
  * @returns {{ids: string[]|null, issues: Issue[]}}
  */
@@ -317,32 +363,50 @@ export function classifyActiveSection(text) {
 
   const ids = [];
   const seen = new Set();
-  /** @type {Array<{issue: Issue, conditional: boolean}>} */
+  /** @type {Array<{issue: Issue, prose: string[]|null}>} */
   const found = [];
+  let end = lines.length;
   for (let i = heading + 1; i < lines.length; i++) {
     const line = lines[i];
-    if (/^## /.test(line)) break;
+    if (/^## /.test(line)) { end = i; break; }
     const m = line.match(ACTIVE_BULLET);
     if (m) {
       const id = m[1].trim();
       if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+      // In grammar, but the span is not an id: reported, never counted.
+      if (id && !isRequirementId(id)) {
+        found.push({ issue: { line: i + 1, code: 'active-non-id-bullet', text: issueText(line) }, prose: null });
+      }
       continue;
     }
     if (!REQ_ID_TOKEN.test(line)) continue;
     let code = 'active-prose-line'; // the catch-all: outside the grammar, never silent
     if (/^\s*\|/.test(line)) code = 'active-table-row';
-    else if (/^\s*[-*+]\s/.test(line)) code = 'active-unbolded-bullet';
-    else if (/^\s*\d+[.)]\s/.test(line)) code = 'active-ordered-item';
+    else if (/^\s*[-*+]\s/.test(line)) {
+      // Name the cause, not the family: an indented bullet is unread because it
+      // is indented (bolding it changes nothing), and a `*`/`+` bullet because
+      // the grammar reads `-` only. Only a column-0 `-` bullet is genuinely a
+      // bullet whose id is not bolded where the grammar looks for it.
+      if (/^\s/.test(line)) code = 'active-indented-bullet';
+      else if (/^[*+]\s/.test(line)) code = 'active-nondash-bullet';
+      else code = 'active-unbolded-bullet';
+    } else if (/^\s*\d+[.)]\s/.test(line)) code = 'active-ordered-item';
     else if (/^#{1,6}\s/.test(line)) code = 'active-heading';
     found.push({
       issue: { line: i + 1, code, text: issueText(line) },
-      conditional: code === 'active-prose-line',
+      prose: code === 'active-prose-line' ? idTokensIn(line) : null,
     });
   }
-  // Prose candidates survive only in a section that declared nothing; the
-  // filter runs at the end, so the surviving issues stay in line order.
+  // Prose candidates survive only in a section that declared nothing AND only
+  // when they name an id the rest of the file does not already record - a
+  // closed milestone's "shipped X, Y - see `## Shipped`" paragraph is correct
+  // as written and must not be nagged at. The filter runs at the end, so the
+  // surviving issues stay in line order.
+  const elsewhere = ids.length === 0
+    ? new Set(idTokensIn(lines.slice(0, heading).concat(lines.slice(end)).join('\n')))
+    : null;
   const issues = found
-    .filter((f) => !f.conditional || ids.length === 0)
+    .filter((f) => !f.prose || (elsewhere !== null && f.prose.some((id) => !elsewhere.has(id))))
     .map((f) => f.issue);
   return { ids, issues };
 }
@@ -357,7 +421,11 @@ export function classifyActiveSection(text) {
  * because a present-but-empty heading yields `[]`, which is falsy-adjacent
  * but not absent. A bullet with no bold span declares no id BY DESIGN - no
  * fallback that guesses an id out of unbolded prose; `classifyActiveSection`'s
- * `issues` is what makes such a line visible instead of silent.
+ * `issues` is what makes such a line visible instead of silent. A bold span
+ * that is not id-shaped IS still an id here (`- **Note**: ...` -> `Note`) -
+ * this is `seed-reqs`' declared-id set and it does not change; the
+ * `active-non-id-bullet` issue reports it, and `audit` filters it out of the
+ * arithmetic with `isRequirementId`.
  *
  * Delegates so the id extraction has exactly ONE implementation and
  * `seed-reqs`' declared-id set cannot drift from `audit`'s.

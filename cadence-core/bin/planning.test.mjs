@@ -1281,22 +1281,24 @@ test('audit + plan-overlap: the frontmatter_issues diagnostic is not key-scoped'
   assert.equal(o2.frontmatter_issues[0].issues.some((i) => i.code === 'unknown-line'), true);
 });
 
-// --- audit: unseeded (D-07) and nonconforming_plans (D-13) additive diagnostics
+// --- audit: unseeded/unpicked (D-01..D-07) and nonconforming_plans (D-13)
 
-test('audit: unseeded is additive - counts, requirements and orphans keep their pre-existing shape', () => {
+test('audit: an unpicked ## Active id BREAKS at zero rows - the additive shape is reversed', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'One' }],
-    phases: { 1: { plan: true, planReqs: ['X'] } },
+    phases: { 1: { plan: true, planReqs: ['SPN-01'] } },
   });
   writeFileSync(join(dir, 'REQUIREMENTS.md'),
-    '# Requirements: Fixture\n\n## Active\n\n- **X**: desc\n\n## Traceability\n\n' +
+    '# Requirements: Fixture\n\n## Active\n\n- **SPN-01**: desc\n\n## Traceability\n\n' +
     '| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
   const r = run(['audit'], dir);
   assert.equal(r.ok, true);
-  assert.deepEqual(r.requirements, []);
-  assert.deepEqual(r.orphans, { plan_ids: [{ file: 'phases/1/PLAN.md', ids: ['X'] }] });
-  assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
-  assert.deepEqual(r.unseeded, { active_ids: ['X'] });
+  assert.deepEqual(r.requirements, [{ id: 'SPN-01', break: 'unpicked' }]);
+  // The deliberate co-occurrence: a plan declares SPN-01, no row carries it, so
+  // the seed-reqs-never-wrote state reports from BOTH directions.
+  assert.deepEqual(r.orphans, { plan_ids: [{ file: 'phases/1/PLAN.md', ids: ['SPN-01'] }] });
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+  assert.deepEqual(r.unseeded, { active_ids: ['SPN-01'] });
 });
 
 test('audit: unseeded reports no_active_section: true when the ## Active heading itself is absent', () => {
@@ -1309,9 +1311,12 @@ test('audit: unseeded reports no_active_section: true when the ## Active heading
   const r = run(['audit'], dir);
   assert.equal(r.ok, true);
   assert.deepEqual(r.unseeded, { active_ids: [], no_active_section: true });
+  // No heading, no declared scope, so nothing is unpicked - the null is never
+  // coerced to [] (D-06), or every pre-v1.4.0 tree would be unpassable.
+  assert.deepEqual(r.requirements, []);
 });
 
-test('audit: unseeded is omitted once the table has at least one row', () => {
+test('audit: a tree with rows and no ## Active heading gains no unpicked break', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'Done', checked: true }],
     phases: { 1: { plan: true, planReqs: ['REQ-1'] } },
@@ -1320,6 +1325,144 @@ test('audit: unseeded is omitted once the table has at least one row', () => {
   const r = run(['audit'], dir);
   assert.equal(r.ok, true);
   assert.equal(r.unseeded, undefined);
+  assert.equal(r.requirements.some((q) => q.break === 'unpicked'), false);
+  assert.equal(r.counts.total, 1); // still the row count: nothing to add
+});
+
+test('audit: the partially-planned state - a row for AUD-01, none for AUD-02, so AUD-02 breaks and the verdict FAILs', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **AUD-01**: planned\n- **AUD-02**: not picked up\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n' +
+    '| AUD-01 | Phase 1 | Complete |\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  const byId = Object.fromEntries(r.requirements.map((q) => [q.id, q]));
+  assert.equal(byId['AUD-01'].break, undefined);
+  assert.deepEqual(byId['AUD-02'], { id: 'AUD-02', break: 'unpicked' }); // no `phase` key
+  assert.deepEqual(r.counts, { total: 2, traced: 1, broken: 1, deferred: 0 });
+  // The arithmetic identity D-02 exists to keep true once a break can have no row.
+  assert.equal(r.counts.total, r.counts.traced + r.counts.broken + r.counts.deferred);
+  assert.deepEqual(r.unseeded, { active_ids: ['AUD-02'] });
+});
+
+test('audit: a ## Deferred id is excluded by SECTION PLACEMENT, and a Deferred-status row is never unpicked', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **AUD-01**: planned\n- **AUD-02**: deferred by status\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n' +
+    '| AUD-01 | Phase 1 | Complete |\n| AUD-02 | Phase 1 | Deferred |\n\n' +
+    '## Deferred\n\n- **RCL-06**: never in Active, never audited\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements.some((q) => q.id === 'RCL-06'), false);
+  assert.equal(r.unseeded, undefined);
+  assert.deepEqual(r.deferred, ['AUD-02']);
+  assert.deepEqual(r.counts, { total: 2, traced: 1, broken: 0, deferred: 1 });
+});
+
+test('audit: an ## Active id that is not id-shaped can never reach the arithmetic, at zero rows either', () => {
+  // The same phantom in the state where `unseeded`'s payload IS the whole
+  // `## Active` list: `Note` is reported, not seeded, not counted, not broken.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **Note**: scope frozen 2026-07-01\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements, []);
+  assert.deepEqual(r.unseeded, { active_ids: [] });
+  assert.equal(r.active_issues[0].code, 'active-non-id-bullet');
+  assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
+});
+
+test('audit: a v1.3.1-shaped ## Active table is reported in active_issues - and its ids stay invisible to the break', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['A'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n| Requirement | Milestone |\n|---|---|\n' +
+    '| TRI-01 (triage every open bug) | v1.3.1 |\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n' +
+    '| A | Phase 1 | Complete |\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.active_issues.length, 1);
+  assert.equal(r.active_issues[0].code, 'active-table-row');
+  assert.equal(r.active_issues[0].line, 7);
+  // The stated blind spot, pinned so the prose claim is falsifiable: the id on
+  // that line is in NO break and in no unseeded payload until it is a bullet.
+  assert.equal(r.requirements.some((q) => q.id === 'TRI-01'), false);
+  assert.equal(r.unseeded, undefined);
+  assert.deepEqual(r.counts, { total: 1, traced: 1, broken: 0, deferred: 0 });
+});
+
+// The upgrade-regression pins. `ACTIVE_BULLET` reads ANY bold span as an id, so
+// an existing project's prose bold-bullet (`- **Note**: scope frozen`) and a
+// mis-punctuated id (`- **AUD-01:**`) are ids by the grammar. Neither may break
+// the audit or move `counts`: the first would FAIL a correct file by a name
+// that is not a requirement, the second would count one requirement twice - as
+// `AUD-01` traced from its row AND `AUD-01:` broken from the bullet.
+test('audit: a prose bold bullet in ## Active is REPORTED, never a break - the phantom-id upgrade pin', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **AUD-01**: the audit gate\n' +
+    '- **Note**: scope frozen 2026-07-01\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n' +
+    '| AUD-01 | Phase 1 | Complete |\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements.some((q) => q.break), false);
+  assert.equal(r.requirements.some((q) => q.id === 'Note'), false);
+  assert.equal(r.unseeded, undefined);
+  assert.deepEqual(r.active_issues,
+    [{ line: 6, code: 'active-non-id-bullet', text: '- **Note**: scope frozen 2026-07-01' }]);
+  assert.deepEqual(r.counts, { total: 1, traced: 1, broken: 0, deferred: 0 });
+});
+
+test('audit: a colon INSIDE the bold span reports, and is never normalized into the id it resembles', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'Done', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **AUD-01:** the colon belongs outside the span\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n' +
+    '| AUD-01 | Phase 1 | Complete |\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements.some((q) => q.break), false);
+  assert.equal(r.active_issues[0].code, 'active-non-id-bullet');
+  // One requirement, counted once - not `AUD-01` traced plus `AUD-01:` broken.
+  assert.deepEqual(r.counts, { total: 1, traced: 1, broken: 0, deferred: 0 });
+});
+
+test('seed-reqs: a v1.3.1-shaped ## Active table leaves its envelope unchanged - the delegation did not leak into the writer', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true, planReqs: ['TRI-01'] } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n| Requirement | Milestone |\n|---|---|\n' +
+    '| TRI-01 (triage every open bug) | v1.3.1 |\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n');
+  const r = run(['seed-reqs', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.active_issues, undefined);
+  assert.deepEqual(r.orphan_ids, ['TRI-01']);
 });
 
 test('audit + plan-overlap: a PLAN-gaps.md is reported as nonconforming_plans; PLAN-2.md is not, overlaps unchanged', () => {

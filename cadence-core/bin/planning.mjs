@@ -41,7 +41,7 @@ import {
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
-  parseActiveIds, insertReqRows,
+  parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -578,7 +578,9 @@ function listPlanFiles(pdir) {
 // ---------------------------------------------------------------------------
 // audit - the requirement -> phase -> plan -> verified trace, as data. The
 // ship-blocking verdict stays the model's sentence; this makes it arithmetic.
-// break codes: no-phase | phase-missing | no-plan | not-verified | drift.
+// break codes: no-phase | phase-missing | no-plan | not-verified | drift |
+// unpicked (an `## Active` id no phase picked up - it has no Traceability row
+// at all, so it carries no `phase` key; see the D-01/D-04 block below).
 // ---------------------------------------------------------------------------
 function cmdAudit(dir) {
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
@@ -606,6 +608,9 @@ function cmdAudit(dir) {
   }
 
   const rows = parseRequirements(reqText);
+  // The declared milestone scope, read ONCE - no new file read, and no
+  // roadmap-side source: parseRoadmapPhases carries no id mapping (D-09).
+  const active = classifyActiveSection(reqText);
   const requirements = [];
   const deferred = [];
   for (const r of rows) {
@@ -632,17 +637,50 @@ function cmdAudit(dir) {
     if (unknown.length) orphanPlans.push({ file, ids: unknown });
   }
 
-  // Additive diagnostic (D-07): a Traceability table with zero rows at all
-  // gets `unseeded`, naming the `## Active` ids that should have a row - the
-  // blind spot verified live where audit.md:43-46's `counts.broken == 0`
-  // PASSes an empty table. Never coerce parseActiveIds' null to [] - that
-  // would collapse "milestone never opened" (a pre-v1.4.0 `## v1
-  // Requirements` project) into "declared but never seeded", the exact
-  // datum this field exists to carry. Neither a count nor the verdict moves.
+  // An `## Active` id with no Traceability row BREAKS the verdict (D-01) - the
+  // quiet failure a per-phase flow cannot see, and the state a milestone spends
+  // most of its life in. This reverses the additive shape D-07 shipped one
+  // milestone earlier: milestone.md's ship gate branches on the verdict alone,
+  // so an additive field left the gate exactly as permeable as it was at the
+  // v1.2.0 and v1.3.1 closes.
+  //
+  // The set is `## Active` minus the table's ids - NO plan-side subtraction: an
+  // id a plan declares but no row carries is BOTH unpicked here and an
+  // `orphans.plan_ids` entry there, which is the seed-reqs-never-wrote state and
+  // must report from both directions. Never coerce `active.ids` null to []
+  // (D-06): every project scaffolded before v1.4.0 has no `## Active` heading by
+  // this grammar, and a coercion would read its whole scope as unpicked and make
+  // its audit unpassable.
+  //
+  // `isRequirementId` is the ADMISSION test, and it is load-bearing: the bullet
+  // grammar reads any bold span as an id (`- **Note**: scope frozen` declares
+  // `Note`, `- **AUTH-01:**` declares `AUTH-01:`) and must keep doing so for
+  // `seed-reqs`. Without this filter every project carrying a prose bold-bullet
+  // in `## Active` would FAIL its audit on upgrade, named for a requirement that
+  // does not exist - and `AUTH-01:` would break while its own row traced
+  // separately, counting one requirement twice. Such a bullet is REPORTED
+  // instead, as `active-non-id-bullet` in `active_issues`.
+  const unpicked = (active.ids || []).filter((id) => isRequirementId(id) && !known.has(id));
+  // No `phase` key on these entries, deliberately: there is no row, so there is
+  // no Phase cell to report, and `phase: null` is `no-phase`'s own datum (a row
+  // that names no phase). Conflating them would make two breaks whose fixes
+  // differ - assign the row a phase, vs plan the requirement or defer it -
+  // indistinguishable to audit.md's next-action list. Appended AFTER the
+  // row-derived entries, so a fully seeded tree's `requirements` is unchanged.
+  for (const id of unpicked) requirements.push({ id, break: 'unpicked' });
+
+  // `unseeded` names the `## Active` ids with no row, at ANY row count (D-04) -
+  // one question at two row counts rather than two questions. It is no longer
+  // verdict-neutral: every id it names also carries an `unpicked` break above.
+  // `rows.length === 0` stays a SECOND trigger on purpose - the unpicked arm
+  // alone would drop the two zero-row reports references/req-traceability.md
+  // documents: a present-but-empty `## Active` ({active_ids: []}) and an absent
+  // heading (+ no_active_section: true). The payload carries the same admission
+  // test as the break - `unseeded` names ids a `/cad-plan` run could seed a row
+  // for, and a non-id-shaped bold span is not one; it reports in `active_issues`.
   let unseeded;
-  if (rows.length === 0) {
-    const activeIds = parseActiveIds(reqText);
-    unseeded = { active_ids: activeIds || [], ...(activeIds === null ? { no_active_section: true } : {}) };
+  if (unpicked.length || rows.length === 0) {
+    unseeded = { active_ids: unpicked, ...(active.ids === null ? { no_active_section: true } : {}) };
   }
 
   const broken = requirements.filter((r) => r.break).length;
@@ -652,8 +690,25 @@ function cmdAudit(dir) {
     ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
     ...(nonconformingPlans.length ? { nonconforming_plans: nonconformingPlans } : {}),
     ...(deferred.length ? { deferred } : {}),
+    // Additive, never a break and never a count - two populations: a line
+    // OUTSIDE the `## Active` bullet grammar (it declares no id, so there is
+    // nothing to count) and a line IN the grammar whose bold span is not
+    // id-shaped (`active-non-id-bullet`, held out of the arithmetic above). The
+    // cost is real and stated in the prose rather than implied - the id named on
+    // either line is invisible to `unpicked` until the line is rewritten as a
+    // bullet whose bold span is exactly the id.
+    ...(active.issues.length ? { active_issues: active.issues } : {}),
     ...(unseeded ? { unseeded } : {}),
-    counts: { total: rows.length, traced: requirements.length - broken, broken, deferred: deferred.length },
+    // total counts Traceability rows PLUS unpicked ids (D-02), which is what
+    // keeps `requirements.length + deferred.length === rows.length +
+    // unpicked.length` - i.e. total = traced + broken + deferred - true now that
+    // a break can exist without a row.
+    counts: {
+      total: rows.length + unpicked.length,
+      traced: requirements.length - broken,
+      broken,
+      deferred: deferred.length,
+    },
   });
 }
 
