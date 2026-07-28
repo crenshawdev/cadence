@@ -109,6 +109,49 @@ All notable changes to Cadence are recorded here. The format follows
   `cadence-core/references/roadmap-phases.md`, each row pinned by a
   parser-level test.
 
+**An audit armed in the partially-planned state**
+
+- An `## Active` requirement no phase has picked up now breaks `/cad-audit` as
+  `unpicked` and moves `counts.broken`, so the traceability gate holds while a
+  milestone is only partly planned - rows for some ids and not others, the
+  state a milestone spends most of its life in - and not only against a
+  zero-row table. That blind spot is the residue of what let the v1.2.0 and
+  v1.3.1 closes through.
+- `counts.total` now counts Traceability ROWS PLUS unpicked ids, so
+  `total = traced + broken + deferred` still holds once a break can exist with
+  no row. This is a real change for any caller written against
+  `total === rows.length`.
+- `unseeded` is row-count-independent: it names the `## Active` ids with no
+  Traceability row at ANY row count, not only when the table is empty. It is
+  also no longer verdict-neutral, which deliberately reverses the additive
+  shape shipped one milestone earlier - a diagnostic that never moves the
+  verdict leaves the ship gate exactly as permeable as it was. The two zero-row
+  reports are unchanged: `{active_ids: []}` for a present-but-empty section,
+  plus `no_active_section: true` when the heading is absent.
+- A line inside `## Active` that the bold-bullet grammar does not read - a
+  v1.3.1-style table row, an indented sub-bullet, a `*`/`+` bullet, an unbolded
+  bullet, an ordered item, a `###` heading, or a prose line in a section that
+  declares no ids and names an id recorded nowhere else in the file - is
+  reported in `active_issues` with its line, a code and the offending text
+  instead of vanishing. The grammar itself is byte-identical: these are
+  diagnostics, not a wider parser, and each code names why THAT line is unread
+  so the fix it implies changes something.
+- The grammar reads any bold span as an id, which is what `seed-reqs` treats as
+  declared and does not change. `/cad-audit` narrows on its own side instead:
+  only an id that is exactly `PREFIX-N` or `#N` may break the verdict or enter
+  `counts`, so `- **Note**: scope frozen` is reported as
+  `active-non-id-bullet` rather than failing a gate under a name that is not a
+  requirement, and `- **AUD-01:**` can never be counted twice.
+- The two exits for a broken id: plan it into a phase (`/cad-plan` seeds the
+  row), or move the bullet out of `## Active` into the deferred section below
+  it (`## v2 Requirements` in the shipped template). A row with an em-dash
+  Phase cell is `no-phase`, not an exit.
+- A project with no `## Active` heading gains no break from this rule at any
+  row count, so a pre-v1.4.0 tree audits exactly as it did before, until the
+  heading is renamed. The grammar and its out-of-grammar table are written down
+  in `cadence-core/references/req-traceability.md`, each row pinned by a
+  parser-level test.
+
 ## [1.3.1] - 2026-07-27
 
 A tech-debt cycle. Every open bug filed by the post-v1.2.0 review sweep was
