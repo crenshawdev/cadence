@@ -6,8 +6,8 @@
 ## Active
 
 `v1.4.0 — Stated grammars` (opened 2026-07-27). `/cad-plan` seeds each id's
-Traceability row below when its phase is planned - which is why TOK-01 and
-RDM-01 (phases 3 and 4) have no row yet.
+Traceability row below when its phase is planned - which is why TOK-01, RDM-01
+and AUD-01 (phases 3, 4 and 5) have no row yet.
 
 - **GRM-01**: Every shipped PLAN.md frontmatter form reads to exactly the ids
   and files declared; anything outside the grammar is reported, never
@@ -20,6 +20,9 @@ RDM-01 (phases 3 and 4) have no row yet.
 - **RDM-01**: The roadmap phase list has a stated grammar, so an empty
   `## Phases` is a derived closed-milestone state rather than
   `unparseable-roadmap`.
+- **AUD-01**: An `## Active` requirement no phase has picked up is counted by
+  `audit`, so the traceability gate holds while a milestone is only partly
+  planned, not just against a zero-row table.
 
 ## Shipped
 

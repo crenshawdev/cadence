@@ -57,5 +57,18 @@ close failed for the same reason one layer up. Per-task plans come at
   a destination that exists, and cursor-drift detection stays live in exactly
   the state where the cursor is the only surviving evidence. The four findings
   that got the v1.3.1 attempt reverted are the design brief; each must be
-  closed by construction, not by another heuristic. Landing it last means this
+  closed by construction, not by another heuristic. Landing it late means this
   cycle's own close exercises it.
+- [ ] **Phase 5: An audit armed in the partially-planned state** - Goal:
+  `audit` counts an `## Active` requirement that no phase has picked up, so the
+  traceability gate holds in the state a milestone spends most of its life in,
+  not only against a zero-row table. `unseeded` fires only when
+  `## Traceability` has zero rows (`planning.mjs:553-557`) and `counts.total`
+  is `rows.length`, so once any phase is planned an unpicked id is never
+  counted and never breaks - verified live here, where TOK-01 and RDM-01 sit in
+  `## Active` with no row and `audit` reports neither. Phase 2 closed the
+  empty-table hole and retired the hand-populated table that used to cover this
+  state, so what is left is the residue of the blind spot that let the v1.2.0
+  and v1.3.1 closes through. Whether an unpicked id breaks the verdict or stays
+  an additive signal is the `/cad-context` call, since phase 2's D-07 scoped
+  verdict arithmetic out.
