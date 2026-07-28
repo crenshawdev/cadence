@@ -21,15 +21,19 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" audit
 
 One JSON line returns the full requirement -> phase -> plan -> verified
 chain: per requirement a `break` code where the chain fails (`no-phase` |
-`phase-missing` | `no-plan` | `not-verified` | `drift`), `orphans.plan_ids`
-(plan frontmatter referencing unknown REQ-IDs - scope creep, weigh lighter
+`phase-missing` | `no-plan` | `not-verified` | `drift` | `unpicked`),
+`orphans.plan_ids` (plan frontmatter referencing unknown REQ-IDs - scope
+creep, weigh lighter
 than a dropped requirement), `frontmatter_issues` (a plan file whose
 `requirements:` frontmatter fell outside the stated grammar -
-`references/plan-frontmatter.md`), `unseeded` (the Traceability table has no
-rows at all - names the `## Active` ids that should have one, seeded by
-`/cad-plan`), `nonconforming_plans` (a `PLAN*.md` filename no seam and no
-executor reads, e.g. `PLAN-gaps.md`), `deferred` (rows whose Status is
-`Deferred` - the one pinned marker), and `counts`.
+`references/plan-frontmatter.md`), `unseeded` (the `## Active` ids with no
+Traceability row, at any row count - each also carries an `unpicked` break),
+`active_issues` (a line inside `## Active` outside the stated bullet grammar -
+`references/req-traceability.md`), `nonconforming_plans` (a `PLAN*.md`
+filename no seam and no executor reads, e.g. `PLAN-gaps.md`), `deferred` (rows
+whose Status is `Deferred` - the one pinned marker), and `counts` (whose
+`total` is Traceability rows PLUS unpicked ids, so
+`total = traced + broken + deferred`).
 
 If a milestone scope was given, filter the returned requirements to that
 milestone's IDs before judging; the seam always traces the whole file.
@@ -43,6 +47,13 @@ milestone's IDs before judging; the seam always traces the whole file.
 - `drift` - the two status sources contradict (row Complete vs box, either
   direction). The status cannot be trusted until reconciled (cad-verify
   re-run, or the discrepancy explained).
+- `unpicked` - an `## Active` requirement no phase picked up: the same silent
+  drop one step earlier, before the requirement ever reached the table (so the
+  entry carries no `phase`). Two exits: plan it into a phase (`/cad-plan` seeds
+  the row), or move the bullet out of `## Active` into the deferred section
+  below it (`## v2 Requirements` in the shipped template). A row with an
+  em-dash Phase cell is `no-phase`, not an exit. Expected mid-cycle exactly
+  like `not-verified`, a defect at ship time.
 
 ## 4. Verdict
 Arithmetic over the seam's output - in-scope `counts.broken` (after any
@@ -56,11 +67,13 @@ milestone filter):
 
 A `frontmatter_issues` entry is additive, not itself a `break` - but a
 payload-dropping diagnostic code can still leave a requirement untraced;
-`references/plan-frontmatter.md` states per code which ones drop. `unseeded`
-and `nonconforming_plans` are additive too and change neither `counts` nor the
-verdict - they name a gap for `/cad-plan` (or a rename) to close, not a break
-to fix here. Either way there is no third, softened state: a broken
-requirement still fails this gate.
+`references/plan-frontmatter.md` states per code which ones drop.
+`active_issues` and `nonconforming_plans` are additive too and change neither
+`counts` nor the verdict - and the id named on an `active_issues` line is in
+neither until that line is rewritten as a bullet. `unseeded` is NOT additive:
+every id it names also carries an `unpicked` break and is already counted.
+Either way there is no third, softened state: a broken requirement still fails
+this gate.
 
 Report: the one-line verdict, the trace table (requirement | phase | plan |
 verified), the dropped/unmapped/drift lists, and - on FAIL - the concrete next

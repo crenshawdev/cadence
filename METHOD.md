@@ -436,6 +436,9 @@ Before a milestone ships, every requirement is traced requirement → phase → 
 → verified, and the joins are computed by the planning seam rather than assembled
 by hand. Each break carries a code: `no-phase` and `no-plan` mean nothing was ever
 committed to deliver it, which is the silent drop the audit exists to catch;
+`unpicked` is that same drop one step earlier, a requirement the milestone
+declared that no phase picked up, so it never even reached the traceability
+table (the partially-planned state the gate used to be blind to);
 `phase-missing` points at a phase not in the roadmap; `not-verified` is expected
 mid-cycle and a defect at ship time; `drift` means the two status sources
 contradict each other, so the status cannot be trusted until reconciled.
