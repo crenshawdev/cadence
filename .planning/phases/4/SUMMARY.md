@@ -70,8 +70,18 @@ Range: `824787e..f14b8b1`, 6 commits, 12 files, +726/-26.
 
 ## Open items
 
-- **HIGH, regression from be19a0b - a lone-CR (classic-Mac) ROADMAP.md is now silently
-  corrupted by `renumber remove`.** Adding `normalize()` inside the shared
+- ~~**HIGH, regression from be19a0b - a lone-CR (classic-Mac) ROADMAP.md is now silently
+  corrupted by `renumber remove`.**~~ **CLOSED by `81bab78`** (`/cad-task`, same branch):
+  the parse path split into `normalizeCrlf` (BOM + `\r\n`) for the roadmap grammar, with
+  the shared `normalize` left unchanged for the frontmatter reader that never writes back.
+  Lone CR returns to unparseable, so `renumber remove` bails `ok:false` with the file
+  byte-identical. The CRLF half was verified rather than assumed: every roadmap write path
+  matches without a `$` anchor (`setPhaseBox:197`, `cmdRenumber`'s list filter) or under
+  `/m` where `$` matches before `\r` (`cutPhaseDetail:1153`), so CRLF round-trips - a CRLF
+  `renumber remove` was run end to end and preserved both the renumbering and the line
+  endings. 8 tests added (4 parser-level, 4 seam-level), all 4 lone-CR ones confirmed
+  failing-capable by reintroducing the regression. `references/roadmap-phases.md`'s
+  Normalization section corrected in the same commit. Original finding for the record: Adding `normalize()` inside the shared
   `parseRoadmapPhases` (`lib/planning-files.mjs:66`) makes lone-`\r` files parse, but
   every WRITE path still splits on `'\n'` against raw bytes. Reproduced live at HEAD:
   a lone-CR roadmap with phases 1 and 2 plus both detail sections, then
