@@ -39,10 +39,13 @@ function fixture(proseText) {
  * config-key checks stay quiet about unrelated keys.
  * `skills` entries are keyed by skill NAME and land at skills/<name>/SKILL.md,
  * which is where check 6 (#74) resolves an agent's `skills:` frontmatter.
+ * `routeTable` is written verbatim to cadence-core/route-table.json for the
+ * rung-ladder check (8); pass a string to write malformed JSON. Omitting it
+ * leaves no table, which skips the check.
  * @param {{agents?:Record<string,string>, skills?:Record<string,string>,
- *          budgets?:Record<string,number>|null}} opts
+ *          budgets?:Record<string,number>|null, routeTable?:object|string}} opts
  */
-function fixtureWith({ agents = {}, skills = {}, budgets = null }) {
+function fixtureWith({ agents = {}, skills = {}, budgets = null, routeTable = undefined }) {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
     'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
@@ -61,14 +64,23 @@ function fixtureWith({ agents = {}, skills = {}, budgets = null }) {
     writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
       JSON.stringify({ budgets }, null, 2));
   }
+  if (routeTable !== undefined) {
+    writeFileSync(join(root, 'cadence-core', 'route-table.json'),
+      typeof routeTable === 'string' ? routeTable : JSON.stringify(routeTable, null, 2));
+  }
   return root;
 }
+
+/** The five rungs the shipped table declares, for rung-ladder fixtures. */
+const RUNG_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
  * A full-tree fixture: has `.claude-plugin/plugin.json` (the isFullTree
  * marker) plus every always-expected input (#44) - the five core surface
- * dirs, `cadence-core/bin/weight-budgets.json`, and `INTERNALS.md` - so a
- * test can delete/rename exactly one and assert the gate catches it.
+ * dirs, `cadence-core/bin/weight-budgets.json`, `INTERNALS.md`, and a minimal
+ * valid `cadence-core/route-table.json` with the agent file its one role names
+ * - so a test can delete/rename exactly one and assert the gate catches it,
+ * without the other rows accumulating unrelated missing-input noise.
  */
 function fullFixture() {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-full-'));
@@ -80,8 +92,14 @@ function fullFixture() {
   }
   cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
     join(root, 'cadence-core', 'config.schema.json'));
+  const agent = '---\nname: cad-t\ntools: Read\n---\nbody\n';
+  writeFileSync(join(root, 'agents', 'cad-t.md'), agent);
+  writeFileSync(join(root, 'cadence-core', 'route-table.json'), JSON.stringify({
+    rung_order: RUNG_ORDER,
+    roles: { 'cad-t': { tier: 'light', base_effort: 'low', rungs: ['low'], escalate_to: 'low' } },
+  }, null, 2));
   writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
-    JSON.stringify({ budgets: {} }, null, 2));
+    JSON.stringify({ budgets: { 'agents/cad-t.md': Buffer.byteLength(agent, 'utf8') } }, null, 2));
   writeFileSync(join(root, 'INTERNALS.md'), 'Read the code: `cadence-core/config.schema.json`.\n');
   return root;
 }
@@ -410,6 +428,157 @@ test('a full tree missing INTERNALS.md fails ok:false naming it', () => {
   assert.equal(r.ok, false);
   const hit = r.problems.find((p) => p.kind === 'missing-input' && p.file === 'INTERNALS.md');
   assert.ok(hit, JSON.stringify(r.problems));
+});
+
+// --- check 7: a rung file carries no behaviour of its own (RNG-01) ---
+
+const RUNG_BODY = 'Your rung is `high`.\n\nFollow the preloaded `cad-t-contract` skill exactly.\n';
+
+test('check 7: an agent preloading a contract that carries <process> in its body is flagged', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\n---\n'
+      + RUNG_BODY + '\n<process>\nDo it my way instead.\n' },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'agent-carries-behaviour' && x.file === 'agents/a.md'
+    && /<process>/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7: the same body WITHOUT the tag yields no agent-carries-behaviour', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\n---\n' + RUNG_BODY },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+test('check 7: an agent with NO skills: key may carry <process> - the D-04 escape hatch', () => {
+  // A future one-off agent with inline prose stays legal; the check is scoped
+  // to files that preload a contract, not to every agent file.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\n<process>\nInline contract.\n</process>\n' },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+test('check 7: the tags inside a PRELOADED SKILL.md are never flagged - that is the contract', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\n---\n' + RUNG_BODY },
+    skills: { 'cad-t-contract': '---\nname: c\nuser-invocable: false\n---\n'
+      + '<role>\nYou are a thing.\n</role>\n<process>\nSteps.\n</process>\n' },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+// --- check 8: the rung ladder, table <-> disk (RNG-01) ---
+
+/** A one-role table whose spec is overridden per row. */
+const roleTable = (spec, order = RUNG_ORDER) => ({
+  rung_order: order,
+  roles: { 'cad-t': { tier: 'light', ...spec } },
+});
+
+test('check 8: a rung the table names with no agent file is missing-rung-agent', () => {
+  const root = fixtureWith({
+    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low', 'high'], escalate_to: 'high' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-rung-agent'
+    && x.file === 'cadence-core/route-table.json'
+    && /cad-t rung high -> agents\/cad-t-high\.md absent/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: a base_effort outside its own rungs is rung-not-declared naming the role', () => {
+  const root = fixtureWith({
+    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
+    routeTable: roleTable({ base_effort: 'max', rungs: ['low'], escalate_to: 'low' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'rung-not-declared'
+    && x.file === 'cadence-core/route-table.json'
+    && /^cad-t\b/.test(x.detail) && /base_effort/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: an escalate_to outside its own rungs is rung-not-declared naming the role', () => {
+  const root = fixtureWith({
+    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'xhigh' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'rung-not-declared'
+    && /^cad-t\b/.test(x.detail) && /escalate_to/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: a rung outside rung_order is unknown-rung', () => {
+  const root = fixtureWith({
+    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low', 'ludicrous'], escalate_to: 'low' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-rung'
+    && x.file === 'cadence-core/route-table.json'
+    && /ludicrous/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: a malformed route-table.json is ONE unreadable-surface, and the earlier checks still report', () => {
+  // Same #49.1 guard the budget manifest carries: an unguarded parse here
+  // unwinds run() and the dispatch catch flattens it to reason:"internal"
+  // with `problems` absent, discarding every problem found so far.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    routeTable: '{ not json',
+  });
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.problems.filter((x) => x.kind === 'unreadable-surface'
+    && x.file === 'cadence-core/route-table.json').length, 1, JSON.stringify(r.problems));
+  assert.ok(r.problems.some((x) => x.kind === 'undeclared-tool' && /Bash/.test(x.detail)),
+    JSON.stringify(r.problems));
+});
+
+test('check 8: a full tree with no route-table.json fails ok:false naming the input', () => {
+  const root = fullFixture();
+  rmSync(join(root, 'cadence-core', 'route-table.json'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'missing-input'
+    && x.file === 'cadence-core/route-table.json'), JSON.stringify(r.problems));
+});
+
+test('check 8 (reverse): a rung-suffixed agent file naming an undeclared rung is flagged', () => {
+  // The direction AC1's "exactly" needs. Without it, a stale rung file - one
+  // the table stopped naming - stays green while still paying standing context
+  // in every main-session prompt.
+  const root = fixtureWith({
+    agents: {
+      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
+      'cad-t-xhigh.md': '---\nname: cad-t-xhigh\ntools: Read\n---\nbody\n',
+    },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'undeclared-rung-agent'
+    && x.file === 'agents/cad-t-xhigh.md'
+    && /cad-t does not declare rung xhigh/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8 (reverse): an UNSUFFIXED agent file the table names nowhere is NOT flagged', () => {
+  // The reverse direction must not creep into a blanket table-membership
+  // rule - that would outlaw the one-off agent D-04 keeps legal.
+  const root = fixtureWith({
+    agents: {
+      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
+      'cad-oneoff.md': '---\nname: cad-oneoff\ntools: Read\n---\nbody\n',
+    },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'undeclared-rung-agent'), JSON.stringify(p));
 });
 
 test('a minimal (non-full-tree) fixture omitting optional inputs stays free of missing-input problems', () => {
