@@ -50,7 +50,7 @@ close failed for the same reason one layer up. Per-task plans come at
   closed by one left-to-right quote/escape-state tokenizer rather than six more
   regex arms, since regex patching is what produced phase 4's own two push-rail
   regressions. The shipped rail-3 claim in `references/git.md` moves with it.
-- [ ] **Phase 4: A stated grammar for the roadmap phase list** - Goal: what
+- [x] **Phase 4: A stated grammar for the roadmap phase list** - Goal: what
   counts as a phase-shaped line is defined rather than guessed, so an empty
   `## Phases` is a derived closed-milestone state instead of
   `unparseable-roadmap`, `/cad-progress` works between milestones and routes to
