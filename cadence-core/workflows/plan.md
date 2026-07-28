@@ -204,7 +204,7 @@ Handle the return:
        routing seam can escalate under `auto`. Plans were written inline: apply
        the fixes in the main context.
     2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
-       (routing seam escalates it to the `-high` effort variant under `auto`).
+       (the routing seam escalates it to its `high` rung file under `auto`).
     3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
        blockers and ask (ask-user seam): proceed to execution anyway, or stop
        and revise by hand. Never loop again.

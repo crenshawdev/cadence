@@ -42,9 +42,11 @@ How a workflow dispatches work to a fresh-context subagent.
 - Dispatch via the agent/Task mechanism with `(agent_name, prompt, model?)`.
 - `model` is per-dispatch overridable; use it as the primary auto-routing lever.
 - Effort is NOT per-dispatch overridable: it is fixed in agent frontmatter per
-  role. Runtime effort escalation swaps to an effort-variant agent file
-  (`cad-plan-checker-high`, ...) - these exist only for roles whose base effort
-  is below the escalation target.
+  FILE, so varying it means varying the file. Runtime escalation swaps to the
+  rung file the role's `escalate_to` names (`cad-plan-checker` ->
+  `cad-plan-checker-high`). Each role declares its reachable rungs in
+  `route-table.json`; the base rung lives at `agents/<role>.md` and every other
+  at `agents/<role>-<rung>.md`, and self-verify fails when one has no file.
 - Timeout: `workflow.subagent_timeout` from config.
 - Every dispatch is fresh-context and self-contained; there is no resume or
   "continue the same agent". A re-dispatch (revision, continuation, escalation)
@@ -94,7 +96,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_na
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed - that is the signal `auto` uses to escalate. Pass `--files` /
   `--ambiguity` when you have them (auto tier bump); omit otherwise.
-- Use the returned `agent` (may be an effort-variant) and `model` in the
+- Use the returned `agent` (may be a rung file other than the base) and `model` in the
   dispatch. `escalated`/`reason` are for logging why.
 - `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
   no `model` override (session default). Routing never blocks a spawn.
@@ -104,7 +106,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_na
   (`opus`/`sonnet`/`haiku`/`fable`) and wins over the whole profile/tier matrix,
   including an `auto` escalation. The resolver reports `pinned: true` and names
   the swap in `reason`; effort is untouched, so a pinned role still gets its
-  effort-variant agent file. An unrecognized alias returns a `warning` and the
+  escalated rung file. An unrecognized alias returns a `warning` and the
   routed model stands - a typo must not silently redirect the spend. `fable` is
   reachable ONLY this way: it sits on no profile rung, because placing it on the
   capability ladder would assert a ranking against the others that is not

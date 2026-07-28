@@ -138,7 +138,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant
 
 ## 4. Rough magnitude
 - Skills: 69 → ~22 (−68%)
-- Agents: 34 → ~9 roles (−74%), plus ~4–8 effort-variant files of the same roles (§6)
+- Agents: 34 → ~9 roles (−74%), plus ~4–8 rung files of the same roles (§6)
 - The spine alone: ~5,100 workflow lines → ~900, with no loss of solo-dev value.
 - Whole subsystems deleted: update/patch/pristine, CLI shim, STATE audit logs, MemPalace,
   graphify, AI track, doc-ingest, UI track, workstreams/workspace.
@@ -349,7 +349,7 @@ lever is trigger frequency (gating), never a weak reviewer.
   → **Design:** MODEL is the primary auto-routing lever (native per-dispatch). EFFORT is fixed per
   agent *role* (planner=high, formatter=low; role is known so this is fine). Runtime effort
   *escalation* uses a small set of **variant agent files** (`planner-high`/`planner-low`, etc.) for
-  the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps effort-variant
+  the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps the rung file
   when needed, bounded by guardrails.
 - ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
   (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
@@ -366,6 +366,17 @@ lever is trigger frequency (gating), never a weak reviewer.
   an unranked model on a rung would assert a comparison we cannot support. A pin is the user
   asserting it instead. Guardrail: unknown alias → warning + routed model stands, never a silent
   redirect of spend. If this grows a second knob, re-read the cut before adding it.
+- ⚠️ **SUPERSEDED (2026-07-28):** the single `escalate_effort_variant` key is gone, replaced by a
+  declared rung ladder: `route-table.json` states `rung_order` and gives every role its own `rungs`
+  array plus an `escalate_to` naming the escalation target, and all 13 reachable rungs exist as
+  agent files (6 base at `agents/<role>.md`, 7 suffixed at `agents/<role>-<rung>.md`). The
+  VERIFIED finding above is untouched — effort is still definition-time frontmatter, which is
+  exactly why a rung needs a file. What changed is that the rung set is data rather than one
+  hardcoded variant, so the routing layer can vary effort per role. The rungs are declared PER ROLE
+  rather than as a cross product because each one costs standing context in every main-session
+  prompt. Two self-verify checks bound the cost: a routable rung with no file (and a rung file no
+  role declares) fails CI, and a rung file that carries behaviour of its own fails CI — the
+  contract lives once, in the preloaded contract skill (#74), and a rung file may only point at it.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
