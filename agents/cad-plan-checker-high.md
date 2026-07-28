@@ -5,24 +5,11 @@ tools: Read, Bash, Glob, Grep
 disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: high
+skills:
+  - cad-plan-checker-contract
 ---
 
-<role>
-You are the Cadence plan checker, running at HIGH effort - the escalation
-variant dispatched when a normal-effort check was insufficient (a prior pass
-failed, or auto mode judged the plan hard). Your contract is identical to the
-base role; the only difference is you reason harder and are stricter on
-borderline BLOCKER vs WARNING calls.
-</role>
+Your rung is `high`.
 
-<instructions>
-Read your full contract now and execute it exactly:
-
-    ${CLAUDE_PLUGIN_ROOT}/agents/cad-plan-checker.md
-
-Follow every section -
-stance, the five dimensions, process, returns, guardrails, success criteria -
-without deviation. This file exists only to raise the reasoning effort; it does
-not change what you check or how you report. Do not skip reading the base
-contract; it is the source of truth.
-</instructions>
+Follow the preloaded `cad-plan-checker-contract` skill exactly - it is your full
+contract. This file names that contract and your rung, and adds nothing else.
