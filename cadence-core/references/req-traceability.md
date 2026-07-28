@@ -29,6 +29,47 @@ nothing matched". A present-but-empty heading (the shipped template's
 must preserve this distinction; coercing `null` to `[]` silently misreports an
 unopened milestone as one that was opened and never seeded.
 
+### The lines this grammar does not read
+
+A line inside `## Active` that names a requirement id but is not a bullet of
+the form above declares NO id. It is not silently dropped: `/cad-audit` reports
+it in `active_issues` as `{line, code, text}`, one issue per line, in line
+order. Each code below is pinned by a case in `cadence-core/bin/planning-files.test.mjs`.
+
+| Code | Example line | What `audit` does with it | Fix |
+|---|---|---|---|
+| `active-table-row` | `\| TRI-01 (triage every open bug) \| v1.3.1 \|` | declares no id; reported | rewrite the row as `- **TRI-01**: ...` |
+| `active-indented-bullet` | `  - **AUD-02**: a sub-bullet` | declares no id; reported | the grammar reads column-0 bullets only - move it to column 0 (bolding it again changes nothing) |
+| `active-nondash-bullet` | `* **AUD-02**: star-bulleted` | declares no id; reported | legal GFM, but the grammar reads `-` markers only - use `- **AUD-02**: ...` |
+| `active-unbolded-bullet` | `- AUD-02: an unbolded bullet` | declares no id; reported | bold the id where the grammar looks, immediately after the marker: `- **AUD-02**: ...` |
+| `active-ordered-item` | `1. AUD-02: the audit gate` | declares no id; reported | rewrite as a `-` bullet |
+| `active-heading` | `### AUD-02` | declares no id; reported | a `###` sub-heading is ordinary section text to this grammar (a `## ` heading would end the section instead) - declare the requirement as a bullet under it |
+| `active-prose-line` | `Scope for v1.4.0: TOK-01 and RDM-01.` | declares no id; reported (conditionally - see below) | write one bullet per requirement |
+| `active-non-id-bullet` | `- **Note**: scope frozen` / `- **AUD-01:** text` | IS an id by the grammar, and stays one for `seed-reqs`; held OUT of `audit`'s arithmetic and reported | put exactly the id inside the bold span, punctuation and prose outside it (`- **AUD-01**: text`), or unbold a bullet that declares no requirement |
+
+Three rules that are deliberately not what a reader would guess:
+
+- An entry-shaped near-miss (every code above but `active-prose-line` and
+  `active-non-id-bullet`) is reported even when real
+  bullets parsed beside it. A table row or an unbolded bullet in a section that
+  also has real bullets is the mixed-authoring case this diagnostic exists to
+  catch - an id half-declared - not a detail line.
+- `active-prose-line` is the one conditional code. It fires only when the
+  section declares ZERO ids AND the line names at least one id that appears
+  nowhere else in REQUIREMENTS.md. So an intro paragraph naming ids above a
+  real bullet list stays quiet, and so does a closed milestone's `## Active`
+  ("No active milestone. `v1.2.0` shipped its scope (REV-01, SOC-01) - see
+  `## Shipped`") - those ids are recorded, nothing is lost. A section authored
+  entirely as prose that names ids the file records nowhere is still never
+  silent.
+- A bold span that is not id-shaped is STILL an id to the grammar:
+  `- **Note**: ...` declares the id `Note`, and `seed-reqs` treats it as
+  declared. That is unchanged and deliberate - narrowing the span would change
+  what the writer seeds. `audit` narrows on its own side instead: only an id
+  that is exactly `PREFIX-N` or `#N` may carry an `unpicked` break or enter
+  `counts`, so a prose bold-bullet is reported (`active-non-id-bullet`) and
+  never fails a gate under a name that is not a requirement.
+
 ## `## Traceability`
 
 Live requirement -> phase -> plan -> verified trace for the open milestone.
@@ -77,25 +118,60 @@ against `## Active`:
   old-heading project, or a close that never seeded it), so these ids are not
   scope creep, and the fix is to open the section, not to edit the plan.
 
-## The two additive `/cad-audit` diagnostics
+## What `/cad-audit` reports on this section
 
-Neither changes `counts` or the PASS/FAIL verdict - both are pure signal for
-a human or `/cad-plan` to act on.
+`unseeded` is NOT additive. An `## Active` id with no Traceability row carries
+an `unpicked` break in `requirements[]` and moves `counts.broken`, so the
+verdict is FAIL: the gate holds while a milestone is only partly planned, not
+only against a zero-row table. This reverses the verdict-neutral shape shipped
+one milestone earlier, deliberately - `workflows/milestone.md`'s ship gate
+branches on the verdict alone, so an additive field left it exactly as
+permeable as it was at the v1.2.0 and v1.3.1 closes.
 
-- `unseeded: { active_ids: [...] }` fires when the Traceability table has
-  ZERO rows at all, naming the `## Active` ids that should have one. This is
-  the diagnostic that closes the blind spot verified live twice
-  (v1.2.0 and v1.3.1 closes): an empty table PASSes `counts.broken == 0`
-  vacuously. `active_ids` preserves the `null`-vs-`[]` distinction from
+- `unseeded: { active_ids: [...] }` fires at ANY row count, naming the
+  `## Active` ids with no Traceability row - the same question the field always
+  asked, no longer asked only when the table is empty. Every id it names also
+  carries an `unpicked` break above; the field is the payload, `requirements[]`
+  is the verdict. `active_ids` preserves the `null`-vs-`[]` distinction from
   `parseActiveIds` above: `no_active_section: true` sits alongside it when the
   heading itself is absent, so "milestone never opened" is never collapsed
-  into "declared but never seeded".
+  into "declared but never seeded". A present-but-empty `## Active` still
+  reports `{active_ids: []}` at zero rows, and an id that is not id-shaped
+  (`- **Note**: ...`) is never in the payload - `/cad-plan` could not seed a row
+  for it either.
+- `counts.total` is Traceability rows PLUS unpicked ids, so
+  `total = traced + broken + deferred` still holds now that a break can exist
+  with no row. A reader written against `total === rows.length` will disagree
+  after v1.4.0; nothing in Cadence reads it that way.
+- `active_issues` and `nonconforming_plans` ARE additive: they change neither
+  `counts` nor the verdict. That is a real cost here, not a reassurance - the
+  id named on an `active_issues` line is NOT in the unpicked set and NOT in
+  `counts` until the line is rewritten as a bullet whose bold span is exactly
+  the id. A section authored entirely as a table reports every row and still
+  PASSes; the issues are the only place that scope is visible.
 - `nonconforming_plans` fires when a phase directory holds a `PLAN*.md` file
   that is not `PLAN.md` or `PLAN-<N>.md` (e.g. a stray `PLAN-gaps.md`) - a
   filename no seam and no executor dispatch reads, so its requirements and
   files are silently invisible everywhere while the phase still reports
   success. `plan-overlap` emits the same field, bare filenames instead of
   `phases/<n>/<file>` paths.
+
+### The two exits for an `unpicked` id, and the one that is not an exit
+
+- Plan it into a phase. `/cad-plan <n>` seeds the row (`seed-reqs`, above), and
+  the break clears on the next audit.
+- Move the bullet out of `## Active` into the deferred section below it - the
+  shipped template spells that `## v2 Requirements`; this repo's own file uses
+  `## Deferred`. Either works, and so does any other `## ` section after
+  `## Active`: the exclusion is by SECTION PLACEMENT, because every parser here
+  cuts at the next `## ` heading. It is never a status check - the `Deferred`
+  Status value only ever excludes ids that ALREADY have a row, which an
+  unpicked id by definition does not.
+
+There is no third exit. Giving the id a row with an em-dash Phase cell yields
+`phase: null`, which breaks as `no-phase` instead - a different break with a
+different fix (assign the row a phase), which is why `unpicked` entries carry
+no `phase` key at all.
 
 ## Migration: a project scaffolded before v1.4.0
 
@@ -105,3 +181,9 @@ A project whose REQUIREMENTS.md still carries the pre-v1.4.0 heading
 heading is renamed to `## Active` - a one-line edit, and the report names it.
 There is no heading-alias fallback in the parser; a second accepted spelling
 is exactly the kind of accreted heuristic this cycle exists to remove.
+
+Such a project gains NO `unpicked` break from the rule above, at any row count:
+with no heading there is no declared scope, and `parseActiveIds`' `null` is
+never coerced to `[]`. Its audit reads exactly as it did before v1.4.0 until
+the heading is renamed - at which point its `## Active` ids become scope, and
+the ones with no row break.
