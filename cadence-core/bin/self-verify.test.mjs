@@ -107,13 +107,14 @@ test('#50: a CRLF backslash continuation joins like an LF one (the --items regre
   assert.ok(p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
 });
 
-test('#50: an EVEN backslash run does NOT continue the line - the next line is a separate command (D-15 parity, shared with git-guard)', () => {
+test('#50: an EVEN backslash run does NOT continue the line - the next line is a separate command (D-15 parity, one rule with the git rails)', () => {
   // `\\` at EOL is a literal backslash, not a continuation, so `--items` sits
   // on a line of its own and belongs to no planning.mjs invocation. A
   // parity-blind join merges it in and invents an unknown-flag that the prose
-  // never wrote. git-guard.mjs carries the identical parity-aware regex - the
-  // two seams stay ONE idiom (D-15), and being wrong in lockstep is not what
-  // that decision asked for.
+  // never wrote. The same parity rule holds for the git rails, spelled as
+  // escape state in lib/shell-tokens.mjs because that input is a shell command
+  // string rather than prose (D-13): ONE rule, two spellings, each fitted to
+  // its input. This test asserts self-verify's own behavior only.
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase 1 \\\\\n--items -\n');
   const p = run(['--root', root]).problems;
