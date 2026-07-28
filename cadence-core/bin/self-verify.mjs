@@ -44,7 +44,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
-import { rungAgents, rungIssues } from './lib/rung-agent.mjs';
+import { rungAgents, rungBodyIssue, rungIssues } from './lib/rung-agent.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -521,6 +521,14 @@ function run(root) {
       // behavioural instruction fits under any budget, so a size check would
       // miss exactly the failure this exists to catch, and gating on `skills:`
       // keeps a future one-off agent with inline prose legal (D-04).
+      //
+      // TWO arms, denylist first then allowlist, because the denylist alone
+      // enforced less than INTERNALS.md:11 and DESIGN.md:378 claim of it. A
+      // body carrying `<process>` is named by its tag, which is the more
+      // actionable message; a body carrying no tag at all is then held to the
+      // canonical template, which is what catches plain-prose behaviour and a
+      // same-size REPLACEMENT of the pointer paragraph. Byte budgets were the
+      // accidental backstop here - they catch an append and nothing else.
       if (fm && /^skills:/m.test(fm[1])) {
         const tags = [];
         for (const m of body.matchAll(
@@ -530,6 +538,14 @@ function run(root) {
         if (tags.length) {
           problems.push({ kind: 'agent-carries-behaviour', file: rel,
             detail: `body carries contract section ${tags.map((t) => `<${t}>`).join(', ')} - the contract belongs in the preloaded skill` });
+        } else {
+          const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
+          const issue = rungBodyIssue(body, effortLine ? effortLine[1] : undefined,
+            parseSkillsField(fm[1]));
+          if (issue) {
+            problems.push({ kind: 'agent-carries-behaviour', file: rel,
+              detail: `${issue.detail} - the contract belongs in the preloaded skill` });
+          }
         }
       }
 

@@ -77,6 +77,68 @@ export function rungAgents(role, spec) {
 }
 
 /**
+ * The canonical BODY of a rung agent file: the rung line, then a pointer at
+ * the contract it preloads. Stated here rather than inside self-verify for the
+ * same reason the name mapping is - the check and the files it checks must
+ * read ONE source, or they drift and the linter blesses the drift.
+ * @param {string} rung the file's frontmatter `effort`
+ * @param {string} skill the contract skill the file preloads
+ * @returns {string}
+ */
+export function rungBody(rung, skill) {
+  return `Your rung is \`${rung}\`.\n\n`
+    + `Follow the preloaded \`${skill}\` skill exactly - it is your full\n`
+    + 'contract. This file names that contract and your rung, and adds nothing else.\n';
+}
+
+/**
+ * A body in whitespace-insensitive form, so re-wrapping a paragraph is free
+ * and only a REWORD counts as a change. Comparing raw text would make the
+ * line breaks load-bearing - a CI failure with no fix a maintainer would
+ * think of.
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeBody(text) {
+  return String(text === undefined || text === null ? '' : text).replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Whether a rung file's body is anything other than the canonical template.
+ *
+ * An ALLOWLIST, deliberately, and this is the second attempt at the rule.
+ * D-04 rejected a size-only check because a 200-byte behavioural instruction
+ * fits under any weight budget - but so does a 200-byte instruction carrying
+ * no contract section tag, so the tag denylist it chose instead had the same
+ * hole: a rung file whose whole body is plain prose passed CI. A rung file has
+ * exactly ONE legitimate body, so "is it that body" is the only rule that
+ * matches what INTERNALS.md:11 claims - it refuses a rung file carrying any
+ * instruction of its own, including a same-size REPLACEMENT of the pointer
+ * paragraph, which no byte budget can see.
+ *
+ * The tag denylist stays in front of this in self-verify: when a body DOES
+ * carry `<process>`, naming the tag is the more actionable message.
+ *
+ * A file declaring several skills passes if its body points at any ONE of
+ * them - the template names a single contract, and nothing here rules out a
+ * future multi-contract agent.
+ *
+ * @param {string} body the agent file's prose, frontmatter already stripped
+ * @param {string} [rung] the file's frontmatter `effort`
+ * @param {string[]} [skills] the file's declared `skills:` entries
+ * @returns {null|{detail: string}} null when the body IS the template
+ */
+export function rungBodyIssue(body, rung, skills) {
+  const found = normalizeBody(body);
+  const declared = (Array.isArray(skills) ? skills : [])
+    .filter((s) => typeof s === 'string' && s);
+  const names = declared.length ? declared : ['<contract>'];
+  const wanted = names.map((s) => normalizeBody(rungBody(rung || '', s)));
+  if (wanted.includes(found)) return null;
+  return { detail: `body is not the rung template - expected exactly ${JSON.stringify(wanted[0])}` };
+}
+
+/**
  * Problems in one role's OWN rung declaration - not on disk, which is
  * self-verify's job. Every `detail` begins with the role name, because the
  * caller files these against `cadence-core/route-table.json` and the role is
