@@ -240,6 +240,139 @@ test('detached HEAD is not a protected branch (rev-parse says HEAD)', () => {
   assert.equal(guard('git commit -m "x"', dir), null);
 });
 
+test('the six non-wrapper shapes silent at HEAD now reach the push rail (phase 3)', () => {
+  // A defect proven only at the parser level is not proven to reach the
+  // permission prompt, which is the hook's only observable (D-09). Each of
+  // these printed EMPTY stdout before the tokenizer landed.
+  const p = project('feature');
+  for (const command of [
+    'git -C "my repo" push origin main',          // (a) quoted -C path
+    'git add -A & git push origin main',          // (b) a bare & separator
+    '$(git push origin main)',                    // (c) command substitution
+    '`git push origin main`',                     // (d) backticks
+    '(git push origin main)',                     // (e) a subshell
+    'echo \\" ; git push origin main; echo "done"', // (f) an escaped quote
+  ]) {
+    const d = guard(command, p);
+    assert.notEqual(d, null, `guard stayed silent for: ${command}`);
+    assert.equal(d.permissionDecision, 'ask', command);
+    assert.match(d.permissionDecisionReason, /cad-land/);
+  }
+});
+
+test('the stated wrapper set reaches the push rail like the bare form (D-02)', () => {
+  const p = project('feature');
+  for (const command of [
+    'bash -c "git push origin main"',
+    "sh -c 'git push origin main'",
+    'zsh -c "git push origin main"',
+    'dash -c "git push origin main"',
+    'eval "git push origin main"',
+    'bash -lc "git push origin main"',
+    '/bin/sh -c "git push origin main"',
+    'sudo bash -c "git push origin main"',
+    'timeout 60 bash -c "git push origin main"',
+    '/usr/bin/env bash -c "git push origin main"',
+    'eval "git" "push origin main"',
+    "bash -c $'git push origin main'",
+  ]) {
+    const d = guard(command, p);
+    assert.notEqual(d, null, `guard stayed silent for: ${command}`);
+    assert.equal(d.permissionDecision, 'ask', command);
+    assert.match(d.permissionDecisionReason, /cad-land/);
+  }
+});
+
+test('a wrapped commit follows the same git.on_protected path as the bare form (D-04)', () => {
+  // Both rails read one tokenizer, so they agree on what a wrapped command IS
+  // (phase-4 D-07). Accepted downstream consequence: a user configured
+  // on_protected=refuse now finds `bash -c "git commit ..."` hard-blocked on a
+  // protected branch, which is what refuse MEANS. This repo runs `ask`.
+  const refuse = project('main', { git: { on_protected: 'refuse' } });
+  assert.deepEqual(guard('bash -c "git commit -m x"', refuse),
+    guard('git commit -m x', refuse));
+  assert.equal(guard('bash -c "git commit -m x"', refuse).permissionDecision, 'deny');
+
+  const ask = project('main');
+  assert.deepEqual(guard('bash -c "git commit -m x"', ask),
+    guard('git commit -m x', ask));
+  assert.equal(guard('bash -c "git commit -m x"', ask).permissionDecision, 'ask');
+});
+
+test('a wrapper word that is NOT the command word can ask but never deny', () => {
+  // Detection is any-position (that is what catches `sudo bash -c ...` with
+  // one rule); REFUSAL is command-position only. Before this gate, a
+  // read-only `rg -t sh "git commit"` came back `deny` under refuse - a
+  // search hard-blocked by a rail meant for real commits.
+  const refuse = project('main', { git: { on_protected: 'refuse' } });
+  for (const command of [
+    'rg -t sh "git commit"',
+    'echo bash -c "git commit -m x"',
+    'shellcheck -s bash "git commit"',
+  ]) {
+    const d = guard(command, refuse);
+    assert.notEqual(d, null, command);
+    assert.equal(d.permissionDecision, 'ask', command);
+    assert.match(d.permissionDecisionReason, /shell-wrapper argument/);
+  }
+  // and the command-position form is untouched: it still denies
+  assert.equal(guard('bash -c "git commit -m x"', refuse).permissionDecision, 'deny');
+});
+
+test('wrapper operands that are not flags still reach the push rail', () => {
+  // Two shapes that ran a REAL push silently: a payload whose content begins
+  // with `-` (skipped as a flag), and a glued `-c"..."` (never re-tokenized).
+  const p = project('feature');
+  for (const command of [
+    'bash -c "-n; git push origin main"',
+    'bash -c"git push origin main"',
+    'bash -lc"git push origin main"',
+  ]) {
+    const d = guard(command, p);
+    assert.notEqual(d, null, `guard stayed silent for: ${command}`);
+    assert.equal(d.permissionDecision, 'ask', command);
+    assert.match(d.permissionDecisionReason, /cad-land/);
+  }
+});
+
+test('a wrapper fed by a redirect or a pipe asks instead of going silent', () => {
+  // The shell hands these their script on stdin, so the wrapper has no operand
+  // to re-tokenize - and both really execute. The guard reads the dropped
+  // redirection target (and, with no operand at all, the whole source) for a
+  // git word and asks (D-03); it never attempts pipeline data-flow analysis.
+  const p = project('feature');
+  for (const command of [
+    'bash <<< "git push origin main"',
+    'echo "git push origin main" | bash',
+  ]) {
+    const d = guard(command, p);
+    assert.notEqual(d, null, `guard stayed silent for: ${command}`);
+    assert.equal(d.permissionDecision, 'ask', command);
+    assert.match(d.permissionDecisionReason, /could not parse/);
+  }
+  // the same shapes with no git word anywhere stay silent
+  assert.equal(guard('echo hello | bash', p), null);
+  assert.equal(guard('grep bash -c file.txt', p), null);
+});
+
+test('an unplaced git word asks, and an unresolvable shape without one stays silent (D-03)', () => {
+  const p = project('feature');
+  const d = guard('echo "git push origin main', p);
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /could not parse/);
+  // no git word in the unresolvable text: the guard must not manufacture noise
+  assert.equal(guard('echo "unterminated', p), null);
+  assert.equal(guard('eval $CMD', p), null);
+});
+
+test('the unplaced rail never denies, even under on_protected refuse (D-03/D-04)', () => {
+  // The tokenizer could not place the word, so it cannot know the command is
+  // a commit; the hard-deny path belongs to what it DID resolve.
+  const d = guard('echo "git commit -m x',
+    project('main', { git: { on_protected: 'refuse' } }));
+  assert.equal(d.permissionDecision, 'ask');
+});
+
 test('malformed stdin exits 0 with no output (guard never blocks work)', () => {
   assert.equal(guardRaw('not json {'), '');
 });
