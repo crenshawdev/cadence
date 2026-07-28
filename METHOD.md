@@ -488,8 +488,9 @@ protected-branch guard when work would land on a protected branch. A nudge there
 is a bug, not a convenience.
 
 Work runs on two tiers. A per-milestone integration branch is what parallel
-worktree branches merge back into - where the host forks a worktree from is
-not Cadence's to guarantee - created at cycle start per `git.auto_branch` and
+worktree branches merge back into - where a worktree forks FROM is the host's
+`worktree.baseRef` setting, which the parallel path requires at `head` -
+created at cycle start per `git.auto_branch` and
 named by `git.integration_branch` (`milestone` by default, with a `trunk`
 escape hatch). After a successful land, `git.on_land_cleanup` returns to the
 base branch, pulls, and reaps the merged integration branch.
