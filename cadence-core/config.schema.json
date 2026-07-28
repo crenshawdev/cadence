@@ -62,19 +62,19 @@
 
     "review.triggers.plan.gate":            { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "adjudicated", "src": "repo", "purpose": "How the plan review gates" },
     "review.triggers.plan.tier":            { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for plan review" },
-    "review.triggers.plan.effort":          { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for plan review" },
+    "review.triggers.plan.effort":          { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for plan review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen" },
     "review.triggers.diff.gate":            { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "advisory", "src": "repo", "purpose": "How the diff review gates" },
     "review.triggers.diff.tier":            { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "balanced", "src": "repo", "purpose": "Model tier for diff review" },
-    "review.triggers.diff.effort":          { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "medium", "src": "repo", "purpose": "Reasoning effort for diff review" },
+    "review.triggers.diff.effort":          { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "medium", "src": "repo", "purpose": "Reasoning effort for diff review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen" },
     "review.triggers.risk_surface.gate":    { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "blocking", "src": "repo", "purpose": "How the risk-surface review gates" },
     "review.triggers.risk_surface.tier":    { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for risk-surface review" },
-    "review.triggers.risk_surface.effort":  { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for risk-surface review" },
+    "review.triggers.risk_surface.effort":  { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for risk-surface review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen" },
     "review.triggers.pre_ship.gate":        { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "adjudicated", "src": "repo", "purpose": "How the pre-ship review gates" },
     "review.triggers.pre_ship.tier":        { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for pre-ship review" },
-    "review.triggers.pre_ship.effort":      { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for pre-ship review" },
+    "review.triggers.pre_ship.effort":      { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for pre-ship review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen" },
     "review.triggers.phase_diff.gate":      { "type": "enum", "values": ["off", "advisory", "blocking", "adjudicated"], "default": "off", "src": "repo", "purpose": "Opt-in aggregate review of the merged phase diff after parallel execution (per-plan reviews never see cross-plan interactions)" },
     "review.triggers.phase_diff.tier":      { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for the merged-phase review" },
-    "review.triggers.phase_diff.effort":    { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for the merged-phase review" },
+    "review.triggers.phase_diff.effort":    { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for the merged-phase review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen" },
 
     "review.consult.enabled":               { "type": "bool", "default": false, "purpose": "Allow a second-model consult at dead-ends" },
     "review.consult.tier":                  { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for consults" },
@@ -82,6 +82,6 @@
     "review.consult.attempt_threshold":     { "type": "int", "min": 1, "default": 3, "purpose": "Failed fix attempts (or red-test iterations) on one bug before cad-debug offers a consult" },
 
     "review.decision_review.tier":          { "type": "enum", "values": ["flagship", "balanced", "cheap"], "default": "flagship", "src": "repo", "purpose": "Model tier for /cad-decision-review's refute-then-adjudicate pass" },
-    "review.decision_review.effort":        { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for /cad-decision-review" }
+    "review.decision_review.effort":        { "type": "enum", "values": ["minimal", "low", "medium", "high"], "default": "high", "src": "repo", "purpose": "Reasoning effort for /cad-decision-review - cross-model reviewers only; the claude-subagent reviewer's effort is frontmatter-frozen" }
   }
 }

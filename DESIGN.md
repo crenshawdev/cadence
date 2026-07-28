@@ -297,6 +297,18 @@ lever is trigger frequency (gating), never a weak reviewer.
   `thinking_level` minimal/low/medium/high on Gemini) - so the external review path gets free
   per-trigger effort control that Cadence's internal SKILL.md agents cannot have (their effort is
   frontmatter-frozen). An argument the CLI path could not match.
+- ⚠️ **SCOPED (2026-07-28, #64):** the corollary of that last bullet was never written down where
+  the key lives, so `review.triggers.<t>.effort` read as a universal per-trigger dial while
+  `fire()` delivered it on the cross-model arm only - and the shipped default
+  (`reviewers: ["claude-subagent"]`, `diff.effort: medium`) put every stock install on the arm that
+  drops it. Re-verified against the host docs 2026-07-28: on the Agent/Task dispatch path Cadence
+  uses, `effort` is subagent-definition-only - no tool parameter, env var, or setting varies it per
+  dispatch - so this is not wirable, it is scopable. It is a **cross-model key**: `claude-subagent`
+  runs `cad-reviewer` at the `high` its frontmatter pins, and `fire()` now names the mismatch in one
+  line rather than discarding the value silently (references/review-triggers.md steps 1 and 4;
+  config.schema.json purposes say so at the point of setting). Turning it into a real per-trigger
+  dial needs per-rung reviewer agent files, which is #63's proposal to land or reject - deliberately
+  not half-built here.
 - **Live detection makes model IDs non-fatal (the key robustness win).** Three layers:
   1. Live detection - after the key is set, call the provider models endpoint (OpenAI
      `GET /v1/models`, Gemini `ListModels`) to enumerate what THAT key can access. This is truth;

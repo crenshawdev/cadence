@@ -20,6 +20,16 @@ Read `review.triggers.<trigger>` from `.planning/config.json` - an object
 `{ gate, tier, effort }`. If `gate == "off"`, return immediately (no-op). Else
 `gate` is one of `advisory | blocking | adjudicated` (step 6).
 
+**Which fields reach which backend.** `gate` governs both. `tier` and `effort`
+govern the cross-model backend ONLY - they resolve the provider's model id and
+its reasoning-effort API parameter (step 4). The `claude-subagent` backend can
+honour neither: its model comes from the routing seam (`bin/route.mjs`), and
+its effort is frozen in `agents/cad-reviewer.md` frontmatter, because effort is
+definition-time only on the spawn-agent seam - not per-dispatch overridable
+(seams.md). That is a host constraint, not an omission here. So a configured
+`effort` is not a promise this backend can keep, and step 4 names the gap
+instead of dropping the value silently.
+
 ### 2. Payload
 Assemble `{ instruction, artifact }` from the wiring table:
 - `artifact` = the plan text, the diff, or the files under review.
@@ -45,7 +55,18 @@ fallback; never silently skip a `blocking` trigger.
 For each reviewer in the set, in parallel where the host allows:
 
 - **claude-subagent**: dispatch `cad-reviewer` through the spawn-agent seam with
-  the payload as its prompt. Parse the JSON object it returns.
+  the payload as its prompt. Parse the JSON object it returns. `trigger.effort`
+  is NOT passed and cannot be - the seam's surface is
+  `(agent_name, prompt, model?)` - so `cad-reviewer` runs at the `effort:` its
+  own file pins (`high`), whatever the config says.
+  **When `trigger.effort` differs from that pinned effort, say so in one line
+  before dispatching**, e.g. "`diff` is configured at effort `medium`; the
+  claude-subagent reviewer is frontmatter-pinned at `high`, so it runs `high` -
+  per-trigger effort reaches cross-model reviewers only". One line per fire, not
+  per reviewer, and nothing at all when the two already agree. A resolved value
+  the backend cannot deliver is a degradation like any other: name it, the same
+  way a dropped cross-model reviewer is named below. Do not "fix" the mismatch
+  by editing the config or by pretending the effort applied.
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): resolve
   `model = review.providers.<name>.tiers[trigger.tier]`
   and `effort = trigger.effort`, then run the seam:
