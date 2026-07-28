@@ -2130,6 +2130,55 @@ test('renumber: decimal phase tokens are never shifted, and are reported', () =>
   assert.match(after, /\*\*Phase 4: Three\*\*/);           // integers shifted
 });
 
+// --- line endings at the seam -----------------------------------------------
+// The roadmap reads through a CRLF-ONLY normalizer and writes raw bytes split
+// on `\n`. Pinning both halves at the seam, because the corruption these guard
+// against is only observable end to end: a lone-CR file that PARSES reaches
+// write paths that see one giant line, and `renumber remove` then reported
+// ok:true while leaving two `**Phase 1:**` lines and deleting both detail
+// sections. Parser-level counterparts live in planning-files.test.mjs.
+
+const reEncode = (dir, nl) => {
+  const f = join(dir, 'ROADMAP.md');
+  writeFileSync(f, readFileSync(f, 'utf8').replace(/\n/g, nl));
+};
+
+test('renumber remove: a CRLF roadmap renumbers correctly and stays CRLF', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
+  reEncode(dir, '\r\n');
+
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  const after = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(after, /- \[ \] \*\*Phase 1: Two\*\*/);      // shifted down
+  assert.equal(/\*\*Phase 1: One\*\*/.test(after), false);  // list line gone
+  assert.equal(/### Phase 2: Two/.test(after), false);      // detail shifted too
+  assert.equal(/[^\r]\n/.test(after), false);               // every LF still CRLF
+});
+
+test('renumber remove: a lone-CR roadmap is refused, not silently corrupted', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
+  reEncode(dir, '\r');
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-roadmap');
+  // The whole point: the file the command refused is byte-identical after.
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.equal((before.match(/\*\*Phase 1: One\*\*/g) || []).length, 1);
+  assert.equal((before.match(/### Phase \d/g) || []).length, 2);
+});
+
+test('status: a lone-CR roadmap refuses rather than reporting a closed milestone', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  reEncode(dir, '\r');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-roadmap');
+  assert.equal(r.cycle, undefined); // never mistaken for a pruned roadmap
+});
+
 test('renumber: refuses to operate ON a decimal phase', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
   assert.equal(run(['renumber', 'remove', '--n', '1.5'], dir).reason, 'bad-args');

@@ -59,11 +59,13 @@ const PHASE_LINE = /^- \[( |x)\] \*\*Phase (\d+(?:\.\d+)?): (.+?)\*\*(?:\s*-\s*(
  * The text is normalized on the way in (parse path only - `normalize`'s own
  * comment reserves this for the roadmap grammar): a CRLF checkout parses to
  * real phases instead of to `[]`. Nothing is written back here; `setPhaseBox`
- * and `phase-done` still rewrite the raw bytes.
+ * and `phase-done` still rewrite the raw bytes. That asymmetry is why this
+ * uses `normalizeCrlf` and NOT `normalize`: a lone-CR file must stay
+ * unparseable, or the write paths that split raw bytes on `\n` corrupt it.
  * @param {string} text
  */
 export function parseRoadmapPhases(text) {
-  const section = normalize(text).split(/^## Phases\s*$/m)[1];
+  const section = normalizeCrlf(text).split(/^## Phases\s*$/m)[1];
   if (!section) return [];
   const body = section.split(/^## /m)[0];
   const phases = [];
@@ -95,7 +97,10 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  * `phases/<N>/` directory is corroboration `cmdStatus` computes, never part
  * of this verdict. Rules, in order:
  *
- *   1. `normalize(text)` first - parse path only, never written back.
+ *   1. `normalizeCrlf(text)` first - parse path only, never written back, and
+ *      CRLF only: a lone-CR file stays one giant line and falls out at
+ *      `no-section`, which is what keeps the roadmap write paths from
+ *      corrupting a file they cannot split.
  *   2. No `^## Phases$` heading -> `no-section`.
  *   3. Parse the CANONICAL extent (heading to the next `## `, today's bound)
  *      with `parseRoadmapPhases`; one or more matches -> `live` with those
@@ -113,7 +118,7 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  * @returns {{state: string, phases: ReturnType<typeof parseRoadmapPhases>, issues: Issue[]}}
  */
 export function classifyPhaseList(text) {
-  const lines = normalize(text).split('\n');
+  const lines = normalizeCrlf(text).split('\n');
   let heading = -1;
   for (let i = 0; i < lines.length; i++) {
     if (/^## Phases\s*$/.test(lines[i])) { heading = i; break; }
@@ -616,12 +621,36 @@ export function uatComplete(uat) {
  * whose text is written back verbatim by `phase-done` and `renumber` - doing
  * it there would silently rewrite a user's CRLF ROADMAP.md/REQUIREMENTS.md
  * wholesale on the next edit, a byte-level rewrite of files Cadence promises
- * to touch surgically. Phase 4 adopts this for the roadmap grammar it owns.
+ * to touch surgically. Used by the frontmatter reader, which never writes its
+ * text back; the ROADMAP grammar takes `normalizeCrlf` below instead, because
+ * it DOES have write paths and a lone-CR file is one giant line to all of them.
  * @param {string} text
  */
 export function normalize(text) {
   const noBom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
   return noBom.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
+ * The ROADMAP parse normalizer: BOM and `\r\n` only, deliberately leaving a
+ * lone `\r` alone. `normalize` above collapses lone CR too, which is right for
+ * a pure reader but wrong for the roadmap, because the roadmap's WRITE paths
+ * (`setPhaseBox`, `cutPhaseDetail`, `cmdRenumber`'s list filter) split the RAW
+ * bytes on `\n`. Making a lone-CR file parse into real phases therefore hands
+ * those paths one giant line: `renumber remove --n 1` returned `ok:true` while
+ * leaving two `**Phase 1:**` lines and deleting both `### Phase N:` detail
+ * sections. CRLF is safe here and lone CR is not, and the difference is not
+ * incidental - every roadmap write path matches either without a `$` anchor
+ * (`setPhaseBox:197`, the renumber filter) or under `/m`, where `$` matches
+ * before `\r` (`cutPhaseDetail:1153`), so a CRLF line round-trips byte for
+ * byte. A lone-CR file has no such guarantee, so it stays unparseable and the
+ * caller bails - the pre-phase-4 behavior, and the only safe answer for a
+ * format this file cannot write back without corrupting.
+ * @param {string} text
+ */
+function normalizeCrlf(text) {
+  const noBom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  return noBom.replace(/\r\n/g, '\n');
 }
 
 /** Trim and truncate an offending line to 120 chars with a trailing `...`. */

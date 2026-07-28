@@ -31,10 +31,23 @@ status is the `## Phases` checkbox, and nothing else.
 ## Normalization
 
 The classifier and `parseRoadmapPhases` both normalize first: one leading
-`U+FEFF` byte-order mark stripped, every `\r\n` and lone `\r` to `\n`. PARSE
-PATH ONLY - `setPhaseBox` and `phase-done` still rewrite the raw bytes, so a
-CRLF ROADMAP.md is never rewritten wholesale. A CRLF checkout therefore
-classifies exactly as its plain-LF twin does.
+`U+FEFF` byte-order mark stripped and every `\r\n` to `\n`. PARSE PATH ONLY -
+`setPhaseBox` and `phase-done` still rewrite the raw bytes, so a CRLF
+ROADMAP.md is never rewritten wholesale. A CRLF checkout therefore classifies
+exactly as its plain-LF twin does.
+
+**CRLF only - a lone `\r` is deliberately NOT normalized here**, which is why
+this uses `normalizeCrlf` rather than the shared `normalize` (that one does
+collapse lone CR, and is right for readers that never write back). The roadmap
+write paths split the RAW bytes on `\n`, so a lone-CR file is one giant line to
+all of them. CRLF survives that round trip because every roadmap write path
+matches either without a `$` anchor (`setPhaseBox`, `cmdRenumber`'s list
+filter) or under `/m`, where `$` matches before `\r` (`cutPhaseDetail`). Lone
+CR has no such guarantee: making it parse once let `renumber remove` report
+`ok:true` while leaving two `**Phase 1:**` lines and deleting both
+`### Phase N:` detail sections. So a lone-CR roadmap stays unparseable, falls
+out at `no-section`, and the caller refuses - the only safe answer for a
+format these writers cannot reproduce.
 
 ## Two deliberate extents
 

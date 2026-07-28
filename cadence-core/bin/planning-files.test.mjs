@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
-  classifyPhaseList, cutPhaseDetail,
+  classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
 } from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
@@ -579,6 +579,43 @@ test('cutPhaseDetail: a named `### Phase N: Name` heading and its body are cut o
   const out = cutPhaseDetail(DETAILS.replace(/\n/g, '\r\n'), 3);
   assert.ok(!out.includes('named body'));
   assert.ok(out.includes('bare body'));
+});
+
+// --- the roadmap parse path is CRLF-only, never lone-CR ----------------------
+// The roadmap READS through normalizeCrlf and WRITES raw bytes split on `\n`.
+// CRLF survives that round trip because every roadmap write path matches
+// without a `$` anchor (setPhaseBox, the renumber list filter) or under /m
+// where `$` matches before `\r` (cutPhaseDetail). A lone-CR file does not: it
+// is one giant line to every `split('\n')`, so parsing it into real phases
+// hands the write paths a file they corrupt. It must stay unparseable.
+
+const ROADMAP_LF = '# Roadmap\n\n## Phases\n\n- [x] **Phase 1: A** - a\n' +
+  '- [ ] **Phase 2: B** - b\n\n## Phase Details\n\n### Phase 1: A\n\none\n';
+const asCr = (s) => s.replace(/\n/g, '\r');
+const asCrlf = (s) => s.replace(/\n/g, '\r\n');
+
+test('parseRoadmapPhases: a CRLF checkout parses to real phases', () => {
+  assert.deepEqual(
+    parseRoadmapPhases(asCrlf(ROADMAP_LF)).map((p) => p.n), [1, 2],
+  );
+});
+
+test('parseRoadmapPhases: a lone-CR file stays unparseable, so write paths never see it', () => {
+  assert.deepEqual(parseRoadmapPhases(asCr(ROADMAP_LF)), []);
+});
+
+test('classifyPhaseList: a lone-CR file is no-section, not live', () => {
+  assert.equal(classifyPhaseList(asCr(ROADMAP_LF)).state, 'no-section');
+});
+
+test('setPhaseBox: a CRLF line is flipped in place with its `\\r` intact', () => {
+  const out = setPhaseBox(asCrlf(ROADMAP_LF), 2, true);
+  assert.ok(out.text.includes('- [x] **Phase 2: B** - b\r\n'));
+  assert.ok(!out.text.includes('\n\n')); // every terminator still CRLF
+});
+
+test('setPhaseBox: a lone-CR file matches nothing - the parse path must not have let it here', () => {
+  assert.equal(setPhaseBox(asCr(ROADMAP_LF), 1, true), null);
 });
 
 // --- parseActiveIds ----------------------------------------------------------
