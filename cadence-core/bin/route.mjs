@@ -26,6 +26,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { agentForRung } from './lib/rung-agent.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { requireInt } from './lib/require-int.mjs';
 
@@ -106,15 +107,28 @@ function resolve(opts) {
     const resolveProfile = stepProfile(A.base_profile, cfg.ceiling, steps);
     if (steps > 0) {
       // `escalated` reflects what actually changed: a ceiling at/below base
-      // holds the profile (stepProfile), but a failure still swaps the
-      // effort-variant - same model spend, harder reasoning.
+      // holds the profile (stepProfile), but a failure still climbs the rung
+      // ladder - same model spend, harder reasoning.
       if (resolveProfile !== A.base_profile) {
         escalated = true;
         reason.push(`profile ${A.base_profile}->${resolveProfile} (attempt ${opts.attempt}, ceiling ${cfg.ceiling}, max ${cfg.max_escalations})`);
       } else {
         reason.push(`profile held at ${A.base_profile} (ceiling ${cfg.ceiling} at/below base - escalation never demotes)`);
       }
-      if (role.escalate_effort_variant) { escalated = true; agent = role.escalate_effort_variant; effort = 'high'; reason.push(`effort-variant ${agent}`); }
+      // Rung escalation: `escalate_to` names the target rung, and the agent
+      // FILE for that rung is what carries the effort (route.mjs reports
+      // effort, it cannot set it - seams.md). Fail-open by design: rung
+      // membership and file existence are self-verify's job, so a malformed
+      // spec here still dispatches rather than blocking the spine.
+      const target = role.escalate_to;
+      if (target && target !== effort) {
+        escalated = true;
+        agent = agentForRung(opts.role, role, target);
+        reason.push(`rung ${effort}->${target} (${agent})`);
+        effort = target;
+      } else {
+        reason.push(`rung held at ${effort} (escalate_to ${target || 'unset'})`);
+      }
     }
     profile = resolveProfile;
     if (!escalated) reason.push(`auto base ${A.base_profile}`);
@@ -128,7 +142,7 @@ function resolve(opts) {
   // A per-role pin is an explicit user assertion, so it wins over the whole
   // profile/tier matrix - including an `auto` escalation, which may still have
   // raised the tier above. What it does NOT touch is effort: that is fixed per
-  // role in agent frontmatter, so a pinned role keeps its effort-variant swap
+  // agent file in frontmatter, so a pinned role keeps its rung escalation
   // (same reasoning depth, user's model). An unknown alias is reported as a
   // warning and the routed model stands - a typo must not silently redirect
   // the spend, nor block the spawn.

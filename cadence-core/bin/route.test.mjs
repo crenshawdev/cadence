@@ -3,10 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, readFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { agentForRung, rungAgents } from './lib/rung-agent.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
@@ -85,11 +86,11 @@ test('auto: difficulty signal bumps tier (standard -> heavy)', () => {
   assert.equal(r.escalated, true);
 });
 
-test('auto: failure escalates profile toward ceiling and swaps effort-variant', () => {
+test('auto: failure escalates profile toward ceiling and swaps the rung', () => {
   const a = cfg({ profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } });
   const r = resolve('cad-plan-checker', a, ['--attempt', '2']);
   assert.equal(r.profile, 'quality');
-  assert.equal(r.agent, 'cad-plan-checker-high'); // effort-variant swap
+  assert.equal(r.agent, 'cad-plan-checker-high'); // rung swap
   assert.equal(r.model, 'sonnet'); // light@quality
 });
 
@@ -116,15 +117,16 @@ test('auto: ceiling at/below base disables escalation - a retry is never demoted
   assert.match(r.reason.join(' '), /never demotes/);
 });
 
-test('auto: held profile still swaps the effort-variant on failure', () => {
-  // Ceiling blocks the profile raise, but the failure signal still escalates
-  // effort for roles that have a variant (same model spend, harder reasoning).
+test('auto: held profile still swaps the rung on failure', () => {
+  // Ceiling blocks the profile raise, but the failure signal still climbs the
+  // rung ladder for roles whose escalate_to leaves their base rung (same model
+  // spend, harder reasoning).
   const a = cfg({ profile: 'auto', auto: { ceiling: 'balanced', escalate_on_failure: true, max_escalations: 1 } });
   const r = resolve('cad-plan-checker', a, ['--attempt', '2']);
   assert.equal(r.profile, 'balanced');            // held at base
-  assert.equal(r.agent, 'cad-plan-checker-high'); // variant swap still happens
+  assert.equal(r.agent, 'cad-plan-checker-high'); // rung swap still happens
   assert.equal(r.effort, 'high');
-  assert.equal(r.escalated, true);                // the variant swap IS a change
+  assert.equal(r.escalated, true);                // the rung swap IS a change
 });
 
 test('auto: ambiguity signal bumps tier; below threshold does not', () => {
@@ -248,11 +250,12 @@ test('fable is reachable only by pin, never by the profile matrix', () => {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
   const t = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env })).table;
   assert.ok(t.model_aliases.includes('fable'));
-  const rungs = Object.values(t.profiles).flatMap((p) => Object.values(p));
-  assert.equal(rungs.includes('fable'), false);
+  // `rungs` now names the effort ladder, so this local is the matrix's models.
+  const matrixModels = Object.values(t.profiles).flatMap((p) => Object.values(p));
+  assert.equal(matrixModels.includes('fable'), false);
 });
 
-test('a pin beats auto escalation but keeps the effort-variant swap', () => {
+test('a pin beats auto escalation but keeps the rung swap', () => {
   const c = cfg(
     { profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 },
       overrides: { 'cad-plan-checker': 'fable' } },
@@ -336,12 +339,72 @@ test('every role base_effort matches the agent file frontmatter that runs it', (
   assert.equal(frontmatterEffort('cad-reviewer'), 'high');
 });
 
-test('an escalate_effort_variant file really carries the high effort route.mjs reports', () => {
-  const variants = Object.values(SHIPPED_TABLE.roles)
-    .map((r) => r.escalate_effort_variant).filter(Boolean);
-  assert.ok(variants.length > 0);
-  // route.mjs hardcodes effort='high' on the variant swap; the file must agree.
-  for (const v of variants) assert.equal(frontmatterEffort(v), 'high', `${v} frontmatter`);
+test('every rung the table can name has an agent file carrying exactly that effort', () => {
+  // The ladder-consistency row. route.mjs REPORTS a rung's effort; the only
+  // thing that makes the report true is the file for that rung agreeing. This
+  // walks the WHOLE table rather than the single escalation the pre-ladder
+  // row covered, so a rung added to the data with no file (or with the wrong
+  // frontmatter) fails here, not at spawn time.
+  /** @type {Map<string,string>} rung agent name -> the rung that produced it */
+  const byName = new Map();
+  for (const [role, spec] of Object.entries(SHIPPED_TABLE.roles)) {
+    for (const rung of [spec.base_effort, ...spec.rungs, spec.escalate_to]) {
+      byName.set(agentForRung(role, spec, rung), rung);
+    }
+    // rungAgents is the shared statement of the same mapping; the two must
+    // agree, or route.mjs and self-verify.mjs are looking at different sets.
+    assert.deepEqual(
+      [...new Set(rungAgents(role, spec))].sort(),
+      [...new Set([spec.base_effort, ...spec.rungs, spec.escalate_to]
+        .map((r) => agentForRung(role, spec, r)))].sort(),
+      `${role} rungAgents`,
+    );
+  }
+  assert.equal(byName.size, 13, `routable agent names: ${[...byName.keys()].join(', ')}`);
+  for (const [name, rung] of byName) {
+    assert.ok(existsSync(join(AGENTS, `${name}.md`)), `agents/${name}.md must exist`);
+    assert.equal(frontmatterEffort(name), rung, `${name} frontmatter effort`);
+  }
+});
+
+test('table exposes rung_order, the five rungs the host accepts', () => {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  assert.deepEqual(r.table.rung_order, ['low', 'medium', 'high', 'xhigh', 'max']);
+});
+
+test('escalate_to is the SOURCE of the swap - repointing it moves the resolved agent', () => {
+  // Pins the mechanism rather than the shipped outcome: a name no code
+  // hardcodes (`cad-plan-checker-xhigh`) must appear purely because the data
+  // says so. If route.mjs went back to hardcoding a variant name or effort,
+  // this row fails while every shipped-value row above still passes.
+  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
+  t.roles['cad-plan-checker'].rungs = ['low', 'high', 'xhigh'];
+  t.roles['cad-plan-checker'].escalate_to = 'xhigh';
+  const tablePath = join(dir, 'escalate-to-xhigh.json');
+  writeFileSync(tablePath, JSON.stringify(t));
+
+  const a = cfg({ profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } });
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: tablePath };
+  const args = ['resolve', '--role', 'cad-plan-checker', '--file', a, '--attempt', '2'];
+  const r = (() => {
+    try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
+    catch (e) { return JSON.parse(e.stdout); }
+  })();
+  assert.equal(r.agent, 'cad-plan-checker-xhigh');
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.escalated, true);
+});
+
+test('a role whose escalate_to IS its base rung keeps the base agent on failure', () => {
+  // cad-planner escalates to `high`, which is already its base_effort, so the
+  // rung arm is a no-op and must report itself as held rather than resolving
+  // `cad-planner-high` - a file that deliberately does not exist.
+  const a = cfg({ profile: 'auto', auto: { ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 } });
+  const r = resolve('cad-planner', a, ['--attempt', '2']);
+  assert.equal(r.agent, 'cad-planner');
+  assert.equal(r.effort, 'high');
+  assert.match(r.reason.join(' '), /rung held at high/);
 });
 
 test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
