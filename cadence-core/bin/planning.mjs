@@ -268,6 +268,19 @@ function cmdCursorSet(dir, opts) {
       // Before the prior-cursor fallback below on purpose: inheriting a stale
       // total writes `Phase: 1 of 5` against a zero-phase roadmap, which reads
       // as an `of M` mismatch to /cad-health.
+      //
+      // `paused` is the one exception, and it is a hold rather than a
+      // transition: /cad-pause calls this flaglessly, so deriving 0 here would
+      // erase the stale `of <M>` that cmdStatus treats as the ONLY surviving
+      // evidence of an unfinished close (a tagged close deletes `phases/<N>/`,
+      // so the phase-dir drift cannot see it either). Pausing must not destroy
+      // the signal that says the close never finished.
+      const prior = opts.status === 'paused'
+        ? parseCursor(read(join(dir, 'STATE.md')) || '') : null;
+      if (prior && prior.total && prior.phase === phase) {
+        if (name === undefined) name = prior.name;
+        if (total === undefined) total = prior.total;
+      }
       if (name === undefined) name = CLOSED_CYCLE_NAME;
       if (total === undefined) total = 0;
     }

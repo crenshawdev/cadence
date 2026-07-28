@@ -141,6 +141,12 @@ milestone close and the next cycle - not an error:
   kind `cursor` regardless of agreement: after a tagged close deletes the
   phase directories, that stale `of <M>` is the only surviving evidence the
   close never finished.
+- `--status paused` is the ONE status that does NOT derive `of 0` here. It
+  preserves a non-zero prior `total` (and that cursor's name) when the prior
+  cursor names the same phase. Pausing is a hold, not a transition, and
+  `/cad-pause` calls `cursor set` flaglessly - deriving `0` would let a pause
+  silently erase the evidence the bullet above depends on. Every other status
+  derives `no active cycle` / `0` as usual.
 - Cursor agreement against an empty phase list:
 
 | Cursor status | Agrees | Why |

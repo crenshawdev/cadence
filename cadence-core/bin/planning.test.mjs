@@ -498,6 +498,47 @@ test('cursor set: the closed arm beats the prior cursor, so a stale total is not
   assert.equal(r.cursor.name, 'no active cycle');
 });
 
+test('cursor set: --status paused preserves a non-zero prior total, so a pause cannot erase the interrupted-close evidence', () => {
+  const dir = makeTree({
+    roadmap: [],
+    cursor: { phase: 3, total: 5, name: 'Billing', status: 'executed', next: '/cad-verify 3', updated: '2026-01-01' },
+  });
+  const r = run(['cursor', 'set', '--phase', '3', '--status', 'paused',
+    '--next', 'mid-close, resume at /cad-milestone'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.total, 5);
+  assert.equal(r.cursor.name, 'Billing');
+  // The stale `of 5` is what cmdStatus reads as the only surviving evidence.
+  const s = run(['status'], dir);
+  assert.equal(s.cycle, 'none');
+  assert.ok(s.drift.some((d) => d.kind === 'cursor' && /did not finish/.test(d.detail)),
+    'the stale-total cursor drift survives the pause');
+});
+
+test('cursor set: paused preserves nothing when the prior cursor names a different phase', () => {
+  const dir = makeTree({
+    roadmap: [],
+    cursor: { phase: 5, total: 5, name: 'Old', status: 'executed', next: '/cad-verify 5', updated: '2026-01-01' },
+  });
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'paused', '--next', 'x'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.total, 0);
+  assert.equal(r.cursor.name, 'no active cycle');
+});
+
+test('cursor set: every non-paused status still derives of 0 against a stale prior cursor', () => {
+  for (const status of ['ready to plan', 'phase complete', 'planned', 'executed']) {
+    const dir = makeTree({
+      roadmap: [],
+      cursor: { phase: 2, total: 5, name: 'Billing', status: 'executed', next: 'x', updated: '2026-01-01' },
+    });
+    const r = run(['cursor', 'set', '--phase', '2', '--status', status, '--next', 'x'], dir);
+    assert.equal(r.ok, true, status);
+    assert.equal(r.cursor.total, 0, status);
+    assert.equal(r.cursor.name, 'no active cycle', status);
+  }
+});
+
 test('cursor set: an out-of-grammar roadmap is broken, not closed - still cannot-derive', () => {
   const dir = makeTree({});
   writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n- Phase 1: Ship auth\n');
