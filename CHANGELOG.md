@@ -4,6 +4,44 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - unreleased
+
+### Fixed
+
+**One quote-state tokenizer for the git-guard rails**
+
+- The seven shapes that reached the network with no prompt now all ask: a
+  quoted `-C` path with a space (`git -C "my repo" push origin main`), `&` as a
+  separator, `$(git push)`, backticks, a subshell, an escaped `\"` before a
+  real push, and the shell-wrapper set `bash` / `sh` / `zsh` / `dash` / `eval`
+  with `-c`. This closes the "Six pre-existing `git-guard` rail-3 holes"
+  known gap recorded under [1.3.1]; `eval` was the seventh, found while
+  gathering context for the fix.
+- The strip-and-split arms and the parity-aware continuation pre-pass are
+  DELETED, not extended: one left-to-right pass in
+  `cadence-core/bin/lib/shell-tokens.mjs` carries a single quote/escape state,
+  preserves word boundaries, descends into `$(...)`, backticks and subshells,
+  and re-tokenizes a shell wrapper's operands. Six regex arms would have been
+  the alternative; regex accretion is what produced the two push-rail
+  regressions this repo already paid for. The module is pure and total (no
+  I/O, never throws, bounded descent and expansion), so the grammar is tested
+  as a table with no subprocess per row.
+- Both rails read that one output, so they agree on what a wrapped command IS:
+  a wrapped `git commit` on a protected branch now follows the same
+  `git.on_protected` path as the bare form. Detection is any-position, so
+  `sudo bash -c "git push"` is seen; hard refusal is command-position only, so
+  a read-only `rg -t sh "git commit"` can never be blocked by a rail meant for
+  real commits.
+- A command carrying a `git` word the tokenizer cannot place - an unterminated
+  quote, a heredoc-fed or pipe-fed wrapper - now asks instead of going silent,
+  and never denies. A shape with no `git` word in it (`echo "unterminated`,
+  `eval $CMD`) stays silent.
+- The grammar and the shapes deliberately left out of it (heredocs, `<<<`,
+  `${...}` expansion, brace expansion, ANSI-C escape sequences, aliases and
+  functions, variable indirection, `ssh host "git push"`) are written down in
+  `cadence-core/references/git.md` rail 3, each out-of-grammar row stating the
+  behavior it actually has and pinned by a test.
+
 ## [1.3.1] - 2026-07-27
 
 A tech-debt cycle. Every open bug filed by the post-v1.2.0 review sweep was
@@ -391,6 +429,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.0
 [1.3.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.1
 [1.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.0
 [1.2.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.1
