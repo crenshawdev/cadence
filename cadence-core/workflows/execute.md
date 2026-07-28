@@ -81,6 +81,22 @@ Sequential (default) unless ALL of these hold:
   check could not run; never parallelize unproven).
 - `parallelization.use_worktrees` is true (parallel dispatch without
   isolation is not supported - fall back to sequential)
+- the host's worktree fork point is the local HEAD, not the remote default
+  branch. This is the user's `worktree.baseRef` setting, not Cadence's, so
+  read it - never assume it, never write it:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/worktree-base.mjs" resolve
+  ```
+
+  `parallelSafe: false` -> SEQUENTIAL, and say why in one line: under
+  `baseRef: "fresh"` (the default, so an unset key counts) a worktree
+  branches from the remote default branch, so this phase's CONTEXT and its
+  PLAN files - unpushed commits on the integration branch - are not in it and
+  every executor would halt `blocked` on its own missing plan. Fix: run
+  `/cad-config`, which offers to set `worktree.baseRef` to `"head"` (Claude
+  Code >= 2.1.208), then re-run /cad-execute. `ok:false` -> sequential too
+  (the check could not run; never parallelize unproven).
 </step>
 
 <step name="execute_sequential">
@@ -149,7 +165,10 @@ with the completed-task table (hashes included), the checkpoint outcome, and
 </step>
 
 <step name="execute_parallel">
-(Opt-in path. All worktree ceremony lives here and nowhere else.)
+(Opt-in path. All worktree ceremony lives here and nowhere else. choose_path
+has already proven `worktree.baseRef` is `head`, so an executor halting
+`blocked` on a missing PLAN here is a real defect to report, not the
+fork-point default.)
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan, each in its own git worktree on branch
