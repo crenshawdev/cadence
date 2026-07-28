@@ -43,7 +43,7 @@ close failed for the same reason one layer up. Per-task plans come at
   than planning against an old merge point, the phase-4 worktree fork bug that
   three executors caught only by noticing. Lands early so the rest of this
   cycle dogfoods both.
-- [ ] **Phase 3: One quote-state tokenizer for git-guard** - Goal: the rail-3
+- [x] **Phase 3: One quote-state tokenizer for git-guard** - Goal: the rail-3
   push guard sees a real `git push` through a quoted `-C` path with a space, an
   `&` separator, `$(...)`, backticks, a subshell, an escaped `\"`, and
   `bash -c "..."` - all six holes verified silent at `c4ab89f` and at HEAD -
