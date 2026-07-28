@@ -194,5 +194,8 @@ so in their own row and are marked CONDITIONAL. Read the row, not the class.
 
 The task-line arm (`- **Files:** a, b`, `parsePlanFiles`' second source) is a
 separate, already CRLF-tolerant regex and is not part of this grammar. The
-roadmap's `## Phases` list (`PHASE_LINE` / `parseRoadmapPhases`) and the
-snippet/UAT-fence parsers have their own, unrelated grammars.
+roadmap's `## Phases` list (`PHASE_LINE` / `parseRoadmapPhases` /
+`classifyPhaseList`) has its own grammar, stated at
+`cadence-core/references/roadmap-phases.md` - same `{line, code, text}` issue
+shape, different states and codes. The snippet/UAT-fence parsers have their
+own, unrelated grammars.
