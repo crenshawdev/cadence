@@ -17,7 +17,7 @@ handling, and the tool's lint of its own prose.
 
 ## Planning works backward from the goal
 
-`agents/cad-planner.md`
+`skills/cad-planner-contract/SKILL.md`
 
 "What should we build?" produces plausible tasks. "What must be TRUE for the
 goal to hold?" produces requirements the tasks have to satisfy. The planner is
@@ -80,7 +80,7 @@ than lazy.
 
 ### The plan is checked before any code exists
 
-`agents/cad-plan-checker.md`, on by default via `workflow.plan_check`
+`skills/cad-plan-checker-contract/SKILL.md`, on by default via `workflow.plan_check`
 
 The checker derives the must-be-true statements from the goal *itself, first,
 before it is allowed to open the plan*, then checks the plan against its own
@@ -97,7 +97,7 @@ output, and softening a blocker to be agreeable is called out explicitly.
 
 ## Execution predicts before it runs
 
-`agents/cad-executor.md`
+`skills/cad-executor-contract/SKILL.md`
 
 For each task: implement, verify, commit. The verification step has a rule that
 does most of the work.
@@ -176,7 +176,7 @@ blanket `git reset --hard`, and `git restore .`.
 
 ## Verification climbs four levels
 
-`agents/cad-verifier.md`
+`skills/cad-verifier-contract/SKILL.md`
 
 The core principle is that task completion is not goal achievement. "Create login
 handler" is complete the moment the file exists. The goal "users can log in"
@@ -303,7 +303,7 @@ than the expensive external one.
 
 ### The reviewer's stance
 
-`agents/cad-reviewer.md`
+`skills/cad-reviewer-contract/SKILL.md`
 
 The artifact is handed over to be refuted, not blessed. Assume it is wrong until
 the evidence clears it; find the input, state or sequence under which it produces
@@ -548,11 +548,11 @@ codebase; omissions still need a human.
 
 | Practice | Enforced in |
 |---|---|
-| Goal-backward derivation, skeleton-first ordering | `agents/cad-planner.md` |
-| Independent derivation before reading the plan | `agents/cad-plan-checker.md` |
-| Prediction-first verification, deviation buckets | `agents/cad-executor.md` |
-| Four-level verification, anti-pattern scan | `agents/cad-verifier.md` |
-| Refute-don't-bless, finding schema | `agents/cad-reviewer.md` |
+| Goal-backward derivation, skeleton-first ordering | `skills/cad-planner-contract/SKILL.md` |
+| Independent derivation before reading the plan | `skills/cad-plan-checker-contract/SKILL.md` |
+| Prediction-first verification, deviation buckets | `skills/cad-executor-contract/SKILL.md` |
+| Four-level verification, anti-pattern scan | `skills/cad-verifier-contract/SKILL.md` |
+| Refute-don't-bless, finding schema | `skills/cad-reviewer-contract/SKILL.md` |
 | Gates, adjudication, risk detection | `cadence-core/references/review-triggers.md` |
 | Consult rules | `cadence-core/references/consult.md` |
 | Coverage definition | `cadence-core/workflows/coverage.md` |

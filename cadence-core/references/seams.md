@@ -78,7 +78,7 @@ offers the change rather than making it.
 The executor's assertion stays regardless - a setting the user can change back
 is not a guarantee, and a session-level override is invisible to any script.
 The executor asserts its own plan file exists before task 1 and halts
-`blocked` when it does not (`agents/cad-executor.md`'s `<worktree_mode>`), and
+`blocked` when it does not (`skills/cad-executor-contract/SKILL.md`'s `<worktree_mode>`), and
 reconciling a stale worktree is the orchestrator's serialized call, never the
 executor's own merge/rebase/fetch.
 

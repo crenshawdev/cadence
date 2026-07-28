@@ -85,7 +85,7 @@ integration branch is what work merges back down to, not a claimed worktree
 fork point. Under `fresh` a worktree can be missing a phase's plans and CONTEXT
 entirely - which is why `workflows/execute.md`'s `choose_path` refuses the
 parallel path unless `worktree.baseRef` is `head`, and why
-`agents/cad-executor.md`'s worktree mode asserts its own plan file before task
+`skills/cad-executor-contract/SKILL.md`'s worktree mode asserts its own plan file before task
 1 anyway rather than assuming the fork point.
 
 ## 2. Atomic conventional commits

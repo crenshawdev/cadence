@@ -37,9 +37,12 @@ function fixture(proseText) {
  * A fixture with agent files and/or a weight-budgets.json manifest, for the
  * budget (CWT-02) and tools-lint (CWT-03) checks. Real schema is copied so the
  * config-key checks stay quiet about unrelated keys.
- * @param {{agents?:Record<string,string>, budgets?:Record<string,number>|null}} opts
+ * `skills` entries are keyed by skill NAME and land at skills/<name>/SKILL.md,
+ * which is where check 6 (#74) resolves an agent's `skills:` frontmatter.
+ * @param {{agents?:Record<string,string>, skills?:Record<string,string>,
+ *          budgets?:Record<string,number>|null}} opts
  */
-function fixtureWith({ agents = {}, budgets = null }) {
+function fixtureWith({ agents = {}, skills = {}, budgets = null }) {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
     'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
@@ -49,6 +52,10 @@ function fixtureWith({ agents = {}, budgets = null }) {
     join(root, 'cadence-core', 'config.schema.json'));
   for (const [name, text] of Object.entries(agents)) {
     writeFileSync(join(root, 'agents', name), text);
+  }
+  for (const [name, text] of Object.entries(skills)) {
+    mkdirSync(join(root, 'skills', name), { recursive: true });
+    writeFileSync(join(root, 'skills', name, 'SKILL.md'), text);
   }
   if (budgets) {
     writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
@@ -211,6 +218,82 @@ test('bare-word tool names (D-06 collisions) are not false positives', () => {
     budgets: { 'agents/a.md': 10000 },
   });
   assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
+// --- preloaded-contract resolution (#74) ---
+
+const CONTRACT = '---\nname: c\ndescription: d\nuser-invocable: false\n---\ncontract prose\n';
+
+test('#74: an agent preloading a skill that does not exist is flagged', () => {
+  // The dangerous half: the host skips a missing `skills:` entry silently with
+  // only a debug-log warning, so the agent runs with NO contract and looks
+  // like it decided to ignore its instructions.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-typo-contract\n---\nFollow it.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-agent-skill' && x.file === 'agents/a.md'
+    && /cad-typo-contract/.test(x.detail)), JSON.stringify(p));
+});
+
+test('#74: an agent preloading a real skill yields no missing-agent-skill', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\n---\nFollow it.\n' },
+    skills: { 'cad-t-contract': CONTRACT },
+    budgets: { 'agents/a.md': 10000, 'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'missing-agent-skill'
+    || x.kind === 'unpreloadable-agent-skill'), JSON.stringify(p));
+});
+
+test('#74: the inline-array spelling of skills: resolves the same way', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills: [cad-t-contract, cad-typo]\n---\nFollow it.\n' },
+    skills: { 'cad-t-contract': CONTRACT },
+    budgets: { 'agents/a.md': 10000, 'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'missing-agent-skill');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.match(p[0].detail, /cad-typo/);
+});
+
+test('#74: the key that follows skills: is not swallowed as a list item', () => {
+  // `color: green` on the line after the list must end it, not become a name.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\ncolor: green\n---\nFollow it.\n' },
+    skills: { 'cad-t-contract': CONTRACT },
+    budgets: { 'agents/a.md': 10000, 'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'missing-agent-skill'));
+});
+
+test('#74: a preloaded skill that disables model invocation is flagged unpreloadable', () => {
+  // The other silent half: `disable-model-invocation: true` cannot be
+  // preloaded at all, because preloading draws from the set of skills the
+  // model may invoke. Same end state - an agent with no contract.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\n---\nFollow it.\n' },
+    skills: { 'cad-t-contract': '---\nname: c\ndisable-model-invocation: true\n---\nprose\n' },
+    budgets: { 'agents/a.md': 10000, 'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unpreloadable-agent-skill' && x.file === 'agents/a.md'
+    && /cad-t-contract/.test(x.detail)), JSON.stringify(p));
+});
+
+test('#74: a tool referenced only inside a preloaded contract must still be declared', () => {
+  // The contract is injected verbatim into the agent, so it IS agent prose -
+  // moving a contract out of the agent body must not empty the tools lint.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\nskills:\n  - cad-t-contract\n---\nFollow it.\n' },
+    skills: { 'cad-t-contract': '---\nname: c\nuser-invocable: false\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000, 'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'undeclared-tool' && x.file === 'agents/a.md'
+    && /Bash/.test(x.detail)), JSON.stringify(p));
 });
 
 // --- unreadable-surface resilience (#49.1) ---
