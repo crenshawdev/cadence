@@ -106,6 +106,7 @@ only:
 | Lowest **planned** phase | /cad-execute {N} |
 | Lowest **executed** phase | /cad-verify {N} |
 | `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when `workflow.skip_discuss` is true |
+| Drift kind `phase-dir` (interrupted prune) | /cad-milestone |
 | `cycle` is `none` (milestone closed) | /cad-phase add |
 | `current` is null (all complete) | /cad-milestone |
 
@@ -113,6 +114,10 @@ The planned/executed rows scan ALL phases lowest-first, not just the
 cursor's phase - this recovers a mid-execution session death even when the
 cursor was advanced past the unfinished work. A pause note pointing at a
 different phase than the derivation is shown as context but does not route.
+
+The `phase-dir` row sits ABOVE `cycle is none` deliberately: an interrupted
+close returns both at once, and finishing the prune precedes opening a new
+cycle. Reordering them offers a new phase on top of unfinished work.
 
 Offer the suggestion through the ask-user seam (references/seams.md):
 1. Continue now - invoke the suggested skill
