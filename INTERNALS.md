@@ -16,7 +16,7 @@ One thing people miss: routing governs the subagents Cadence dispatches, not you
 
 Read the code: `cadence-core/bin/route.mjs` (the resolver), `cadence-core/route-table.json` (roles, profiles, and auto signals, all editable data, no code change to retune), `cadence-core/bin/route.test.mjs`. Design record: `DESIGN.md`, "Model routing."
 
-## The push guard, and the parser I didn't write
+## The push guard: the parser I deleted, and the tokenizer I wrote
 
 Cadence guards git with a PreToolUse hook. Every `git push` the model tries to run through Bash stops and asks you first. No exceptions, which is the entire point of it.
 
@@ -28,7 +28,11 @@ So I deleted it. The whole predicate, gone, and git-guard went back to asking on
 
 The rule I took out of it: don't try to out-parse an attacker, delete the thing you would have had to parse.
 
-Read the code: `cadence-core/bin/git-guard.mjs` (the hook, now with no push exemption), `cadence-core/bin/git-publish.mjs` (the sanctioned seam), `cadence-core/bin/lib/publish-decision.mjs` (the pure refuse-gate logic), tests in `cadence-core/bin/git-guard.test.mjs` and `cadence-core/bin/git-publish.test.mjs`. Design record: `DESIGN.md`, reversal R2.
+Then v1.4.0 made me draw the line more carefully, because the guard was going blind in the other direction. `git -C "my repo" push origin main` was silent. So were `git add -A & git push`, a push inside `$(...)`, inside backticks, inside a subshell, behind an escaped quote, and `bash -c "git push origin main"`. Six shapes, all real pushes, all reaching the network with no prompt, because the old reader stripped quoted spans and split on whitespace, and stripping loses exactly the word boundaries the shapes hide behind.
+
+The distinction the code now embodies: an *allow-list predicate* has to be RIGHT to let a command through, and one shape you did not think of is a bypass, which is why `isPlainPush` stays deleted. A *detection widener* only ever decides whether to ASK, so being wrong costs a prompt. Those are opposite bets, and only the first is unwinnable. So the guard reads a command with one left-to-right pass that carries quote and escape state, preserves word boundaries, descends into substitutions and subshells, and re-tokenizes the argument of a stated set of shell wrappers. It is pure, total, and it never decides anything is safe. When it cannot resolve a shape that carries a `git` word, it asks. The grammar it implements and the shapes it deliberately does not (heredocs, `${...}` expansion, aliases, `ssh host "git push"`) are written down with their actual behavior in `cadence-core/references/git.md`, rail 3, each pinned by a test row - a gap you have written down and pinned is not the same animal as a gap you have not noticed.
+
+Read the code: `cadence-core/bin/git-guard.mjs` (the hook, now with no push exemption), `cadence-core/bin/lib/shell-tokens.mjs` (the tokenizer, pure and testable), `cadence-core/bin/shell-tokens.test.mjs` (the grammar table), `cadence-core/bin/git-publish.mjs` (the sanctioned seam), `cadence-core/bin/lib/publish-decision.mjs` (the pure refuse-gate logic), tests in `cadence-core/bin/git-guard.test.mjs` and `cadence-core/bin/git-publish.test.mjs`. Design record: `DESIGN.md`, reversal R2.
 
 ## Live model detection
 
