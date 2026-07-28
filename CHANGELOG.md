@@ -215,6 +215,15 @@ rows a milestone close used to need by hand.
   `counts`, so `- **Note**: scope frozen` is reported as
   `active-non-id-bullet` rather than failing a gate under a name that is not a
   requirement, and `- **AUD-01:**` can never be counted twice.
+- A bullet carrying a SECOND id-shaped bold span
+  (`- **AUTH-01** and **AUTH-02**: both sides`) reports
+  `active-multi-id-bullet`. The grammar reads the first span only, so without
+  this the rest vanished with `issues: []` and a committed requirement could
+  drop out of scope while the ship gate reported clean. The grammar is
+  deliberately NOT widened to read every span: taking them all would mint an id
+  out of ordinary emphasis (`- **GRM-01**: the **core** path` would declare
+  `core`), the same silent failure reversed. Emphasis that is not id-shaped
+  reports nothing, because nothing is lost.
 - The two exits for a broken id: plan it into a phase (`/cad-plan` seeds the
   row), or move the bullet out of `## Active` into the deferred section below
   it (`## v2 Requirements` in the shipped template). A row with an em-dash
