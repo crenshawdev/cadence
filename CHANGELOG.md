@@ -4,9 +4,82 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - unreleased
+## [1.4.0] - 2026-07-28
+
+Stated grammars. Cadence parsed four formats it owns with accreted heuristic
+regexes, and each one failed silently in both directions: an over-read
+fabricated a requirement id that surfaced as an `/cad-audit` orphan, an
+under-read dropped a real path and handed the parallel-safety gate a false
+`overlaps: []`. Both look like success. Each of those readers is now a stated
+grammar with a written-down reference, an out-of-grammar table, and a
+parser-level test per row - plan-file frontmatter, the shell text both git
+rails read, the roadmap phase list, and the `## Active` requirement section -
+and every input outside a grammar is reported rather than silently reread. The
+spine's own bookkeeping moved with them: `/cad-plan` now seeds the traceability
+rows a milestone close used to need by hand.
+
+### Added
+
+**`/cad-plan` seeds its own traceability rows**
+
+- A new `planning.mjs seed-reqs` subcommand, called by `/cad-plan` at the point
+  the plan is written, inserts a `Pending` REQUIREMENTS `## Traceability` row
+  for every `## Active` requirement the phase covers. A milestone close no
+  longer needs a hand-populated table before `/cad-audit` passes - which it did
+  need at the v1.2.0 and v1.3.1 closes, and which is why neither close's audit
+  fired. Seeding is idempotent: a second run returns `{"seeded":[],
+  "skipped":[...]}` and leaves the file byte-unchanged.
+- The `## Active` section it reads has a stated grammar (`parseActiveIds`) with
+  its own reference, `cadence-core/references/req-traceability.md`. The
+  single-writer invariant is restated across five prose surfaces as a
+  Status-TRANSITION rule rather than a row-existence one: `/cad-plan` may create
+  a row, but only `cad-verify` moves a Status beyond `Pending`.
+- A worktree-mode executor asserts its own `PLAN-<k>.md` exists before task 1
+  and halts `blocked` naming the missing path and the worktree HEAD, instead of
+  planning against a stale merge point - the phase-4 fork bug three executors
+  caught only by noticing. It repairs nothing: merge, rebase and fetch are
+  banned inside the worktree. The honest worktree binding is now stated across
+  six surfaces; Cadence issues no `git worktree add` anywhere, so it cannot
+  guarantee a fork point and no longer claims to.
 
 ### Fixed
+
+**The plan-file frontmatter grammar**
+
+- `readFrontmatterList` is one normalized classifying pass over a stated
+  grammar - a `normalize` step (BOM, CRLF, lone CR, leading blank lines), a
+  quote-state value scanner, and a block reader with an explicit terminator
+  set - replacing the accreted regexes. The greedy `\[(.*)\]` that three
+  reviewers found independently is gone: `files: [a.md, b.md]   # [see notes]`
+  reads two files rather than swallowing the comment's bracket, and
+  `requirements:   # TODO fill this in` above a block list reads the block
+  instead of the comment. That last one was a HIGH regression introduced by the
+  v1.3.1 cycle.
+- Every input outside the grammar now carries a named diagnostic on the `audit`
+  and `plan-overlap` envelopes as `frontmatter_issues`, where it previously
+  changed what was read with `issues: []`. The shipped template's own former
+  shape was one of them: a `files: []  # comment` key line followed by indented
+  paths took the inline arm, so `currentKey` was never set and every path
+  beneath it vanished - two plans in that shape handed `plan-overlap` a false
+  `overlaps: []` and the parallel gate would dispatch both onto the same file.
+  Also diagnosed: a quoted value with trailing text (`- "src/shared.rs" (new)`,
+  which used to mint a value carrying its own quotes and match nothing), a
+  commented-out key line inside an open block (an over-read of one key and an
+  under-read of the other in one pass), `requirements:["#41"]` with no space
+  after the colon, a backslash escape inside an inline list, and a
+  backtick-wrapped value tested on the value's BOUNDARY - which catches a half
+  wrap, a wrap plus punctuation, and a backticked id that `#`-comment handling
+  would otherwise reduce to a one-character phantom.
+- Frontmatter paths reach `plan-overlap` byte-exact as the plan wrote them:
+  `resolveValue` replaced the old global rewriting, so `src/x(1)` and
+  `` lib/a`b.mjs `` survive unrewritten while a `- **Files:** src/a.rs (edit)`
+  task line still normalizes. A path declared in one plan's frontmatter and the
+  other's task line now reports as an overlap where it was a silent miss.
+- The grammar, every diagnostic code, and a per-code table stating whether that
+  code DROPS what it read are written down in
+  `cadence-core/references/plan-frontmatter.md`, the payload column proved at
+  the audit seam rather than asserted in prose. 33+ parser-level grammar rows,
+  each reported as its own test.
 
 **One quote-state tokenizer for the git-guard rails**
 
@@ -151,6 +224,45 @@ All notable changes to Cadence are recorded here. The format follows
   heading is renamed. The grammar and its out-of-grammar table are written down
   in `cadence-core/references/req-traceability.md`, each row pinned by a
   parser-level test.
+
+### Breaking
+
+- `/cad-audit`'s `counts.total` is Traceability ROWS PLUS unpicked `## Active`
+  ids, not `rows.length`. A caller written against `total === rows.length`
+  reads a different number now that a break can exist with no row.
+- `unseeded` is no longer verdict-neutral. This reverses the additive shape
+  shipped one milestone earlier, deliberately: a diagnostic that never moves
+  the verdict leaves the ship gate exactly as permeable as it was. A tree with
+  an `## Active` id no phase has picked up now FAILs an audit that passed
+  before.
+- Under `git.on_protected: refuse`, a transparent prefix before a real commit
+  (`sudo git commit`, `timeout 60 git commit`, `find . -exec git commit \;`)
+  now ASKS rather than hard-denying. The enumerated prefix-command and
+  shell-keyword sets that produced those denies are gone; each prefix carries
+  its own option grammar, the tail proved open-ended across three review
+  rounds, and the enumeration produced a false deny on `command -v git commit`,
+  which runs nothing. A missing deny costs a prompt on a real commit; a wrong
+  deny hard-blocks read-only work.
+
+### Known gaps
+
+- **Markdown decoration inside a frontmatter value that touches neither
+  boundary.** `` - **`src/shared.rs`** `` still resolves to a value that
+  matches no sibling's plain spelling, with no diagnostic. The boundary rule
+  catches every wrap that reaches an edge; an interior backtick cannot be
+  flagged without also flagging `` lib/a`b.mjs ``, which must stay clean -
+  structurally identical inputs. Closing it means stating one rule about
+  markdown in values, not adding a sixth arm.
+- **`backtick-wrapped-value` fires on any key's scalar**, including prose keys
+  no seam reads. Two plans with disjoint file lists can still get a
+  `frontmatter_issues` entry and lose their parallel dispatch. Fails safe
+  (throughput, not correctness); the shipped template has no prose scalar keys.
+- **`seed-reqs`' `mismatched` result is computed but surfaced by no caller**,
+  so a moved or renumbered requirement reports as a clean skip in the
+  user-visible report.
+- **A `blocked` worktree halt has no described remedy.** The no-self-repair
+  halt is by design; what is missing is the orchestrator-side refresh path in
+  `execute.md`.
 
 ## [1.3.1] - 2026-07-27
 
