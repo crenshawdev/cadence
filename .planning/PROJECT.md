@@ -5,12 +5,14 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v1.3.1` is the current release: a tech-debt cycle that closed all
-13 bugs from the post-`v1.2.0` review sweep, the theme being that seams which
-used to fail quietly now say so. Earlier cycles shipped file-based memory and
-BM25 recall (`v1.1.0`), the cross-model review repairs and durable-decision
-recall (`v1.2.0`), the sweep-highs patch (`v1.2.1`), and the liteSpeed
-flow-and-latency pass (`v1.3.0`), on the `v1.0.0` planning baseline.
+subsystem. `v1.4.0` is the current release: four formats Cadence owns are now
+read by stated grammars with written-down references and per-row tests, so an
+input outside a grammar is reported rather than silently over- or under-read.
+Earlier cycles shipped file-based memory and BM25 recall (`v1.1.0`), the
+cross-model review repairs and durable-decision recall (`v1.2.0`), the
+sweep-highs patch (`v1.2.1`), the liteSpeed flow-and-latency pass (`v1.3.0`),
+and the tech-debt cycle that closed all 13 post-`v1.2.0` sweep bugs (`v1.3.1`),
+on the `v1.0.0` planning baseline.
 
 ## Core Value
 
@@ -46,31 +48,34 @@ context-gathering, and debugging — without any external memory system.
 - ✓ `/cad-decision-review`: on-demand refute-then-adjudicate over one decision, Context7 + codebase grounding, per-objection ruling + amendments (DEC-02) — v1.2.0
 - ✓ DeepSeek cross-model review provider: Chat Completions adapter (json_object + in-prompt schema), selectable via `review.reviewers` (REV-02) — v1.2.0
 - ✓ Every open bug from the post-v1.2.0 sweep triaged and fixed, no won't-fix: silent data-file failures surfaced (#39, #40, #43, #44), seam flag inputs validated before any write (#42, #45), planning parsers de-phantomed and widened (#41, #46, #47, #48), renumber and git-guard hardened (#37, #49, #50) — v1.3.1
+- ✓ Plan-file frontmatter reads to exactly what is declared, byte-exact to `plan-overlap`, and every out-of-grammar input carries a named diagnostic instead of changing what was read (GRM-01) — v1.4.0
+- ✓ `/cad-plan` seeds its own REQUIREMENTS traceability rows via `seed-reqs`; a worktree executor asserts its own plan file before task 1 (SPN-01) — v1.4.0
+- ✓ One quote-state tokenizer drives both git-guard rails, closing the six verified rail-3 push holes plus the `eval` wrapper family (TOK-01) — v1.4.0
+- ✓ The roadmap phase list has a stated grammar, so an empty `## Phases` is a derived closed-milestone state and `/cad-progress` works between milestones (RDM-01) — v1.4.0
+- ✓ `/cad-audit` counts an `## Active` requirement no phase picked up, so the traceability gate holds in the partially-planned state (AUD-01) — v1.4.0
 
 ### Active
 
-**v1.4.0 — Stated grammars** is the active cycle, opened 2026-07-27 on the
-CAPTURE.md backlog left open at the v1.3.1 close. The theme: Cadence parses
-formats it owns with accreted heuristic regexes, and each one fails silently in
-both directions. An over-read fabricates a requirement id that surfaces as an
-`/cad-audit` orphan; an under-read drops a real path and hands the
-parallel-safety gate a false `overlaps: []`. Both look like success. Four
-phases in ROADMAP.md: the plan-file frontmatter grammar (nine capture items in
-one function, including the HIGH phase 3 introduced), the spine's own
-bookkeeping (Traceability seeding, worktree plan-file assertion), one
-quote-state tokenizer for the six git-guard rail-3 holes, and a stated grammar
-for the roadmap phase list — which is why the v1.3.1 empty-roadmap fix was
-reverted, and which lands last so this cycle's close exercises it.
+No milestone is open. **v1.4.0 — Stated grammars** closed 2026-07-28 with all
+five requirements shipped and verified; the roadmap is pruned and the cursor
+reads `no active cycle`. The next cycle opens at `/cad-phase add`.
 
-Deferred out of this cycle, with reasons:
+Candidates for it, none chosen yet:
 
 - **Streaming provider responses.** The evidence is good (the same model at the
   same effort measured 292s and 118s on two payloads, so no fixed timeout is
   ever right), but `review.request_timeout_ms` at 540000 plus the 600000ms Bash
   ceiling bounds the damage, and the rewrite touches every adapter, response
   handling, and the structured-output assertion. It is a cycle, not a phase.
+  Deferred out of v1.4.0 for that reason.
+- **v1.4.0's own known gaps**, listed under `[1.4.0] Known gaps` in
+  CHANGELOG.md: one stated rule for markdown inside a frontmatter value (the
+  interior-backtick class, where `` lib/a`b.mjs `` and `` **`src/a.rs`** `` are
+  structurally identical inputs), scoping `backtick-wrapped-value` off prose
+  keys, surfacing `seed-reqs`' computed-but-unread `mismatched`, and the
+  missing orchestrator-side worktree refresh behind a `blocked` halt.
 - **The 12 open `[enhancement]` issues** (#14-#31, #54) — features, not
-  correctness.
+  correctness, which is why they have sat out three cycles.
 
 ### Out of Scope
 
@@ -125,6 +130,11 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | A close-time fix still goes through the ship gate | An empty-roadmap fix written during the v1.3.1 close looked small, passed 340 tests, and was reverted when `pre_ship` confirmed two HIGH findings: its heuristic reported a broken roadmap as a cleanly closed milestone, and it routed users to a workflow that refuses phases absent from ROADMAP | ✗ Reverted at the v1.3.1 close; requeued as a designed phase |
 | Durability is prose judgment, not a score | The three-part filter lives in cad-context workflow prose; no scoring seam, matching "prose keeps judgment, scripts keep invariants" | ✓ Shipped v1.2.0 |
 | DeepSeek via json_object + in-prompt schema | DeepSeek has no server-side json_schema; the shared validate-on-return guard degrades a schema-ignoring response to bad-shape, not bad data | ✓ Shipped v1.2.0 |
+| A grammar is written down, tabled, and tested per row | The four readers this cycle replaced each failed silently in BOTH directions; a stated grammar with an out-of-grammar table makes the limit a documented row instead of an accident | ✓ Shipped v1.4.0 (4 references, per-row tests) |
+| Detection any-position, hard refusal command-position only | Matching a wrapper anywhere keeps `sudo bash -c "git push"` from going silent; refusing anywhere would hard-block read-only work like `rg -t sh "git commit"` and `command -v git commit`, which run nothing | ✓ Shipped v1.4.0 — costs a deny on transparent prefixes, which now ask |
+| The two roadmap readers keep DIFFERENT extents | Canonical parse stops at the next `## `; classification runs to end of text, so a wiped checkbox list whose `### Phase N:` sections survive reports as an interrupted prune instead of a clean close | ✓ Shipped v1.4.0 — restoring "consistency" re-opens the false close |
+| `unseeded` became verdict-breaking, reversing v1.4.0's own earlier shape | A diagnostic that never moves the verdict leaves the ship gate exactly as permeable as it was; the additive form shipped in phase 2 is what phase 5 had to undo | ✓ Shipped v1.4.0 (breaking for `total === rows.length` callers) |
+| The release tag is cut after the merge, not at the close | A tag made during `/cad-milestone` names a commit on the integration branch that base never contains as a tip; publishing is `/cad-land`'s step, and the tag rides with it | ✓ Adopted at the v1.4.0 close |
 
 ---
-*Last updated: 2026-07-27 shipped v1.3.1 (13 sweep bugs closed + one off-roadmap fix); no milestone open*
+*Last updated: 2026-07-28 shipped v1.4.0 (four stated grammars + the spine's own bookkeeping); no milestone open*
