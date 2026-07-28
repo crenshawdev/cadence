@@ -17,6 +17,10 @@ Resolve the phase:
 - `$ARGUMENTS` gives a phase number, else run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
   take `current` (on `ok:false`, relay its `reason` and `hint` and stop).
+  An `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a
+  derived closed milestone - `current` is legitimately null because no cycle
+  is OPEN. Stop with "The milestone is closed - no active cycle.
+  /cad-phase add opens the next one."
   That phase's entry also lists its plan files
   (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.

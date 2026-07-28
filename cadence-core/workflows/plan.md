@@ -18,7 +18,11 @@ Parse `$ARGUMENTS`:
 - `[phase]` - phase number. If omitted, run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
   take `current`; if the current phase is already planned, its `phases[]`
-  entries show which phases still need plans - ask (ask-user seam).
+  entries show which phases still need plans - ask (ask-user seam). An
+  `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
+  closed milestone, not a planning target: stop with "The milestone is
+  closed - no active cycle. /cad-phase add opens the next one." There is no
+  phase to plan until a roadmap entry exists.
 - `--skip-check` - skip the plan-checker gate even when workflow.plan_check
   is true.
 - `--inline` - plan in the main context instead of spawning cad-planner.
