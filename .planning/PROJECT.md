@@ -62,26 +62,49 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No milestone is open. **v1.4.0 — Stated grammars** closed 2026-07-28 with all
-five requirements shipped and verified; the roadmap is pruned and the cursor
-reads `no active cycle`. The next cycle opens at `/cad-phase add`.
+**v2.0.0 — Stakes, not spend**, opened 2026-07-28. Six requirements across six
+phases, tracked as GitHub milestone `v2.0.0`.
 
-Candidates for it, none chosen yet:
+- **RNG-01** — per-rung agent files materialize effort off the preloaded
+  contract skills, retiring `escalate_effort_variant` and the
+  `cad-plan-checker-high` runtime-read shim
+- **STK-01** — `model.profile`'s enum becomes the stakes question, no
+  back-compat alias. This is the break that makes the release major
+- **STK-02** — a routing cell resolves `{model, effort, review, verify}`
+  rather than a bare model, computed from one small table
+- **STK-03** — the risk surface Cadence already detects raises a phase's rung
+  by itself; detection is a floor, lowering it needs a named override
+- **ACR-01** — CONTEXT acceptance criteria get stable ids and `/cad-audit`
+  proves coverage in both directions
+- **CFG-01** — the remaining resolved-then-dropped config keys, closed the way
+  per-trigger effort was
+
+Two things deliberately left open at setup. The rung names
+(`personal`/`production`/`critical`) are a proposal the issue holds least
+firmly; they lock at `/cad-context 2`, and whatever they become must describe
+a situation rather than grade an effort. And the executor-model claim behind
+the cell values ("heavier model on the executor produced fewer review cycles")
+has only an informal result behind it — a spike inside phase 3, not a gate on
+the cycle, since it decides which model lands in which cell and not whether
+the axis is right.
+
+Not chosen for this cycle:
 
 - **Streaming provider responses.** The evidence is good (the same model at the
   same effort measured 292s and 118s on two payloads, so no fixed timeout is
   ever right), but `review.request_timeout_ms` at 540000 plus the 600000ms Bash
   ceiling bounds the damage, and the rewrite touches every adapter, response
   handling, and the structured-output assertion. It is a cycle, not a phase.
-  Deferred out of v1.4.0 for that reason.
 - **v1.4.0's own known gaps**, listed under `[1.4.0] Known gaps` in
   CHANGELOG.md: one stated rule for markdown inside a frontmatter value (the
   interior-backtick class, where `` lib/a`b.mjs `` and `` **`src/a.rs`** `` are
   structurally identical inputs), scoping `backtick-wrapped-value` off prose
   keys, surfacing `seed-reqs`' computed-but-unread `mismatched`, and the
   missing orchestrator-side worktree refresh behind a `blocked` halt.
-- **The 12 open `[enhancement]` issues** (#14-#31, #54) — features, not
-  correctness, which is why they have sat out three cycles.
+- **The remaining open `[enhancement]` issues** (#14-#31) — features, not
+  correctness, which is why they have sat out four cycles. #54 left that set
+  and joined this milestone, where it closes as superseded rather than ships:
+  the reframe deletes the tier ladder it wanted to expose.
 
 ### Out of Scope
 
@@ -117,7 +140,7 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 - **Compatibility**: existing `.planning/` layouts must work unchanged; recall on a project with no SUMMARYs degrades to empty results, never an error
 - **Determinism**: same corpus + same query → same results; no timestamps, no randomness in ranking
 - **Toolchain**: Node 22/24 (CI matrix), `node --test`, `tsc --checkJs` must stay green
-- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version.
+- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version. `v2.0.0` is major for one reason only: `model.profile`'s enum values change with no back-compat alias, so a config a user wrote stops validating.
 
 ## Key Decisions
 
@@ -141,6 +164,8 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | The two roadmap readers keep DIFFERENT extents | Canonical parse stops at the next `## `; classification runs to end of text, so a wiped checkbox list whose `### Phase N:` sections survive reports as an interrupted prune instead of a clean close | ✓ Shipped v1.4.0 — restoring "consistency" re-opens the false close |
 | `unseeded` became verdict-breaking, reversing v1.4.0's own earlier shape | A diagnostic that never moves the verdict leaves the ship gate exactly as permeable as it was; the additive form shipped in phase 2 is what phase 5 had to undo | ✓ Shipped v1.4.0 (breaking for `total === rows.length` callers) |
 | The release tag is cut after the merge, not at the close | A tag made during `/cad-milestone` names a commit on the integration branch that base never contains as a tip; publishing is `/cad-land`'s step, and the tag rides with it | ✓ Adopted at the v1.4.0 close |
+| The routing axis asks stakes, not spend | "How much will you spend" is answerable but useless, and on a Max subscription it is not a question the user has; "what happens if this is wrong" is answerable in one second and is the only form a risk signal can auto-set. MANIFESTO's principle is value per dispatch — stakes is the numerator it was always reaching for | Adopted for v2.0.0 (STK-01); breaking, no alias |
+| The rung ladder is one contract materialized N times, not N variants | The host freezes `effort` per agent file on the Agent/Task dispatch path, so rungs need files; the contract lives in exactly one skill and a rung file that ever carries behaviour fails self-verify. Without that check this is the GSD namespace-variant sin the MANIFESTO names | Adopted for v2.0.0 (RNG-01), on the v1.5.0 contract skills |
 
 ---
-*Last updated: 2026-07-28 recorded v1.4.1 and v1.5.0, which shipped off-roadmap; no milestone open*
+*Last updated: 2026-07-28 opened v2.0.0 — Stakes, not spend (6 requirements, 6 phases)*

@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 0 (no active cycle)
+Phase: 1 of 6 (The rung ladder)
 Status: ready to plan
-Next: /cad-phase add
+Next: /cad-context 1
 Updated: 2026-07-28

@@ -5,10 +5,18 @@
 
 ## Active
 
-No milestone is open. `v1.4.0`'s five requirements shipped and moved to
-`## Shipped` below. The next cycle's headline asks land here as
-`- **<ID>**: <one line>` bullets when it opens; `/cad-plan` then seeds each
-id's Traceability row as its phase is planned.
+`v2.0.0 — Stakes, not spend`. The routing axis stops asking how much a user
+wants to spend and starts asking what happens if the work is wrong. The
+breaking change is the enum rename with no back-compat alias; everything else
+in the cycle either enables it or rides with it. `/cad-plan` seeds each id's
+Traceability row as its phase is planned.
+
+- **RNG-01**: Per-rung agent files materialize effort off the preloaded contract skills, retiring `escalate_effort_variant` and the `cad-plan-checker-high` runtime-read shim; a rung file that carries behaviour fails self-verify
+- **STK-01**: The routing axis asks stakes rather than spend - `model.profile`'s enum values change with no back-compat alias, and every surface naming the old values moves with them
+- **STK-02**: A routing cell resolves `{model, effort, review, verify}` rather than a bare model, computed from a small table, with self-verify asserting every cell resolves to a valid model, a valid effort and a real trigger
+- **STK-03**: The top rung is computed from the risk surface Cadence already detects - detection sets a floor, the user may raise it, and lowering below a detected floor requires an explicit override that names what it overrides
+- **ACR-01**: CONTEXT acceptance criteria carry stable ids, and `/cad-audit` asserts coverage in both directions - every criterion reaches a UAT item, every UAT item traces to a criterion or is marked verifier-added
+- **CFG-01**: The remaining resolved-then-dropped config keys stop lying, closed at the point of setting, the same way per-trigger `effort` was
 
 ## Shipped
 
@@ -104,4 +112,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-07-28 v1.4.1 and v1.5.0 recorded (5 issue-driven rows archived)*
+*Last updated: 2026-07-28 v2.0.0 opened (6 active requirements declared)*
