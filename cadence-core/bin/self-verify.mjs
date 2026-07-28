@@ -19,6 +19,10 @@
 //   3. paths         every ${CLAUDE_PLUGIN_ROOT}/<path> must exist in-repo.
 //   3b. internals    every backticked repo path cited in INTERNALS.md (the
 //                    deep-dive "Read the code" pointers) must exist in-repo.
+//   6. agent skills  every skill an agent preloads via `skills:` frontmatter
+//                    must resolve on disk and be model-invocable. The host
+//                    skips a missing or disabled one SILENTLY, so this check
+//                    is what keeps a preloaded contract from vanishing.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -165,6 +169,38 @@ function expand(token, triggers, providers) {
     list.flatMap((t) => re.test(t) ? values.map((v) => t.replace(re, v)) : [t]);
   out = subst(out, /<t(?:rigger)?>?/g, triggers);
   out = subst(out, /<(?:name|provider)>?/g, providers);
+  return out;
+}
+
+/**
+ * Parse an agent frontmatter block's `skills:` value into skill names. Accepts
+ * the three spellings a hand-written agent file realistically uses: the block
+ * list (`skills:\n  - name`), the inline array (`skills: [a, b]`), and a bare
+ * scalar (`skills: name`). Anything else yields no names, which the caller
+ * treats as "this agent preloads nothing" - the same as an absent key.
+ * @param {string} fmText the text BETWEEN the frontmatter fences
+ * @returns {string[]}
+ */
+export function parseSkillsField(fmText) {
+  const m = fmText.match(/^skills:[ \t]*(.*)$/m);
+  if (!m || m.index === undefined) return [];
+  const unquote = (/** @type {string} */ s) => s.trim().replace(/^['"]|['"]$/g, '').trim();
+  const inline = m[1].trim();
+  if (inline) {
+    return inline.replace(/^\[/, '').replace(/\]$/, '')
+      .split(',').map(unquote).filter(Boolean);
+  }
+  const out = [];
+  for (const line of fmText.slice(m.index + m[0].length).split('\n')) {
+    const item = line.match(/^[ \t]+-[ \t]*(.+)$/);
+    if (item) {
+      const name = unquote(item[1]);
+      if (name) out.push(name);
+      continue;
+    }
+    if (line.trim() === '') continue;
+    break; // the next frontmatter key ends the list
+  }
   return out;
 }
 
@@ -363,12 +399,27 @@ function run(root) {
     problems.push({ kind: 'missing-input', file: 'cadence-core/bin/weight-budgets.json', detail: 'always-expected input absent' });
   }
 
-  // 5. agents-only tools-declaration lint: an agent's prose may only reference
-  // tools it declares in frontmatter `tools:`. Skills declare capability under
-  // `allowed-tools:` and are excluded (D-07). Only backtick-quoted mentions or
+  // 5. agents-only tools-declaration lint, and 6. the preloaded-contract
+  // resolution check - one walk of agents/, because both read the same
+  // frontmatter and the second supplies the first with prose to scan.
+  //
+  // 5: an agent's prose may only reference tools it declares in frontmatter
+  // `tools:`. Skills declare capability under `allowed-tools:` and are excluded
+  // as SKILLS (D-07) - but a contract skill an agent PRELOADS is that agent's
+  // own prose, injected verbatim at startup, so it is scanned here as part of
+  // the agent. Without that, moving a contract out of the agent body (#74)
+  // would silently empty this lint's input. Only backtick-quoted mentions or
   // "the <Tool> tool" phrasing count as references (D-06); bare-word uses
   // (`| Task |`, `Task completeness`, `Write \`None.\``) are ignored, so no
   // current prose needs editing.
+  //
+  // 6: every name in `skills:` must resolve to skills/<name>/SKILL.md and must
+  // NOT set `disable-model-invocation: true`. Both failures are SILENT in the
+  // host - a missing or disabled skill is skipped with only a debug-log
+  // warning, and a skill that disables model invocation cannot be preloaded at
+  // all. Either one produces an agent running with no contract, which reads
+  // like an agent that decided to ignore its instructions rather than like a
+  // typo. This check is what makes preloading safe to depend on (#74).
   const toolAlt = KNOWN_TOOLS.join('|');
   const backtickRe = new RegExp('`(' + toolAlt + ')`', 'g');
   const theToolRe = new RegExp('\\bthe (' + toolAlt + ') tool\\b', 'g');
@@ -417,10 +468,40 @@ function run(root) {
           }
         }
       }
+      // 6. resolve every preloaded contract, collecting its prose for the
+      // tools lint below. An unreadable SKILL.md is NOT reported here: skills/
+      // is on the mdFiles walk, so the read-guard above already named it as an
+      // unreadable-surface, and a second entry would double-count one file -
+      // the same convention checks 3b and 5 follow.
+      const preloaded = [];
+      for (const skill of (fm ? parseSkillsField(fm[1]) : [])) {
+        const skillFile = join(root, 'skills', skill, 'SKILL.md');
+        if (!existsSync(skillFile)) {
+          problems.push({ kind: 'missing-agent-skill', file: rel,
+            detail: `${skill} -> skills/${skill}/SKILL.md absent` });
+          continue;
+        }
+        let skillText;
+        try {
+          skillText = readFileSync(skillFile, 'utf8');
+        } catch {
+          continue;
+        }
+        const skillFm = skillText.match(/^---\n([\s\S]*?)\n---/);
+        if (skillFm && /^disable-model-invocation:[ \t]*true[ \t]*$/m.test(skillFm[1])) {
+          problems.push({ kind: 'unpreloadable-agent-skill', file: rel,
+            detail: `${skill} sets disable-model-invocation: true` });
+          continue;
+        }
+        preloaded.push(skillFm ? skillText.slice(skillFm[0].length) : skillText);
+      }
+
       const body = fm ? text.slice(fm[0].length) : text;
       const referenced = new Set();
-      for (const m of body.matchAll(backtickRe)) referenced.add(m[1]);
-      for (const m of body.matchAll(theToolRe)) referenced.add(m[1]);
+      for (const prose of [body, ...preloaded]) {
+        for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
+        for (const m of prose.matchAll(theToolRe)) referenced.add(m[1]);
+      }
       for (const tool of referenced) {
         if (!declared.has(tool)) {
           problems.push({ kind: 'undeclared-tool', file: rel, detail: `${tool} not in tools:` });
@@ -439,7 +520,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
