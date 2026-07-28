@@ -6,6 +6,11 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-07-28
+
+Four corrections to things Cadence said about itself, and one structural
+change so there are fewer places left to say them.
+
 ### Added
 
 - **Self-verify asserts every preloaded agent contract resolves.** A `skills:`
@@ -754,6 +759,8 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.5.0
+[1.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.1
 [1.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.0
 [1.3.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.1
 [1.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.0
