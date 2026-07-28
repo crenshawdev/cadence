@@ -8,7 +8,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { normalize, readFrontmatterList, parseActiveIds, insertReqRows } from './lib/planning-files.mjs';
+import {
+  normalize, readFrontmatterList, parseActiveIds, insertReqRows,
+  classifyPhaseList, cutPhaseDetail,
+} from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
 const fence = (body) => `---\n${body}\n---\n# Plan\n`;
@@ -405,6 +408,178 @@ for (const row of NORMALIZE_ROWS) {
     assert.equal(normalize(row.input), row.expected);
   });
 }
+
+// --- the roadmap phase-list grammar (classifyPhaseList) ---------------------
+// The table cadence-core/references/roadmap-phases.md states in prose: every
+// canonical shape, the closed-milestone shapes, and one row per out-of-grammar
+// diagnostic code. Parser level, one test() per row - the seam-level tests in
+// planning.test.mjs re-assert only a handful, since each of those pays a node
+// spawn.
+
+/** A template-shaped roadmap: `## Overview`, then `## Phases`, then `body`. */
+const roadmap = (body) =>
+  `# Roadmap: Test\n\n## Overview\n\nProse.\n\n## Phases\n\n${body}\n`;
+
+// Each row: {name, text, state, phases?, codes}. `phases` (when present) is
+// the expected phase NUMBERS; `codes` is the issue codes in line order.
+const PHASE_LIST_ROWS = [
+  // --- live: the canonical entry, unchanged (D-01) --------------------------
+  {
+    name: 'a single canonical entry',
+    text: roadmap('- [ ] **Phase 1: Auth** - log in and out'),
+    state: 'live', phases: [1], codes: [],
+  },
+  {
+    name: 'several canonical entries mixing checked and unchecked boxes',
+    text: roadmap('- [x] **Phase 1: Auth** - done\n- [ ] **Phase 2: Billing** - next'),
+    state: 'live', phases: [1, 2], codes: [],
+  },
+  {
+    name: 'a decimal insertion sorts between its neighbours',
+    text: roadmap('- [x] **Phase 2: Billing** - done\n- [ ] **Phase 2.1: Hotfix** - urgent\n' +
+      '- [ ] **Phase 3: Reports** - later'),
+    state: 'live', phases: [2, 2.1, 3], codes: [],
+  },
+  {
+    name: 'a CRLF checkout parses live, not as a near-miss scan',
+    text: roadmap('- [ ] **Phase 1: Auth** - log in and out').replace(/\n/g, '\r\n'),
+    state: 'live', phases: [1], codes: [],
+  },
+  {
+    name: 'canonical entries plus their ### Phase N: details report no issues (the checkbox list is the phase set)',
+    text: roadmap('- [ ] **Phase 1: Auth** - log in and out\n\n## Phase Details\n\n' +
+      '### Phase 1: Auth\n**Depends on:** Nothing (first phase)'),
+    state: 'live', phases: [1], codes: [],
+  },
+
+  // --- closed: a genuinely empty phase list ---------------------------------
+  {
+    name: 'an empty ## Phases section is a closed milestone',
+    text: roadmap(''),
+    state: 'closed', phases: [], codes: [],
+  },
+  {
+    name: 'ordinary prose carrying no phase token is still closed',
+    text: roadmap('The milestone shipped; the next scope is not set yet.'),
+    state: 'closed', phases: [], codes: [],
+  },
+  {
+    name: 'a stray `- [ ] decide scope` bullet carries no number, so it is not a near miss',
+    text: roadmap('- [ ] decide scope'),
+    state: 'closed', phases: [], codes: [],
+  },
+  {
+    name: 'a bolded **Phase word with no number is prose, not a near miss',
+    text: roadmap('The **Phase** column of the table moved.'),
+    state: 'closed', phases: [], codes: [],
+  },
+  {
+    name: 'a fully pruned template-shaped roadmap - empty ## Phases and a bare ## Phase Details heading - is closed',
+    text: roadmap('## Phase Details'),
+    state: 'closed', phases: [], codes: [],
+  },
+
+  // --- no-section -----------------------------------------------------------
+  {
+    name: 'a roadmap with no ## Phases heading at all',
+    text: '# Roadmap: Test\n\n## Overview\n\nProse.\n',
+    state: 'no-section', phases: [], codes: [],
+  },
+
+  // --- out-of-grammar: one row per diagnostic code --------------------------
+  {
+    name: 'phase-bullet: `- Phase 1: Ship auth` (no checkbox, no bold)',
+    text: roadmap('- Phase 1: Ship auth'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-bullet'],
+  },
+  {
+    name: 'phase-bullet: `- ✓ Phase 1: Auth` (a tick instead of a checkbox)',
+    text: roadmap('- ✓ Phase 1: Auth'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-bullet'],
+  },
+  {
+    name: 'phase-bullet: `- [ ] Phase 1: Auth` (checkbox, unbolded)',
+    text: roadmap('- [ ] Phase 1: Auth'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-bullet'],
+  },
+  {
+    name: 'phase-bullet: `- [ ] **Phase 1 Auth**` (bolded, no colon)',
+    text: roadmap('- [ ] **Phase 1 Auth**'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-bullet'],
+  },
+  {
+    name: 'phase-heading: a ### Phase 1: detail surviving a wiped checkbox list',
+    text: roadmap('## Phase Details\n\n### Phase 1: Auth\n**Goal:** ship it'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-heading'],
+  },
+  {
+    name: 'phase-heading: `## Phase 12: Auth` written as a section heading',
+    text: roadmap('## Phase 12: Auth'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-heading'],
+  },
+  {
+    name: 'phase-ordered-item: `1. Phase 1: Auth`',
+    text: roadmap('1. Phase 1: Auth'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-ordered-item'],
+  },
+  {
+    name: 'phase-ordered-item: `1) Phase 1: Auth`',
+    text: roadmap('1) Phase 1: Auth'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-ordered-item'],
+  },
+  {
+    name: 'phase-table-row: `| Phase 1 | Auth |`',
+    text: roadmap('| Phase | Name |\n|---|---|\n| Phase 1 | Auth |'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-table-row'],
+  },
+  {
+    name: 'phase-prose-line: the catch-all, so a shape outside the grammar is never silent',
+    text: roadmap('Phase 2 rolls to the next milestone.'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-prose-line'],
+  },
+  {
+    name: 'one issue per line, in line order, across mixed shapes',
+    text: roadmap('- Phase 1: Ship auth\n\n## Phase Details\n\n### Phase 2: Billing'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-bullet', 'phase-heading'],
+  },
+];
+
+for (const row of PHASE_LIST_ROWS) {
+  test(`phase-list: ${row.name}`, () => {
+    const res = classifyPhaseList(row.text);
+    assert.equal(res.state, row.state, 'state');
+    assert.deepEqual(res.phases.map((p) => p.n), row.phases, 'phase numbers');
+    assert.deepEqual(res.issues.map((i) => i.code), row.codes, 'issue codes');
+  });
+}
+
+test('classifyPhaseList: the surviving-detail issue carries its exact line, code and text', () => {
+  const text = roadmap('## Phase Details\n\n### Phase 1: Auth\n**Goal:** ship it');
+  assert.deepEqual(classifyPhaseList(text).issues,
+    [{ line: 11, code: 'phase-heading', text: '### Phase 1: Auth' }]);
+});
+
+// --- cutPhaseDetail on CRLF --------------------------------------------------
+// Newly reachable: parseRoadmapPhases now normalizes, so `renumber` no longer
+// bails with unparseable-roadmap on a CRLF checkout and `/cad-phase remove`
+// reaches this cut. `$` under /m matches before `\r` as well as `\n`, so both
+// the named and the BARE heading shapes cut - pinned here so a later anchor
+// edit cannot orphan a detail section silently.
+
+const DETAILS = '# R\n\n## Phase Details\n\n### Phase 2:\nbare body\n\n' +
+  '### Phase 3: Next\nnamed body\n';
+
+test('cutPhaseDetail: a bare `### Phase N:` heading and its body are cut on a CRLF checkout', () => {
+  const out = cutPhaseDetail(DETAILS.replace(/\n/g, '\r\n'), 2);
+  assert.ok(!out.includes('bare body'));
+  assert.ok(out.includes('named body'));
+});
+
+test('cutPhaseDetail: a named `### Phase N: Name` heading and its body are cut on a CRLF checkout', () => {
+  const out = cutPhaseDetail(DETAILS.replace(/\n/g, '\r\n'), 3);
+  assert.ok(!out.includes('named body'));
+  assert.ok(out.includes('bare body'));
+});
 
 // --- parseActiveIds ----------------------------------------------------------
 

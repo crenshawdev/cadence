@@ -55,10 +55,15 @@ const PHASE_LINE = /^- \[( |x)\] \*\*Phase (\d+(?:\.\d+)?): (.+?)\*\*(?:\s*-\s*(
  * Parse the `## Phases` list. Returns phases sorted numerically (decimal
  * insertions like 2.1 sort between 2 and 3), or [] when the section is
  * missing/empty - the caller decides whether that is fatal.
+ *
+ * The text is normalized on the way in (parse path only - `normalize`'s own
+ * comment reserves this for the roadmap grammar): a CRLF checkout parses to
+ * real phases instead of to `[]`. Nothing is written back here; `setPhaseBox`
+ * and `phase-done` still rewrite the raw bytes.
  * @param {string} text
  */
 export function parseRoadmapPhases(text) {
-  const section = text.split(/^## Phases\s*$/m)[1];
+  const section = normalize(text).split(/^## Phases\s*$/m)[1];
   if (!section) return [];
   const body = section.split(/^## /m)[0];
   const phases = [];
@@ -67,6 +72,71 @@ export function parseRoadmapPhases(text) {
     if (m) phases.push({ n: Number(m[2]), name: m[3], desc: m[4] || '', checked: m[1] === 'x' });
   }
   return phases.sort((a, b) => a.n - b.n);
+}
+
+// The name the cursor carries between milestones - `parseCursor` requires a
+// non-empty name group, so the closed state needs a stated spelling rather
+// than an empty string. Lives here with the rest of the cursor grammar.
+export const CLOSED_CYCLE_NAME = 'no active cycle';
+
+// The phase TOKEN: capitalized `Phase` plus a number, the same token
+// shiftPhaseTokens/findProsePhaseRefs already treat as THE phase reference in
+// this codebase. Lowercase `phase 2` is prose and stays prose.
+const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
+
+/**
+ * Classify the `## Phases` section. This is a CLASSIFIER over the section,
+ * NOT a wider phase parser: `PHASE_LINE` above is byte-identical and still
+ * decides what counts as a phase for `status`, `audit`, `phase-done` and the
+ * cursor's `total` (D-01). Stated in full at
+ * `cadence-core/references/roadmap-phases.md`.
+ *
+ * Pure and total: no I/O, no throw, no filesystem (D-05) - a surviving
+ * `phases/<N>/` directory is corroboration `cmdStatus` computes, never part
+ * of this verdict. Rules, in order:
+ *
+ *   1. `normalize(text)` first - parse path only, never written back.
+ *   2. No `^## Phases$` heading -> `no-section`.
+ *   3. Parse the CANONICAL extent (heading to the next `## `, today's bound)
+ *      with `parseRoadmapPhases`; one or more matches -> `live` with those
+ *      phases and no issues. A near-miss beside a real checkbox list is
+ *      deliberately NOT reported: the checkbox list is the phase set.
+ *   4. Otherwise scan the CLASSIFICATION extent - the heading to END OF TEXT,
+ *      deliberately wider than the canonical bound (D-03) - for the phase
+ *      token. Any match -> `out-of-grammar`, at most one issue per line, code
+ *      by the line's shape. No match -> `closed`.
+ *
+ * The two extents differ on purpose: bounding the scan at the next `## ` is
+ * what would let a wiped checkbox list with intact `### Phase N:` details
+ * under `## Phase Details` read as a cleanly closed milestone.
+ * @param {string} text
+ * @returns {{state: string, phases: ReturnType<typeof parseRoadmapPhases>, issues: Issue[]}}
+ */
+export function classifyPhaseList(text) {
+  const lines = normalize(text).split('\n');
+  let heading = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Phases\s*$/.test(lines[i])) { heading = i; break; }
+  }
+  if (heading === -1) return { state: 'no-section', phases: [], issues: [] };
+
+  const phases = parseRoadmapPhases(text);
+  if (phases.length) return { state: 'live', phases, issues: [] };
+
+  /** @type {Issue[]} */
+  const issues = [];
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!PHASE_TOKEN.test(line)) continue;
+    let code = 'phase-prose-line'; // the catch-all: out of grammar, never silent
+    if (/^#{1,6}\s/.test(line)) code = 'phase-heading';
+    else if (/^\s*[-*+]\s/.test(line)) code = 'phase-bullet';
+    else if (/^\s*\d+[.)]\s/.test(line)) code = 'phase-ordered-item';
+    else if (/^\s*\|/.test(line)) code = 'phase-table-row';
+    issues.push({ line: i + 1, code, text: issueText(line) });
+  }
+  if (issues.length) return { state: 'out-of-grammar', phases: [], issues };
+  return { state: 'closed', phases: [], issues: [] };
 }
 
 // ---------------------------------------------------------------------------
