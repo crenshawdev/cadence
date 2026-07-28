@@ -28,6 +28,18 @@ All notable changes to Cadence are recorded here. The format follows
   user's settings without being told to. The executor's `<worktree_mode>`
   assertion stays either way: a setting the user can change back, and a
   session CLI override no script can see, are not guarantees.
+- **Per-trigger `effort` no longer claims to apply where it cannot reach.**
+  `fire(trigger)` resolved `{gate, tier, effort}` and consumed `effort` on the
+  cross-model arm only. The `claude-subagent` arm dispatches through a seam
+  whose surface is `(agent_name, prompt, model?)`, so on a stock install the
+  configured value was read, resolved, and dropped with nothing said - every
+  trigger, every fire. Wiring it through is not available: `effort` is a
+  subagent definition field with no per-dispatch override on the Agent/Task
+  path, so varying it needs per-rung agent files. The key is scoped instead.
+  `review-triggers.md` states which fields reach which backend,
+  `config.schema.json` says it at the point of setting, and a fire whose
+  configured effort differs from `cad-reviewer`'s frontmatter-pinned `high`
+  now names the difference in one line rather than silently ignoring it.
 
 ## [1.4.1] - 2026-07-28
 
