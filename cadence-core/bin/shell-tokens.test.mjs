@@ -7,10 +7,12 @@
 // permission prompt. Only node: builtins, no subprocess.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { tokenizeCommand, gitSubcommands } from './lib/shell-tokens.mjs';
+import { tokenizeCommand, gitSubcommands, SHELL_WRAPPERS } from './lib/shell-tokens.mjs';
 
-// Each row: {name, text, subs, unplaced}. `subs` is asserted with
-// assert.deepEqual against gitSubcommands(text).subs, in order.
+// Each row: {name, text, subs, unplaced, denyable}. `subs` is asserted with
+// assert.deepEqual against gitSubcommands(text).subs, in order; `denyable`
+// defaults to `subs`, since a subcommand read from the command text itself is
+// always deny-eligible and only a non-command-position wrapper withholds it.
 const ROWS = [
   // --- the six non-wrapper holes this phase closes (silent at HEAD) -------
   { name: 'hole (a): a quoted -C path with a space keeps its word boundary',
@@ -118,6 +120,100 @@ const ROWS = [
   { name: 'every git invocation in one simple command is reported, not just the first',
     text: 'xargs -I{} git add . git push', subs: ['add', 'push'] },
 
+  // --- the stated wrapper set, re-tokenized (D-02) ------------------------
+  { name: 'bash -c "..." re-tokenizes its operand',
+    text: 'bash -c "git push origin main"', subs: ['push'] },
+  { name: 'sh -c \'...\' re-tokenizes its operand',
+    text: "sh -c 'git push origin main'", subs: ['push'] },
+  { name: 'zsh -c "..." re-tokenizes its operand',
+    text: 'zsh -c "git push origin main"', subs: ['push'] },
+  { name: 'dash -c "..." re-tokenizes its operand',
+    text: 'dash -c "git push origin main"', subs: ['push'] },
+  { name: 'eval "..." re-tokenizes its operand (the seventh hole, found at gather time)',
+    text: 'eval "git push origin main"', subs: ['push'] },
+  { name: 'combined flags are tolerated rather than enumerated',
+    text: 'bash -lc "git push"', subs: ['push'] },
+  { name: 'an env prefix is not a bypass',
+    text: 'env bash -c "git push"', subs: ['push'] },
+  { name: 'a /usr/bin/env prefix is not a bypass either',
+    text: '/usr/bin/env bash -c "git push"', subs: ['push'] },
+  { name: 'a /bin/-prefixed wrapper counts',
+    text: '/bin/sh -c "git push"', subs: ['push'] },
+  { name: 'a nested wrapper terminates and is still read',
+    text: 'bash -c "bash -c \\"git push\\""', subs: ['push'] },
+  // The four prefix rows are DETECTED (subs) but ask-only (denyable empty):
+  // the wrapper is not the command word, and that is the whole gate.
+  { name: 'a sudo prefix is covered by ANY-POSITION matching, not a second prefix set',
+    text: 'sudo bash -c "git push origin main"', subs: ['push'], denyable: [] },
+  { name: 'a timeout prefix is covered by the same rule',
+    text: 'timeout 60 bash -c "git push"', subs: ['push'], denyable: [] },
+  { name: 'a nohup prefix is covered by the same rule',
+    text: 'nohup bash -c "git push"', subs: ['push'], denyable: [] },
+  { name: 'an xargs prefix is covered by the same rule',
+    text: 'xargs bash -c "git push origin main"', subs: ['push'], denyable: [] },
+  { name: 'a VAR=value prefix before a wrapper is not a bypass',
+    text: 'GIT_SSH_COMMAND=x bash -c "git push origin main"', subs: ['push'] },
+  { name: "bash -c $'...' re-tokenizes to a real push, not the word $git",
+    text: "bash -c $'git push origin main'", subs: ['push'] },
+  { name: 'a wrapper operand is re-tokenized even inside a substitution',
+    text: '$(bash -c "git push origin main")', subs: ['push'] },
+  // negative rows: the wrapper rule must not manufacture pushes
+  { name: 'echo is not a wrapper, so its quoted argument stays word content',
+    text: 'echo "git push"', subs: [] },
+  { name: 'a quoted wrapper string inside a commit message is one WORD, never a wrapper',
+    text: 'git commit -m "bash -c git push"', subs: ['commit'] },
+  { name: 'any-position matching re-tokenizes a non-command operand harmlessly',
+    text: 'grep bash -c file.txt', subs: [] },
+
+  // --- detection is any-position, REFUSAL is command-position only --------
+  // Every row here was a hard `deny` under git.on_protected=refuse before the
+  // gate landed: a read-only ripgrep search over shell files was blocked
+  // outright, which is a worse failure than the extra prompt any-position
+  // detection buys. They stay DETECTED (subs) and become ask-only (denyable
+  // empty).
+  { name: 'a ripgrep search for "git commit" is detected but never deny-eligible',
+    text: 'rg -t sh "git commit"', subs: ['commit'], denyable: [] },
+  { name: 'an echoed wrapper command is detected but never deny-eligible',
+    text: 'echo bash -c "git commit -m x"', subs: ['commit'], denyable: [] },
+  { name: 'a shellcheck -s bash argument is detected but never deny-eligible',
+    text: 'shellcheck -s bash "git commit"', subs: ['commit'], denyable: [] },
+  { name: 'a COMMAND-POSITION wrapper keeps its deny power (the D-04 parity pair)',
+    text: 'bash -c "git commit -m x"', subs: ['commit'], denyable: ['commit'] },
+  { name: 'the bare form of the D-04 parity pair is deny-eligible too',
+    text: 'git commit -m x', subs: ['commit'], denyable: ['commit'] },
+  { name: 'an env prefix does not cost the wrapper its command position',
+    text: 'env bash -c "git commit -m x"', subs: ['commit'], denyable: ['commit'] },
+  { name: 'a VAR=value prefix does not cost the wrapper its command position',
+    text: 'GIT_DIR=x bash -c "git commit -m x"', subs: ['commit'], denyable: ['commit'] },
+  { name: 'a sudo-prefixed wrapped commit is detected, and asks rather than denying',
+    text: 'sudo bash -c "git commit -m x"', subs: ['commit'], denyable: [] },
+
+  // --- operands that are not flags, however they are spelled --------------
+  { name: 'a -leading wrapper operand is a PAYLOAD, not a flag to skip',
+    // The quoted operand's CONTENT starts with `-`; skipping every `-`-leading
+    // word dropped a payload that really pushes. Both the whole word and its
+    // flag-stripped form carry the push, so it is reported twice - harmless,
+    // since every consumer asks "is push among them".
+    text: 'bash -c "-n; git push origin main"', subs: ['push', 'push'] },
+  { name: 'a GLUED -c"..." payload is re-tokenized (valid bash, silent before)',
+    text: 'bash -c"git push origin main"', subs: ['push'] },
+  { name: 'a glued combined-flag payload is re-tokenized too',
+    text: 'bash -lc"git push origin main"', subs: ['push'] },
+  { name: 'a real flag cluster is still just a flag',
+    text: 'bash -c "echo hi"', subs: [] },
+
+  // --- a wrapper with no operand to scan ----------------------------------
+  { name: 'a herestring-fed wrapper: the dropped target is read, so it asks',
+    text: 'bash <<< "git push origin main"', subs: [], unplaced: true },
+  { name: 'a pipe-fed wrapper has no operand, so the whole source is read',
+    text: 'echo "git push origin main" | bash', subs: [], unplaced: true },
+  { name: 'a pipe-fed wrapper with no git word anywhere stays silent',
+    text: 'echo hello | bash', subs: [], unplaced: false },
+  { name: 'a curl-pipe shape with no git word stays silent',
+    text: 'curl -s https://example.com/install.sh | sh', subs: [], unplaced: false },
+  { name: 'a redirection target with no git word is dropped silently',
+    text: 'echo x > out.txt', subs: [], unplaced: false },
+
   // --- totality ----------------------------------------------------------
   { name: 'empty input', text: '', subs: [] },
   { name: 'whitespace-only input', text: '   \n  ', subs: [] },
@@ -135,6 +231,8 @@ for (const row of ROWS) {
     assert.deepEqual(got.subs, row.subs, `subs for ${JSON.stringify(row.text)}`);
     assert.equal(got.unplaced, row.unplaced ?? false,
       `unplaced for ${JSON.stringify(row.text)}`);
+    assert.deepEqual(got.denyable, row.denyable ?? row.subs,
+      `denyable for ${JSON.stringify(row.text)}`);
   });
 }
 
@@ -198,6 +296,57 @@ test('a pathological nest past the depth cap fails toward asking, never loops', 
   const deep = '$('.repeat(40) + 'git push origin main' + ')'.repeat(40);
   const got = gitSubcommands(deep);
   assert.equal(got.unplaced, true);
+});
+
+test('the wrapper set is the stated five, matching references/git.md rail 3', () => {
+  // The set is written down, not implied by the code: git.md rail 3 names
+  // exactly these, so a member added here without the prose (or the reverse)
+  // fails this row.
+  assert.deepEqual(SHELL_WRAPPERS, ['bash', 'sh', 'zsh', 'dash', 'eval']);
+});
+
+test('eval CONCATENATES its operands before re-tokenizing them', () => {
+  // The shell joins eval's operands with a space and executes the result, so
+  // this IS a real `git push origin main`. Under per-operand re-tokenization
+  // the operands are `git` (no subcommand) and `push origin main` (no git
+  // word), and the only sub is the noise word `push origin main` - so this
+  // assertion is exactly what discriminates the concatenation rule.
+  const got = gitSubcommands('eval "git" "push origin main"');
+  assert.ok(got.subs.includes('push'), JSON.stringify(got.subs));
+  // eval's own words are ALSO scanned (the literal word `git` followed by the
+  // word `push origin main`), so a noise entry rides along. Harmless: every
+  // consumer asks "is push among them", and it can only add a prompt.
+  assert.deepEqual(got.subs, ['push origin main', 'push']);
+});
+
+test('eval with bare words needs no wrapper handling and still asks', () => {
+  // Its own words already carry a git word; the wrapper rule ALSO re-reads the
+  // joined operands, so `push` is reported twice. Harmless - every consumer
+  // asks "is push among them" - and the alternative (suppressing a re-read)
+  // would be a special case with no behavioral gain.
+  assert.ok(gitSubcommands('eval git push origin main').subs.includes('push'));
+});
+
+test('a wrapper-dense command is bounded: no quadratic scan, no heap abort', () => {
+  // MAX_COMMANDS bounds dequeues only, so it bounded NOTHING here: one simple
+  // command carrying N wrapper words re-tokenized every following operand once
+  // per wrapper word. Measured before the expansion budget: 500 words 46ms,
+  // 1000 213ms, 2000 985ms, 4000 a FATAL V8 out-of-memory - which the hook's
+  // `try { main(); } catch {}` cannot catch, so the harness would see a dead
+  // hook, no decision would be emitted, and the plainly visible `git push` in
+  // the same string would run unprompted. This hook runs on EVERY Bash call.
+  const text = 'git push origin main; ' + 'bash '.repeat(10000);
+  const started = Date.now();
+  const got = gitSubcommands(text); // must not throw, must not stall
+  const elapsed = Date.now() - started;
+  assert.ok(got.subs.includes('push'), JSON.stringify(got.subs));
+  assert.equal(got.unplaced, true); // budget exhausted -> fail toward asking
+  assert.ok(elapsed < 2000, `10000-word wrapper input took ${elapsed}ms`);
+});
+
+test('an ordinary wrapper command never trips the expansion budget', () => {
+  assert.equal(gitSubcommands('bash -c "git status"').unplaced, false);
+  assert.equal(gitSubcommands('bash -c "echo a b c d e f g h"').unplaced, false);
 });
 
 test('an input past the simple-command cap fails toward asking, never spins', () => {

@@ -38,6 +38,112 @@ const MAX_DEPTH = 8;
  * spin the work queue. Exceeding it fails toward asking. */
 const MAX_COMMANDS = 1000;
 
+/** Hard bound on wrapper operand RE-TOKENIZATIONS per gitSubcommands call,
+ * threaded exactly like MAX_DEPTH and counted globally rather than per
+ * command. MAX_COMMANDS bounds dequeues only, so it bounds nothing about the
+ * work one simple command can demand: a command carrying N wrapper words used
+ * to re-tokenize every following operand once per wrapper word - O(N^2) - and
+ * a 10KB input took a second while a 20KB one aborted the process with a V8
+ * out-of-memory, which the hook's `try { main(); } catch {}` cannot catch. A
+ * dead hook emits no decision, so a plainly visible `git push` in the same
+ * string would run unprompted. Exceeding the budget stops expansion and sets
+ * `unplaced`: fail toward asking, never toward a crash. */
+const MAX_EXPANSIONS = 200;
+
+/** How far past a wrapper word to look for a re-tokenizable operand before
+ * assuming it has one (bounded so the lookahead stays linear overall). */
+const OPERAND_LOOKAHEAD = 64;
+
+/** A genuinely flag-shaped word: a short option cluster (`-c`, `-lc`,
+ * `-exc`). Flags are tolerated rather than enumerated. Anything else that
+ * merely BEGINS with `-` is a payload, not a flag: `bash -c "-n; git push"`
+ * yields the operand `-n; git push`, and skipping every `-`-leading word
+ * dropped a payload that really pushes. */
+const FLAG_CLUSTER = /^-[A-Za-z]+$/;
+
+/** A leading `VAR=value` assignment word. */
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** How many leading flag letters to try stripping off a glued operand
+ * (`-c"git push"` tokenizes to the single word `-cgit push`, `-lc"..."` to
+ * `-lcgit push`); real flag clusters are short. */
+const MAX_FLAG_STRIP = 4;
+
+/** The stated set of shell-invoking wrappers whose operands are re-tokenized
+ * (D-02), written down here and in cadence-core/references/git.md rail 3 -
+ * never implied by the code alone. A word matches when it EQUALS a member or
+ * ends with `/` + a member, so `/bin/bash` counts. `eval` is in the set
+ * because `eval "git push origin main"` was verified silent at HEAD; a set
+ * stopping at bash/sh would ship the rail-3 claim beside an adjacent hole. */
+export const SHELL_WRAPPERS = ['bash', 'sh', 'zsh', 'dash', 'eval'];
+
+/**
+ * Is this word one of the stated wrappers?
+ * @param {string} w
+ * @returns {boolean}
+ */
+function isWrapper(w) {
+  for (const m of SHELL_WRAPPERS) if (w === m || w.endsWith(`/${m}`)) return true;
+  return false;
+}
+
+/**
+ * Is this word `env` (matched by the same rule as the wrapper set, so
+ * `/usr/bin/env bash -c ...` is not a bypass)?
+ * @param {string} w
+ * @returns {boolean}
+ */
+function isEnvWord(w) { return w === 'env' || w.endsWith('/env'); }
+
+/**
+ * Index of the COMMAND WORD of a simple command: word 0 after skipping
+ * leading `VAR=value` assignments and an `env` word with its own flags and
+ * `VAR=` arguments.
+ *
+ * This is what gates DENY power (never detection). A wrapper is detected at
+ * any position - that is what catches `sudo bash -c "git push"` with one rule
+ * instead of an enumerated prefix set - but a wrapper found anywhere other
+ * than command position can only ever produce an ASK, because at any other
+ * position the "wrapper" is very often an ordinary argument: `rg -t sh "git
+ * commit"` and `echo bash -c "git commit -m x"` both resolve to `commit`, and
+ * hard-blocking a read-only ripgrep search is a worse failure than the extra
+ * prompt any-position matching buys.
+ * @param {string[]} words
+ * @returns {number}
+ */
+function commandWordIndex(words) {
+  let i = 0;
+  while (i < words.length && ASSIGNMENT.test(words[i])) i++;
+  if (i < words.length && isEnvWord(words[i])) {
+    i++;
+    while (i < words.length && (words[i].startsWith('-') || ASSIGNMENT.test(words[i]))) i++;
+  }
+  return i;
+}
+
+/**
+ * The texts to re-tokenize for one operand word of a matched wrapper, in
+ * order. A genuine flag cluster contributes nothing; anything else is a
+ * payload. A `-`-leading payload is tried BOTH whole (`-n; git push origin
+ * main` is a real command list) and with its leading flag letters stripped,
+ * because `bash -c"git push"` is valid bash and tokenizes to the single glued
+ * word `-cgit push` - the strip is what finds the `git` again.
+ * @param {string} w
+ * @returns {string[]}
+ */
+function operandTexts(w) {
+  if (!w.startsWith('-')) return [w];
+  if (FLAG_CLUSTER.test(w)) return [];
+  const texts = [w];
+  const run = /^-([A-Za-z]*)/.exec(w)?.[1] ?? '';
+  const k = Math.min(run.length, MAX_FLAG_STRIP);
+  for (let s = 1; s <= k; s++) {
+    const t = w.slice(1 + s);
+    if (t && !texts.includes(t)) texts.push(t);
+  }
+  return texts;
+}
+
 /**
  * Does raw (undescended or unterminated) text carry a `git` token? This is
  * D-03's signal: an unresolvable shape stays silent unless a git word is in
@@ -130,8 +236,15 @@ export function tokenizeCommand(text, depth = 0) {
 
   const endWord = () => {
     if (started) {
-      if (pendingRedirect) pendingRedirect = false;
-      else words.push(cur);
+      if (pendingRedirect) {
+        // The target is removed from the word list the way the shell removes
+        // it - but a DROPPED word can be the only evidence of a real command:
+        // `bash <<< "git push origin main"` leaves the wrapper with no operand
+        // at all. So the drop still costs a look: a git word inside a dropped
+        // target is unplaced, and the guard asks (D-03).
+        if (hasGitToken(cur)) unplaced = true;
+        pendingRedirect = false;
+      } else words.push(cur);
       cur = ''; started = false;
     }
   };
@@ -310,38 +423,138 @@ export function tokenizeCommand(text, depth = 0) {
  * the first remaining word is the subcommand. The scan then CONTINUES, so a
  * second git invocation in the same simple command is reported too.
  *
+ * A wrapper word (SHELL_WRAPPERS) matched AT ANY POSITION has its operands
+ * re-tokenized and appended to the work queue - the same any-position rule the
+ * git-word scan already uses. That one rule is what covers `sudo bash -c ...`,
+ * `timeout 60 bash -c ...`, `nohup bash -c ...`, `xargs bash -c ...`,
+ * `env`/`/usr/bin/env` and `VAR=value` prefixes without a second enumerated
+ * prefix set to maintain; word-boundary preservation is what keeps it safe,
+ * since `git commit -m "bash -c git push"` is a single quoted WORD and never
+ * matches. Flags are tolerated rather than enumerated (`-c`, `-lc`, `-exc`),
+ * which also covers `eval`, which has none. `eval` takes one further rule: the
+ * shell CONCATENATES its operands with a space and executes the result, so
+ * `eval "git" "push origin main"` is a real push that per-operand
+ * re-tokenization would miss entirely - eval's operands are joined before
+ * re-tokenization. The wrapper rule lives HERE and not in tokenizeCommand: the
+ * lexer stays a lexer, the wrapper set is semantics.
+ *
+ * DETECTION is any-position; REFUSAL is command-position only. A subcommand
+ * reached through a wrapper that was NOT the command word of its simple
+ * command (see commandWordIndex) is reported in `subs` but withheld from
+ * `denyable`, so the caller may ask on it and can never hard-block on it:
+ * `rg -t sh "git commit"` and `echo bash -c "git commit -m x"` are read-only
+ * commands that resolve to `commit`, while `bash -c "git commit -m x"` is a
+ * real wrapped commit and stays deny-eligible. Subcommands read from the
+ * command text itself are always deny-eligible.
+ *
  * @param {unknown} text
  * @param {number} [depth] descent budget already spent (threaded)
- * @returns {{subs: string[], unplaced: boolean}}
+ * @returns {{subs: string[], unplaced: boolean, denyable: string[]}}
  */
 export function gitSubcommands(text, depth = 0) {
   const src = String(text ?? '');
-  if (!src) return { subs: [], unplaced: false };
+  if (!src) return { subs: [], unplaced: false, denyable: [] };
 
   const first = tokenizeCommand(src, depth);
   let unplaced = first.unplaced;
   /** @type {string[]} */
   const subs = [];
-  /** @type {string[][]} */
-  const queue = [...first.commands];
+  /** @type {string[]} */
+  const denyable = [];
+  // The work queue carries each simple command with the descent budget already
+  // spent to reach it, so wrapper nesting (`bash -c "bash -c \"...\""`)
+  // terminates at MAX_DEPTH: a fresh re-tokenization restarting at 0 would
+  // bound nothing. `deny` rides along the same way: a command reached through
+  // a non-command-position wrapper is ask-only, and so is everything below it.
+  /** @type {{words: string[], depth: number, denyable: boolean}[]} */
+  const queue = first.commands.map((words) => ({ words, depth, denyable: true }));
+
+  // Memoized: a wrapper with no operand at all (`echo "git push" | bash`) is
+  // read against the whole original source, and that check can repeat.
+  /** @type {boolean | null} */
+  let srcGit = null;
+  const sourceHasGit = () => (srcGit ??= hasGitToken(src));
 
   let seen = 0;
+  let expansions = 0;
+  let budgetSpent = false;
   while (queue.length) {
     if (++seen > MAX_COMMANDS) { unplaced = true; break; }
-    const words = /** @type {string[]} */ (queue.shift());
+    const item = /** @type {{words: string[], depth: number, denyable: boolean}} */
+      (queue.shift());
+    const words = item.words;
+    const cmdPos = commandWordIndex(words);
+    // Every word is re-tokenized at most ONCE per simple command, however many
+    // wrapper words precede it: re-scanning each operand per wrapper word is
+    // the O(N^2) shape that made a long command a multi-second stall.
+    let expandFrom = 0;
+
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
+      if (isWrapper(w)) {
+        // Any-position DETECTION, command-position DENY (see the doc comment).
+        const childDenyable = item.denyable && i === cmdPos;
+        /** @param {string} t */
+        const expand = (t) => {
+          if (item.depth >= MAX_DEPTH) {
+            if (hasGitToken(t)) unplaced = true; // fail toward asking
+            return;
+          }
+          if (expansions >= MAX_EXPANSIONS) { budgetSpent = true; unplaced = true; return; }
+          expansions++;
+          const inner = tokenizeCommand(t, item.depth + 1);
+          for (const c of inner.commands) {
+            queue.push({ words: c, depth: item.depth + 1, denyable: childDenyable });
+          }
+          if (inner.unplaced) unplaced = true;
+        };
+
+        // No operand to scan at all - the wrapper is fed by a pipe, a heredoc
+        // or a redirect (`echo "git push origin main" | bash`), all of which
+        // really execute. Read the whole original source for a git word and
+        // fail toward asking; do not attempt pipeline data-flow analysis.
+        let hasOperand = false;
+        for (let j = i + 1; j < words.length && j - i <= OPERAND_LOOKAHEAD; j++) {
+          if (!FLAG_CLUSTER.test(words[j])) { hasOperand = true; break; }
+        }
+        if (!hasOperand && !unplaced && sourceHasGit()) unplaced = true;
+
+        if (!budgetSpent) {
+          const start = Math.max(i + 1, expandFrom);
+          if (w === 'eval' || w.endsWith('/eval')) {
+            // eval executes the CONCATENATION of its operands, not each of them.
+            /** @type {string[]} */
+            const joined = [];
+            for (let j = start; j < words.length; j++) {
+              if (FLAG_CLUSTER.test(words[j])) continue;
+              joined.push(words[j]);
+            }
+            if (joined.length) expand(joined.join(' '));
+          } else {
+            for (let j = start; j < words.length && !budgetSpent; j++) {
+              const texts = operandTexts(words[j]);
+              // A skipped flag cluster still gets read: a git word inside one
+              // would otherwise be dropped silently.
+              if (!texts.length) { if (hasGitToken(words[j])) unplaced = true; continue; }
+              for (const t of texts) { expand(t); if (budgetSpent) break; }
+            }
+          }
+          expandFrom = words.length;
+        }
+        continue; // a wrapper word is never a git word
+      }
       if (!(w === 'git' || w.endsWith('/git'))) continue;
       for (let j = i + 1; j < words.length; j++) {
         const a = words[j];
         if (GIT_OPT_WITH_ARG.has(a)) { j++; continue; } // option + its argument
         if (a.startsWith('-')) continue;               // other global flags
         subs.push(a);
+        if (item.denyable) denyable.push(a);
         i = j; // continue the outer scan from here: report every invocation
         break;
       }
     }
   }
 
-  return { subs, unplaced };
+  return { subs, unplaced, denyable };
 }
