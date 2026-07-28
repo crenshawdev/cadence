@@ -35,7 +35,7 @@ close failed for the same reason one layer up. Per-task plans come at
   greedy `\[(.*)\]` three reviewers found independently, and the seven other
   capture items in the same function. One semantic call belongs to the user at
   `/cad-context`: whether `#` followed by a digit is the id test.
-- [ ] **Phase 2: The spine's own bookkeeping** - Goal: `/cad-plan` seeds the
+- [x] **Phase 2: The spine's own bookkeeping** - Goal: `/cad-plan` seeds the
   REQUIREMENTS `## Traceability` row for every requirement a plan covers, so a
   milestone close never again needs a hand-populated table before `/cad-audit`
   passes (it has now failed to fire at the v1.2.0 and v1.3.1 closes); and a
