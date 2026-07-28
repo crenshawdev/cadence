@@ -214,6 +214,41 @@ const ROWS = [
   { name: 'a redirection target with no git word is dropped silently',
     text: 'echo x > out.txt', subs: [], unplaced: false },
 
+  // --- OUT OF GRAMMAR ----------------------------------------------------
+  // One row per shape named in references/git.md rail 3's "Out of grammar"
+  // table, each pinning the behavior that table states (its wording is quoted
+  // in the row name, so drift between doc and code is visible here). Declaring
+  // a shape out of scope without pinning what it DOES is exactly the silent
+  // misread this phase exists to end (phase-1 D-20).
+  { name: 'heredoc: "the body is read as ordinary command lines, not as data"',
+    text: 'bash <<EOF\ngit push origin main\nEOF', subs: ['push'], unplaced: true },
+  { name: 'heredoc: "a heredoc that merely CONTAINS the text can ask"',
+    text: 'cat <<EOF\ngit push origin main\nEOF', subs: ['push'] },
+  { name: 'herestring: "read for a `git` token, so this asks rather than going silent"',
+    text: 'bash <<< "git push origin main"', subs: [], unplaced: true },
+  { name: '${...} in $(): "no expansion is performed ... so this is SILENT"',
+    text: 'echo $(echo ${x:-git push})', subs: [] },
+  { name: 'brace expansion: "{git,echo} is one ordinary word ... SILENT"',
+    text: '{git,echo} push origin main', subs: [] },
+  { name: 'brace expansion: "braces in ARGUMENTS are harmless"',
+    text: 'git push origin {main,dev}', subs: ['push'] },
+  { name: "ANSI-C escapes: \"g\\x69t is not the word git and this is SILENT\"",
+    text: "bash -c $'g\\x69t push origin main'", subs: [] },
+  { name: 'ANSI-C: "plain bash -c $\'git push origin main\' reads push"',
+    text: "bash -c $'git push origin main'", subs: ['push'] },
+  { name: 'substitution-supplied command word: "its OUTPUT is not fed back ... SILENT"',
+    text: '$(echo git) push origin main', subs: [] },
+  { name: 'substitution-split: "asks, but for the inner command, not the outer one"',
+    text: '$(echo git push) origin main', subs: ['push'] },
+  { name: 'aliases: "a call to an alias or function defined elsewhere is SILENT"',
+    text: 'gp origin main', subs: [] },
+  { name: 'shell functions: "a function DEFINITION whose body holds git push asks"',
+    text: 'deploy() { git push; }; deploy', subs: ['push'] },
+  { name: 'variable indirection: "not expanded ... so this is SILENT"',
+    text: 'CMD="git push"; $CMD', subs: [] },
+  { name: 'remote execution: "ssh is not in the wrapper set ... SILENT"',
+    text: 'ssh host "git push origin main"', subs: [] },
+
   // --- totality ----------------------------------------------------------
   { name: 'empty input', text: '', subs: [] },
   { name: 'whitespace-only input', text: '   \n  ', subs: [] },
