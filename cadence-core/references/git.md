@@ -67,7 +67,7 @@ Act on its `action`:
 
 `git.integration_branch` picks the model. `milestone` creates the integration
 branch: the integration branch is what parallel worktree branches merge back
-into; where the host forks them from is not Cadence's to guarantee. It keeps
+into; where they fork FROM is the host's `worktree.baseRef`. It keeps
 merge churn off `main`. `trunk` creates nothing - commits land on the base,
 still governed by `git.on_protected` (git-guard.mjs unchanged). `git.auto_branch`
 picks how it is created at cycle start: `ask` prompts once, `auto` creates and
@@ -75,15 +75,18 @@ switches silently, `off` stays put. Creation is lazy and once per cycle - the
 seam infers it from HEAD sitting on a protected base, so later phases already
 off the base pass silently.
 
-Cadence issues no `git worktree add` anywhere in its own code, so it cannot pin
-where a worktree forks from; the host provides that isolation
-(`references/seams.md`, spawn-agent, Worktree isolation). `git.base_branch`
+Cadence issues no `git worktree add` anywhere in its own code, so it pins no
+fork point per dispatch; the host does, from the user's `worktree.baseRef`
+setting - `fresh` (the default) forks from the remote default branch and drops
+unpushed work, `head` forks from the local `HEAD` (`references/seams.md`,
+spawn-agent, Worktree isolation; Claude Code >= 2.1.208). `git.base_branch`
 stays the landing and guard base, distinct from the integration branch: the
 integration branch is what work merges back down to, not a claimed worktree
-fork point. A worktree branched from an older merge point can be missing a
-phase's plans and CONTEXT entirely - which is why `agents/cad-executor.md`'s
-worktree mode asserts its own plan file before task 1 rather than assuming the
-fork point.
+fork point. Under `fresh` a worktree can be missing a phase's plans and CONTEXT
+entirely - which is why `workflows/execute.md`'s `choose_path` refuses the
+parallel path unless `worktree.baseRef` is `head`, and why
+`agents/cad-executor.md`'s worktree mode asserts its own plan file before task
+1 anyway rather than assuming the fork point.
 
 ## 2. Atomic conventional commits
 

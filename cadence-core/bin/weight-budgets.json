@@ -2,7 +2,7 @@
   "_comment": "Per-surface UTF-8 byte budgets enforced by self-verify.mjs (CWT-02). Regenerate from cadence-core/bin/weight.mjs when intentional surface growth is accepted. This is NOT a config.schema.json key - do not migrate it into config; it is a manifest beside the check.",
   "budgets": {
     "agents/cad-assumptions-analyzer.md": 4224,
-    "agents/cad-executor.md": 7036,
+    "agents/cad-executor.md": 7099,
     "agents/cad-plan-checker-high.md": 1154,
     "agents/cad-plan-checker.md": 4093,
     "agents/cad-planner.md": 8786,
