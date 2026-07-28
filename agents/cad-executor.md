@@ -32,8 +32,7 @@ For each task in the plan, in order:
    expected. "It should work" is not verification.
 3. Commit per the commit protocol below.
 
-After the last task: check the plan's success criteria against what you
-built, then return the report.
+After the last task: return the report.
 </process>
 
 <commit_protocol>
