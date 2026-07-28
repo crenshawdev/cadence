@@ -70,6 +70,45 @@ All notable changes to Cadence are recorded here. The format follows
   `cadence-core/references/git.md` rail 3, each out-of-grammar row stating the
   behavior it actually has and pinned by a test.
 
+**A stated grammar for the roadmap phase list**
+
+- An empty `## Phases` is now a derived closed-milestone state instead of
+  `unparseable-roadmap`: `planning.mjs status` returns `ok:true` carrying an
+  additive `cycle:"none"` field, with `current` and `total` unchanged (`null`
+  and `0`). `/cad-progress` therefore works in the window between a milestone
+  close and the next cycle, where it used to report the roadmap as broken.
+  `cycle` is present only in that state, so a caller cannot read a closed
+  milestone as "all phases complete" from `current === null` alone.
+- A phase-shaped line that is NOT a canonical entry - a plain bullet, a
+  heading, an ordered item, a table row, a prose mention - is reported per line
+  with its own diagnostic code and the offending line named in `detail`, rather
+  than one blanket string, and never classifies as a closed milestone. That
+  includes the case which reverted the attempt made during the [1.3.1] close: a
+  wiped checkbox list whose `### Phase N:` detail sections survive, which a
+  heuristic reported as a cleanly closed milestone. The classification scan
+  deliberately reads past the `## `-bounded extent the canonical parse uses.
+- `PHASE_LINE` is unchanged - nothing new counts as a phase. This is a
+  classifier OVER the `## Phases` section, not a wider phase parser: what
+  counts as a phase for `status`, `audit`, `phase-done` and the cursor's
+  `total` is exactly what it was.
+- Drift detection stays live against a closed milestone, which is the one state
+  where the cursor is the only surviving evidence: `phase complete` and
+  `ready to plan` agree, `planned`, `executed` and `context gathered` are
+  drift, `paused` keeps its any-point carve-out. A surviving `phases/N/`
+  directory reports as a new `phase-dir` drift kind, and a stale `of <M>`
+  cursor against a zero-phase roadmap reports cursor drift on its own - after a
+  tagged close deleted the phase dirs, that total is all that is left to see.
+- `cursor set` derives `of 0 (no active cycle)` from a pruned roadmap, so
+  `/cad-milestone` step 6 runs with no extra flags on the tree its own step 3
+  produces; that step now also prunes each completed phase's `### Phase N:`
+  detail section, without which a template-conformant close never reaches the
+  closed state. `/cad-progress` and `/cad-milestone` route between milestones
+  to `/cad-phase add`, the only workflow that appends a phase line to an
+  existing roadmap.
+- The grammar, its four states and its out-of-grammar table are written down in
+  `cadence-core/references/roadmap-phases.md`, each row pinned by a
+  parser-level test.
+
 ## [1.3.1] - 2026-07-27
 
 A tech-debt cycle. Every open bug filed by the post-v1.2.0 review sweep was
