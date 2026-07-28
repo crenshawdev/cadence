@@ -4,9 +4,12 @@
 // guard sees") states in prose - every closed hole, every shipped silence,
 // and every shape declared out-of-grammar, ALONGSIDE (not instead of) the
 // seam-level rows in git-guard.test.mjs that prove the same defects reach the
-// permission prompt. Only node: builtins, no subprocess.
+// permission prompt. Only node: builtins, no subprocess (the one file read is
+// references/git.md, so the enumerated sets are pinned against the prose that
+// states them rather than against a second copy of themselves).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { tokenizeCommand, gitSubcommands, SHELL_WRAPPERS } from './lib/shell-tokens.mjs';
 
 // Each row: {name, text, subs, unplaced, denyable}. `subs` is asserted with
@@ -61,7 +64,9 @@ const ROWS = [
 
   // --- shapes that already asked at HEAD and must keep asking ------------
   { name: 'an xargs-prefixed push is still a push',
-    text: 'xargs -I{} git push origin main', subs: ['push'] },
+    // `denyable` is empty (the git word is an xargs argument) and costs
+    // nothing: the push rail asks unconditionally and never reads `denyable`.
+    text: 'xargs -I{} git push origin main', subs: ['push'], denyable: [] },
   { name: 'a VAR=value assignment prefix does not hide the git word',
     text: 'GIT_SSH_COMMAND=x git push origin main', subs: ['push'] },
   { name: 'global options and their arguments are skipped when reading the subcommand',
@@ -106,6 +111,28 @@ const ROWS = [
   { name: '$"..." keeps its content one word, like any double-quoted span',
     text: 'echo $"git push"', subs: [] },
 
+  // --- a descended region leaves a word SLOT ------------------------------
+  // A region contributes no CONTENT to the enclosing word, but it does START
+  // that word: it leaves an empty placeholder rather than deleting the word.
+  // Without the placeholder the word list of the first row is `git -C push
+  // origin main`, `-C` eats `push` as its own argument, the command reads as
+  // the subcommand `origin`, and a REAL push reached the network with no
+  // prompt - on the phase's headline shape. The `#` rows are the same root
+  // cause seen from the comment rule: `#` opens a comment only at word start,
+  // and a region left the word unstarted while the shell was mid-word.
+  { name: 'a $() region as -C\'s argument leaves a placeholder, so push is still read',
+    text: 'git -C $(pwd) push origin main', subs: ['push'] },
+  { name: 'a backtick region as -C\'s argument does the same',
+    text: 'git -C `pwd` push origin main', subs: ['push'] },
+  { name: 'a region as -c\'s argument does the same',
+    text: 'git -c $(echo a=b) push origin main', subs: ['push'] },
+  { name: 'a # glued onto a $() region is mid-word content, not a comment',
+    text: 'echo hi $(echo)#x; git push origin main', subs: ['push'] },
+  { name: 'a # glued onto a backtick region is mid-word content too',
+    text: 'echo hi `echo`#x; git push origin main', subs: ['push'] },
+  { name: 'the placeholder is skipped when reading a subcommand, never reported as one',
+    text: 'git $(pwd) status', subs: ['status'] },
+
   // --- word rules --------------------------------------------------------
   { name: 'an EMPTY quoted argument is still a word, so -C consumes it and push is found',
     text: 'git -C "" push origin main', subs: ['push'] },
@@ -118,7 +145,10 @@ const ROWS = [
   { name: 'an absolute /usr/bin/git path is a git word',
     text: '/usr/bin/git push origin main', subs: ['push'] },
   { name: 'every git invocation in one simple command is reported, not just the first',
-    text: 'xargs -I{} git add . git push', subs: ['add', 'push'] },
+    // Neither is deny-eligible: both git words are arguments of `xargs`, which
+    // is at command position itself. Detection is unaffected - the push is
+    // still seen and the guard still asks.
+    text: 'xargs -I{} git add . git push', subs: ['add', 'push'], denyable: [] },
 
   // --- the stated wrapper set, re-tokenized (D-02) ------------------------
   { name: 'bash -c "..." re-tokenizes its operand',
@@ -165,6 +195,64 @@ const ROWS = [
   { name: 'any-position matching re-tokenizes a non-command operand harmlessly',
     text: 'grep bash -c file.txt', subs: [] },
 
+  // --- env -S / --split-string EXECUTES its operand ----------------------
+  // GNU env splits the string and runs it, so the operand is a command line,
+  // not an argument. It was neither detected nor listed among the
+  // out-of-grammar shapes: a real push with no decision at all.
+  { name: 'env -S executes its operand, so the push in it is read',
+    text: 'env -S "git push origin main"', subs: ['push'] },
+  { name: 'env --split-string is the same option spelled long',
+    text: 'env --split-string "git commit -m x"', subs: ['commit'] },
+  { name: 'env --split-string=... glues the operand to the option',
+    text: 'env --split-string="git push origin main"', subs: ['push'] },
+  { name: 'env -S with a glued operand is read too',
+    text: 'env -S"git push origin main"', subs: ['push'] },
+  { name: '/usr/bin/env -S is matched by the same env rule',
+    text: '/usr/bin/env -S "git push origin main"', subs: ['push'] },
+  { name: 'an env -S operand that is not the command word can ask but never deny',
+    text: 'echo env -S "git commit -m x"', subs: ['commit'], denyable: [] },
+  { name: 'an ordinary env prefix does not re-tokenize its command as a string',
+    text: 'env FOO=1 git commit -m x', subs: ['commit'] },
+  { name: 'an env with no -S and no git word stays silent',
+    text: 'env -u HOME echo hi', subs: [] },
+  // An option that takes a SEPARATE argument used to end the option scan on
+  // that argument, so `-S` behind it was never reached: each row here was a
+  // real push (or a `refuse` user's expected hard block) printing NO decision.
+  // And `-S` is an option wherever it sits in a short cluster, not only at its
+  // head: GNU env's optstring is `+ia:u:vC:S:0`, so `-iS` takes the next word.
+  { name: 'env -u NAME does not end the option scan before -S',
+    text: 'env -u HOME -S "git push origin main"', subs: ['push'] },
+  { name: 'env -C DIR does not end the option scan before -S',
+    text: 'env -C /tmp -S "git push origin main"', subs: ['push'] },
+  { name: 'env -a ARG (--argv0) does not end the option scan before -S',
+    text: 'env -a foo -S "git push origin main"', subs: ['push'] },
+  { name: '-S is matched anywhere in a short cluster, not only at its head',
+    text: 'env -iS "git push origin main"', subs: ['push'] },
+  { name: 'a cluster whose -S carries its own glued argument is read too',
+    text: 'env -iSgit\\ push', subs: ['push'] },
+  { name: 'the same hole on the commit rail: a refuse user expects a hard block',
+    text: 'env -u HOME -S "git commit -m x"', subs: ['commit'], denyable: ['commit'] },
+  { name: 'the long spellings of the separate-argument options behave alike',
+    text: 'env --unset HOME --chdir /tmp --split-string "git push origin main"',
+    subs: ['push'] },
+  { name: 'an =-glued long argument consumes no following word',
+    text: 'env --unset=HOME --split-string="git push origin main"', subs: ['push'] },
+  { name: 'an optional-argument long option consumes no following word',
+    // getopt_long reads an OPTIONAL argument only from an `=`-glued spelling,
+    // so `--block-signal` leaves `-S` as the next option, not as its argument.
+    text: 'env --block-signal -S "git push origin main"', subs: ['push'] },
+  { name: 'an explicit -- ends env\'s options, and the command behind it is read',
+    text: 'env -- git commit -m x', subs: ['commit'], denyable: ['commit'] },
+  // The fallback that keeps the NEXT unanticipated env option from being the
+  // next silent bypass: an option envOptions cannot account for means env's
+  // operands were never located, so the source is read for a git token.
+  { name: 'an env option this file does not know fails toward ASKING, not silence',
+    text: 'env -Z "git push origin main"', subs: [], unplaced: true },
+  { name: 'an unknown LONG env option fails toward asking too',
+    text: 'env --frobnicate -S "git push origin main"', subs: [], unplaced: true },
+  { name: 'an unknown env option with no git word anywhere still stays silent',
+    text: 'env -Z echo hi', subs: [], unplaced: false },
+
   // --- detection is any-position, REFUSAL is command-position only --------
   // Every row here was a hard `deny` under git.on_protected=refuse before the
   // gate landed: a read-only ripgrep search over shell files was blocked
@@ -187,6 +275,60 @@ const ROWS = [
     text: 'GIT_DIR=x bash -c "git commit -m x"', subs: ['commit'], denyable: ['commit'] },
   { name: 'a sudo-prefixed wrapped commit is detected, and asks rather than denying',
     text: 'sudo bash -c "git commit -m x"', subs: ['commit'], denyable: [] },
+
+  // ...and the same gate one level down, on the GIT word's own position.
+  // Before it, `denyable` was gated on the WRAPPER's position only, so a bare
+  // mention of a git word inside an ordinary command was hard-denied under
+  // git.on_protected=refuse: `grep git commit` and `bash -c "echo git commit"`
+  // both came back `deny` while committing nothing. Detection is unchanged.
+  { name: 'a grep for a git word is detected but never deny-eligible',
+    text: 'grep git commit', subs: ['commit'], denyable: [] },
+  { name: 'an echoed git word inside a wrapper is detected but never deny-eligible',
+    text: 'bash -c "echo git commit"', subs: ['commit'], denyable: [] },
+  { name: 'an echoed git word is detected but never deny-eligible',
+    text: 'echo git commit', subs: ['commit'], denyable: [] },
+  { name: 'a find -exec-style mention is detected but never deny-eligible',
+    text: 'grep -rn git commit src/', subs: ['commit'], denyable: [] },
+  // --- the deny gate needs NO enumerated prefix set -----------------------
+  // An earlier cut enumerated transparent prefix commands (`sudo`, `timeout`,
+  // `nohup`, ...) and shell keywords so those kept a hard `deny`. The set was
+  // dropped: each prefix carries its OWN option grammar, so the tail was
+  // open-ended - `sudo -u john`, `timeout --signal KILL 60` and
+  // `find . -exec git commit \;` all fell out of it across three review
+  // rounds, and `command -v git commit` fell INTO it as a false deny on a
+  // lookup that runs nothing. The gate is now one position rule with nothing
+  // to enumerate: a git word at index 0 of its own simple command, after
+  // leading `VAR=value` assignments and empty placeholder words. A prefixed
+  // commit ASKS. That is a real regression against the pre-tokenizer guard,
+  // accepted deliberately: a missing deny costs a prompt, a wrong deny blocks
+  // read-only work.
+  { name: 'a sudo-prefixed commit asks rather than denying (no prefix set)',
+    text: 'sudo git commit -m x', subs: ['commit'], denyable: [] },
+  { name: 'sudo with its OWN option and argument asks too',
+    text: 'sudo -u john git commit -m x', subs: ['commit'], denyable: [] },
+  { name: 'a timeout prefix with its own long option asks',
+    text: 'timeout --signal KILL 60 git commit -m x', subs: ['commit'], denyable: [] },
+  { name: 'a find -exec mention asks',
+    text: 'find . -name x -exec git commit -m x \\;', subs: ['commit'], denyable: [] },
+  { name: 'command -v git commit LOOKS a command up and runs nothing: never a deny',
+    text: 'command -v git commit', subs: ['commit'], denyable: [] },
+  { name: 'a nice-prefixed commit asks',
+    text: 'nice -n 5 git commit -m x', subs: ['commit'], denyable: [] },
+  { name: 'a brace group asks (a shell keyword is an ordinary word here)',
+    text: '{ git commit -m x; }', subs: ['commit'], denyable: [] },
+  { name: 'a conditional asks',
+    text: 'if git commit -m x; then echo ok; fi', subs: ['commit'], denyable: [] },
+  // ...and what the position rule still DENIES, with no enumeration at all.
+  { name: 'a subshell keeps its deny power: the descended command starts at word 0',
+    text: '(git commit -m x)', subs: ['commit'], denyable: ['commit'] },
+  { name: 'an empty placeholder word is SKIPPED by the position gate, not counted',
+    // `$(echo)` leaves a word slot with no text, and the command really
+    // commits. Treating `''` as an ordinary command word dropped this from
+    // deny to ask - the placeholder is inert for the git-word rule, NOT for
+    // the position gates.
+    text: '$(echo) git commit -m x', subs: ['commit'], denyable: ['commit'] },
+  { name: 'a leading assignment is skipped by the position gate too',
+    text: 'GIT_AUTHOR_NAME=t git commit -m x', subs: ['commit'], denyable: ['commit'] },
 
   // --- operands that are not flags, however they are spelled --------------
   { name: 'a -leading wrapper operand is a PAYLOAD, not a flag to skip',
@@ -239,11 +381,16 @@ const ROWS = [
   { name: 'substitution-supplied command word: "its OUTPUT is not fed back ... SILENT"',
     text: '$(echo git) push origin main', subs: [] },
   { name: 'substitution-split: "asks, but for the inner command, not the outer one"',
-    text: '$(echo git push) origin main', subs: ['push'] },
+    // Detected, never deny-eligible: the inner command is `echo git push`, and
+    // a git word behind `echo` runs no git at all.
+    text: '$(echo git push) origin main', subs: ['push'], denyable: [] },
   { name: 'aliases: "a call to an alias or function defined elsewhere is SILENT"',
     text: 'gp origin main', subs: [] },
   { name: 'shell functions: "a function DEFINITION whose body holds git push asks"',
-    text: 'deploy() { git push; }; deploy', subs: ['push'] },
+    // The body tokenizes to the simple command `{ git push`, so the git word
+    // is at index 1 and the deny is withheld - irrelevant here, since the push
+    // rail asks unconditionally without reading `denyable`.
+    text: 'deploy() { git push; }; deploy', subs: ['push'], denyable: [] },
   { name: 'variable indirection: "not expanded ... so this is SILENT"',
     text: 'CMD="git push"; $CMD', subs: [] },
   { name: 'remote execution: "ssh is not in the wrapper set ... SILENT"',
@@ -313,9 +460,18 @@ test('double quotes honor a backslash before ", \\, $ and a backtick only', () =
   assert.deepEqual(tokenizeCommand('echo "a\\nb"').commands, [['echo', 'a\\nb']]);
 });
 
-test('a descended region contributes nothing to the enclosing word', () => {
+test('a descended region contributes no CONTENT to the enclosing word', () => {
   const { commands } = tokenizeCommand('echo pre$(git push origin main)post');
   assert.deepEqual(commands, [['git', 'push', 'origin', 'main'], ['echo', 'prepost']]);
+});
+
+test('a descended region still leaves an empty placeholder WORD, not a deleted slot', () => {
+  // The word count is what `-C` counts on: delete the slot and the option eats
+  // the real subcommand.
+  assert.deepEqual(tokenizeCommand('git -C $(pwd) push').commands,
+    [['pwd'], ['git', '-C', '', 'push']]);
+  assert.deepEqual(tokenizeCommand('git -C `pwd` push').commands,
+    [['pwd'], ['git', '-C', '', 'push']]);
 });
 
 test('a substitution inside double quotes is still descended into', () => {
@@ -333,11 +489,41 @@ test('a pathological nest past the depth cap fails toward asking, never loops', 
   assert.equal(got.unplaced, true);
 });
 
-test('the wrapper set is the stated five, matching references/git.md rail 3', () => {
-  // The set is written down, not implied by the code: git.md rail 3 names
-  // exactly these, so a member added here without the prose (or the reverse)
-  // fails this row.
+// Each enumerated set is written down in references/git.md rail 3 rather than
+// implied by the code, and these rows READ that prose: an earlier version
+// claimed "a member added here without the prose (or the reverse) fails this
+// row" while only comparing the constant to a hardcoded literal, so adding
+// `perl` to the prose kept everything green - a doc/code drift check that
+// checked no document.
+const GIT_MD = readFileSync(new URL('../references/git.md', import.meta.url), 'utf8');
+
+/** The backticked members of the one git.md sentence `re` captures. */
+function statedSet(re, what) {
+  const m = re.exec(GIT_MD);
+  assert.ok(m, `references/git.md rail 3 must state the ${what} in a sentence matching ${re}`);
+  return [...m[1].matchAll(/`([^`]+)`/g)].map((x) => x[1]);
+}
+
+test('the wrapper set is the stated five, and references/git.md names exactly them', () => {
   assert.deepEqual(SHELL_WRAPPERS, ['bash', 'sh', 'zsh', 'dash', 'eval']);
+  assert.deepEqual(statedSet(/The stated set is ([^.]+?), matched/, 'wrapper set'),
+    SHELL_WRAPPERS, 'git.md rail 3 and SHELL_WRAPPERS disagree');
+});
+
+test('no enumerated prefix-command or keyword set survives in code or prose', () => {
+  // The deny gate used to carry PREFIX_COMMANDS and COMMAND_KEYWORDS so that
+  // `sudo git commit` kept its hard refusal. Both were dropped: every prefix
+  // has its own option grammar, so the enumeration had an open-ended tail
+  // (`sudo -u john`, `timeout --signal KILL 60`, `find -exec`) that three
+  // review rounds kept finding new members of - plus a FALSE deny on
+  // `command -v git commit`. The gate is now one position rule. This row
+  // fails if either set is reintroduced on one side and not the other.
+  const src = readFileSync(new URL('./lib/shell-tokens.mjs', import.meta.url), 'utf8');
+  for (const name of ['PREFIX_COMMANDS', 'COMMAND_KEYWORDS']) {
+    assert.equal(src.includes(name), false, `${name} is back in lib/shell-tokens.mjs`);
+  }
+  assert.equal(/prefix commands `sudo`/.test(GIT_MD), false,
+    'references/git.md still states an enumerated prefix-command set');
 });
 
 test('eval CONCATENATES its operands before re-tokenizing them', () => {
@@ -377,6 +563,23 @@ test('a wrapper-dense command is bounded: no quadratic scan, no heap abort', () 
   assert.ok(got.subs.includes('push'), JSON.stringify(got.subs));
   assert.equal(got.unplaced, true); // budget exhausted -> fail toward asking
   assert.ok(elapsed < 2000, `10000-word wrapper input took ${elapsed}ms`);
+});
+
+test('an env-dense command is bounded too (the -S scan is not quadratic)', () => {
+  // env -S re-tokenizes through the same expansion budget as a wrapper
+  // operand, and its option scan stops at the command word, so neither a wall
+  // of `env` words nor a wall of `-S` operands can stall the hook.
+  for (const text of [
+    'git push origin main; ' + 'env '.repeat(10000),
+    'env ' + '-S "echo hi" '.repeat(2000),
+  ]) {
+    const started = Date.now();
+    const got = gitSubcommands(text);
+    assert.ok(Array.isArray(got.subs));
+    assert.ok(Date.now() - started < 2000, `env-dense input took ${Date.now() - started}ms`);
+  }
+  assert.ok(gitSubcommands('git push origin main; ' + 'env '.repeat(10000))
+    .subs.includes('push'));
 });
 
 test('an ordinary wrapper command never trips the expansion budget', () => {

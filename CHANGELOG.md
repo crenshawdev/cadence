@@ -29,9 +29,18 @@ All notable changes to Cadence are recorded here. The format follows
 - Both rails read that one output, so they agree on what a wrapped command IS:
   a wrapped `git commit` on a protected branch now follows the same
   `git.on_protected` path as the bare form. Detection is any-position, so
-  `sudo bash -c "git push"` is seen; hard refusal is command-position only, so
-  a read-only `rg -t sh "git commit"` can never be blocked by a rail meant for
-  real commits.
+  `sudo bash -c "git push"` is seen; hard refusal is command-position only at
+  BOTH levels - the wrapper's position and the git word's own - so a read-only
+  `rg -t sh "git commit"` and a bare mention like `grep git commit` can never
+  be blocked by a rail meant for real commits, while `sudo git commit` and
+  `timeout 60 git commit` keep their refusal.
+- A substitution used as a global option's argument
+  (`git -C $(pwd) push origin main`, `` git -C `pwd` push ``) keeps its word
+  slot, so `-C` can no longer eat the real subcommand; a `#` glued onto a
+  substitution (`echo hi $(echo)#x; git push`) is mid-word content rather than
+  a comment; and `env -S "git push origin main"` is read as the command line
+  GNU env really splits and executes. All three ran a real push with no
+  prompt.
 - A command carrying a `git` word the tokenizer cannot place - an unterminated
   quote, a heredoc-fed or pipe-fed wrapper - now asks instead of going silent,
   and never denies. A shape with no `git` word in it (`echo "unterminated`,

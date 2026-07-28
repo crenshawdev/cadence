@@ -146,10 +146,15 @@ still separates, so `git add . # git push` is one `add`; a `#` inside a word
 (`file#1`) is ordinary content.
 
 **Regions.** `$(...)`, backticks and a `(` in command position are descended
-into as their own command lists and contribute nothing to the enclosing word,
-so `$(git push)`, `` `git push` ``, `(git push origin main)` and `( git push )`
-all read alike. `<(...)` and `>(...)` process substitutions are descended into
-as well. `$'...'` is a single-quoted span with the `$` dropped, and `$"..."` a
+into as their own command lists, so `$(git push)`, `` `git push` ``,
+`(git push origin main)` and `( git push )` all read alike. `<(...)` and
+`>(...)` process substitutions are descended into as well. A region
+contributes no CONTENT to the enclosing word, but it does leave an empty
+placeholder WORD in its place rather than deleting the word - the word COUNT
+is what the rules around it depend on. `git -C $(pwd) push origin main` reads
+`push` because the placeholder is what `-C` consumes, and a `#` glued onto a
+region (`echo hi $(echo)#x; git push origin main`) is mid-word content rather
+than a comment, because the region left the word started. `$'...'` is a single-quoted span with the `$` dropped, and `$"..."` a
 double-quoted span with the `$` dropped, because that is how bash evaluates
 them.
 
@@ -178,22 +183,43 @@ redirect (`echo "git push origin main" | bash`); there the whole original
 command text is read for a `git` token and the guard asks. No pipeline
 data-flow analysis is attempted.
 
+**`env -S`.** GNU `env -S` / `--split-string` splits its operand and executes
+it, so that operand is a command line rather than an argument: `env -S "git
+push origin main"` really pushes. It is re-tokenized like a wrapper operand,
+in all four spellings (`-S x`, `-Sx`, `--split-string x`,
+`--split-string=x`). An `env` word with no `-S` is still just a prefix.
+
 **Detection is any-position, refusal is command-position only.** Matching a
 wrapper anywhere is what keeps `sudo bash -c "git push"` from going silent, but
 at any position other than the command word the "wrapper" is very often an
 ordinary argument: `rg -t sh "git commit"` and `echo bash -c "git commit -m x"`
-both resolve to `commit`. So a subcommand reached through a wrapper that was
-not the command word of its simple command - word 0, after leading `VAR=value`
-assignments and an `env` word with its own flags and `VAR=` arguments - can
-only ever produce an ASK, never a `git.on_protected` refusal. A read-only
-search must not be hard-blocked by a rail meant for real commits.
+both resolve to `commit`. The same is true one level down, of the git word
+itself: `grep git commit` and `bash -c "echo git commit"` mention a git word
+without invoking git. So a subcommand can produce a `git.on_protected` refusal
+only when the wrapper it was reached through (if any) was the command word of
+its simple command AND the git word itself was the command word of its own;
+anything else can only ever ASK. A read-only search must not be hard-blocked by
+a rail meant for real commits.
+
+Command position for the wrapper is word 0 after leading `VAR=value`
+assignments and an `env` word with its own flags and `VAR=` arguments. For the
+git word it is the same, plus the prefix commands `sudo`, `doas`, `command`,
+`exec`, `nice`, `ionice`, `stdbuf`, `timeout`, `nohup` and `xargs` with their
+flags and a numeric operand (`timeout 60 git commit`), plus the shell keywords
+`{`, `!`, `if`, `then`, `elif`, `else`, `while`, `until`, `do` and `time`.
+Those two lists are ENUMERATED, which is exactly what the wrapper rule refuses
+to do for detection - and the difference is the direction of the error. A
+member missing from a detection set means a real push goes SILENT; a member
+missing from these means one spurious prompt on a real commit, and never a
+bypass. Enumeration is safe only where being wrong costs an ask.
 
 **The git word and the subcommand.** A word is a git word when it EQUALS `git`
 or ends with `/git` - word content, so the single word produced by
 `echo "git push"` is not one. From the word after it, a global option that
 takes an argument (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`,
 `--exec-path`, `--config-env`) is skipped with its argument, other `-`-leading
-words are skipped, and the first remaining word is the subcommand. The scan
+words are skipped, an empty word (a region placeholder, an empty quoted span)
+is skipped, and the first remaining word is the subcommand. The scan
 then continues, so EVERY git invocation in a command is reported, not just the
 first. `git stash push -m wip` reads `stash`.
 

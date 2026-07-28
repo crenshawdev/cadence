@@ -70,9 +70,11 @@ function planningRoot(start) {
 // one exception to that silence is a shape the tokenizer could not place that
 // still carries a `git` word: it reports `unplaced` and the guard asks, never
 // denies (D-03). Detection is wide, refusal is narrow: a subcommand the
-// tokenizer only reached through a shell wrapper that was NOT the command word
-// (`rg -t sh "git commit"`) arrives in `subs` but not in `denyable`, so it can
-// ask and can never hard-block.
+// tokenizer reached through a shell wrapper that was NOT the command word
+// (`rg -t sh "git commit"`), or from a git word that was not itself a command
+// word (`grep git commit`, `command -v git commit`, `sudo git commit`),
+// arrives in `subs` but not in `denyable`, so it can ask and can never
+// hard-block.
 
 // The current branch name, or '' on any failure (not a repo / no commits).
 function currentBranch(cwd) {
@@ -89,11 +91,15 @@ function currentBranch(cwd) {
 /**
  * @param {string} root Cadence project root (holds .planning/)
  * @param {string} cwd
- * @param {boolean} canDeny whether the commit was read from the command word
- *   itself or from a command-position wrapper (see gitSubcommands: detection
- *   is any-position, refusal is command-position only). False downgrades a
- *   `refuse` hard block to an ask, so a read-only `rg -t sh "git commit"` can
- *   never be blocked by a rail meant for real commits.
+ * @param {boolean} canDeny whether the commit was read from a command word -
+ *   the git word itself in command position, or a command-position wrapper
+ *   whose operand held one (see gitSubcommands: detection is any-position,
+ *   refusal is command-position only). False downgrades a `refuse` hard block
+ *   to an ask, so a read-only `rg -t sh "git commit"`, a bare mention like
+ *   `grep git commit` and a lookup like `command -v git commit` can never be
+ *   blocked by a rail meant for real commits. A transparent prefix
+ *   (`sudo git commit`) lands on that same ask - the deliberate cost of a gate
+ *   with no prefix set to enumerate.
  * @returns {{decision: string, reason: string} | null}
  */
 function commitDecision(root, cwd, canDeny) {
@@ -126,8 +132,9 @@ function commitDecision(root, cwd, canDeny) {
       (refuse
         ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
         : onProtected === 'refuse'
-          ? 'A `git commit` was read from inside a shell-wrapper argument rather than ' +
-            'the command itself, so the guard asks instead of applying ' +
+          ? 'A `git commit` was read from a non-command position - an argument, a ' +
+            'shell-wrapper operand, or a transparent prefix like `sudo` - rather than ' +
+            'from a command word, so the guard asks instead of applying ' +
             'git.on_protected=refuse (references/git.md rail 3). Approve only if this ' +
             'really commits.'
           : 'Create a task branch first, or approve to commit here deliberately.'),

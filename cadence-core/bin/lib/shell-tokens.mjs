@@ -95,28 +95,145 @@ function isWrapper(w) {
  */
 function isEnvWord(w) { return w === 'env' || w.endsWith('/env'); }
 
+/** GNU env's own short options that take an ARGUMENT (`env --help`, coreutils
+ * 9.11: `-a ARG`, `-u NAME`, `-C DIR`, `-S STRING`). The argument is the rest
+ * of the cluster when there is one and the next word otherwise, which is why
+ * `-iS "git push origin main"` is a real push: the cluster ends in `S`. */
+const ENV_SHORT_WITH_ARG = 'auCS';
+
+/** GNU env's short options that take none (`-i`, `-0`, `-v`). Any other short
+ * letter is one this file does not know, and an unknown option means env's
+ * operands cannot be located - see envOptions. */
+const ENV_SHORT_FLAGS = 'i0v';
+
+/** GNU env's long options whose argument is MANDATORY, so a separate word is
+ * consumed when no `=value` is glued on. */
+const ENV_LONG_WITH_ARG = new Set(['argv0', 'unset', 'chdir', 'split-string']);
+
+/** GNU env's long options that consume no separate word: the plain flags, plus
+ * the three signal options whose argument is OPTIONAL - getopt_long only ever
+ * reads an optional argument from an `=`-glued spelling, never from the next
+ * word. */
+const ENV_LONG_NO_WORD = new Set(['ignore-environment', 'null', 'debug',
+  'list-signal-handling', 'help', 'version',
+  'block-signal', 'default-signal', 'ignore-signal']);
+
 /**
- * Index of the COMMAND WORD of a simple command: word 0 after skipping
- * leading `VAR=value` assignments and an `env` word with its own flags and
- * `VAR=` arguments.
+ * Index of the first word of a simple command that can actually BE its command
+ * word: word 0 after leading `VAR=value` assignments and empty placeholder
+ * words. The placeholder skip is load-bearing, not tidiness: a descended
+ * region or an empty quoted span leaves a word SLOT with no text, so
+ * `$(echo) git commit -m x` really commits while its git word sits at index 1.
+ * @param {string[]} words
+ * @returns {number}
+ */
+function commandStart(words) {
+  let i = 0;
+  while (i < words.length && (words[i] === '' || ASSIGNMENT.test(words[i]))) i++;
+  return i;
+}
+
+/**
+ * Walk GNU env's own option region, starting at the word just after an `env`
+ * word. ONE home for env's grammar, read by both the `-S` re-tokenization and
+ * the command-position gate.
  *
- * This is what gates DENY power (never detection). A wrapper is detected at
- * any position - that is what catches `sudo bash -c "git push"` with one rule
- * instead of an enumerated prefix set - but a wrapper found anywhere other
- * than command position can only ever produce an ASK, because at any other
- * position the "wrapper" is very often an ordinary argument: `rg -t sh "git
- * commit"` and `echo bash -c "git commit -m x"` both resolve to `commit`, and
- * hard-blocking a read-only ripgrep search is a worse failure than the extra
- * prompt any-position matching buys.
+ * Options that take a SEPARATE argument are skipped WITH that argument rather
+ * than ending the walk: stopping at the first non-flag word made
+ * `env -u HOME -S "git push origin main"` and `env -C /tmp -S "..."` silent
+ * real pushes, because the walk ended on `HOME` before it ever reached `-S`.
+ * A short cluster is walked letter by letter for the same reason - `-S` is an
+ * option wherever it sits in one, so `-iS "git push"` is caught.
+ *
+ * An option this walk does not know does NOT silently end it: `unresolved` is
+ * returned so the caller can fail toward asking. That is what keeps the next
+ * env option nobody anticipated from becoming the next silent bypass.
+ *
+ * @param {string[]} words
+ * @param {number} start index just after the `env` word
+ * @returns {{end: number, splits: string[], unresolved: boolean}} `end` is the
+ *   first word past env's options (its command word, if it has one), `splits`
+ *   the `-S`/`--split-string` operands (each a COMMAND LINE, not an argument).
+ */
+function envOptions(words, start) {
+  /** @type {string[]} */
+  const splits = [];
+  let j = start;
+  while (j < words.length) {
+    const a = words[j];
+    if (a === '' || ASSIGNMENT.test(a)) { j++; continue; }
+    if (a === '--') { j++; break; }          // explicit end of options
+    if (a === '-') {                         // "a mere - implies -i", then operands
+      j++;
+      while (j < words.length && (words[j] === '' || ASSIGNMENT.test(words[j]))) j++;
+      break;
+    }
+    if (a.startsWith('--')) {
+      const eq = a.indexOf('=');
+      const name = eq < 0 ? a.slice(2) : a.slice(2, eq);
+      const glued = eq < 0 ? null : a.slice(eq + 1);
+      if (ENV_LONG_WITH_ARG.has(name)) {
+        const arg = glued !== null ? glued : words[j + 1];
+        if (name === 'split-string' && arg !== undefined) splits.push(arg);
+        j += glued !== null ? 1 : 2;
+        continue;
+      }
+      if (ENV_LONG_NO_WORD.has(name)) { j++; continue; }
+      return { end: j, splits, unresolved: true };
+    }
+    if (a.startsWith('-')) {
+      let consumedNext = false;
+      let known = true;
+      for (let k = 1; k < a.length; k++) {
+        const ch = a[k];
+        if (ENV_SHORT_WITH_ARG.includes(ch)) {
+          const rest = a.slice(k + 1);
+          const arg = rest !== '' ? rest : words[j + 1];
+          if (ch === 'S' && arg !== undefined) splits.push(arg);
+          if (rest === '') consumedNext = true;
+          break;                              // the rest of the cluster IS the argument
+        }
+        if (!ENV_SHORT_FLAGS.includes(ch)) { known = false; break; }
+      }
+      if (!known) return { end: j, splits, unresolved: true };
+      j += consumedNext ? 2 : 1;
+      continue;
+    }
+    break;                                    // env's command word
+  }
+  return { end: j, splits, unresolved: false };
+}
+
+/**
+ * Index of the COMMAND WORD of a simple command: `commandStart`, and past an
+ * `env` word with its whole option region (env is a genuinely transparent
+ * prefix, and its grammar is already written down above for `-S`).
+ *
+ * This is the ONE gate on DENY power, and it needs no enumeration to be right.
+ * Detection stays any-position - that is what catches `sudo bash -c "git
+ * push"` and `grep git commit` - but a wrapper or a git word found anywhere
+ * other than command position can only ever produce an ASK, because at any
+ * other position it is very often data: `rg -t sh "git commit"`,
+ * `echo bash -c "git commit -m x"`, `grep git commit` and `command -v git
+ * commit` all resolve to `commit` while committing nothing.
+ *
+ * An earlier cut gated deny with an enumerated set of transparent prefix
+ * commands (`sudo`, `timeout`, `nohup`, ...) so that `sudo git commit` kept
+ * its hard refusal. That set was dropped: every prefix carries its own option
+ * grammar (`sudo -u john`, `timeout --signal KILL 60`, `find -exec`), so the
+ * enumeration had an open-ended tail that three review rounds kept finding new
+ * members of - including a FALSE deny on `command -v git commit`, which runs
+ * nothing. Losing it costs `sudo git commit` an ask instead of a deny on a
+ * protected branch, which is the safe direction; a wrong position rule in the
+ * other direction hard-blocks read-only work.
  * @param {string[]} words
  * @returns {number}
  */
 function commandWordIndex(words) {
-  let i = 0;
-  while (i < words.length && ASSIGNMENT.test(words[i])) i++;
+  let i = commandStart(words);
   if (i < words.length && isEnvWord(words[i])) {
-    i++;
-    while (i < words.length && (words[i].startsWith('-') || ASSIGNMENT.test(words[i]))) i++;
+    i = envOptions(words, i + 1).end;
+    while (i < words.length && (words[i] === '' || ASSIGNMENT.test(words[i]))) i++;
   }
   return i;
 }
@@ -259,11 +376,27 @@ export function tokenizeCommand(text, depth = 0) {
   /**
    * Handle a descended region: tokenize it as its own command list appended
    * here, or - at the depth cap - refuse to descend and fail toward asking.
-   * A descended region contributes NOTHING to the enclosing word.
+   *
+   * A descended region contributes no CONTENT to the enclosing word, but it
+   * DOES start that word, so the region leaves an empty placeholder word
+   * instead of deleting the word slot. Both matter:
+   *   - `git -C $(pwd) push origin main` - without the placeholder the word
+   *     list is `git -C push origin main`, `-C` eats `push` as its argument,
+   *     and a real push reads as `origin` and goes silent. Same for
+   *     `` git -C `pwd` push `` and `git -c $(echo a=b) push`.
+   *   - `echo hi $(echo)#x; git push origin main` - `#` is a comment only when
+   *     it OPENS a word, and a preceding region leaves the shell mid-word, so
+   *     without `started` the `#` swallows the real push behind it.
+   * The placeholder is never a git word (`''` is not `git` and does not end in
+   * `/git`) and never a wrapper, and it is skipped when reading a subcommand.
+   * It is NOT inert for the position gates, though: `$(echo) git commit -m x`
+   * really commits, so commandStart skips leading placeholders the same way it
+   * skips leading `VAR=value` assignments.
    * @param {string} raw
    * @param {boolean} unterminated
    */
   const region = (raw, unterminated) => {
+    started = true;          // the region leaves a word SLOT, not nothing
     pendingRedirect = false; // a substitution after `>` IS the target
     if (unterminated && hasGitToken(raw)) unplaced = true;
     if (depth >= MAX_DEPTH) {
@@ -438,14 +571,29 @@ export function tokenizeCommand(text, depth = 0) {
  * re-tokenization. The wrapper rule lives HERE and not in tokenizeCommand: the
  * lexer stays a lexer, the wrapper set is semantics.
  *
- * DETECTION is any-position; REFUSAL is command-position only. A subcommand
- * reached through a wrapper that was NOT the command word of its simple
- * command (see commandWordIndex) is reported in `subs` but withheld from
- * `denyable`, so the caller may ask on it and can never hard-block on it:
- * `rg -t sh "git commit"` and `echo bash -c "git commit -m x"` are read-only
- * commands that resolve to `commit`, while `bash -c "git commit -m x"` is a
- * real wrapped commit and stays deny-eligible. Subcommands read from the
- * command text itself are always deny-eligible.
+ * An `env` word gets one further rule of its own: GNU `env -S` /
+ * `--split-string` SPLITS its operand and executes it, so that operand is a
+ * command line and is re-tokenized through the same machinery and the same
+ * budgets. Without it `env -S "git push origin main"` was a real push with no
+ * decision at all. env's whole option region is read by envOptions, so an
+ * option taking a separate argument (`env -u HOME -S "..."`) no longer ends
+ * the scan before `-S`, and an option envOptions does not know sets `unplaced`
+ * rather than going quiet.
+ *
+ * DETECTION is any-position; REFUSAL is command-position only, and the gate
+ * applies at BOTH levels. A subcommand is deny-eligible only when the wrapper
+ * it was reached through (if any) sat at command position in its simple
+ * command AND the git word itself sat at command position in its own - one
+ * rule, commandWordIndex, with no set of prefix commands to enumerate.
+ * Otherwise it is reported in `subs` and withheld from `denyable`, so the
+ * caller may ask on it and can never hard-block on it. `rg -t sh "git
+ * commit"`, `echo bash -c "git commit -m x"`, `grep git commit` and
+ * `command -v git commit` all resolve to `commit` while committing nothing,
+ * whereas `bash -c "git commit -m x"`, `$(echo) git commit -m x` and
+ * `git commit -m x` are real commits and stay deny-eligible. A transparent
+ * prefix (`sudo git commit -m x`, `timeout 60 git commit -m x`) ASKS rather
+ * than denying: see commandWordIndex for why the prefix enumeration that used
+ * to keep those denies was dropped.
  *
  * @param {unknown} text
  * @param {number} [depth] descent budget already spent (threaded)
@@ -483,31 +631,60 @@ export function gitSubcommands(text, depth = 0) {
     const item = /** @type {{words: string[], depth: number, denyable: boolean}} */
       (queue.shift());
     const words = item.words;
+    // ONE position gate for both the wrapper and the git word (see
+    // commandWordIndex): DETECTION is any-position, DENY is command-position.
     const cmdPos = commandWordIndex(words);
     // Every word is re-tokenized at most ONCE per simple command, however many
     // wrapper words precede it: re-scanning each operand per wrapper word is
     // the O(N^2) shape that made a long command a multi-second stall.
     let expandFrom = 0;
 
+    /**
+     * Re-tokenize one operand text and queue what it holds, under the shared
+     * depth and expansion budgets.
+     * @param {string} t
+     * @param {boolean} childDenyable
+     */
+    const expand = (t, childDenyable) => {
+      if (item.depth >= MAX_DEPTH) {
+        if (hasGitToken(t)) unplaced = true; // fail toward asking
+        return;
+      }
+      if (expansions >= MAX_EXPANSIONS) { budgetSpent = true; unplaced = true; return; }
+      expansions++;
+      const inner = tokenizeCommand(t, item.depth + 1);
+      for (const c of inner.commands) {
+        queue.push({ words: c, depth: item.depth + 1, denyable: childDenyable });
+      }
+      if (inner.unplaced) unplaced = true;
+    };
+
     for (let i = 0; i < words.length; i++) {
       const w = words[i];
+      // `env -S "git push origin main"` / `--split-string`: GNU env SPLITS the
+      // operand and executes it, so it is a command line, not an argument.
+      // Left unhandled it was neither detected nor listed - a real push with no
+      // prompt - so the operand goes through the same re-tokenization (and the
+      // same budgets) as a wrapper's. An `env` word is at command position when
+      // only assignments precede it, which is the same deny gate the wrapper
+      // set uses.
+      if (isEnvWord(w)) {
+        const childDenyable = item.denyable && i === commandStart(words);
+        const { splits, unresolved } = envOptions(words, i + 1);
+        for (const t of splits) {
+          if (budgetSpent) break;
+          if (t) expand(t, childDenyable);
+        }
+        // An option envOptions could not account for means env's operands were
+        // never located, so a `-S` further along may have been missed. Read the
+        // source for a `git` token and fail toward asking - the rule that keeps
+        // the next unknown env option from being the next silent bypass.
+        if (unresolved && !unplaced && sourceHasGit()) unplaced = true;
+        continue; // `env` is neither a wrapper nor a git word
+      }
       if (isWrapper(w)) {
         // Any-position DETECTION, command-position DENY (see the doc comment).
         const childDenyable = item.denyable && i === cmdPos;
-        /** @param {string} t */
-        const expand = (t) => {
-          if (item.depth >= MAX_DEPTH) {
-            if (hasGitToken(t)) unplaced = true; // fail toward asking
-            return;
-          }
-          if (expansions >= MAX_EXPANSIONS) { budgetSpent = true; unplaced = true; return; }
-          expansions++;
-          const inner = tokenizeCommand(t, item.depth + 1);
-          for (const c of inner.commands) {
-            queue.push({ words: c, depth: item.depth + 1, denyable: childDenyable });
-          }
-          if (inner.unplaced) unplaced = true;
-        };
 
         // No operand to scan at all - the wrapper is fed by a pipe, a heredoc
         // or a redirect (`echo "git push origin main" | bash`), all of which
@@ -515,7 +692,10 @@ export function gitSubcommands(text, depth = 0) {
         // fail toward asking; do not attempt pipeline data-flow analysis.
         let hasOperand = false;
         for (let j = i + 1; j < words.length && j - i <= OPERAND_LOOKAHEAD; j++) {
-          if (!FLAG_CLUSTER.test(words[j])) { hasOperand = true; break; }
+          // An empty placeholder word (a descended region, an empty quoted
+          // span) carries no text to re-tokenize, so it is not an operand:
+          // `echo "git push" | bash $(tty)` must still read the whole source.
+          if (words[j] !== '' && !FLAG_CLUSTER.test(words[j])) { hasOperand = true; break; }
         }
         if (!hasOperand && !unplaced && sourceHasGit()) unplaced = true;
 
@@ -526,17 +706,18 @@ export function gitSubcommands(text, depth = 0) {
             /** @type {string[]} */
             const joined = [];
             for (let j = start; j < words.length; j++) {
-              if (FLAG_CLUSTER.test(words[j])) continue;
+              if (words[j] === '' || FLAG_CLUSTER.test(words[j])) continue;
               joined.push(words[j]);
             }
-            if (joined.length) expand(joined.join(' '));
+            if (joined.length) expand(joined.join(' '), childDenyable);
           } else {
             for (let j = start; j < words.length && !budgetSpent; j++) {
+              if (words[j] === '') continue; // placeholder: no text to re-read
               const texts = operandTexts(words[j]);
               // A skipped flag cluster still gets read: a git word inside one
               // would otherwise be dropped silently.
               if (!texts.length) { if (hasGitToken(words[j])) unplaced = true; continue; }
-              for (const t of texts) { expand(t); if (budgetSpent) break; }
+              for (const t of texts) { expand(t, childDenyable); if (budgetSpent) break; }
             }
           }
           expandFrom = words.length;
@@ -544,12 +725,21 @@ export function gitSubcommands(text, depth = 0) {
         continue; // a wrapper word is never a git word
       }
       if (!(w === 'git' || w.endsWith('/git'))) continue;
+      // A git word that is not the command word of its simple command is a
+      // MENTION, not an invocation: `grep git commit`, `command -v git commit`
+      // and the child command of `bash -c "echo git commit"` all resolve to
+      // `commit` without committing anything, and all were hard-denied under
+      // git.on_protected=refuse before this gate. Detection is unchanged; only
+      // the deny is withheld. A transparent prefix (`sudo git commit`) is on
+      // the losing side of that trade by design - see commandWordIndex.
+      const gitDenyable = item.denyable && i === cmdPos;
       for (let j = i + 1; j < words.length; j++) {
         const a = words[j];
         if (GIT_OPT_WITH_ARG.has(a)) { j++; continue; } // option + its argument
+        if (a === '') continue;                        // region/empty-quote placeholder
         if (a.startsWith('-')) continue;               // other global flags
         subs.push(a);
-        if (item.denyable) denyable.push(a);
+        if (gitDenyable) denyable.push(a);
         i = j; // continue the outer scan from here: report every invocation
         break;
       }
