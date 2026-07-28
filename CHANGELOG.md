@@ -31,16 +31,35 @@ All notable changes to Cadence are recorded here. The format follows
   `git.on_protected` path as the bare form. Detection is any-position, so
   `sudo bash -c "git push"` is seen; hard refusal is command-position only at
   BOTH levels - the wrapper's position and the git word's own - so a read-only
-  `rg -t sh "git commit"` and a bare mention like `grep git commit` can never
-  be blocked by a rail meant for real commits, while `sudo git commit` and
-  `timeout 60 git commit` keep their refusal.
+  `rg -t sh "git commit"`, a bare mention like `grep git commit` and a lookup
+  like `command -v git commit` can never be blocked by a rail meant for real
+  commits.
+- Command position is one rule with nothing to enumerate: word 0 of the simple
+  command, after leading `VAR=value` assignments and empty placeholder words,
+  and past an `env` word with its option region. The consequence to know is a
+  deliberate regression: under `git.on_protected: refuse` a transparent prefix
+  now ASKS rather than denying, so `sudo git commit`, `timeout 60 git commit`
+  and `find . -exec git commit \;` all prompt instead of hard-blocking. The
+  enumerated prefix-command and shell-keyword sets that used to keep those
+  denies are gone, because every prefix carries its own option grammar
+  (`sudo -u john`, `timeout --signal KILL 60`) and the tail proved open-ended
+  across three review rounds - while producing a false deny on
+  `command -v git commit`, which runs nothing.
 - A substitution used as a global option's argument
   (`git -C $(pwd) push origin main`, `` git -C `pwd` push ``) keeps its word
-  slot, so `-C` can no longer eat the real subcommand; a `#` glued onto a
+  slot, so `-C` can no longer eat the real subcommand, and a `#` glued onto a
   substitution (`echo hi $(echo)#x; git push`) is mid-word content rather than
-  a comment; and `env -S "git push origin main"` is read as the command line
-  GNU env really splits and executes. All three ran a real push with no
-  prompt.
+  a comment. Both ran a real push with no prompt.
+- GNU `env -S` / `--split-string` is read as the command line env really splits
+  and executes. Finding it means walking env's whole option region: the options
+  that take a separate argument (`-a`/`--argv0`, `-u`/`--unset`, `-C`/`--chdir`)
+  are skipped WITH that argument instead of ending the scan, and `-S` is
+  matched anywhere in a short cluster rather than only at its head, so
+  `env -S "git push origin main"`, `env -u HOME -S "..."`, `env -C /tmp -S
+  "..."` and `env -iS "..."` all reach a decision - each was a real push with
+  no prompt. An env option the guard does not know no longer ends the scan
+  quietly: the command text is read for a `git` token and the guard asks, so
+  the next unanticipated option cannot become the next silent bypass.
 - A command carrying a `git` word the tokenizer cannot place - an unterminated
   quote, a heredoc-fed or pipe-fed wrapper - now asks instead of going silent,
   and never denies. A shape with no `git` word in it (`echo "unterminated`,

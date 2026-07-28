@@ -183,35 +183,60 @@ redirect (`echo "git push origin main" | bash`); there the whole original
 command text is read for a `git` token and the guard asks. No pipeline
 data-flow analysis is attempted.
 
-**`env -S`.** GNU `env -S` / `--split-string` splits its operand and executes
-it, so that operand is a command line rather than an argument: `env -S "git
-push origin main"` really pushes. It is re-tokenized like a wrapper operand,
-in all four spellings (`-S x`, `-Sx`, `--split-string x`,
-`--split-string=x`). An `env` word with no `-S` is still just a prefix.
+**`env`.** GNU `env -S` / `--split-string` splits its operand and executes it,
+so that operand is a command line rather than an argument: `env -S "git push
+origin main"` really pushes, and it is re-tokenized like a wrapper operand.
+Finding it means walking env's whole option region rather than stopping at the
+first non-flag word, so the options that take a SEPARATE argument (`-a` /
+`--argv0`, `-u` / `--unset`, `-C` / `--chdir`, and `-S` itself) are skipped
+WITH that argument: stopping early is what made `env -u HOME -S "git push
+origin main"` silent. A short cluster is walked letter by letter, because `-S`
+is an option wherever it sits in one (`env -iS "git push origin main"`), and
+the argument of an arg-taking letter is the rest of its cluster when there is
+one and the next word otherwise. The long options whose argument is OPTIONAL
+(`--block-signal`, `--default-signal`, `--ignore-signal`) consume no following
+word, since getopt_long reads an optional argument only from an `=`-glued
+spelling. `--` ends the options; a mere `-` implies `-i` and the operands
+follow it.
+
+An `env` option this walk does NOT know is the important case, and it does not
+end the walk quietly: env's operands were never located, so a `-S` further
+along may have been missed, and the guard reads the command text for a `git`
+token and ASKS. That fallback is what keeps the next env option nobody
+anticipated from becoming the next silent bypass. An `env` word whose options
+resolve with no `-S` among them is just a transparent prefix.
 
 **Detection is any-position, refusal is command-position only.** Matching a
 wrapper anywhere is what keeps `sudo bash -c "git push"` from going silent, but
 at any position other than the command word the "wrapper" is very often an
 ordinary argument: `rg -t sh "git commit"` and `echo bash -c "git commit -m x"`
 both resolve to `commit`. The same is true one level down, of the git word
-itself: `grep git commit` and `bash -c "echo git commit"` mention a git word
-without invoking git. So a subcommand can produce a `git.on_protected` refusal
-only when the wrapper it was reached through (if any) was the command word of
-its simple command AND the git word itself was the command word of its own;
-anything else can only ever ASK. A read-only search must not be hard-blocked by
-a rail meant for real commits.
+itself: `grep git commit`, `command -v git commit` and
+`bash -c "echo git commit"` mention a git word without invoking git. So a
+subcommand can produce a `git.on_protected` refusal only when the wrapper it
+was reached through (if any) sat at command position in its simple command AND
+the git word itself sat at command position in its own; anything else can only
+ever ASK. A read-only search must not be hard-blocked by a rail meant for real
+commits.
 
-Command position for the wrapper is word 0 after leading `VAR=value`
-assignments and an `env` word with its own flags and `VAR=` arguments. For the
-git word it is the same, plus the prefix commands `sudo`, `doas`, `command`,
-`exec`, `nice`, `ionice`, `stdbuf`, `timeout`, `nohup` and `xargs` with their
-flags and a numeric operand (`timeout 60 git commit`), plus the shell keywords
-`{`, `!`, `if`, `then`, `elif`, `else`, `while`, `until`, `do` and `time`.
-Those two lists are ENUMERATED, which is exactly what the wrapper rule refuses
-to do for detection - and the difference is the direction of the error. A
-member missing from a detection set means a real push goes SILENT; a member
-missing from these means one spurious prompt on a real commit, and never a
-bypass. Enumeration is safe only where being wrong costs an ask.
+Command position is one rule with nothing to enumerate: word 0 of the simple
+command, after leading `VAR=value` assignments and empty placeholder words (a
+descended region leaves a slot, and `$(echo) git commit -m x` really commits),
+and past an `env` word with its whole option region as described above. It is
+the same rule for the wrapper and for the git word.
+
+The consequence to know: a transparent prefix costs the refusal. `sudo git
+commit -m x` on a protected branch under `git.on_protected: refuse` ASKS
+rather than denying, and so do `timeout 60 git commit`, `nice -n 5 git commit`,
+`{ git commit; }` and `find . -exec git commit \;`. The guard still SEES every
+one of them and still prompts. An earlier cut kept those denies with an
+enumerated set of prefix commands and shell keywords, and that set was dropped
+because every prefix carries its own option grammar - `sudo -u john`,
+`timeout --signal KILL 60`, `find -exec` - so the enumeration had an
+open-ended tail that three review rounds kept finding new members of, and it
+produced a false deny on `command -v git commit`, a lookup that runs nothing.
+A missing deny costs a prompt on a real commit; a wrong deny hard-blocks
+read-only work.
 
 **The git word and the subcommand.** A word is a git word when it EQUALS `git`
 or ends with `/git` - word content, so the single word produced by
