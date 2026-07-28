@@ -50,8 +50,12 @@ Then create an annotated tag at HEAD (`git tag -a <version> -m ...`), and do
 NOT push it - publishing the tag is /cad-land's decision.
 
 ## 3. Prune completed phases + cleanup
-- Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list;
-  the tag + git history are their archive.
+- Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list,
+  AND each one's `### Phase N: ...` detail section under `## Phase Details`
+  (leave that heading itself standing - it carries no phase token). A surviving
+  detail section is the signature of an INTERRUPTED close and the phase-list
+  grammar reports it as one (`references/roadmap-phases.md`), so a finished
+  close must leave none. The tag + git history are their archive.
 - Archive the completed phases' `.planning/phases/<N>/` directories out of the
   live tree. Tagged (release) milestone: delete them - recoverable from the tag.
   Untagged (non-release) milestone: there is no tag to name them by, so MOVE
@@ -77,18 +81,29 @@ changelog.
   the detail; the live file keeps the trace.
 - Carry forward any deferred/unmet requirement into the new milestone.
 - Seed the next milestone's headline requirements from the PROJECT.md evolution
-  and the user's intent. Deep per-phase requirements come later via /cad-plan;
-  keep this to the milestone's top-level asks.
+  and the user's intent, as `## Active` bullets in the `- **<ID>**: <one line>`
+  form (`references/req-traceability.md`) - the section `/cad-plan`'s seeding
+  step reads. Deep per-phase requirements come later via /cad-plan; keep this
+  to the milestone's top-level asks.
 
 ## 6. Reset the cursor
 Point the cursor at the new cycle through the seam:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
-  --phase 1 --status "ready to plan" --next "<first action of the next milestone>"
+  --phase 1 --status "ready to plan" --next "/cad-phase add"
 ```
 
-(Pass `--name`/`--total` explicitly if the new roadmap is not written yet.)
+On a fully pruned roadmap this needs no flags beyond those: the seam derives
+`of 0 (no active cycle)` from the empty phase list step 3 now produces.
+`/cad-phase add` is the destination because it is the only workflow that
+appends a phase line to an existing roadmap - `/cad-plan` stops with "Phase
+{N} is not in ROADMAP.md".
+
+(Pass `--name`/`--total` explicitly when this close DEFERRED work: step 3's
+third bullet leaves that phase's line in place, so the list is still live and
+its entries do not include phase 1 - the seam finds nothing to derive from and
+returns `cannot-derive`.)
 Commit the doc changes (`docs:`), cursor included, per references/git.md -
 never leave the tree dirty.
 
@@ -110,6 +125,7 @@ re-derive the just-shipped branch name by version. It reaps via the
 
 ## 8. Report
 Tag created (unpushed) - or "no tag (non-release)" - phases pruned,
-PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next action. Note
-that publishing the tag is /cad-land (already chained when `git.auto_close` is
-on).
+PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next action: with
+the roadmap pruned empty that action is `/cad-phase add`, which opens the next
+cycle's first phase entry. Note that publishing the tag is /cad-land (already
+chained when `git.auto_close` is on).

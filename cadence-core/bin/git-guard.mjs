@@ -29,6 +29,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { gitSubcommands } from './lib/shell-tokens.mjs';
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -57,61 +58,23 @@ function planningRoot(start) {
   }
 }
 
-// The git subcommand(s) a shell command actually invokes: for each simple
-// command containing a `git` word, the first word after it that is not a
-// global option (or that option's argument). Backslash line-continuations
-// are joined FIRST (parity-aware - see below), ahead of quote-stripping -
-// order is load-bearing: the
-// double-quote pattern's `\\.` arm cannot match a backslash-newline, so a
-// quoted string split across a continuation would survive the strip intact
-// and its embedded `\n` would then be cut into a bare trailing command by
-// the segment split below, manufacturing a phantom subcommand out of quoted
-// text (D-08). Joining first collapses the continued line so the strip
-// removes a continued quoted string whole. A wrapped `git push` therefore
-// reaches the push rail as the push it is, and - deliberately, since the two
-// rails must agree on what a wrapped command IS - a wrapped `git commit` on
-// a protected branch starts prompting too (D-07). Quoted strings are then
-// stripped, so `git log --grep "push"` or `echo "git push"` never look like
-// a push, and `git stash push` resolves to `stash`, not `push`. Conservative
-// by construction: an unrecognized shape yields no subcommand and the guard
-// stays silent - it must never block normal work.
-const GIT_OPT_WITH_ARG = new Set(['-C', '-c', '--git-dir', '--work-tree',
-  '--namespace', '--exec-path', '--config-env']);
-
-function gitSubcommands(command) {
-  const stripped = String(command)
-    // Join continuations, but only where the backslash is actually one: a
-    // trailing RUN of backslashes continues the line only when its length is
-    // ODD (`\\` at EOL is a literal backslash argument and the newline still
-    // ends the command). Joining on an even run splices two independent
-    // commands into one segment, and the scan below reads only the first
-    // git word per segment - so `git add -A \\` + newline + `git push` would
-    // resolve to `add` alone and a real push would go unprompted.
-    .replace(/(\\+)(\r?\n)[ \t]*/g, (_m, slashes, nl) => (slashes.length % 2
-      ? `${slashes.slice(0, -1)} `   // odd: last one continues the line
-      : `${slashes}${nl}`))          // even: literal, keep the separator
-    // ONE left-to-right pass over both quote forms, never two sequential
-    // passes: a `"` inside a single-quoted word (`awk -F'"'`) is not a
-    // delimiter, and stripping double quotes first pairs it with the next
-    // `"` on the line, deleting everything between - including a real
-    // `; git push origin main ;`. The alternation makes whichever quote
-    // opens FIRST win, which is what the shell does.
-    .replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, ' ');
-  const subs = [];
-  for (const segment of stripped.split(/&&|\|\||[;|\n]/)) {
-    const words = segment.trim().split(/\s+/).filter(Boolean);
-    const gi = words.findIndex((w) => w === 'git' || w.endsWith('/git'));
-    if (gi < 0) continue;
-    for (let i = gi + 1; i < words.length; i++) {
-      const w = words[i];
-      if (GIT_OPT_WITH_ARG.has(w)) { i++; continue; } // skip option + its arg
-      if (w.startsWith('-')) continue;                // other global flags
-      subs.push(w);
-      break;
-    }
-  }
-  return subs;
-}
+// What a command IS, is read by lib/shell-tokens.mjs - one left-to-right
+// quote/escape-state tokenizer, the single home for that rule. The grammar it
+// implements and the shapes declared out of it are written down in
+// cadence-core/references/git.md rail 3 ("What the guard sees"), not restated
+// here. Two properties this file depends on: BOTH rails read the same
+// tokenizer output, because they must agree on what a wrapped command IS
+// (D-07) - so a wrapped `git commit` on a protected branch follows the same
+// git.on_protected path as the bare form; and an unrecognized shape yields no
+// subcommand, so the guard stays silent rather than blocking normal work. The
+// one exception to that silence is a shape the tokenizer could not place that
+// still carries a `git` word: it reports `unplaced` and the guard asks, never
+// denies (D-03). Detection is wide, refusal is narrow: a subcommand the
+// tokenizer reached through a shell wrapper that was NOT the command word
+// (`rg -t sh "git commit"`), or from a git word that was not itself a command
+// word (`grep git commit`, `command -v git commit`, `sudo git commit`),
+// arrives in `subs` but not in `denyable`, so it can ask and can never
+// hard-block.
 
 // The current branch name, or '' on any failure (not a repo / no commits).
 function currentBranch(cwd) {
@@ -121,34 +84,25 @@ function currentBranch(cwd) {
   } catch { return ''; }
 }
 
-// No process.exit() anywhere below: the decision JSON is written to stdout,
-// and exiting right after a write can truncate it on a pipe (the same rule
-// lib/seam-io.mjs pins for the seam scripts). Plain returns let the stream
-// drain; the process exits 0 naturally, which is the hook contract.
-function main() {
-  const input = JSON.parse(readFileSync(0, 'utf8'));
-  const command = String(input?.tool_input?.command || '');
-  const cwd = input?.cwd || process.cwd();
-
-  // Only police Cadence projects (walk-up, see planningRoot), and only
-  // commands whose git SUBCOMMAND is push or commit.
-  const root = planningRoot(cwd);
-  if (!root) return;
-  const subs = gitSubcommands(command);
-  const isPush = subs.includes('push');
-  const isCommit = subs.includes('commit');
-  if (!isPush && !isCommit) return;
-
-  // A push needs no config: EVERY Bash `git push` asks unconditionally - no
-  // exemption of any kind lives here (rail 3). cad-land's sanctioned unattended
-  // publish runs through the git-publish seam as a subprocess argv push, which
-  // is not a Bash tool call, so this hook never sees it.
-  if (isPush) {
-    decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
-      'call (references/git.md rail 3). Approve only if you are deliberately publishing.');
-    return;
-  }
-
+// The protected-branch decision for a `git commit`, or null when there is
+// nothing to say (on_protected: allow, no branch, branch not protected). It
+// returns rather than writes so main() can order the rails: a resolved commit
+// decision is emitted before the unplaced rail can ever mask it.
+/**
+ * @param {string} root Cadence project root (holds .planning/)
+ * @param {string} cwd
+ * @param {boolean} canDeny whether the commit was read from a command word -
+ *   the git word itself in command position, or a command-position wrapper
+ *   whose operand held one (see gitSubcommands: detection is any-position,
+ *   refusal is command-position only). False downgrades a `refuse` hard block
+ *   to an ask, so a read-only `rg -t sh "git commit"`, a bare mention like
+ *   `grep git commit` and a lookup like `command -v git commit` can never be
+ *   blocked by a rail meant for real commits. A transparent prefix
+ *   (`sudo git commit`) lands on that same ask - the deliberate cost of a gate
+ *   with no prefix set to enumerate.
+ * @returns {{decision: string, reason: string} | null}
+ */
+function commitDecision(root, cwd, canDeny) {
   const { config } = mergeLayers(join(root, '.planning', 'config.json'));
   const git = config.git || {};
   // A lone string is an easy hand-edit; honor it rather than silently
@@ -165,17 +119,71 @@ function main() {
   // instead of silently degrading the intended hard block to a soft ask (#38).
   const raw = git.on_protected === 'deny' ? 'refuse' : git.on_protected;
   const onProtected = raw || 'ask';
-  if (onProtected === 'allow') return;
+  if (onProtected === 'allow') return null;
 
   const branch = currentBranch(cwd);
-  if (!branch) return; // not a repo / no commits - nothing to guard
+  if (!branch) return null; // not a repo / no commits - nothing to guard
+  if (!protectedBranches.includes(branch)) return null;
 
-  if (protectedBranches.includes(branch)) {
-    decide(onProtected === 'refuse' ? 'deny' : 'ask',
-      `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
-      (onProtected === 'refuse'
+  const refuse = onProtected === 'refuse' && canDeny;
+  return {
+    decision: refuse ? 'deny' : 'ask',
+    reason: `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
+      (refuse
         ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
-        : 'Create a task branch first, or approve to commit here deliberately.'));
+        : onProtected === 'refuse'
+          ? 'A `git commit` was read from a non-command position - an argument, a ' +
+            'shell-wrapper operand, or a transparent prefix like `sudo` - rather than ' +
+            'from a command word, so the guard asks instead of applying ' +
+            'git.on_protected=refuse (references/git.md rail 3). Approve only if this ' +
+            'really commits.'
+          : 'Create a task branch first, or approve to commit here deliberately.'),
+  };
+}
+
+// No process.exit() anywhere below: the decision JSON is written to stdout,
+// and exiting right after a write can truncate it on a pipe (the same rule
+// lib/seam-io.mjs pins for the seam scripts). Plain returns let the stream
+// drain; the process exits 0 naturally, which is the hook contract.
+function main() {
+  const input = JSON.parse(readFileSync(0, 'utf8'));
+  const command = String(input?.tool_input?.command || '');
+  const cwd = input?.cwd || process.cwd();
+
+  // Only police Cadence projects (walk-up, see planningRoot).
+  const root = planningRoot(cwd);
+  if (!root) return;
+  const { subs, unplaced, denyable } = gitSubcommands(command);
+  const isPush = subs.includes('push');
+  const isCommit = subs.includes('commit');
+
+  // A push needs no config: EVERY Bash `git push` asks unconditionally - no
+  // exemption of any kind lives here (rail 3). cad-land's sanctioned unattended
+  // publish runs through the git-publish seam as a subprocess argv push, which
+  // is not a Bash tool call, so this hook never sees it.
+  if (isPush) {
+    decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
+      'call (references/git.md rail 3). Approve only if you are deliberately publishing.');
+    return;
+  }
+
+  if (isCommit) {
+    const d = commitDecision(root, cwd, denyable.includes('commit'));
+    if (d) { decide(d.decision, d.reason); return; }
+  }
+
+  // Ordering is load-bearing. This rail runs AFTER the commit rail so it can
+  // never mask a deny, and BEFORE returning silent so a task-branch commit
+  // carrying an unterminated quote still asks. There is no `if (!isPush &&
+  // !isCommit) return;` above it: an unplaced command has both false, so an
+  // early return there would leave this rail dead on exactly the inputs it
+  // exists for. It never emits deny - the tokenizer could not place the word,
+  // so it cannot know the command is a commit (D-03, D-04).
+  if (unplaced) {
+    decide('ask', 'Cadence rail: this command carries a `git` word inside a shape ' +
+      'the guard could not parse (an unterminated quote or substitution), so it may ' +
+      'be a push (references/git.md rail 3, "What the guard sees"). Approve only if ' +
+      'you are deliberately running it.');
   }
 }
 

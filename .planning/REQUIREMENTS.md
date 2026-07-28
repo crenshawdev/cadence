@@ -1,13 +1,14 @@
-# Requirements: Cadence (v1.3.1 shipped)
+# Requirements: Cadence (v1.4.0 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-**None.** `v1.3.1` shipped 2026-07-27 and no milestone is open. The next
-cycle's headline asks get seeded here when it opens; see PROJECT.md `### Active`
-for the candidate scopes and the evidence behind them.
+No milestone is open. `v1.4.0`'s five requirements shipped and moved to
+`## Shipped` below. The next cycle's headline asks land here as
+`- **<ID>**: <one line>` bullets when it opens; `/cad-plan` then seeds each
+id's Traceability row as its phase is planned.
 
 ## Shipped
 
@@ -57,6 +58,11 @@ parses only the Traceability table).
 | #37 (decimal STATE cursor carved out of the renumber shift) | 4 | Complete | v1.3.1 |
 | #49 (unreadable symlink survivable; renumber collision and partial-apply reported) | 4 | Complete | v1.3.1 |
 | #50 (git-guard joins backslash line-continuations before parsing) | 4 | Complete | v1.3.1 |
+| GRM-01 (plan-file frontmatter grammar: exact reads, byte-exact paths, a named diagnostic for every out-of-grammar input) | 1 | Complete | v1.4.0 |
+| SPN-01 (`/cad-plan` seeds its own traceability rows; worktree executor asserts its plan file before task 1) | 2 | Complete | v1.4.0 |
+| TOK-01 (one quote-state tokenizer closes the six rail-3 push holes and the `eval` wrapper family) | 3 | Complete | v1.4.0 |
+| RDM-01 (stated roadmap phase-list grammar; empty `## Phases` is a derived closed-milestone state) | 4 | Complete | v1.4.0 |
+| AUD-01 (`audit` counts an unpicked `## Active` id, so the gate holds while a milestone is partly planned) | 5 | Complete | v1.4.0 |
 
 ## Deferred
 
@@ -77,19 +83,20 @@ Explicit exclusions. The reason prevents scope creep later.
 
 ## Traceability
 
-Live requirement → phase → plan → verified trace for the **current** milestone,
-written solely by cad-verify. Shipped rows move to `## Shipped` above when a
-milestone closes, so `/cad-audit` starts each cycle clean. The audit seam reads
-the rows of this section only, bounded at the next `## ` heading.
+Live requirement → phase → plan → verified trace for the **current** milestone.
+`/cad-plan` creates a row per requirement (always at `Pending`); no writer but
+cad-verify ever sets a Status beyond it (`references/req-traceability.md`).
+Shipped rows move to `## Shipped` above when a milestone closes, so
+`/cad-audit` starts each cycle clean. The audit seam reads the rows of this
+section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 
-Empty: v1.3.1's rows are archived under `## Shipped` and no milestone is open.
-`/cad-plan` seeds this table for the next cycle. That seeding step has now
-failed to fire at two consecutive closes (v1.2.0 and v1.3.1), each time needing
-a hand-populated table before `/cad-audit` could pass, so check it explicitly
-next cycle rather than assuming it ran.
+Empty between milestones. `v1.4.0`'s five rows moved to `## Shipped` at its
+close, so the next cycle's audit starts clean. Rows come back one at a time
+from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
+hand-populated.
 
 ---
-*Last updated: 2026-07-27 shipped v1.3.1; Traceability cleared for the next cycle*
+*Last updated: 2026-07-28 v1.4.0 closed (5 requirements shipped and archived)*

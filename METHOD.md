@@ -436,6 +436,9 @@ Before a milestone ships, every requirement is traced requirement → phase → 
 → verified, and the joins are computed by the planning seam rather than assembled
 by hand. Each break carries a code: `no-phase` and `no-plan` mean nothing was ever
 committed to deliver it, which is the silent drop the audit exists to catch;
+`unpicked` is that same drop one step earlier, a requirement the milestone
+declared that no phase picked up, so it never even reached the traceability
+table (the partially-planned state the gate used to be blind to);
 `phase-missing` points at a phase not in the roadmap; `not-verified` is expected
 mid-cycle and a defect at ship time; `drift` means the two status sources
 contradict each other, so the status cannot be trusted until reconciled.
@@ -485,10 +488,11 @@ protected-branch guard when work would land on a protected branch. A nudge there
 is a bug, not a convenience.
 
 Work runs on two tiers. A per-milestone integration branch is what parallel
-worktrees fork from and merge back into, created at cycle start per
-`git.auto_branch` and named by `git.integration_branch` (`milestone` by default,
-with a `trunk` escape hatch). After a successful land, `git.on_land_cleanup`
-returns to the base branch, pulls, and reaps the merged integration branch.
+worktree branches merge back into - where the host forks a worktree from is
+not Cadence's to guarantee - created at cycle start per `git.auto_branch` and
+named by `git.integration_branch` (`milestone` by default, with a `trunk`
+escape hatch). After a successful land, `git.on_land_cleanup` returns to the
+base branch, pulls, and reaps the merged integration branch.
 
 Everything else is atomic: one conventional commit per task, specific files
 staged individually. Publishing flows through a single sanctioned seam, which

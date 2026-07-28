@@ -55,10 +55,17 @@ const PHASE_LINE = /^- \[( |x)\] \*\*Phase (\d+(?:\.\d+)?): (.+?)\*\*(?:\s*-\s*(
  * Parse the `## Phases` list. Returns phases sorted numerically (decimal
  * insertions like 2.1 sort between 2 and 3), or [] when the section is
  * missing/empty - the caller decides whether that is fatal.
+ *
+ * The text is normalized on the way in (parse path only - `normalize`'s own
+ * comment reserves this for the roadmap grammar): a CRLF checkout parses to
+ * real phases instead of to `[]`. Nothing is written back here; `setPhaseBox`
+ * and `phase-done` still rewrite the raw bytes. That asymmetry is why this
+ * uses `normalizeCrlf` and NOT `normalize`: a lone-CR file must stay
+ * unparseable, or the write paths that split raw bytes on `\n` corrupt it.
  * @param {string} text
  */
 export function parseRoadmapPhases(text) {
-  const section = text.split(/^## Phases\s*$/m)[1];
+  const section = normalizeCrlf(text).split(/^## Phases\s*$/m)[1];
   if (!section) return [];
   const body = section.split(/^## /m)[0];
   const phases = [];
@@ -67,6 +74,83 @@ export function parseRoadmapPhases(text) {
     if (m) phases.push({ n: Number(m[2]), name: m[3], desc: m[4] || '', checked: m[1] === 'x' });
   }
   return phases.sort((a, b) => a.n - b.n);
+}
+
+// The name the cursor carries between milestones - `parseCursor` requires a
+// non-empty name group, so the closed state needs a stated spelling rather
+// than an empty string. Lives here with the rest of the cursor grammar.
+export const CLOSED_CYCLE_NAME = 'no active cycle';
+
+// The phase TOKEN: capitalized `Phase` plus a number, the same token
+// shiftPhaseTokens/findProsePhaseRefs already treat as THE phase reference in
+// this codebase. Lowercase `phase 2` is prose and stays prose.
+const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
+
+/**
+ * Classify the `## Phases` section. This is a CLASSIFIER over the section,
+ * NOT a wider phase parser: `PHASE_LINE` above is byte-identical and still
+ * decides what counts as a phase for `status`, `audit`, `phase-done` and the
+ * cursor's `total` (D-01). Stated in full at
+ * `cadence-core/references/roadmap-phases.md`.
+ *
+ * Pure and total: no I/O, no throw, no filesystem (D-05) - a surviving
+ * `phases/<N>/` directory is corroboration `cmdStatus` computes, never part
+ * of this verdict. Rules, in order:
+ *
+ *   1. `normalizeCrlf(text)` first - parse path only, never written back, and
+ *      CRLF only: a lone-CR file stays one giant line and falls out at
+ *      `no-section`, which is what keeps the roadmap write paths from
+ *      corrupting a file they cannot split.
+ *   2. No `^## Phases$` heading -> `no-section`.
+ *   3. Parse the CANONICAL extent (heading to the next `## `, today's bound)
+ *      with `parseRoadmapPhases`; one or more matches -> `live` with those
+ *      phases and no issues. A near-miss beside a real checkbox list is
+ *      deliberately NOT reported: the checkbox list is the phase set.
+ *   4. Otherwise scan the CLASSIFICATION extent - the heading to END OF TEXT,
+ *      deliberately wider than the canonical bound (D-03) - for the phase
+ *      token. Any match -> `out-of-grammar`, at most one issue per line, code
+ *      by the line's shape, EXCEPT a line that already matches `PHASE_LINE`,
+ *      which is `phase-outside-section` (right shape, wrong section - it can
+ *      only reach here from past the canonical bound). No match -> `closed`.
+ *
+ * The two extents differ on purpose: bounding the scan at the next `## ` is
+ * what would let a wiped checkbox list with intact `### Phase N:` details
+ * under `## Phase Details` read as a cleanly closed milestone.
+ * @param {string} text
+ * @returns {{state: string, phases: ReturnType<typeof parseRoadmapPhases>, issues: Issue[]}}
+ */
+export function classifyPhaseList(text) {
+  const lines = normalizeCrlf(text).split('\n');
+  let heading = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Phases\s*$/.test(lines[i])) { heading = i; break; }
+  }
+  if (heading === -1) return { state: 'no-section', phases: [], issues: [] };
+
+  const phases = parseRoadmapPhases(text);
+  if (phases.length) return { state: 'live', phases, issues: [] };
+
+  /** @type {Issue[]} */
+  const issues = [];
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (!PHASE_TOKEN.test(line)) continue;
+    let code = 'phase-prose-line'; // the catch-all: out of grammar, never silent
+    // A byte-perfect canonical entry reaching here is in the WRONG SECTION, not
+    // the wrong shape - the canonical extent above found no phases, so this line
+    // sits past the next `## `. Shape-only classification would call it
+    // `phase-bullet`, whose fix ("rewrite as the canonical entry") is a no-op on
+    // a line that already is one. Checked first: shape tests cannot tell these
+    // apart.
+    if (PHASE_LINE.test(line)) code = 'phase-outside-section';
+    else if (/^#{1,6}\s/.test(line)) code = 'phase-heading';
+    else if (/^\s*[-*+]\s/.test(line)) code = 'phase-bullet';
+    else if (/^\s*\d+[.)]\s/.test(line)) code = 'phase-ordered-item';
+    else if (/^\s*\|/.test(line)) code = 'phase-table-row';
+    issues.push({ line: i + 1, code, text: issueText(line) });
+  }
+  if (issues.length) return { state: 'out-of-grammar', phases: [], issues };
+  return { state: 'closed', phases: [], issues: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +241,313 @@ export function setReqStatus(text, ids, status) {
     }
   }
   return { text: lines.join('\n'), changed };
+}
+
+// ---------------------------------------------------------------------------
+// REQUIREMENTS.md - the `## Active` grammar and the Traceability insert
+// path. Stated in full at cadence-core/references/req-traceability.md; this
+// section is that grammar's single implementation, the same relationship
+// plan-frontmatter.md has to the block above.
+// ---------------------------------------------------------------------------
+
+// THE `## Active` bullet grammar - `- **<ID>**: ...`, an optional leading
+// checkbox tolerated. Byte-identical to the regex `parseActiveIds` carried
+// before `classifyActiveSection` existed: the classifier below REPORTS lines
+// outside this grammar, it never widens it (phase-5 D-05).
+const ACTIVE_BULLET = /^-\s+(?:\[[ xX]\]\s+)?\*\*([^*]+)\*\*/;
+
+// A requirement id as this project spells one, in both shipped forms: the
+// `PREFIX-N` form (`TRI-01`, `GRM-01`) and the v1.3.1 issue form (`#41`). Used
+// ONLY to decide whether an out-of-grammar line is worth reporting - a line
+// with no id token declares nothing and is ordinary section prose. Deliberately
+// UNanchored: it SCANS arbitrary prose, and `isRequirementId` below is the
+// anchored question. Do not add anchors here.
+const REQ_ID_TOKEN = /\b[A-Z][A-Z0-9]{1,7}-\d+\b|(?:^|[^\w#])#\d+\b/;
+const REQ_ID_TOKEN_G = new RegExp(REQ_ID_TOKEN.source, 'g');
+
+// The FULL-STRING form of the same two spellings. `ACTIVE_BULLET` reads any
+// bold span as an id (`- **Note**: ...` declares `Note`) and must keep doing
+// so - that is what `seed-reqs` treats as declared, and narrowing it would
+// change the writer's behavior, the mirror of the reason D-05 refuses to widen
+// it. So the narrowing lives HERE instead, as a question `audit` asks before
+// letting an id break the verdict: a bold bullet whose span is not id-shaped is
+// REPORTED (`active-non-id-bullet`) and never counted.
+const REQ_ID_EXACT = /^(?:[A-Z][A-Z0-9]{1,7}-\d+|#\d+)$/;
+
+/**
+ * Is `id` exactly a requirement id, the whole string and nothing else? The
+ * admission test for anything that moves `audit`'s arithmetic: `AUTH-01` yes,
+ * `AUTH-01:` no (the colon belongs outside the bold span), `Note` no.
+ * @param {string} id @returns {boolean}
+ */
+export function isRequirementId(id) {
+  return REQ_ID_EXACT.test(id);
+}
+
+/** Every requirement-id token in `s`, its leading delimiter stripped. */
+function idTokensIn(s) {
+  return [...s.matchAll(REQ_ID_TOKEN_G)].map((m) => m[0].slice(m[0].search(/[A-Z#]/)));
+}
+
+// Every bold span on a line, in order. `ACTIVE_BULLET` reads only the FIRST,
+// so this is what makes a second one visible rather than silent.
+const BOLD_SPAN_G = /\*\*([^*]+)\*\*/g;
+
+/** Every bold span in `s` AFTER the first, trimmed. */
+function trailingBoldSpans(s) {
+  return [...s.matchAll(BOLD_SPAN_G)].slice(1).map((m) => m[1].trim());
+}
+
+/**
+ * Classify the `## Active` section: the ids it declares, plus the lines that
+ * LOOK like they declare one but fall outside `ACTIVE_BULLET`. This is a
+ * CLASSIFIER, not a wider parser - `ACTIVE_BULLET` above is byte-identical to
+ * the shipped regex and still decides what `seed-reqs` and `audit` treat as a
+ * declared id (D-05). Pure and total: no I/O, no throw.
+ *
+ * Rules, in order:
+ *
+ *   1. Split the RAW text on `\n` - deliberately NOT through
+ *      `normalize`/`normalizeCrlf`, unlike the roadmap grammar. REQUIREMENTS.md
+ *      has write paths (`insertReqRows`, `setReqStatus`) that split raw bytes,
+ *      the same asymmetry `normalizeCrlf`'s own comment states, and a CRLF file
+ *      already parses here because every bold span closes before the `\r`.
+ *   2. No `^## Active$` line -> `{ids: null, issues: []}`. An absent heading is
+ *      NOT an out-of-grammar report: it is the datum `audit`'s
+ *      `no_active_section` already carries, and every project scaffolded before
+ *      v1.4.0 is in that state (D-06).
+ *   3. Otherwise walk from that heading to the next `^## ` - the same bound
+ *      `sectionBody` cuts at, so `## Deferred` is never read (D-07). A line
+ *      matching `ACTIVE_BULLET` contributes its trimmed bold span as an id
+ *      (de-duplicated first-occurrence-wins, empty skipped). It produces an
+ *      issue ONLY when that span is not id-shaped by `isRequirementId`
+ *      (`active-non-id-bullet`) - see the sharp edge below.
+ *   4. Every other line is scanned for `REQ_ID_TOKEN`. No token, no issue. A
+ *      token yields at most ONE issue for that line, code by the line's shape,
+ *      each naming the actual cause and implying a remedy that changes it:
+ *        - `^\s*\|`            -> `active-table-row`
+ *        - a bullet marker with LEADING WHITESPACE -> `active-indented-bullet`
+ *          (a sub-bullet or continuation; the grammar reads column-0 bullets
+ *          only, so bolding it changes nothing - it has to move to column 0)
+ *        - a column-0 `*`/`+` marker -> `active-nondash-bullet` (legal GFM,
+ *          but the grammar reads `-` only)
+ *        - a column-0 `-` bullet whose id is not in a bold span immediately
+ *          after the marker -> `active-unbolded-bullet`
+ *        - `^\s*\d+[.)]\s`     -> `active-ordered-item`
+ *        - `^#{1,6}\s`         -> `active-heading`
+ *        - anything else       -> `active-prose-line`
+ *   5. The entry-shaped codes fire REGARDLESS of how many bullets parsed -
+ *      deliberately unlike `classifyPhaseList`'s near-miss suppression, because
+ *      a table row or an unbolded bullet beside real bullets is the mixed
+ *      authoring case this diagnostic exists to catch (an id half-declared).
+ *      `active-prose-line` is the one conditional code, on two counts: the
+ *      section must declare ZERO ids ADMISSIBLE to `isRequirementId` - the same
+ *      question the arithmetic asks, so a section whose only bullet declares no
+ *      admissible id cannot silence its own prose (an ordinary intro paragraph
+ *      beside a REAL bullet list still stays quiet) - AND the line must name at least
+ *      one id that appears NOWHERE else in the file. A closed milestone's
+ *      `## Active` ("No active milestone. `v1.2.0` shipped its scope (REV-01,
+ *      ...) - see `## Shipped`") names only ids the file already records, so
+ *      nothing is lost and nothing is reported; a section that opens a
+ *      milestone in prose names ids the file records nowhere, and is still
+ *      never silent.
+ *
+ * The sharp edge the unchanged grammar keeps, and where it is now blunted: a
+ * BOLD span that is not id-shaped is still READ as an id - `- **Note**: ...`
+ * declares `Note` - because narrowing `ACTIVE_BULLET` would change what
+ * `seed-reqs` treats as declared, the mirror of the reason D-05 refuses to
+ * widen it. So `ids` still carries it and `parseActiveIds` is unchanged, but it
+ * is reported as `active-non-id-bullet`, and `audit` admits only `isRequirementId`
+ * ids into its `unpicked` break. Without that admission test every project with
+ * a prose bold-bullet in `## Active` (`- **Note**: scope frozen`) would start
+ * FAILing its audit on upgrade, by a phantom id name.
+ * @param {string} text
+ * @returns {{ids: string[]|null, issues: Issue[]}}
+ */
+export function classifyActiveSection(text) {
+  const lines = text.split('\n');
+  let heading = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Active\s*$/.test(lines[i])) { heading = i; break; }
+  }
+  if (heading === -1) return { ids: null, issues: [] };
+
+  const ids = [];
+  const seen = new Set();
+  /** @type {Array<{issue: Issue, prose: string[]|null}>} */
+  const found = [];
+  let end = lines.length;
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^## /.test(line)) { end = i; break; }
+    const m = line.match(ACTIVE_BULLET);
+    if (m) {
+      const id = m[1].trim();
+      if (id && !seen.has(id)) { seen.add(id); ids.push(id); }
+      // In grammar, but the span is not an id: reported, never counted.
+      if (id && !isRequirementId(id)) {
+        found.push({ issue: { line: i + 1, code: 'active-non-id-bullet', text: issueText(line) }, prose: null });
+      }
+      // A SECOND id-shaped bold span on the same bullet. `ACTIVE_BULLET` reads
+      // only the first, so the rest would vanish with `issues: []` - the silent
+      // under-read this grammar exists to prevent. Reported, never counted:
+      // widening the grammar to take every bold span is the fix that looks
+      // obvious and mints an id out of ordinary emphasis
+      // (`- **GRM-01**: the **core** path` would declare `core`), which is the
+      // same silent failure pointed the other way. Only id-SHAPED extra spans
+      // are reported, so emphasis costs nothing.
+      const extra = trailingBoldSpans(line).filter(isRequirementId);
+      if (extra.length > 0) {
+        found.push({ issue: { line: i + 1, code: 'active-multi-id-bullet', text: issueText(line) }, prose: null });
+      }
+      continue;
+    }
+    if (!REQ_ID_TOKEN.test(line)) continue;
+    let code = 'active-prose-line'; // the catch-all: outside the grammar, never silent
+    if (/^\s*\|/.test(line)) code = 'active-table-row';
+    else if (/^\s*[-*+]\s/.test(line)) {
+      // Name the cause, not the family: an indented bullet is unread because it
+      // is indented (bolding it changes nothing), and a `*`/`+` bullet because
+      // the grammar reads `-` only. Only a column-0 `-` bullet is genuinely a
+      // bullet whose id is not bolded where the grammar looks for it.
+      if (/^\s/.test(line)) code = 'active-indented-bullet';
+      else if (/^[*+]\s/.test(line)) code = 'active-nondash-bullet';
+      else code = 'active-unbolded-bullet';
+    } else if (/^\s*\d+[.)]\s/.test(line)) code = 'active-ordered-item';
+    else if (/^#{1,6}\s/.test(line)) code = 'active-heading';
+    found.push({
+      issue: { line: i + 1, code, text: issueText(line) },
+      prose: code === 'active-prose-line' ? idTokensIn(line) : null,
+    });
+  }
+  // Prose candidates survive only in a section that declared nothing AND only
+  // when they name an id the rest of the file does not already record - a
+  // closed milestone's "shipped X, Y - see `## Shipped`" paragraph is correct
+  // as written and must not be nagged at. The filter runs at the end, so the
+  // surviving issues stay in line order.
+  // Narrowed by `isRequirementId` deliberately: "the section declared ids" has
+  // to mean the same thing here as in the arithmetic. Against the raw bullet
+  // list a single `- **Note**: scope frozen` declares an id, and silenced the
+  // whole section's prose - a section carrying no admissible id at all went
+  // quiet on the strength of a prose bullet.
+  const declared = ids.filter(isRequirementId);
+  const elsewhere = declared.length === 0
+    ? new Set(idTokensIn(lines.slice(0, heading).concat(lines.slice(end)).join('\n')))
+    : null;
+  const issues = found
+    .filter((f) => !f.prose || (elsewhere !== null && f.prose.some((id) => !elsewhere.has(id))))
+    .map((f) => f.issue);
+  return { ids, issues };
+}
+
+/**
+ * Parse the `## Active` section's committed-scope bullets: every
+ * `- **<ID>**: ...` line (an optional leading checkbox tolerated), ids
+ * trimmed and de-duplicated first-occurrence-wins. Returns `null` - NOT
+ * `[]` - when the heading is ABSENT, so a caller can tell "no milestone
+ * scope declared" from "declared, nothing matched": the same
+ * `=== null`-not-`!body` warning `parseContextDecisions` carries above,
+ * because a present-but-empty heading yields `[]`, which is falsy-adjacent
+ * but not absent. A bullet with no bold span declares no id BY DESIGN - no
+ * fallback that guesses an id out of unbolded prose; `classifyActiveSection`'s
+ * `issues` is what makes such a line visible instead of silent. A bold span
+ * that is not id-shaped IS still an id here (`- **Note**: ...` -> `Note`) -
+ * this is `seed-reqs`' declared-id set and it does not change; the
+ * `active-non-id-bullet` issue reports it, and `audit` filters it out of the
+ * arithmetic with `isRequirementId`.
+ *
+ * Delegates so the id extraction has exactly ONE implementation and
+ * `seed-reqs`' declared-id set cannot drift from `audit`'s.
+ * @param {string} text @returns {string[]|null}
+ */
+export function parseActiveIds(text) {
+  return classifyActiveSection(text).ids;
+}
+
+/**
+ * Insert `## Traceability` rows for `rows: [{id, phase}]` that have no row
+ * yet, at Status `Pending` - the literal string, NOT a parameter: the seam
+ * must be incapable of creating a row at any other status, which is what
+ * keeps "no writer but cad-verify ever writes a non-`Pending` Status" true
+ * by construction.
+ *
+ * The section is bounded at the next `## ` heading, exactly as
+ * `parseRequirements`/`setReqStatus` already do - a table under a later
+ * section is somebody else's data. Inside that bound, the header row's
+ * all-dashes/colons separator is located; with no separator found, the text
+ * is returned UNCHANGED alongside `error: 'no-traceability-table'` - never
+ * fabricate a table.
+ *
+ * Existing ids are read through `parseRequirements(text)`, so the reader and
+ * the writer of this one table cannot drift. An id that already has a row is
+ * pushed to `skipped`; when that row's Phase cell differs from the requested
+ * one, it is ALSO pushed to `mismatched` as `{id, row_phase}` - a renumber or
+ * a moved requirement leaving the row pointing elsewhere must not pass as a
+ * clean skip.
+ *
+ * New rows land after the LAST contiguous line starting with `|` at or below
+ * the separator (the empty-table case lands directly under the separator
+ * itself), so a trailing prose paragraph under the table survives byte
+ * identical. Each row renders as `| ${id} | Phase ${phase} | Pending |` -
+ * the `Phase N` spelling is mandatory: `shiftPhaseTokens` shifts only
+ * `Phase K` tokens and `phases/K/` paths, and `renumber remove`'s
+ * orphan-blanking regex tests `\bPhase ${at}\b`, so a bare-number phase cell
+ * would silently desync the whole table on the next phase insert or removal.
+ * The anchor line's line ending is preserved - a CRLF anchor gets a CRLF row -
+ * since this is a write path and normalize() stays off write paths (D-05).
+ * @param {string} text @param {Array<{id: string, phase: number}>} rows
+ * @returns {{text: string, inserted: string[], skipped: string[], mismatched: Array<{id: string, row_phase: number|null}>, error?: string}}
+ */
+export function insertReqRows(text, rows) {
+  const lines = text.split('\n');
+  let start = -1, end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Traceability\s*$/.test(lines[i])) { start = i; continue; }
+    if (start !== -1 && i > start && /^## /.test(lines[i])) { end = i; break; }
+  }
+  if (start === -1) {
+    return { text, inserted: [], skipped: [], mismatched: [], error: 'no-traceability-table' };
+  }
+
+  // The separator: a `|`-bounded row whose every cell is only dashes,
+  // colons and whitespace - a strict superset of every legal GFM delimiter
+  // spelling, the same blacklist parseRequirements uses to skip it.
+  let sepLine = -1;
+  for (let i = start + 1; i < end; i++) {
+    if (!lines[i].startsWith('|')) continue;
+    const cells = lines[i].split('|').slice(1, -1);
+    if (cells.length >= 2 && cells.every((c) => /^[-:\s]+$/.test(c))) { sepLine = i; break; }
+  }
+  if (sepLine === -1) {
+    return { text, inserted: [], skipped: [], mismatched: [], error: 'no-traceability-table' };
+  }
+
+  const existing = new Map(parseRequirements(text).map((r) => [r.id, r]));
+  const inserted = [], skipped = [], mismatched = [];
+  const toInsert = [];
+  for (const { id, phase } of rows) {
+    const row = existing.get(id);
+    if (row) {
+      skipped.push(id);
+      if (row.phase !== phase) mismatched.push({ id, row_phase: row.phase });
+      continue;
+    }
+    inserted.push(id);
+    toInsert.push({ id, phase });
+  }
+  if (!toInsert.length) {
+    return { text, inserted, skipped, mismatched };
+  }
+
+  let anchor = sepLine;
+  for (let i = sepLine + 1; i < end; i++) {
+    if (lines[i].startsWith('|')) anchor = i;
+    else break;
+  }
+  const eol = lines[anchor].endsWith('\r') ? '\r' : '';
+  const newLines = toInsert.map(({ id, phase }) => `| ${id} | Phase ${phase} | Pending |${eol}`);
+  lines.splice(anchor + 1, 0, ...newLines);
+  return { text: lines.join('\n'), inserted, skipped, mismatched };
 }
 
 // ---------------------------------------------------------------------------
@@ -407,99 +798,503 @@ export function uatComplete(uat) {
 }
 
 // ---------------------------------------------------------------------------
-// PLAN.md frontmatter - the `requirements: [..]` list (templates/PLAN.md).
+// PLAN.md frontmatter - the `requirements: [..]` / `files: [..]` grammar
+// (templates/PLAN.md). Stated in full at
+// cadence-core/references/plan-frontmatter.md; this section is that
+// grammar's single implementation.
 // ---------------------------------------------------------------------------
 
 /**
- * Read one frontmatter key as a string list. ONE reader for both
- * `requirements:` and `files:` (D-07) - two copies of the same pattern would
- * drift, and the audit would then accept a plan shape the parallel-safety
- * overlap check rejects, in the very file that declares one grammar per
- * format.
- *
- * The lookup is BOUNDED to the leading `---`-fenced block (D-06). The other
- * parsers here scan the whole body, so this reads as inconsistent without
- * the reason: an unbounded key scan plus a permissive block reader lets a
- * prose `requirements:` line in the plan body swallow the following bullets
- * as ids, surfacing as fabricated `orphans.plan_ids` in audit - trading an
- * under-read for a worse over-read.
- *
- * The grammar is deliberately minimal - no nesting, no flow-in-block, no
- * comment-only lines. Three cases for the remainder after `key:`:
- *   `[a, b]`  inline list, split on commas. Never comment-stripped: the
- *             template writes `requirements: []     # phase requirement IDs`.
- *   (empty)   block list - the contiguous following `- item` lines, stopping
- *             at the first line that is not one. A remainder that is ITSELF
- *             a comment counts as empty.
- *   scalar    anything else non-empty: a one-element list. Explicitly NOT a
- *             fall-through to the block reader, which would discard the value
- *             AND swallow whatever `- ` lines follow it.
- * A trailing comment is stripped only on a WHITESPACE-preceded `#`, never a
- * bare one - this repo's own requirement ids are `#41`-shaped. That rule alone
- * cannot see a remainder that is ENTIRELY a comment: `^key:\s*(.*)$` has
- * already eaten the whitespace before the `#`, so `requirements:   # note`
- * arrives here as `# note` with nothing left to strip. Discriminate on what
- * FOLLOWS the `#` - whitespace or end-of-line is a comment (empty value, fall
- * through to the block reader), a non-space character is a `#41`-shaped id (a
- * scalar). Taking such a remainder as a scalar is the over-read D-06 bounds
- * against: it returns the comment text as a fabricated id AND discards the
- * block list beneath it.
- * @param {string} text @param {string} key @returns {string[]}
+ * @typedef {{line: number, code: string, text: string}} Issue
  */
-function readFrontmatterList(text, key) {
-  const fm = text.match(/^---\n([\s\S]*?)\n---/);
-  if (!fm) return [];
-  const lines = fm[1].split('\n');
-  const head = new RegExp(`^${key}:\\s*(.*)$`);
-  const at = lines.findIndex((l) => head.test(l));
-  if (at === -1) return [];
-  const clean = (s) => s.replace(/\s+#.*$/, '').replace(/["']/g, '').trim();
-  const remainder = (lines[at].match(head) || ['', ''])[1].trim();
 
-  if (remainder.startsWith('[')) {
-    const inline = remainder.match(/\[(.*)\]/);
-    // The inline payload is never comment-stripped - the template itself
-    // writes `requirements: []     # phase requirement IDs...`.
-    return (inline ? inline[1].split(',') : [])
-      .map((s) => s.replace(/["']/g, '').trim()).filter(Boolean);
-  }
-
-  /** @type {string[]} */
-  let raw;
-  // `# `/bare `#` is a comment, `#41` is an id (see the note above). The
-  // whitespace-preceded strip cannot fire on a remainder that is entirely a
-  // comment, so that case is tested first rather than falling to the scalar arm.
-  const commentOnly = /^#(\s|$)/.test(remainder);
-  const bare = commentOnly ? '' : remainder.replace(/\s+#.*$/, '').trim();
-  if (bare === '') {
-    raw = [];
-    for (const line of lines.slice(at + 1)) {
-      const item = line.match(/^\s*-\s+(.+?)\s*$/);
-      if (!item) break; // contiguous only; the first non-item line ends it
-      raw.push(item[1]);
-    }
-  } else {
-    raw = [bare]; // a scalar value - deliberately NOT a block fall-through
-  }
-  return raw.map(clean).filter(Boolean);
+/**
+ * Strip one leading U+FEFF byte-order mark and normalize line endings
+ * (`\r\n` and lone `\r`) to `\n`. PARSE PATH ONLY (D-05): wired into the
+ * frontmatter reader below, deliberately NOT into planning.mjs's `read()`,
+ * whose text is written back verbatim by `phase-done` and `renumber` - doing
+ * it there would silently rewrite a user's CRLF ROADMAP.md/REQUIREMENTS.md
+ * wholesale on the next edit, a byte-level rewrite of files Cadence promises
+ * to touch surgically. Used by the frontmatter reader, which never writes its
+ * text back; the ROADMAP grammar takes `normalizeCrlf` below instead, because
+ * it DOES have write paths and a lone-CR file is one giant line to all of them.
+ * @param {string} text
+ */
+export function normalize(text) {
+  const noBom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  return noBom.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
 /**
- * Extract the requirement IDs a plan commits to deliver.
+ * The ROADMAP parse normalizer: BOM and `\r\n` only, deliberately leaving a
+ * lone `\r` alone. `normalize` above collapses lone CR too, which is right for
+ * a pure reader but wrong for the roadmap, because the roadmap's WRITE paths
+ * (`setPhaseBox`, `cutPhaseDetail`, `cmdRenumber`'s list filter) split the RAW
+ * bytes on `\n`. Making a lone-CR file parse into real phases therefore hands
+ * those paths one giant line: `renumber remove --n 1` returned `ok:true` while
+ * leaving two `**Phase 1:**` lines and deleting both `### Phase N:` detail
+ * sections. CRLF is safe here and lone CR is not, and the difference is not
+ * incidental - every roadmap write path matches either without a `$` anchor
+ * (`setPhaseBox:197`, the renumber filter) or under `/m`, where `$` matches
+ * before `\r` (`cutPhaseDetail:1153`), so a CRLF line round-trips byte for
+ * byte. A lone-CR file has no such guarantee, so it stays unparseable and the
+ * caller bails - the pre-phase-4 behavior, and the only safe answer for a
+ * format this file cannot write back without corrupting.
  * @param {string} text
  */
+function normalizeCrlf(text) {
+  const noBom = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  return noBom.replace(/\r\n/g, '\n');
+}
+
+/** Trim and truncate an offending line to 120 chars with a trailing `...`. */
+function issueText(line) {
+  const t = line.trim();
+  return t.length > 120 ? `${t.slice(0, 120)}...` : t;
+}
+
+/**
+ * Scan a frontmatter value left to right tracking quote state: a quote
+ * character (`"` or `'`) opens a span when none is open and closes it when
+ * it matches the open quote; an UNQUOTED `#` ends the value at that index
+ * (D-01: quoting decides, with no `# ` vs `#x` discrimination and no
+ * whitespace-preceded rule - `requirements: #TODO fill this in` and
+ * `requirements: #41` both scan to an empty value, `"#41"` is data); end of
+ * string also ends the value. The result is right-trimmed. Ending the scan
+ * still inside a quote span yields code `unterminated-quote` and an empty
+ * value - callers must not fall through to any other arm on that code: an
+ * apostrophe that never closes (`files: [src/it's-a-file.md]`) has no honest
+ * item boundary, so yielding nothing (not a half-read) is the only sound
+ * result.
+ * @param {string} s @returns {{value: string, code: string|null}}
+ */
+function scanValue(s) {
+  let quote = null;
+  let cut = s.length;
+  for (let idx = 0; idx < s.length; idx++) {
+    const c = s[idx];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === '#') { cut = idx; break; }
+  }
+  if (quote) return { value: '', code: 'unterminated-quote' };
+  return { value: s.slice(0, cut).replace(/\s+$/, ''), code: null };
+}
+
+/**
+ * Resolve one already-comment-stripped, trimmed candidate (an inline list
+ * element, a block-item payload, or a key line's scalar remainder) at its
+ * own boundary (D-17/D-18/D-20), superseding `unwrap` (deleted - no dead
+ * helper, no second resolution path).
+ *
+ * An empty `raw` resolves to `{value:'', codes:[]}`. When `raw[0]` is a
+ * quote character, the value ends at the NEXT occurrence of that SAME
+ * character (`raw.indexOf(raw[0], 1)`) - none found yields
+ * `{value:'', codes:['unterminated-quote']}` (mirroring `scanValue`'s own
+ * fail-loud rule, since a caller can pass a whole-value scan result unwound
+ * one boundary further in). Otherwise the value ends at the first whitespace
+ * character (`raw.search(/\s/)`, the whole string when there is none) - the
+ * accepted cost stated plainly: an unquoted value can no longer contain a
+ * space, so quote a value that does (checked against 21 commits of plan
+ * frontmatter - every shipped value is a single token, so no shipped form
+ * regresses).
+ *
+ * Whatever follows the value (D-17, symmetric with D-18 on the unquoted
+ * form) is the "rest"; when the rest is non-whitespace, `trailing-value-
+ * content` is pushed and the value BEFORE it still stands (parse-then-
+ * diagnose, matching `trailing-inline-content`'s precedent).
+ *
+ * Finally, per D-20, the residual test: a resolved value that could only
+ * have been written with an escape rule this grammar does not have gets
+ * `residual-quote`, payload KEPT. It fires on a value containing a
+ * backslash (the only way a ONE-element escape like `files: ["a\"]` is
+ * detectable at all - it has no trailing rest and no surviving quote, so the
+ * other two codes both miss it), OR the SAME quote character that wrapped
+ * it (for an unquoted value, either quote character) - deliberately NOT a
+ * bare "contains a quote" test, which would fire on the grammar's own
+ * prescribed spelling of an apostrophe-bearing path
+ * (`"src/it's-a-file.md"`, `references/plan-frontmatter.md:96-99`) and
+ * leave that conforming file with no diagnostic-free form.
+ *
+ * No escape state is added here or at any of this function's three call
+ * sites' surrounding scanners (`scanValue`, `splitDepth0`, `parseInlineList`
+ * stay untouched) - this is a test on the RESOLVED value, detection, not an
+ * escape rule.
+ * @param {string} raw @returns {{value: string, codes: string[]}}
+ */
+function resolveValue(raw) {
+  if (!raw) return { value: '', codes: [] };
+  const codes = [];
+  const quoted = raw[0] === '"' || raw[0] === "'";
+  let value, rest;
+  if (quoted) {
+    const q = raw[0];
+    const close = raw.indexOf(q, 1);
+    if (close === -1) return { value: '', codes: ['unterminated-quote'] };
+    value = raw.slice(1, close);
+    rest = raw.slice(close + 1);
+  } else {
+    const ws = raw.search(/\s/);
+    if (ws === -1) { value = raw; rest = ''; }
+    else { value = raw.slice(0, ws); rest = raw.slice(ws); }
+  }
+  if (rest.trim()) codes.push('trailing-value-content');
+  const residual = value.includes('\\') ||
+    (quoted ? value.includes(raw[0]) : (value.includes('"') || value.includes("'")));
+  if (residual) codes.push('residual-quote');
+  // A backtick at the START or END of a resolved value is markdown formatting
+  // that leaked into data. The grammar has no backtick rule, so the value
+  // stands byte-exact (D-19) and is reported rather than rewritten - `add()`'s
+  // old backtick strip is exactly the silent path rewriting D-19 removed.
+  //
+  // Boundary, not containment, and not a matched pair. Containment would fire
+  // on a real path like lib/a`b.mjs, which overlaps correctly today - the same
+  // over-fire the same-quote restriction above exists to prevent. But requiring
+  // a MATCHED pair misses every near-miss spelling, each of which is just as
+  // silent and just as unmatchable: a half wrap (`src/a.rs), a wrap plus
+  // punctuation (`src/a.rs`,), a wrap the whitespace rule already cut in half
+  // (`src/my file.rs -> `src/my), and - the sharpest one - a backtick-wrapped
+  // ID, where scanValue's unquoted-# rule (D-01) cuts `#41` down to a lone
+  // backtick BEFORE this runs, minting a one-character phantom id that audit
+  // reports as an orphan. Boundary catches all four; a matched-pair test
+  // catches none of them.
+  if (value.startsWith('`') || value.endsWith('`')) {
+    codes.push('backtick-wrapped-value');
+  }
+  return { value, codes };
+}
+
+/**
+ * Push one `{line, code, text}` issue per DISTINCT code in `codes`, in
+ * first-occurrence order - a five-element inline list with five annotated
+ * elements reports `trailing-value-content` once for its line, not five
+ * times.
+ * @param {Issue[]} issues @param {number} lineNo @param {string} lineText @param {string[]} codes
+ */
+function pushIssues(issues, lineNo, lineText, codes) {
+  const seen = new Set();
+  for (const code of codes) {
+    if (seen.has(code)) continue;
+    seen.add(code);
+    issues.push({ line: lineNo, code, text: issueText(lineText) });
+  }
+}
+
+/**
+ * Split a string on commas at quote depth 0 - a comma inside a quoted span
+ * is literal, never a separator.
+ * @param {string} s @returns {string[]}
+ */
+function splitDepth0(s) {
+  const out = [];
+  let quote = null, start = 0;
+  for (let idx = 0; idx < s.length; idx++) {
+    const c = s[idx];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === ',') { out.push(s.slice(start, idx)); start = idx + 1; }
+  }
+  out.push(s.slice(start));
+  return out;
+}
+
+/**
+ * Parse an inline flow list value - already comment-stripped by `scanValue`
+ * and confirmed by the caller to start with `[`. Finds the closing `]` at
+ * quote depth 0 (a quoted `]` is literal, never the closer) by the same
+ * left-to-right scan, never a `\[(.*)\]` capture (greedy or not - neither
+ * can see quoting, and the greedy form is the defect three reviewers found
+ * independently). No closing bracket yields no items plus codes
+ * `['unterminated-inline-list']`. Non-whitespace after the closing bracket
+ * yields `trailing-inline-content` (bracket-level, pushed first), with the
+ * payload still parsed - never a fall-through that discards it. The payload
+ * is split on commas at quote depth 0 (a comma inside a quoted span is
+ * literal - and per D-20, no escape state, so a quote span an escaped quote
+ * was meant to keep open still closes at the FIRST matching character) and
+ * each trimmed, non-empty element is resolved by `resolveValue`; every
+ * element's codes are appended after the bracket-level code, in order,
+ * un-deduplicated here (the caller dedupes per line).
+ * @param {string} value @returns {{items: string[], codes: string[]}}
+ */
+function parseInlineList(value) {
+  let quote = null, closeIdx = -1;
+  for (let idx = 1; idx < value.length; idx++) {
+    const c = value[idx];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === ']') { closeIdx = idx; break; }
+  }
+  if (closeIdx === -1) return { items: [], codes: ['unterminated-inline-list'] };
+  const payload = value.slice(1, closeIdx);
+  const trailing = value.slice(closeIdx + 1);
+  const codes = trailing.trim() ? ['trailing-inline-content'] : [];
+  const items = [];
+  for (const raw of splitDepth0(payload)) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const resolved = resolveValue(trimmed);
+    codes.push(...resolved.codes);
+    if (resolved.value) items.push(resolved.value);
+  }
+  return { items, codes };
+}
+
+// Any line at column 0 shaped like `key:` or `key: value` - the anchor for a
+// key's value AND one of the block-list terminator set's three members
+// (D-04): fence, key line, end of block.
+const KEY_LINE = /^([A-Za-z_][A-Za-z0-9_.-]*):(\s|$)/;
+const FENCE_LINE = /^---\s*$/;
+const BLANK_LINE = /^\s*$/;
+const COMMENT_LINE = /^\s*#/;
+// A block-list item: any indent, then `-`, one or more WHITESPACE characters
+// (a space or a tab - `\s+`, not a literal space), then payload. An empty
+// payload contributes nothing, same as a comment-only item. Note the
+// whitespace is REQUIRED: a bare `-` with nothing after it does not match
+// here at all, so it falls through to `unknown-line` rather than reading as
+// an empty item. The distinction is the whitespace, and it is stated in
+// references/plan-frontmatter.md the same way. No indentation/nesting rule -
+// the grammar has none.
+const ITEM_LINE = /^\s*-\s+(.*)$/;
+// A column-0 line that is key-SHAPED (D-16) but fails KEY_LINE's `(\s|$)`
+// requirement after the colon - `requirements:["#41"]` matches this, not
+// KEY_LINE. Never widened to require the space: that would parse every
+// stray colon-bearing column-0 line (a bare `http://example.com`) as a
+// key/value pair.
+const MALFORMED_KEY_LINE = /^[A-Za-z_][A-Za-z0-9_.-]*:/;
+
+/**
+ * Classify every line of a PLAN.md's leading frontmatter block in ONE pass
+ * and return every key's resolved value list alongside every line that fell
+ * outside the grammar (D-02, D-03). This is the single implementation
+ * `references/plan-frontmatter.md` names; `readFrontmatterList` below is a
+ * thin selector over it, never a second scan.
+ *
+ * ONE pass over the whole block, not one scan per key, because the
+ * structural diagnostics must not depend on which key the caller asked for:
+ * `audit` reads only `requirements` and `plan-overlap` reads only `files`, so
+ * a per-key scan could report a stray line to only ONE of the two envelopes -
+ * and under the shipped template's inline `requirements: []` / `files: []`
+ * form, no block scan runs at all, so a stray line would reach NEITHER.
+ *
+ * The fence is normalized first (D-05): a leading BOM is stripped, `\r\n`/
+ * lone `\r` become `\n`, and leading blank lines are tolerated before the
+ * opening `---`. Anything other than a bare `---` as the first non-blank
+ * line means the file has no frontmatter at all - empty items and NO issue,
+ * since `audit`'s `no-plan` and `plan-overlap`'s `undeclared` already make
+ * that loud. An opening fence with no closing fence returns empty items plus
+ * one issue `unterminated-frontmatter` at the opening fence's line.
+ *
+ * A key line is an exact column-0 match (`KEY_LINE`), never an interpolated
+ * per-key regex; the first occurrence of a given key wins. The value arms
+ * (inline list / block / scalar) and block-item payloads are resolved by
+ * `scanValue` + `resolveValue` (+ `parseInlineList` for the inline form) -
+ * the quote-aware scanner D-01 requires, so the two paths cannot drift and
+ * every code either arm produces reaches `issues` with its line number.
+ *
+ * A key whose remainder is empty opens a block: `currentKey` stays set while
+ * we walk forward, SKIPPING blank and comment-only lines and pushing each
+ * item's scanned/resolved value (D-04) - until the stated terminator set:
+ * another key line, the closing fence, or the end of the block. Anything
+ * else is recorded as an `unknown-line` issue and SKIPPED, never treated as
+ * a fourth terminator - an unknown line must not truncate a list any item
+ * below it still belongs to (the phase-3 regression this grammar closes).
+ * An item arriving while NO block key is open - either before any key line,
+ * or under a key that took the inline/scalar arm - is diagnosed
+ * `item-without-key` and its payload DROPPED (D-13): it never back-attaches
+ * to the most recent key line whatever arm that key took, since merging an
+ * inline value with a following block would fuse two separate statements
+ * under a merge rule this grammar does not state. A repeated key line does
+ * not reopen a block either (first occurrence wins, above), so items under a
+ * second `files:` line report the same code.
+ * @param {string} text
+ * @returns {{keys: Map<string, string[]>, issues: Issue[]}}
+ */
+export function parseFrontmatter(text) {
+  const norm = normalize(text);
+  const lines = norm.split('\n');
+  let i = 0;
+  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
+  if (i >= lines.length || !FENCE_LINE.test(lines[i])) {
+    return { keys: new Map(), issues: [] };
+  }
+  const fenceStartLine = i + 1;
+  let j = i + 1;
+  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
+  if (j >= lines.length) {
+    return {
+      keys: new Map(),
+      issues: [{ line: fenceStartLine, code: 'unterminated-frontmatter', text: issueText(lines[i]) }],
+    };
+  }
+
+  const keys = new Map();
+  const issues = [];
+  /** @type {string|null} the key currently accepting block items, or null */
+  let currentKey = null;
+
+  for (let k = i + 1; k < j; k++) {
+    const line = lines[k];
+    const lineNo = k + 1;
+
+    const km = line.match(KEY_LINE);
+    if (km) {
+      currentKey = null; // a key line is always a terminator for the prior block
+      const key = km[1];
+      const first = !keys.has(key);
+      const remainder = line.slice(key.length + 1).trim();
+      const scanned = scanValue(remainder);
+
+      if (scanned.code) {
+        pushIssues(issues, lineNo, line, [scanned.code]);
+        if (first) keys.set(key, []);
+        continue;
+      }
+
+      const value = scanned.value;
+      let items, codes = [];
+      if (value.startsWith('[')) {
+        const r = parseInlineList(value);
+        items = r.items;
+        codes = r.codes;
+      } else if (value !== '') {
+        const r = resolveValue(value);
+        items = r.value ? [r.value] : [];
+        codes = r.codes;
+      } else {
+        items = [];
+        if (first) currentKey = key; // block-eligible; items collected below
+      }
+      pushIssues(issues, lineNo, line, codes);
+      if (first) keys.set(key, items);
+      continue;
+    }
+
+    if (BLANK_LINE.test(line)) continue; // skip, never a terminator
+
+    if (COMMENT_LINE.test(line)) {
+      // D-14: a comment-only line whose body - after stripping leading
+      // whitespace, the run of `#` characters, and any following spaces - is
+      // itself key-shaped earns `commented-key-line` but is NOT promoted to
+      // a terminator: once the `#` is stripped, an ordinary prose comment
+      // (`# TODO: fill this in`) also satisfies KEY_LINE, so promoting would
+      // let prose truncate a real block - the exact silent under-read D-04
+      // exists to close. Accepted cost, stated plainly: `requirements:` /
+      // `- "#41"` / `# files:` / `  - src/shared.rs` still folds
+      // `src/shared.rs` into `requirements` and audit still mints it as an
+      // orphan - but now with this diagnostic beside it and `choose_path`
+      // routing sequential, so it is no longer silent.
+      const body = line.replace(/^\s*#+\s*/, '');
+      if (KEY_LINE.test(body)) issues.push({ line: lineNo, code: 'commented-key-line', text: issueText(line) });
+      continue; // skip either way, never a terminator
+    }
+
+    const im = line.match(ITEM_LINE);
+    if (im) {
+      const scanned = scanValue(im[1]);
+      if (scanned.code) {
+        pushIssues(issues, lineNo, line, [scanned.code]);
+        continue;
+      }
+      if (scanned.value === '') continue; // comment-only item / empty `- ` payload: D-01 cost, not an issue
+      const resolved = resolveValue(scanned.value);
+      pushIssues(issues, lineNo, line, resolved.codes);
+      if (currentKey) {
+        if (resolved.value) keys.get(currentKey).push(resolved.value);
+      } else {
+        // No block key is open (D-13): an item under an inline/scalar key,
+        // or before any key at all, is diagnosed and DROPPED - never
+        // back-attached to the most recent key line whatever arm that key
+        // took, whether or not a REPEATED key name reopens it (it does not,
+        // `:690` first-occurrence-wins).
+        issues.push({ line: lineNo, code: 'item-without-key', text: issueText(line) });
+      }
+      continue;
+    }
+
+    if (MALFORMED_KEY_LINE.test(line)) {
+      // D-16: key-shaped at column 0 but missing the whitespace-or-EOL after
+      // its colon (`requirements:["#41"]`) - names the actual repair (add a
+      // space) instead of falling through to the generic `unknown-line`.
+      // KEY_LINE itself stays strict; dropping its `(\s|$)` group would read
+      // this form at the cost of parsing a bare `http://example.com` as key
+      // `http`, value `//example.com`.
+      issues.push({ line: lineNo, code: 'malformed-key-line', text: issueText(line) });
+      continue;
+    }
+
+    // Neither item, comment, blank, key, malformed key, nor terminator:
+    // recorded and SKIPPED - it does not stop an active block, so nothing
+    // below it is lost (D-04).
+    issues.push({ line: lineNo, code: 'unknown-line', text: issueText(line) });
+  }
+
+  return { keys, issues };
+}
+
+/**
+ * Read one frontmatter key as a string list plus the WHOLE pass's issues
+ * (never a key-scoped subset, D-02) - a thin selector over
+ * `parseFrontmatter`, the single implementation this grammar has (D-03). ONE
+ * reader for both `requirements:` and `files:`: two copies of the same
+ * pattern would drift, and audit would then accept a plan shape the
+ * parallel-safety overlap check rejects, in the file that declares one
+ * grammar per format.
+ *
+ * See `cadence-core/references/plan-frontmatter.md` for the full stated
+ * grammar (normalization, fence, key line, the three value forms, block-list
+ * skip/terminator rules, quoting, and every diagnostic code).
+ * @param {string} text @param {string} key
+ * @returns {{items: string[], issues: Issue[]}}
+ */
+export function readFrontmatterList(text, key) {
+  const { keys, issues } = parseFrontmatter(text);
+  return { items: keys.get(key) ?? [], issues };
+}
+
+/**
+ * Extract the requirement IDs a plan commits to deliver, plus any
+ * frontmatter grammar issues from the pass that read them.
+ * @param {string} text @returns {{ids: string[], issues: Issue[]}}
+ */
 export function parsePlanRequirements(text) {
-  return readFrontmatterList(text, 'requirements');
+  const { items, issues } = readFrontmatterList(text, 'requirements');
+  return { ids: items, issues };
 }
 
 /**
  * Extract the file paths a plan declares it touches: the frontmatter
- * `files:` list (inline or block, via readFrontmatterList) unioned with
- * every task's `- **Files:** a, b` line
- * (either source alone can go stale; the union is what the parallel-safety
- * overlap check trusts). Trailing parentheticals ("src/a.rs (new)") and
- * backticks are stripped; template placeholders ({...}) are ignored.
- * @param {string} text @returns {string[]}
+ * `files:` list unioned with every task's `- **Files:** a, b` line (either
+ * source alone can go stale; the union is what the parallel-safety overlap
+ * check trusts) - plus the frontmatter arm's issues (`plan-overlap` reports
+ * nowhere else; the task-line arm is a separate, already CRLF-tolerant regex
+ * outside this grammar).
+ *
+ * The two arms normalize DIFFERENTLY (D-19; D-09 superseded). The
+ * frontmatter arm's items are already grammar-resolved - comment-stripped,
+ * quote-resolved, trailing content diagnosed - so re-processing them through
+ * `add()`'s parenthetical/backtick strip is a second, silent route to a
+ * wrong `overlaps`: `src/x(1)` -> `src/x`, `` a`b.mjs `` -> `ab.mjs`, each a
+ * phantom or missed overlap reported as authoritative with no
+ * `frontmatter_issues` entry. The frontmatter arm therefore adds its items
+ * VERBATIM, byte for byte as the plan declared them (skipping only the
+ * empty string); the task-line arm keeps `add()`'s parenthetical strip,
+ * backtick strip and `{`-placeholder filter exactly as before.
+ *
+ * The task-line arm ALSO adds its raw, un-normalized trimmed form (skipping
+ * empties and `{`-placeholders on both forms) - the cross-arm bridge this
+ * narrowing requires: once the two arms normalize differently, the SAME
+ * declared path would otherwise reach the shared `Set` as two different
+ * strings depending on which arm a plan used (PLAN-1 declaring `src/x(1)`
+ * in frontmatter, PLAN-2 declaring it only on a `- **Files:**` task line,
+ * would yield `src/x(1)` vs `src/x` - no overlap, no `undeclared`, no
+ * `frontmatter_issues`, and `plan-overlap` would greenlight two plans
+ * writing one file). Adding both forms can only ADD Set entries, never
+ * remove one, so its failure direction is a phantom overlap routing
+ * sequential - the safe direction for a parallel-safety gate. Accepted
+ * cost: an annotated task line contributes a non-path string
+ * (`src/a.rs (edit)`) to that plan's files list, which can appear in
+ * `overlaps` output as a duplicate beside its normalized twin.
+ * @param {string} text @returns {{files: string[], issues: Issue[]}}
  */
 export function parsePlanFiles(text) {
   const files = new Set();
@@ -507,11 +1302,16 @@ export function parsePlanFiles(text) {
     const f = raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
     if (f && !f.startsWith('{')) files.add(f);
   };
-  for (const f of readFrontmatterList(text, 'files')) add(f);
+  const { items, issues } = readFrontmatterList(text, 'files');
+  for (const f of items) if (f) files.add(f); // verbatim - no post-grammar rewriting (D-19)
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
-    for (const f of m[1].split(',')) add(f);
+    for (const raw of m[1].split(',')) {
+      add(raw); // the normalized form, D-19's task-line arm
+      const trimmed = raw.trim();
+      if (trimmed && !trimmed.startsWith('{')) files.add(trimmed); // + the raw form, the cross-arm bridge
+    }
   }
-  return [...files];
+  return { files: [...files], issues };
 }
 
 // ---------------------------------------------------------------------------

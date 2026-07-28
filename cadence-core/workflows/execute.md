@@ -17,6 +17,10 @@ Resolve the phase:
 - `$ARGUMENTS` gives a phase number, else run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
   take `current` (on `ok:false`, relay its `reason` and `hint` and stop).
+  An `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a
+  derived closed milestone - `current` is legitimately null because no cycle
+  is OPEN. Stop with "The milestone is closed - no active cycle.
+  /cad-phase add opens the next one."
   That phase's entry also lists its plan files
   (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
@@ -71,7 +75,9 @@ Sequential (default) unless ALL of these hold:
 
   Any `overlaps` entry -> sequential, and report which plans collide on
   which files. Any `undeclared` entry -> sequential too: a plan declaring
-  no files cannot be proven independent. `ok:false` -> sequential (the
+  no files cannot be proven independent. Any `frontmatter_issues` entry ->
+  sequential for the same reason: a plan whose frontmatter did not fully
+  parse cannot be proven independent either. `ok:false` -> sequential (the
   check could not run; never parallelize unproven).
 - `parallelization.use_worktrees` is true (parallel dispatch without
   isolation is not supported - fall back to sequential)

@@ -420,6 +420,15 @@ rewritten.
   config-injection, env-prefix RCE, redirect-glue, and bare-push command classes. Routing
   publish through a seam the hook never inspects retires the whole parsing-arms-race
   surface instead of trying to out-parse an attacker.
+- *Note, 2026-07-27 (v1.4.0):* R2 governs the ALLOW-LIST PREDICATE only. v1.4.0 added a
+  detection-side tokenizer (`cadence-core/bin/lib/shell-tokens.mjs`) that both git rails
+  read, because six real push shapes — a quoted `-C` path, an `&` separator, `$(...)`,
+  backticks, a subshell, an escaped `\"` — plus `bash -c "..."` were silent under the
+  strip-and-split reader. This does not reverse R2: the tokenizer never lets a command
+  through. It only widens what the guard NOTICES, it fails toward asking (an unresolvable
+  shape carrying a `git` word asks), and the sanctioned publish still bypasses the hook
+  entirely through the git-publish seam. Being wrong in a predicate is a bypass; being
+  wrong here is a prompt. R2 is not an argument for deleting it.
 
 **Sequence (with R3, §7).** These reconcile with R3 — the `git.auto_push` config switch cut
 2026-07-16 (§7) — as one honest sequence, not a contradiction: `auto_push` was cut for

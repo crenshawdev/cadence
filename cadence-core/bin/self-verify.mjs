@@ -49,6 +49,7 @@ const CONTRACTS = {
     'uat status': ['--phase'],
     audit: [],
     'plan-overlap': ['--phase'],
+    'seed-reqs': ['--phase'],
     recall: [],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
@@ -240,18 +241,23 @@ function run(root) {
 
     // 2. script invocations.
     // Join backslash continuations so multi-line commands read as one. The
-    // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF
-    // one - git-guard.mjs carries the identical regex for the same reason,
-    // so the two seams stay one idiom rather than two spellings (D-15). The
+    // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF one.
+    // The RULE this join encodes is shared with the git rails, in two
+    // spellings fitted to two inputs: here the input is PROSE, so a regex
+    // join is the whole job; in cadence-core/bin/lib/shell-tokens.mjs the
+    // input is a shell command string, so the same rule lives as escape state
+    // in a left-to-right pass and no regex remains (D-13, D-06). The shared
+    // invariant is the PARITY requirement below - an even trailing run is a
+    // literal backslash, not a continuation - and it must hold in both. The
     // trailing class is `[ \t]*`, not `\s*`: `\s` matches `\n`, so `\s*`
     // would swallow the newline that ends the continued line and merge the
     // NEXT line into the joined command, letting the flag-checking regex
     // below (bounded by `[^\n]*`) read words that were never on that
-    // command line. Parity matters here for the same reason it does there: a
-    // trailing RUN of backslashes continues the line only when its length is
-    // ODD, so `\\` at EOL is a literal backslash and the newline still ends
-    // the command. Joining anyway merges the next line in and reports a flag
-    // that was never on this command (a false unknown-flag).
+    // command line. Parity matters here for the same reason it does in the
+    // tokenizer: a trailing RUN of backslashes continues the line only when
+    // its length is ODD, so `\\` at EOL is a literal backslash and the newline
+    // still ends the command. Joining anyway merges the next line in and
+    // reports a flag that was never on this command (a false unknown-flag).
     const joined = text.replace(/(\\+)(\r?\n)[ \t]*/g, (_m, slashes, nl) => (slashes.length % 2
       ? `${slashes.slice(0, -1)} `
       : `${slashes}${nl}`));

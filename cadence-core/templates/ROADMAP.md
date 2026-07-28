@@ -49,8 +49,9 @@ Notes:
   statement that could be shown false. "X works" is not a criterion.
 - Integer phases are planned work. Decimal phases (2.1, 2.2) are urgent
   insertions added later via /cad-phase; execution follows numeric order.
-- Every v1 REQ-ID appears in exactly one phase; the Traceability table in
-  REQUIREMENTS.md mirrors this mapping.
+- Every v1 REQ-ID appears in exactly one phase. Do not hand-author
+  REQUIREMENTS.md's Traceability table to match - `/cad-plan` seeds each row
+  when its phase is planned (`references/req-traceability.md`).
 - Phase status is the `## Phases` checkbox, and nothing else: `- [ ]` open,
   `- [x]` complete. /cad-verify checks the box when a phase's UAT fully
   passes; /cad-progress reconciles it if it ever drifts. There is no separate

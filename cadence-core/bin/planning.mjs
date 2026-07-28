@@ -21,6 +21,8 @@
 //                                   from ROADMAP when omitted; stamps today
 //   plan-overlap --phase N          pairwise intersection of the phase's
 //                                   plans' declared file lists (parallel gate)
+//   seed-reqs --phase N             insert Traceability rows for a phase's
+//                                   plan-declared, ## Active-bounded req ids
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
 //                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
@@ -34,10 +36,12 @@ import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
+  classifyPhaseList, CLOSED_CYCLE_NAME,
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
+  parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -89,8 +93,26 @@ function cmdStatus(dir) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   const roadmapText = read(join(dir, 'ROADMAP.md'));
   if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
-  const roadmap = parseRoadmapPhases(roadmapText);
-  if (!roadmap.length) return fail('unparseable-roadmap', 'no `- [ ] **Phase N: ...**` lines under ## Phases');
+  // The phase-list grammar (references/roadmap-phases.md). An empty section is
+  // a DERIVED closed milestone, not a parse failure; a phase-shaped line that
+  // is not a canonical entry is reported per line with its own code.
+  const classified = classifyPhaseList(roadmapText);
+  if (classified.state === 'no-section') {
+    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md');
+  }
+  if (classified.state === 'out-of-grammar') {
+    // Emitted directly rather than through fail(), which has no channel for
+    // the issue list. The detail names the FIRST offending line, so the
+    // diagnostic identifies what to fix instead of restating the grammar.
+    const first = classified.issues[0];
+    return emit({
+      ok: false, reason: 'unparseable-roadmap',
+      detail: `line ${first.line}: ${first.text}`,
+      issues: classified.issues,
+    });
+  }
+  const closed = classified.state === 'closed';
+  const roadmap = classified.phases;
 
   const derived = derivePhases(dir, roadmap);
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
@@ -102,6 +124,25 @@ function cmdStatus(dir) {
       drift.push({ kind: 'roadmap-box', phase: p.n, detail: `box checked, derived ${p.status}` });
     } else if (!p.checked && p.status === 'complete') {
       drift.push({ kind: 'roadmap-box', phase: p.n, detail: 'derived complete, box unchecked' });
+    }
+  }
+
+  // Interrupted-close corroboration: a closed milestone whose `phases/<N>/`
+  // directories are still on disk. Kept OUT of the classifier on purpose - the
+  // verdict is text-only and pure (D-05); this is the filesystem half, and it
+  // reports the accurate PAIR (closed state AND drift) rather than letting one
+  // orphan directory disprove the close.
+  if (closed) {
+    let entries = [];
+    try { entries = readdirSync(join(dir, 'phases')); } catch { /* absence is data */ }
+    const surviving = entries.filter((e) => /^\d+(\.\d+)?$/.test(e))
+      .sort((a, b) => Number(a) - Number(b));
+    for (const e of surviving) {
+      const { plans } = listPlanFiles(join(dir, 'phases', e));
+      drift.push({
+        kind: 'phase-dir', phase: Number(e),
+        detail: `phases/${e}/ survives the milestone close (${plans.length} plan files)`,
+      });
     }
   }
 
@@ -128,6 +169,12 @@ function cmdStatus(dir) {
   if (parsed) {
     let agrees;
     if (parsed.status === 'paused') agrees = true; // legal at any point
+    // A closed milestone: `phase complete` and `ready to plan` both agree, so
+    // `planned`/`executed`/`context gathered` stay drift - detection must NOT
+    // die in the one state where the cursor is the only surviving evidence.
+    // The phase NUMBER is not compared: a zero-phase roadmap gives it nothing
+    // to agree with.
+    else if (closed) agrees = parsed.status === 'phase complete' || parsed.status === 'ready to plan';
     else if (current === null) agrees = parsed.status === 'phase complete';
     else agrees = parsed.phase === current &&
       (AGREE[currentEntry.status] || []).includes(parsed.status);
@@ -136,13 +183,31 @@ function cmdStatus(dir) {
       drift.push({
         kind: 'cursor', phase: parsed.phase,
         detail: `cursor says phase ${parsed.phase} ${parsed.status}; derived ` +
-          (current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
+          (closed ? 'closed milestone (no phases in ROADMAP)'
+            : current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
+      });
+    }
+    // A stale `of <M>` against a zero-phase roadmap, reported INDEPENDENTLY of
+    // `agrees` (which the mapping above governs alone - a `phase complete`
+    // cursor still agrees). This is the case the phase-dir drift cannot see: a
+    // tagged close deletes `phases/<N>/`, so when the prune commits and the
+    // cursor rewrite never runs, the stale total is literally the only
+    // surviving evidence.
+    if (closed && parsed.total !== 0) {
+      drift.push({
+        kind: 'cursor', phase: parsed.phase,
+        detail: `cursor totals ${parsed.total} phases; ROADMAP has none - ` +
+          'milestone close did not finish (run cursor set)',
       });
     }
   }
 
   ok({
     current, total: derived.length,
+    // Additive, and present ONLY in the closed state: a caller branching on
+    // `current === null` alone would otherwise read a closed milestone as
+    // "all phases complete" and route back to /cad-milestone.
+    ...(closed ? { cycle: 'none' } : {}),
     phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
       // plans listed only when they deviate from a single PLAN.md
@@ -188,10 +253,37 @@ function cmdCursorSet(dir, opts) {
     total = parsed.value;
   }
   if (name === undefined || total === undefined) {
-    const phases = parseRoadmapPhases(read(join(dir, 'ROADMAP.md')) || '');
+    // The same phase-list grammar `status` reads (references/roadmap-phases.md).
+    // `closed` fills `no active cycle` / 0, so the seam succeeds against a
+    // pruned roadmap BY CONSTRUCTION and /cad-milestone step 6 runs on the tree
+    // its own step 3 produces. `out-of-grammar` and `no-section` deliberately
+    // keep today's behavior - a roadmap holding unrecognized phase-shaped lines
+    // is broken, not closed, and writing `of 0` there would erase a live
+    // cycle's total.
+    const { state, phases } = classifyPhaseList(read(join(dir, 'ROADMAP.md')) || '');
     const entry = phases.find((p) => p.n === phase);
     if (name === undefined && entry) name = entry.name;
     if (total === undefined && phases.length) total = phases.length;
+    if (state === 'closed') {
+      // Before the prior-cursor fallback below on purpose: inheriting a stale
+      // total writes `Phase: 1 of 5` against a zero-phase roadmap, which reads
+      // as an `of M` mismatch to /cad-health.
+      //
+      // `paused` is the one exception, and it is a hold rather than a
+      // transition: /cad-pause calls this flaglessly, so deriving 0 here would
+      // erase the stale `of <M>` that cmdStatus treats as the ONLY surviving
+      // evidence of an unfinished close (a tagged close deletes `phases/<N>/`,
+      // so the phase-dir drift cannot see it either). Pausing must not destroy
+      // the signal that says the close never finished.
+      const prior = opts.status === 'paused'
+        ? parseCursor(read(join(dir, 'STATE.md')) || '') : null;
+      if (prior && prior.total && prior.phase === phase) {
+        if (name === undefined) name = prior.name;
+        if (total === undefined) total = prior.total;
+      }
+      if (name === undefined) name = CLOSED_CYCLE_NAME;
+      if (total === undefined) total = 0;
+    }
   }
   if (name === undefined || total === undefined) {
     const prior = parseCursor(read(join(dir, 'STATE.md')) || '');
@@ -455,9 +547,40 @@ function cmdUat(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// listPlanFiles - one phase directory's plan files, split into conforming
+// (`PLAN.md`, `PLAN-N.md`) and non-conforming (any other `PLAN*.md`, e.g. a
+// `PLAN-gaps.md` shipped by name - phase-1 D-21: invisible to status, audit,
+// plan-overlap and executor dispatch alike, so its requirements and files
+// were read by nothing while everything reported success).
+//
+// `missing: true` reports that `pdir` could not be read at all - load-bearing,
+// not decoration: cmdAudit and cmdPlanOverlap have OPPOSITE absent-directory
+// contracts today (audit swallows it to mean "unplanned"; plan-overlap
+// returns `fail('no-phase-dir', ...)`), and a helper with no channel for that
+// would turn an absent phase dir into plan-overlap's clean-pass shape, which
+// `execute.md`'s choose_path (routes sequential only on `ok:false`) would then
+// read as clearance to run parallel. Each caller keeps its own behavior on
+// `missing`; this helper only reports it.
+// ---------------------------------------------------------------------------
+function listPlanFiles(pdir) {
+  let entries;
+  try { entries = readdirSync(pdir); }
+  catch { return { plans: [], nonconforming: [], missing: true }; }
+  const plans = [];
+  const nonconforming = [];
+  for (const f of entries) {
+    if (/^PLAN(-\d+)?\.md$/.test(f)) plans.push(f);
+    else if (f.startsWith('PLAN') && f.endsWith('.md')) nonconforming.push(f);
+  }
+  return { plans: plans.sort(), nonconforming: nonconforming.sort() };
+}
+
+// ---------------------------------------------------------------------------
 // audit - the requirement -> phase -> plan -> verified trace, as data. The
 // ship-blocking verdict stays the model's sentence; this makes it arithmetic.
-// break codes: no-phase | phase-missing | no-plan | not-verified | drift.
+// break codes: no-phase | phase-missing | no-plan | not-verified | drift |
+// unpicked (an `## Active` id no phase picked up - it has no Traceability row
+// at all, so it carries no `phase` key; see the D-01/D-04 block below).
 // ---------------------------------------------------------------------------
 function cmdAudit(dir) {
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
@@ -469,19 +592,25 @@ function cmdAudit(dir) {
   // requirement id -> the plan file that carries it, per phase dir.
   const planByReq = new Map();
   const planIds = new Map(); // plan file -> ids (for orphan detection)
+  const frontmatterIssues = []; // [{file, issues}], plan-file order, omitted when empty
+  const nonconformingPlans = []; // phases/<n>/<file>, phase order, omitted when empty
   for (const [n] of roadmap) {
     const pdir = join(dir, 'phases', String(n));
-    let files = [];
-    try { files = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); } catch { /* unplanned */ }
+    const { plans: files, nonconforming } = listPlanFiles(pdir);
+    for (const f of nonconforming) nonconformingPlans.push(`phases/${n}/${f}`);
     for (const f of files) {
       const rel = `phases/${n}/${f}`;
-      const ids = parsePlanRequirements(read(join(pdir, f)) || '');
+      const { ids, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
       planIds.set(rel, ids);
       for (const id of ids) if (!planByReq.has(id)) planByReq.set(id, rel);
+      if (issues.length) frontmatterIssues.push({ file: rel, issues });
     }
   }
 
   const rows = parseRequirements(reqText);
+  // The declared milestone scope, read ONCE - no new file read, and no
+  // roadmap-side source: parseRoadmapPhases carries no id mapping (D-09).
+  const active = classifyActiveSection(reqText);
   const requirements = [];
   const deferred = [];
   for (const r of rows) {
@@ -508,12 +637,78 @@ function cmdAudit(dir) {
     if (unknown.length) orphanPlans.push({ file, ids: unknown });
   }
 
+  // An `## Active` id with no Traceability row BREAKS the verdict (D-01) - the
+  // quiet failure a per-phase flow cannot see, and the state a milestone spends
+  // most of its life in. This reverses the additive shape D-07 shipped one
+  // milestone earlier: milestone.md's ship gate branches on the verdict alone,
+  // so an additive field left the gate exactly as permeable as it was at the
+  // v1.2.0 and v1.3.1 closes.
+  //
+  // The set is `## Active` minus the table's ids - NO plan-side subtraction: an
+  // id a plan declares but no row carries is BOTH unpicked here and an
+  // `orphans.plan_ids` entry there, which is the seed-reqs-never-wrote state and
+  // must report from both directions. Never coerce `active.ids` null to []
+  // (D-06): every project scaffolded before v1.4.0 has no `## Active` heading by
+  // this grammar, and a coercion would read its whole scope as unpicked and make
+  // its audit unpassable.
+  //
+  // `isRequirementId` is the ADMISSION test, and it is load-bearing: the bullet
+  // grammar reads any bold span as an id (`- **Note**: scope frozen` declares
+  // `Note`, `- **AUTH-01:**` declares `AUTH-01:`) and must keep doing so for
+  // `seed-reqs`. Without this filter every project carrying a prose bold-bullet
+  // in `## Active` would FAIL its audit on upgrade, named for a requirement that
+  // does not exist - and `AUTH-01:` would break while its own row traced
+  // separately, counting one requirement twice. Such a bullet is REPORTED
+  // instead, as `active-non-id-bullet` in `active_issues`.
+  const unpicked = (active.ids || []).filter((id) => isRequirementId(id) && !known.has(id));
+  // No `phase` key on these entries, deliberately: there is no row, so there is
+  // no Phase cell to report, and `phase: null` is `no-phase`'s own datum (a row
+  // that names no phase). Conflating them would make two breaks whose fixes
+  // differ - assign the row a phase, vs plan the requirement or defer it -
+  // indistinguishable to audit.md's next-action list. Appended AFTER the
+  // row-derived entries, so a fully seeded tree's `requirements` is unchanged.
+  for (const id of unpicked) requirements.push({ id, break: 'unpicked' });
+
+  // `unseeded` names the `## Active` ids with no row, at ANY row count (D-04) -
+  // one question at two row counts rather than two questions. It is no longer
+  // verdict-neutral: every id it names also carries an `unpicked` break above.
+  // `rows.length === 0` stays a SECOND trigger on purpose - the unpicked arm
+  // alone would drop the two zero-row reports references/req-traceability.md
+  // documents: a present-but-empty `## Active` ({active_ids: []}) and an absent
+  // heading (+ no_active_section: true). The payload carries the same admission
+  // test as the break - `unseeded` names ids a `/cad-plan` run could seed a row
+  // for, and a non-id-shaped bold span is not one; it reports in `active_issues`.
+  let unseeded;
+  if (unpicked.length || rows.length === 0) {
+    unseeded = { active_ids: unpicked, ...(active.ids === null ? { no_active_section: true } : {}) };
+  }
+
   const broken = requirements.filter((r) => r.break).length;
   ok({
     requirements,
     ...(orphanPlans.length ? { orphans: { plan_ids: orphanPlans } } : {}),
+    ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+    ...(nonconformingPlans.length ? { nonconforming_plans: nonconformingPlans } : {}),
     ...(deferred.length ? { deferred } : {}),
-    counts: { total: rows.length, traced: requirements.length - broken, broken, deferred: deferred.length },
+    // Additive, never a break and never a count - two populations: a line
+    // OUTSIDE the `## Active` bullet grammar (it declares no id, so there is
+    // nothing to count) and a line IN the grammar whose bold span is not
+    // id-shaped (`active-non-id-bullet`, held out of the arithmetic above). The
+    // cost is real and stated in the prose rather than implied - the id named on
+    // either line is invisible to `unpicked` until the line is rewritten as a
+    // bullet whose bold span is exactly the id.
+    ...(active.issues.length ? { active_issues: active.issues } : {}),
+    ...(unseeded ? { unseeded } : {}),
+    // total counts Traceability rows PLUS unpicked ids (D-02), which is what
+    // keeps `requirements.length + deferred.length === rows.length +
+    // unpicked.length` - i.e. total = traced + broken + deferred - true now that
+    // a break can exist without a row.
+    counts: {
+      total: rows.length + unpicked.length,
+      traced: requirements.length - broken,
+      broken,
+      deferred: deferred.length,
+    },
   });
 }
 
@@ -528,13 +723,28 @@ function cmdPlanOverlap(dir, opts) {
   const n = Number(opts.phase);
   if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'plan-overlap needs --phase <N>');
   const pdir = join(dir, 'phases', String(n));
-  let planFiles = [];
-  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
-  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  const { plans: planFiles, nonconforming, missing } = listPlanFiles(pdir);
+  if (missing) return fail('no-phase-dir', `${pdir} not found`);
+
+  // Parsed BEFORE the fewer-than-two-plans early return, so a one-plan
+  // phase's grammar diagnostic still reaches this envelope instead of being
+  // skipped along with the intersection this early return has nothing to do.
+  const declared = planFiles.map((f) => {
+    const { files, issues } = parsePlanFiles(read(join(pdir, f)) || '');
+    return { plan: f, files, issues };
+  });
+  const frontmatterIssues = declared
+    .filter((d) => d.issues.length)
+    .map((d) => ({ plan: d.plan, issues: d.issues }));
+
   if (planFiles.length < 2) {
-    return ok({ phase: n, plans: [], overlaps: [], note: 'fewer than two plans - nothing to intersect' });
+    return ok({
+      phase: n, plans: [], overlaps: [],
+      note: 'fewer than two plans - nothing to intersect',
+      ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
+      ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+    });
   }
-  const declared = planFiles.map((f) => ({ plan: f, files: parsePlanFiles(read(join(pdir, f)) || '') }));
   const overlaps = [];
   for (let i = 0; i < declared.length; i++) {
     for (let j = i + 1; j < declared.length; j++) {
@@ -550,6 +760,74 @@ function cmdPlanOverlap(dir, opts) {
     // A plan declaring no files cannot be proven independent - the check is
     // only as strong as the declarations. The caller treats these as unsafe.
     ...(undeclared.length ? { undeclared } : {}),
+    ...(nonconforming.length ? { nonconforming_plans: nonconforming } : {}),
+    ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// seed-reqs - insert Traceability rows for the requirement ids a phase's
+// plan(s) declare, bounded by ## Active (D-02/D-04/D-05/D-06). Called by
+// /cad-plan right where the plan is written - the write path this table
+// never had (git log -S Traceability shows status-flip-only since c34ec8a).
+// ---------------------------------------------------------------------------
+function cmdSeedReqs(dir, opts) {
+  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
+  const n = parsedPhase.value;
+
+  // #42/#45 rail: the flag is validated before any read.
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  const reqText = read(reqFile);
+  if (reqText === null) return fail('no-requirements', `${reqFile} not found`);
+
+  const pdir = join(dir, 'phases', String(n));
+  let planFiles = [];
+  try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
+  catch { return fail('no-phase-dir', `${pdir} not found`); }
+  if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${n}`);
+
+  // Ids in plan-file order, union first-occurrence-wins across the phase's
+  // plan(s); frontmatter issues carried in the same {file, issues} shape
+  // cmdAudit emits, so a malformed requirements: line is loud at the moment
+  // its ids are being written, not only at the next audit.
+  const ids = [];
+  const seenIds = new Set();
+  const frontmatterIssues = [];
+  for (const f of planFiles) {
+    const { ids: fileIds, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
+    for (const id of fileIds) if (!seenIds.has(id)) { seenIds.add(id); ids.push(id); }
+    if (issues.length) frontmatterIssues.push({ file: `phases/${n}/${f}`, issues });
+  }
+
+  // Bound by ## Active (D-06): an id with no bullet there is scope creep or
+  // a typo and stays an orphans.plan_ids entry on purpose, never seeded.
+  const activeIds = parseActiveIds(reqText);
+  const noActiveSection = activeIds === null;
+  const activeSet = new Set(activeIds || []);
+  const rows = [];
+  const orphanIds = [];
+  for (const id of ids) {
+    if (activeSet.has(id)) rows.push({ id, phase: n });
+    else orphanIds.push(id);
+  }
+
+  const res = insertReqRows(reqText, rows);
+  if (res.error) return fail('no-traceability-table', `${reqFile} has no "## Traceability" table with a header separator`);
+  if (res.inserted.length) atomicWrite(reqFile, res.text);
+
+  // seeded/skipped are ALWAYS present, even empty - contrary to the
+  // envelope's omit-empty convention and deliberately so (uat merge's
+  // always-present counts precedent): a bookkeeping step that has now
+  // failed twice by writing nothing must report writing nothing.
+  ok({
+    phase: n,
+    seeded: res.inserted,
+    skipped: res.skipped,
+    ...(res.mismatched.length ? { mismatched: res.mismatched } : {}),
+    ...(orphanIds.length ? { orphan_ids: orphanIds } : {}),
+    ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
+    ...(noActiveSection ? { no_active_section: true } : {}),
   });
 }
 
@@ -921,6 +1199,7 @@ const COMMANDS = {
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
+  'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so
   // rejecting extras would turn a today-degraded interactive call into a hard
   // failure. tokenize() splits on non-alphanumerics, so the separator is

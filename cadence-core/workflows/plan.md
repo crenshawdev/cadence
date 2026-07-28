@@ -18,7 +18,11 @@ Parse `$ARGUMENTS`:
 - `[phase]` - phase number. If omitted, run
   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
   take `current`; if the current phase is already planned, its `phases[]`
-  entries show which phases still need plans - ask (ask-user seam).
+  entries show which phases still need plans - ask (ask-user seam). An
+  `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
+  closed milestone, not a planning target: stop with "The milestone is
+  closed - no active cycle. /cad-phase add opens the next one." There is no
+  phase to plan until a roadmap entry exists.
 - `--skip-check` - skip the plan-checker gate even when workflow.plan_check
   is true.
 - `--inline` - plan in the main context instead of spawning cad-planner.
@@ -218,15 +222,35 @@ another iteration.
 </step>
 
 <step name="commit">
-1. Update the cursor through the seam (it derives name/total from ROADMAP
+1. Seed this phase's Traceability rows through the seam, right where the plan
+   was just written:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" seed-reqs --phase {N}
+   ```
+
+   Inserts `| <id> | Phase {N} | Pending |` for exactly the declared
+   `requirements:` ids that also have an `## Active` bullet in
+   REQUIREMENTS.md; idempotent, so a replan or a `--gaps` plan can never
+   duplicate a row. Report `orphan_ids` to the user - a declared id with no
+   `## Active` bullet is scope creep or a typo. `no_active_section: true` is
+   a DIFFERENT report: the milestone's `## Active` section itself is absent
+   (an old-heading project, or a close that never seeded it), so those ids
+   are not scope creep - the fix is to open the section, not to edit the
+   plan. Status is always `Pending`; cad-verify remains the only writer of
+   any other status. `ok:false` is reported to the user and the workflow
+   CONTINUES regardless - the plan is already on disk, seeding is not a gate.
+
+2. Update the cursor through the seam (it derives name/total from ROADMAP
    and stamps the date):
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
    ```
 
-2. If planning.commit_docs is true: apply the protected-branch guard
-   (references/git.md rail 1), then commit the plan file(s) and STATE.md -
+3. If planning.commit_docs is true: apply the protected-branch guard
+   (references/git.md rail 1), then commit the plan file(s), STATE.md, and
+   `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
 </step>
 
@@ -238,6 +262,7 @@ Planned phase {N}: {name}
 Plan(s): {files, task counts}
 Checker: {passed | passed after revision | skipped | overridden with N open issues}
 Review: {plan trigger outcome}
+Traceability: {seeded ids | none seeded | orphan_ids: [...] | no_active_section}
 Commit: {hash | not committed (planning.commit_docs false)}
 ```
 
@@ -266,6 +291,7 @@ on disk and each executor runs in a fresh context.
 - [ ] Every phase requirement ID appears in a plan's `requirements`
 - [ ] Checker gate honored (ran, or skipped via config/flag), max one revision
 - [ ] `plan` review trigger fired after the plan was written
+- [ ] seed-reqs run; seeded/orphan_ids/no_active_section reported to the user
 - [ ] Cursor updated; docs committed per planning.commit_docs
 - [ ] No existing plans overwritten without asking
 </success_criteria>

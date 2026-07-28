@@ -11,9 +11,12 @@ whole flow turns on one definition:
 `$ARGUMENTS` = a phase number, else the last completed phase from
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` (the
 highest phase whose status is complete, else executed). On `ok:false`
-(no-planning-dir / no-roadmap), relay its `reason` and `hint` and stop. If
-the phase's status is unplanned or planned, say so and stop - there is
-nothing to cover yet.
+(no-planning-dir / no-roadmap), relay its `reason` and `hint` and stop. An
+`ok:true` carrying `cycle: "none"` with an empty `phases[]` is a derived
+closed milestone, not a project with nothing complete: stop with "The
+milestone is closed - no active cycle. /cad-phase add opens the next one."
+and do NOT derive a phase from the empty array. If the phase's status is
+unplanned or planned, say so and stop - there is nothing to cover yet.
 
 ## 2. Gather the phase's requirements and artifacts
 Batch the independent reads in one message - REQUIREMENTS.md, the PLAN

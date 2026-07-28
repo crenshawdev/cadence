@@ -51,6 +51,18 @@ How a workflow dispatches work to a fresh-context subagent.
   is a NEW spawn that reads the prior artifact from disk - never a
   resume/continuation of a prior run, which this seam does not provide.
 
+**Worktree isolation.** The host provides the worktree for the parallel
+`/cad-execute` path (`workflows/execute.md`'s `execute_parallel` step); its
+fork point is host-owned and NOT caller-controllable. Cadence issues no
+`git worktree add` anywhere in `cadence-core/bin`, `agents/`, `skills/` or
+`cadence-core/workflows/`, so it cannot pin the base commit a worktree
+branches from. A worktree has been observed 31 commits behind, missing both
+the phase CONTEXT and its own `PLAN-2.md` (`.planning/CAPTURE.md:5`).
+Therefore the executor asserts its own plan file exists before task 1 and
+halts `blocked` when it does not (`agents/cad-executor.md`'s
+`<worktree_mode>`), and reconciling a stale worktree is the orchestrator's
+serialized call, never the executor's own merge/rebase/fetch.
+
 **Routing (which model + which agent file).** Before every dispatch, resolve the
 role through the routing seam - never hardcode a model, never dispatch a role at
 the session default when a profile is set:

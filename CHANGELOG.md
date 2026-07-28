@@ -4,6 +4,275 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-28
+
+Stated grammars. Cadence parsed four formats it owns with accreted heuristic
+regexes, and each one failed silently in both directions: an over-read
+fabricated a requirement id that surfaced as an `/cad-audit` orphan, an
+under-read dropped a real path and handed the parallel-safety gate a false
+`overlaps: []`. Both look like success. Each of those readers is now a stated
+grammar with a written-down reference, an out-of-grammar table, and a
+parser-level test per row - plan-file frontmatter, the shell text both git
+rails read, the roadmap phase list, and the `## Active` requirement section -
+and every input outside a grammar is reported rather than silently reread. The
+spine's own bookkeeping moved with them: `/cad-plan` now seeds the traceability
+rows a milestone close used to need by hand.
+
+### Added
+
+**`/cad-plan` seeds its own traceability rows**
+
+- A new `planning.mjs seed-reqs` subcommand, called by `/cad-plan` at the point
+  the plan is written, inserts a `Pending` REQUIREMENTS `## Traceability` row
+  for every `## Active` requirement the phase covers. A milestone close no
+  longer needs a hand-populated table before `/cad-audit` passes - which it did
+  need at the v1.2.0 and v1.3.1 closes, and which is why neither close's audit
+  fired. Seeding is idempotent: a second run returns `{"seeded":[],
+  "skipped":[...]}` and leaves the file byte-unchanged.
+- The `## Active` section it reads has a stated grammar (`parseActiveIds`) with
+  its own reference, `cadence-core/references/req-traceability.md`. The
+  single-writer invariant is restated across five prose surfaces as a
+  Status-TRANSITION rule rather than a row-existence one: `/cad-plan` may create
+  a row, but only `cad-verify` moves a Status beyond `Pending`.
+- A worktree-mode executor asserts its own `PLAN-<k>.md` exists before task 1
+  and halts `blocked` naming the missing path and the worktree HEAD, instead of
+  planning against a stale merge point - the phase-4 fork bug three executors
+  caught only by noticing. It repairs nothing: merge, rebase and fetch are
+  banned inside the worktree. The honest worktree binding is now stated across
+  six surfaces; Cadence issues no `git worktree add` anywhere, so it cannot
+  guarantee a fork point and no longer claims to.
+
+### Fixed
+
+**The plan-file frontmatter grammar**
+
+- `readFrontmatterList` is one normalized classifying pass over a stated
+  grammar - a `normalize` step (BOM, CRLF, lone CR, leading blank lines), a
+  quote-state value scanner, and a block reader with an explicit terminator
+  set - replacing the accreted regexes. The greedy `\[(.*)\]` that three
+  reviewers found independently is gone: `files: [a.md, b.md]   # [see notes]`
+  reads two files rather than swallowing the comment's bracket, and
+  `requirements:   # TODO fill this in` above a block list reads the block
+  instead of the comment. That last one was a HIGH regression introduced by the
+  v1.3.1 cycle.
+- Every input outside the grammar now carries a named diagnostic on the `audit`
+  and `plan-overlap` envelopes as `frontmatter_issues`, where it previously
+  changed what was read with `issues: []`. The shipped template's own former
+  shape was one of them: a `files: []  # comment` key line followed by indented
+  paths took the inline arm, so `currentKey` was never set and every path
+  beneath it vanished - two plans in that shape handed `plan-overlap` a false
+  `overlaps: []` and the parallel gate would dispatch both onto the same file.
+  Also diagnosed: a quoted value with trailing text (`- "src/shared.rs" (new)`,
+  which used to mint a value carrying its own quotes and match nothing), a
+  commented-out key line inside an open block (an over-read of one key and an
+  under-read of the other in one pass), `requirements:["#41"]` with no space
+  after the colon, a backslash escape inside an inline list, and a
+  backtick-wrapped value tested on the value's BOUNDARY - which catches a half
+  wrap, a wrap plus punctuation, and a backticked id that `#`-comment handling
+  would otherwise reduce to a one-character phantom.
+- Frontmatter paths reach `plan-overlap` byte-exact as the plan wrote them:
+  `resolveValue` replaced the old global rewriting, so `src/x(1)` and
+  `` lib/a`b.mjs `` survive unrewritten while a `- **Files:** src/a.rs (edit)`
+  task line still normalizes. A path declared in one plan's frontmatter and the
+  other's task line now reports as an overlap where it was a silent miss.
+- The grammar, every diagnostic code, and a per-code table stating whether that
+  code DROPS what it read are written down in
+  `cadence-core/references/plan-frontmatter.md`, the payload column proved at
+  the audit seam rather than asserted in prose. 33+ parser-level grammar rows,
+  each reported as its own test.
+
+**One quote-state tokenizer for the git-guard rails**
+
+- The seven shapes that reached the network with no prompt now all ask: a
+  quoted `-C` path with a space (`git -C "my repo" push origin main`), `&` as a
+  separator, `$(git push)`, backticks, a subshell, an escaped `\"` before a
+  real push, and the shell-wrapper set `bash` / `sh` / `zsh` / `dash` / `eval`
+  with `-c`. This closes the "Six pre-existing `git-guard` rail-3 holes"
+  known gap recorded under [1.3.1]; `eval` was the seventh, found while
+  gathering context for the fix.
+- The strip-and-split arms and the parity-aware continuation pre-pass are
+  DELETED, not extended: one left-to-right pass in
+  `cadence-core/bin/lib/shell-tokens.mjs` carries a single quote/escape state,
+  preserves word boundaries, descends into `$(...)`, backticks and subshells,
+  and re-tokenizes a shell wrapper's operands. Six regex arms would have been
+  the alternative; regex accretion is what produced the two push-rail
+  regressions this repo already paid for. The module is pure and total (no
+  I/O, never throws, bounded descent and expansion), so the grammar is tested
+  as a table with no subprocess per row.
+- Both rails read that one output, so they agree on what a wrapped command IS:
+  a wrapped `git commit` on a protected branch now follows the same
+  `git.on_protected` path as the bare form. Detection is any-position, so
+  `sudo bash -c "git push"` is seen; hard refusal is command-position only at
+  BOTH levels - the wrapper's position and the git word's own - so a read-only
+  `rg -t sh "git commit"`, a bare mention like `grep git commit` and a lookup
+  like `command -v git commit` can never be blocked by a rail meant for real
+  commits.
+- Command position is one rule with nothing to enumerate: word 0 of the simple
+  command, after leading `VAR=value` assignments and empty placeholder words,
+  and past an `env` word with its option region. The consequence to know is a
+  deliberate regression: under `git.on_protected: refuse` a transparent prefix
+  now ASKS rather than denying, so `sudo git commit`, `timeout 60 git commit`
+  and `find . -exec git commit \;` all prompt instead of hard-blocking. The
+  enumerated prefix-command and shell-keyword sets that used to keep those
+  denies are gone, because every prefix carries its own option grammar
+  (`sudo -u john`, `timeout --signal KILL 60`) and the tail proved open-ended
+  across three review rounds - while producing a false deny on
+  `command -v git commit`, which runs nothing.
+- A substitution used as a global option's argument
+  (`git -C $(pwd) push origin main`, `` git -C `pwd` push ``) keeps its word
+  slot, so `-C` can no longer eat the real subcommand, and a `#` glued onto a
+  substitution (`echo hi $(echo)#x; git push`) is mid-word content rather than
+  a comment. Both ran a real push with no prompt.
+- GNU `env -S` / `--split-string` is read as the command line env really splits
+  and executes. Finding it means walking env's whole option region: the options
+  that take a separate argument (`-a`/`--argv0`, `-u`/`--unset`, `-C`/`--chdir`)
+  are skipped WITH that argument instead of ending the scan, and `-S` is
+  matched anywhere in a short cluster rather than only at its head, so
+  `env -S "git push origin main"`, `env -u HOME -S "..."`, `env -C /tmp -S
+  "..."` and `env -iS "..."` all reach a decision - each was a real push with
+  no prompt. An env option the guard does not know no longer ends the scan
+  quietly: the command text is read for a `git` token and the guard asks, so
+  the next unanticipated option cannot become the next silent bypass.
+- A command carrying a `git` word the tokenizer cannot place - an unterminated
+  quote, a heredoc-fed or pipe-fed wrapper - now asks instead of going silent,
+  and never denies. A shape with no `git` word in it (`echo "unterminated`,
+  `eval $CMD`) stays silent.
+- The grammar and the shapes deliberately left out of it (heredocs, `<<<`,
+  `${...}` expansion, brace expansion, ANSI-C escape sequences, aliases and
+  functions, variable indirection, `ssh host "git push"`) are written down in
+  `cadence-core/references/git.md` rail 3, each out-of-grammar row stating the
+  behavior it actually has and pinned by a test.
+
+**A stated grammar for the roadmap phase list**
+
+- An empty `## Phases` is now a derived closed-milestone state instead of
+  `unparseable-roadmap`: `planning.mjs status` returns `ok:true` carrying an
+  additive `cycle:"none"` field, with `current` and `total` unchanged (`null`
+  and `0`). `/cad-progress` therefore works in the window between a milestone
+  close and the next cycle, where it used to report the roadmap as broken.
+  `cycle` is present only in that state, so a caller cannot read a closed
+  milestone as "all phases complete" from `current === null` alone.
+- A phase-shaped line that is NOT a canonical entry - a plain bullet, a
+  heading, an ordered item, a table row, a prose mention - is reported per line
+  with its own diagnostic code and the offending line named in `detail`, rather
+  than one blanket string, and never classifies as a closed milestone. That
+  includes the case which reverted the attempt made during the [1.3.1] close: a
+  wiped checkbox list whose `### Phase N:` detail sections survive, which a
+  heuristic reported as a cleanly closed milestone. The classification scan
+  deliberately reads past the `## `-bounded extent the canonical parse uses.
+- `PHASE_LINE` is unchanged - nothing new counts as a phase. This is a
+  classifier OVER the `## Phases` section, not a wider phase parser: what
+  counts as a phase for `status`, `audit`, `phase-done` and the cursor's
+  `total` is exactly what it was.
+- Drift detection stays live against a closed milestone, which is the one state
+  where the cursor is the only surviving evidence: `phase complete` and
+  `ready to plan` agree, `planned`, `executed` and `context gathered` are
+  drift, `paused` keeps its any-point carve-out. A surviving `phases/N/`
+  directory reports as a new `phase-dir` drift kind, and a stale `of <M>`
+  cursor against a zero-phase roadmap reports cursor drift on its own - after a
+  tagged close deleted the phase dirs, that total is all that is left to see.
+- `cursor set` derives `of 0 (no active cycle)` from a pruned roadmap, so
+  `/cad-milestone` step 6 runs with no extra flags on the tree its own step 3
+  produces; that step now also prunes each completed phase's `### Phase N:`
+  detail section, without which a template-conformant close never reaches the
+  closed state. `/cad-progress` and `/cad-milestone` route between milestones
+  to `/cad-phase add`, the only workflow that appends a phase line to an
+  existing roadmap.
+- The grammar, its four states and its out-of-grammar table are written down in
+  `cadence-core/references/roadmap-phases.md`, each row pinned by a
+  parser-level test.
+
+**An audit armed in the partially-planned state**
+
+- An `## Active` requirement no phase has picked up now breaks `/cad-audit` as
+  `unpicked` and moves `counts.broken`, so the traceability gate holds while a
+  milestone is only partly planned - rows for some ids and not others, the
+  state a milestone spends most of its life in - and not only against a
+  zero-row table. That blind spot is the residue of what let the v1.2.0 and
+  v1.3.1 closes through.
+- `counts.total` now counts Traceability ROWS PLUS unpicked ids, so
+  `total = traced + broken + deferred` still holds once a break can exist with
+  no row. This is a real change for any caller written against
+  `total === rows.length`.
+- `unseeded` is row-count-independent: it names the `## Active` ids with no
+  Traceability row at ANY row count, not only when the table is empty. It is
+  also no longer verdict-neutral, which deliberately reverses the additive
+  shape shipped one milestone earlier - a diagnostic that never moves the
+  verdict leaves the ship gate exactly as permeable as it was. The two zero-row
+  reports are unchanged: `{active_ids: []}` for a present-but-empty section,
+  plus `no_active_section: true` when the heading is absent.
+- A line inside `## Active` that the bold-bullet grammar does not read - a
+  v1.3.1-style table row, an indented sub-bullet, a `*`/`+` bullet, an unbolded
+  bullet, an ordered item, a `###` heading, or a prose line in a section that
+  declares no ids and names an id recorded nowhere else in the file - is
+  reported in `active_issues` with its line, a code and the offending text
+  instead of vanishing. The grammar itself is byte-identical: these are
+  diagnostics, not a wider parser, and each code names why THAT line is unread
+  so the fix it implies changes something.
+- The grammar reads any bold span as an id, which is what `seed-reqs` treats as
+  declared and does not change. `/cad-audit` narrows on its own side instead:
+  only an id that is exactly `PREFIX-N` or `#N` may break the verdict or enter
+  `counts`, so `- **Note**: scope frozen` is reported as
+  `active-non-id-bullet` rather than failing a gate under a name that is not a
+  requirement, and `- **AUD-01:**` can never be counted twice.
+- A bullet carrying a SECOND id-shaped bold span
+  (`- **AUTH-01** and **AUTH-02**: both sides`) reports
+  `active-multi-id-bullet`. The grammar reads the first span only, so without
+  this the rest vanished with `issues: []` and a committed requirement could
+  drop out of scope while the ship gate reported clean. The grammar is
+  deliberately NOT widened to read every span: taking them all would mint an id
+  out of ordinary emphasis (`- **GRM-01**: the **core** path` would declare
+  `core`), the same silent failure reversed. Emphasis that is not id-shaped
+  reports nothing, because nothing is lost.
+- The two exits for a broken id: plan it into a phase (`/cad-plan` seeds the
+  row), or move the bullet out of `## Active` into the deferred section below
+  it (`## v2 Requirements` in the shipped template). A row with an em-dash
+  Phase cell is `no-phase`, not an exit.
+- A project with no `## Active` heading gains no break from this rule at any
+  row count, so a pre-v1.4.0 tree audits exactly as it did before, until the
+  heading is renamed. The grammar and its out-of-grammar table are written down
+  in `cadence-core/references/req-traceability.md`, each row pinned by a
+  parser-level test.
+
+### Breaking
+
+- `/cad-audit`'s `counts.total` is Traceability ROWS PLUS unpicked `## Active`
+  ids, not `rows.length`. A caller written against `total === rows.length`
+  reads a different number now that a break can exist with no row.
+- `unseeded` is no longer verdict-neutral. This reverses the additive shape
+  shipped one milestone earlier, deliberately: a diagnostic that never moves
+  the verdict leaves the ship gate exactly as permeable as it was. A tree with
+  an `## Active` id no phase has picked up now FAILs an audit that passed
+  before.
+- Under `git.on_protected: refuse`, a transparent prefix before a real commit
+  (`sudo git commit`, `timeout 60 git commit`, `find . -exec git commit \;`)
+  now ASKS rather than hard-denying. The enumerated prefix-command and
+  shell-keyword sets that produced those denies are gone; each prefix carries
+  its own option grammar, the tail proved open-ended across three review
+  rounds, and the enumeration produced a false deny on `command -v git commit`,
+  which runs nothing. A missing deny costs a prompt on a real commit; a wrong
+  deny hard-blocks read-only work.
+
+### Known gaps
+
+- **Markdown decoration inside a frontmatter value that touches neither
+  boundary.** `` - **`src/shared.rs`** `` still resolves to a value that
+  matches no sibling's plain spelling, with no diagnostic. The boundary rule
+  catches every wrap that reaches an edge; an interior backtick cannot be
+  flagged without also flagging `` lib/a`b.mjs ``, which must stay clean -
+  structurally identical inputs. Closing it means stating one rule about
+  markdown in values, not adding a sixth arm.
+- **`backtick-wrapped-value` fires on any key's scalar**, including prose keys
+  no seam reads. Two plans with disjoint file lists can still get a
+  `frontmatter_issues` entry and lose their parallel dispatch. Fails safe
+  (throughput, not correctness); the shipped template has no prose scalar keys.
+- **`seed-reqs`' `mismatched` result is computed but surfaced by no caller**,
+  so a moved or renumbered requirement reports as a clean skip in the
+  user-visible report.
+- **A `blocked` worktree halt has no described remedy.** The no-self-repair
+  halt is by design; what is missing is the orchestrator-side refresh path in
+  `execute.md`.
+
 ## [1.3.1] - 2026-07-27
 
 A tech-debt cycle. Every open bug filed by the post-v1.2.0 review sweep was
@@ -391,6 +660,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[1.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.0
 [1.3.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.1
 [1.3.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.3.0
 [1.2.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.2.1

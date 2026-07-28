@@ -24,10 +24,16 @@ Its one JSON line carries everything this workflow reads:
   **planned** (PLAN, no SUMMARY) -> **executed** (SUMMARY, UAT not fully
   passed) -> **complete**, with UAT counts where a checklist exists.
 - `current` - the lowest non-complete phase (null when all are complete).
+- `cycle` - present and `"none"` ONLY when the phase list is a derived closed
+  milestone (the window between a close and the next cycle). There, `current`
+  is null because no cycle is OPEN, not because every phase is complete - do
+  not conflate the two. Grammar:
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/roadmap-phases.md`.
 - `cursor` - the parsed STATE.md hint, with `agrees` already computed.
   When its status is `paused`, its `next` is the resume pointer /cad-pause
   wrote - the one-line "where I was".
-- `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`.
+- `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`,
+  `phase-dir` (a `phases/<N>/` dir surviving a milestone close).
 
 On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
 project here. /cad-new-project starts one.") and stop.
@@ -51,10 +57,17 @@ and `--stats` must write nothing. Otherwise (the normal path) batch a
   Status mapping: unplanned -> `ready to plan`, planned -> `planned`,
   executed -> `executed`; all complete -> `phase complete` (with `--phase`
   = the last phase). A `paused` cursor always agrees - leave it.
+- Closed milestone (`cycle` is `none`) with cursor drift: rewrite it as
+  `--phase 1 --status "ready to plan" --next "/cad-phase add"` - no
+  `--name`/`--total`, the seam derives `of 0 (no active cycle)` from the
+  pruned roadmap.
+- Drift kind `phase-dir`: the prune was interrupted - route to
+  `/cad-milestone` to finish it. NOT to `/cad-verify {N}`: that phase is no
+  longer in ROADMAP, so the workflow would refuse it.
 - Drift kinds `roadmap-box` / `req-status`: do NOT edit those files here -
-  cad-verify is their single writer. Note the drift in the report
-  ("ROADMAP shows phase N open but it is complete") and route to
-  `/cad-verify N` to repair it.
+  cad-verify is the only writer of a ROADMAP checkbox or a Traceability
+  Status beyond `Pending`. Note the drift in the report ("ROADMAP shows
+  phase N open but it is complete") and route to `/cad-verify N` to repair it.
 </step>
 
 <step name="stats">
@@ -78,6 +91,9 @@ Compact status, no banners:
 Recent: {2-3 recent commit subjects}
 Paused: {the cursor's Next line}   (only when Status is paused)
 ```
+
+When `cycle` is `none`, the header is `# {project} - milestone closed - no
+active cycle` and there is no phase list to print.
 </step>
 
 <step name="route">
@@ -90,12 +106,18 @@ only:
 | Lowest **planned** phase | /cad-execute {N} |
 | Lowest **executed** phase | /cad-verify {N} |
 | `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when `workflow.skip_discuss` is true |
+| Drift kind `phase-dir` (interrupted prune) | /cad-milestone |
+| `cycle` is `none` (milestone closed) | /cad-phase add |
 | `current` is null (all complete) | /cad-milestone |
 
 The planned/executed rows scan ALL phases lowest-first, not just the
 cursor's phase - this recovers a mid-execution session death even when the
 cursor was advanced past the unfinished work. A pause note pointing at a
 different phase than the derivation is shown as context but does not route.
+
+The `phase-dir` row sits ABOVE `cycle is none` deliberately: an interrupted
+close returns both at once, and finishing the prune precedes opening a new
+cycle. Reordering them offers a new phase on top of unfinished work.
 
 Offer the suggestion through the ask-user seam (references/seams.md):
 1. Continue now - invoke the suggested skill

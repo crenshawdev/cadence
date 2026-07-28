@@ -17,11 +17,13 @@ were supposed to deliver it, and detect orphans in both directions. Produce a
 PASS/FAIL verdict: FAIL if any requirement is untraced, unverified, or lost.
 
 This is the check that catches the quiet failure a per-phase flow can miss -
-a requirement that no phase ever picked up, or one marked done while its phase
+a requirement that no phase ever picked up (an `unpicked` break counted in
+`counts.broken`, not a note beside a PASS), or one marked done while its phase
 never verified. It reads the authoritative status - the REQUIREMENTS
 traceability table (Requirement | Phase | Status) and the ROADMAP `## Phases`
-checkbox, the only persisted status, both written solely by cad-verify. It does
-not write status itself.
+checkbox, the only persisted status. `/cad-plan` creates a table row (always
+at Pending); no writer but cad-verify ever sets a Status beyond it, and the
+ROADMAP checkbox is cad-verify's alone. It does not write status itself.
 </objective>
 
 <execution_context>
