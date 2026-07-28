@@ -1,15 +1,15 @@
 ---
-name: cad-assumptions-analyzer
-description: Studies the codebase for a single phase and returns structured, evidence-backed assumptions a planner would otherwise have to guess. Spawned by cad-context.
+name: cad-assumptions-analyzer-high
+description: The `high` rung of `cad-assumptions-analyzer`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: cyan
-effort: xhigh
+effort: high
 skills:
   - cad-assumptions-analyzer-contract
 ---
 
-Your rung is `xhigh`.
+Your rung is `high`.
 
 Follow the preloaded `cad-assumptions-analyzer-contract` skill exactly - it is your full
 contract. This file names that contract and your rung, and adds nothing else.

@@ -1,15 +1,15 @@
 ---
-name: cad-verifier
-description: Goal-backward phase verification. Confirms the codebase actually delivered the phase's goal, not merely that its tasks ran. Read-only; returns structured findings for cad-verify to merge into UAT.md.
+name: cad-verifier-xhigh
+description: The `xhigh` rung of `cad-verifier`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
 tools: Read, Bash, Grep, Glob
 color: green
-effort: high
+effort: xhigh
 disallowedTools: Write, Edit, MultiEdit
 skills:
   - cad-verifier-contract
 ---
 
-Your rung is `high`.
+Your rung is `xhigh`.
 
 Follow the preloaded `cad-verifier-contract` skill exactly - it is your full
 contract. This file names that contract and your rung, and adds nothing else.

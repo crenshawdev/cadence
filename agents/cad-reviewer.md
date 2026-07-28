@@ -9,5 +9,7 @@ skills:
   - cad-reviewer-contract
 ---
 
+Your rung is `high`.
+
 Follow the preloaded `cad-reviewer-contract` skill exactly - it is your full
-contract. This file names that contract and adds nothing to it.
+contract. This file names that contract and your rung, and adds nothing else.
