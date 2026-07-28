@@ -107,6 +107,14 @@ grammar uses. Every row is pinned by a test.
 | `phase-ordered-item` | `1. Phase 1: Auth`, `1) Phase 1: Auth` | Same | Rewrite as the canonical entry |
 | `phase-table-row` | `\| Phase 1 \| Auth \|` | Same | Rewrite as the canonical entry; ROADMAP has no phase table |
 | `phase-prose-line` | `Phase 2 rolls to the next milestone.` | Same - the catch-all, so a shape outside the grammar gets a diagnostic rather than silence | Move the sentence out of the `## Phases` section, or lowercase the reference (`phase 2` is prose) |
+| `phase-outside-section` | a byte-perfect `- [ ] **Phase 1: Auth** - desc` sitting under a LATER `## ` heading | Same - but the shape is already canonical, so the fault is the location, not the syntax | Move the entry up into `## Phases`; it is the right line under the wrong heading |
+
+`phase-outside-section` is checked BEFORE the shape tests, because they cannot
+tell it apart from `phase-bullet` - both are bullets. Without it the classifier
+reports a canonical entry as `phase-bullet` and prescribes "rewrite as the
+canonical entry", which is a no-op on a line that already is one, and the real
+cause (the classification extent runs to end of text while the canonical extent
+stops at the next `## `) is never named.
 
 ## The closed-milestone contract
 

@@ -538,6 +538,22 @@ const PHASE_LIST_ROWS = [
     state: 'out-of-grammar', phases: [], codes: ['phase-prose-line'],
   },
   {
+    name: 'phase-outside-section: a canonical entry under a LATER ## heading',
+    text: roadmap('## Next milestone (draft)\n\n- [ ] **Phase 1: Auth** - log in'),
+    state: 'out-of-grammar', phases: [], codes: ['phase-outside-section'],
+  },
+  {
+    name: 'phase-outside-section beats phase-bullet: the shape tests cannot tell them apart',
+    text: roadmap('## Draft\n\n- [ ] **Phase 1: Auth** - log in\n- Phase 2: Billing'),
+    state: 'out-of-grammar', phases: [],
+    codes: ['phase-outside-section', 'phase-bullet'],
+  },
+  {
+    name: 'a canonical entry INSIDE ## Phases is live, never phase-outside-section',
+    text: roadmap('- [ ] **Phase 1: Auth** - log in'),
+    state: 'live', phases: [1], codes: [],
+  },
+  {
     name: 'one issue per line, in line order, across mixed shapes',
     text: roadmap('- Phase 1: Ship auth\n\n## Phase Details\n\n### Phase 2: Billing'),
     state: 'out-of-grammar', phases: [], codes: ['phase-bullet', 'phase-heading'],

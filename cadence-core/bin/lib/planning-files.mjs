@@ -109,7 +109,9 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  *   4. Otherwise scan the CLASSIFICATION extent - the heading to END OF TEXT,
  *      deliberately wider than the canonical bound (D-03) - for the phase
  *      token. Any match -> `out-of-grammar`, at most one issue per line, code
- *      by the line's shape. No match -> `closed`.
+ *      by the line's shape, EXCEPT a line that already matches `PHASE_LINE`,
+ *      which is `phase-outside-section` (right shape, wrong section - it can
+ *      only reach here from past the canonical bound). No match -> `closed`.
  *
  * The two extents differ on purpose: bounding the scan at the next `## ` is
  * what would let a wiped checkbox list with intact `### Phase N:` details
@@ -134,7 +136,14 @@ export function classifyPhaseList(text) {
     const line = lines[i];
     if (!PHASE_TOKEN.test(line)) continue;
     let code = 'phase-prose-line'; // the catch-all: out of grammar, never silent
-    if (/^#{1,6}\s/.test(line)) code = 'phase-heading';
+    // A byte-perfect canonical entry reaching here is in the WRONG SECTION, not
+    // the wrong shape - the canonical extent above found no phases, so this line
+    // sits past the next `## `. Shape-only classification would call it
+    // `phase-bullet`, whose fix ("rewrite as the canonical entry") is a no-op on
+    // a line that already is one. Checked first: shape tests cannot tell these
+    // apart.
+    if (PHASE_LINE.test(line)) code = 'phase-outside-section';
+    else if (/^#{1,6}\s/.test(line)) code = 'phase-heading';
     else if (/^\s*[-*+]\s/.test(line)) code = 'phase-bullet';
     else if (/^\s*\d+[.)]\s/.test(line)) code = 'phase-ordered-item';
     else if (/^\s*\|/.test(line)) code = 'phase-table-row';
