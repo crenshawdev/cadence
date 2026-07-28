@@ -109,10 +109,12 @@ Only when your dispatch prompt says worktree mode:
   dispatch prompt, exists at that path relative to the worktree cwd. Missing
   -> HALT and return a `blocked` checkpoint naming the missing PLAN path and
   the worktree's `git rev-parse --short HEAD`; repair nothing yourself.
-  Reason: the worktree's fork point is the host's, not Cadence's
-  (`references/seams.md`, spawn-agent), and a worktree branched from an
-  older merge point can be missing this phase's plans and CONTEXT entirely -
-  three phase-4 executors hit exactly that (`.planning/CAPTURE.md:5`).
+  Reason: the fork point comes from the host's `worktree.baseRef` setting,
+  not from Cadence (`references/seams.md`, spawn-agent), and under its
+  `fresh` default a worktree branches from the remote default branch,
+  missing this phase's plans and CONTEXT entirely - three phase-4 executors
+  hit exactly that (`.planning/CAPTURE.md:5`). A setting the user can change
+  back is not a guarantee: assert anyway.
 - Before EVERY commit, verify `git branch --show-current` is your assigned
   branch and not a protected one. Mismatch -> HALT and return a `blocked`
   checkpoint. Never repair refs yourself.

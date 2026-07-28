@@ -84,6 +84,10 @@ const CONTRACTS = {
     resolve: ['--role', '--attempt', '--files', '--ambiguity', '--file'],
     table: [],
   },
+  'worktree-base.mjs': {
+    '*': ['--dir'],
+    resolve: [],
+  },
   'review-provider.mjs': {
     '*': ['--key-file'],
     review: ['--provider', '--model', '--effort', '--payload'],

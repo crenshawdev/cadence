@@ -52,16 +52,35 @@ How a workflow dispatches work to a fresh-context subagent.
   resume/continuation of a prior run, which this seam does not provide.
 
 **Worktree isolation.** The host provides the worktree for the parallel
-`/cad-execute` path (`workflows/execute.md`'s `execute_parallel` step); its
-fork point is host-owned and NOT caller-controllable. Cadence issues no
-`git worktree add` anywhere in `cadence-core/bin`, `agents/`, `skills/` or
-`cadence-core/workflows/`, so it cannot pin the base commit a worktree
-branches from. A worktree has been observed 31 commits behind, missing both
-the phase CONTEXT and its own `PLAN-2.md` (`.planning/CAPTURE.md:5`).
-Therefore the executor asserts its own plan file exists before task 1 and
-halts `blocked` when it does not (`agents/cad-executor.md`'s
-`<worktree_mode>`), and reconciling a stale worktree is the orchestrator's
-serialized call, never the executor's own merge/rebase/fetch.
+`/cad-execute` path (`workflows/execute.md`'s `execute_parallel` step).
+Cadence issues no `git worktree add` anywhere in `cadence-core/bin`,
+`agents/`, `skills/` or `cadence-core/workflows/`, so it never pins the fork
+point per dispatch - but the fork point IS selectable: the host's
+`worktree.baseRef` setting decides it, and subagent worktrees use the same
+base as `--worktree`. Claim holds for Claude Code >= 2.1.208 (before that a
+`fresh` worktree used whatever `origin/HEAD` was already cached locally).
+- `fresh` - the DEFAULT - branches from the repository's default branch on
+  the remote, so unpushed work is absent: a phase's CONTEXT and its PLAN
+  files, which live in commits on the integration branch, are not in the
+  worktree. A worktree has been observed 31 commits behind, missing both the
+  phase CONTEXT and its own `PLAN-2.md` (`.planning/CAPTURE.md:5`) - this
+  default is why.
+- `head` branches from the local `HEAD`, carrying the integration branch's
+  unpushed commits. Inside a worktree, `head` resolves to THAT worktree's
+  `HEAD`, not the main checkout's.
+
+It is a settings value, not a per-dispatch parameter, and a plugin must never
+silently write a user's settings. So Cadence reads it and refuses: the
+parallel path runs only under `head` (`workflows/execute.md`'s `choose_path`
+preflight, via `cadence-core/bin/worktree-base.mjs`), and `/cad-config`
+offers the change rather than making it.
+
+The executor's assertion stays regardless - a setting the user can change back
+is not a guarantee, and a session-level override is invisible to any script.
+The executor asserts its own plan file exists before task 1 and halts
+`blocked` when it does not (`agents/cad-executor.md`'s `<worktree_mode>`), and
+reconciling a stale worktree is the orchestrator's serialized call, never the
+executor's own merge/rebase/fetch.
 
 **Routing (which model + which agent file).** Before every dispatch, resolve the
 role through the routing seam - never hardcode a model, never dispatch a role at

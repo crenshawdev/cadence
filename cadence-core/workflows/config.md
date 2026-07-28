@@ -51,6 +51,8 @@ free-typing model ids.
    may pick `Skip rest` on any page to stop and write what changed so far.
 5. `review.providers` is not in the page walk - offer it as a final step
    (`Configure review providers now?`) that enters **Review provider setup**.
+6. Then run **Worktree base ref** below - a HOST setting, offered only when
+   the config now in hand runs plans in parallel worktrees.
 
 ### Catalog
 
@@ -91,7 +93,7 @@ selectable option and its `description`.
 | **Git** |||||
 | `git.protected_branches` | list | Branches Cadence won't commit to directly | comma list, e.g. `main, master` | main, master |
 | `git.on_protected` `[repo]` | enum | What to do on a protected branch | `ask`→prompt · `refuse`→block · `allow`→proceed | ask |
-| `git.integration_branch` `[repo]` | enum | Two-tier branch model at cycle start | `milestone`→create a per-milestone integration branch (the branch worktrees merge back into; where the host forks them from is not Cadence's to guarantee) · `trunk`→no integration branch, commit on the base under `on_protected` | milestone |
+| `git.integration_branch` `[repo]` | enum | Two-tier branch model at cycle start | `milestone`→create a per-milestone integration branch (the branch worktrees merge back into; where they fork FROM is the host's `worktree.baseRef`) · `trunk`→no integration branch, commit on the base under `on_protected` | milestone |
 | `git.auto_branch` `[repo]` | enum | How the integration branch is created at cycle start | `ask`→prompt once · `auto`→create/switch silently · `off`→stay put | ask |
 | `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
 | `git.create_tag` | bool | Tag on milestone | `true`→tag · `false`→don't | true |
@@ -152,6 +154,10 @@ independently valid. Use `--global` for machine-wide defaults (e.g. a preferred
 
 ## Direct set
 
+A `worktree.baseRef=…` pair is not a Cadence key and the seam would reject it
+as unknown: route it to **Worktree base ref** instead, and say it is a Claude
+Code setting the user's own settings file owns.
+
 For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
 - Validate and write in one shot through the **Validation seam**:
   `config.mjs set <key=value>…`. It rejects an unknown key, a bad value, a
@@ -167,6 +173,46 @@ For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
   container holds an array or a scalar and must be removed or replaced first -
   the seam will not overwrite it, because doing so would discard its contents.
   Do not retry with a malformed config.
+
+## Worktree base ref (a HOST setting - offered, never written silently)
+
+`worktree.baseRef` is a Claude Code setting, not a Cadence key: it is absent
+from `config.schema.json`, never goes through `config.mjs`, and lives in the
+user's settings files. It decides where a subagent worktree forks from, so the
+parallel `/cad-execute` path depends on it - under its `"fresh"` default a
+worktree branches from the remote default branch and an executor arrives
+without this phase's CONTEXT or its own PLAN file, which is why `choose_path`
+refuses to parallelize there (`references/seams.md`, Worktree isolation;
+Claude Code >= 2.1.208). Inside a worktree, `"head"` means that worktree's own
+`HEAD`.
+
+Run this step when `parallelization.enabled` and `parallelization.use_worktrees`
+are both true in the config as it now stands (so a value just flipped in the
+walk counts); otherwise skip it silently - the setting is inert for a
+sequential project.
+
+1. Read the effective value:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/worktree-base.mjs" resolve
+   ```
+
+2. `parallelSafe: true` -> say so in one line (the value and the file it came
+   from) and stop. Nothing to change.
+3. Otherwise ask through the ask-user seam, quoting the exact JSON
+   (`"worktree": { "baseRef": "head" }`) and naming the file each option
+   writes: the project's `.claude/settings.json` (recommended - it travels
+   with the repo, so every clone's parallel runs behave the same) /
+   `~/.claude/settings.json` (all projects) / leave it (parallel execution
+   keeps falling back to sequential). Declining is a valid answer and ends the
+   step - a plugin does not overrule a user's settings.
+4. On accept: READ the target file first and show the user its current
+   `worktree` block (or that there is none), then merge the one key in,
+   preserving every other setting byte-for-byte, and write it back. Never
+   replace a settings file wholesale, never write one whose contents you did
+   not read, and never touch a managed-policy file - a higher layer keeps
+   winning, so the write would be a lie. Re-run the seam and report the value
+   it now resolves to and the file it came from.
 
 ## Review provider setup (cold branch)
 
