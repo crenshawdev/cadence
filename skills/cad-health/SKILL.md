@@ -27,17 +27,23 @@ Check, then report - do not fix without asking.
 2. **STATE cursor.** Exactly the 4-line schema (Phase / Status / Next / Updated -
    references/conventions.md). `Status` is one of the lifecycle values
    (`ready to plan | context gathered | planned | executed | phase complete |
-   paused`). `Phase: N of M` parses with N <= M. `Updated` is a date. Flag a 5th
-   line, an unknown status, or an unparseable phase.
+   paused`). `Phase: N of M` parses with N <= M (except in the closed-milestone
+   case rule 5 states). `Updated` is a date. Flag a 5th line, an unknown status,
+   or an unparseable phase.
 
 3. **ROADMAP.** `## Phases` entries are `- [ ]` / `- [x]` **Phase N: Name**,
-   numbered 1..M with no gaps or dupes.
+   numbered 1..M with no gaps or dupes. An EMPTY `## Phases` is a legitimately
+   closed milestone, not a numbering gap - do not flag it.
 
 4. **REQUIREMENTS.** The traceability table parses; every `Status` is `Pending`
    or `Complete`; every `Phase` value names a phase that exists in ROADMAP.
 
 5. **Consistency.** Cursor `M` == ROADMAP phase count; cursor `N` is within
-   range. `.planning/phases/<N>/` dirs correspond to real phases (a planned
+   range. When ROADMAP has zero phases the cursor reads `of 0`, and
+   `Phase: 1 of 0 (no active cycle)` is the expected closed-milestone shape -
+   both clauses pass, and a surviving `phases/<N>/` dir there means the prune
+   was interrupted (/cad-milestone finishes it).
+   `.planning/phases/<N>/` dirs correspond to real phases (a planned
    phase with no dir yet is fine; a dir with no phase is an issue). A phase
    marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all
    `Complete` (or a `Complete` requirement whose phase is still `- [ ]`) is a
