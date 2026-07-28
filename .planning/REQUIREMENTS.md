@@ -105,9 +105,9 @@ section only, bounded at the next `## ` heading.
 | SPN-01 | Phase 2 | Complete |
 
 Seeded by `/cad-plan`'s `seed-reqs` call, one row per phase's `## Active` id
-as its plan lands - not hand-populated. TOK-01 and RDM-01 (phases 3 and 4)
-gain rows only once those phases are planned; until then they are correctly
-absent, not dropped.
+as its plan lands - not hand-populated. TOK-01, RDM-01 and AUD-01 (phases 3,
+4 and 5) gain rows only once those phases are planned; until then they are
+correctly absent, not dropped.
 
 ---
 *Last updated: 2026-07-27 phase 2 (SPN-01 pending, phase 2 not yet verified)*
