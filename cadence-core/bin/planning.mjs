@@ -36,6 +36,7 @@ import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
+  classifyPhaseList, CLOSED_CYCLE_NAME,
   parseRequirements, parseUat, renderUat, uatComplete, atomicWrite,
   setPhaseBox, setReqStatus, parsePlanRequirements, parsePlanFiles,
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
@@ -92,8 +93,26 @@ function cmdStatus(dir) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   const roadmapText = read(join(dir, 'ROADMAP.md'));
   if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`, '/cad-new-project');
-  const roadmap = parseRoadmapPhases(roadmapText);
-  if (!roadmap.length) return fail('unparseable-roadmap', 'no `- [ ] **Phase N: ...**` lines under ## Phases');
+  // The phase-list grammar (references/roadmap-phases.md). An empty section is
+  // a DERIVED closed milestone, not a parse failure; a phase-shaped line that
+  // is not a canonical entry is reported per line with its own code.
+  const classified = classifyPhaseList(roadmapText);
+  if (classified.state === 'no-section') {
+    return fail('unparseable-roadmap', 'no `## Phases` section in ROADMAP.md');
+  }
+  if (classified.state === 'out-of-grammar') {
+    // Emitted directly rather than through fail(), which has no channel for
+    // the issue list. The detail names the FIRST offending line, so the
+    // diagnostic identifies what to fix instead of restating the grammar.
+    const first = classified.issues[0];
+    return emit({
+      ok: false, reason: 'unparseable-roadmap',
+      detail: `line ${first.line}: ${first.text}`,
+      issues: classified.issues,
+    });
+  }
+  const closed = classified.state === 'closed';
+  const roadmap = classified.phases;
 
   const derived = derivePhases(dir, roadmap);
   const currentEntry = derived.find((p) => p.status !== 'complete') || null;
@@ -105,6 +124,25 @@ function cmdStatus(dir) {
       drift.push({ kind: 'roadmap-box', phase: p.n, detail: `box checked, derived ${p.status}` });
     } else if (!p.checked && p.status === 'complete') {
       drift.push({ kind: 'roadmap-box', phase: p.n, detail: 'derived complete, box unchecked' });
+    }
+  }
+
+  // Interrupted-close corroboration: a closed milestone whose `phases/<N>/`
+  // directories are still on disk. Kept OUT of the classifier on purpose - the
+  // verdict is text-only and pure (D-05); this is the filesystem half, and it
+  // reports the accurate PAIR (closed state AND drift) rather than letting one
+  // orphan directory disprove the close.
+  if (closed) {
+    let entries = [];
+    try { entries = readdirSync(join(dir, 'phases')); } catch { /* absence is data */ }
+    const surviving = entries.filter((e) => /^\d+(\.\d+)?$/.test(e))
+      .sort((a, b) => Number(a) - Number(b));
+    for (const e of surviving) {
+      const { plans } = listPlanFiles(join(dir, 'phases', e));
+      drift.push({
+        kind: 'phase-dir', phase: Number(e),
+        detail: `phases/${e}/ survives the milestone close (${plans.length} plan files)`,
+      });
     }
   }
 
@@ -131,6 +169,12 @@ function cmdStatus(dir) {
   if (parsed) {
     let agrees;
     if (parsed.status === 'paused') agrees = true; // legal at any point
+    // A closed milestone: `phase complete` and `ready to plan` both agree, so
+    // `planned`/`executed`/`context gathered` stay drift - detection must NOT
+    // die in the one state where the cursor is the only surviving evidence.
+    // The phase NUMBER is not compared: a zero-phase roadmap gives it nothing
+    // to agree with.
+    else if (closed) agrees = parsed.status === 'phase complete' || parsed.status === 'ready to plan';
     else if (current === null) agrees = parsed.status === 'phase complete';
     else agrees = parsed.phase === current &&
       (AGREE[currentEntry.status] || []).includes(parsed.status);
@@ -139,13 +183,31 @@ function cmdStatus(dir) {
       drift.push({
         kind: 'cursor', phase: parsed.phase,
         detail: `cursor says phase ${parsed.phase} ${parsed.status}; derived ` +
-          (current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
+          (closed ? 'closed milestone (no phases in ROADMAP)'
+            : current === null ? 'all complete' : `phase ${current} ${currentEntry.status}`),
+      });
+    }
+    // A stale `of <M>` against a zero-phase roadmap, reported INDEPENDENTLY of
+    // `agrees` (which the mapping above governs alone - a `phase complete`
+    // cursor still agrees). This is the case the phase-dir drift cannot see: a
+    // tagged close deletes `phases/<N>/`, so when the prune commits and the
+    // cursor rewrite never runs, the stale total is literally the only
+    // surviving evidence.
+    if (closed && parsed.total !== 0) {
+      drift.push({
+        kind: 'cursor', phase: parsed.phase,
+        detail: `cursor totals ${parsed.total} phases; ROADMAP has none - ` +
+          'milestone close did not finish (run cursor set)',
       });
     }
   }
 
   ok({
     current, total: derived.length,
+    // Additive, and present ONLY in the closed state: a caller branching on
+    // `current === null` alone would otherwise read a closed milestone as
+    // "all phases complete" and route back to /cad-milestone.
+    ...(closed ? { cycle: 'none' } : {}),
     phases: derived.map((p) => ({
       n: p.n, name: p.name, status: p.status,
       // plans listed only when they deviate from a single PLAN.md

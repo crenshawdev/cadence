@@ -156,13 +156,117 @@ test('status: missing ROADMAP.md is no-roadmap', () => {
   assert.equal(r.reason, 'no-roadmap');
 });
 
-test('status: roadmap without phase lines is unparseable-roadmap', () => {
+// The phase-list grammar reaches the seam here; its breadth is pinned at
+// parser level in planning-files.test.mjs (each of these pays a node spawn).
+
+test('status: a ## Phases section holding no phase token is a closed milestone, not a parse failure', () => {
   const dir = makeTree({});
   writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n(nothing)\n');
   const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cycle, 'none');
+  assert.equal(r.current, null);
+  assert.equal(r.total, 0);
+  assert.equal(r._exit, 0);
+});
+
+test('status: a non-canonical phase-shaped line is unparseable-roadmap with a per-line diagnostic', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n- Phase 1: Ship auth\n');
+  const r = run(['status'], dir);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'unparseable-roadmap');
+  assert.equal(r.issues[0].code, 'phase-bullet');
+  assert.equal(r.issues[0].line, 5);
+  assert.equal(r.detail, 'line 5: - Phase 1: Ship auth');
 });
+
+test('status: a wiped checkbox list whose ### Phase N: details survive is NOT a closed milestone', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'),
+    '# Roadmap\n\n## Phases\n\n\n## Phase Details\n\n### Phase 1: Auth\n**Goal:** ship it\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-roadmap');
+  assert.equal(r.issues[0].code, 'phase-heading');
+  assert.equal(r.issues[0].text, '### Phase 1: Auth');
+});
+
+test('status: no ## Phases section at all is still unparseable-roadmap', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Overview\n\nx\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unparseable-roadmap');
+  assert.equal(r.detail, 'no `## Phases` section in ROADMAP.md');
+});
+
+test('status: an interrupted close reports the closed state AND a phase-dir drift entry', () => {
+  const dir = makeTree({ roadmap: [], phases: { 2: { plan: true } } });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cycle, 'none');
+  assert.deepEqual(r.drift, [{
+    kind: 'phase-dir', phase: 2,
+    detail: 'phases/2/ survives the milestone close (1 plan files)',
+  }]);
+});
+
+test('status: a tagged close that never ran cursor set reports cursor drift on the stale total, while still agreeing', () => {
+  const dir = makeTree({
+    roadmap: [],
+    cursor: { phase: 5, total: 5, name: 'Old', status: 'phase complete', next: '/cad-milestone', updated: '2026-01-01' },
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cycle, 'none');
+  assert.equal(r.cursor.agrees, true);
+  assert.equal(r.drift.length, 1);
+  assert.equal(r.drift[0].kind, 'cursor');
+  assert.match(r.drift[0].detail, /cursor totals 5 phases; ROADMAP has none/);
+});
+
+test('status: a finished close (cursor of 0) reports no drift at all', () => {
+  const dir = makeTree({
+    roadmap: [],
+    cursor: { phase: 1, total: 0, name: 'no active cycle', status: 'ready to plan', next: '/cad-phase add', updated: '2026-01-01' },
+  });
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cycle, 'none');
+  assert.equal(r.cursor.agrees, true);
+  assert.equal(r.drift, undefined);
+});
+
+// Against an empty phase list the cursor is the only surviving evidence, so
+// the agreement mapping is what keeps drift detection alive (D-09).
+const CLOSED_AGREEMENT = [
+  { status: 'phase complete', agrees: true },
+  { status: 'ready to plan', agrees: true },
+  { status: 'paused', agrees: true },
+  { status: 'planned', agrees: false },
+  { status: 'executed', agrees: false },
+  { status: 'context gathered', agrees: false },
+];
+
+for (const row of CLOSED_AGREEMENT) {
+  test(`status: closed milestone, cursor "${row.status}" agrees=${row.agrees}`, () => {
+    const dir = makeTree({
+      roadmap: [],
+      cursor: { phase: 1, total: 0, name: 'no active cycle', status: row.status, next: '/cad-phase add', updated: '2026-01-01' },
+    });
+    const r = run(['status'], dir);
+    assert.equal(r.ok, true);
+    assert.equal(r.cycle, 'none');
+    assert.equal(r.cursor.agrees, row.agrees);
+    if (row.agrees) {
+      assert.equal(r.drift, undefined);
+    } else {
+      assert.equal(r.drift[0].kind, 'cursor');
+      assert.match(r.drift[0].detail, /derived closed milestone \(no phases in ROADMAP\)/);
+    }
+  });
+}
 
 // --- status: derivation ------------------------------------------------------
 
