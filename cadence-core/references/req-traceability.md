@@ -56,8 +56,10 @@ Three rules that are deliberately not what a reader would guess:
   also has real bullets is the mixed-authoring case this diagnostic exists to
   catch - an id half-declared - not a detail line.
 - `active-prose-line` is the one conditional code. It fires only when the
-  section declares ZERO ids AND the line names at least one id that appears
-  nowhere else in REQUIREMENTS.md. So an intro paragraph naming ids above a
+  section declares ZERO ids that `audit` admits into its arithmetic
+  (`isRequirementId`) AND the line names at least one id that appears
+  nowhere else in REQUIREMENTS.md. A `- **Note**: ...` bullet is therefore not
+  a declaration for this purpose, though it is one to `seed-reqs`. So an intro paragraph naming ids above a
   real bullet list stays quiet, and so does a closed milestone's `## Active`
   ("No active milestone. `v1.2.0` shipped its scope (REV-01, SOC-01) - see
   `## Shipped`") - those ids are recorded, nothing is lost. A section authored

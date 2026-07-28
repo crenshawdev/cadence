@@ -876,6 +876,14 @@ const ACTIVE_ROWS = [
     ids: [], codes: ['active-prose-line'],
   },
   {
+    name: 'active-prose-line: a bullet declaring NO ADMISSIBLE id does not silence the prose line',
+    // The suppression asks `isRequirementId`, the same question the arithmetic
+    // asks. Against the raw bullet list this section "declared an id" (`Note`)
+    // and went quiet over two ids nothing carries.
+    text: activeDoc('Scope for v1.4.0: TOK-01 and RDM-01 are planned.\n\n- **Note**: scope frozen'),
+    ids: ['Note'], codes: ['active-prose-line', 'active-non-id-bullet'],
+  },
+  {
     name: 'the SAME prose line beside real bullets reports NOTHING - the intro-paragraph guard',
     text: activeDoc('Scope for v1.4.0: TOK-01 and RDM-01 are planned, AUD-01 is not.\n\n' +
       '- **TOK-01**: the tokenizer\n- **RDM-01**: the roadmap grammar'),

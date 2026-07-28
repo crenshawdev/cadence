@@ -332,8 +332,10 @@ function idTokensIn(s) {
  *      a table row or an unbolded bullet beside real bullets is the mixed
  *      authoring case this diagnostic exists to catch (an id half-declared).
  *      `active-prose-line` is the one conditional code, on two counts: the
- *      section must declare ZERO ids (so an ordinary intro paragraph naming ids
- *      beside a real bullet list stays quiet), AND the line must name at least
+ *      section must declare ZERO ids ADMISSIBLE to `isRequirementId` - the same
+ *      question the arithmetic asks, so a section whose only bullet declares no
+ *      admissible id cannot silence its own prose (an ordinary intro paragraph
+ *      beside a REAL bullet list still stays quiet) - AND the line must name at least
  *      one id that appears NOWHERE else in the file. A closed milestone's
  *      `## Active` ("No active milestone. `v1.2.0` shipped its scope (REV-01,
  *      ...) - see `## Shipped`") names only ids the file already records, so
@@ -402,7 +404,13 @@ export function classifyActiveSection(text) {
   // closed milestone's "shipped X, Y - see `## Shipped`" paragraph is correct
   // as written and must not be nagged at. The filter runs at the end, so the
   // surviving issues stay in line order.
-  const elsewhere = ids.length === 0
+  // Narrowed by `isRequirementId` deliberately: "the section declared ids" has
+  // to mean the same thing here as in the arithmetic. Against the raw bullet
+  // list a single `- **Note**: scope frozen` declares an id, and silenced the
+  // whole section's prose - a section carrying no admissible id at all went
+  // quiet on the strength of a prose bullet.
+  const declared = ids.filter(isRequirementId);
+  const elsewhere = declared.length === 0
     ? new Set(idTokensIn(lines.slice(0, heading).concat(lines.slice(end)).join('\n')))
     : null;
   const issues = found
