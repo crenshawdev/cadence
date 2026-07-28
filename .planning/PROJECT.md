@@ -5,14 +5,16 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v1.4.0` is the current release: four formats Cadence owns are now
-read by stated grammars with written-down references and per-row tests, so an
-input outside a grammar is reported rather than silently over- or under-read.
-Earlier cycles shipped file-based memory and BM25 recall (`v1.1.0`), the
-cross-model review repairs and durable-decision recall (`v1.2.0`), the
-sweep-highs patch (`v1.2.1`), the liteSpeed flow-and-latency pass (`v1.3.0`),
-and the tech-debt cycle that closed all 13 post-`v1.2.0` sweep bugs (`v1.3.1`),
-on the `v1.0.0` planning baseline.
+subsystem. `v1.5.0` is the current release: four corrections to things Cadence
+said about itself, and one structural change - each agent's contract is now
+stored once, as a skill preloaded through `skills:` - so there are fewer places
+left to say them. Earlier cycles shipped file-based memory and BM25 recall
+(`v1.1.0`), the cross-model review repairs and durable-decision recall
+(`v1.2.0`), the sweep-highs patch (`v1.2.1`), the liteSpeed flow-and-latency
+pass (`v1.3.0`), the tech-debt cycle that closed all 13 post-`v1.2.0` sweep
+bugs (`v1.3.1`), the four stated grammars (`v1.4.0`) and the two
+internally-inconsistent contracts closed by subtraction (`v1.4.1`), on the
+`v1.0.0` planning baseline.
 
 ## Core Value
 
@@ -53,6 +55,10 @@ context-gathering, and debugging — without any external memory system.
 - ✓ One quote-state tokenizer drives both git-guard rails, closing the six verified rail-3 push holes plus the `eval` wrapper family (TOK-01) — v1.4.0
 - ✓ The roadmap phase list has a stated grammar, so an empty `## Phases` is a derived closed-milestone state and `/cad-progress` works between milestones (RDM-01) — v1.4.0
 - ✓ `/cad-audit` counts an `## Active` requirement no phase picked up, so the traceability gate holds in the partially-planned state (AUD-01) — v1.4.0
+- ✓ Two contracts that contradicted themselves closed by subtraction: the executor's terminal success-criteria check (#65) and `conventions.md`'s claim to reach every skill (#67) — v1.4.1
+- ✓ The worktree fork point stated as `worktree.baseRef`-selectable across six surfaces, with `/cad-execute` refusing the parallel path under `fresh` (#68) — v1.5.0
+- ✓ Per-trigger `effort` scoped to the backend that can honour it, rather than resolved and silently dropped on the `claude-subagent` arm (#64) — v1.5.0
+- ✓ Each agent's contract stored once as a preloaded contract skill, with self-verify asserting every one resolves and is model-invocable (#74) — v1.5.0
 
 ### Active
 
@@ -137,4 +143,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | The release tag is cut after the merge, not at the close | A tag made during `/cad-milestone` names a commit on the integration branch that base never contains as a tip; publishing is `/cad-land`'s step, and the tag rides with it | ✓ Adopted at the v1.4.0 close |
 
 ---
-*Last updated: 2026-07-28 shipped v1.4.0 (four stated grammars + the spine's own bookkeeping); no milestone open*
+*Last updated: 2026-07-28 recorded v1.4.1 and v1.5.0, which shipped off-roadmap; no milestone open*

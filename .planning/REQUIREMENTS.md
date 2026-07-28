@@ -1,4 +1,4 @@
-# Requirements: Cadence (v1.4.0 shipped)
+# Requirements: Cadence (v1.5.0 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
@@ -63,6 +63,11 @@ parses only the Traceability table).
 | TOK-01 (one quote-state tokenizer closes the six rail-3 push holes and the `eval` wrapper family) | 3 | Complete | v1.4.0 |
 | RDM-01 (stated roadmap phase-list grammar; empty `## Phases` is a derived closed-milestone state) | 4 | Complete | v1.4.0 |
 | AUD-01 (`audit` counts an unpicked `## Active` id, so the gate holds while a milestone is partly planned) | 5 | Complete | v1.4.0 |
+| #65 (executor's terminal success-criteria check deleted; `goal_check` already does that assessment) | — | Complete | v1.4.1 |
+| #67 (`conventions.md` states the reach it actually has, not the reach it claimed) | — | Complete | v1.4.1 |
+| #68 (worktree fork point stated as `worktree.baseRef`-selectable; parallel execute refuses under `fresh`) | — | Complete | v1.5.0 |
+| #64 (per-trigger `effort` scoped to the backend that can honour it) | — | Complete | v1.5.0 |
+| #74 (each agent contract stored once as a preloaded contract skill; self-verify asserts every one resolves) | — | Complete | v1.5.0 |
 
 ## Deferred
 
@@ -99,4 +104,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-07-28 v1.4.0 closed (5 requirements shipped and archived)*
+*Last updated: 2026-07-28 v1.4.1 and v1.5.0 recorded (5 issue-driven rows archived)*
