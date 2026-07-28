@@ -57,7 +57,11 @@ planned (`references/req-traceability.md`).
 
 Notes:
 - REQ-ID format: `[CATEGORY]-[NUMBER]` with a 3-5 letter category code
-  (AUTH-01, CLI-02, SYNC-03). IDs are stable; never renumber.
+  (AUTH-01, CLI-02, SYNC-03). IDs are stable; never renumber. The audit's
+  admission test is slightly wider than this advice - 2-8 characters, digits
+  allowed after the first - but it requires the category to START WITH A
+  LETTER. A digit-leading category (`2FA-01`) is NOT counted by `/cad-audit`;
+  spell it `TFA-01`.
 - A good requirement is specific and testable ("User can reset password via
   email link", not "Handle password reset"), user-centric ("User can X", not
   "System does Y"), and atomic (one capability each).

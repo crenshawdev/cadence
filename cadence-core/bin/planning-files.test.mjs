@@ -770,6 +770,23 @@ const ACTIVE_ROWS = [
     text: activeDoc('- **#41**: silent data-file failure'),
     ids: ['#41'], codes: [],
   },
+  // The digit-leading category, both halves of the same limit. `isRequirementId`
+  // anchors the category's first character as a LETTER, so `2FA-01` is reported
+  // and never counted - and `REQ_ID_TOKEN` carries the same anchor, so unbolding
+  // it (the remedy the table refuses here) takes it from reported to invisible.
+  // Pinned because the limit is STATED in prose
+  // (references/req-traceability.md's remedy table, templates/REQUIREMENTS.md):
+  // widening either anchor must break these rows deliberately, never silently.
+  {
+    name: 'active-non-id-bullet: a DIGIT-LEADING category is held out too - the stated v1.4.0 limit',
+    text: activeDoc('- **2FA-01**: two-factor auth'),
+    ids: ['2FA-01'], codes: ['active-non-id-bullet'],
+  },
+  {
+    name: 'a digit-leading id UNBOLDED is SILENT - the same anchor, in the prose scan',
+    text: activeDoc('- 2FA-01: two-factor auth'),
+    ids: [], codes: [],
+  },
   {
     name: 'a non-id bold bullet BESIDE real ones: the real ids parse, only the phantom reports',
     text: activeDoc('- **GRM-01**: grammar work\n- **Note**: scope is frozen\n- **RDM-01**: roadmap'),
@@ -885,11 +902,15 @@ for (const row of ACTIVE_ROWS) {
 // verdict. Anchored on purpose - `REQ_ID_TOKEN` beside it is unanchored because
 // it SCANS prose; conflating the two is what let `Note` and `AUD-01:` in.
 test('isRequirementId: the whole string and nothing else, in both shipped spellings', () => {
-  for (const yes of ['AUD-01', 'GRM-01', 'AB-1', 'ABCDEFGH-12', '#41']) {
+  for (const yes of ['AUD-01', 'GRM-01', 'AB-1', 'ABCDEFGH-12', '#41', 'A11Y-01']) {
     assert.equal(isRequirementId(yes), true, yes);
   }
+  // `2FA-01`/`3DS-02`: the category's FIRST character must be a letter, though
+  // digits are admitted after it (`A11Y-01` passes). A stated limit, not an
+  // oversight - `REQ_ID_TOKEN` scans arbitrary prose, where a digit-leading
+  // category would make every date (`2026-07-28`) an id token.
   for (const no of ['Note', 'AUD-01:', 'AUD-01 (the gate)', 'aud-01', 'A-01', 'ABCDEFGHI-1',
-    'AUD-01 ', '#41.', 'see AUD-01', '']) {
+    'AUD-01 ', '#41.', 'see AUD-01', '', '2FA-01', '3DS-02']) {
     assert.equal(isRequirementId(no), false, no);
   }
 });
