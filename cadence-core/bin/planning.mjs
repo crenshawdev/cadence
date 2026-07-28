@@ -253,10 +253,24 @@ function cmdCursorSet(dir, opts) {
     total = parsed.value;
   }
   if (name === undefined || total === undefined) {
-    const phases = parseRoadmapPhases(read(join(dir, 'ROADMAP.md')) || '');
+    // The same phase-list grammar `status` reads (references/roadmap-phases.md).
+    // `closed` fills `no active cycle` / 0, so the seam succeeds against a
+    // pruned roadmap BY CONSTRUCTION and /cad-milestone step 6 runs on the tree
+    // its own step 3 produces. `out-of-grammar` and `no-section` deliberately
+    // keep today's behavior - a roadmap holding unrecognized phase-shaped lines
+    // is broken, not closed, and writing `of 0` there would erase a live
+    // cycle's total.
+    const { state, phases } = classifyPhaseList(read(join(dir, 'ROADMAP.md')) || '');
     const entry = phases.find((p) => p.n === phase);
     if (name === undefined && entry) name = entry.name;
     if (total === undefined && phases.length) total = phases.length;
+    if (state === 'closed') {
+      // Before the prior-cursor fallback below on purpose: inheriting a stale
+      // total writes `Phase: 1 of 5` against a zero-phase roadmap, which reads
+      // as an `of M` mismatch to /cad-health.
+      if (name === undefined) name = CLOSED_CYCLE_NAME;
+      if (total === undefined) total = 0;
+    }
   }
   if (name === undefined || total === undefined) {
     const prior = parseCursor(read(join(dir, 'STATE.md')) || '');

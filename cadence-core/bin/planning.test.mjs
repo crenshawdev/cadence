@@ -462,6 +462,52 @@ test('cursor set: derives name/total from ROADMAP, stamps today, writes 4 lines'
   assert.ok(!readdirSync(dir).some((f) => f.endsWith('.tmp')));
 });
 
+// --- cursor set: the closed-milestone derivation (D-10) ---------------------
+
+test('cursor set: derives `of 0 (no active cycle)` from a pruned roadmap, with no --name/--total', () => {
+  const dir = makeTree({ roadmap: [] });
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'ready to plan',
+    '--next', '/cad-phase add'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.total, 0);
+  assert.equal(r.cursor.name, 'no active cycle');
+  const text = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  assert.match(text, /^Phase: 1 of 0 \(no active cycle\)$/m);
+});
+
+test('cursor set: the closed cursor it writes round-trips through cursor get, never unparseable-cursor', () => {
+  const dir = makeTree({ roadmap: [] });
+  assert.equal(run(['cursor', 'set', '--phase', '1', '--status', 'ready to plan',
+    '--next', '/cad-phase add'], dir).ok, true);
+  const g = run(['cursor', 'get'], dir);
+  assert.equal(g.ok, true);
+  assert.equal(g.total, 0);
+  assert.equal(g.name, 'no active cycle');
+  assert.equal(g.phase, 1);
+});
+
+test('cursor set: the closed arm beats the prior cursor, so a stale total is not inherited', () => {
+  const dir = makeTree({
+    roadmap: [],
+    cursor: { phase: 5, total: 5, name: 'Old', status: 'phase complete', next: '/cad-milestone', updated: '2026-01-01' },
+  });
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'ready to plan',
+    '--next', '/cad-phase add'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.cursor.total, 0);
+  assert.equal(r.cursor.name, 'no active cycle');
+});
+
+test('cursor set: an out-of-grammar roadmap is broken, not closed - still cannot-derive', () => {
+  const dir = makeTree({});
+  writeFileSync(join(dir, 'ROADMAP.md'), '# Roadmap\n\n## Phases\n\n- Phase 1: Ship auth\n');
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'ready to plan',
+    '--next', '/cad-phase add'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'cannot-derive');
+  assert.equal(readdirSync(dir).includes('STATE.md'), false); // nothing written
+});
+
 test('cursor set: rejects a status outside the lifecycle', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }] });
   const r = run(['cursor', 'set', '--phase', '1', '--status', 'doing stuff', '--next', 'x'], dir);
