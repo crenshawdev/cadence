@@ -29,10 +29,11 @@
 //                    grows behaviour, the ladder is N divergent variants
 //                    instead of one contract at N efforts.
 //   8. routing cells the three grids in route-table.json, cell by cell (every
-//                    problem NAMES the cell), plus both directions between the
-//                    grids and agents/: every rung a cell names must have an
-//                    agent file, and every rung-suffixed agent file must be a
-//                    rung some cell reaches. route.mjs returns an agent name it
+//                    problem NAMES the cell), the `surfaces` block against the
+//                    `risk.override.<surface>` schema keys in both directions,
+//                    plus both directions between the grids and agents/: every
+//                    rung a cell names must have an agent file, and every
+//                    rung-suffixed agent file must be a rung some cell reaches. route.mjs returns an agent name it
 //                    never checks exists, so an unbuilt or stale rung would
 //                    surface as a failed spawn instead of in CI.
 //
@@ -46,7 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { rungBodyIssue, rungFile } from './lib/rung-agent.mjs';
-import { cellIssues, declaredRoles, routableAgents } from './lib/route-cells.mjs';
+import { cellIssues, declaredRoles, routableAgents, surfaceIssues } from './lib/route-cells.mjs';
 import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -605,6 +606,21 @@ function run(root) {
         problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
       }
 
+      // The `surfaces` block, in BOTH directions against config.schema.json's
+      // `risk.override.<surface>` keys. `requiredFloor` is the LAST level of the
+      // schema's stakes enum, never the literal "critical": the level names come
+      // from the schema everywhere else in this check, and a hardcoded copy here
+      // would be the vocabulary drift this walk exists to catch.
+      const stakesValues = Array.isArray(stakesSpec.values) ? stakesSpec.values : [];
+      for (const { code, detail } of surfaceIssues(table, {
+        levels: stakesValues,
+        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
+        overrideSurfaces: SURFACES,
+        requiredFloor: stakesValues[stakesValues.length - 1],
+      })) {
+        problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
+      }
+
       // table -> disk: every name route.mjs can return must exist. route.mjs
       // never checks the name it returns, so without this an unbuilt or
       // renamed rung fails at dispatch time instead of in CI.
@@ -661,7 +677,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells, risk-surfaces', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
