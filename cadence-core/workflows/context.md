@@ -215,6 +215,11 @@ phase goal plus the locked decisions. Rules:
 - 3-7 criteria. Fewer means the goal is vague; more means the phase is
   probably too big (feeds the next step).
 - No subjective words: "clean", "reasonable", "robust" are banned.
+- Each criterion carries a phase-local `AC<N>` id at the head of its bullet,
+  numbered from 1 in presentation order - never phase-prefixed, never
+  renumbered afterwards. `/cad-verify` carries that id onto the UAT item it
+  builds, and `/cad-audit` FAILs on a criterion that reached none
+  (`references/acceptance-criteria.md`).
 
 Present the draft list and ask (ask-user seam, structured):
 - header: "Acceptance"
@@ -289,9 +294,9 @@ decisions this phase are durable" if empty}
 
 ## Acceptance criteria
 
-- [ ] {pass/fail, observed behavior}
-- [ ] {pass/fail, observed behavior} (human-verify: needs {tool/service})
-- [ ] ...
+- [ ] AC1: {pass/fail, observed behavior}
+- [ ] AC2: {pass/fail, observed behavior} (human-verify: needs {tool/service})
+- [ ] AC3: ...
 
 ## Flagged assumptions
 

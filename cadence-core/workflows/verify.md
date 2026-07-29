@@ -45,7 +45,7 @@ covered as a new item:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase <N>
-   stdin: [{"name":"...","expected":"..."}]
+   stdin: [{"name":"...","expected":"...","criterion":"AC3"}]
 ```
 
 Refresh appends only genuinely new names - recorded results are never
@@ -70,6 +70,20 @@ Item rules (the model's judgment, before the seam call):
 - One item per observable behavior: name + expected (what the user should
   SEE, specific and falsifiable). Skip internal criteria (refactors, type
   changes) - execution already covered those.
+- **Carry the criterion id.** An item built from a CONTEXT criterion sends
+  `"criterion":"AC<N>"` - the id at the head of the bullet it came from. This
+  is the ONLY place the link is created: the wording is yours, so nothing
+  downstream can recover which criterion an item came from by comparing
+  strings. `/cad-audit` FAILs on a criterion no item names
+  (`references/acceptance-criteria.md`).
+- An item built from any other source carries `"origin"` instead of
+  `criterion`: the cold-start smoke item below sends `"origin":"smoke"`, and
+  an item from the PLAN+ROADMAP fallback branch or a SUMMARY-derived
+  deliverable sends neither field - `/cad-audit` reports it as untraced
+  without moving the verdict.
+- A CONTEXT whose criteria carry no `AC<N>` ids yields no `criterion` values
+  at all; that reads as a pre-field legacy checklist, reported and never a
+  failure.
 - Deduplicate: a PLAN verification restating a ROADMAP criterion is one
   item, worded as the ROADMAP criterion (the contract).
 - A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT
@@ -87,7 +101,7 @@ Then create the checklist in one call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat init --phase <N>
-   stdin: [{"name":"...","expected":"..."}, ...]
+   stdin: [{"name":"...","expected":"...","criterion":"AC1"}, ...]
 ```
 
 Continue to `deep_check`.
@@ -241,8 +255,9 @@ hold the result and the next command starts fresh.
 </guardrails>
 
 <success_criteria>
-- [ ] UAT.md has one item per acceptance criterion; every result recorded
-      through `uat record` the moment it was given
+- [ ] UAT.md has one item per acceptance criterion, each carrying its
+      `criterion` id; every result recorded through `uat record` the moment it
+      was given
 - [ ] User walked through only untested items, one at a time, plain-text
       answers, using the seam's `next` chaining (no re-reads)
 - [ ] Every failure carries verbatim evidence + inferred severity
