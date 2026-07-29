@@ -641,6 +641,75 @@ test('check 8: a full tree with no route-table.json fails ok:false naming the in
     && x.file === 'cadence-core/route-table.json'), JSON.stringify(r.problems));
 });
 
+test('check 8: a model outside model_aliases fails ok:false naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  t.cells.solo['cad-verifier'].model = 'gpt-5';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-model'
+    && x.file === 'cadence-core/route-table.json'
+    && /solo\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a rung outside rung_order fails ok:false naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  t.cells.solo['cad-verifier'].effort = 'ludicrous';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-rung'
+    && /solo\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a gate outside the four gate values fails ok:false naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  t.review.solo.diff = 'maybe';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-gate'
+    && /solo\/diff/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a trigger name config.schema.json does not define fails ok:false', () => {
+  const t = cellTable('cad-verifier');
+  t.review.solo.frobnicate = 'blocking';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-trigger'
+    && /solo\/frobnicate/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a retry BELOW its effort fails ok:false as rung-demotion', () => {
+  // The fault every membership check passes: `medium` is a real rung with a
+  // real file, so only the direction check can see that a retry would think
+  // LESS while route.mjs reported an escalation.
+  const t = cellTable('cad-verifier');
+  t.cells.critical['cad-verifier'] = { model: 'opus', effort: 'xhigh', retry: 'medium' };
+  const root = fixtureWith({
+    agents: {
+      ...VERIFIER_AGENTS,
+      'cad-verifier-medium.md': '---\nname: cad-verifier-medium\ntools: Read\n---\nbody\n',
+    },
+    routeTable: t,
+  });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'rung-demotion'
+    && /critical\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a retry EQUAL to its effort is NOT a demotion', () => {
+  const root = fixtureWith({
+    agents: { 'cad-verifier.md': VERIFIER_AGENTS['cad-verifier.md'] },
+    routeTable: cellTable('cad-verifier', { effort: 'high', retry: 'high' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'rung-demotion'), JSON.stringify(p));
+});
+
 test('check 8: a NULL cell is one reported problem, not a collapse to reason:internal', () => {
   // The parse guard covered the read and JSON.parse only, so a null entry one
   // layer in still unwound run() at the first deref - the #49.1 shape.
