@@ -3,6 +3,8 @@
     "note": "Data table for bin/route.mjs (model routing). Editable: change the tier of a role or the model a (stakes, tier) pair resolves to without touching code. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per agent FILE in frontmatter, so varying it means varying the file: escalating a role swaps to the rung file named by its `escalate_to`.",
     "tiers": "light, standard, heavy - the role-tier vocabulary the `roles` block draws from and the column each stakes row is keyed by. No code orders this array today; it states the accepted names, not a ladder anything climbs.",
     "rungs": "A role's reachable rungs are declared per role in its `rungs` array, not as a rung_order x roles cross product - every rung listed costs an agent file, and every registered agent's name/description/tools ride in the main session prompt. `base_effort` lives at the unsuffixed agents/<role>.md; every other rung lives at agents/<role>-<rung>.md, and self-verify fails if one is missing. `base_effort` and `escalate_to` must both be members of the role's own `rungs`.",
+    "cells": "The (stakes level, role) grid: one cell per pair, each yielding the `model` the role runs at, the `effort` rung it starts at and the `retry` rung a failed attempt climbs to. 18 cells, read in one screen - `tier` is gone, and with it the indirection that pinned a role's model to a field named after something else.",
+    "roles": "TRANSITIONAL, mid-phase: `role_order` is the declared ARRAY of routable role names and is what route.mjs checks a `--role` against. The `roles` OBJECT beside it is the retired tier/base_effort/rungs/escalate_to block, kept only until this phase's deletion task, which drops it and renames `role_order` to `roles`. Until then the live key is `role_order`.",
     "review": "The `review` grid keys on (stakes level, trigger name) and yields the gate that trigger fires at, for the five triggers config.schema.json defines. `risk_surface` is deliberately `blocking` at EVERY level: it fires only on a detection match, so there is no level at which a matched risk surface is worth waving through. A `review.triggers.<t>.gate` a user set wins over the level's value and route.mjs reports the disagreement in `warnings`.",
     "verify": "The `verify` grid keys on the stakes level ALONE - the deep-verify pass has no role in hand when it decides whether to run. It is two-state (`off`/`on`); the depth of that pass is carried by the cad-verifier row of the effort grid, not here.",
     "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. `fable` is deliberately absent from the stakes matrix, and not because of any ranking claim: it requires 30-day data retention and returns 400 invalid_request_error for every zero-data-retention org, which is other people's orgs since Cadence ships as a public plugin; its safety classifiers return a refusal stop reason on cyber-adjacent content, and Cadence reviews its own git rails, secrets handling and shell tokenizer; and its multi-minute turns press against the configured provider request timeout inside the host's Bash ceiling. It is reachable only by explicit pin, which is a user assertion about their own org, not ours."
@@ -10,6 +12,34 @@
   "tier_order": ["light", "standard", "heavy"],
   "rung_order": ["low", "medium", "high", "xhigh", "max"],
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
+  "role_order": ["cad-planner", "cad-assumptions-analyzer", "cad-verifier", "cad-reviewer", "cad-executor", "cad-plan-checker"],
+
+  "cells": {
+    "solo": {
+      "cad-planner":              { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-assumptions-analyzer": { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-verifier":             { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-reviewer":             { "model": "sonnet", "effort": "medium", "retry": "high" },
+      "cad-executor":             { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-plan-checker":         { "model": "sonnet", "effort": "low",    "retry": "high" }
+    },
+    "shipped": {
+      "cad-planner":              { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-assumptions-analyzer": { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-verifier":             { "model": "opus",   "effort": "medium", "retry": "high" },
+      "cad-reviewer":             { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-executor":             { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-plan-checker":         { "model": "sonnet", "effort": "medium", "retry": "high" }
+    },
+    "critical": {
+      "cad-planner":              { "model": "opus",   "effort": "xhigh",  "retry": "max" },
+      "cad-assumptions-analyzer": { "model": "opus",   "effort": "xhigh",  "retry": "xhigh" },
+      "cad-verifier":             { "model": "opus",   "effort": "xhigh",  "retry": "max" },
+      "cad-reviewer":             { "model": "opus",   "effort": "xhigh",  "retry": "max" },
+      "cad-executor":             { "model": "opus",   "effort": "xhigh",  "retry": "xhigh" },
+      "cad-plan-checker":         { "model": "opus",   "effort": "high",   "retry": "xhigh" }
+    }
+  },
 
   "roles": {
     "cad-planner":              { "tier": "heavy",    "base_effort": "high",  "rungs": ["high", "xhigh", "max"],            "escalate_to": "high" },

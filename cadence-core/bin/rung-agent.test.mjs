@@ -8,11 +8,65 @@
 // Only node: builtins, no subprocess - the lib is pure.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentForRung, rungAgents, rungBody, rungBodyIssue, rungIssues } from './lib/rung-agent.mjs';
+import { agentForRung, rungAgents, rungBody, rungBodyIssue, rungIssues, RUNG_FILES, rungFile, rungFiles } from './lib/rung-agent.mjs';
 
 const ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
 /** The shipped shape of a well-formed role spec. */
 const CHECKER = { base_effort: 'low', rungs: ['low', 'high'], escalate_to: 'high' };
+
+// --- RUNG_FILES / rungFile / rungFiles ---------------------------------------
+
+test('rungFile returns the UNSUFFIXED file where that is the rung it carries', () => {
+  assert.equal(rungFile('cad-plan-checker', 'low'), 'cad-plan-checker');
+  assert.equal(rungFile('cad-verifier', 'high'), 'cad-verifier');
+});
+
+test('rungFile returns the suffixed file for every other rung', () => {
+  assert.equal(rungFile('cad-plan-checker', 'xhigh'), 'cad-plan-checker-xhigh');
+  assert.equal(rungFile('cad-planner', 'max'), 'cad-planner-max');
+});
+
+test('rungFile is not a naming convention - the analyzer inverts it', () => {
+  // The map exists BECAUSE this pair cannot be derived: the unsuffixed file is
+  // the analyzer's xhigh rung and the `-high` sibling is the lower one.
+  assert.equal(rungFile('cad-assumptions-analyzer', 'xhigh'), 'cad-assumptions-analyzer');
+  assert.equal(rungFile('cad-assumptions-analyzer', 'high'), 'cad-assumptions-analyzer-high');
+});
+
+test('a rung the role does not carry is null, never a guessed filename', () => {
+  assert.equal(rungFile('cad-executor', 'max'), null);
+});
+
+test('an unknown role is null, and a non-string rung does not throw', () => {
+  assert.equal(rungFile('cad-nope', 'high'), null);
+  assert.equal(rungFile('cad-planner', undefined), null);
+  assert.equal(rungFile(undefined, 'high'), null);
+});
+
+test('rungFile never inherits a prototype property as a rung', () => {
+  // `constructor`/`toString` are on every object; a plain `map[rung]` read
+  // would return a function and route.mjs would dispatch its source text.
+  assert.equal(rungFile('cad-planner', 'constructor'), null);
+  assert.equal(rungFile('cad-planner', 'toString'), null);
+});
+
+test('rungFiles lists every stem a role names, in rung order', () => {
+  assert.deepEqual(rungFiles('cad-verifier'),
+    ['cad-verifier-medium', 'cad-verifier', 'cad-verifier-xhigh', 'cad-verifier-max']);
+});
+
+test('rungFiles on an unknown role is empty, never a throw', () => {
+  assert.deepEqual(rungFiles('cad-nope'), []);
+  assert.deepEqual(rungFiles(undefined), []);
+});
+
+test('RUNG_FILES names 19 files across the six roles, and is frozen', () => {
+  const stems = Object.keys(RUNG_FILES).flatMap((r) => rungFiles(r));
+  assert.equal(stems.length, 19);
+  assert.equal(new Set(stems).size, 19); // no file serves two rungs
+  assert.equal(Object.isFrozen(RUNG_FILES), true);
+  assert.equal(Object.isFrozen(RUNG_FILES['cad-planner']), true);
+});
 
 // --- agentForRung ------------------------------------------------------------
 

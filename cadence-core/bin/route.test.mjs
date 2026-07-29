@@ -7,7 +7,7 @@ import { writeFileSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { agentForRung, rungAgents } from './lib/rung-agent.mjs';
+import { RUNG_FILES, rungFile, rungFiles } from './lib/rung-agent.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
@@ -52,28 +52,21 @@ function resolve(role, file, extra = [], opts = {}) {
   }
 }
 
-test('each stakes level resolves the matrix per role tier', () => {
-  const solo = cfg({ stakes: 'solo' });
-  // One full-shape assertion pins the whole resolution contract...
-  const planner = resolve('cad-planner', solo);
+test('a resolve returns the whole bundle off one cell, and no tier', () => {
+  // The full-shape row: every field of the contract in one place. The 18 cells
+  // themselves are pinned one test case per cell below.
+  const planner = resolve('cad-planner', cfg({ stakes: 'solo' }));
   assert.equal(planner.ok, true);
-  assert.equal(planner.model, 'sonnet');          // heavy@solo
-  assert.equal(planner.tier, 'heavy');
-  assert.equal(planner.effort, 'high');           // role base_effort
-  assert.equal(planner.agent, 'cad-planner');     // no variant swap
+  assert.equal(planner.model, 'sonnet');       // the solo/cad-planner cell
+  assert.equal(planner.effort, 'high');        // ...its starting rung
+  assert.equal(planner.agent, 'cad-planner');  // ...and that rung's file
   assert.equal(planner.stakes, 'solo');
-  // ...then the rest of the matrix: model + tier + effort per role.
-  const exec = resolve('cad-executor', solo);
-  assert.deepEqual([exec.model, exec.tier, exec.effort], ['haiku', 'standard', 'high']);
-  const checker = resolve('cad-plan-checker', solo);
-  assert.deepEqual([checker.model, checker.tier, checker.effort, checker.agent],
-    ['haiku', 'light', 'low', 'cad-plan-checker']);
-
-  const critical = cfg({ stakes: 'critical' });
-  assert.equal(resolve('cad-planner', critical).model, 'opus');
-  assert.equal(resolve('cad-executor', critical).model, 'opus');
-  const cc = resolve('cad-plan-checker', critical);
-  assert.deepEqual([cc.ok, cc.model, cc.tier], [true, 'sonnet', 'light']);
+  assert.equal(planner.escalated, false);      // a clean run never escalates
+  assert.equal(planner.verify, 'off');
+  assert.equal(planner.review.plan, 'advisory');
+  // `tier` is gone: the model comes from the role's own cell, not from a
+  // column named after something else (D-03).
+  assert.equal('tier' in planner, false);
 });
 
 // --- the review and verify grids (D-01) --------------------------------------
@@ -163,7 +156,7 @@ test('escalation fires at the shipped DEFAULT, with no stakes key set anywhere',
   const missing = join(dir, 'no-config-at-all.json');
   const first = resolve('cad-plan-checker', missing);
   assert.equal(first.escalated, false);            // a clean run never escalates
-  assert.equal(first.agent, 'cad-plan-checker');
+  assert.equal(first.agent, 'cad-plan-checker-medium');
   assert.equal(first.stakes, 'shipped');
 
   const retry = resolve('cad-plan-checker', missing, ['--attempt', '2']);
@@ -172,13 +165,14 @@ test('escalation fires at the shipped DEFAULT, with no stakes key set anywhere',
   assert.equal(retry.effort, 'high');
   assert.equal(retry.escalated, true);
   assert.equal(retry.stakes, 'shipped');
-  assert.equal(retry.model, 'haiku');              // light@shipped - the rung climbs, the model holds
+  assert.equal(retry.model, 'sonnet');             // the rung climbs, the model holds
 });
 
 test('escalation fires at every stakes level, not just the default', () => {
-  for (const stakes of ['solo', 'shipped', 'critical']) {
+  const expected = { solo: 'cad-plan-checker-high', shipped: 'cad-plan-checker-high', critical: 'cad-plan-checker-xhigh' };
+  for (const [stakes, agent] of Object.entries(expected)) {
     const r = resolve('cad-plan-checker', cfg({ stakes }), ['--attempt', '2']);
-    assert.equal(r.agent, 'cad-plan-checker-high', stakes);
+    assert.equal(r.agent, agent, stakes);
     assert.equal(r.escalated, true, stakes);
   }
 });
@@ -187,8 +181,8 @@ test('model.escalate_on_failure: false holds the rung and names the key in reaso
   const off = cfg({ escalate_on_failure: false });
   const r = resolve('cad-plan-checker', off, ['--attempt', '3']);
   assert.equal(r.escalated, false);
-  assert.equal(r.agent, 'cad-plan-checker');
-  assert.equal(r.effort, 'low');
+  assert.equal(r.agent, 'cad-plan-checker-medium'); // the shipped cell's starting rung
+  assert.equal(r.effort, 'medium');
   assert.match(r.reason.join(' '), /model\.escalate_on_failure/); // a held retry is diagnosable
 });
 
@@ -289,8 +283,8 @@ test('layers deep-merge: a global model block and a repo stakes key combine', ()
   // retry is held by a key the repo file never mentions.
   const r = resolve('cad-plan-checker', repo, ['--attempt', '2'], { global: g });
   assert.equal(r.stakes, 'critical');
-  assert.equal(r.model, 'sonnet');  // light@critical
-  assert.equal(r.agent, 'cad-plan-checker');
+  assert.equal(r.model, 'opus');    // the critical/cad-plan-checker cell
+  assert.equal(r.agent, 'cad-plan-checker-high');
   assert.equal(r.escalated, false);
 });
 
@@ -300,14 +294,13 @@ test('an override pins one role and leaves the others routed', () => {
   const c = cfg({ stakes: 'shipped', overrides: { 'cad-planner': 'fable' } }, 'ovr-planner.json');
   const planner = resolve('cad-planner', c);
   assert.equal(planner.ok, true);
-  assert.equal(planner.model, 'fable');   // pinned, not heavy@shipped (opus)
+  assert.equal(planner.model, 'fable');   // pinned, not the cell's opus
   assert.equal(planner.pinned, true);
-  assert.equal(planner.tier, 'heavy');    // tier still reported honestly
   assert.equal(planner.effort, 'high');   // effort is frontmatter, untouched
   assert.match(planner.reason.join(' '), /override cad-planner: opus -> fable/);
   // a sibling role is unaffected
   const exec = resolve('cad-executor', c);
-  assert.equal(exec.model, 'sonnet');     // standard@shipped
+  assert.equal(exec.model, 'opus');       // the shipped/cad-executor cell
   assert.equal(exec.pinned, false);
 });
 
@@ -391,41 +384,35 @@ function frontmatterEffort(agentName) {
   return (fm.match(/^effort:\s*(\S+)\s*$/m) || [])[1];
 }
 
-test('every role base_effort matches the agent file frontmatter that runs it', () => {
-  for (const [role, spec] of Object.entries(SHIPPED_TABLE.roles)) {
-    assert.equal(frontmatterEffort(role), spec.base_effort, `${role} base_effort`);
-  }
-  // cad-reviewer is the one the review subsystem documents by value: the
-  // per-trigger `effort` config key cannot reach it, so the docs name what it
-  // does run at. Pin that literal.
-  assert.equal(frontmatterEffort('cad-reviewer'), 'high');
-});
-
-test('every rung the table can name has an agent file carrying exactly that effort', () => {
-  // The ladder-consistency row. route.mjs REPORTS a rung's effort; the only
-  // thing that makes the report true is the file for that rung agreeing. This
-  // walks the WHOLE table rather than the single escalation the pre-ladder
-  // row covered, so a rung added to the data with no file (or with the wrong
-  // frontmatter) fails here, not at spawn time.
-  /** @type {Map<string,string>} rung agent name -> the rung that produced it */
+test('every rung a cell can name has an agent file carrying exactly that effort', () => {
+  // The ladder-consistency row, and the one walk in this file that is
+  // legitimate under D-11: it compares two INDEPENDENT sources - the shipped
+  // table and the frontmatter on disk - rather than deriving its expectations
+  // from the thing under test. route.mjs REPORTS a rung's effort; the only
+  // thing that makes the report true is the file for that rung agreeing.
+  /** @type {Map<string,string>} agent-file stem -> the rung that produced it */
   const byName = new Map();
-  for (const [role, spec] of Object.entries(SHIPPED_TABLE.roles)) {
-    for (const rung of [spec.base_effort, ...spec.rungs, spec.escalate_to]) {
-      byName.set(agentForRung(role, spec, rung), rung);
+  for (const [level, row] of Object.entries(SHIPPED_TABLE.cells)) {
+    for (const [role, cell] of Object.entries(row)) {
+      for (const rung of [cell.effort, cell.retry]) {
+        const stem = rungFile(role, rung);
+        assert.ok(stem, `${level}/${role} rung ${rung} has no file in RUNG_FILES`);
+        byName.set(stem, rung);
+      }
     }
-    // rungAgents is the shared statement of the same mapping; the two must
-    // agree, or route.mjs and self-verify.mjs are looking at different sets.
-    assert.deepEqual(
-      [...new Set(rungAgents(role, spec))].sort(),
-      [...new Set([spec.base_effort, ...spec.rungs, spec.escalate_to]
-        .map((r) => agentForRung(role, spec, r)))].sort(),
-      `${role} rungAgents`,
-    );
   }
   assert.equal(byName.size, 19, `routable agent names: ${[...byName.keys()].join(', ')}`);
   for (const [name, rung] of byName) {
     assert.ok(existsSync(join(AGENTS, `${name}.md`)), `agents/${name}.md must exist`);
     assert.equal(frontmatterEffort(name), rung, `${name} frontmatter effort`);
+  }
+  // ...and the other direction: a rung file RUNG_FILES names that no cell can
+  // reach is standing context nothing dispatches.
+  const named = new Set([...byName.keys()]);
+  for (const role of Object.keys(RUNG_FILES)) {
+    for (const stem of rungFiles(role)) {
+      assert.ok(named.has(stem), `agents/${stem}.md is named by no cell`);
+    }
   }
 });
 
@@ -435,15 +422,14 @@ test('table exposes rung_order, the five rungs the host accepts', () => {
   assert.deepEqual(r.table.rung_order, ['low', 'medium', 'high', 'xhigh', 'max']);
 });
 
-test('escalate_to is the SOURCE of the swap - repointing it moves the resolved agent', () => {
+test('the cell retry is the SOURCE of the swap - repointing it moves the resolved agent', () => {
   // Pins the mechanism rather than the shipped outcome: a name no code
   // hardcodes (`cad-plan-checker-xhigh`) must appear purely because the data
   // says so. If route.mjs went back to hardcoding a variant name or effort,
   // this row fails while every shipped-value row above still passes.
   const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  t.roles['cad-plan-checker'].rungs = ['low', 'high', 'xhigh'];
-  t.roles['cad-plan-checker'].escalate_to = 'xhigh';
-  const tablePath = join(dir, 'escalate-to-xhigh.json');
+  t.cells.shipped['cad-plan-checker'].retry = 'xhigh';
+  const tablePath = join(dir, 'retry-xhigh.json');
   writeFileSync(tablePath, JSON.stringify(t));
 
   const c = cfg({ stakes: 'shipped' });
@@ -458,15 +444,16 @@ test('escalate_to is the SOURCE of the swap - repointing it moves the resolved a
   assert.equal(r.escalated, true);
 });
 
-test('a role whose escalate_to IS its base rung keeps the base agent on failure', () => {
-  // cad-planner escalates to `high`, which is already its base_effort, so the
-  // rung arm is a no-op and must report itself as held rather than resolving
-  // `cad-planner-high` - a file that deliberately does not exist.
-  const c = cfg({ stakes: 'shipped' });
-  const r = resolve('cad-planner', c, ['--attempt', '2']);
-  assert.equal(r.agent, 'cad-planner');
-  assert.equal(r.effort, 'high');
-  assert.match(r.reason.join(' '), /rung held at high/);
+test('a cell whose retry IS its starting rung reports the rung held, not an escalation', () => {
+  // critical/cad-executor already runs at `xhigh` and its retry names the same
+  // rung, so the arm is a no-op. Saying "held" beats reporting an escalation
+  // that never happened - and beats resolving a file for a rung nothing named.
+  const c = cfg({ stakes: 'critical' });
+  const r = resolve('cad-executor', c, ['--attempt', '2']);
+  assert.equal(r.agent, 'cad-executor-xhigh');
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.escalated, false);
+  assert.match(r.reason.join(' '), /rung held at xhigh/);
 });
 
 test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {

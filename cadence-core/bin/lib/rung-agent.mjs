@@ -19,6 +19,84 @@
 'use strict';
 
 /**
+ * The rung -> agent-file map, stated per role rather than derived (D-05). With
+ * `base_effort` gone the unsuffixed `agents/<role>.md` is one rung among the
+ * others and nothing about a rung's NAME says which file carries it:
+ * `cad-assumptions-analyzer` is the `xhigh` rung while its `-high` sibling is
+ * the lower one, so any convention would have to lie about one of them. The
+ * alternative was renaming five of six files to make a convention true, which
+ * invalidates every one of their exact-fit weight budgets and buys nothing a
+ * reader of this table cannot already see.
+ *
+ * Each role's rungs are listed in rung_order (low -> max), which is the order
+ * `rungFiles` returns them in. Frozen: this is a statement of what is on disk,
+ * and a caller mutating it would make route.mjs and self-verify disagree about
+ * the same question.
+ * @type {Readonly<Record<string, Readonly<Record<string, string>>>>}
+ */
+export const RUNG_FILES = Object.freeze({
+  'cad-planner': Object.freeze({
+    high: 'cad-planner',
+    xhigh: 'cad-planner-xhigh',
+    max: 'cad-planner-max',
+  }),
+  'cad-assumptions-analyzer': Object.freeze({
+    high: 'cad-assumptions-analyzer-high',
+    xhigh: 'cad-assumptions-analyzer',
+  }),
+  'cad-verifier': Object.freeze({
+    medium: 'cad-verifier-medium',
+    high: 'cad-verifier',
+    xhigh: 'cad-verifier-xhigh',
+    max: 'cad-verifier-max',
+  }),
+  'cad-reviewer': Object.freeze({
+    medium: 'cad-reviewer-medium',
+    high: 'cad-reviewer',
+    xhigh: 'cad-reviewer-xhigh',
+    max: 'cad-reviewer-max',
+  }),
+  'cad-executor': Object.freeze({
+    high: 'cad-executor',
+    xhigh: 'cad-executor-xhigh',
+  }),
+  'cad-plan-checker': Object.freeze({
+    low: 'cad-plan-checker',
+    medium: 'cad-plan-checker-medium',
+    high: 'cad-plan-checker-high',
+    xhigh: 'cad-plan-checker-xhigh',
+  }),
+});
+
+/**
+ * The agent-file stem for one rung of one role, or null when the pair is not
+ * in the map. Null rather than a guessed `<role>-<rung>`: a guess names a file
+ * that does not exist and reads as a real answer, while null is a fact the
+ * caller can act on - route.mjs degrades the dispatch and says so, self-verify
+ * files a problem.
+ * @param {string} role
+ * @param {string} rung
+ * @returns {string|null}
+ */
+export function rungFile(role, rung) {
+  const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
+  if (!map || typeof rung !== 'string') return null;
+  return Object.prototype.hasOwnProperty.call(map, rung) ? map[rung] : null;
+}
+
+/**
+ * Every agent-file stem one role's map names, in declared rung order. An
+ * unknown role yields an empty array rather than throwing - self-verify calls
+ * this on a table it has not validated yet.
+ * @param {string} role
+ * @returns {string[]}
+ */
+export function rungFiles(role) {
+  const map = typeof role === 'string' ? RUNG_FILES[role] : undefined;
+  return map ? Object.values(map) : [];
+}
+
+/**
  * @typedef {object} RoleSpec
  * @property {string} [base_effort] the rung the unsuffixed agent file carries
  * @property {string[]} [rungs] every rung this role can be dispatched at

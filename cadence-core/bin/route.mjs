@@ -31,7 +31,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { agentForRung } from './lib/rung-agent.mjs';
+import { rungFile } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { requireInt } from './lib/require-int.mjs';
@@ -88,8 +88,11 @@ function triggerGatesIn(c) {
 }
 
 function resolve(opts) {
-  const role = TABLE.roles[opts.role];
-  if (!role) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${Object.keys(TABLE.roles).join(', ')}` }); return; }
+  // The declared role list, not a lookup in a spec object: a role IS routable
+  // or it is not, and after this phase the table carries no per-role block for
+  // the question to be asked of.
+  const roles = Array.isArray(TABLE.role_order) ? TABLE.role_order : [];
+  if (!roles.includes(opts.role)) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${roles.join(', ')}` }); return; }
 
   const cfg = readConfig(opts.file);
   // An honest first reason: `config:<layers>` is a claim that a layer supplied
@@ -99,51 +102,63 @@ function resolve(opts) {
   const reason = [cfg.stakesSet
     ? `config:${cfg._source}`
     : `stakes default "${cfg.stakes}" (unset in layers: ${cfg._source})`];
-  const tier = role.tier;
-  let agent = opts.role;
-  let effort = role.base_effort;
+
+  // The three grids (D-01). `model`, `effort` and `retry` come from ONE cell
+  // keyed on (level, role); `review` keys on (level, trigger) because a gate
+  // belongs to a trigger, not to an agent; `verify` keys on the level alone
+  // because deep_check runs once per phase with no role in hand. A level
+  // missing any of the three is a TORN table, so it degrades the same way a bad
+  // stakes value already does rather than emitting a partial bundle - half a
+  // bundle read as a whole one is worse than no bundle at all.
+  const level = TABLE.cells && TABLE.cells[cfg.stakes];
+  const cell = level && typeof level === 'object' && !Array.isArray(level) ? level[opts.role] : null;
+  const reviewRow = TABLE.review && TABLE.review[cfg.stakes];
+  const verify = TABLE.verify ? TABLE.verify[cfg.stakes] : undefined;
+  if (!cell || typeof cell !== 'object' || Array.isArray(cell)
+    || !reviewRow || typeof reviewRow !== 'object' || Array.isArray(reviewRow)
+    || verify === undefined) {
+    out({ ok: false, reason: 'unresolved', role: opts.role, stakes: cfg.stakes }); return;
+  }
+
+  // The agent FILE is what carries the effort (route.mjs reports effort, it
+  // cannot set it - seams.md), and with `base_effort` gone the unsuffixed file
+  // is one rung among the others, so the file comes from the explicit map
+  // rather than from a naming convention. Fail-open by design: a rung the map
+  // does not carry is self-verify's problem, and this still dispatches - at the
+  // unsuffixed file, saying it did, rather than naming a file that is not there.
+  const agentFor = (rung) => {
+    const stem = rungFile(opts.role, rung);
+    if (stem) return stem;
+    reason.push(`rung "${rung}" maps to no agent file; dispatching ${opts.role}`);
+    return opts.role;
+  };
+
+  let effort = cell.effort;
+  let agent = agentFor(effort);
   let escalated = false;
 
-  // Escalation is unconditional: a failed attempt re-dispatches at the role's
-  // `escalate_to` rung at EVERY stakes level. Gating it behind a routing mode
-  // is what left the rung ladder unreachable on a default install.
+  // Escalation is unconditional: a failed attempt climbs to the rung its OWN
+  // cell names, at EVERY stakes level. Gating it behind a routing mode is what
+  // left the rung ladder unreachable on a default install; a fixed per-role
+  // target beside a cell that also sets effort is what let five of six roles
+  // resolve their escalation to a no-op (D-02).
   if ((opts.attempt || 1) > 1) {
     if (cfg.escalate_on_failure) {
-      // `escalate_to` names the target rung, and the agent FILE for that rung
-      // is what carries the effort (route.mjs reports effort, it cannot set it
-      // - seams.md). Fail-open by design: rung membership and file existence
-      // are self-verify's job, so a malformed spec here still dispatches
-      // rather than blocking the spine.
-      const target = role.escalate_to;
+      const target = cell.retry;
       if (target && target !== effort) {
         escalated = true;
-        agent = agentForRung(opts.role, role, target);
+        agent = agentFor(target);
         reason.push(`rung ${effort}->${target} (${agent})`);
         effort = target;
       } else {
-        // Honest no-op: a role whose escalate_to IS its base rung has nothing
-        // to swap to, and saying so beats reporting an escalation that never
+        // Honest no-op: a cell whose retry IS its starting rung has nothing to
+        // climb to, and saying so beats reporting an escalation that never
         // happened.
-        reason.push(`rung held at ${effort} (escalate_to ${target || 'unset'})`);
+        reason.push(`rung held at ${effort} (retry rung is the same rung)`);
       }
     } else {
       reason.push(`rung held at ${effort} (model.escalate_on_failure: false)`);
     }
-  }
-
-  const table = TABLE.stakes && TABLE.stakes[cfg.stakes];
-  if (!table || !table[tier]) { out({ ok: false, reason: 'unresolved', role: opts.role, stakes: cfg.stakes, tier }); return; }
-
-  // The other two grids (D-01). `review` keys on (level, trigger) because a
-  // gate belongs to a trigger, not to an agent; `verify` keys on the level
-  // alone because deep_check runs once per phase with no role in hand. A level
-  // missing either row is a TORN table, so it degrades the same way a bad
-  // stakes value already does rather than emitting a partial bundle - half a
-  // bundle read as a whole one is worse than no bundle at all.
-  const reviewRow = TABLE.review && TABLE.review[cfg.stakes];
-  const verify = TABLE.verify ? TABLE.verify[cfg.stakes] : undefined;
-  if (!reviewRow || typeof reviewRow !== 'object' || Array.isArray(reviewRow) || verify === undefined) {
-    out({ ok: false, reason: 'unresolved', role: opts.role, stakes: cfg.stakes, tier }); return;
   }
 
   // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
@@ -169,13 +184,13 @@ function resolve(opts) {
     }
   }
 
-  // A per-role pin is an explicit user assertion, so it wins over the whole
-  // stakes/tier matrix. What it does NOT touch is effort: that is fixed per
-  // agent file in frontmatter, so a pinned role keeps its rung escalation
-  // (same reasoning depth, user's model). An unknown alias is reported as a
-  // warning and the routed model stands - a typo must not silently redirect
-  // the spend, nor block the spawn.
-  let model = table[tier];
+  // A per-role pin is an explicit user assertion, so it wins over the cell's
+  // model. What it does NOT touch is effort: that is fixed per agent file in
+  // frontmatter, so a pinned role keeps its rung and its rung escalation (same
+  // reasoning depth, user's model). An unknown alias is reported as a warning
+  // and the routed model stands - a typo must not silently redirect the spend,
+  // nor block the spawn.
+  let model = cell.model;
   let pinned = false;
   const pin = cfg.overrides[opts.role];
   if (pin != null) {
@@ -183,7 +198,7 @@ function resolve(opts) {
       if (pin === model) {
         reason.push(`override ${opts.role}=${pin} (already the routed model)`);
       } else {
-        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over ${cfg.stakes}/${tier})`);
+        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over the ${cfg.stakes}/${opts.role} cell)`);
         model = pin;
       }
       pinned = true;
@@ -197,7 +212,7 @@ function resolve(opts) {
   // trigger->gate map for this level (no --trigger flag: the map rides on one
   // resolve, and a flag would change the CONTRACTS entry for no reader), and
   // `verify` is the level's two-state deep-verify switch.
-  out({ ok: true, role: opts.role, agent, model, effort, review, verify, tier, stakes: cfg.stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  out({ ok: true, role: opts.role, agent, model, effort, review, verify, stakes: cfg.stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
