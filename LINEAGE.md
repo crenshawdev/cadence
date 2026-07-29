@@ -40,7 +40,7 @@ and reconceived, not copied. The GSD originals were enormous:
 | `gsd-planner` | 47K | `cad-planner` (a fraction of the size) |
 | `gsd-verifier` | 48K | `cad-verifier` |
 | `gsd-executor` | 43K | `cad-executor` |
-| `gsd-plan-checker` | 44K | `cad-plan-checker` (+ `-high` variant) |
+| `gsd-plan-checker` | 44K | `cad-plan-checker` (+ its `-high` rung file) |
 | `gsd-assumptions-analyzer` | 4.5K | `cad-assumptions-analyzer` |
 | `gsd-code-reviewer` | 16.5K | `cad-reviewer` (now one voice in a configurable review subsystem) |
 
