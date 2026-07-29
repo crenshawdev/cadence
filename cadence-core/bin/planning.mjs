@@ -23,6 +23,10 @@
 //                                   plans' declared file lists (parallel gate)
 //   seed-reqs --phase N             insert Traceability rows for a phase's
 //                                   plan-declared, ## Active-bounded req ids
+//   criteria-coverage               every CONTEXT `## Acceptance criteria` id
+//                                   against its phase's UAT items, both
+//                                   directions; uncovered breaks, untraced
+//                                   reports (references/acceptance-criteria.md)
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
 //                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
@@ -42,6 +46,7 @@ import {
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
+  classifyAcceptanceCriteria,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -713,6 +718,136 @@ function cmdAudit(dir) {
 }
 
 // ---------------------------------------------------------------------------
+// criteria-coverage - the CONTEXT acceptance criterion -> UAT item trace, as
+// data. Proves the function is TOTAL: every criterion a phase declared reached
+// that phase's checklist. `/cad-audit` folds this into its ONE verdict.
+//
+// A NEW subcommand rather than an extension of `audit` (D-08): audit's
+// `counts` identity is pinned at :702-711 with a comment stating why, and
+// audit.md section 4 filters `requirements[]` BY milestone id - a criterion
+// break carries no requirement id to filter on, so an out-of-scope phase's
+// break would block a ship it should not.
+//
+// The two directions are ASYMMETRIC (D-09): `breaks` is the only verdict-moving
+// key; `untraced`, `legacy`, `unknown_criterion` and `context_issues` are
+// additive. Four of four phases this cycle appended legitimate verifier gap
+// items, so making the reverse direction breaking would make the gate
+// unpassable.
+// ---------------------------------------------------------------------------
+
+// An `origin` value that declares an item legitimately built from no criterion.
+// Mirrors UAT_ORIGINS in lib/planning-files.mjs minus `criterion`, which names
+// no id by itself and therefore exempts nothing.
+const ORIGIN_EXEMPT = new Set(['verifier', 'smoke']);
+
+function cmdCriteriaCoverage(dir) {
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  // The same phase list `cmdAudit` walks - no new source of truth for which
+  // phases exist. `milestone.md` step 3 prunes completed phases out of the live
+  // `## Phases` list, so this only ever holds the current cycle's phases.
+  const roadmap = parseRoadmapPhases(roadmapText);
+
+  const phases = [];
+  const breaks = [];
+  const untraced = [];
+  const legacy = [];
+  const unknownCriterion = [];
+  const contextIssues = [];
+  let nCriteria = 0, nCovered = 0, nUncovered = 0;
+
+  for (const p of roadmap) {
+    const pdir = join(dir, 'phases', String(p.n));
+    const contextText = read(join(pdir, 'CONTEXT.md'));
+    const uatText = read(join(pdir, 'UAT.md'));
+    // EITHER file absent -> the phase contributes nothing at all: no break, no
+    // `phases[]` entry (D-10). CONTEXT is a documented optional artifact, and
+    // `milestone.md` runs this gate at step 1 while the prune that DELETES
+    // phase dirs runs at step 3 - so a prior milestone's pruned phase must
+    // never make the gate unpassable.
+    if (contextText === null || uatText === null) continue;
+
+    const classified = classifyAcceptanceCriteria(contextText);
+    // `criteria: null` is an absent heading - "nothing declared", not a
+    // problem. Coerced to [] here because the phase's files both exist, so it
+    // still reports its `phases[]` entry and its items still trace (to nothing,
+    // which is `untraced`'s additive job).
+    const criteria = classified.criteria || [];
+    const items = parseUat(uatText).items;
+    if (classified.issues.length) contextIssues.push({ phase: p.n, issues: classified.issues });
+    phases.push({ phase: p.n, criteria: criteria.length, items: items.length });
+
+    const withCriterion = items.filter((it) => it.criterion !== undefined);
+    const withOrigin = items.filter((it) => it.origin !== undefined);
+    // Pre-field legacy (D-16): a checklist written before either field existed.
+    // The `origin` half of the test is LOAD-BEARING. Every checklist written
+    // after this phase carries at least one `origin` - the cold-start smoke item
+    // is emitted with `origin: smoke` and every appended gap item gets
+    // `origin: verifier` - so a UAT carrying some `origin` but not one
+    // `criterion` is NOT an old project: it is a post-field checklist whose
+    // links were dropped, and its criteria break normally. Widen this back to a
+    // bare no-`criterion` test and the exemption absolves exactly the
+    // regression this subcommand exists to catch: a `/cad-verify` that silently
+    // stops emitting `criterion` reads as "an old project" and the gate stays
+    // green forever. An EMPTY checklist is not legacy - an empty checklist is
+    // the drop itself, so its criteria all break.
+    if (items.length && withCriterion.length === 0 && withOrigin.length === 0) {
+      legacy.push(p.n);
+      continue;
+    }
+
+    const declared = new Set(criteria.map((c) => c.id));
+    const covered = new Set();
+    for (const it of items) {
+      if (it.criterion !== undefined) {
+        const id = String(it.criterion);
+        // An item COVERS the id in its `criterion` field.
+        if (declared.has(id)) covered.add(id);
+        else unknownCriterion.push({ phase: p.n, item: Number(it.k), criterion: id });
+        continue;
+      }
+      // Untraced: no `criterion`, and no `origin` that declares the item has
+      // none. `origin: criterion` with no id is still untraced - it names
+      // nothing, so it proves nothing.
+      if (!ORIGIN_EXEMPT.has(String(it.origin))) {
+        untraced.push({ phase: p.n, item: Number(it.k), name: String(it.name) });
+      }
+    }
+    nCriteria += criteria.length;
+    nCovered += covered.size;
+    for (const c of criteria) {
+      if (covered.has(c.id)) continue;
+      nUncovered++;
+      // An UNCHECKED roadmap box means the phase has not reached verification
+      // yet, so its uncovered criteria are counted but never break: a gate run
+      // mid-cycle must not FAIL on work still in flight.
+      if (p.checked) breaks.push({ phase: p.n, id: c.id, break: 'uncovered' });
+    }
+  }
+
+  ok({
+    phases,
+    ...(breaks.length ? { breaks } : {}),
+    ...(untraced.length ? { untraced } : {}),
+    ...(legacy.length ? { legacy } : {}),
+    ...(unknownCriterion.length ? { unknown_criterion: unknownCriterion } : {}),
+    ...(contextIssues.length ? { context_issues: contextIssues } : {}),
+    // `criteria === covered + uncovered` holds by construction, and it is what
+    // legacy phases are held OUT of these counts to preserve - the same pinned
+    // identity `audit`'s `total = traced + broken + deferred` carries above.
+    // `uncovered` is the count; `breaks` is the subset of it whose phase box is
+    // checked, which is why the two can differ mid-cycle.
+    counts: {
+      criteria: nCriteria,
+      covered: nCovered,
+      uncovered: nUncovered,
+      untraced: untraced.length,
+      phases: phases.length,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // plan-overlap - the parallel-safety invariant as arithmetic. Intersects the
 // declared file lists of a phase's plans pairwise; cad-execute's choose_path
 // requires empty overlaps before dispatching plans concurrently. Overlaps
@@ -1198,6 +1333,7 @@ const COMMANDS = {
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
+  'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so

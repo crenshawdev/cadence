@@ -96,7 +96,7 @@ pass happened to run.
 **Requirements:** ACR-01
 **Success Criteria:**
 1. CONTEXT acceptance criteria carry ids that survive `/cad-phase` insert and remove, pinned by a renumber test. An id that renumbers under the user is worse than none.
-2. `/cad-audit` FAILs on a criterion with no UAT item, naming the id, verified against the v1.4.0 phase-1 case rebuilt as a fixture - the round-1 checklist that dropped AC4 and AC5.
+2. `/cad-audit` FAILs on a criterion with no UAT item, naming the id, verified against a fixture synthesized from this cycle's phase-1 CONTEXT+UAT pair with two items removed - real prose, synthetic defect (D-15: the v1.4.0 case this line first named was verified not to exist).
 3. A UAT item tracing to no criterion is reported unless it is marked verifier-added.
 4. The grammar is written down in `references/`, with one test row per out-of-grammar shape, the same discipline the four `v1.4.0` grammars follow.
 

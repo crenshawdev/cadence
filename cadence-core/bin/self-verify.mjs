@@ -68,6 +68,7 @@ const CONTRACTS = {
     'uat merge': ['--phase'],
     'uat status': ['--phase'],
     audit: [],
+    'criteria-coverage': [],
     'plan-overlap': ['--phase'],
     'seed-reqs': ['--phase'],
     recall: [],
