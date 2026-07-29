@@ -86,31 +86,36 @@ executor's own merge/rebase/fetch.
 
 **Routing (which model + which agent file).** Before every dispatch, resolve the
 role through the routing seam - never hardcode a model, never dispatch a role at
-the session default when a profile is set:
+the session default when the project has stated its stakes:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_name> \
-  [--attempt <N>] [--files <N>] [--ambiguity <0..1>]
+  [--attempt <N>]
 ```
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
-  run failed - that is the signal `auto` uses to escalate. Pass `--files` /
-  `--ambiguity` when you have them (auto tier bump); omit otherwise.
+  run failed: the re-dispatch swaps to the role's `escalate_to` rung file. That
+  happens at EVERY stakes level, and `model.escalate_on_failure: false` is the
+  off switch.
 - Use the returned `agent` (may be a rung file other than the base) and `model` in the
   dispatch. `escalated`/`reason` are for logging why.
 - `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
   no `model` override (session default). Routing never blocks a spawn.
-- Fixed profiles (`fast`/`balanced`/`quality`) never escalate - explicit pick
-  wins. Only `model.profile: auto` reacts to `--attempt`/signals.
+- The stakes level selects the model matrix column and never reacts to
+  `--attempt` by itself - a retry climbs the rung ladder, not the matrix.
 - **Per-role pin.** `model.overrides` maps one role to one model alias
-  (`opus`/`sonnet`/`haiku`/`fable`) and wins over the whole profile/tier matrix,
-  including an `auto` escalation. The resolver reports `pinned: true` and names
+  (`opus`/`sonnet`/`haiku`/`fable`) and wins over the whole stakes/tier matrix.
+  The resolver reports `pinned: true` and names
   the swap in `reason`; effort is untouched, so a pinned role still gets its
-  escalated rung file. An unrecognized alias returns a `warning` and the
+  escalated rung file. An unrecognized alias adds a `warnings` entry and the
   routed model stands - a typo must not silently redirect the spend. `fable` is
-  reachable ONLY this way: it sits on no profile rung, because placing it on the
-  capability ladder would assert a ranking against the others that is not
-  established. Pinning it is the user's assertion to make, not the table's.
+  reachable ONLY this way, and not on any ranking claim: it requires 30-day data
+  retention, so a zero-data-retention org gets a hard `400` on every request;
+  its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
+  own git rails, secrets handling and shell tokenizer; and its multi-minute
+  turns press against `review.request_timeout_ms` inside the host's Bash
+  ceiling. Pinning it is the user's assertion to make about their own org, not
+  the table's.
 - **Tell the user when a pin fires.** A dispatch is approved through a UI that
   generally shows the agent name and not the model, so a pinned dispatch looks
   identical to a routed one at the moment of approval. When `pinned` is true,

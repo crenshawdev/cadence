@@ -144,6 +144,11 @@ auth/authz/sessions - DB schema/migrations - money/billing/pricing -
 concurrency/async/locking - destructive ops (deletes, bulk updates, drops) -
 secrets/crypto/keys - public API/wire contracts - untrusted-input parsing.
 
+This list is also the operative definition of the `critical` stakes value: a
+diff touching one of these surfaces is a break that does not come back as a bug
+report. What is true TODAY is only that the list fires this review trigger -
+nothing here reads the configured stakes level, and nothing here raises it.
+
 **Pre-filter before escalating (avoid a blocking panel on a non-risk).**
 A heuristic match is dropped - it does NOT fire the trigger - when the match
 is provably harmless:
