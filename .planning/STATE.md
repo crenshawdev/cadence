@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 6 (The stakes axis)
-Status: phase complete
-Next: /cad-context 3 (The bundle cell)
+Phase: 3 of 6 (The bundle cell)
+Status: context gathered
+Next: /cad-plan 3
 Updated: 2026-07-29
