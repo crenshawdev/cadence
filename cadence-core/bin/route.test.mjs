@@ -3,11 +3,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, mkdirSync, chmodSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RUNG_FILES, rungFile, rungFiles } from './lib/rung-agent.mjs';
+import { renderCursor } from './lib/planning-files.mjs';
 
 const ROUTE = join(dirname(fileURLToPath(import.meta.url)), 'route.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-route-'));
@@ -40,10 +41,12 @@ function rawCfg(body, name) {
 }
 
 // resolve() defaults to an isolated (missing) global layer; pass opts.global to
-// point CADENCE_GLOBAL_CONFIG at a real global file for merge tests.
+// point CADENCE_GLOBAL_CONFIG at a real global file for merge tests, and
+// opts.table to inject a route table through CADENCE_ROUTE_TABLE.
 function resolve(role, file, extra = [], opts = {}) {
   const args = ['resolve', '--role', role, ...(file ? ['--file', file] : []), ...extra];
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
+  if (opts.table) env.CADENCE_ROUTE_TABLE = opts.table;
   try {
     return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
   } catch (e) {
@@ -554,4 +557,172 @@ test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no
   const r = JSON.parse(lines[0]);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-table');
+});
+
+// --- the computed risk floor (STK-03) ----------------------------------------
+
+// Every floor fixture gets its OWN mkdtempSync directory, with its config
+// written INSIDE it. The planning root is dirname(--file), so a fixture dropping
+// a STATE.md or a phases/<N>/PLAN.md into the shared `dir` above would put every
+// other row in this file - including all 18 `cell <stakes>/<role>` cases -
+// behind a cursor pointing at an auth-declaring PLAN, resolving them `critical`
+// and failing assertions that have nothing to do with this phase.
+//
+// Every row also passes CADENCE_GLOBAL_CONFIG at the NO_GLOBAL path (via the
+// resolve() helper): this machine's real user-global layer sets
+// review.triggers.phase_diff.gate, so a non-hermetic row's warning-count
+// assertion would read a correct tree as a failure.
+
+/** A PLAN.md whose frontmatter `files:` declares exactly these paths. */
+const planText = (files) =>
+  `---\nphase: 9\nplan: 1\nrequirements:\n  - STK-03\nfiles:\n${
+    files.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`;
+
+/**
+ * A fresh planning root per call: `<root>/config.json` (the --file), an optional
+ * `<root>/phases/<phase>/PLAN.md` declaring `files`, and an optional
+ * `<root>/STATE.md` cursor. Returns the config path.
+ * @param {string[]|null} files null = create no PLAN file at all
+ */
+function planningRoot(files, { phase = 9, cursor = null, config = { stakes: 'solo' },
+  emptyDir = false, text = null } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-route-floor-'));
+  if (files || emptyDir) {
+    const pdir = join(root, 'phases', String(phase));
+    mkdirSync(pdir, { recursive: true });
+    if (files) writeFileSync(join(pdir, 'PLAN.md'), text ?? planText(files));
+  }
+  if (cursor !== null) {
+    writeFileSync(join(root, 'STATE.md'), renderCursor({
+      phase: cursor, total: 9, name: 'fixture', status: 'planned',
+      next: '/cad-execute', updated: '2026-07-29',
+    }));
+  }
+  writeFileSync(join(root, 'config.json'), JSON.stringify(config));
+  return join(root, 'config.json');
+}
+
+const floorEntries = (r) => (r.reason || []).filter((x) => /^risk floor:/.test(x));
+
+test('a solo phase whose PLAN declares an auth path resolves at the critical cell', () => {
+  const file = planningRoot(['README.md', 'src/auth/session.rs']);
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');   // raised off a solo baseline
+  assert.equal(r.model, 'opus');        // ...and every knob comes from that row
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-executor-xhigh');
+  assert.equal(r.verify, 'on');
+  assert.equal(r.review.diff, 'blocking');
+  const floor = floorEntries(r);
+  assert.equal(floor.length, 1, JSON.stringify(r.reason));
+  assert.match(floor[0], /auth/);            // the surface
+  assert.match(floor[0], /session\.rs/);     // the path that matched
+  assert.match(floor[0], /pattern "auth"/);  // the pattern that matched
+  assert.match(floor[0], /solo -> critical/); // the baseline is still visible
+});
+
+test('the cursor fallback returns a bundle deep-equal to the --phase one (AC1)', () => {
+  const files = ['README.md', 'src/auth/session.rs'];
+  const explicit = resolve('cad-executor', planningRoot(files), ['--phase', '9']);
+  const viaCursor = resolve('cad-executor', planningRoot(files, { cursor: 9 }));
+  assert.equal(viaCursor.stakes, 'critical');
+  assert.deepEqual(viaCursor, explicit); // nothing names HOW the phase was found
+});
+
+test('a PLAN matching no surface row resolves at the baseline with no floor entry', () => {
+  const r = resolve('cad-executor', planningRoot(['README.md', 'src/main.rs']), ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(floorEntries(r), []);
+  assert.equal(r.warnings, undefined);
+});
+
+test('a phase directory with no PLAN file is the baseline, ok:true, and silent', () => {
+  const r = resolve('cad-executor', planningRoot(null, { emptyDir: true }), ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(floorEntries(r), []);
+  assert.equal(r.warnings, undefined); // the pre-plan state is not news
+});
+
+test('neither --phase nor a cursor is the baseline, ok:true, and silent', () => {
+  const r = resolve('cad-executor', planningRoot(['src/auth/session.rs']));
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(floorEntries(r), []);
+  assert.equal(r.warnings, undefined);
+});
+
+test('an unreadable PLAN is the baseline plus exactly one warning naming the file', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0
+    ? 'root bypasses mode bits' : false,
+}, () => {
+  const file = planningRoot(['src/auth/session.rs']);
+  const plan = join(dirname(file), 'phases', '9', 'PLAN.md');
+  chmodSync(plan, 0o000);
+  try {
+    const r = resolve('cad-executor', file, ['--phase', '9']);
+    assert.equal(r.ok, true);          // never {ok:false}: that routes LOWER
+    assert.equal(r.stakes, 'solo');
+    assert.deepEqual(floorEntries(r), []);
+    assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+    assert.match(r.warnings[0], /PLAN\.md/);
+  } finally {
+    chmodSync(plan, 0o644);
+  }
+});
+
+test('a --phase that is not a phase number does NOT fall through to the cursor', () => {
+  // The row that pins the no-fallthrough rule: answering a typo with a floor
+  // computed from a DIFFERENT phase is worse than the value the user typed.
+  const file = planningRoot(['src/auth/session.rs'], { cursor: 9 });
+  const r = resolve('cad-executor', file, ['--phase', 'notanumber']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual(floorEntries(r), []);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /notanumber/);
+  // ...and the same fixture DOES floor when the phase is named correctly.
+  assert.equal(resolve('cad-executor', file, ['--phase', '9']).stakes, 'critical');
+});
+
+test('D-09: cad-planner and cad-assumptions-analyzer resolve at the baseline', () => {
+  // Passing --phase explicitly, so the row proves the ROLE arm rather than an
+  // absent phase: the cursor lags /cad-context, so "no PLAN yet" alone would
+  // floor the analyzer off the PREVIOUS phase's file list.
+  const file = planningRoot(['src/auth/session.rs']);
+  for (const role of ['cad-planner', 'cad-assumptions-analyzer']) {
+    const r = resolve(role, file, ['--phase', '9']);
+    assert.equal(r.ok, true, role);
+    assert.equal(r.stakes, 'solo', role);
+    assert.deepEqual(floorEntries(r), [], role);
+  }
+  // the same fixture floors cad-executor, so the row is failing-capable
+  assert.equal(resolve('cad-executor', file, ['--phase', '9']).stakes, 'critical');
+});
+
+test('a floor BELOW the baseline raises nothing and caps nothing (AC3)', () => {
+  // The only way to exercise raiseTo's cap-never branch: every shipped row
+  // floors to the top rung (D-03), so the sub-top floor is injected.
+  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
+  t.surfaces.auth.floor = 'shipped';
+  const tablePath = join(dir, 'floor-shipped-table.json');
+  writeFileSync(tablePath, JSON.stringify(t));
+  const file = planningRoot(['src/auth/session.rs'], { config: { stakes: 'critical' } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { table: tablePath });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');   // held, never capped down to shipped
+  assert.equal(r.model, 'opus');
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.verify, 'on');
+  assert.equal(r.review.phase_diff, 'adjudicated');
+  const floor = floorEntries(r);
+  assert.equal(floor.length, 1, JSON.stringify(r.reason));
+  assert.match(floor[0], /already at or above it/);
+});
+
+test('a decimal phase addresses its own directory', () => {
+  const file = planningRoot(['src/auth/session.rs'], { phase: '2.1' });
+  assert.equal(resolve('cad-executor', file, ['--phase', '2.1']).stakes, 'critical');
 });

@@ -99,7 +99,7 @@ const CONTRACTS = {
   },
   'route.mjs': {
     '*': [],
-    resolve: ['--role', '--attempt', '--file'],
+    resolve: ['--role', '--attempt', '--file', '--phase'],
     table: [],
   },
   'worktree-base.mjs': {
