@@ -8,6 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 
@@ -2166,6 +2167,59 @@ test('renumber insert at total+1 appends: nothing shifts, only the slot opens', 
   const cursor = run(['cursor', 'get'], dir);
   assert.equal(cursor.phase, 2); // below the insertion point - untouched
   assert.equal(cursor.total, 4); // but the denominator grew
+});
+
+// --- renumber vs CONTEXT acceptance-criteria ids: a NON-event ----------------
+// What these pin is that NOTHING happens. cmdRenumber's computed edits are
+// ROADMAP/REQUIREMENTS/STATE only, and phase dirs move whole via gitMv with
+// their contents never rewritten - so `shiftPhaseTokens` never reaches a
+// CONTEXT.md, and a `Phase 2` token INSIDE the fixture proves it (drop that
+// token and the byte assertion passes vacuously). The only way to fail these is
+// for a criterion id to embed the phase number, which is exactly what D-02
+// forbids: an id that renumbers under the user is worse than no id at all.
+//
+// Falsification is a mutation of the CODE, not the fixture: add
+// `phases/<n>/CONTEXT.md` to the files cmdRenumber shifts tokens over and both
+// tests fail. "Rewrite one fixture id to P2-AC1 and watch it fail" proves
+// nothing - it moves the expected and the actual bytes together.
+
+const CRITERIA_CONTEXT = '# Phase 2: Two - Context\n\n' +
+  'Gathered: 2026-01-01\nFeeds: /cad-plan 2\n\n' +
+  '## Scope boundary\n\nIn: the work Phase 2 delivers\n\n' +
+  '## Acceptance criteria\n\n' +
+  '- [ ] AC1: the first observable behavior\n' +
+  '- [ ] AC2: the second observable behavior\n' +
+  '- [ ] AC3: the third observable behavior\n';
+
+/** renumberTree plus a real criteria section (and a `Phase 2` token) in phase 2. */
+function criteriaRenumberTree() {
+  const dir = renumberTree();
+  writeFileSync(join(dir, 'phases', '2', 'CONTEXT.md'), CRITERIA_CONTEXT);
+  return dir;
+}
+
+test('renumber insert: an existing phase CONTEXT keeps its AC ids byte-identical (D-02)', () => {
+  const dir = criteriaRenumberTree();
+  const r = run(['renumber', 'insert', '--at', '2'], dir);
+  assert.equal(r.ok, true);
+  // phases/2 moved to phases/3; its bytes did not change, `Phase 2` included.
+  const moved = readFileSync(join(dir, 'phases', '3', 'CONTEXT.md'), 'utf8');
+  assert.equal(moved, CRITERIA_CONTEXT);
+  // Hardcoded, NOT re-derived from the same file, so the assertion still fails
+  // if the grammar itself is deleted.
+  assert.deepEqual(classifyAcceptanceCriteria(moved).criteria.map((c) => c.id),
+    ['AC1', 'AC2', 'AC3']);
+});
+
+test('renumber remove: the shift DOWN leaves an existing phase CONTEXT byte-identical too', () => {
+  const dir = criteriaRenumberTree();
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  // phases/2 moved down to phases/1; same bytes, same ids.
+  const moved = readFileSync(join(dir, 'phases', '1', 'CONTEXT.md'), 'utf8');
+  assert.equal(moved, CRITERIA_CONTEXT);
+  assert.deepEqual(classifyAcceptanceCriteria(moved).criteria.map((c) => c.id),
+    ['AC1', 'AC2', 'AC3']);
 });
 
 test('renumber insert: integer dirs shift even when a decimal phase is highest (#36)', () => {
