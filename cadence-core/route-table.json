@@ -12,12 +12,12 @@
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
 
   "roles": {
-    "cad-planner":              { "tier": "heavy",    "base_effort": "high",  "rungs": ["high", "xhigh"],            "escalate_to": "high" },
-    "cad-assumptions-analyzer": { "tier": "heavy",    "base_effort": "xhigh", "rungs": ["high", "xhigh"],            "escalate_to": "xhigh" },
-    "cad-verifier":             { "tier": "heavy",    "base_effort": "high",  "rungs": ["high", "xhigh"],            "escalate_to": "high" },
-    "cad-reviewer":             { "tier": "heavy",    "base_effort": "high",  "rungs": ["medium", "high", "xhigh"],  "escalate_to": "high" },
-    "cad-executor":             { "tier": "standard", "base_effort": "high",  "rungs": ["high", "xhigh"],            "escalate_to": "high" },
-    "cad-plan-checker":         { "tier": "light",    "base_effort": "low",   "rungs": ["low", "high"],              "escalate_to": "high" }
+    "cad-planner":              { "tier": "heavy",    "base_effort": "high",  "rungs": ["high", "xhigh", "max"],            "escalate_to": "high" },
+    "cad-assumptions-analyzer": { "tier": "heavy",    "base_effort": "xhigh", "rungs": ["high", "xhigh"],                   "escalate_to": "xhigh" },
+    "cad-verifier":             { "tier": "heavy",    "base_effort": "high",  "rungs": ["medium", "high", "xhigh", "max"],  "escalate_to": "high" },
+    "cad-reviewer":             { "tier": "heavy",    "base_effort": "high",  "rungs": ["medium", "high", "xhigh", "max"],  "escalate_to": "high" },
+    "cad-executor":             { "tier": "standard", "base_effort": "high",  "rungs": ["high", "xhigh"],                   "escalate_to": "high" },
+    "cad-plan-checker":         { "tier": "light",    "base_effort": "low",   "rungs": ["low", "medium", "high", "xhigh"],  "escalate_to": "high" }
   },
 
   "stakes": {

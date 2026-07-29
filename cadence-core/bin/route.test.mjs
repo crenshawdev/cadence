@@ -422,7 +422,7 @@ test('every rung the table can name has an agent file carrying exactly that effo
       `${role} rungAgents`,
     );
   }
-  assert.equal(byName.size, 13, `routable agent names: ${[...byName.keys()].join(', ')}`);
+  assert.equal(byName.size, 19, `routable agent names: ${[...byName.keys()].join(', ')}`);
   for (const [name, rung] of byName) {
     assert.ok(existsSync(join(AGENTS, `${name}.md`)), `agents/${name}.md must exist`);
     assert.equal(frontmatterEffort(name), rung, `${name} frontmatter effort`);
