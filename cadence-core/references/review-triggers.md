@@ -169,10 +169,21 @@ secrets/crypto/keys - public API/wire contracts - untrusted-input parsing.
 
 This list is also the operative definition of the `critical` stakes value: a
 diff touching one of these surfaces is a break that does not come back as a bug
-report. What is true TODAY is only that the list fires this review trigger -
-nothing here reads the configured stakes level, and nothing here raises it.
+report. A machine translation of it now lives in `cadence-core/route-table.json`
+as the `surfaces` block, where a path match against the phase's own PLAN
+`files:` list RAISES the resolved stakes level at dispatch time (see
+`references/seams.md` § Routing).
+
+So TWO detectors exist and neither replaces the other. The dispatch-time one is
+a path match: coarse, with no diff in hand, and it sets the stakes floor for the
+whole phase. This section's one is model judgment at commit time: it reads the
+actual diff and fires the trigger. A phase can be floored without this trigger
+firing, and this trigger can fire on a phase the floor never raised.
 
 **Pre-filter before escalating (avoid a blocking panel on a non-risk).**
+These two drops are judgments about diff CONTENT, so they apply to the
+COMMIT-TIME detection only - the dispatch-time floor has no diff to judge, and
+the per-surface override is its escape hatch instead.
 A heuristic match is dropped - it does NOT fire the trigger - when the match
 is provably harmless:
 

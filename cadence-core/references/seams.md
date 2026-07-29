@@ -91,7 +91,7 @@ the session default when the project has stated its stakes:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_name> \
-  [--attempt <N>]
+  [--attempt <N>] [--phase <N>]
 ```
 
 One resolve returns FOUR knobs, not a model: `model` and `effort` for this
@@ -99,6 +99,15 @@ dispatch, `review` (the whole trigger -> gate map for the level, which
 `references/review-triggers.md` step 1 reads), and `verify` (whether the
 deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
 dial, and effort alone cannot express "fire a blocking cross-model review".
+
+The stakes level a config layer set is a FLOOR, not the last word. The resolve
+reads the phase's declared PLAN `files:` list and raises the level to the floor
+of any risk surface those paths match, so the whole bundle comes from the raised
+row. The phase comes from `--phase <N>` or, when the flag is absent, from the
+`.planning/STATE.md` cursor - an existing call site keeps working untouched. The
+floor RAISES and never caps: a baseline already at or above it changes no knob.
+It never blocks either - no phase, no PLAN, an unreadable PLAN and a `--phase`
+that is not a phase number all resolve at the baseline with `ok:true`.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed: the re-dispatch climbs to the retry rung the SAME cell names, and
@@ -141,6 +150,15 @@ dial, and effort alone cannot express "fire a blocking cross-model review".
   say so on its own line before spawning - "dispatching cad-planner on fable
   (pinned, routing would have picked opus)". Burying it in a preamble does not
   count; the user cannot verify what the dialog does not show.
+- **Tell the user when the risk floor raises the level.** Same reasoning, same
+  scope: the approval dialog shows neither the level nor the reason, so a floored
+  dispatch looks identical to a routed one. When `reason` carries a `risk floor:`
+  entry that RAISED the level, say so on its own line before spawning -
+  "dispatching cad-executor at critical (risk floor: auth)". A floor the user
+  never sees is the resolved-then-dropped shape this release exists to close.
+  `risk.override.<surface>` is the way back down and it waives ONE surface: the
+  level drops to the baseline only when every detected surface is named, and the
+  waived names stay in `reason`.
 
 **Concurrent dispatch.** Independent dispatches over disjoint payloads (the
 per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of

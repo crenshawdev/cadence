@@ -93,6 +93,46 @@ configured.
   and a retry rung that sits BELOW the rung it started on - which no membership
   check can see and which would otherwise let a retry think less while
   reporting that it thought more.
+- **A computed risk floor: detection raises the stakes level by itself.** The
+  eight risk surfaces Cadence already recognized in prose are now declared data
+  - a `surfaces` block in `cadence-core/route-table.json`, each row a list of
+  path tokens and the level it floors to. `route.mjs resolve` reads the phase's
+  declared PLAN `files:` list, matches it against those rows, and raises the
+  level to the highest floor it hits, so all four knobs come from the raised
+  row through the one cell grid. It only ever raises: a baseline already at or
+  above the floor changes nothing and says so in `reason`.
+- **`route.mjs resolve --phase <N>`, with a cursor fallback.** The phase comes
+  from the flag, or from `.planning/STATE.md` when the flag is absent, so an
+  existing call site keeps working. Every unresolvable input - no phase, no
+  PLAN, an unreadable PLAN, a `--phase` that is not a phase number - resolves at
+  the baseline with `ok:true` and a warning where there is something to say. A
+  refusal would route a possibly-risky phase LOWER than its own baseline, so
+  there is none. `cad-planner` and `cad-assumptions-analyzer` are never floored:
+  they run before the phase they are about has a plan.
+- **`risk.override.<surface>`, the per-surface waiver.** One repo-scoped boolean
+  per surface. The level drops back to the baseline only when EVERY detected
+  surface is named, the waived names stay in `reason`, and a value that is not
+  strictly `true` waives nothing and says so. A misspelled surface is refused at
+  the write face with the accepted names listed, and the user-global layer is
+  refused outright: a waiver lowers a floor, and it lowers it for one repository.
+- **A `surfaces` walk in `self-verify`, both directions**, every problem naming
+  the offending row: a floor that is not a stakes level, a floor below the level
+  every shipped row is required to carry, a pattern list that is empty or holds
+  a token no path can ever produce, a surface with no `risk.override` key to
+  waive it, a `risk.override` key naming no surface row, and drift in either the
+  `stakes_order` or `gates` vocabulary the resolver reads by index.
+
+### Fixed
+
+- **A `review.triggers.<t>.gate` outside `off|advisory|blocking|adjudicated` no
+  longer reaches the bundle.** A value a config layer set used to win over the
+  level's gate without ever being checked, so `"blockign"` silently replaced
+  `critical`'s deliberately-blocking `risk_surface` gate - a one-character typo
+  disabling a review, on the axis the new risk floor rides on. An invalid or
+  non-string gate now loses to the level's gate and is named in `warnings`, the
+  same treatment an unknown model alias already got. A VALID gate that disagrees
+  still wins and still reports the disagreement: this is a validity check in
+  front of that precedence, not a change to it.
 
 ### Upgrading
 
