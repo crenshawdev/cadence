@@ -8,13 +8,13 @@ counts (`find`/`wc` over `agents/`, `skills/`, `gsd-core/workflows/`, `*.md`).
 
 ## The distance
 
-| Surface | GSD | Cadence | Retained |
+| Surface | GSD (d010ea1) | Cadence (2026-07-10) | Retained |
 |---|---|---|---|
 | **Documentary mass (words)** | **1,113,812** | **33,621** | **~3%** |
 | Agents | 34 | 7 | 21% |
 | Skills | 71 | 22 | 31% |
 | Workflows | 114 | 16 | 14% |
-| References | 86 | 8 | 9% |
+| References | 86 | 7 | 8% |
 | Commands | 71 | 0 (folded into skills) | — |
 | Capabilities | 46 | 0 | — |
 | `src/` code files | 163 (full TypeScript product) | 3 `.mjs` scripts | ~2% |
@@ -32,8 +32,9 @@ The shared skeleton, and the reason Cadence is recognizably GSD's descendant:
 
 ## What carried over, slimmed to the bone
 
-Cadence's 7 agents descend from ~6 GSD ancestors, but every one was slimmed ~80-90%
-and reconceived, not copied. The GSD originals were enormous:
+Cadence's 6 agent roles, materialized as 13 rung files, descend from ~6 GSD
+ancestors, but every one was slimmed ~80-90% and reconceived, not copied. The GSD
+originals were enormous:
 
 | GSD agent | size | Cadence descendant |
 |---|---|---|
