@@ -207,11 +207,12 @@ Handle the return:
     1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
        the issues (see spawn_planner) - a new spawn, never a resume of the prior
        run; the plan on disk preserves its grounding - with `--attempt 2` so the
-       routing seam escalates the re-dispatch to the role's `escalate_to` rung
-       file. Plans were written inline: apply
-       the fixes in the main context.
+       routing seam climbs the re-dispatch to the retry rung this level's
+       cad-planner cell names, and dispatches that rung's file. Plans were
+       written inline: apply the fixes in the main context.
     2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
-       (the routing seam escalates it to its `high` rung file).
+       (the seam climbs it to the retry rung its own cell names, and returns
+       the file for it - never a rung name this prose hardcodes).
     3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
        blockers and ask (ask-user seam): proceed to execution anyway, or stop
        and revise by hand. Never loop again.

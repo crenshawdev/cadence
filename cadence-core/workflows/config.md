@@ -74,11 +74,11 @@ selectable option and its `description`.
 | `granularity` `[repo]` | enum | How finely phases split into tasks (new-project phase count) | `fine`→8-12 phases · `standard`→5-8 · `coarse`→3-5 | standard |
 | **Model** |||||
 | `stakes` `[repo]` | enum | What does a break here cost? (routing asks this, not what a dispatch costs) | `solo`→nobody else runs this, a break costs only my time · `shipped`→other people run this, a break comes back as a bug report · `critical`→a break is not a bug report | shipped |
-| `model.escalate_on_failure` | bool | Re-dispatch a failed attempt at the role's harder rung | `true`→retry at the role's `escalate_to` rung file · `false`→leave the retry at its base rung | true |
+| `model.escalate_on_failure` | bool | Re-dispatch a failed attempt at the role's harder rung | `true`→retry at the rung the role's own cell names · `false`→hold the retry at the rung it started on | true |
 | **Workflow** |||||
 | `workflow.research` | bool | Run a research pass before planning | `true`→scout first · `false`→skip | false |
 | `workflow.plan_check` | bool | Gate plans through the checker before code | `true`→verify plan first · `false`→trust it | true |
-| `workflow.verifier` | bool | Goal-backward verification after a phase | `true`→check goal was met · `false`→skip | true |
+| `workflow.verifier` | bool | Off switch for goal-backward verification after a phase | `true`→the stakes level decides (`--deep` forces) · `false`→always skip | true |
 | `workflow.skip_discuss` | bool | Skip the pre-plan discussion step entirely | `true`→straight to plan · `false`→discuss | false |
 | `workflow.subagent_timeout` | int | ms before a subagent is killed | e.g. `300000` (5 min) | 300000 |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
