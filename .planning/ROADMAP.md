@@ -32,7 +32,7 @@ and each release tag are their archive.
 ## Phases
 
 - [ ] **Phase 1: The rung ladder** - materialize each contract skill at the rungs it needs, retiring the runtime-read shim
-- [ ] **Phase 2: The stakes axis** - rename the enum to the question users actually have, with no back-compat alias
+- [x] **Phase 2: The stakes axis** - rename the enum to the question users actually have, with no back-compat alias
 - [ ] **Phase 3: The bundle cell** - a routing cell resolves model, effort, review and verify, computed from one small table
 - [ ] **Phase 4: The computed floor** - the risk surface Cadence already detects raises a phase's rung by itself
 - [ ] **Phase 5: Acceptance-criteria ids** - prove every CONTEXT criterion reached the UAT checklist, in both directions

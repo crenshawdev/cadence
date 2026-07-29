@@ -106,7 +106,7 @@ section only, bounded at the next `## ` heading.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | RNG-01 | Phase 1 | Pending |
-| STK-01 | Phase 2 | Pending |
+| STK-01 | Phase 2 | Complete |
 
 Empty between milestones. `v1.4.0`'s five rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

@@ -1,6 +1,6 @@
 # State
 
 Phase: 2 of 6 (The stakes axis)
-Status: executed
-Next: /cad-verify 2
+Status: phase complete
+Next: /cad-context 3 (The bundle cell)
 Updated: 2026-07-29
