@@ -1,12 +1,11 @@
 {
   "_meta": {
-    "note": "Data table for bin/route.mjs (model routing). Editable: change the tier of a role or the model an (profile, tier) pair resolves to without touching code. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per agent FILE in frontmatter, so varying it means varying the file: escalating a role swaps to the rung file named by its `escalate_to`.",
-    "tiers": "light < standard < heavy (order used for difficulty bumps and clamping)",
+    "note": "Data table for bin/route.mjs (model routing). Editable: change the tier of a role or the model a (stakes, tier) pair resolves to without touching code. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per agent FILE in frontmatter, so varying it means varying the file: escalating a role swaps to the rung file named by its `escalate_to`.",
+    "tiers": "light, standard, heavy - the role-tier vocabulary the `roles` block draws from and the column each stakes row is keyed by. No code orders this array today; it states the accepted names, not a ladder anything climbs.",
     "rungs": "A role's reachable rungs are declared per role in its `rungs` array, not as a rung_order x roles cross product - every rung listed costs an agent file, and every registered agent's name/description/tools ride in the main session prompt. `base_effort` lives at the unsuffixed agents/<role>.md; every other rung lives at agents/<role>-<rung>.md, and self-verify fails if one is missing. `base_effort` and `escalate_to` must both be members of the role's own `rungs`.",
-    "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. `fable` is deliberately absent from the profile matrix: the profiles are a capability ladder, and placing fable on a rung would assert a ranking against opus/sonnet/haiku that is not established. It is reachable only by explicit pin, which is a user assertion, not ours."
+    "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. `fable` is deliberately absent from the stakes matrix, and not because of any ranking claim: it requires 30-day data retention and returns 400 invalid_request_error for every zero-data-retention org, which is other people's orgs since Cadence ships as a public plugin; its safety classifiers return a refusal stop reason on cyber-adjacent content, and Cadence reviews its own git rails, secrets handling and shell tokenizer; and its multi-minute turns press against the configured provider request timeout inside the host's Bash ceiling. It is reachable only by explicit pin, which is a user assertion about their own org, not ours."
   },
   "tier_order": ["light", "standard", "heavy"],
-  "profile_order": ["fast", "balanced", "quality"],
   "rung_order": ["low", "medium", "high", "xhigh", "max"],
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
 
@@ -19,18 +18,9 @@
     "cad-plan-checker":         { "tier": "light",    "base_effort": "low",   "rungs": ["low", "high"],              "escalate_to": "high" }
   },
 
-  "profiles": {
-    "fast":     { "light": "haiku",  "standard": "haiku",  "heavy": "sonnet" },
-    "balanced": { "light": "haiku",  "standard": "sonnet", "heavy": "opus" },
-    "quality":  { "light": "sonnet", "standard": "opus",   "heavy": "opus" }
-  },
-
-  "auto": {
-    "base_profile": "balanced",
-    "signals": {
-      "files": { "threshold": 15, "note": "phase/plan touches >= this many files -> +1 tier" },
-      "ambiguity": { "threshold": 0.6, "note": "0-1 ambiguity score >= this -> +1 tier" }
-    },
-    "max_tier_bump": 1
+  "stakes": {
+    "solo":     { "light": "haiku",  "standard": "haiku",  "heavy": "sonnet" },
+    "shipped":  { "light": "haiku",  "standard": "sonnet", "heavy": "opus" },
+    "critical": { "light": "sonnet", "standard": "opus",   "heavy": "opus" }
   }
 }

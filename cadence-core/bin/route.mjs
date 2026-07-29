@@ -1,32 +1,36 @@
 #!/usr/bin/env node
 // @ts-check
-// route.mjs - zero-dep model-routing resolver. Given an agent role (and, for
-// `auto`, difficulty signals + attempt number), resolve which model alias and
-// which agent file the spawn-agent seam should dispatch. The route-table.json
-// beside ../route-table.json is editable data (role tiers + profile->model
-// matrix); this file is the logic. DESIGN "model routing" (§ model routing).
+// route.mjs - zero-dep model-routing resolver. Given an agent role and an
+// attempt number, resolve which model alias and which agent file the
+// spawn-agent seam should dispatch. The route-table.json beside
+// ../route-table.json is editable data (role tiers + stakes->model matrix);
+// this file is the logic. DESIGN "model routing" (§ model routing).
+//
+// The question the table asks is what a break COSTS, not what a dispatch
+// costs: a role's tier picks the column, the project's stakes picks the row.
 //
 // Never blocks the spine: on any problem it returns {ok:false,...} and the
 // caller dispatches the base agent at the session-default model (no override).
 //
 // Subcommands (one JSON line on stdout):
-//   resolve --role <name> [--attempt N] [--files N] [--ambiguity 0..1] [--file <config>]
+//   resolve --role <name> [--attempt N] [--file <config>]
 //   table                                  dump the routing table
 //
 // Config is layered: a global file (see GLOBAL_CONFIG below) provides defaults,
 // the per-repo --file (default .planning/config.json) overrides it, and the
 // built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
 // Config keys read:
-//   model.profile          fast | balanced | quality | auto
-//   model.auto.ceiling     highest profile auto may escalate to
-//   model.auto.escalate_on_failure (bool), model.auto.max_escalations (int)
-//   model.overrides.<role> pin one role to a model alias, bypassing the matrix
+//   stakes                     solo | shipped | critical
+//   model.escalate_on_failure  re-dispatch a failed attempt at the role's
+//                              `escalate_to` rung (bool, every stakes level)
+//   model.overrides.<role>     pin one role to a model alias, bypassing the matrix
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { agentForRung } from './lib/rung-agent.mjs';
+import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { requireInt } from './lib/require-int.mjs';
 
@@ -40,45 +44,25 @@ const TABLE_PATH = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-ta
 const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
-const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
+const DEFAULTS = { stakes: 'shipped', escalate_on_failure: true };
 
 // Resolve the effective config from global + repo layers (repo wins, via the
 // shared merge lib), falling back to DEFAULTS for anything unset. _source
-// names the layers that applied.
+// names the layers that applied, `stakesSet` says whether any layer actually
+// carried the key (a default must never be reported as a configured value),
+// and _warnings carries what the read found wrong but did not block on: a
+// layer that failed to parse, and any key v2.0.0 retired.
 function readConfig(file) {
-  const { config: c, source } = mergeLayers(file);
+  const { config: c, source, warnings } = mergeLayers(file);
   const m = c.model || {};
-  const a = m.auto || {};
   return {
-    profile: m.profile ?? DEFAULTS.profile,
-    ceiling: a.ceiling ?? DEFAULTS.ceiling,
-    escalate_on_failure: a.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
-    max_escalations: a.max_escalations ?? DEFAULTS.max_escalations,
+    stakes: c.stakes ?? DEFAULTS.stakes,
+    stakesSet: c.stakes !== undefined && c.stakes !== null,
+    escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
     _source: source,
+    _warnings: [...(warnings || []), ...retiredKeysIn(c)],
   };
-}
-
-/** @param {number} i @param {number} lo @param {number} hi */
-const clampIdx = (i, lo, hi) => Math.max(lo, Math.min(hi, i));
-
-/** @param {string} tier @param {number} n */
-function bumpTier(tier, n) {
-  const order = TABLE.tier_order;
-  return order[clampIdx(order.indexOf(tier) + n, 0, order.length - 1)];
-}
-
-// Step from base profile UP toward ceiling by `steps`, never overshooting.
-// Escalation only ever raises: a ceiling at or below the base profile
-// disables it entirely (re-running a FAILED attempt on a weaker model would
-// be a demotion, not an escalation). Unknown names also resolve at base.
-/** @param {string} base @param {string} ceiling @param {number} steps */
-function stepProfile(base, ceiling, steps) {
-  const order = TABLE.profile_order;
-  const b = order.indexOf(base);
-  const c = order.indexOf(ceiling);
-  if (b < 0 || c <= b) return base;
-  return order[clampIdx(b + steps, b, c)];
 }
 
 function resolve(opts) {
@@ -86,40 +70,28 @@ function resolve(opts) {
   if (!role) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${Object.keys(TABLE.roles).join(', ')}` }); return; }
 
   const cfg = readConfig(opts.file);
-  const reason = [`config:${cfg._source}`];
-  let profile = cfg.profile;
-  let tier = role.tier;
+  // An honest first reason: `config:<layers>` is a claim that a layer supplied
+  // the value, so a default that no layer carried says so instead. Reporting
+  // `config:repo` for a value the repo file never held is how a retired key
+  // reads as a configured one.
+  const reason = [cfg.stakesSet
+    ? `config:${cfg._source}`
+    : `stakes default "${cfg.stakes}" (unset in layers: ${cfg._source})`];
+  const tier = role.tier;
   let agent = opts.role;
   let effort = role.base_effort;
   let escalated = false;
 
-  if (profile === 'auto') {
-    const A = TABLE.auto;
-    // difficulty -> tier bump (capped)
-    let bumps = 0;
-    const sig = [];
-    if (opts.files != null && opts.files >= A.signals.files.threshold) { bumps++; sig.push(`files>=${A.signals.files.threshold}`); }
-    if (opts.ambiguity != null && opts.ambiguity >= A.signals.ambiguity.threshold) { bumps++; sig.push(`ambiguity>=${A.signals.ambiguity.threshold}`); }
-    bumps = Math.min(bumps, A.max_tier_bump);
-    if (bumps > 0) { tier = bumpTier(role.tier, bumps); escalated = true; reason.push(`tier +${bumps} (${sig.join(', ')})`); }
-    // failure -> profile escalation toward ceiling (bounded by max_escalations)
-    const steps = cfg.escalate_on_failure ? Math.min(Math.max((opts.attempt || 1) - 1, 0), cfg.max_escalations) : 0;
-    const resolveProfile = stepProfile(A.base_profile, cfg.ceiling, steps);
-    if (steps > 0) {
-      // `escalated` reflects what actually changed: a ceiling at/below base
-      // holds the profile (stepProfile), but a failure still climbs the rung
-      // ladder - same model spend, harder reasoning.
-      if (resolveProfile !== A.base_profile) {
-        escalated = true;
-        reason.push(`profile ${A.base_profile}->${resolveProfile} (attempt ${opts.attempt}, ceiling ${cfg.ceiling}, max ${cfg.max_escalations})`);
-      } else {
-        reason.push(`profile held at ${A.base_profile} (ceiling ${cfg.ceiling} at/below base - escalation never demotes)`);
-      }
-      // Rung escalation: `escalate_to` names the target rung, and the agent
-      // FILE for that rung is what carries the effort (route.mjs reports
-      // effort, it cannot set it - seams.md). Fail-open by design: rung
-      // membership and file existence are self-verify's job, so a malformed
-      // spec here still dispatches rather than blocking the spine.
+  // Escalation is unconditional: a failed attempt re-dispatches at the role's
+  // `escalate_to` rung at EVERY stakes level. Gating it behind a routing mode
+  // is what left the rung ladder unreachable on a default install.
+  if ((opts.attempt || 1) > 1) {
+    if (cfg.escalate_on_failure) {
+      // `escalate_to` names the target rung, and the agent FILE for that rung
+      // is what carries the effort (route.mjs reports effort, it cannot set it
+      // - seams.md). Fail-open by design: rung membership and file existence
+      // are self-verify's job, so a malformed spec here still dispatches
+      // rather than blocking the spine.
       const target = role.escalate_to;
       if (target && target !== effort) {
         escalated = true;
@@ -127,45 +99,47 @@ function resolve(opts) {
         reason.push(`rung ${effort}->${target} (${agent})`);
         effort = target;
       } else {
+        // Honest no-op: a role whose escalate_to IS its base rung has nothing
+        // to swap to, and saying so beats reporting an escalation that never
+        // happened.
         reason.push(`rung held at ${effort} (escalate_to ${target || 'unset'})`);
       }
+    } else {
+      reason.push(`rung held at ${effort} (model.escalate_on_failure: false)`);
     }
-    profile = resolveProfile;
-    if (!escalated) reason.push(`auto base ${A.base_profile}`);
-  } else {
-    reason.push('explicit profile (no escalation; user pick wins)');
   }
 
-  const table = TABLE.profiles[profile];
-  if (!table || !table[tier]) { out({ ok: false, reason: 'unresolved', role: opts.role, profile, tier }); return; }
+  const table = TABLE.stakes && TABLE.stakes[cfg.stakes];
+  if (!table || !table[tier]) { out({ ok: false, reason: 'unresolved', role: opts.role, stakes: cfg.stakes, tier }); return; }
 
   // A per-role pin is an explicit user assertion, so it wins over the whole
-  // profile/tier matrix - including an `auto` escalation, which may still have
-  // raised the tier above. What it does NOT touch is effort: that is fixed per
+  // stakes/tier matrix. What it does NOT touch is effort: that is fixed per
   // agent file in frontmatter, so a pinned role keeps its rung escalation
   // (same reasoning depth, user's model). An unknown alias is reported as a
   // warning and the routed model stands - a typo must not silently redirect
   // the spend, nor block the spawn.
   let model = table[tier];
   let pinned = false;
-  let warning;
+  const warnings = [...cfg._warnings];
   const pin = cfg.overrides[opts.role];
   if (pin != null) {
     if (TABLE.model_aliases.includes(pin)) {
       if (pin === model) {
         reason.push(`override ${opts.role}=${pin} (already the routed model)`);
       } else {
-        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over ${profile}/${tier})`);
+        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over ${cfg.stakes}/${tier})`);
         model = pin;
       }
       pinned = true;
     } else {
-      warning = `model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`;
+      warnings.push(`model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`);
       reason.push('override ignored (unknown alias)');
     }
   }
 
-  out({ ok: true, role: opts.role, agent, model, effort, tier, profile, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warning ? { warning } : {}) });
+  // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
+  // retired key and an unknown pin alias can all be true at once.
+  out({ ok: true, role: opts.role, agent, model, effort, tier, stakes: cfg.stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
@@ -181,8 +155,6 @@ function parseArgs(a) {
       if (parsed.ok) o.attempt = parsed.value;
       else { o.attempt = raw; o.attemptInvalid = true; }
     }
-    else if (k === '--files') o.files = parseInt(a[++i], 10);
-    else if (k === '--ambiguity') o.ambiguity = parseFloat(a[++i]);
     else if (k === '--file') o.file = a[++i];
   }
   return o;
@@ -198,7 +170,7 @@ try {
   const cmd = argv[0];
   if (cmd === 'resolve') {
     const o = parseArgs(argv.slice(1));
-    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--files N] [--ambiguity 0..1]' }); }
+    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--file <config>]' }); }
     else if (o.attemptInvalid) { out({ ok: false, reason: 'usage', detail: 'resolve --attempt must be an integer' }); }
     else resolve(o);
   } else if (cmd === 'table') {
