@@ -76,6 +76,83 @@ test('each stakes level resolves the matrix per role tier', () => {
   assert.deepEqual([cc.ok, cc.model, cc.tier], [true, 'sonnet', 'light']);
 });
 
+// --- the review and verify grids (D-01) --------------------------------------
+
+test('each level resolves its whole review map and its verify value, literally', () => {
+  // Literal expectations, never derived from route-table.json: a fixture that
+  // reads its own subject cannot fail (D-11).
+  const solo = resolve('cad-planner', cfg({ stakes: 'solo' }));
+  assert.deepEqual(solo.review, {
+    plan: 'advisory', diff: 'off', risk_surface: 'blocking',
+    phase_diff: 'off', pre_ship: 'advisory',
+  });
+  assert.equal(solo.verify, 'off');
+
+  const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
+  assert.deepEqual(shipped.review, {
+    plan: 'adjudicated', diff: 'advisory', risk_surface: 'blocking',
+    phase_diff: 'off', pre_ship: 'adjudicated',
+  });
+  assert.equal(shipped.verify, 'on');
+
+  const critical = resolve('cad-planner', cfg({ stakes: 'critical' }));
+  assert.deepEqual(critical.review, {
+    plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
+    phase_diff: 'adjudicated', pre_ship: 'adjudicated',
+  });
+  assert.equal(critical.verify, 'on');
+});
+
+test('risk_surface is blocking at every level - a detection match is never waved through', () => {
+  for (const stakes of ['solo', 'shipped', 'critical']) {
+    assert.equal(resolve('cad-planner', cfg({ stakes })).review.risk_surface, 'blocking', stakes);
+  }
+});
+
+test('a config gate that AGREES with the level is taken silently', () => {
+  const c = rawCfg({ stakes: 'shipped', review: { triggers: { diff: { gate: 'advisory' } } } },
+    'gate-agrees.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.review.diff, 'advisory');
+  assert.equal(r.warnings, undefined); // agreement is not news
+});
+
+test('a config gate that DISAGREES wins, and says so exactly once (D-04)', () => {
+  // solo's `diff` gate is `off`; the user asked for blocking. The key the user
+  // set decides - a resolved-then-dropped gate is the defect class this
+  // milestone closes - and the disagreement is spoken, not swallowed.
+  const c = rawCfg({ stakes: 'solo', review: { triggers: { diff: { gate: 'blocking' } } } },
+    'gate-disagrees.json');
+  const r = resolve('cad-planner', c);
+  assert.equal(r.review.diff, 'blocking');
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /review\.triggers\.diff\.gate/); // names the trigger
+  assert.match(r.warnings[0], /"blocking"/);                   // ...the config value
+  assert.match(r.warnings[0], /"off"/);                        // ...and the level's
+  // every other trigger still comes from the level
+  assert.equal(r.review.plan, 'advisory');
+  assert.equal(r.review.risk_surface, 'blocking');
+});
+
+test('a level with no review row or no verify value degrades to unresolved', () => {
+  // A torn table must not emit half a bundle: two of the four knobs read as a
+  // whole answer is worse than no answer.
+  for (const drop of ['review', 'verify']) {
+    const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
+    delete t[drop].shipped;
+    const p = join(dir, `torn-${drop}.json`);
+    writeFileSync(p, JSON.stringify(t));
+    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: p };
+    const args = ['resolve', '--role', 'cad-planner', '--file', cfg({ stakes: 'shipped' })];
+    const r = (() => {
+      try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
+      catch (e) { return JSON.parse(e.stdout); }
+    })();
+    assert.equal(r.ok, false, drop);
+    assert.equal(r.reason, 'unresolved', drop);
+  }
+});
+
 // --- escalation, now unconditional -------------------------------------------
 
 test('escalation fires at the shipped DEFAULT, with no stakes key set anywhere', () => {

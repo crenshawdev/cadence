@@ -24,6 +24,8 @@
 //   model.escalate_on_failure  re-dispatch a failed attempt at the role's
 //                              `escalate_to` rung (bool, every stakes level)
 //   model.overrides.<role>     pin one role to a model alias, bypassing the matrix
+//   review.triggers.*.gate     a gate a LAYER set, which wins over the level's
+//                              gate and reports the disagreement (D-04)
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -60,9 +62,29 @@ function readConfig(file) {
     stakesSet: c.stakes !== undefined && c.stakes !== null,
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
+    triggerGates: triggerGatesIn(c),
     _source: source,
     _warnings: [...(warnings || []), ...retiredKeysIn(c)],
   };
+}
+
+// Per-trigger gates a LAYER actually wrote, keyed by trigger name. mergeLayers
+// merges the two FILE layers only and never folds in a schema default, so
+// everything this returns is a user assertion - which is the whole reason D-04
+// can let it win over the level's gate. Reading a default here would turn "the
+// schema says advisory" into "the user asked for advisory" and the grid would
+// decide nothing. Defensive at every hop: this runs on whatever a user's config
+// happens to hold, and a scalar where an object belongs contributes nothing
+// rather than throwing.
+function triggerGatesIn(c) {
+  const out = {};
+  const triggers = (c && typeof c === 'object' ? (c.review || {}) : {}).triggers;
+  if (!triggers || typeof triggers !== 'object' || Array.isArray(triggers)) return out;
+  for (const [name, spec] of Object.entries(triggers)) {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue;
+    if (spec.gate !== undefined && spec.gate !== null) out[name] = spec.gate;
+  }
+  return out;
 }
 
 function resolve(opts) {
@@ -112,6 +134,41 @@ function resolve(opts) {
   const table = TABLE.stakes && TABLE.stakes[cfg.stakes];
   if (!table || !table[tier]) { out({ ok: false, reason: 'unresolved', role: opts.role, stakes: cfg.stakes, tier }); return; }
 
+  // The other two grids (D-01). `review` keys on (level, trigger) because a
+  // gate belongs to a trigger, not to an agent; `verify` keys on the level
+  // alone because deep_check runs once per phase with no role in hand. A level
+  // missing either row is a TORN table, so it degrades the same way a bad
+  // stakes value already does rather than emitting a partial bundle - half a
+  // bundle read as a whole one is worse than no bundle at all.
+  const reviewRow = TABLE.review && TABLE.review[cfg.stakes];
+  const verify = TABLE.verify ? TABLE.verify[cfg.stakes] : undefined;
+  if (!reviewRow || typeof reviewRow !== 'object' || Array.isArray(reviewRow) || verify === undefined) {
+    out({ ok: false, reason: 'unresolved', role: opts.role, stakes: cfg.stakes, tier }); return;
+  }
+
+  // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
+  // retired key, a gate disagreement and an unknown pin alias can all be true
+  // at once.
+  const warnings = [...cfg._warnings];
+
+  // Config-wins precedence (D-04): a `review.triggers.<t>.gate` a layer SET
+  // beats the level's gate, and the disagreement is spoken rather than
+  // resolved silently. Level-wins was rejected because it makes a key the user
+  // explicitly set stop doing anything, which is the resolved-then-dropped
+  // defect this milestone exists to close. The walk is over the LEVEL's row, so
+  // a trigger name no level names contributes no gate and no warning - naming
+  // the accepted set is config.mjs validate's job, not a dispatch's.
+  const review = {};
+  for (const [trigger, levelGate] of Object.entries(reviewRow)) {
+    const configured = cfg.triggerGates[trigger];
+    if (configured !== undefined && configured !== levelGate) {
+      review[trigger] = configured;
+      warnings.push(`review.triggers.${trigger}.gate="${configured}" (config) wins over the ${cfg.stakes} level gate "${levelGate}"`);
+    } else {
+      review[trigger] = levelGate;
+    }
+  }
+
   // A per-role pin is an explicit user assertion, so it wins over the whole
   // stakes/tier matrix. What it does NOT touch is effort: that is fixed per
   // agent file in frontmatter, so a pinned role keeps its rung escalation
@@ -120,7 +177,6 @@ function resolve(opts) {
   // the spend, nor block the spawn.
   let model = table[tier];
   let pinned = false;
-  const warnings = [...cfg._warnings];
   const pin = cfg.overrides[opts.role];
   if (pin != null) {
     if (TABLE.model_aliases.includes(pin)) {
@@ -137,9 +193,11 @@ function resolve(opts) {
     }
   }
 
-  // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
-  // retired key and an unknown pin alias can all be true at once.
-  out({ ok: true, role: opts.role, agent, model, effort, tier, stakes: cfg.stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  // The bundle: four knobs, not a bare model. `review` is the whole
+  // trigger->gate map for this level (no --trigger flag: the map rides on one
+  // resolve, and a flag would change the CONTRACTS entry for no reader), and
+  // `verify` is the level's two-state deep-verify switch.
+  out({ ok: true, role: opts.role, agent, model, effort, review, verify, tier, stakes: cfg.stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
