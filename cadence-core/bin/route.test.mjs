@@ -69,6 +69,94 @@ test('a resolve returns the whole bundle off one cell, and no tier', () => {
   assert.equal('tier' in planner, false);
 });
 
+// --- the 18 cells, pinned literally (D-11) -----------------------------------
+
+// HAND-WRITTEN DATA, typed out from .planning/phases/3/CONTEXT.md's grid. It is
+// never read, derived or spread from cadence-core/route-table.json: that file is
+// the subject under test, and a fixture that derives its expectations from its
+// subject cannot fail. Phase 2's SUMMARY records two mutation-proved losses of
+// exactly this shape (config.test.mjs:41, route.test.mjs:208).
+const CELLS = [
+  { stakes: 'solo', role: 'cad-planner', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-planner', retryAgent: 'cad-planner-xhigh' },
+  { stakes: 'solo', role: 'cad-assumptions-analyzer', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-assumptions-analyzer-high', retryAgent: 'cad-assumptions-analyzer' },
+  { stakes: 'solo', role: 'cad-verifier', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-verifier', retryAgent: 'cad-verifier-xhigh' },
+  { stakes: 'solo', role: 'cad-reviewer', model: 'sonnet', effort: 'medium', retry: 'high', agent: 'cad-reviewer-medium', retryAgent: 'cad-reviewer' },
+  { stakes: 'solo', role: 'cad-executor', model: 'sonnet', effort: 'high', retry: 'xhigh', agent: 'cad-executor', retryAgent: 'cad-executor-xhigh' },
+  { stakes: 'solo', role: 'cad-plan-checker', model: 'sonnet', effort: 'low', retry: 'high', agent: 'cad-plan-checker', retryAgent: 'cad-plan-checker-high' },
+
+  { stakes: 'shipped', role: 'cad-planner', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-planner', retryAgent: 'cad-planner-xhigh' },
+  { stakes: 'shipped', role: 'cad-assumptions-analyzer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-assumptions-analyzer-high', retryAgent: 'cad-assumptions-analyzer' },
+  { stakes: 'shipped', role: 'cad-verifier', model: 'opus', effort: 'medium', retry: 'high', agent: 'cad-verifier-medium', retryAgent: 'cad-verifier' },
+  { stakes: 'shipped', role: 'cad-reviewer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-reviewer', retryAgent: 'cad-reviewer-xhigh' },
+  { stakes: 'shipped', role: 'cad-executor', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-executor', retryAgent: 'cad-executor-xhigh' },
+  { stakes: 'shipped', role: 'cad-plan-checker', model: 'sonnet', effort: 'medium', retry: 'high', agent: 'cad-plan-checker-medium', retryAgent: 'cad-plan-checker-high' },
+
+  { stakes: 'critical', role: 'cad-planner', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-planner-xhigh', retryAgent: 'cad-planner-max' },
+  { stakes: 'critical', role: 'cad-assumptions-analyzer', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-assumptions-analyzer', retryAgent: 'cad-assumptions-analyzer' },
+  { stakes: 'critical', role: 'cad-verifier', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-verifier-xhigh', retryAgent: 'cad-verifier-max' },
+  { stakes: 'critical', role: 'cad-reviewer', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-reviewer-xhigh', retryAgent: 'cad-reviewer-max' },
+  { stakes: 'critical', role: 'cad-executor', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-executor-xhigh', retryAgent: 'cad-executor-xhigh' },
+  { stakes: 'critical', role: 'cad-plan-checker', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-plan-checker-high', retryAgent: 'cad-plan-checker-xhigh' },
+];
+
+// ONE test case per cell, never one case walking all 18: node:test aborts a
+// case at its first throwing assertion, so a single case would report one
+// failure and skip every later row - and the per-cell discrimination this
+// section exists to guarantee would go unproven.
+for (const c of CELLS) {
+  test(`cell ${c.stakes}/${c.role}`, () => {
+    const file = cfg({ stakes: c.stakes }, `cell-${c.stakes}.json`);
+    const first = resolve(c.role, file);
+    assert.equal(first.ok, true);
+    assert.equal(first.model, c.model, 'model');
+    assert.equal(first.effort, c.effort, 'effort');
+    assert.equal(first.agent, c.agent, 'agent');
+
+    const retry = resolve(c.role, file, ['--attempt', '2']);
+    assert.equal(retry.ok, true);
+    assert.equal(retry.effort, c.retry, 'retry effort');
+    assert.equal(retry.agent, c.retryAgent, 'retry agent');
+    assert.equal(retry.model, c.model, 'the rung climbs, the model holds');
+  });
+}
+
+test('the two held retries say the rung was held, not that it escalated', () => {
+  const file = cfg({ stakes: 'critical' }, 'cell-critical.json');
+  for (const role of ['cad-assumptions-analyzer', 'cad-executor']) {
+    const r = resolve(role, file, ['--attempt', '2']);
+    assert.equal(r.escalated, false, role);
+    assert.match(r.reason.join(' '), /rung held at xhigh/, role);
+  }
+});
+
+test('no cell at any level holds fable or haiku - the routed vocabulary is sonnet and opus', () => {
+  // Walked over the shipped table rather than the literal rows above: this row
+  // is about what the DATA can reach, and CELLS is what it should reach (D-12).
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const t = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env })).table;
+  const routed = Object.values(t.cells).flatMap((row) => Object.values(row).map((c) => c.model));
+  assert.equal(routed.includes('fable'), false);
+  assert.equal(routed.includes('haiku'), false);
+  assert.deepEqual([...new Set(routed)].sort(), ['opus', 'sonnet']);
+  // ...and both stay reachable by an explicit pin, which is a user assertion
+  // about their own org rather than a rung on this ladder.
+  for (const alias of ['opus', 'sonnet', 'haiku', 'fable']) {
+    assert.ok(t.model_aliases.includes(alias), alias);
+  }
+});
+
+test('a pin replaces the cell model at every level and never touches its effort', () => {
+  for (const c of CELLS.filter((x) => x.role === 'cad-executor')) {
+    const file = rawCfg({ stakes: c.stakes, model: { overrides: { 'cad-executor': 'fable' } } },
+      `pin-exec-${c.stakes}.json`);
+    const r = resolve('cad-executor', file);
+    assert.equal(r.model, 'fable', c.stakes);
+    assert.equal(r.pinned, true, c.stakes);
+    assert.equal(r.effort, c.effort, `${c.stakes} effort`); // frontmatter, untouched
+    assert.equal(r.agent, c.agent, `${c.stakes} agent`);
+  }
+});
+
 // --- the review and verify grids (D-01) --------------------------------------
 
 test('each level resolves its whole review map and its verify value, literally', () => {
