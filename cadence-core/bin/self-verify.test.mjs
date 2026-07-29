@@ -666,6 +666,25 @@ test('check 8 (reverse): a rung-suffixed agent file naming an undeclared rung is
     && /cad-t does not declare rung xhigh/.test(x.detail)), JSON.stringify(p));
 });
 
+test('check 8 (reverse): a file suffixed with its role BASE rung names the duplication', () => {
+  // Same kind, opposite fix: the table DOES declare this rung, at the
+  // unsuffixed filename (D-01). "does not declare rung low" would contradict
+  // the table and point the maintainer at the wrong file.
+  const root = fixtureWith({
+    agents: {
+      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
+      'cad-t-low.md': '---\nname: cad-t-low\ntools: Read\n---\nbody\n',
+    },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
+  });
+  const p = run(['--root', root]).problems;
+  const hit = p.find((x) => x.kind === 'undeclared-rung-agent'
+    && x.file === 'agents/cad-t-low.md');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /base rung .*agents\/cad-t\.md.*duplicates it/);
+  assert.doesNotMatch(hit.detail, /does not declare/);
+});
+
 test('check 8 (reverse): an UNSUFFIXED agent file the table names nowhere is NOT flagged', () => {
   // The reverse direction must not creep into a blanket table-membership
   // rule - that would outlaw the one-off agent D-04 keeps legal.

@@ -622,8 +622,16 @@ function run(root) {
           if (!stem.startsWith(`${role}-`)) continue;
           const rung = stem.slice(role.length + 1);
           if (order.includes(rung)) {
+            // Two different faults reach here and want opposite fixes. A rung
+            // the table never names is a stale file; a rung the table names as
+            // this role's BASE is a D-01 duplication, and saying "does not
+            // declare" there contradicts the table and sends the maintainer to
+            // edit the wrong file.
+            const base = (roles[role] || {}).base_effort;
             problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
-              detail: `${role} does not declare rung ${rung}` });
+              detail: rung === base
+                ? `${rung} is ${role}'s base rung and already lives at agents/${role}.md - this suffixed file duplicates it`
+                : `${role} does not declare rung ${rung}` });
           }
           break;
         }
