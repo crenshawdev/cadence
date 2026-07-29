@@ -6,6 +6,69 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+The routing question changes. Cadence used to ask how much a dispatch should
+cost; it now asks what it costs if the work is wrong. The config key carrying
+that question is renamed rather than revalued, with no back-compat alias, and
+that is the one reason this release is major: a config you already wrote stops
+validating.
+
+### Removed
+
+- **`model.profile`**, replaced by the top-level **`stakes`** key. Its values
+  go with it: `fast`, `balanced`, `quality` and `auto` are gone, and `stakes`
+  takes `solo`, `shipped` or `critical`.
+- **`model.auto.escalate_on_failure`**, replaced by
+  **`model.escalate_on_failure`**, which is honoured at every stakes level
+  rather than only inside the retired `auto` mode.
+- **`model.auto.ceiling`**, removed outright. Escalation no longer steps a
+  spend ladder, so there is no ceiling left for it to stop at.
+- **`model.auto.max_escalations`**, removed outright. A role escalates to
+  exactly one rung, the `escalate_to` its route-table entry names, so there is
+  no second step to cap.
+- The `auto` mode's difficulty signals go with it, so `route.mjs resolve` no
+  longer accepts `--files` or `--ambiguity`. No workflow or skill ever passed
+  them.
+
+None of these has a back-compat alias, and the break is on the KEY, not merely
+on the value it holds. `model.profile: "solo"` is exactly as invalid as
+`model.profile: "balanced"`. `/cad-config` refuses to write the retired name
+and names `stakes` in the refusal; `config.mjs validate` reports it as an
+unknown key; and both live read faces, `config.mjs get` and
+`route.mjs resolve`, emit a warning saying the key is present and ignored
+instead of resolving silently at the default and reporting that result as
+configured.
+
+### Changed
+
+- **The routing axis asks what a break costs, not what a dispatch costs.**
+  `stakes: solo` means nobody else runs this and a break costs only your own
+  time. `stakes: shipped` means other people run this and a break comes back
+  as a bug report. `stakes: critical` means a break is not a bug report. The
+  default is `shipped`. "How much should this dispatch cost" was answerable but
+  useless, and on a flat-rate plan it is not a question you have at all, while
+  "what happens if this is wrong" is answerable in about a second and is the
+  only form of the question a risk signal can ever set on your behalf.
+- **The per-role effort rung ladder is reachable on a default install.** The
+  rung files ship in this release, but escalation used to be gated behind
+  `model.profile: "auto"`, a mode the shipped default never selected, so a
+  failed attempt was re-dispatched at the rung it had just failed at.
+  Escalate-on-failure is now unconditional: a retry swaps to the role's
+  `escalate_to` rung at every stakes level, and `model.escalate_on_failure`
+  set to `false` is how you turn that off.
+
+### Upgrading
+
+`config.mjs set` writes keys and never removes them, and the seam refuses the
+retired names outright, so the stale block has to come out of the file by hand:
+
+1. Open `.planning/config.json`, and `~/.claude/cadence/config.json` as well if
+   you set a global layer.
+2. Delete `profile` and the whole `auto` block from the `model` object. If
+   `auto.escalate_on_failure` was set, keep that value as
+   `"escalate_on_failure"` directly under `model`; it defaults to `true`.
+3. Run `/cad-config stakes=shipped`, or `solo`, or `critical`, to set the new
+   key.
+
 ## [1.5.0] - 2026-07-28
 
 Four corrections to things Cadence said about itself, and one structural
