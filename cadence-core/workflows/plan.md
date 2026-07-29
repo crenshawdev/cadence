@@ -35,9 +35,15 @@ Read config through the seam - one call for every key this workflow uses:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.plan_check workflow.inline_plan_threshold planning.commit_docs \
-  review.triggers.plan.gate git.protected_branches git.on_protected \
+  git.protected_branches git.on_protected \
   git.base_branch memory.backend
 ```
+
+The `plan` gate is NOT in that batch: fire(trigger) takes every gate from the
+routing bundle (`route.mjs resolve`), so the stakes level reaches this fire site
+rather than only the seam. `config.mjs get` returns the schema DEFAULT for a
+gate no layer set, which would fire at the default while the seam reported the
+level's.
 
 `memory.backend` rides this same batch so the effective recall backend is read
 through the config touchpoint already here - no extra Bash round-trip. It gates

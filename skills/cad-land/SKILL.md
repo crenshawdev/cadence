@@ -24,8 +24,10 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 <process>
 Read every config key this run needs in ONE `config.mjs get` up front
 (conventions.md Parallel work) - `git.base_branch git.protected_branches
-review.triggers.pre_ship.gate git.auto_close git.on_land_cleanup` - and reuse the
-values across the steps below rather than re-reading per step.
+git.auto_close git.on_land_cleanup` - and reuse the values across the steps
+below rather than re-reading per step. The `pre_ship` gate is not among them:
+fire(trigger) takes it from the routing bundle, so the stakes level decides it
+rather than a schema default no layer wrote.
 
 1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that

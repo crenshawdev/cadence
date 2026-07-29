@@ -35,9 +35,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.subagent_timeout workflow.test_command planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
-  git.protected_branches git.on_protected git.base_branch \
-  review.triggers.diff.gate review.triggers.phase_diff.gate
+  git.protected_branches git.on_protected git.base_branch
 ```
+
+The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
+gate from the routing bundle (`route.mjs resolve`), which is what makes the
+stakes level reach a fire site rather than only the seam. A `config.mjs get` of
+a gate returns the SCHEMA DEFAULT when no layer set it, so pre-fetching one
+would fire at the default while the seam reported the level's.
 </step>
 
 <step name="git_guard">

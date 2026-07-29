@@ -42,11 +42,12 @@ How a workflow dispatches work to a fresh-context subagent.
 - Dispatch via the agent/Task mechanism with `(agent_name, prompt, model?)`.
 - `model` is per-dispatch overridable; use it as the primary auto-routing lever.
 - Effort is NOT per-dispatch overridable: it is fixed in agent frontmatter per
-  FILE, so varying it means varying the file. Runtime escalation swaps to the
-  rung file the role's `escalate_to` names (`cad-plan-checker` ->
-  `cad-plan-checker-high`). Each role declares its reachable rungs in
-  `route-table.json`; the base rung lives at `agents/<role>.md` and every other
-  at `agents/<role>-<rung>.md`, and self-verify fails when one has no file.
+  FILE, so varying it means varying the file. A cell names the rung and
+  `cadence-core/bin/lib/rung-agent.mjs` names the file that carries it
+  (`cad-plan-checker` at `medium` -> `cad-plan-checker-medium`); the map is
+  stated per role rather than derived, because the unsuffixed `agents/<role>.md`
+  is one rung among the others rather than the lowest. Self-verify fails in both
+  directions: a rung with no file, and a rung file no cell reaches.
 - Timeout: `workflow.subagent_timeout` from config.
 - Every dispatch is fresh-context and self-contained; there is no resume or
   "continue the same agent". A re-dispatch (revision, continuation, escalation)
@@ -84,8 +85,8 @@ The executor asserts its own plan file exists before task 1 and halts
 reconciling a stale worktree is the orchestrator's serialized call, never the
 executor's own merge/rebase/fetch.
 
-**Routing (which model + which agent file).** Before every dispatch, resolve the
-role through the routing seam - never hardcode a model, never dispatch a role at
+**Routing (the quality bundle).** Before every dispatch, resolve the role
+through the routing seam - never hardcode a model, never dispatch a role at
 the session default when the project has stated its stakes:
 
 ```
@@ -93,23 +94,41 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_na
   [--attempt <N>]
 ```
 
+One resolve returns FOUR knobs, not a model: `model` and `effort` for this
+dispatch, `review` (the whole trigger -> gate map for the level, which
+`references/review-triggers.md` step 1 reads), and `verify` (whether the
+deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
+dial, and effort alone cannot express "fire a blocking cross-model review".
+
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
-  run failed: the re-dispatch swaps to the role's `escalate_to` rung file. That
-  happens at EVERY stakes level, and `model.escalate_on_failure: false` is the
-  off switch.
-- Use the returned `agent` (may be a rung file other than the base) and `model` in the
-  dispatch. `escalated`/`reason` are for logging why.
+  run failed: the re-dispatch climbs to the retry rung the SAME cell names, and
+  swaps to that rung's file. That happens at EVERY stakes level, and
+  `model.escalate_on_failure: false` is the off switch. Where the retry rung
+  equals the starting rung, `reason` says the rung was held and `escalated`
+  stays false - a held retry is never reported as an escalation.
+- Use the returned `agent` and `model` in the dispatch. `escalated`/`reason` are
+  for logging why.
 - `{ok:false}` (unknown role, no table) → dispatch the **base** `agent_name` with
   no `model` override (session default). Routing never blocks a spawn.
-- The stakes level selects the model matrix column and never reacts to
-  `--attempt` by itself - a retry climbs the rung ladder, not the matrix.
+- **Relay every `warnings[]` entry to the user before dispatching**, each
+  DISTINCT warning once per workflow run - not once per dispatch. A warning
+  that reaches JSON and no human is a resolved-then-dropped value wearing a
+  diagnostic's clothes; but `route.mjs` runs per role per spawn, so an unscoped
+  rule turns one deliberate config gate into a notice on every planner,
+  executor, verifier and checker dispatch for the life of the project, and
+  warning fatigue degrades the same channel the torn-layer and retired-key
+  warnings depend on.
+- The stakes level picks the row and the role picks the cell in it; the level
+  never reacts to `--attempt` by itself - a retry climbs the rung, not the level.
 - **Per-role pin.** `model.overrides` maps one role to one model alias
-  (`opus`/`sonnet`/`haiku`/`fable`) and wins over the whole stakes/tier matrix.
+  (`opus`/`sonnet`/`haiku`/`fable`) and wins over the cell's model.
   The resolver reports `pinned: true` and names
-  the swap in `reason`; effort is untouched, so a pinned role still gets its
-  escalated rung file. An unrecognized alias adds a `warnings` entry and the
-  routed model stands - a typo must not silently redirect the spend. `fable` is
-  reachable ONLY this way, and not on any ranking claim: it requires 30-day data
+  the swap in `reason`; effort is untouched, so a pinned role still climbs to
+  its retry rung file. `haiku` and `fable` are reachable this way ONLY - the
+  routed vocabulary is `sonnet` and `opus`. An unrecognized alias adds a
+  `warnings` entry and the routed model stands - a typo must not silently
+  redirect the spend. For `fable` pin-only rests on no ranking claim: it
+  requires 30-day data
   retention, so a zero-data-retention org gets a hard `400` on every request;
   its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
   own git rails, secrets handling and shell tokenizer; and its multi-minute
