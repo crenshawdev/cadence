@@ -78,6 +78,15 @@ configured.
   decided by a field named after something else. The routed vocabulary is
   `sonnet` and `opus`; `haiku` and `fable` are reachable only by an explicit
   `model.overrides.<role>` pin.
+- **`/cad-audit` proves criterion coverage in both directions, and FAILs on a
+  criterion that reached no UAT item**, naming the id and the phase with a
+  concrete next action. Requirement tracing already caught work nobody committed
+  to deliver; this catches work nobody proved was delivered. Two of this cycle's
+  own 122 criteria were dropped at checklist-build time and recovered only
+  because a second verify pass happened to run. Upgrading costs nothing: an
+  existing checklist where no item carries `criterion` is read as a pre-field
+  legacy file, reported and never broken, and new checklists carry the link from
+  the next `/cad-verify` onward.
 
 ### Added
 
@@ -126,6 +135,24 @@ configured.
   a token no path can ever produce, a surface with no `risk.override` key to
   waive it, a `risk.override` key naming no surface row, and drift in either the
   `stakes_order` or `gates` vocabulary the resolver reads by index.
+- **Acceptance criteria carry ids.** Every criterion in a phase's CONTEXT.md now
+  starts with a phase-local `AC<N>` token (`- [ ] AC1: ...`), which `/cad-context`
+  writes from now on. The grammar is stated in full at
+  `cadence-core/references/acceptance-criteria.md` and read by one function, with
+  a named diagnostic for each of nine shapes outside it - the central one being a
+  bullet carrying no id at all. The id never renumbers: `/cad-phase` insert and
+  remove move a phase directory whole and rewrite nothing inside it, which is why
+  the id is not phase-prefixed and not a path.
+- **`planning.mjs criteria-coverage`**, a new seam subcommand that traces every
+  criterion to the UAT item that tested it, in both directions. A criterion that
+  reached no item is verdict-breaking and named by its id; an item that traces to
+  no criterion is reported and moves nothing.
+- **Two UAT item fields, `criterion` and `origin`.** `criterion` names the
+  `AC<N>` an item was built from, written by `/cad-verify` and carried through
+  every later rewrite of the file. `origin` (`criterion | verifier | smoke`)
+  declares an item that legitimately has no criterion - a gap the deep verifier
+  appended, or the cold-start smoke check - so it is exempt rather than merely
+  unlinked, and `uat record --origin` can set it after the fact.
 
 ### Fixed
 

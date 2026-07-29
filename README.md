@@ -78,7 +78,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 **Review & quality**
 - **`/cad-plan-review`** — adversarial review of a plan before any code is written.
 - **`/cad-decision-review`** — stress-test one load-bearing decision, grounded against live docs and the real repo.
-- **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification. Catches silently-dropped work.
+- **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification, and every acceptance criterion traced to the check that tested it. Catches silently-dropped work.
 - **`/cad-coverage`** — find a phase's requirements that have zero failing-capable test coverage, then close the gaps.
 - **`/cad-docs-verify`** — check factual claims in docs against the live codebase.
 - **`/cad-debug`** — systematic debugging with hypotheses that survive `/clear`.
