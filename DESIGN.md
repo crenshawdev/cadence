@@ -368,8 +368,8 @@ lever is trigger frequency (gating), never a weak reviewer.
   redirect of spend. If this grows a second knob, re-read the cut before adding it.
 - ⚠️ **SUPERSEDED (2026-07-28):** the single `escalate_effort_variant` key is gone, replaced by a
   declared rung ladder: `route-table.json` states `rung_order` and gives every role its own `rungs`
-  array plus an `escalate_to` naming the escalation target, and all 13 reachable rungs exist as
-  agent files (6 base at `agents/<role>.md`, 7 suffixed at `agents/<role>-<rung>.md`). The
+  array plus a key naming its escalation target, and all 13 reachable rungs exist as agent files
+  (6 base at `agents/<role>.md`, 7 suffixed at `agents/<role>-<rung>.md`). The
   VERIFIED finding above is untouched — effort is still definition-time frontmatter, which is
   exactly why a rung needs a file. What changed is that the rung set is data rather than one
   hardcoded variant, so the routing layer can vary effort per role. The rungs are declared PER ROLE
@@ -392,7 +392,7 @@ lever is trigger frequency (gating), never a weak reviewer.
   role escalates TO is still its own table row, and only `cad-plan-checker` names a rung above its
   base today, so the other five roles' retries hold their rung until those rows change;
   `auto.ceiling` and `max_escalations` are dropped outright, since the surviving escalation is a
-  single swap to the role's `escalate_to` rung and has no second step to cap. One correction to the
+  single swap to the role's escalation rung and has no second step to cap. One correction to the
   PARTIALLY REOPENED bullet: its stated reason for keeping `fable` pin-only is now stale, because
   the ranking IS established and `fable` ranks above `opus`. That decision still stands, on three
   operational facts instead. A zero-data-retention org gets a hard `400 invalid_request_error` on
@@ -400,26 +400,26 @@ lever is trigger frequency (gating), never a weak reviewer.
   classifiers refuse cyber-adjacent content, and Cadence reviews its own git rails, secrets
   handling and shell tokenizer. And its multi-minute turns press against the configured provider
   request timeout inside the host's Bash ceiling.
-- ⚠️ **SUPERSEDED (2026-07-29):** the per-role `base_effort`/`escalate_to` ladder and the
+- ⚠️ **SUPERSEDED (2026-07-29):** the per-role start-rung/escalation-rung ladder and the
   `(stakes, tier)` model matrix are both replaced by three grids in `route-table.json`. A routing
   cell keys on `(stakes level, role)` and yields the whole quality bundle - `model`, the `effort`
   rung to start at, and the `retry` rung a failed attempt climbs to - while `review` keys on
-  `(level, trigger)` and yields a gate, and `verify` keys on the level alone. `tier` and
-  `tier_order` are deleted with the matrix: a role's model came from a column named after
+  `(level, trigger)` and yields a gate, and `verify` keys on the level alone. The whole `tier`
+  vocabulary is deleted with the matrix: a role's model came from a column named after
   something else, which is the indirection this removes. 18 cells read in one screen, so nothing
   is enumerated in code. Two claims above are now false and left standing as the record they are:
-  the SUPERSEDED bullet's "13 reachable rungs" is 19, and its `rungs`/`escalate_to` shape is gone;
+  the SUPERSEDED bullet's "13 reachable rungs" is 19, and its per-role rung-list shape is gone;
   the AXIS REPLACED bullet's "only `cad-plan-checker` names a rung above its base" was the defect,
-  not the design - `escalate_to === base_effort` for five of six roles meant six of the 13 rung
-  files were reachable by no config and no attempt count, and the retry ladder the previous entry
-  claimed to ship did not exist. Reversing that earlier decision is safe for a reason that did not
-  exist when it was made: a FIXED escalation target can point BELOW what a cell set, which makes a
-  retry think less while reporting an escalation, and a per-cell retry cannot. The direction guard
-  moves with it - self-verify now fails a cell whose `retry` sits below its `effort`, cell-named,
-  and the same walk checks the model, both rungs, every gate and every trigger name against the
-  vocabulary `config.schema.json` already defines. A config `review.triggers.<t>.gate` still WINS
-  over the level's gate, with the disagreement in `warnings`: the level must not make a key the
-  user explicitly set stop doing anything.
+  not the design - an escalation target equal to the starting rung for five of six roles meant six
+  of the 13 rung files were reachable by no config and no attempt count, and the retry ladder the
+  previous entry claimed to ship did not exist. Reversing that earlier decision is safe for a reason
+  that did not exist when it was made: a FIXED escalation target can point BELOW what a cell set,
+  which makes a retry think less while reporting an escalation, and a per-cell retry cannot. The
+  direction guard moves with it - self-verify now fails a cell whose `retry` sits below its
+  `effort`, cell-named, and the same walk checks the model, both rungs, every gate and every
+  trigger name against the vocabulary `config.schema.json` already defines. A config
+  `review.triggers.<t>.gate` still WINS over the level's gate, with the disagreement in `warnings`:
+  the level must not make a key the user explicitly set stop doing anything.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
