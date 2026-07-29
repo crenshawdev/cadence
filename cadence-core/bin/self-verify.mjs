@@ -47,6 +47,7 @@ import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { rungBodyIssue, rungFile } from './lib/rung-agent.mjs';
 import { cellIssues, declaredRoles, routableAgents } from './lib/route-cells.mjs';
+import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -176,13 +177,15 @@ function* mdFiles(root) {
  * would under-cover the reverse check: prose that says
  * `review.triggers.<t>.tier` covers ALL triggers' tier keys, not just plan's.
  * @param {string} token @param {string[]} triggers @param {string[]} providers
+ * @param {string[]} [surfaces] the risk surfaces `risk.override.<surface>` stands for
  */
-function expand(token, triggers, providers) {
+function expand(token, triggers, providers, surfaces = []) {
   let out = [token];
   const subst = (list, re, values) =>
     list.flatMap((t) => re.test(t) ? values.map((v) => t.replace(re, v)) : [t]);
   out = subst(out, /<t(?:rigger)?>?/g, triggers);
   out = subst(out, /<(?:name|provider)>?/g, providers);
+  out = subst(out, /<surface>?/g, surfaces);
   return out;
 }
 
@@ -237,6 +240,11 @@ function run(root) {
     .filter((k) => k.startsWith('review.triggers.')).map((k) => k.split('.')[2]))];
   const PROVIDERS = [...new Set(schemaKeys
     .filter((k) => k.startsWith('review.providers.')).map((k) => k.split('.')[2]))];
+  // The risk-surface vocabulary, derived from the schema exactly as TRIGGERS and
+  // PROVIDERS are: prose writing `risk.override.<surface>` covers all eight keys
+  // in both directions of check 1, and check 8 walks the same list against
+  // route-table.json's `surfaces` block.
+  const SURFACES = surfacesFromKeys(schemaKeys);
   // Keys with no dot can never match the dotted-token regex; they are covered
   // by a bare-word mention instead.
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
@@ -283,7 +291,7 @@ function run(root) {
       const family = raw.split('.')[0];
       if (!FAMILIES.has(family)) continue;
       if (raw.split('.').some((seg) => NON_KEY_SEGMENT.has(seg))) continue;
-      const expansions = expand(raw, TRIGGERS, PROVIDERS);
+      const expansions = expand(raw, TRIGGERS, PROVIDERS, SURFACES);
       for (const t of expansions) seenTokens.add(t);
       const known = expansions.some((t) =>
         schemaKeys.some((k) => k === t || k.startsWith(t + '.')));

@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
+import { surfaceKeyError, OVERRIDE_PREFIX } from './lib/risk-surfaces.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -109,6 +110,11 @@ function validate(file) {
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {
+    // Same message the write face gives, for the same reason the retired-key
+    // check states: a value refused at `set` with one message and named
+    // differently at `validate` is the drift this repo keeps closing.
+    const surfaceErr = surfaceKeyError(path, Object.keys(SCHEMA));
+    if (surfaceErr) { errors.push({ key: path, error: surfaceErr }); continue; }
     const spec = SCHEMA[path];
     if (!spec) { errors.push({ key: path, error: 'unknown key' }); continue; }
     const msg = checkValue(spec, v);
@@ -132,6 +138,11 @@ function checkPairs(tokens) {
     // read or write, so the refusal stays atomic.
     const retired = retiredKeyError(key);
     if (retired) { errors.push({ key, error: retired }); continue; }
+    // Same placement, same reason: `risk.override.athu` is a misspelled surface,
+    // and the generic `unknown key` arm below would answer it with nothing the
+    // user can act on. This names every accepted surface instead.
+    const surfaceErr = surfaceKeyError(key, Object.keys(SCHEMA));
+    if (surfaceErr) { errors.push({ key, error: surfaceErr }); continue; }
     const spec = SCHEMA[key];
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
@@ -181,11 +192,33 @@ function setInto(obj, dotted, value) {
   node[parts[parts.length - 1]] = value;
 }
 
+// The `risk.override.<surface>` family is the one key family whose whole purpose
+// is to LOWER a floor, and its schema `src` says `repo`. `src` is metadata
+// nothing in bin/ reads today (closing that generally is phase 6's shape), so
+// without this one narrow refusal a single
+// `config.mjs set risk.override.auth=true --global` would waive the auth floor
+// in every repository on the machine, forever, with nothing in any of those
+// repos recording it - the silent lowering this whole phase exists to prevent.
+/** @param {string} file @param {boolean} create @param {{key:string}[]} pairs */
+function repoScopedErrors(file, create, pairs) {
+  const targetsGlobal = create || (Boolean(GLOBAL_CONFIG) && file === GLOBAL_CONFIG);
+  if (!targetsGlobal) return [];
+  return pairs.filter((p) => p.key.startsWith(OVERRIDE_PREFIX)).map((p) => ({
+    key: p.key,
+    error: `"${p.key}" is repo-scoped (src: repo): a risk-floor waiver applies to `
+      + 'ONE repository, so it cannot be written to the user-global layer - '
+      + 'set it with --file <repo config> instead',
+  }));
+}
+
 // `create` (the --global path) starts from an empty config and makes the parent
 // dir if the file does not exist yet; a corrupt existing file still fails.
 function set(file, tokens, create) {
   const { pairs, errors } = checkPairs(tokens);
-  if (errors.length) fail('invalid', errors);
+  // Both refusals land in ONE detail list, before any read or write, so a
+  // multi-pair set stays all-or-nothing.
+  const scoped = repoScopedErrors(file, create, pairs);
+  if (errors.length || scoped.length) fail('invalid', [...errors, ...scoped]);
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {

@@ -206,7 +206,8 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
     '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
     '`git.on_land_cleanup` `git.auto_close`\n' +
-    '`planning.commit_docs` `memory.backend`\n');
+    '`planning.commit_docs` `memory.backend`\n' +
+    '`risk.override.<surface>`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
 });

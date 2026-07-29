@@ -508,3 +508,81 @@ test('CADENCE_CONFIG_SCHEMA nonexistent degrades to ok:false, reason bad-schema,
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-schema');
 });
+
+// --- the per-surface risk-floor waiver (STK-03) -------------------------------
+
+test('set: risk.override.auth=true writes the nested key', () => {
+  const file = join(dir, 'waiver.json');
+  writeFileSync(file, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['set', '--file', file, 'risk.override.auth=true'], join(dir, 'no-global-waiver.json'));
+  assert.equal(r.ok, true);
+  const written = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(written.risk.override.auth, true);
+  assert.equal(written.stakes, 'solo'); // preserved
+});
+
+test('check: a misspelled surface names every accepted surface, not "unknown key"', () => {
+  const r = run(['check', 'risk.override.notasurface=true']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'risk.override.notasurface');
+  assert.doesNotMatch(r.detail[0].error, /^unknown key$/);
+  assert.match(r.detail[0].error, /is not a risk surface/);
+  for (const name of ['auth', 'migrations', 'billing', 'concurrency',
+    'destructive', 'secrets', 'api_contract', 'untrusted_input']) {
+    assert.match(r.detail[0].error, new RegExp(`\\b${name}\\b`), name);
+  }
+});
+
+test('check: a real surface key still enforces its bool type', () => {
+  const r = run(['check', 'risk.override.auth=yes']);
+  assert.equal(r.ok, false);
+  assert.match(r.detail[0].error, /true or false/);
+  assert.equal(run(['check', 'risk.override.auth=true']).ok, true);
+});
+
+test('validate: a bogus surface key reports the same listing message, not "unknown key"', () => {
+  // A value refused at `set` with one message and named differently at
+  // `validate` is the drift this repo keeps closing.
+  const file = join(dir, 'bogus-surface-config.json');
+  writeFileSync(file, JSON.stringify({ risk: { override: { notasurface: true } } }));
+  const r = run(['validate', '--file', file], join(dir, 'no-global-bogus-surface.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.errors[0].key, 'risk.override.notasurface');
+  assert.doesNotMatch(r.errors[0].error, /^unknown key$/);
+  assert.match(r.errors[0].error, /is not a risk surface/);
+  assert.match(r.errors[0].error, /auth/);
+});
+
+test('set --global: a risk waiver is refused as repo-scoped, and the repo file accepts it', () => {
+  // `src: repo` is schema metadata nothing else in bin/ reads, so without this
+  // refusal one --global set would waive the floor in every repo on the machine.
+  const gpath = join(dir, 'global-waiver.json');
+  const r = run(['set', '--global', 'risk.override.auth=true'], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'risk.override.auth');
+  assert.match(r.detail[0].error, /repo-scoped/);
+  assert.equal(existsSync(gpath), false); // nothing written
+
+  // ...and a --file pointed at the SAME path (the global layer under another
+  // spelling) is refused too.
+  const gpath2 = join(dir, 'global-waiver-by-file.json');
+  writeFileSync(gpath2, JSON.stringify({ stakes: 'solo' }));
+  const viaFile = run(['set', '--file', gpath2, 'risk.override.auth=true'], gpath2);
+  assert.equal(viaFile.ok, false);
+  assert.match(viaFile.detail[0].error, /repo-scoped/);
+
+  // the control: a repo-scoped set of the same pair SUCCEEDS
+  const repo = join(dir, 'repo-waiver-control.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const ok = run(['set', '--file', repo, 'risk.override.auth=true'], join(dir, 'no-global-control.json'));
+  assert.equal(ok.ok, true);
+  assert.equal(JSON.parse(readFileSync(repo, 'utf8')).risk.override.auth, true);
+});
+
+test('set --global: a non-waiver key is unaffected by the repo-scope refusal', () => {
+  const gpath = join(dir, 'global-still-works.json');
+  const r = run(['set', '--global', 'stakes=critical'], gpath);
+  assert.equal(r.ok, true);
+});
