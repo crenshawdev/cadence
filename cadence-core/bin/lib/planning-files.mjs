@@ -657,6 +657,164 @@ export function parseContextDecisions(text) {
 }
 
 // ---------------------------------------------------------------------------
+// CONTEXT.md - the `## Acceptance criteria` grammar. Stated in full at
+// cadence-core/references/acceptance-criteria.md; this section is that
+// grammar's single implementation, and `planning.mjs criteria-coverage` is its
+// only consumer.
+// ---------------------------------------------------------------------------
+
+// The canonical criterion head: a column-0 dash, a checkbox, the bare `AC<N>`
+// token, a colon, then the text. The id is deliberately NOT hyphenated: `AC-01`
+// is admitted by `REQ_ID_EXACT` above, so a criterion id pasted into a plan's
+// `requirements:` frontmatter would read as a requirement id and mint a phantom
+// `orphans.plan_ids` entry in `audit` (D-01). `AC1` is structurally disjoint.
+const CRITERION_HEAD = /^- \[( |x|X)\] (AC\d+):[ \t]*(.*)$/;
+
+// A column-0 checkbox bullet, whatever it carries. The `criterion-unidded`
+// gate: it fires BEFORE any id-token test, because the legacy shape this
+// grammar exists to catch names no id at all.
+const CRITERION_BOX = /^- \[[ xX]\]\s/;
+
+// An `AC<N>` token anywhere on a line. Used ONLY to decide whether an
+// out-of-grammar line is worth reporting - a line naming no id declares
+// nothing and is ordinary section prose. Unanchored on purpose, the same
+// division of labour `REQ_ID_TOKEN` / `isRequirementId` carries above.
+const CRITERION_TOKEN = /\bAC\d+\b/;
+
+// An INDENTED bullet whose content starts with an `AC<N>` token (a checkbox
+// tolerated between). The one exception to the continuation rule below: a
+// criterion bullet that got indented is a criterion the grammar cannot see, so
+// it must report rather than be swallowed as continuation prose.
+const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
+
+/**
+ * Classify the `## Acceptance criteria` section of a CONTEXT.md: the criteria
+ * it declares as `{id, text}`, plus the lines that LOOK like they declare one
+ * and fall outside the canonical head. Pure and total: no I/O, no throw.
+ *
+ * Rules, in order:
+ *
+ *   1. Normalize through the shared `normalize` (BOM, CRLF and lone CR) rather
+ *      than `normalizeCrlf`. This is a PURE READER: CONTEXT.md has no writer
+ *      anywhere in this codebase (D-03) - no seam creates or edits one, only
+ *      `parseContextDecisions` reads it - so the roadmap's write-path carve-out
+ *      (a lone-CR file must stay unparseable because `setPhaseBox` and friends
+ *      split raw bytes) does not apply. Nothing here writes text back.
+ *   2. No `^## Acceptance criteria$` line -> `{criteria: null, issues: []}`.
+ *      An absent heading is the datum "nothing declared", NOT an
+ *      out-of-grammar report - the same absent-heading rule
+ *      `classifyActiveSection` uses. CONTEXT.md is itself optional.
+ *   3. Otherwise walk from that heading to the next `^## ` or end of text.
+ *      A line matching `CRITERION_HEAD` opens a criterion, ids de-duplicated
+ *      first-occurrence-wins.
+ *   4. An INDENTED, non-blank line while a criterion is open is a
+ *      CONTINUATION: appended to that criterion's text joined with one space
+ *      and never classified on its own, which is what keeps a wrapped
+ *      criterion that happens to name another id silent (the same silence
+ *      `classifyActiveSection`'s continuation row pins). The one exception is
+ *      `CRITERION_SUB`, reported as `criterion-indented-bullet`. A blank line
+ *      or any non-indented line closes the open criterion.
+ *   5. Every other line: at most ONE issue, in line order, each
+ *      `{line, code, text}` through `issueText`'s trim-and-truncate.
+ *        - a column-0 `- [ ]` bullet with no `AC<N>` head -> `criterion-unidded`
+ *          (the legacy shape and the central diagnostic; tested before any
+ *          token gate so a bullet naming no id at all still fires)
+ *        - a second bullet reusing an id -> `criterion-duplicate-id`, reported
+ *          and NOT pushed
+ *        - an id with no text after the colon -> `criterion-empty-text`, and
+ *          the criterion IS still pushed with `text: ''` (parse-then-diagnose,
+ *          the `trailing-value-content` precedent: the id is real and must
+ *          still reach a UAT item)
+ *        - `- AC1: ...` with no checkbox -> `criterion-unboxed-bullet`
+ *        - a column-0 `*`/`+` marker -> `criterion-nondash-bullet`
+ *        - an indented bullet outside a continuation -> `criterion-indented-bullet`
+ *        - `^\s*\d+[.)]\s`  -> `criterion-ordered-item`
+ *        - `^#{1,6}\s`      -> `criterion-heading`
+ *        - anything else naming an `AC<N>` token -> `criterion-prose-line`
+ *   6. The entry-shaped codes fire REGARDLESS of how many criteria parsed -
+ *      deliberately unlike `classifyPhaseList`'s near-miss suppression, and
+ *      unlike `active-prose-line`'s conditional arm. One idded bullet beside
+ *      six bare ones is exactly the mixed-authoring migration case this exists
+ *      to catch, and suppressing the codes once anything parsed would hide it.
+ *
+ * Trailing prose after the criterion text, `(human-verify: needs <tool>)`
+ * included, is IN grammar and stays in `text` verbatim (D-11): the classifier
+ * admits and ignores it, and `workflows/verify.md` keeps its current prose read
+ * of that suffix.
+ * @param {string} text
+ * @returns {{criteria: Array<{id: string, text: string}>|null, issues: Issue[]}}
+ */
+export function classifyAcceptanceCriteria(text) {
+  const lines = normalize(text).split('\n');
+  let heading = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
+  }
+  if (heading === -1) return { criteria: null, issues: [] };
+
+  /** @type {Array<{id: string, text: string}>} */
+  const criteria = [];
+  /** @type {Issue[]} */
+  const issues = [];
+  const seen = new Set();
+  /** @type {{id: string, text: string}|null} The criterion continuations extend. */
+  let open = null;
+  // A head-shaped bullet whose criterion was NOT pushed (a duplicate id) still
+  // absorbs its continuation lines, so a wrapped duplicate reports once for the
+  // bullet rather than once more for every line under it.
+  let absorbing = false;
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^## /.test(line)) break;
+    const head = line.match(CRITERION_HEAD);
+    if (head) {
+      const id = head[2];
+      const body = head[3].trim();
+      if (seen.has(id)) {
+        issues.push({ line: i + 1, code: 'criterion-duplicate-id', text: issueText(line) });
+        open = null;
+        absorbing = true;
+        continue;
+      }
+      seen.add(id);
+      if (!body) {
+        issues.push({ line: i + 1, code: 'criterion-empty-text', text: issueText(line) });
+      }
+      open = { id, text: body };
+      criteria.push(open);
+      absorbing = false;
+      continue;
+    }
+    if ((open || absorbing) && /^\s/.test(line) && line.trim()) {
+      if (CRITERION_SUB.test(line)) {
+        issues.push({ line: i + 1, code: 'criterion-indented-bullet', text: issueText(line) });
+        continue;
+      }
+      if (open) open.text = open.text ? `${open.text} ${line.trim()}` : line.trim();
+      continue;
+    }
+    open = null;
+    absorbing = false;
+    // The legacy shape: a checkbox bullet with no `AC<N>` head. Checked before
+    // the token gate, since the bullet this phase exists to catch names no id.
+    if (CRITERION_BOX.test(line)) {
+      issues.push({ line: i + 1, code: 'criterion-unidded', text: issueText(line) });
+      continue;
+    }
+    if (!CRITERION_TOKEN.test(line)) continue;
+    let code = 'criterion-prose-line'; // the catch-all: outside the grammar, never silent
+    if (/^\s*[-*+]\s/.test(line)) {
+      if (/^\s/.test(line)) code = 'criterion-indented-bullet';
+      else if (/^[*+]\s/.test(line)) code = 'criterion-nondash-bullet';
+      else code = 'criterion-unboxed-bullet';
+    } else if (/^\s*\d+[.)]\s/.test(line)) code = 'criterion-ordered-item';
+    else if (/^#{1,6}\s/.test(line)) code = 'criterion-heading';
+    issues.push({ line: i + 1, code, text: issueText(line) });
+  }
+  return { criteria, issues };
+}
+
+// ---------------------------------------------------------------------------
 // UAT.md - the persistent checklist (templates/UAT.md).
 // ---------------------------------------------------------------------------
 
