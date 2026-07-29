@@ -23,8 +23,8 @@ validating.
 - **`model.auto.ceiling`**, removed outright. Escalation no longer steps a
   spend ladder, so there is no ceiling left for it to stop at.
 - **`model.auto.max_escalations`**, removed outright. A role escalates to
-  exactly one rung, the `escalate_to` its route-table entry names, so there is
-  no second step to cap.
+  exactly one rung, the retry rung its own routing cell names, so there is no
+  second step to cap.
 - The `auto` mode's difficulty signals go with it, so `route.mjs resolve` no
   longer accepts `--files` or `--ambiguity`. No workflow or skill ever passed
   them.
@@ -48,15 +48,51 @@ configured.
   useless, and on a flat-rate plan it is not a question you have at all, while
   "what happens if this is wrong" is answerable in about a second and is the
   only form of the question a risk signal can ever set on your behalf.
-- **Escalate-on-failure is unconditional.** It used to be gated behind
-  `model.profile: "auto"`, a mode the shipped default never selected, so a
-  failed attempt was re-dispatched at the rung it had just failed at. A retry
-  now swaps to the role's `escalate_to` rung at every stakes level, and
-  `model.escalate_on_failure` set to `false` is how you turn that off. What a
-  role escalates TO is still its own `route-table.json` row: today only
-  `cad-plan-checker` names an `escalate_to` above its base rung, so it is the
-  only role whose retry currently changes rung. The other five sit flat until
-  their rows say otherwise.
+- **Escalate-on-failure is unconditional, and the rung ladder is reachable.**
+  It used to be gated behind `model.profile: "auto"`, a mode the shipped
+  default never selected, so a failed attempt was re-dispatched at the rung it
+  had just failed at. A retry now climbs to the retry rung its own routing cell
+  names, at every stakes level, and `model.escalate_on_failure` set to `false`
+  is how you turn that off. Every role climbs: the fixed per-role escalation
+  target that made five of six retries a no-op is gone, and the two cells whose
+  retry deliberately equals their starting rung report the rung as held rather
+  than claiming an escalation.
+- **A routing cell yields four knobs, not a model.** One question in - what
+  does a break cost - and out comes the model, the effort rung to start at, the
+  rung a failed attempt climbs to, the gate each review trigger fires at, and
+  whether the deep verify pass runs. Quality is not one dial, and no amount of
+  effort expresses "fire a blocking cross-model review before this ships".
+- **Review gates come from the stakes level.** `plan` is advisory on a solo
+  project and adjudicated once other people run it; `diff` is off, then
+  advisory, then blocking; `phase_diff` is opt-in until critical; `pre_ship`
+  is advisory, then adjudicated. `risk_surface` is blocking at every level,
+  because it fires only on a detection match. A
+  `review.triggers.<t>.gate` you set still WINS over the level's, and the
+  disagreement is reported rather than resolved silently - a key you set must
+  not quietly stop doing anything.
+- **The deep verify pass is level-driven.** It is off at `solo` and on above,
+  still once per phase, and `--deep` forces it at any level.
+  `workflow.verifier: false` remains the off switch.
+- **Models come from the cell, not from a role's tier.** The `(stakes, tier)`
+  matrix and the whole `tier` vocabulary are gone: a role's model was being
+  decided by a field named after something else. The routed vocabulary is
+  `sonnet` and `opus`; `haiku` and `fable` are reachable only by an explicit
+  `model.overrides.<role>` pin.
+
+### Added
+
+- **Six more rung agent files, 19 in total**: `cad-planner-max`,
+  `cad-verifier-medium`, `cad-verifier-max`, `cad-reviewer-max`,
+  `cad-plan-checker-medium` and `cad-plan-checker-xhigh`. Each is the same
+  contract at a different depth, and CI fails a rung file that carries any
+  instruction of its own.
+- **Cell validation in `self-verify`**, every problem naming the offending cell:
+  a (level, role) pair with no cell, a rung with no agent file, a rung file no
+  cell reaches, a model outside `model_aliases`, a rung outside `rung_order`, a
+  gate outside the four gate values, a trigger name the schema does not define,
+  and a retry rung that sits BELOW the rung it started on - which no membership
+  check can see and which would otherwise let a retry think less while
+  reporting that it thought more.
 
 ### Upgrading
 

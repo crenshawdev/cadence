@@ -32,7 +32,7 @@ The shared skeleton, and the reason Cadence is recognizably GSD's descendant:
 
 ## What carried over, slimmed to the bone
 
-Cadence's 6 agent roles, materialized as 13 rung files, descend from ~6 GSD
+Cadence's 6 agent roles, materialized as 19 rung files, descend from ~6 GSD
 ancestors, but every one was slimmed ~80-90% and reconceived, not copied. The GSD
 originals were enormous:
 
