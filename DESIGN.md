@@ -387,8 +387,10 @@ lever is trigger frequency (gating), never a weak reviewer.
   behave - the same category error one level up from the one this change exists to fix - and its
   difficulty signals go with it (`--files`, `--ambiguity`, and the table's `auto` block), having
   never been passed by a live workflow or skill. `escalate_on_failure` is promoted to
-  `model.escalate_on_failure` and honoured at every stakes level, which is what makes the rung
-  ladder above reachable on a default install rather than only under a mode nobody selected;
+  `model.escalate_on_failure` and honoured at every stakes level, so the rung ladder above is
+  reached by the shipped default rather than only under a mode nobody selected - though what each
+  role escalates TO is still its own table row, and only `cad-plan-checker` names a rung above its
+  base today, so the other five roles' retries hold their rung until those rows change;
   `auto.ceiling` and `max_escalations` are dropped outright, since the surviving escalation is a
   single swap to the role's `escalate_to` rung and has no second step to cap. One correction to the
   PARTIALLY REOPENED bullet: its stated reason for keeping `fable` pin-only is now stale, because

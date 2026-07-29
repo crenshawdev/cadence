@@ -48,13 +48,15 @@ configured.
   useless, and on a flat-rate plan it is not a question you have at all, while
   "what happens if this is wrong" is answerable in about a second and is the
   only form of the question a risk signal can ever set on your behalf.
-- **The per-role effort rung ladder is reachable on a default install.** The
-  rung files ship in this release, but escalation used to be gated behind
+- **Escalate-on-failure is unconditional.** It used to be gated behind
   `model.profile: "auto"`, a mode the shipped default never selected, so a
-  failed attempt was re-dispatched at the rung it had just failed at.
-  Escalate-on-failure is now unconditional: a retry swaps to the role's
-  `escalate_to` rung at every stakes level, and `model.escalate_on_failure`
-  set to `false` is how you turn that off.
+  failed attempt was re-dispatched at the rung it had just failed at. A retry
+  now swaps to the role's `escalate_to` rung at every stakes level, and
+  `model.escalate_on_failure` set to `false` is how you turn that off. What a
+  role escalates TO is still its own `route-table.json` row: today only
+  `cad-plan-checker` names an `escalate_to` above its base rung, so it is the
+  only role whose retry currently changes rung. The other five sit flat until
+  their rows say otherwise.
 
 ### Upgrading
 
