@@ -23,6 +23,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
+import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -124,6 +125,13 @@ function checkPairs(tokens) {
     const kv = splitPair(tok);
     if (!kv) { errors.push({ key: tok, error: 'not a key=value pair' }); continue; }
     const [key, raw] = kv;
+    // BEFORE the schema lookup, deliberately: a retired key is one the schema
+    // no longer holds, so the `!spec` arm below would answer a rename with the
+    // generic 'unknown key' and leave the user to find the replacement. This
+    // runs inside checkPairs, which both `set` and `check` reach before any
+    // read or write, so the refusal stays atomic.
+    const retired = retiredKeyError(key);
+    if (retired) { errors.push({ key, error: retired }); continue; }
     const spec = SCHEMA[key];
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
@@ -132,30 +140,6 @@ function checkPairs(tokens) {
     pairs.push({ key, value });
   }
   return { pairs, errors };
-}
-
-// Cross-key checks the per-key schema types cannot express. Advisory only:
-// warnings, never errors - a legal-but-surprising value stays settable (a
-// user may deliberately disable escalation this way).
-function crossWarnings(pairs) {
-  const warnings = [];
-  for (const { key, value } of pairs) {
-    if (key === 'model.auto.ceiling') {
-      try {
-        const t = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-        const order = t.profile_order || [];
-        const base = t.auto && t.auto.base_profile;
-        if (order.indexOf(String(value)) <= order.indexOf(base)) {
-          warnings.push({
-            key,
-            warning: `ceiling "${value}" is at/below auto's base profile "${base}": ` +
-              'failure escalation holds at base (it never demotes) - use a higher ceiling to enable raises',
-          });
-        }
-      } catch { /* no table -> no cross-check; per-key validation already ran */ }
-    }
-  }
-  return warnings;
 }
 
 // A dotted key writes through intermediate containers. Auto-vivifying one that
@@ -216,8 +200,7 @@ function set(file, tokens, create) {
   // atomicWrite (temp + rename), not a bare write: config is a live layer
   // every other seam reads mid-session; a crash must never leave it torn.
   atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
-  const warnings = crossWarnings(pairs);
-  out({ ok: true, file, changed: pairs, ...(warnings.length ? { warnings } : {}) });
+  out({ ok: true, file, changed: pairs });
 }
 
 // The effective value set: schema defaults, overlaid by the global then the
@@ -225,6 +208,10 @@ function set(file, tokens, create) {
 // a flat dotted-key map, so callers read values without re-flattening.
 function get(file, keys) {
   const { config, source, warnings } = mergeLayers(file);
+  // A key the schema dropped is invisible to the read below - it resolves at
+  // the default and looks configured. Naming it here is what keeps an upgraded
+  // repo from silently routing on a value nothing reads.
+  const allWarnings = [...(warnings || []), ...retiredKeysIn(config)];
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};
@@ -234,7 +221,7 @@ function get(file, keys) {
   for (const k of wanted) {
     values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
   }
-  out({ ok: true, values, source, ...(warnings && warnings.length ? { warnings } : {}) });
+  out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }
 
 // --- dispatch ----------------------------------------------------------------
@@ -258,9 +245,11 @@ try {
   }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
-    const { pairs, errors } = checkPairs(rest);
-    const warnings = crossWarnings(pairs);
-    out({ ok: errors.length === 0, errors, ...(warnings.length ? { warnings } : {}) });
+    // The same failure contract `set` speaks (and workflows/config.md
+    // documents): one shape for both faces, so a caller reads `detail` once.
+    const { errors } = checkPairs(rest);
+    if (errors.length) out({ ok: false, reason: 'invalid', detail: errors });
+    else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
   else if (cmd === 'get') { const { file, tokens } = optFile(rest); get(file, tokens); }

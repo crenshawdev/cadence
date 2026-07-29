@@ -199,13 +199,59 @@ test('validate: a scalar top-level config fails, never ok:true checked:0 (#45.3)
   assert.equal(rn.ok, true);
 });
 
-test('check: reports per-pair errors and ok mirrors them', () => {
+test('check: speaks the same {ok,reason,detail} failure contract set does', () => {
   const good = run(['check', 'workflow.plan_check=false', 'granularity=fine']);
   assert.equal(good.ok, true);
-  assert.deepEqual(good.errors, []);
   const bad = run(['check', 'workflow.plan_check=false', 'not-a-pair', 'no.such.key=1']);
   assert.equal(bad.ok, false);
-  assert.deepEqual(bad.errors.map((e) => e.error), ['not a key=value pair', 'unknown key']);
+  assert.equal(bad.reason, 'invalid');
+  assert.deepEqual(bad.detail.map((e) => e.error), ['not a key=value pair', 'unknown key']);
+});
+
+// --- retired keys: refused at the write face, named at the read face ----------
+
+test('check: a retired KEY names its replacement, not the generic unknown key', () => {
+  const r = run(['check', 'model.profile=balanced']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'model.profile');
+  assert.doesNotMatch(r.detail[0].error, /^unknown key$/);
+  assert.match(r.detail[0].error, /stakes/);
+  for (const value of ['solo', 'shipped', 'critical']) {
+    assert.match(r.detail[0].error, new RegExp(value)); // the remediation needs no lookup
+  }
+});
+
+test('check: a retired VALUE on the LIVE key still reads as a value error', () => {
+  // The two failures must stay distinguishable: a bad value names the enum,
+  // a retired key names its replacement.
+  const r = run(['check', 'stakes=quality']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.match(r.detail[0].error, /must be one of: solo, shipped, critical/);
+});
+
+test('set: a removed key is refused before anything is written', () => {
+  const gpath = join(dir, 'retired-write.json');
+  const r = run(['set', '--global', 'model.auto.ceiling=quality'], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'model.auto.ceiling');
+  assert.match(r.detail[0].error, /retired in v2\.0\.0/);
+  assert.doesNotMatch(r.detail[0].error, /^unknown key$/);
+  assert.equal(existsSync(gpath), false); // atomic: nothing written
+});
+
+test('get: a repo config still holding a retired key warns instead of resolving silently', () => {
+  const gpath = join(dir, 'no-global-for-retired.json');
+  const repo = join(dir, 'retired-repo.json');
+  writeFileSync(repo, JSON.stringify({ model: { profile: 'balanced' } }));
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  assert.equal(r.ok, true);                  // never blocks a workflow's read
+  assert.equal(r.values['stakes'], 'shipped'); // the schema default
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /model\.profile/);
+  assert.match(r.warnings[0], /stakes/);
 });
 
 test('keys: dumps the live schema - pruned keys are really gone', () => {
@@ -260,10 +306,10 @@ test('git.integration_branch / git.auto_branch: defaults and enum enforcement', 
   assert.equal(r.values['git.auto_branch'], 'ask');
   const badMode = run(['check', 'git.integration_branch=mainline']);
   assert.equal(badMode.ok, false);
-  assert.match(badMode.errors[0].error, /must be one of: milestone, trunk/);
+  assert.match(badMode.detail[0].error, /must be one of: milestone, trunk/);
   const badAuto = run(['check', 'git.auto_branch=sometimes']);
   assert.equal(badAuto.ok, false);
-  assert.match(badAuto.errors[0].error, /must be one of: ask, auto, off/);
+  assert.match(badAuto.detail[0].error, /must be one of: ask, auto, off/);
 });
 
 test('get: unknown key is rejected, exit code mirrors ok', () => {
@@ -379,7 +425,7 @@ test('check: an int key with a max rejects above it and accepts at it', () => {
   // used. The bound belongs at the write face too.
   const over = run(['check', 'review.request_timeout_ms=999999999999']);
   assert.equal(over.ok, false);
-  assert.match(over.errors[0].error, /must be <= 600000/);
+  assert.match(over.detail[0].error, /must be <= 600000/);
 
   const typo = run(['check', 'review.request_timeout_ms=600000000']);
   assert.equal(typo.ok, false);                       // one extra zero group
