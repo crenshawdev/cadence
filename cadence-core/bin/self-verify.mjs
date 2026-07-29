@@ -593,7 +593,11 @@ function run(root) {
         for (const name of rungAgents(role, spec)) {
           routable.add(name);
           if (!existsSync(join(root, 'agents', `${name}.md`))) {
-            const rung = name === role ? spec.base_effort : name.slice(role.length + 1);
+            // `spec || {}` because a null role entry is exactly the malformed
+            // table the guard above is for, and rungAgents/rungIssues both
+            // already tolerate one - an unguarded deref HERE would unwind
+            // run() and discard every problem checks 1-7 found (#49.1).
+            const rung = name === role ? (spec || {}).base_effort : name.slice(role.length + 1);
             problems.push({ kind: 'missing-rung-agent', file: 'cadence-core/route-table.json',
               detail: `${role} rung ${rung} -> agents/${name}.md absent` });
           }

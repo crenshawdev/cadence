@@ -606,6 +606,21 @@ test('check 8: a full tree with no route-table.json fails ok:false naming the in
     && x.file === 'cadence-core/route-table.json'), JSON.stringify(r.problems));
 });
 
+test('check 8: a NULL role entry is one reported problem, not a collapse to reason:internal', () => {
+  // The parse guard covered the read and JSON.parse only, so a null spec still
+  // unwound run() at the base_effort deref - the #49.1 shape one layer in.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    routeTable: { rung_order: RUNG_ORDER, roles: { 'cad-t': null } },
+  });
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined, JSON.stringify(r));
+  assert.ok(r.problems.some((x) => x.kind === 'rung-not-declared' && /^cad-t\b/.test(x.detail)),
+    JSON.stringify(r.problems));
+  assert.ok(r.problems.some((x) => x.kind === 'undeclared-tool' && /Bash/.test(x.detail)),
+    JSON.stringify(r.problems));
+});
+
 test('check 8 (reverse): a rung-suffixed agent file naming an undeclared rung is flagged', () => {
   // The direction AC1's "exactly" needs. Without it, a stale rung file - one
   // the table stopped naming - stays green while still paying standing context
