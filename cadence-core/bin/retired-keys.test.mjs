@@ -34,7 +34,7 @@ test('model.auto.ceiling reads as a removal, naming no replacement key', () => {
 test('model.auto.max_escalations reads as a removal, naming no replacement key', () => {
   const e = retiredKeyError('model.auto.max_escalations');
   assert.match(e, /retired in v2\.0\.0/);
-  assert.match(e, /escalate_to/);    // says why there is no second step to cap
+  assert.match(e, /retry rung its own routing cell names/); // why there is no second step to cap
   assert.doesNotMatch(e, /use "/);
 });
 

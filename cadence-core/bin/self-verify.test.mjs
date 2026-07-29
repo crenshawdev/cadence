@@ -88,7 +88,7 @@ function cellTable(role = 'cad-verifier', cell = {}) {
   const t = {
     rung_order: RUNG_ORDER,
     model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
-    role_order: [role],
+    roles: [role],
     cells: {}, review: {}, verify: {},
   };
   for (const level of ['solo', 'shipped', 'critical']) {

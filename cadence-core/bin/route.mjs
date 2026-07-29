@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // @ts-check
-// route.mjs - zero-dep model-routing resolver. Given an agent role and an
-// attempt number, resolve which model alias and which agent file the
-// spawn-agent seam should dispatch. The route-table.json beside
-// ../route-table.json is editable data (role tiers + stakes->model matrix);
-// this file is the logic. DESIGN "model routing" (§ model routing).
+// route.mjs - zero-dep routing resolver. Given an agent role and an attempt
+// number, resolve the whole quality bundle the spawn-agent seam and the review
+// subsystem need: {model, effort, review, verify}. The route-table.json beside
+// ../route-table.json is editable data (three grids); this file is the logic.
+// DESIGN "model routing" (§ model routing).
 //
-// The question the table asks is what a break COSTS, not what a dispatch
-// costs: a role's tier picks the column, the project's stakes picks the row.
+// The question the table asks is what a break COSTS, not what a dispatch costs:
+// the project's stakes level picks the row, and the role picks the cell in it.
+// One question in, four knobs out - because quality is not one dial, and effort
+// alone cannot express "fire a blocking cross-model review".
 //
 // Never blocks the spine: on any problem it returns {ok:false,...} and the
 // caller dispatches the base agent at the session-default model (no override).
@@ -21,9 +23,9 @@
 // built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
 // Config keys read:
 //   stakes                     solo | shipped | critical
-//   model.escalate_on_failure  re-dispatch a failed attempt at the role's
-//                              `escalate_to` rung (bool, every stakes level)
-//   model.overrides.<role>     pin one role to a model alias, bypassing the matrix
+//   model.escalate_on_failure  re-dispatch a failed attempt at the retry rung
+//                              its own cell names (bool, every stakes level)
+//   model.overrides.<role>     pin one role to a model alias, bypassing the cell
 //   review.triggers.*.gate     a gate a LAYER set, which wins over the level's
 //                              gate and reports the disagreement (D-04)
 
@@ -91,7 +93,7 @@ function resolve(opts) {
   // The declared role list, not a lookup in a spec object: a role IS routable
   // or it is not, and after this phase the table carries no per-role block for
   // the question to be asked of.
-  const roles = Array.isArray(TABLE.role_order) ? TABLE.role_order : [];
+  const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
   if (!roles.includes(opts.role)) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${roles.join(', ')}` }); return; }
 
   const cfg = readConfig(opts.file);
@@ -121,8 +123,8 @@ function resolve(opts) {
   }
 
   // The agent FILE is what carries the effort (route.mjs reports effort, it
-  // cannot set it - seams.md), and with `base_effort` gone the unsuffixed file
-  // is one rung among the others, so the file comes from the explicit map
+  // cannot set it - seams.md), and the unsuffixed file is one rung among the
+  // others, so the file comes from the explicit map in lib/rung-agent.mjs
   // rather than from a naming convention. Fail-open by design: a rung the map
   // does not carry is self-verify's problem, and this still dispatches - at the
   // unsuffixed file, saying it did, rather than naming a file that is not there.

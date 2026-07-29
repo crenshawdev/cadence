@@ -19,7 +19,7 @@ function table(role = 'cad-verifier', cell = { model: 'opus', effort: 'high', re
   const t = {
     rung_order: ['low', 'medium', 'high', 'xhigh', 'max'],
     model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
-    role_order: [role],
+    roles: [role],
     cells: {}, review: {}, verify: {},
   };
   for (const level of LEVELS) {
@@ -256,7 +256,7 @@ test('an empty vocabulary checks nothing rather than failing everything', () => 
 // --- declaredRoles / routableAgents -------------------------------------------
 
 test('declaredRoles reads the declared array and filters non-strings', () => {
-  assert.deepEqual(declaredRoles({ role_order: ['cad-planner', 3, '', 'cad-verifier'] }),
+  assert.deepEqual(declaredRoles({ roles: ['cad-planner', 3, '', 'cad-verifier'] }),
     ['cad-planner', 'cad-verifier']);
   assert.deepEqual(declaredRoles({}), []);
   assert.deepEqual(declaredRoles(null), []);

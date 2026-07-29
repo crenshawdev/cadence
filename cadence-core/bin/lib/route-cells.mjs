@@ -31,7 +31,7 @@ const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' &&
  * @returns {string[]}
  */
 export function declaredRoles(table) {
-  return strs(obj(table) ? table.role_order : null);
+  return strs(obj(table) ? table.roles : null);
 }
 
 /**

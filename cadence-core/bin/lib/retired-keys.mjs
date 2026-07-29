@@ -49,8 +49,8 @@ export const RETIRED_KEYS = Object.freeze({
   }),
   'model.auto.max_escalations': Object.freeze({
     replacement: null,
-    detail: 'removed with the `auto` mode - a role escalates to exactly one rung '
-      + '(its `escalate_to`), so there is no second step to cap',
+    detail: 'removed with the `auto` mode - a role escalates to exactly one rung, '
+      + "the retry rung its own routing cell names, so there is no second step to cap",
   }),
 });
 

@@ -321,13 +321,19 @@ test('usage degradation: missing --role and unknown subcommand', () => {
   assert.equal(bare(['nonsense']).reason, 'usage');
 });
 
-test('table dumps the routing table (roles + matrix present)', () => {
+test('table dumps the routing table - the three grids and the declared roles', () => {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
   const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
   assert.equal(r.ok, true);
-  assert.deepEqual(r.table.tier_order, ['light', 'standard', 'heavy']);
-  assert.ok(r.table.roles['cad-planner']);
-  assert.ok(r.table.stakes.shipped);
+  assert.ok(Array.isArray(r.table.roles), 'roles is the declared ARRAY');
+  assert.ok(r.table.roles.includes('cad-planner'));
+  assert.ok(r.table.cells.shipped['cad-planner']);
+  assert.ok(r.table.review.shipped.plan);
+  assert.equal(r.table.verify.shipped, 'on');
+  // The whole top-level key set, pinned: the retired blocks are GONE, not
+  // merely unread, and a new one cannot appear without a reader.
+  assert.deepEqual(Object.keys(r.table).sort(),
+    ['_meta', 'cells', 'model_aliases', 'review', 'roles', 'rung_order', 'verify']);
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
@@ -390,15 +396,6 @@ test('an override pins one role and leaves the others routed', () => {
   const exec = resolve('cad-executor', c);
   assert.equal(exec.model, 'opus');       // the shipped/cad-executor cell
   assert.equal(exec.pinned, false);
-});
-
-test('fable is reachable only by pin, never by the stakes matrix', () => {
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
-  const t = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env })).table;
-  assert.ok(t.model_aliases.includes('fable'));
-  // `rungs` now names the effort ladder, so this local is the matrix's models.
-  const matrixModels = Object.values(t.stakes).flatMap((row) => Object.values(row));
-  assert.equal(matrixModels.includes('fable'), false);
 });
 
 test('a pin beats the routed model but keeps the rung swap', () => {
