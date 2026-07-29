@@ -9,6 +9,7 @@ updated: 2026-07-29
 
 ### 1. The four-knob bundle for all 18 cells
 expected: `node cadence-core/bin/route.mjs resolve --role <role>` returns model, effort, review and verify for all 18 (level, role) pairs, and cadence-core/bin/route.test.mjs carries one row per pair with literal expected values rather than values derived from the table under test
+criterion: AC1
 status: pass
 first_pass: pass
 source: verifier
@@ -16,6 +17,7 @@ evidence: Hermetic 36-resolution sweep (18 cells x attempts 1,2) matched CONTEXT
 
 ### 2. Retry rungs, held rungs, and escalate_to gone
 expected: With --attempt 2 each cell resolves to the retry rung its grid row names and returns that rung's agent file; where retry equals the starting rung (level 3 analyzer and executor) the reason string says the rung was held; and escalate_to appears in no shipped .json, .mjs or .md - modulo the DESIGN.md history exception the SUMMARY flags for judgement
+criterion: AC2
 status: pass
 first_pass: fail
 reported: reword
@@ -25,6 +27,7 @@ fix: 7674f4e, retest
 
 ### 3. 19 agent rung files, each budgeted and effort-matched
 expected: agents/ holds the 19 files the grids name, each file's frontmatter effort equals the rung in its name, each has a weight-budgets.json entry, and `node cadence-core/bin/self-verify.mjs` names the cell when a grid names a rung with no file
+criterion: AC3
 status: pass
 first_pass: pass
 source: verifier
@@ -32,6 +35,7 @@ evidence: ls agents/ = 19 files; routableAgents = 19 stems with named-but-absent
 
 ### 4. self-verify fails on the four bad-value classes, naming the cell
 expected: `node cadence-core/bin/self-verify.mjs` reports ok:false naming the offending cell for a model outside model_aliases, a rung outside rung_order, a gate outside off|advisory|blocking|adjudicated, and a trigger name config.schema.json does not define
+criterion: AC4
 status: pass
 first_pass: pass
 source: verifier
@@ -39,6 +43,7 @@ evidence: On a git archive copy (baseline ok:true, problems []): unknown-model |
 
 ### 5. Model pins, no fable in cells, executor model from its own cells
 expected: model.overrides.<role> replaces a cell's model and leaves its effort unchanged; no cell at any level holds fable; and cad-executor's model comes from its own cells (sonnet / opus / opus) rather than from a tier lookup
+criterion: AC5
 status: pass
 first_pass: pass
 source: verifier
@@ -46,6 +51,7 @@ evidence: Pin sweep (model.overrides.cad-planner=fable): solo/shipped/critical a
 
 ### 6. Config gate wins over the level gate, with a named warning
 expected: A config whose review.triggers.<t>.gate disagrees with the level's gate resolves to the CONFIG value and emits one warning naming the trigger, the config value and the level value
+criterion: AC6
 status: pass
 first_pass: pass
 source: verifier
@@ -53,6 +59,7 @@ evidence: solo + diff:blocking -> review.diff="blocking", warnings = ["review.tr
 
 ### 7. Green tree: tests, types, self-verify
 expected: `node --test cadence-core/bin/*.test.mjs` exits 0, `npx tsc -p tsconfig.ci.json` exits 0, and `node cadence-core/bin/self-verify.mjs` reports ok:true with no budget overage and no unknown-config-key
+criterion: AC7
 status: pass
 first_pass: pass
 source: verifier

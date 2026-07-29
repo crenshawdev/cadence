@@ -9,6 +9,7 @@ updated: 2026-07-29
 
 ### 1. Floor raises a solo baseline; --phase and cursor agree
 expected: With stakes "solo" in every config layer, `node cadence-core/bin/route.mjs resolve --role <r> --phase <N>` against a phase whose PLAN files: matches a surfaces row returns stakes:"critical" plus that row's model, effort, review and verify, and reason names the matched surface and the path that matched it. The same resolve with no --phase, against a STATE cursor pointing at that phase, returns the identical bundle.
+criterion: AC1
 status: pass
 first_pass: pass
 source: verifier
@@ -16,6 +17,7 @@ evidence: resolve --role cad-executor --phase 7 --file <fixture> -> stakes:criti
 
 ### 2. No detection means no floor, and it never blocks
 expected: A phase whose PLAN files: match no surface row, a phase with no PLAN file, and a resolve with neither --phase nor a cursor all return the baseline level's bundle with ok:true and no floor entry in reason. A PLAN present but unreadable returns the same baseline bundle plus one warning naming the file.
+criterion: AC2
 status: pass
 first_pass: pass
 source: verifier
@@ -23,6 +25,7 @@ evidence: 4 hermetic runs all stakes:solo, reason [config:global+repo], no warni
 
 ### 3. The floor raises and never caps
 expected: With stakes "critical" configured and a detected surface whose row floors below critical, resolve returns critical with no override set and no refusal.
+criterion: AC3
 status: pass
 first_pass: pass
 source: verifier
@@ -30,6 +33,7 @@ evidence: Injected table with surfaces.auth.floor=shipped: baseline critical -> 
 
 ### 4. Per-surface waiver, and a misspelled surface refused at the write face
 expected: With stakes "solo" and a phase detecting two surfaces: setting risk.override.<first> alone still resolves critical; setting both resolves solo with reason naming each waived surface; and `node cadence-core/bin/config.mjs set risk.override.<not-a-surface> true` is refused with a message listing the accepted surface names.
+criterion: AC4
 status: pass
 first_pass: pass
 source: verifier
@@ -37,6 +41,7 @@ evidence: Phase declaring src/auth/session.rs + db/migrations/001.sql: risk.over
 
 ### 5. Self-verify catches four classes of surface-table drift
 expected: `node cadence-core/bin/self-verify.mjs` reports ok:false naming the offending row for each of: a surface whose floor is not a stakes level, a surface row with an empty pattern list, a surface in route-table.json with no risk.override.<surface> schema key, and a risk.override.<surface> schema key naming no surface row.
+criterion: AC5
 status: pass
 first_pass: pass
 source: verifier
@@ -44,6 +49,7 @@ evidence: rsync tree copy (baseline ok:true, 0 problems), one mutation each -> o
 
 ### 6. A bad review gate no longer reaches the bundle
 expected: A config review.triggers.<t>.gate outside off|advisory|blocking|adjudicated, or not a string, no longer reaches the bundle: resolve returns the LEVEL's gate for that trigger plus one warning naming the rejected value. Verified with {"gate":"blockign"} on risk_surface at critical, which previously resolved ok:true carrying "blockign".
+criterion: AC6
 status: pass
 first_pass: pass
 source: verifier
@@ -51,6 +57,7 @@ evidence: Hermetic {"stakes":"critical","review":{"triggers":{"risk_surface":{"g
 
 ### 7. Suite, types and self-verify are green
 expected: `node --test cadence-core/bin/*.test.mjs` exits 0, `npx tsc -p tsconfig.ci.json` exits 0, and `node cadence-core/bin/self-verify.mjs` reports ok:true with --phase accepted in the route.mjs CONTRACTS entry, no budget overage and no unknown-config-key.
+criterion: AC7
 status: pass
 first_pass: pass
 source: verifier
@@ -58,6 +65,7 @@ evidence: node --test cadence-core/bin/*.test.mjs -> pass 950 / fail 0, exit 0; 
 
 ### 8. CHANGELOG claims a global-layer waiver refusal the resolver does not implement
 expected: CHANGELOG.md:112-117 (shipped by this phase's own docs commit 5a4c3e3) states the waiver is repo-scoped and 'the user-global layer is refused outright', and config.schema.json marks all eight keys src:repo - but route.mjs:107 reads riskOverrides from the MERGED config and config.mjs's repoScopedErrors compares paths by string equality, so a global waiver passes both faces. The behaviors are SUMMARY open items 1-2; what is new is that the docs ship the fix as a delivered claim.
+origin: verifier
 status: pass
 first_pass: fail
 source: verifier
