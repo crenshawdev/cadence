@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
-  classifyActiveSection, isRequirementId,
+  classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
 } from './lib/planning-files.mjs';
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
@@ -928,6 +928,186 @@ for (const row of ACTIVE_ROWS) {
     assert.deepEqual(parseActiveIds(row.text), row.ids, 'parseActiveIds delegation');
   });
 }
+
+// --- the CONTEXT `## Acceptance criteria` grammar ----------------------------
+// The table cadence-core/references/acceptance-criteria.md states in prose.
+// Every code in that file's out-of-grammar table has a row here and vice versa.
+
+/** A CONTEXT-shaped doc: `## Acceptance criteria` at line 3, `body` from 5. */
+const criteriaDoc = (body) =>
+  `# Phase 1 Context\n\n## Acceptance criteria\n\n${body}\n\n## Flagged assumptions\n\nnone\n`;
+
+// Each row: {name, text, criteria, codes}. `criteria` is the declared
+// `{id, text}` list (null for an ABSENT heading); `codes` is the issue codes in
+// line order.
+const CRITERION_ROWS = [
+  // --- in grammar: never an issue -------------------------------------------
+  {
+    name: 'the canonical bullet parses to {id, text}',
+    text: criteriaDoc('- [ ] AC1: the tests pass'),
+    criteria: [{ id: 'AC1', text: 'the tests pass' }], codes: [],
+  },
+  {
+    name: 'a checked `- [x]` bullet is still a criterion',
+    text: criteriaDoc('- [x] AC1: the tests pass'),
+    criteria: [{ id: 'AC1', text: 'the tests pass' }], codes: [],
+  },
+  {
+    name: 'a capital `- [X]` checkbox is still a criterion',
+    text: criteriaDoc('- [X] AC1: the tests pass'),
+    criteria: [{ id: 'AC1', text: 'the tests pass' }], codes: [],
+  },
+  {
+    name: 'a two-digit id parses as itself',
+    text: criteriaDoc('- [ ] AC12: the twelfth criterion'),
+    criteria: [{ id: 'AC12', text: 'the twelfth criterion' }], codes: [],
+  },
+  {
+    name: 'several criteria keep presentation order',
+    text: criteriaDoc('- [ ] AC1: one\n- [ ] AC2: two\n- [ ] AC3: three'),
+    criteria: [{ id: 'AC1', text: 'one' }, { id: 'AC2', text: 'two' },
+      { id: 'AC3', text: 'three' }], codes: [],
+  },
+  {
+    name: 'a wrapped criterion joins its continuation lines with one space',
+    text: criteriaDoc('- [ ] AC1: the first line\n      continues here\n      and here'),
+    criteria: [{ id: 'AC1', text: 'the first line continues here and here' }], codes: [],
+  },
+  {
+    name: 'a continuation line naming another AC<N> reports NOTHING - the silence the rule buys',
+    text: criteriaDoc('- [ ] AC1: unchanged, the same shape\n      AC3 pins elsewhere'),
+    criteria: [{ id: 'AC1', text: 'unchanged, the same shape AC3 pins elsewhere' }], codes: [],
+  },
+  {
+    name: 'a trailing (human-verify: ...) suffix stays in the text verbatim (D-11)',
+    text: criteriaDoc('- [ ] AC2: the image builds (human-verify: needs docker)'),
+    criteria: [{ id: 'AC2', text: 'the image builds (human-verify: needs docker)' }], codes: [],
+  },
+  {
+    name: 'a CRLF checkout parses exactly as its LF twin',
+    text: criteriaDoc('- [ ] AC1: the tests pass').replace(/\n/g, '\r\n'),
+    criteria: [{ id: 'AC1', text: 'the tests pass' }], codes: [],
+  },
+  {
+    name: 'a lone-CR file parses too - this is a pure reader, so `normalize` applies (D-03)',
+    text: criteriaDoc('- [ ] AC1: the tests pass').replace(/\n/g, '\r'),
+    criteria: [{ id: 'AC1', text: 'the tests pass' }], codes: [],
+  },
+  {
+    name: 'an absent heading is criteria null, NOT [] and NOT an issue',
+    text: '# Phase 1 Context\n\n## Durable decisions\n\n- D-01 (area): a decision\n',
+    criteria: null, codes: [],
+  },
+  {
+    name: 'a present-but-empty heading is [] with no issues',
+    text: '# Phase 1 Context\n\n## Acceptance criteria\n\n## Flagged assumptions\n\nnone\n',
+    criteria: [], codes: [],
+  },
+  {
+    name: 'a criterion-shaped bullet under a LATER ## heading is not read',
+    text: '## Acceptance criteria\n\n- [ ] AC1: real\n\n## Notes\n\n- [ ] AC2: not a criterion\n',
+    criteria: [{ id: 'AC1', text: 'real' }], codes: [],
+  },
+  {
+    name: 'ordinary prose naming no AC<N> token is silent',
+    text: criteriaDoc('- [ ] AC1: one\n\nTooling probed on this machine: node, npx, git.'),
+    criteria: [{ id: 'AC1', text: 'one' }], codes: [],
+  },
+
+  // --- out of grammar: one code per row, all nine ----------------------------
+  {
+    name: 'criterion-unidded: a bare checkbox bullet - the legacy shape, the central diagnostic',
+    text: criteriaDoc('- [ ] the tests pass'),
+    criteria: [], codes: ['criterion-unidded'],
+  },
+  {
+    name: 'criterion-unidded fires on a bullet naming NO id token at all (checked before the token gate)',
+    text: criteriaDoc('- [ ] AC1: one\n- [ ] the linter is clean'),
+    criteria: [{ id: 'AC1', text: 'one' }], codes: ['criterion-unidded'],
+  },
+  {
+    name: 'criterion-duplicate-id: the second bullet reusing an id is reported and NOT pushed',
+    text: criteriaDoc('- [ ] AC3: first\n- [ ] AC3: second, a duplicate'),
+    criteria: [{ id: 'AC3', text: 'first' }], codes: ['criterion-duplicate-id'],
+  },
+  {
+    name: 'criterion-empty-text: reported AND still pushed with an empty text (parse-then-diagnose)',
+    text: criteriaDoc('- [ ] AC4:'),
+    criteria: [{ id: 'AC4', text: '' }], codes: ['criterion-empty-text'],
+  },
+  {
+    name: 'criterion-unboxed-bullet: no checkbox, so not a criterion',
+    text: criteriaDoc('- AC1: the tests pass'),
+    criteria: [], codes: ['criterion-unboxed-bullet'],
+  },
+  {
+    name: 'criterion-nondash-bullet: legal GFM, but the grammar reads `-` only',
+    text: criteriaDoc('* AC1: the tests pass'),
+    criteria: [], codes: ['criterion-nondash-bullet'],
+  },
+  {
+    name: 'criterion-indented-bullet: an indented criterion with nothing open',
+    text: criteriaDoc('  - [ ] AC2: the linter is clean'),
+    criteria: [], codes: ['criterion-indented-bullet'],
+  },
+  {
+    name: 'criterion-indented-bullet: the continuation exception - an indented AC bullet UNDER an open criterion',
+    text: criteriaDoc('- [ ] AC1: one\n  - [ ] AC2: swallowed as prose without this'),
+    criteria: [{ id: 'AC1', text: 'one' }], codes: ['criterion-indented-bullet'],
+  },
+  {
+    name: 'criterion-ordered-item: a numbered list item',
+    text: criteriaDoc('1. AC1: the tests pass'),
+    criteria: [], codes: ['criterion-ordered-item'],
+  },
+  {
+    name: 'criterion-heading: a criterion written as a heading',
+    text: criteriaDoc('### AC1: the tests pass'),
+    criteria: [], codes: ['criterion-heading'],
+  },
+  {
+    name: 'criterion-prose-line: the catch-all - phase 5s own CONTEXT footer',
+    text: criteriaDoc('- [ ] AC7: the last one\n\nAC7 is the only human-verify criterion.'),
+    criteria: [{ id: 'AC7', text: 'the last one' }], codes: ['criterion-prose-line'],
+  },
+
+  // The mixed-authoring case the entry-shaped codes exist for: one idded bullet
+  // beside four out-of-grammar lines. `classifyPhaseList`'s near-miss
+  // suppression would report NONE of these; suppressing them here is what would
+  // hide a half-migrated CONTEXT.
+  {
+    name: 'one issue per line, in line order, across mixed shapes beside a real criterion',
+    text: criteriaDoc('- [ ] AC1: real\n- [ ] a bare bullet\n1. AC2: ordered\n### AC3: heading\nAC4 lives in prose.'),
+    criteria: [{ id: 'AC1', text: 'real' }],
+    codes: ['criterion-unidded', 'criterion-ordered-item', 'criterion-heading', 'criterion-prose-line'],
+  },
+];
+
+for (const row of CRITERION_ROWS) {
+  test(`acceptance-criteria: ${row.name}`, () => {
+    const res = classifyAcceptanceCriteria(row.text);
+    assert.deepEqual(res.criteria, row.criteria, 'criteria');
+    assert.deepEqual(res.issues.map((i) => i.code), row.codes, 'issue codes');
+  });
+}
+
+test('classifyAcceptanceCriteria: an issue carries its exact line, code and truncated text', () => {
+  assert.deepEqual(
+    classifyAcceptanceCriteria(criteriaDoc('- [ ] AC1: one\n- [ ] a bare bullet')).issues,
+    [{ line: 6, code: 'criterion-unidded', text: '- [ ] a bare bullet' }]);
+});
+
+// This repo's own four completed phases, as the fixture no synthetic row can
+// replace: the grammar must read the files it was written against.
+test('classifyAcceptanceCriteria: phases 1-4 of this repo read AC1-AC7 with no issues', () => {
+  for (const n of [1, 2, 3, 4]) {
+    const res = classifyAcceptanceCriteria(
+      readFileSync(new URL(`../../.planning/phases/${n}/CONTEXT.md`, import.meta.url), 'utf8'));
+    assert.deepEqual(res.criteria.map((c) => c.id),
+      ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7'], `phase ${n} ids`);
+    assert.deepEqual(res.issues, [], `phase ${n} issues`);
+  }
+});
 
 // The admission test `audit` asks before an `## Active` id may break the
 // verdict. Anchored on purpose - `REQ_ID_TOKEN` beside it is unanchored because
