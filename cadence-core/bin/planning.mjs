@@ -46,7 +46,7 @@ import {
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
-  classifyAcceptanceCriteria,
+  classifyAcceptanceCriteria, UAT_ORIGINS,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -401,28 +401,48 @@ function cmdUat(dir, sub, opts) {
     if (!Array.isArray(items) || items.some((i) => !i.name || !i.expected)) {
       return fail('bad-payload', 'expected a JSON array of {name, expected}');
     }
+    // The traceability fields are OPTIONAL but validated before any write, so a
+    // typo lands as a named refusal rather than as an item whose `criterion`
+    // names nothing (which `criteria-coverage` would then report as
+    // `unknown_criterion` on a file already on disk).
+    const badCriterion = items.find((i) => i.criterion !== undefined && !/^AC\d+$/.test(i.criterion));
+    if (badCriterion) {
+      return fail('bad-payload', `criterion must be AC<N> (got: ${badCriterion.criterion})`);
+    }
+    const badOrigin = items.find((i) => i.origin !== undefined && !UAT_ORIGINS.includes(i.origin));
+    if (badOrigin) {
+      return fail('bad-payload', `origin must be one of: ${UAT_ORIGINS.join(' | ')} (got: ${badOrigin.origin})`);
+    }
+    // Carried onto the item by BOTH arms. `origin` is never derived from the
+    // presence of `criterion`: a present `criterion` is itself the
+    // criterion-derived marker, and fabricating a second one would put this
+    // seam's output out of step with the four backfilled checklists (D-16).
+    const build = (it, k) => ({ k, name: it.name, expected: it.expected,
+      ...(it.criterion ? { criterion: it.criterion } : {}),
+      ...(it.origin ? { origin: it.origin } : {}),
+      status: 'pending', ...(it.source ? { source: it.source } : {}) });
     if (sub === 'init') {
       if (existsSync(uatFile(dir, n))) return fail('uat-exists', 'use refresh, or remove the file deliberately');
       const today = new Date().toISOString().slice(0, 10);
       const uat = {
         fm: { status: 'testing', phase: String(n), started: today, updated: today,
           ...(opts.sources ? { sources: opts.sources } : {}) },
-        items: items.map((it, i) => ({ k: i + 1, name: it.name, expected: it.expected,
-          status: 'pending', ...(it.source ? { source: it.source } : {}) })),
+        items: items.map((it, i) => build(it, i + 1)),
       };
       writeUat(dir, n, uat);
       return ok({ file: uatFile(dir, n), items: uat.items.length, next: nextPending(uat.items) });
     }
     // refresh: append only items whose name matches nothing existing; never
-    // touch a recorded result.
+    // touch a recorded result. It carries the same fields `init` does, in
+    // LOCKSTEP with it (D-06): `verify.md` routes every re-run of a phase
+    // through refresh, so an arm that dropped them would make any phase
+    // verified across two sessions untraceable even with init right.
     const uat = loadUat(dir, n);
     if (!uat) return;
     const have = new Set(uat.items.map((i) => String(i.name)));
     const fresh = items.filter((i) => !have.has(i.name));
     let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
-    for (const it of fresh) {
-      uat.items.push({ k: ++k, name: it.name, expected: it.expected, status: 'pending' });
-    }
+    for (const it of fresh) uat.items.push(build(it, ++k));
     if (fresh.length) writeUat(dir, n, uat);
     return ok({ added: fresh.length, total: uat.items.length, next: nextPending(uat.items) });
   }
@@ -441,10 +461,17 @@ function cmdUat(dir, sub, opts) {
     if (source === 'verifier' && item.status !== 'pending') {
       return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
     }
+    // Validated BEFORE any write: `--origin` is the after-the-fact repair for
+    // an item whose provenance was never declared, so an out-of-enum value must
+    // leave the file byte-unchanged rather than record a marker nothing reads.
+    if (opts.origin !== undefined && !UAT_ORIGINS.includes(opts.origin)) {
+      return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`);
+    }
     item.status = opts.result;
     if (source === 'verifier') item.source = 'verifier';
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
-      ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence']]) {
+      ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence'],
+      ['origin', 'origin']]) {
       if (opts[flag] !== undefined) item[field] = opts[flag];
     }
     // Invariant: first_pass is the FIRST pass/fail verdict, set once, never after.
@@ -519,7 +546,13 @@ function cmdUat(dir, sub, opts) {
         // entry that wrote nothing must not inflate it - otherwise the
         // envelope reports three gaps found for one item written.
         if (!name) { rejected++; continue; }
+        // `origin: verifier` is the item-level provenance `source: verifier` is
+        // not: source records where a RESULT came from and is set identically on
+        // an existing pending item above, so it cannot mark an item the verifier
+        // ADDED (D-12). Without this the reverse-direction exemption would
+        // swallow nearly every item in every shipped checklist.
         uat.items.push({ k: ++k, name, expected: g.expected || g.reason || '',
+          origin: 'verifier',
           status: 'fail', source: 'verifier', severity: g.severity || 'major',
           ...(g.reason ? { reported: g.reason } : {}),
           ...(g.evidence ? { evidence: g.evidence } : {}), first_pass: 'fail' });
@@ -530,7 +563,13 @@ function cmdUat(dir, sub, opts) {
       if (find(h)) continue;
       const name = usableName(h);
       if (!name) { rejected++; continue; } // appends the identical phantom, at pending
-      uat.items.push({ k: ++k, name, expected: h.expected || '', status: 'pending' });
+      // This path wrote NO provenance of any kind before this phase - observable
+      // at .planning/phases/1/UAT.md items 12 and 14, which carry neither
+      // `source` nor an origin. The bare-`continue` counting bug above (an entry
+      // matching an existing item lands in neither `skipped` nor `rejected`) is
+      // deliberately untouched: it is deferred to its own phase (D-14).
+      uat.items.push({ k: ++k, name, expected: h.expected || '',
+        origin: 'verifier', status: 'pending' });
       added++;
     }
     writeUat(dir, n, uat);

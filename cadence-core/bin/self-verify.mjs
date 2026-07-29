@@ -64,7 +64,7 @@ const CONTRACTS = {
     'uat init': ['--phase', '--sources'],
     'uat refresh': ['--phase'],
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--source'],
+      '--severity', '--cause', '--fix', '--evidence', '--source', '--origin'],
     'uat merge': ['--phase'],
     'uat status': ['--phase'],
     audit: [],

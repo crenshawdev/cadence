@@ -878,6 +878,121 @@ test('uat merge: fills pending only, appends unmatched gaps and human checks', (
   assert.doesNotMatch(text, /would overwrite/);
 });
 
+// --- uat: the criterion / origin carrier (registration is what makes it last)
+// Registration in UAT_FIELDS is the whole mechanism: parseUat accepts any
+// `field: value` line, so an UNregistered field survives init and is destroyed
+// by the first record, which rewrites the whole file. Every assertion here
+// reads the raw bytes rather than the envelope for that reason.
+
+const LINKED_ITEMS = JSON.stringify([
+  { name: 'Login works', expected: 'user lands on dashboard', criterion: 'AC3' },
+  { name: 'Logout works', expected: 'session cleared', criterion: 'AC4' },
+  { name: 'The plugin loads at all', expected: 'no error on startup', origin: 'smoke' },
+]);
+
+/** The raw bytes of a fixture's UAT.md - never the envelope. */
+const uatText = (dir) => readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+
+function linkedTree() {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  run(['uat', 'init', '--phase', '1'], dir, LINKED_ITEMS);
+  return dir;
+}
+
+test('uat: a criterion written by init is byte-present after a refresh AND after a record', () => {
+  const dir = linkedTree();
+  assert.match(uatText(dir), /### 1\. Login works\nexpected: user lands on dashboard\ncriterion: AC3\nstatus: pending/);
+  // The refresh payload carries a NEW item name, so the file is actually
+  // rewritten (`if (fresh.length) writeUat`) - re-sending the identical payload
+  // would leave it untouched and prove nothing about the refresh arm.
+  const r = run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Password reset', expected: 'email arrives', criterion: 'AC5' },
+  ]));
+  assert.equal(r.added, 1);
+  assert.equal(uatText(dir).match(/^criterion: AC3$/gm).length, 1);
+  assert.match(uatText(dir), /### 4\. Password reset\nexpected: email arrives\ncriterion: AC5\nstatus: pending/);
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(uatText(dir).match(/^criterion: AC3$/gm).length, 1);
+  assert.equal(uatText(dir).match(/^criterion: AC5$/gm).length, 1);
+});
+
+test('uat: an origin written by init survives refresh and record the same way', () => {
+  const dir = linkedTree();
+  assert.match(uatText(dir), /### 3\. The plugin loads at all\nexpected: [^\n]*\norigin: smoke\nstatus: pending/);
+  run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'A deliverable', expected: 'ships', origin: 'verifier' },
+  ]));
+  run(['uat', 'record', '--phase', '1', '--item', '3', '--result', 'pass'], dir);
+  assert.equal(uatText(dir).match(/^origin: smoke$/gm).length, 1);
+  assert.equal(uatText(dir).match(/^origin: verifier$/gm).length, 1);
+});
+
+test('uat refresh: carries source, criterion and origin onto an appended item, in lockstep with init', () => {
+  const dir = linkedTree();
+  run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Deep-pass find', expected: 'observable', criterion: 'AC6', origin: 'criterion', source: 'verifier' },
+  ]));
+  assert.match(uatText(dir),
+    /### 4\. Deep-pass find\nexpected: observable\ncriterion: AC6\norigin: criterion\nstatus: pending\nsource: verifier/);
+});
+
+test('uat record --origin: sets provenance after the fact on an existing item', () => {
+  const dir = uatTree(); // no field on either item
+  const r = run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass',
+    '--origin', 'verifier'], dir);
+  assert.equal(r.ok, true);
+  assert.match(uatText(dir), /### 2\. Logout works\nexpected: session cleared\norigin: verifier\nstatus: pass/);
+});
+
+test('uat record: an out-of-enum --origin is refused with the file byte-unchanged', () => {
+  const dir = linkedTree();
+  const before = uatText(dir);
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--origin', 'verifer'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /criterion \| verifier \| smoke/);
+  assert.equal(uatText(dir), before);
+});
+
+test('uat init: an out-of-shape criterion or origin is bad-payload, nothing written', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  const badId = run(['uat', 'init', '--phase', '1'], dir,
+    JSON.stringify([{ name: 'X', expected: 'y', criterion: 'AC-01' }]));
+  assert.equal(badId.reason, 'bad-payload');
+  assert.match(badId.detail, /AC<N>/);
+  assert.equal(existsSync(join(dir, 'phases', '1', 'UAT.md')), false);
+  const badOrigin = run(['uat', 'init', '--phase', '1'], dir,
+    JSON.stringify([{ name: 'X', expected: 'y', origin: 'verified' }]));
+  assert.equal(badOrigin.reason, 'bad-payload');
+  assert.match(badOrigin.detail, /criterion \| verifier \| smoke/);
+  assert.equal(existsSync(join(dir, 'phases', '1', 'UAT.md')), false);
+});
+
+test('uat merge: both append paths write origin verifier - the item-level provenance source cannot carry', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [{ name: 'Rate limiting', reason: 'no limiter found on /login' }],
+    human_checks: [{ name: 'Email renders in dark mode', expected: 'readable' }],
+  }));
+  assert.equal(r.added, 2);
+  // The gap append.
+  assert.match(uatText(dir), /### 3\. Rate limiting\nexpected: [^\n]*\norigin: verifier\nstatus: fail/);
+  // The human_checks append, which wrote no provenance of any kind before.
+  assert.match(uatText(dir), /### 4\. Email renders in dark mode\nexpected: readable\norigin: verifier\nstatus: pending/);
+});
+
+test('uat merge: a MATCHED pending item gets source verifier and no origin - it was not verifier-added', () => {
+  const dir = linkedTree();
+  run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    passes: [{ name: 'Login works', evidence: 'src/auth.ts:42' }],
+  }));
+  // Item 1 keeps its criterion and gains no origin: source records where the
+  // RESULT came from, origin where the ITEM came from (D-12).
+  assert.match(uatText(dir), /### 1\. Login works\nexpected: [^\n]*\ncriterion: AC3\nstatus: pass\nfirst_pass: pass\nsource: verifier/);
+  assert.equal(uatText(dir).match(/^origin: verifier$/gm), null);
+});
+
 test('uat merge: an entry with no usable name is rejected, never written (#46.2)', () => {
   const dir = uatTree();
   const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({

@@ -21,20 +21,24 @@ updated: [ISO timestamp]
 
 ### 1. [Name]
 expected: [observable behavior - what the user should see]
+criterion: AC1
 status: pending
 
 ### 2. [Name]
 expected: [observable behavior]
+criterion: AC2
 status: pass
 
 ### 3. [Name]
 expected: [observable behavior]
+origin: smoke
 status: pass
 source: verifier
 evidence: [what cad-verifier observed, file:line or command output]
 
 ### 4. [Name]
 expected: [observable behavior]
+origin: verifier
 status: fail
 first_pass: fail
 reported: "[verbatim user reply]"
@@ -82,8 +86,24 @@ reworked: [N]
 - `reworked` (Summary): count of items whose `first_pass` is `fail` - the
   phase needed N human fix-and-retest rounds. A clean run reports `0`; a
   bumpy one does not hide behind `failed: 0`.
+- `criterion`: the CONTEXT `## Acceptance criteria` id (`AC<N>`) this item
+  was built from, written by `uat init`/`uat refresh` from the payload and
+  carried through every later rewrite. It is what lets `/cad-audit` prove
+  every criterion reached the checklist
+  (`references/acceptance-criteria.md`).
+- `origin`: `criterion | verifier | smoke` - declared on an item that
+  legitimately has no criterion, so it is exempt rather than merely
+  unlinked. A verifier-appended gap gets `verifier`, the cold-start smoke
+  item `smoke`. Written, never derived: a present `criterion` is itself the
+  criterion-derived marker. `uat record --origin` repairs it after the fact.
+- A checklist where NO item carries `criterion` and none carries `origin`
+  predates both fields: `/cad-audit` reports it as legacy and never breaks
+  on it. One `origin` present without any `criterion` is NOT legacy - it is
+  a live checklist whose links were dropped, and it breaks.
 - `source: verifier` marks results merged from a cad-verifier pass; they
-  are skipped in the walk but stay visible here with their evidence.
+  are skipped in the walk but stay visible here with their evidence. It is
+  where a RESULT came from, never where an ITEM came from - that is
+  `origin`'s job, and conflating them exempts nearly every item.
 - Failure evidence lives on the item (reported / severity / cause / fix) -
   there is no separate gaps section.
 - Summary counts: recomputed and overwritten after every response.

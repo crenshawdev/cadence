@@ -819,8 +819,22 @@ export function classifyAcceptanceCriteria(text) {
 // ---------------------------------------------------------------------------
 
 // Item field order in the rendered file - pinned so rewrites are stable.
-const UAT_FIELDS = ['expected', 'status', 'first_pass', 'source', 'evidence',
-  'reported', 'severity', 'cause', 'fix', 'reason'];
+//
+// Registration is what makes a field SURVIVE: `parseUat` accepts any
+// `^(\w+):\s*(.+?)\s*$` line, but `renderUat` filters against this whitelist
+// and every `uat record` rewrites the whole file, so an unregistered field
+// survives `init` and is destroyed by the first `record` (D-05). `criterion`
+// and `origin` sit directly after `expected` because that is where a hand-added
+// line has to be for the first rewrite not to move it.
+const UAT_FIELDS = ['expected', 'criterion', 'origin', 'status', 'first_pass',
+  'source', 'evidence', 'reported', 'severity', 'cause', 'fix', 'reason'];
+
+// The one place the `origin` enum lives. `criterion` is the criterion-derived
+// marker by its own presence, so `origin: criterion` is only ever a repair for
+// an item whose link is known-lost; `verifier` and `smoke` are the values that
+// declare an item legitimately built from no criterion, and they are the only
+// two `criteria-coverage` exempts from `untraced`.
+export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
 const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
 
 /**
