@@ -6,9 +6,13 @@
     "roles": "The declared ARRAY of routable role names, and what route.mjs checks a `--role` against.",
     "review": "The `review` grid keys on (stakes level, trigger name) and yields the gate that trigger fires at, for the five triggers config.schema.json defines. `risk_surface` is deliberately `blocking` at EVERY level: it fires only on a detection match, so there is no level at which a matched risk surface is worth waving through. A `review.triggers.<t>.gate` a user set wins over the level's value and route.mjs reports the disagreement in `warnings`.",
     "verify": "The `verify` grid keys on the stakes level ALONE - the deep-verify pass has no role in hand when it decides whether to run. It is two-state (`off`/`on`); the depth of that pass is carried by the cad-verifier row of the effort grid, not here.",
+    "surfaces": "The declared risk surfaces. A row's `patterns` are lowercase tokens matched for EQUALITY against the tokens of a path the phase's PLAN declares in its `files:` frontmatter; a match RAISES the resolved stakes level to that row's `floor` and never lowers it (the comparison order is `stakes_order`). `risk.override.<surface>` is the per-surface waiver: the floor drops back to the baseline only when every detected surface is named. Patterns are data - moving one is an edit here, not a code change - and self-verify walks the block against config.schema.json in both directions.",
+    "gates": "The accepted `review.triggers.<t>.gate` vocabulary, checked by route.mjs before a config-set gate may win over the level's gate - the same role model_aliases plays for a pin, in the same file, so the resolver never reads config.schema.json.",
     "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. The ROUTED vocabulary is narrower - `sonnet` and `opus` - so `haiku` and `fable` are reachable by a pin only. For `fable` that is not a ranking claim: it requires 30-day data retention and returns 400 invalid_request_error for every zero-data-retention org, which is other people's orgs since Cadence ships as a public plugin; its safety classifiers return a refusal stop reason on cyber-adjacent content, and Cadence reviews its own git rails, secrets handling and shell tokenizer; and its multi-minute turns press against the configured provider request timeout inside the host's Bash ceiling. It is reachable only by explicit pin, which is a user assertion about their own org, not ours."
   },
   "rung_order": ["low", "medium", "high", "xhigh", "max"],
+  "stakes_order": ["solo", "shipped", "critical"],
+  "gates": ["off", "advisory", "blocking", "adjudicated"],
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
   "roles": ["cad-planner", "cad-assumptions-analyzer", "cad-verifier", "cad-reviewer", "cad-executor", "cad-plan-checker"],
 
@@ -49,5 +53,16 @@
     "solo": "off",
     "shipped": "on",
     "critical": "on"
+  },
+
+  "surfaces": {
+    "auth":            { "patterns": ["auth", "authn", "authz", "authentication", "authorization", "oauth", "login", "logout", "signin", "signup", "session", "sessions", "permission", "permissions", "rbac", "acl", "jwt"], "floor": "critical" },
+    "migrations":      { "patterns": ["migration", "migrations", "migrate", "alembic", "flyway", "liquibase", "ddl", "seeds"], "floor": "critical" },
+    "billing":         { "patterns": ["billing", "payment", "payments", "pricing", "invoice", "invoices", "checkout", "subscription", "subscriptions", "stripe", "paypal", "ledger", "refund", "refunds"], "floor": "critical" },
+    "concurrency":     { "patterns": ["concurrency", "concurrent", "mutex", "semaphore", "lock", "locks", "locking", "thread", "threads", "threading", "scheduler", "worker", "workers", "queue", "queues"], "floor": "critical" },
+    "destructive":     { "patterns": ["delete", "deletion", "destroy", "drop", "purge", "prune", "truncate", "wipe", "teardown", "rollback"], "floor": "critical" },
+    "secrets":         { "patterns": ["secret", "secrets", "credential", "credentials", "keyring", "keystore", "keychain", "crypto", "cipher", "encrypt", "encryption", "decrypt", "signing", "gpg", "pgp", "env", "dotenv", "vault", "password", "passwd", "htpasswd"], "floor": "critical" },
+    "api_contract":    { "patterns": ["api", "openapi", "swagger", "graphql", "grpc", "proto", "protobuf", "wire", "dto", "rpc", "webhook", "webhooks", "idl"], "floor": "critical" },
+    "untrusted_input": { "patterns": ["parser", "parsers", "deserialize", "deserializer", "unmarshal", "sanitize", "sanitizer", "sanitizing", "upload", "uploads", "ingest", "untrusted", "xss", "injection"], "floor": "critical" }
   }
 }

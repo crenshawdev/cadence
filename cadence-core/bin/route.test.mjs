@@ -333,7 +333,8 @@ test('table dumps the routing table - the three grids and the declared roles', (
   // The whole top-level key set, pinned: the retired blocks are GONE, not
   // merely unread, and a new one cannot appear without a reader.
   assert.deepEqual(Object.keys(r.table).sort(),
-    ['_meta', 'cells', 'model_aliases', 'review', 'roles', 'rung_order', 'verify']);
+    ['_meta', 'cells', 'gates', 'model_aliases', 'review', 'roles', 'rung_order',
+      'stakes_order', 'surfaces', 'verify']);
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
