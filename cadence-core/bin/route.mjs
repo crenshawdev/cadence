@@ -26,8 +26,11 @@
 //   model.escalate_on_failure  re-dispatch a failed attempt at the retry rung
 //                              its own cell names (bool, every stakes level)
 //   model.overrides.<role>     pin one role to a model alias, bypassing the cell
-//   review.triggers.*.gate     a gate a LAYER set, which wins over the level's
-//                              gate and reports the disagreement (D-04)
+//   review.triggers.*.gate     a gate a LAYER set, which must be one of the
+//                              table's `gates` and then wins over the level's
+//                              gate, reporting the disagreement (D-04); a value
+//                              outside that vocabulary loses to the level's gate
+//                              and is named in `warnings`
 //
 // The stakes level a config layer set is a FLOOR question too (STK-03): the
 // phase's own PLAN `files:` list is matched against the table's `surfaces`
@@ -58,6 +61,14 @@ const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DON
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
 const DEFAULTS = { stakes: 'shipped', escalate_on_failure: true };
+
+// The accepted `review.triggers.<t>.gate` vocabulary, used ONLY when the table
+// carries no usable `gates` array. Never skip the check on an absent list:
+// skipping leaves the hole open on exactly the tables most likely to be wrong -
+// an older or hand-edited route-table.json, or one injected through
+// CADENCE_ROUTE_TABLE - so a `"blockign"` typo would still reach the bundle
+// intact on the very input shape the check exists to cover.
+const DEFAULT_GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
 
 // The shape a `--phase` value must have: an integer phase, or a decimal
 // insertion (`2.1`), which is the phase directory's own name.
@@ -329,10 +340,27 @@ function resolve(opts) {
   // defect this milestone exists to close. The walk is over the LEVEL's row, so
   // a trigger name no level names contributes no gate and no warning - naming
   // the accepted set is config.mjs validate's job, not a dispatch's.
+  //
+  // A gate must be one of the table's accepted values BEFORE it can win. This
+  // adds a validity check in front of that precedence and changes no part of it:
+  // a valid gate that disagrees still wins and still warns. Without it a
+  // one-character typo (`"blockign"`) silently replaced `critical`'s
+  // deliberately-blocking `risk_surface` gate - a silent lowering of the very
+  // signal the risk floor rides on.
+  const gateNames = Array.isArray(TABLE.gates) && TABLE.gates.length
+    && TABLE.gates.every((g) => typeof g === 'string') ? TABLE.gates : DEFAULT_GATES;
   const review = {};
   for (const [trigger, levelGate] of Object.entries(reviewRow)) {
     const configured = cfg.triggerGates[trigger];
     if (configured !== undefined && configured !== levelGate) {
+      if (!gateNames.includes(configured)) {
+        // Same treatment an unknown model alias gets: name it, let the routed
+        // value stand, never block the spawn.
+        review[trigger] = levelGate;
+        warnings.push(`review.triggers.${trigger}.gate=${JSON.stringify(configured)} is not one of `
+          + `[${gateNames.join(', ')}]; the ${stakes} level gate "${levelGate}" stands`);
+        continue;
+      }
       review[trigger] = configured;
       warnings.push(`review.triggers.${trigger}.gate="${configured}" (config) wins over the ${stakes} level gate "${levelGate}"`);
     } else {

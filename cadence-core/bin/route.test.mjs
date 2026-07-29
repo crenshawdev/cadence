@@ -807,3 +807,64 @@ test('a waiver and a model pin coexist - two fields, not one', () => {
   assert.equal(r.stakes, 'solo'); // the waiver applied
   assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
 });
+
+// --- the gate-enum hole (AC6) ------------------------------------------------
+
+test('a config gate outside the four values loses to the level gate, and says so', () => {
+  // The CONTEXT-cited repro: today this resolved ok:true carrying "blockign",
+  // silently replacing critical's deliberately-blocking risk_surface gate.
+  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'blockign' } } } },
+    'gate-typo.json');
+  const r = resolve('cad-reviewer', c);
+  assert.equal(r.ok, true);
+  assert.equal(r.review.risk_surface, 'blocking'); // the LEVEL's gate stands
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /blockign/);
+  assert.match(r.warnings[0], /risk_surface/);
+});
+
+test('a gate of the wrong TYPE takes the same path as a typo', () => {
+  for (const [label, gate] of [['number', 3], ['bool', true], ['object', { gate: 'off' }],
+    ['array', ['off']]]) {
+    const c = rawCfg({ stakes: 'critical', review: { triggers: { diff: { gate } } } },
+      `gate-type-${label}.json`);
+    const r = resolve('cad-reviewer', c);
+    assert.equal(r.ok, true, label);
+    assert.equal(r.review.diff, 'blocking', label); // critical's own diff gate
+    assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
+    assert.match(r.warnings[0], /review\.triggers\.diff\.gate/, label);
+  }
+});
+
+test('a VALID disagreeing gate still wins - the check runs in front of D-04, not over it', () => {
+  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'off' } } } },
+    'gate-valid-disagree.json');
+  const r = resolve('cad-reviewer', c);
+  assert.equal(r.review.risk_surface, 'off'); // the user's key still decides
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /wins over the critical level gate/);
+});
+
+test('a VALID agreeing gate still emits no warning', () => {
+  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'blocking' } } } },
+    'gate-valid-agree.json');
+  const r = resolve('cad-reviewer', c);
+  assert.equal(r.review.risk_surface, 'blocking');
+  assert.equal(r.warnings, undefined);
+});
+
+test('the gate check FALLS BACK rather than skipping when the table declares no gates', () => {
+  // The row that proves the fallback rather than the skip: an older or
+  // hand-edited table carries no `gates` array, and that is exactly the input
+  // shape on which a typo must not reach the bundle.
+  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
+  delete t.gates;
+  const tablePath = join(dir, 'no-gates-table.json');
+  writeFileSync(tablePath, JSON.stringify(t));
+  const c = rawCfg({ stakes: 'critical', review: { triggers: { risk_surface: { gate: 'blockign' } } } },
+    'gate-typo-no-gates.json');
+  const r = resolve('cad-reviewer', c, [], { table: tablePath });
+  assert.equal(r.review.risk_surface, 'blocking');
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /blockign/);
+});
