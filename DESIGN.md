@@ -416,10 +416,11 @@ lever is trigger frequency (gating), never a weak reviewer.
   that did not exist when it was made: a FIXED escalation target can point BELOW what a cell set,
   which makes a retry think less while reporting an escalation, and a per-cell retry cannot. The
   direction guard moves with it - self-verify now fails a cell whose `retry` sits below its
-  `effort`, cell-named, and the same walk checks the model, both rungs, every gate and every
-  trigger name against the vocabulary `config.schema.json` already defines. A config
-  `review.triggers.<t>.gate` still WINS over the level's gate, with the disagreement in `warnings`:
-  the level must not make a key the user explicitly set stop doing anything.
+  `effort`, cell-named, and the same walk checks every gate and every trigger name against the
+  vocabulary `config.schema.json` defines, and the model and both rungs against the table's own
+  `model_aliases` and `rung_order`. A config `review.triggers.<t>.gate` still WINS over the level's
+  gate, with the disagreement in `warnings`: the level must not make a key the user explicitly set
+  stop doing anything.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
