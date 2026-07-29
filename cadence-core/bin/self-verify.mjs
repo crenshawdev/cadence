@@ -28,12 +28,13 @@
 //                    a pointer at one single-sourced contract; the moment one
 //                    grows behaviour, the ladder is N divergent variants
 //                    instead of one contract at N efforts.
-//   8. rung agents   both directions between route-table.json and agents/:
-//                    every rung the table can name must have an agent file,
-//                    and every rung-suffixed agent file must name a rung its
-//                    role declares. route.mjs returns an agent name it never
-//                    checks exists, so an unbuilt or stale rung would surface
-//                    as a failed spawn instead of in CI.
+//   8. routing cells the three grids in route-table.json, cell by cell (every
+//                    problem NAMES the cell), plus both directions between the
+//                    grids and agents/: every rung a cell names must have an
+//                    agent file, and every rung-suffixed agent file must be a
+//                    rung some cell reaches. route.mjs returns an agent name it
+//                    never checks exists, so an unbuilt or stale rung would
+//                    surface as a failed spawn instead of in CI.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -44,7 +45,8 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
-import { rungAgents, rungBodyIssue, rungIssues } from './lib/rung-agent.mjs';
+import { rungBodyIssue, rungFile } from './lib/rung-agent.mjs';
+import { cellIssues, declaredRoles, routableAgents } from './lib/route-cells.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -580,40 +582,41 @@ function run(root) {
       problems.push({ kind: 'unreadable-surface', file: 'cadence-core/route-table.json',
         detail: e.code || e.message });
     }
-    const roles = table && table.roles && typeof table.roles === 'object' ? table.roles : null;
-    if (roles) {
+    if (table && typeof table === 'object' && !Array.isArray(table)) {
+      // The grids' own well-formedness, cell by cell. The vocabulary comes from
+      // config.schema.json - the file that already defines these names (D-10) -
+      // rather than from parsing references/review-triggers.md's Wiring table,
+      // which has no stated grammar.
+      const gateSpec = schema['review.triggers.plan.gate'] || {};
+      const stakesSpec = schema.stakes || {};
+      for (const { code, detail } of cellIssues(table, {
+        levels: Array.isArray(stakesSpec.values) ? stakesSpec.values : [],
+        triggers: TRIGGERS,
+        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
+      })) {
+        problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
+      }
+
       // table -> disk: every name route.mjs can return must exist. route.mjs
       // never checks the name it returns, so without this an unbuilt or
-      // mistyped rung fails at dispatch time instead of in CI (D-05).
-      const routable = new Set();
-      for (const [role, spec] of Object.entries(roles)) {
-        for (const { code, detail } of rungIssues(role, spec, table.rung_order)) {
-          problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
-        }
-        for (const name of rungAgents(role, spec)) {
-          routable.add(name);
-          if (!existsSync(join(root, 'agents', `${name}.md`))) {
-            // `spec || {}` because a null role entry is exactly the malformed
-            // table the guard above is for, and rungAgents/rungIssues both
-            // already tolerate one - an unguarded deref HERE would unwind
-            // run() and discard every problem checks 1-7 found (#49.1).
-            const rung = name === role ? (spec || {}).base_effort : name.slice(role.length + 1);
-            problems.push({ kind: 'missing-rung-agent', file: 'cadence-core/route-table.json',
-              detail: `${role} rung ${rung} -> agents/${name}.md absent` });
-          }
+      // renamed rung fails at dispatch time instead of in CI.
+      const routable = routableAgents(table);
+      for (const [stem, cell] of routable) {
+        if (!existsSync(join(root, 'agents', `${stem}.md`))) {
+          problems.push({ kind: 'missing-rung-agent', file: 'cadence-core/route-table.json',
+            detail: `${cell}: agents/${stem}.md absent` });
         }
       }
-      // disk -> table, which "exactly the files the table names" (AC1) needs
-      // and the walk above does not give. Matched ONLY on the rung-suffixed
-      // shape: a blanket "not named by the table" rule would outlaw the
-      // one-off agent with inline prose D-04 deliberately keeps legal. Without
-      // this direction, a stale rung file - one the table stopped naming -
-      // stays green while still paying standing context in every main-session
-      // prompt, the cost the per-role `rungs` declaration exists to bound.
+      // disk -> table, which "exactly the files the grids name" needs and the
+      // walk above does not give. Matched ONLY on the rung-suffixed shape: a
+      // blanket "not named by the table" rule would outlaw the one-off agent
+      // with inline prose D-04 deliberately keeps legal. Without this
+      // direction, a stale rung file - one no cell reaches - stays green while
+      // still paying standing context in every main-session prompt.
       const order = Array.isArray(table.rung_order) ? table.rung_order : [];
       // Longest role name first, so a role that prefixes another cannot claim
       // the other's file.
-      const roleNames = Object.keys(roles).sort((a, b) => b.length - a.length);
+      const roleNames = declaredRoles(table).sort((a, b) => b.length - a.length);
       for (const e of agentFiles) {
         if (!e.endsWith('.md')) continue;
         const stem = e.slice(0, -3);
@@ -622,16 +625,14 @@ function run(root) {
           if (!stem.startsWith(`${role}-`)) continue;
           const rung = stem.slice(role.length + 1);
           if (order.includes(rung)) {
-            // Two different faults reach here and want opposite fixes. A rung
-            // the table never names is a stale file; a rung the table names as
-            // this role's BASE is a D-01 duplication, and saying "does not
-            // declare" there contradicts the table and sends the maintainer to
-            // edit the wrong file.
-            const base = (roles[role] || {}).base_effort;
+            // Two faults reach here and want opposite fixes. A file the rung
+            // map names is a cell that went missing (add the cell); a file it
+            // does not name is a stale rung file (delete it).
+            const mapped = rungFile(role, rung) === stem;
             problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
-              detail: rung === base
-                ? `${rung} is ${role}'s base rung and already lives at agents/${role}.md - this suffixed file duplicates it`
-                : `${role} does not declare rung ${rung}` });
+              detail: mapped
+                ? `${rung} is ${role}'s rung in lib/rung-agent.mjs, but no cell at any level resolves to it`
+                : `no cell names ${role} at rung ${rung}, and lib/rung-agent.mjs maps no file to it` });
           }
           break;
         }
@@ -652,7 +653,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-agents', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

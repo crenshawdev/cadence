@@ -72,8 +72,39 @@ function fixtureWith({ agents = {}, skills = {}, budgets = null, routeTable = un
   return root;
 }
 
-/** The five rungs the shipped table declares, for rung-ladder fixtures. */
+/** The five rungs the shipped table declares, for routing-cell fixtures. */
 const RUNG_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * A well-formed cell-shaped route table for ONE role, complete at all three
+ * levels, which a row then breaks in exactly one place. The role is a REAL one:
+ * the rung -> agent-file map lives in lib/rung-agent.mjs and knows the six
+ * shipped roles, so a fixture inventing `cad-t` would report a missing rung file
+ * for every cell and bury the fault the row is about.
+ * @param {string} role @param {{model?:string, effort?:string, retry?:string}} [cell]
+ */
+function cellTable(role = 'cad-verifier', cell = {}) {
+  const spec = { model: 'opus', effort: 'high', retry: 'xhigh', ...cell };
+  const t = {
+    rung_order: RUNG_ORDER,
+    model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
+    role_order: [role],
+    cells: {}, review: {}, verify: {},
+  };
+  for (const level of ['solo', 'shipped', 'critical']) {
+    t.cells[level] = { [role]: { ...spec } };
+    t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking',
+      phase_diff: 'off', pre_ship: 'advisory' };
+    t.verify[level] = 'off';
+  }
+  return t;
+}
+
+/** The agent files cellTable's default role+cell names, as fixture entries. */
+const VERIFIER_AGENTS = {
+  'cad-verifier.md': '---\nname: cad-verifier\ntools: Read\n---\nbody\n',
+  'cad-verifier-xhigh.md': '---\nname: cad-verifier-xhigh\ntools: Read\n---\nbody\n',
+};
 
 /**
  * A full-tree fixture: has `.claude-plugin/plugin.json` (the isFullTree
@@ -93,14 +124,14 @@ function fullFixture() {
   }
   cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
     join(root, 'cadence-core', 'config.schema.json'));
-  const agent = '---\nname: cad-t\ntools: Read\n---\nbody\n';
-  writeFileSync(join(root, 'agents', 'cad-t.md'), agent);
-  writeFileSync(join(root, 'cadence-core', 'route-table.json'), JSON.stringify({
-    rung_order: RUNG_ORDER,
-    roles: { 'cad-t': { tier: 'light', base_effort: 'low', rungs: ['low'], escalate_to: 'low' } },
-  }, null, 2));
+  // One real role at one rung, so the fixture's table is complete and its one
+  // routable agent file exists: every row here breaks exactly one thing.
+  const agent = '---\nname: cad-verifier\ntools: Read\n---\nbody\n';
+  writeFileSync(join(root, 'agents', 'cad-verifier.md'), agent);
+  writeFileSync(join(root, 'cadence-core', 'route-table.json'),
+    JSON.stringify(cellTable('cad-verifier', { effort: 'high', retry: 'high' }), null, 2));
   writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
-    JSON.stringify({ budgets: { 'agents/cad-t.md': Buffer.byteLength(agent, 'utf8') } }, null, 2));
+    JSON.stringify({ budgets: { 'agents/cad-verifier.md': Buffer.byteLength(agent, 'utf8') } }, null, 2));
   writeFileSync(join(root, 'INTERNALS.md'), 'Read the code: `cadence-core/config.schema.json`.\n');
   return root;
 }
@@ -530,55 +561,59 @@ test('check 7: a body whose rung disagrees with the frontmatter effort is flagge
     JSON.stringify(p));
 });
 
-// --- check 8: the rung ladder, table <-> disk (RNG-01) ---
+// --- check 8: the routing cells, grids <-> disk (STK-02) ---
 
-/** A one-role table whose spec is overridden per row. */
-const roleTable = (spec, order = RUNG_ORDER) => ({
-  rung_order: order,
-  roles: { 'cad-t': { tier: 'light', ...spec } },
-});
-
-test('check 8: a rung the table names with no agent file is missing-rung-agent', () => {
+test('check 8: a rung a cell names with no agent file is missing-rung-agent', () => {
   const root = fixtureWith({
-    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low', 'high'], escalate_to: 'high' }),
+    agents: { 'cad-verifier.md': VERIFIER_AGENTS['cad-verifier.md'] },
+    routeTable: cellTable('cad-verifier'), // retry xhigh -> cad-verifier-xhigh.md, absent
   });
   const p = run(['--root', root]).problems;
   assert.ok(p.some((x) => x.kind === 'missing-rung-agent'
     && x.file === 'cadence-core/route-table.json'
-    && /cad-t rung high -> agents\/cad-t-high\.md absent/.test(x.detail)), JSON.stringify(p));
+    && /agents\/cad-verifier-xhigh\.md absent/.test(x.detail)
+    && /cad-verifier/.test(x.detail)), JSON.stringify(p));
 });
 
-test('check 8: a base_effort outside its own rungs is rung-not-declared naming the role', () => {
-  const root = fixtureWith({
-    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
-    routeTable: roleTable({ base_effort: 'max', rungs: ['low'], escalate_to: 'low' }),
-  });
+test('check 8: a (level, role) pair with no cell is missing-cell naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  delete t.cells.critical['cad-verifier'];
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
   const p = run(['--root', root]).problems;
-  assert.ok(p.some((x) => x.kind === 'rung-not-declared'
+  assert.ok(p.some((x) => x.kind === 'missing-cell'
     && x.file === 'cadence-core/route-table.json'
-    && /^cad-t\b/.test(x.detail) && /base_effort/.test(x.detail)), JSON.stringify(p));
+    && /critical\/cad-verifier/.test(x.detail)), JSON.stringify(p));
 });
 
-test('check 8: an escalate_to outside its own rungs is rung-not-declared naming the role', () => {
-  const root = fixtureWith({
-    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'xhigh' }),
-  });
+test('check 8: a level whose review row omits a trigger is missing-cell naming it', () => {
+  const t = cellTable('cad-verifier');
+  delete t.review.shipped.pre_ship;
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
   const p = run(['--root', root]).problems;
-  assert.ok(p.some((x) => x.kind === 'rung-not-declared'
-    && /^cad-t\b/.test(x.detail) && /escalate_to/.test(x.detail)), JSON.stringify(p));
+  assert.ok(p.some((x) => x.kind === 'missing-cell'
+    && /shipped\/pre_ship/.test(x.detail)), JSON.stringify(p));
 });
 
-test('check 8: a rung outside rung_order is unknown-rung', () => {
-  const root = fixtureWith({
-    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low', 'ludicrous'], escalate_to: 'low' }),
-  });
+test('check 8: a level with no verify value is missing-cell naming the level', () => {
+  const t = cellTable('cad-verifier');
+  delete t.verify.solo;
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
   const p = run(['--root', root]).problems;
-  assert.ok(p.some((x) => x.kind === 'unknown-rung'
-    && x.file === 'cadence-core/route-table.json'
-    && /ludicrous/.test(x.detail)), JSON.stringify(p));
+  assert.ok(p.some((x) => x.kind === 'missing-cell'
+    && /^solo: no verify value/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: the trigger set comes from config.schema.json, not from the prose table', () => {
+  // D-10: parsing references/review-triggers.md's Wiring table would grow a
+  // reader for a file with no stated grammar. The schema defines these five
+  // names, so a level that omits one of them is caught by the schema's list.
+  const t = cellTable('cad-verifier');
+  for (const level of ['solo', 'shipped', 'critical']) t.review[level] = { plan: 'advisory' };
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'missing-cell');
+  for (const trigger of ['diff', 'risk_surface', 'phase_diff', 'pre_ship']) {
+    assert.ok(p.some((x) => x.detail.includes(`solo/${trigger}`)), `${trigger}: ${JSON.stringify(p)}`);
+  }
 });
 
 test('check 8: a malformed route-table.json is ONE unreadable-surface, and the earlier checks still report', () => {
@@ -606,94 +641,66 @@ test('check 8: a full tree with no route-table.json fails ok:false naming the in
     && x.file === 'cadence-core/route-table.json'), JSON.stringify(r.problems));
 });
 
-test('check 8: an escalate_to BELOW base_effort is rung-demotion naming the role', () => {
-  // Membership cannot see direction: `medium` is a legal member of this role's
-  // own rungs, so every pre-existing check passes it while a failure retry
-  // would re-dispatch at LOWER effort and still report escalated: true.
+test('check 8: a NULL cell is one reported problem, not a collapse to reason:internal', () => {
+  // The parse guard covered the read and JSON.parse only, so a null entry one
+  // layer in still unwound run() at the first deref - the #49.1 shape.
+  const t = cellTable('cad-verifier');
+  t.cells.solo['cad-verifier'] = null;
   const root = fixtureWith({
-    agents: {
-      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
-      'cad-t-medium.md': '---\nname: cad-t-medium\ntools: Read\n---\nbody\n',
-      'cad-t-xhigh.md': '---\nname: cad-t-xhigh\ntools: Read\n---\nbody\n',
-    },
-    routeTable: roleTable({ base_effort: 'high', rungs: ['medium', 'high', 'xhigh'],
-      escalate_to: 'medium' }),
-  });
-  const p = run(['--root', root]).problems;
-  assert.ok(p.some((x) => x.kind === 'rung-demotion'
-    && x.file === 'cadence-core/route-table.json'
-    && /^cad-t\b/.test(x.detail)), JSON.stringify(p));
-});
-
-test('check 8: the shipped table, where escalate_to equals base_effort, is NOT a demotion', () => {
-  const root = fixtureWith({
-    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
-  });
-  const p = run(['--root', root]).problems;
-  assert.ok(!p.some((x) => x.kind === 'rung-demotion'), JSON.stringify(p));
-});
-
-test('check 8: a NULL role entry is one reported problem, not a collapse to reason:internal', () => {
-  // The parse guard covered the read and JSON.parse only, so a null spec still
-  // unwound run() at the base_effort deref - the #49.1 shape one layer in.
-  const root = fixtureWith({
-    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
-    routeTable: { rung_order: RUNG_ORDER, roles: { 'cad-t': null } },
+    agents: { ...VERIFIER_AGENTS, 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    routeTable: t,
   });
   const r = run(['--root', root]);
   assert.equal(r.reason, undefined, JSON.stringify(r));
-  assert.ok(r.problems.some((x) => x.kind === 'rung-not-declared' && /^cad-t\b/.test(x.detail)),
-    JSON.stringify(r.problems));
+  assert.ok(r.problems.some((x) => x.kind === 'missing-cell'
+    && /solo\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
   assert.ok(r.problems.some((x) => x.kind === 'undeclared-tool' && /Bash/.test(x.detail)),
     JSON.stringify(r.problems));
 });
 
-test('check 8 (reverse): a rung-suffixed agent file naming an undeclared rung is flagged', () => {
-  // The direction AC1's "exactly" needs. Without it, a stale rung file - one
-  // the table stopped naming - stays green while still paying standing context
-  // in every main-session prompt.
+test('check 8 (reverse): a rung file no cell reaches is undeclared-rung-agent', () => {
+  // The direction "exactly the files the grids name" needs. Without it, a stale
+  // rung file stays green while still paying standing context in every
+  // main-session prompt.
   const root = fixtureWith({
     agents: {
-      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
-      'cad-t-xhigh.md': '---\nname: cad-t-xhigh\ntools: Read\n---\nbody\n',
+      ...VERIFIER_AGENTS,
+      'cad-verifier-max.md': '---\nname: cad-verifier-max\ntools: Read\n---\nbody\n',
     },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
-  });
-  const p = run(['--root', root]).problems;
-  assert.ok(p.some((x) => x.kind === 'undeclared-rung-agent'
-    && x.file === 'agents/cad-t-xhigh.md'
-    && /cad-t does not declare rung xhigh/.test(x.detail)), JSON.stringify(p));
-});
-
-test('check 8 (reverse): a file suffixed with its role BASE rung names the duplication', () => {
-  // Same kind, opposite fix: the table DOES declare this rung, at the
-  // unsuffixed filename (D-01). "does not declare rung low" would contradict
-  // the table and point the maintainer at the wrong file.
-  const root = fixtureWith({
-    agents: {
-      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
-      'cad-t-low.md': '---\nname: cad-t-low\ntools: Read\n---\nbody\n',
-    },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
+    routeTable: cellTable('cad-verifier'), // no cell resolves to `max`
   });
   const p = run(['--root', root]).problems;
   const hit = p.find((x) => x.kind === 'undeclared-rung-agent'
-    && x.file === 'agents/cad-t-low.md');
+    && x.file === 'agents/cad-verifier-max.md');
   assert.ok(hit, JSON.stringify(p));
-  assert.match(hit.detail, /base rung .*agents\/cad-t\.md.*duplicates it/);
-  assert.doesNotMatch(hit.detail, /does not declare/);
+  assert.match(hit.detail, /no cell at any level resolves to it/);
 });
 
-test('check 8 (reverse): an UNSUFFIXED agent file the table names nowhere is NOT flagged', () => {
+test('check 8 (reverse): a rung file the map does not name either says so instead', () => {
+  // Same kind, different fix: `medium` IS a cad-verifier rung with a file, so
+  // that message says "add a cell". A rung nothing maps says "delete the file".
+  const root = fixtureWith({
+    agents: {
+      ...VERIFIER_AGENTS,
+      'cad-verifier-low.md': '---\nname: cad-verifier-low\ntools: Read\n---\nbody\n',
+    },
+    routeTable: cellTable('cad-verifier'),
+  });
+  const hit = run(['--root', root]).problems.find((x) => x.kind === 'undeclared-rung-agent'
+    && x.file === 'agents/cad-verifier-low.md');
+  assert.ok(hit);
+  assert.match(hit.detail, /maps no file to it/);
+});
+
+test('check 8 (reverse): an UNSUFFIXED agent file the grids name nowhere is NOT flagged', () => {
   // The reverse direction must not creep into a blanket table-membership
   // rule - that would outlaw the one-off agent D-04 keeps legal.
   const root = fixtureWith({
     agents: {
-      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
+      ...VERIFIER_AGENTS,
       'cad-oneoff.md': '---\nname: cad-oneoff\ntools: Read\n---\nbody\n',
     },
-    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
+    routeTable: cellTable('cad-verifier'),
   });
   const p = run(['--root', root]).problems;
   assert.ok(!p.some((x) => x.kind === 'undeclared-rung-agent'), JSON.stringify(p));
