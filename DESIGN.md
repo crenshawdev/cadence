@@ -131,8 +131,8 @@ verifier, debugger, doc-verifier, nyquist/coverage). Cut all ai-*, ui-*, doc-cla
 synthesizer, mempalace-curator, user-profiler, codebase-mapper, intel-updater,
 framework-selector, domain-researcher, eval-*, advisor-researcher, research-synthesizer,
 pattern-mapper (→ mem-*), project-researcher (→ Codex), security-auditor (→ Codex),
-integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant files
-(`planner-high`/`planner-low` etc., §6) add ~4–8 files but are variants of kept roles, not new agents.
+integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
+(`cad-planner-xhigh` etc., §6) add ~4–8 files but are rungs of kept roles, not new agents.
 
 ---
 
