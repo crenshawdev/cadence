@@ -102,7 +102,7 @@ selectable option and its `description`.
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | Backend for recall over `.planning/` | `builtin`→zero-dep BM25 recall over `.planning/` · `none`→recall off | builtin |
 | **Risk** |||||
-| `risk.override.<surface>` `[repo]` | bool | Waive the detected risk floor for ONE surface | `<surface>` ∈ `{auth, migrations, billing, concurrency, destructive, secrets, api_contract, untrusted_input}`; `true`→that surface stops raising this phase's stakes level · `false`→the floor stands. Repo-scoped: it cannot be set `--global` | false |
+| `risk.override.<surface>` `[repo]` | bool | Waive the detected risk floor for ONE surface | `<surface>` ∈ `{auth, migrations, billing, concurrency, destructive, secrets, api_contract, untrusted_input}`; `true`→that surface stops raising this phase's stakes level · `false`→the floor stands. Repo-scoped: `--global` is refused, though a waiver already in the global layer still resolves - set it in the repo's own config | false |
 | **Review** (providers handled separately) |||||
 | `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model | claude-subagent |
 | `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |

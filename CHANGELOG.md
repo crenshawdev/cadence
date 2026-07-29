@@ -109,12 +109,17 @@ configured.
   refusal would route a possibly-risky phase LOWER than its own baseline, so
   there is none. `cad-planner` and `cad-assumptions-analyzer` are never floored:
   they run before the phase they are about has a plan.
-- **`risk.override.<surface>`, the per-surface waiver.** One repo-scoped boolean
-  per surface. The level drops back to the baseline only when EVERY detected
-  surface is named, the waived names stay in `reason`, and a value that is not
-  strictly `true` waives nothing and says so. A misspelled surface is refused at
-  the write face with the accepted names listed, and the user-global layer is
-  refused outright: a waiver lowers a floor, and it lowers it for one repository.
+- **`risk.override.<surface>`, the per-surface waiver.** One boolean per surface,
+  DECLARED repo-scoped (`src: repo`). The level drops back to the baseline only
+  when EVERY detected surface is named, the waived names stay in `reason`, and a
+  value that is not strictly `true` waives nothing and says so. A misspelled
+  surface is refused at the write face with the accepted names listed, and
+  `--global` is refused there too. That refusal is not yet airtight in either
+  direction: the resolver reads the waiver off the MERGED config, so a waiver
+  already sitting in the user-global layer is honored, and the write-face check
+  compares paths as strings, so an alias for the global file (`<dir>/./config.json`)
+  writes through it. Set a waiver only in a repo's own `.planning/config.json`
+  until both close.
 - **A `surfaces` walk in `self-verify`, both directions**, every problem naming
   the offending row: a floor that is not a stakes level, a floor below the level
   every shipped row is required to carry, a pattern list that is empty or holds
