@@ -377,6 +377,27 @@ lever is trigger frequency (gating), never a weak reviewer.
   prompt. Two self-verify checks bound the cost: a routable rung with no file (and a rung file no
   role declares) fails CI, and a rung file that carries behaviour of its own fails CI — the
   contract lives once, in the preloaded contract skill (#74), and a rung file may only point at it.
+- ⚠️ **AXIS REPLACED (2026-07-28):** the spend axis this whole record describes is replaced by a
+  stakes axis. `model.profile` over `fast`/`balanced`/`quality` becomes a bare top-level `stakes`
+  key over `solo`/`shipped`/`critical` (nobody else runs this / other people run this and a break
+  comes back as a bug report / a break is not a bug report), with no back-compat alias: a config
+  written against the old name stops validating on the KEY and not merely on its value, which is
+  the whole reason v2.0.0 is major. The `auto` mode is deleted rather than kept as a fourth value,
+  because three values answer what a break costs while the fourth answered how the resolver should
+  behave - the same category error one level up from the one this change exists to fix - and its
+  difficulty signals go with it (`--files`, `--ambiguity`, and the table's `auto` block), having
+  never been passed by a live workflow or skill. `escalate_on_failure` is promoted to
+  `model.escalate_on_failure` and honoured at every stakes level, which is what makes the rung
+  ladder above reachable on a default install rather than only under a mode nobody selected;
+  `auto.ceiling` and `max_escalations` are dropped outright, since the surviving escalation is a
+  single swap to the role's `escalate_to` rung and has no second step to cap. One correction to the
+  PARTIALLY REOPENED bullet: its stated reason for keeping `fable` pin-only is now stale, because
+  the ranking IS established and `fable` ranks above `opus`. That decision still stands, on three
+  operational facts instead. A zero-data-retention org gets a hard `400 invalid_request_error` on
+  every request to it, and Cadence is a public plugin, so those are other people's orgs. Its safety
+  classifiers refuse cyber-adjacent content, and Cadence reviews its own git rails, secrets
+  handling and shell tokenizer. And its multi-minute turns press against the configured provider
+  request timeout inside the host's Bash ceiling.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
