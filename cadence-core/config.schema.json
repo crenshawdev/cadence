@@ -5,13 +5,11 @@
   },
   "keys": {
     "granularity":                          { "type": "enum", "values": ["fine", "standard", "coarse"], "default": "standard", "src": "repo", "purpose": "How finely phases split into tasks (new-project maps coarse 3-5 / standard 5-8 / fine 8-12 phases)" },
+    "stakes":                               { "type": "enum", "values": ["solo", "shipped", "critical"], "default": "shipped", "src": "repo", "purpose": "What a break in this project costs - the question routing asks, rather than what a dispatch costs. solo = nobody else runs this, a break costs only my time; shipped = other people run this, a break comes back as a bug report; critical = a break is not a bug report" },
 
-    "model.profile":                        { "type": "enum", "values": ["fast", "balanced", "quality", "auto"], "default": "balanced", "src": "repo", "purpose": "Model routing: fast/balanced/quality canned tiers, or auto (role + difficulty, escalate on failure)" },
-    "model.auto.ceiling":                   { "type": "enum", "values": ["fast", "balanced", "quality"], "default": "quality", "src": "repo", "purpose": "Highest profile auto-escalation may reach" },
-    "model.auto.escalate_on_failure":       { "type": "bool", "default": true, "purpose": "Bump the tier after a failed attempt" },
-    "model.auto.max_escalations":           { "type": "int", "min": 0, "default": 1, "purpose": "How many times to escalate before giving up" },
+    "model.escalate_on_failure":            { "type": "bool", "default": true, "purpose": "Re-dispatch a failed attempt at the role's `escalate_to` rung file; false leaves the retry at its base rung" },
 
-    "model.overrides.cad-planner":              { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the planner to one model alias, bypassing the profile matrix (null = route normally). The only way to reach `fable`, which sits on no profile rung" },
+    "model.overrides.cad-planner":              { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the planner to one model alias, bypassing the stakes matrix (null = route normally). The only way to reach `fable`, which stays pin-only: reaching it is a user assertion about their own org (it needs 30-day data retention, and its classifiers refuse cyber-adjacent review work), not a rung on this ladder" },
     "model.overrides.cad-assumptions-analyzer": { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the assumptions analyzer to one model alias (null = route normally)" },
     "model.overrides.cad-verifier":             { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the verifier to one model alias (null = route normally)" },
     "model.overrides.cad-reviewer":             { "type": "enum", "values": ["opus", "sonnet", "haiku", "fable", null], "default": null, "src": "repo", "purpose": "Pin the claude-subagent reviewer to one model alias (null = route normally)" },

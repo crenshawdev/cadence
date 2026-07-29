@@ -27,37 +27,38 @@ function run(args, globalPath) {
 test('set --global auto-creates the global file (and parent dir) from empty', () => {
   const gpath = join(dir, 'nested', 'cadence', 'config.json'); // parent dirs absent
   assert.equal(existsSync(gpath), false);
-  const r = run(['set', '--global', 'model.profile=quality'], gpath);
+  const r = run(['set', '--global', 'stakes=critical'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.file, gpath);
-  assert.deepEqual(r.changed, [{ key: 'model.profile', value: 'quality' }]); // the receipt
+  assert.deepEqual(r.changed, [{ key: 'stakes', value: 'critical' }]); // the receipt
   const written = JSON.parse(readFileSync(gpath, 'utf8'));
-  assert.equal(written.model.profile, 'quality');
+  assert.equal(written.stakes, 'critical');
 });
 
 test('set --global merges into an existing global file, not clobber', () => {
   const gpath = join(dir, 'existing.json');
-  writeFileSync(gpath, JSON.stringify({ model: { profile: 'fast' }, granularity: 'coarse' }));
-  const r = run(['set', '--global', 'model.auto.ceiling=quality'], gpath);
+  writeFileSync(gpath, JSON.stringify({ stakes: 'solo', granularity: 'coarse' }));
+  // a DOTTED key, so the row still covers writing through a parent container
+  const r = run(['set', '--global', 'model.escalate_on_failure=false'], gpath);
   assert.equal(r.ok, true);
   const written = JSON.parse(readFileSync(gpath, 'utf8'));
-  assert.equal(written.model.profile, 'fast');     // preserved
+  assert.equal(written.stakes, 'solo');            // preserved
   assert.equal(written.granularity, 'coarse');     // preserved
-  assert.equal(written.model.auto.ceiling, 'quality'); // added
+  assert.equal(written.model.escalate_on_failure, false); // added
 });
 
 test('set --global still validates: a bad value is rejected, nothing written', () => {
   const gpath = join(dir, 'reject.json');
-  const r = run(['set', '--global', 'model.profile=nonsense'], gpath);
+  const r = run(['set', '--global', 'stakes=nonsense'], gpath);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
-  assert.equal(r.detail[0].key, 'model.profile'); // detail names the offender
+  assert.equal(r.detail[0].key, 'stakes'); // detail names the offender
   assert.match(r.detail[0].error, /must be one of/);
   assert.equal(existsSync(gpath), false); // atomic: no partial write
 });
 
 test('set on a missing repo file refuses (only --global auto-creates)', () => {
-  const r = run(['set', '--file', join(dir, 'no-such-repo.json'), 'model.profile=fast'],
+  const r = run(['set', '--file', join(dir, 'no-such-repo.json'), 'model.escalate_on_failure=false'],
     join(dir, 'no-global-set.json'));
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'read');
@@ -65,7 +66,7 @@ test('set on a missing repo file refuses (only --global auto-creates)', () => {
 
 test('validate --global reads the global file and reports the payload', () => {
   const gpath = join(dir, 'valid.json');
-  writeFileSync(gpath, JSON.stringify({ model: { profile: 'balanced' }, granularity: 'fine' }));
+  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', granularity: 'fine' }));
   const r = run(['validate', '--global'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.file, gpath);
@@ -129,11 +130,12 @@ test('set: a scalar top-level config is rejected as invalid, never reason:intern
   // the happy path still holds for a well-formed object config.
   const sibling = join(dir, 'w-sibling.json');
   writeFileSync(sibling, JSON.stringify({ granularity: 'coarse' }));
-  const rs = run(['set', '--file', sibling, 'model.profile=fast'], join(dir, 'no-global-w-sibling.json'));
+  const rs = run(['set', '--file', sibling, 'model.escalate_on_failure=false'],
+    join(dir, 'no-global-w-sibling.json'));
   assert.equal(rs.ok, true);
   const written = JSON.parse(readFileSync(sibling, 'utf8'));
   assert.equal(written.granularity, 'coarse');
-  assert.equal(written.model.profile, 'fast');
+  assert.equal(written.model.escalate_on_failure, false);
 });
 
 // Rewritten per CONTEXT D-04 (Phase-1 D-05 lineage): the previous version of
@@ -159,12 +161,12 @@ test('set: a non-object parent container is refused, not overwritten', () => {
 test('set: an absent or null parent is still auto-created', () => {
   const file = join(dir, 'w-vivify-parent.json');
   writeFileSync(file, JSON.stringify({ granularity: 'coarse', model: null }));
-  const r = run(['set', '--file', file, 'git.on_protected=allow', 'model.profile=fast'],
+  const r = run(['set', '--file', file, 'git.on_protected=allow', 'model.escalate_on_failure=false'],
     join(dir, 'no-global-w-vivify.json'));
   assert.equal(r.ok, true);
   const written = JSON.parse(readFileSync(file, 'utf8'));
-  assert.equal(written.git.on_protected, 'allow');   // absent parent
-  assert.equal(written.model.profile, 'fast');       // null parent holds no data
+  assert.equal(written.git.on_protected, 'allow');        // absent parent
+  assert.equal(written.model.escalate_on_failure, false); // null parent holds no data
   assert.equal(written.granularity, 'coarse');
 });
 
@@ -209,14 +211,19 @@ test('check: reports per-pair errors and ok mirrors them', () => {
 test('keys: dumps the live schema - pruned keys are really gone', () => {
   const r = run(['keys']);
   assert.equal(r.ok, true);
-  assert.deepEqual(r.keys['model.profile'].values, ['fast', 'balanced', 'quality', 'auto']);
+  // The routing axis asks what a break costs, and the ladder is unconditional:
+  // the spend vocabulary (and the `auto` mode that gated it) is gone, not aliased.
+  assert.deepEqual(r.keys['stakes'].values, ['solo', 'shipped', 'critical']);
+  assert.equal(r.keys['stakes'].default, 'shipped');
+  assert.equal(r.keys['model.escalate_on_failure'].default, true);
   assert.ok(r.keys['review.consult.attempt_threshold']);   // added this cycle
   assert.ok(r.keys['review.triggers.phase_diff.gate']);    // added this cycle
   assert.deepEqual(r.keys['git.integration_branch'].values, ['milestone', 'trunk']); // added this round
   assert.deepEqual(r.keys['git.auto_branch'].values, ['ask', 'auto', 'off']);        // added this round
   for (const gone of ['mode', 'context_window', 'workflow.auto_advance',
     'workflow.discuss_mode', 'workflow.human_verify_mode', 'workflow.build_command',
-    'git.auto_push']) {
+    'git.auto_push', 'model.profile', 'model.auto.ceiling',
+    'model.auto.escalate_on_failure', 'model.auto.max_escalations']) {
     assert.equal(r.keys[gone], undefined, `${gone} should be pruned`);
   }
   assert.equal(Object.keys(r.keys).some((k) => k.startsWith('search.')), false);
@@ -226,12 +233,12 @@ test('keys: dumps the live schema - pruned keys are really gone', () => {
 
 test('get: repo > global > schema defaults, with source named', () => {
   const gpath = join(dir, 'get-global.json');
-  writeFileSync(gpath, JSON.stringify({ model: { profile: 'quality' }, workflow: { research: true } }));
+  writeFileSync(gpath, JSON.stringify({ stakes: 'critical', workflow: { research: true } }));
   const repo = join(dir, 'get-repo.json');
-  writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
-  const r = run(['get', '--file', repo, 'model.profile', 'workflow.research', 'workflow.plan_check'], gpath);
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'stakes', 'workflow.research', 'workflow.plan_check'], gpath);
   assert.equal(r.ok, true);
-  assert.equal(r.values['model.profile'], 'fast');        // repo wins
+  assert.equal(r.values['stakes'], 'solo');               // repo wins
   assert.equal(r.values['workflow.research'], true);      // global fills
   assert.equal(r.values['workflow.plan_check'], true);    // schema default
   assert.equal(r.source, 'global+repo');
@@ -278,8 +285,8 @@ test('get: a corrupt repo layer is skipped (values/source match no-repo-layer) A
   const gpath = join(dir, 'no-global-for-corrupt-repo.json');
   const repo = join(dir, 'corrupt-repo.json');
   writeFileSync(repo, '{ torn mid-write');
-  const r = run(['get', '--file', repo, 'model.profile'], gpath);
-  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo.json'), 'model.profile'], gpath);
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo.json'), 'stakes'], gpath);
   assert.equal(r.ok, true);
   assert.deepEqual(r.values, absentRepo.values); // byte-identical to the no-repo-layer result
   assert.equal(r.source, absentRepo.source);     // 'defaults' - the broken layer contributed nothing
@@ -292,10 +299,10 @@ test('get: a corrupt global layer is skipped (repo still wins) AND warns naming 
   const gpath = join(dir, 'corrupt-global.json');
   writeFileSync(gpath, '{ torn mid-write');
   const repo = join(dir, 'fine-repo.json');
-  writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
-  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
   assert.equal(r.ok, true);
-  assert.equal(r.values['model.profile'], 'fast');
+  assert.equal(r.values['stakes'], 'solo');
   assert.equal(r.source, 'repo'); // the broken global layer contributed nothing
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /corrupt-global\.json/);
@@ -305,8 +312,8 @@ test('get: a scalar repo config falls back to defaults, never source:repo (#45.3
   const gpath = join(dir, 'no-global-for-scalar-repo.json');
   const repo = join(dir, 'scalar-repo.json');
   writeFileSync(repo, '42');
-  const r = run(['get', '--file', repo, 'model.profile'], gpath);
-  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo2.json'), 'model.profile'], gpath);
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo2.json'), 'stakes'], gpath);
   assert.equal(r.ok, true);
   assert.notEqual(r.source, 'repo');
   assert.deepEqual(r.values, absentRepo.values); // schema default, same as no-repo-layer
@@ -320,8 +327,8 @@ test('get: a falsy non-object repo layer warns like a truthy one', () => {
   for (const content of ['null', '0', 'false', '""']) {
     const repo = join(dir, `falsy-repo-${content.replace(/[^a-z0-9]/gi, '_')}.json`);
     writeFileSync(repo, content);
-    const r = run(['get', '--file', repo, 'model.profile'], gpath);
-    const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo3.json'), 'model.profile'], gpath);
+    const r = run(['get', '--file', repo, 'stakes'], gpath);
+    const absentRepo = run(['get', '--file', join(dir, 'truly-absent-repo3.json'), 'stakes'], gpath);
     assert.equal(r.ok, true, `content ${content}`);
     assert.equal(r.warnings.length, 1, `content ${content}`);
     assert.match(r.warnings[0], new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -335,30 +342,30 @@ test('get: a falsy non-object global layer warns too', () => {
   const gpath = join(dir, 'falsy-global.json');
   writeFileSync(gpath, '0');
   const repo = join(dir, 'fine-repo-for-falsy-global.json');
-  writeFileSync(repo, JSON.stringify({ model: { profile: 'fast' } }));
-  const r = run(['get', '--file', repo, 'model.profile'], gpath);
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
   assert.equal(r.ok, true);
   assert.equal(r.source, 'repo'); // repo value still wins
-  assert.equal(r.values['model.profile'], 'fast');
+  assert.equal(r.values['stakes'], 'solo');
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /falsy-global\.json/);
 });
 
 test('get: an absent layer stays silent and an unparseable layer warns exactly once', () => {
   const gpath = join(dir, 'no-global-for-absent-vs-corrupt.json');
-  const absent = run(['get', '--file', join(dir, 'truly-absent-repo4.json'), 'model.profile'], gpath);
+  const absent = run(['get', '--file', join(dir, 'truly-absent-repo4.json'), 'stakes'], gpath);
   assert.equal(absent.warnings, undefined);
 
   const torn = join(dir, 'torn-mid-write.json');
   writeFileSync(torn, '{ torn mid-write');
-  const rTorn = run(['get', '--file', torn, 'model.profile'], gpath);
+  const rTorn = run(['get', '--file', torn, 'stakes'], gpath);
   assert.equal(rTorn.warnings.length, 1);
   assert.match(rTorn.warnings[0], /failed to parse/);
   assert.doesNotMatch(rTorn.warnings[0], /not an object/);
 
   const zeroByte = join(dir, 'zero-byte.json');
   writeFileSync(zeroByte, '');
-  const rZero = run(['get', '--file', zeroByte, 'model.profile'], gpath);
+  const rZero = run(['get', '--file', zeroByte, 'stakes'], gpath);
   assert.equal(rZero.warnings.length, 1);
   assert.match(rZero.warnings[0], /failed to parse/);
   assert.doesNotMatch(rZero.warnings[0], /not an object/);
@@ -407,7 +414,7 @@ test('get: one file resolving as both layers warns once, not twice', () => {
   ]) {
     const shared = join(dir, `shared-both-layers-${label}.json`);
     writeFileSync(shared, bytes);
-    const r = run(['get', '--file', shared, 'model.profile'], shared);
+    const r = run(['get', '--file', shared, 'stakes'], shared);
     assert.equal(r.ok, true, label);
     assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
     assert.match(r.warnings[0], pattern, label);
@@ -418,30 +425,8 @@ test('get: one file resolving as both layers warns once, not twice', () => {
   const repo = join(dir, 'two-broken-repo.json');
   writeFileSync(g, '0');
   writeFileSync(repo, '[1,2]');
-  const r2 = run(['get', '--file', repo, 'model.profile'], g);
+  const r2 = run(['get', '--file', repo, 'stakes'], g);
   assert.equal(r2.warnings.length, 2);
-});
-
-// --- cross-key warnings ---------------------------------------------------
-
-test('check: ceiling at/below the auto base profile warns but stays valid', () => {
-  for (const ceiling of ['fast', 'balanced']) {
-    const r = run(['check', `model.auto.ceiling=${ceiling}`]);
-    assert.equal(r.ok, true); // legal value - advisory only
-    assert.equal(r.warnings.length, 1);
-    assert.match(r.warnings[0].warning, /never demotes/);
-  }
-  const ok = run(['check', 'model.auto.ceiling=quality']);
-  assert.equal(ok.ok, true);
-  assert.equal(ok.warnings, undefined); // above base - no warning
-});
-
-test('set: the ceiling warning rides along with a successful write', () => {
-  const gpath = join(dir, 'warn.json');
-  const r = run(['set', '--global', 'model.auto.ceiling=fast'], gpath);
-  assert.equal(r.ok, true);
-  assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).model.auto.ceiling, 'fast');
-  assert.match(r.warnings[0].warning, /holds at base/);
 });
 
 // --- shipped config.schema.json absent/malformed (#40) ------------------------
