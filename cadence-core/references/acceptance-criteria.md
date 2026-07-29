@@ -191,3 +191,42 @@ still in flight.
   under the user is worse than no id at all.
 - **The reader never reads the filesystem.** It is pure and total: no I/O, no
   throw. Coverage, absence and every count belong to `criteria-coverage`.
+
+## Rebuilding the demonstration fixture
+
+The `/cad-audit` demonstration is a disposable pair of `.planning` trees:
+
+- `/tmp/cadence-phase5-fixture/fail/.planning` - `/cad-audit` must FAIL, naming
+  `AC4` and `AC5` by id with a next action for each.
+- `/tmp/cadence-phase5-fixture/pass/.planning` - `/cad-audit` must PASS.
+
+`/tmp` is reaped, so the recipe rather than the tree is what ships here. Both
+trees are synthesized from this repo's own phase-1 pair - real prose, a
+synthetic defect:
+
+1. `mkdir -p /tmp/cadence-phase5-fixture/{fail,pass}/.planning/phases/1`.
+2. Copy `.planning/phases/1/CONTEXT.md` (criteria `AC1`-`AC7`) and
+   `.planning/phases/1/UAT.md` into each tree's `phases/1/`. That checklist
+   already carries `criterion: AC1` through `AC7` on items 1-7 and
+   `origin: verifier` on items 8-14.
+3. In the `fail` tree ONLY, delete the whole `### 4.` and `### 5.` item blocks -
+   the two carrying `criterion: AC4` and `criterion: AC5` - and set the
+   `## Summary` `total:` and `passed:` to 12. The `pass` tree keeps all 14.
+4. In BOTH trees write a ROADMAP.md whose `## Phases` holds one CHECKED
+   `- [x] **Phase 1: Rungs**` entry with a matching `### Phase 1: Rungs` detail
+   section, a REQUIREMENTS.md whose `## Active` bullet and `## Traceability` row
+   both name `RNG-01` at Status `Complete`, and `phases/1/PLAN.md` whose
+   frontmatter declares `requirements:\n  - RNG-01`.
+
+Step 4's PLAN.md is not optional. `audit` builds its requirement -> plan map
+solely from the phase's plan files, so a tree with no PLAN.md returns
+`break: "no-plan"` for every row: the `pass` tree would FAIL on the requirement
+arm, and the `fail` tree's FAIL would not be attributable to coverage at all.
+Confirm `node cadence-core/bin/planning.mjs audit --dir <tree>/.planning`
+reports `counts.broken: 0` for BOTH trees before the human check is worth
+running, so the only difference between them is the coverage arm.
+
+Then the two seam calls, which are what the human check reads through
+`/cad-audit`: `criteria-coverage --dir .../fail/.planning` prints `breaks` with
+exactly `AC4` and `AC5`, and the same call against `.../pass/.planning` prints
+no `breaks` at all.
