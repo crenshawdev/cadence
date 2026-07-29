@@ -73,10 +73,8 @@ selectable option and its `description`.
 | **Core** |||||
 | `granularity` `[repo]` | enum | How finely phases split into tasks (new-project phase count) | `fine`→8-12 phases · `standard`→5-8 · `coarse`→3-5 | standard |
 | **Model** |||||
-| `model.profile` `[repo]` | enum | Model routing for agents (see `route-table.json`) | `fast`→cheapest/quickest · `balanced`→default mix · `quality`→strongest · `auto`→role + difficulty, escalate on failure | balanced |
-| `model.auto.ceiling` `[repo]` | enum | Highest profile `auto` escalation may reach | `fast` · `balanced` · `quality` (caps the escalation) | quality |
-| `model.auto.escalate_on_failure` | bool | Bump the tier after a failed attempt | `true`→retry stronger · `false`→stay put | true |
-| `model.auto.max_escalations` | int | How many times to escalate before giving up | `0`–`3` | 1 |
+| `stakes` `[repo]` | enum | What does a break here cost? (routing asks this, not what a dispatch costs) | `solo`→nobody else runs this, a break costs only my time · `shipped`→other people run this, a break comes back as a bug report · `critical`→a break is not a bug report | shipped |
+| `model.escalate_on_failure` | bool | Re-dispatch a failed attempt at the role's harder rung | `true`→retry at the role's `escalate_to` rung file · `false`→leave the retry at its base rung | true |
 | **Workflow** |||||
 | `workflow.research` | bool | Run a research pass before planning | `true`→scout first · `false`→skip | false |
 | `workflow.plan_check` | bool | Gate plans through the checker before code | `true`→verify plan first · `false`→trust it | true |
@@ -150,7 +148,7 @@ call so the write is one atomic, validated operation.
 (precedence **repo > global > built-in defaults**); nested objects merge, arrays
 replace wholesale. Each file is still validated on its own - every layer must be
 independently valid. Use `--global` for machine-wide defaults (e.g. a preferred
-`model.profile`) and the per-repo file to override per project.
+`stakes` level) and the per-repo file to override per project.
 
 ## Direct set
 
@@ -165,6 +163,10 @@ For each `key=value` (dotted paths allowed, e.g. `workflow.plan_check=false`):
   through a container that already holds a non-object (`{ok:false,
   reason:"invalid", detail:[…]}`) atomically - nothing is written unless every
   pair is valid - and echoes `{ok:true, changed:[…]}` on success.
+- `check` dry-runs the same pairs and speaks the same contract - `{ok:true}`,
+  or `{ok:false, reason:"invalid", detail:[…]}` - without writing anything, and
+  a key retired by a release carries a `detail` naming the key that replaced it,
+  so that remediation needs no `keys` lookup.
 - On rejection, surface the seam's `detail` (the invalid keys and why). For a
   per-key detail, look up the allowed values via `config.mjs keys`; for a
   `(root)` detail, that lookup returns nothing - the remediation instead is
