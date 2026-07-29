@@ -726,3 +726,84 @@ test('a decimal phase addresses its own directory', () => {
   const file = planningRoot(['src/auth/session.rs'], { phase: '2.1' });
   assert.equal(resolve('cad-executor', file, ['--phase', '2.1']).stakes, 'critical');
 });
+
+// --- the per-surface waiver (D-05) -------------------------------------------
+
+/** A fixture PLAN declaring two paths that match two DIFFERENT surfaces. */
+const TWO_SURFACES = ['src/auth/login.rs', 'db/migrations/001.sql'];
+
+test('two detected surfaces with no override resolve at the floor', () => {
+  const r = resolve('cad-executor', planningRoot(TWO_SURFACES), ['--phase', '9']);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(floorEntries(r).length, 2, JSON.stringify(r.reason));
+});
+
+test('waiving ONE of two detected surfaces still floors, and names both', () => {
+  const file = planningRoot(TWO_SURFACES,
+    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.stakes, 'critical'); // migrations still stands
+  const floor = floorEntries(r).join(' ');
+  assert.match(floor, /risk\.override\.auth waives "auth"/);
+  assert.match(floor, /surface "migrations" matched/);
+  assert.equal(r.warnings, undefined);
+});
+
+test('waiving EVERY detected surface drops to the baseline, naming each waiver', () => {
+  const file = planningRoot(TWO_SURFACES,
+    { config: { stakes: 'solo', risk: { override: { auth: true, migrations: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet'); // the solo cell, whole
+  const floor = floorEntries(r);
+  assert.equal(floor.length, 1, JSON.stringify(r.reason));
+  assert.match(floor[0], /risk\.override\.auth/);
+  assert.match(floor[0], /risk\.override\.migrations/);
+  assert.doesNotMatch(floor[0], /matched/); // no raise entry survives
+});
+
+test('an override that is not strictly true does NOT waive, and says so', () => {
+  for (const value of ['true', 1, {}]) {
+    const file = planningRoot(['src/auth/login.rs'],
+      { config: { stakes: 'solo', risk: { override: { auth: value } } } });
+    const r = resolve('cad-executor', file, ['--phase', '9']);
+    assert.equal(r.stakes, 'critical', JSON.stringify(value));
+    assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+    assert.match(r.warnings[0], /risk\.override\.auth/);
+  }
+});
+
+test('an override set to false is the ordinary un-waived state, silently', () => {
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { auth: false } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.warnings, undefined);
+});
+
+test('an override naming a surface the table does not declare warns and waives nothing', () => {
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { frobnicate: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /frobnicate/);
+  assert.match(r.warnings[0], /auth/); // the accepted names
+});
+
+test('a waiver and a model pin coexist - two fields, not one', () => {
+  // The row that guards the readConfig field split: folding riskOverrides into
+  // `overrides` makes every model.overrides.<role> pin resolve undefined.
+  const file = planningRoot(['src/auth/login.rs'], {
+    config: {
+      stakes: 'solo',
+      risk: { override: { auth: true } },
+      model: { overrides: { 'cad-executor': 'haiku' } },
+    },
+  });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.pinned, true);
+  assert.equal(r.model, 'haiku');
+  assert.equal(r.stakes, 'solo'); // the waiver applied
+  assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
+});

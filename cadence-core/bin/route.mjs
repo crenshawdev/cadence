@@ -88,6 +88,12 @@ function readConfig(file) {
     stakesSet: c.stakes !== undefined && c.stakes !== null,
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
+    // NOT folded into `overrides` above: that map is read as
+    // `cfg.overrides[opts.role]` for the per-role model pin, so sharing the
+    // field would make every `model.overrides.<role>` pin resolve undefined -
+    // and a config carrying both a pin and a waiver would have two writers
+    // fighting over one field.
+    riskOverrides: riskOverridesIn(c),
     triggerGates: triggerGatesIn(c),
     _source: source,
     _warnings: [...(warnings || []), ...retiredKeysIn(c)],
@@ -130,7 +136,7 @@ function triggerGatesIn(c) {
  * obtained, because a `--phase N` resolve and the cursor fallback must return
  * the same bundle.
  * @param {{role: string, file: string, phase?: string}} opts
- * @param {{stakes: string}} cfg
+ * @param {{stakes: string, riskOverrides: Record<string, any>}} cfg
  * @param {string[]} reason @param {string[]} warnings
  * @returns {string} the effective level
  */
@@ -158,8 +164,41 @@ function riskFloor(opts, cfg, reason, warnings) {
 
   const declared = declaredPhaseFiles(root, phase);
   warnings.push(...declared.warnings);
-  const matches = matchSurfaces(declared.files, TABLE.surfaces);
-  if (!matches.length) return baseline;
+  const detected = matchSurfaces(declared.files, TABLE.surfaces);
+
+  // The waiver is PER SURFACE (D-05): the floor drops to the baseline only when
+  // every detected surface is named, so waiving one of two still floors. A typo
+  // must not silently lower a floor any more than it may silently redirect a
+  // model, so only a strict `true` waives and every other shape speaks.
+  const declaredSurfaces = TABLE.surfaces && typeof TABLE.surfaces === 'object'
+    && !Array.isArray(TABLE.surfaces) ? Object.keys(TABLE.surfaces) : [];
+  const waived = new Set();
+  for (const [surface, value] of Object.entries(cfg.riskOverrides)) {
+    if (!declaredSurfaces.includes(surface)) {
+      warnings.push(`risk.override.${surface} names no declared risk surface `
+        + `(${declaredSurfaces.join(', ')}); it waives nothing`);
+      continue;
+    }
+    if (value === true) { waived.add(surface); continue; }
+    if (value === false || value === null) continue; // the ordinary "not waived"
+    warnings.push(`risk.override.${surface}=${JSON.stringify(value)} is not true or `
+      + `false; the ${surface} risk floor stands`);
+  }
+  const matches = detected.filter((m) => !waived.has(m.surface));
+  const waivedHits = detected.filter((m) => waived.has(m.surface));
+
+  if (!matches.length) {
+    // A full waiver still leaves its names in the record: a floor that vanishes
+    // without a trace is the resolved-then-dropped shape this milestone closes.
+    if (waivedHits.length) {
+      reason.push(`risk floor: waived by ${waivedHits.map((m) => `risk.override.${m.surface}`).join(', ')}`
+        + ` - every detected surface is named; stakes stays ${baseline}`);
+    }
+    return baseline;
+  }
+  for (const m of waivedHits) {
+    reason.push(`risk floor: risk.override.${m.surface} waives "${m.surface}"`);
+  }
 
   const order = Array.isArray(TABLE.stakes_order) ? TABLE.stakes_order : [];
   let effective = baseline;
@@ -176,6 +215,24 @@ function riskFloor(opts, cfg, reason, warnings) {
     }
   }
   return effective;
+}
+
+// The `risk.override.<surface>` waivers a LAYER actually wrote, keyed by surface
+// name - collected exactly the way `triggerGatesIn` collects per-trigger gates,
+// and defensive at every hop for the same reason: this runs on whatever a user's
+// config happens to hold, so a scalar where an object belongs contributes
+// nothing rather than throwing. The VALUES are kept verbatim; only a strict
+// `true` waives, and the resolve side speaks about anything else.
+function riskOverridesIn(c) {
+  const out = {};
+  const risk = c && typeof c === 'object' && !Array.isArray(c) ? c.risk : null;
+  if (!risk || typeof risk !== 'object' || Array.isArray(risk)) return out;
+  const overrides = risk.override;
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return out;
+  for (const [surface, value] of Object.entries(overrides)) {
+    if (value !== undefined) out[surface] = value;
+  }
+  return out;
 }
 
 function resolve(opts) {
