@@ -122,18 +122,19 @@ fix: 6ffcb9b, retest
 
 ### 14. LINEAGE.md agent figures and vocabulary: decided
 expected: LINEAGE.md:14 (| Agents | 34 | 7 | 21% |), :35 ("Cadence's 7 agents") and :43 (retired vocabulary) are either updated to the 13-file reality or explicitly kept as a dated provenance record like CHANGELOG.md:43 - a deliberate decision either way, not drift.
-status: fail
+status: pass
 first_pass: fail
+evidence: LINEAGE.md:11 header now reads | Surface | GSD (d010ea1) | Cadence (2026-07-10) | Retained |; :17 References = 7, matching the 7 cadence-core/references/*.md in tree 1f94fbe; :35 reads 'Cadence's 6 agent roles, materialized as 13 rung files' with no 'Cadence's 7 agents' remaining anywhere in the file; README.md:111 scopes 'measured 2026-07-10' to the 3% mass claim and states today's shape separately. self-verify.mjs = ok:true, problems:[].
 reported: fix 43
 severity: minor
-cause: LINEAGE's Cadence-side figures are stale across every row (agents 7 vs 13 files, skills 22 vs 29 dirs, workflows 16 vs 21, references 8 vs 10, 3 .mjs vs 45), and README:111 disagrees with them under the same 'measured 2026-07-10' stamp while itself carrying a number newer than that date.
-fix: f8b4cf1 retires the :43 vocabulary; the :14/:35 figure refresh is routed to a separate /cad-task - it needs a call on what each row counts and touches README's date stamp
+cause: LINEAGE's table is a reproducible 2026-07-10 snapshot, not drift: rebuilding 1f94fbe reproduces agents 7, skills 22, workflows 16, .mjs 3, and 33,727 words against the recorded 33,621. Three real defects remain: References 8 does not reproduce (tree has 7); :35 states 'Cadence's 7 agents' in present tense with no date framing; and README:111 folds today's shape (23 skills, 6 roles, 13 rung files) into a sentence stamped 'measured 2026-07-10', a date at which none of those three numbers held.
+fix: 37ea261, retest
 
 ## Summary
 
 total: 14
-passed: 13
-failed: 1
+passed: 14
+failed: 0
 pending: 0
 skipped: 0
 blocked: 0
