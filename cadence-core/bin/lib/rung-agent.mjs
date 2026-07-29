@@ -149,6 +149,8 @@ export function rungBodyIssue(body, rung, skills) {
  *                        `escalate_to` is absent or outside `rungs`
  *   `unknown-rung`       a rung value outside `rungOrder`, or `rungOrder`
  *                        itself absent/empty
+ *   `rung-demotion`      `escalate_to` sits BELOW `base_effort` in
+ *                        `rungOrder` - equal is legal and common
  *
  * When `rungOrder` is absent or empty nothing can be checked against it, so
  * one problem naming `rung_order` is returned INSTEAD of one per value - a
@@ -196,6 +198,21 @@ export function rungIssues(role, spec, rungOrder) {
       issues.push({ code: 'unknown-rung',
         detail: `${role} names rung "${v}", which is not in rung_order [${order.join(', ')}]` });
     }
+  }
+
+  // DIRECTION, which membership cannot see: `escalate_to` may sit at or above
+  // `base_effort`, never below. Equal is the shipped default for five of six
+  // roles (D-03/D-07 held today's escalation verbatim), so only a strict
+  // demotion fires. Without this a data-only edit makes a FAILURE RETRY
+  // re-dispatch at lower effort while route.mjs still reports
+  // `escalated: true` - the retry thinks less, and says it thought more.
+  // route.mjs stays fail-open and does not re-check this (D-03); CI is where
+  // a bad table is supposed to die.
+  const bi = order.indexOf(s.base_effort);
+  const ei = order.indexOf(s.escalate_to);
+  if (bi >= 0 && ei >= 0 && ei < bi) {
+    issues.push({ code: 'rung-demotion',
+      detail: `${role} escalate_to "${s.escalate_to}" is BELOW base_effort "${s.base_effort}" in rung_order [${order.join(', ')}]` });
   }
   return issues;
 }

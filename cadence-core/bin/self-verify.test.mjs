@@ -606,6 +606,34 @@ test('check 8: a full tree with no route-table.json fails ok:false naming the in
     && x.file === 'cadence-core/route-table.json'), JSON.stringify(r.problems));
 });
 
+test('check 8: an escalate_to BELOW base_effort is rung-demotion naming the role', () => {
+  // Membership cannot see direction: `medium` is a legal member of this role's
+  // own rungs, so every pre-existing check passes it while a failure retry
+  // would re-dispatch at LOWER effort and still report escalated: true.
+  const root = fixtureWith({
+    agents: {
+      'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n',
+      'cad-t-medium.md': '---\nname: cad-t-medium\ntools: Read\n---\nbody\n',
+      'cad-t-xhigh.md': '---\nname: cad-t-xhigh\ntools: Read\n---\nbody\n',
+    },
+    routeTable: roleTable({ base_effort: 'high', rungs: ['medium', 'high', 'xhigh'],
+      escalate_to: 'medium' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'rung-demotion'
+    && x.file === 'cadence-core/route-table.json'
+    && /^cad-t\b/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: the shipped table, where escalate_to equals base_effort, is NOT a demotion', () => {
+  const root = fixtureWith({
+    agents: { 'cad-t.md': '---\nname: cad-t\ntools: Read\n---\nbody\n' },
+    routeTable: roleTable({ base_effort: 'low', rungs: ['low'], escalate_to: 'low' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'rung-demotion'), JSON.stringify(p));
+});
+
 test('check 8: a NULL role entry is one reported problem, not a collapse to reason:internal', () => {
   // The parse guard covered the read and JSON.parse only, so a null spec still
   // unwound run() at the base_effort deref - the #49.1 shape one layer in.

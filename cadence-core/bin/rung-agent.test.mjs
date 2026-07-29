@@ -142,3 +142,24 @@ test('rungBodyIssue accepts a body pointing at ANY ONE declared skill', () => {
   const body = rungBody('high', 'cad-b-contract');
   assert.equal(rungBodyIssue(body, 'high', ['cad-a-contract', 'cad-b-contract']), null);
 });
+
+test('an escalate_to BELOW base_effort is rung-demotion naming the role', () => {
+  const issues = rungIssues('cad-reviewer',
+    { base_effort: 'high', rungs: ['medium', 'high', 'xhigh'], escalate_to: 'medium' }, ORDER);
+  assert.ok(issues.some((i) => i.code === 'rung-demotion'
+    && /escalate_to "medium"/.test(i.detail) && /base_effort "high"/.test(i.detail)
+    && i.detail.startsWith('cad-reviewer')), JSON.stringify(issues));
+});
+
+test('an escalate_to EQUAL to base_effort is legal - five of six shipped roles hold there', () => {
+  const issues = rungIssues('cad-planner',
+    { base_effort: 'high', rungs: ['high', 'xhigh'], escalate_to: 'high' }, ORDER);
+  assert.ok(!issues.some((i) => i.code === 'rung-demotion'), JSON.stringify(issues));
+});
+
+test('rung-demotion needs BOTH ends in rung_order - an unknown rung is unknown-rung only', () => {
+  const issues = rungIssues('cad-planner',
+    { base_effort: 'high', rungs: ['high', 'ludicrous'], escalate_to: 'ludicrous' }, ORDER);
+  assert.ok(!issues.some((i) => i.code === 'rung-demotion'), JSON.stringify(issues));
+  assert.ok(issues.some((i) => i.code === 'unknown-rung'), JSON.stringify(issues));
+});
