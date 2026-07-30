@@ -75,6 +75,17 @@ declared", never an out-of-grammar report. CONTEXT.md is itself an optional
 artifact, and `null` (not `[]`) is what lets a caller tell "no criteria section"
 from "a section that declared nothing".
 
+A NEAR-MISS heading is not absence. A line matching
+`^#{1,6}\s*acceptance\s+criteri` case-insensitively, that is not the exact
+heading - `## Acceptance Criteria`, `## Acceptance criteria:`, `### Acceptance
+criteria` - returns `criteria: null` WITH a `criteria-heading-near-miss` issue
+on that line, reported once for the first such line since the section is
+singular. Absence means nothing was declared; a typo means everything declared
+was dropped out of the coverage domain, and the items pointing at those ids land
+in the additive `unknown_criterion` while the gate stays green. It is the
+section-level twin of the in-section near-misses below and exists for the same
+reason.
+
 ## Out of grammar
 
 These shapes are NOT criteria (except `criterion-empty-text`, which is - see

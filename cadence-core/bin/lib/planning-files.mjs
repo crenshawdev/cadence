@@ -704,6 +704,12 @@ const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
  *      An absent heading is the datum "nothing declared", NOT an
  *      out-of-grammar report - the same absent-heading rule
  *      `classifyActiveSection` uses. CONTEXT.md is itself optional.
+ *      The ONE exception: a line that was meant to be that heading and missed
+ *      (`## Acceptance Criteria`, `## Acceptance criteria:`, `### Acceptance
+ *      criteria`) reports `criteria-heading-near-miss` and still returns
+ *      `criteria: null`. Unlike an absent heading, a typo'd one silently drops
+ *      declared criteria out of the coverage domain - the section-level twin
+ *      of the in-section near-misses below, and reported for the same reason.
  *   3. Otherwise walk from that heading to the next `^## ` or end of text.
  *      A line matching `CRITERION_HEAD` opens a criterion, ids de-duplicated
  *      first-occurrence-wins.
@@ -750,7 +756,21 @@ export function classifyAcceptanceCriteria(text) {
   for (let i = 0; i < lines.length; i++) {
     if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
   }
-  if (heading === -1) return { criteria: null, issues: [] };
+  if (heading === -1) {
+    // No exact heading. Before returning "nothing declared", look for a line
+    // that was MEANT to be it: a capital C, a trailing colon, a `###`. Without
+    // this arm the whole section leaves the coverage domain in silence - every
+    // criterion under a typo'd heading is undeclared, every item pointing at
+    // one lands in the additive `unknown_criterion`, and the gate stays green.
+    // Reported once, on the first near-miss: the section is singular.
+    for (let i = 0; i < lines.length; i++) {
+      if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
+        return { criteria: null,
+          issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
+      }
+    }
+    return { criteria: null, issues: [] };
+  }
 
   /** @type {Array<{id: string, text: string}>} */
   const criteria = [];

@@ -999,6 +999,31 @@ const CRITERION_ROWS = [
     criteria: null, codes: [],
   },
   {
+    name: 'criteria-heading-near-miss: a capital C drops the whole section, so it is reported',
+    text: '# Phase 1 Context\n\n## Acceptance Criteria\n\n- [ ] AC1: the tests pass\n',
+    criteria: null, codes: ['criteria-heading-near-miss'],
+  },
+  {
+    name: 'criteria-heading-near-miss: a trailing colon',
+    text: '# Phase 1 Context\n\n## Acceptance criteria:\n\n- [ ] AC1: the tests pass\n',
+    criteria: null, codes: ['criteria-heading-near-miss'],
+  },
+  {
+    name: 'criteria-heading-near-miss: the wrong heading level',
+    text: '# Phase 1 Context\n\n### Acceptance criteria\n\n- [ ] AC1: the tests pass\n',
+    criteria: null, codes: ['criteria-heading-near-miss'],
+  },
+  {
+    name: 'criteria-heading-near-miss is reported ONCE - the section is singular',
+    text: '# Phase 1 Context\n\n## Acceptance Criteria\n\n- [ ] AC1: one\n\n## Acceptance criteria:\n\n- [ ] AC2: two\n',
+    criteria: null, codes: ['criteria-heading-near-miss'],
+  },
+  {
+    name: 'the exact heading wins over a near-miss elsewhere in the file',
+    text: '# Phase 1 Context\n\n## Acceptance Criteria (draft)\n\nold notes\n\n## Acceptance criteria\n\n- [ ] AC1: the tests pass\n',
+    criteria: [{ id: 'AC1', text: 'the tests pass' }], codes: [],
+  },
+  {
     name: 'a present-but-empty heading is [] with no issues',
     text: '# Phase 1 Context\n\n## Acceptance criteria\n\n## Flagged assumptions\n\nnone\n',
     criteria: [], codes: [],

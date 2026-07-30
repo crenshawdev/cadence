@@ -1880,6 +1880,24 @@ test('criteria-coverage: an absent CONTEXT.md or UAT.md leaves the phase out of 
   assert.equal(b.breaks, undefined);
 });
 
+// A typo'd heading used to leave no trace at all: criteria: null, issues: [],
+// so the phase reported zero criteria and the items pointing at AC1 landed in
+// the additive unknown_criterion with the gate green. Now the heading itself is
+// named, which is what makes the drop findable.
+test('criteria-coverage: a near-miss criteria heading is reported, not silent', () => {
+  const dir = coverageTree({
+    1: {
+      contextText: '# Phase 1 Context\n\n## Acceptance Criteria\n\n- [ ] AC1: the tests pass\n',
+      items: [{ name: 'Tests pass', criterion: 'AC1' }],
+    },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.context_issues[0].issues.map((i) => i.code), ['criteria-heading-near-miss']);
+  assert.equal(r.context_issues[0].issues[0].line, 3);
+  assert.deepEqual(r.unknown_criterion, [{ phase: 1, item: 1, criterion: 'AC1' }]);
+  assert.equal(r.counts.criteria, 0);
+});
+
 test('criteria-coverage: a CONTEXT of bare bullets surfaces criterion-unidded, additively', () => {
   const dir = coverageTree({
     1: {
