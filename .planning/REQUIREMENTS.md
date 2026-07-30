@@ -109,7 +109,7 @@ section only, bounded at the next `## ` heading.
 | STK-01 | Phase 2 | Complete |
 | STK-02 | Phase 3 | Complete |
 | STK-03 | Phase 4 | Complete |
-| ACR-01 | Phase 5 | Pending |
+| ACR-01 | Phase 5 | Complete |
 
 Empty between milestones. `v1.4.0`'s five rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

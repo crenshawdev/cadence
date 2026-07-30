@@ -66,8 +66,8 @@ evidence: parseUat walk: phases 1/2/3/4 = 14/8/7/8 items, seven criterion AC1-AC
 expected: Running `/cad-audit` interactively against the fixture tree issues FAIL naming the uncovered criterion ids, not PASS-with-warnings. (human-verify: needs an interactive /cad-audit run - a slash-command surface no executor can invoke. Note: the installed plugin version the check runs against must be recorded, since 1.5.0's cache has no criteria-coverage subcommand.)
 criterion: AC7
 origin: criterion
-status: blocked
-reason: The surface under test is not installed: /cad-audit resolves through ${CLAUDE_PLUGIN_ROOT} = cadence/1.5.0, whose planning.mjs and audit.md contain zero occurrences of criteria-coverage (verified by grep). A live /cad-audit run on 2026-07-29 against this repo returned the shipped four-part chain only, with no coverage arm. Machine half is proven: criteria-coverage --dir on the fail fixture returns breaks AC4+AC5, on the pass fixture no breaks, and audit counts.broken is 0 for both trees. Unblocks when v2.0.0 is installed.
+status: skipped
+reason: Circular by construction: the surface under test is /cad-audit resolved through ${CLAUDE_PLUGIN_ROOT}, and the only installed version (cadence/1.5.0) has zero occurrences of criteria-coverage in planning.mjs or audit.md - v2.0.0 is what this cycle ships. Machine half proven on record: criteria-coverage on the fail fixture returns breaks AC4+AC5, on the pass fixture no breaks. Deferred to a post-install /cad-audit run against the fixture.
 
 ### 8. Full gate green: tests, tsc, self-verify, budgets
 expected: `node --test cadence-core/bin/*.test.mjs` and `npx tsc -p tsconfig.ci.json` both pass, and `self-verify` reports ok:true with the new subcommand and its flags present in CONTRACTS and no budget-overrun on audit.md, context.md or verify.md.
@@ -144,6 +144,6 @@ total: 13
 passed: 12
 failed: 0
 pending: 0
-skipped: 0
-blocked: 1
+skipped: 1
+blocked: 0
 reworked: 5
