@@ -62,8 +62,8 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**v2.0.0 — Stakes, not spend**, opened 2026-07-28. Six requirements across six
-phases, tracked as GitHub milestone `v2.0.0`.
+**v2.0.0 — Stakes, not spend**, opened 2026-07-28. Seven requirements across
+six phases, tracked as GitHub milestone `v2.0.0`.
 
 - **RNG-01** — per-rung agent files materialize effort off the preloaded
   contract skills, retiring `escalate_effort_variant` and the
@@ -78,6 +78,8 @@ phases, tracked as GitHub milestone `v2.0.0`.
   proves coverage in both directions
 - **CFG-01** — the remaining resolved-then-dropped config keys, closed the way
   per-trigger effort was
+- **HST-01** — the plugin's documented home moves to the self-hosted Forgejo
+  remote, and GitHub stops being the published source
 
 Two things deliberately left open at setup. The rung names
 (`personal`/`production`/`critical`) are a proposal the issue holds least
@@ -168,4 +170,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | The rung ladder is one contract materialized N times, not N variants | The host freezes `effort` per agent file on the Agent/Task dispatch path, so rungs need files; the contract lives in exactly one skill and a rung file that ever carries behaviour fails self-verify. Without that check this is the GSD namespace-variant sin the MANIFESTO names | Adopted for v2.0.0 (RNG-01), on the v1.5.0 contract skills |
 
 ---
-*Last updated: 2026-07-28 opened v2.0.0 — Stakes, not spend (6 requirements, 6 phases)*
+*Last updated: 2026-07-29 HST-01 added at phase 6 (7 requirements, 6 phases)*

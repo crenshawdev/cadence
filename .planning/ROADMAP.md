@@ -106,7 +106,7 @@ dropped-criteria incident this line first named was verified not to exist).
 then thrown away with nothing said. The same defect shape `v1.5.0` closed for
 per-trigger effort, closed everywhere it remains.
 **Depends on:** Phase 3 (the tier arm may resolve there instead, which shrinks this phase rather than blocking it)
-**Requirements:** CFG-01
+**Requirements:** CFG-01, HST-01
 **Success Criteria:**
 1. Every key still in scope is either honoured by the backend that reads it, or scoped and refused at the point of setting, with its real reach stated in the schema description.
 2. A written-down sweep for the resolved-then-dropped shape across config consumers reports zero remaining, and the sweep can be re-run by a later cycle.
