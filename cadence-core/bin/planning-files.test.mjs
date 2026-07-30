@@ -1051,6 +1051,31 @@ const CRITERION_ROWS = [
     criteria: [{ id: 'AC1', text: 'one' }], codes: ['criterion-unidded'],
   },
   {
+    name: 'criterion-unidded: a bullet whose PROSE names an id is still unidded, not malformed',
+    text: criteriaDoc('- [ ] the AC3 pin still holds'),
+    criteria: [], codes: ['criterion-unidded'],
+  },
+  {
+    name: 'criterion-malformed-id: a second space after the checkbox (a list re-indent)',
+    text: criteriaDoc('- [ ]  AC1: one thing'),
+    criteria: [], codes: ['criterion-malformed-id'],
+  },
+  {
+    name: 'criterion-malformed-id: emphasis around the id token',
+    text: criteriaDoc('- [ ] **AC1**: one thing'),
+    criteria: [], codes: ['criterion-malformed-id'],
+  },
+  {
+    name: 'criterion-malformed-id: a lowercase ac1 - the token is case-sensitive',
+    text: criteriaDoc('- [ ] ac1: one thing'),
+    criteria: [], codes: ['criterion-malformed-id'],
+  },
+  {
+    name: 'criterion-malformed-id: the colon is missing',
+    text: criteriaDoc('- [ ] AC1 one thing'),
+    criteria: [], codes: ['criterion-malformed-id'],
+  },
+  {
     name: 'criterion-duplicate-id: the second bullet reusing an id is reported and NOT pushed',
     text: criteriaDoc('- [ ] AC3: first\n- [ ] AC3: second, a duplicate'),
     criteria: [{ id: 'AC3', text: 'first' }], codes: ['criterion-duplicate-id'],

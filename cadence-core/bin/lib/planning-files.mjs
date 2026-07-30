@@ -671,9 +671,17 @@ export function parseContextDecisions(text) {
 const CRITERION_HEAD = /^- \[( |x|X)\] (AC\d+):[ \t]*(.*)$/;
 
 // A column-0 checkbox bullet, whatever it carries. The `criterion-unidded`
-// gate: it fires BEFORE any id-token test, because the legacy shape this
-// grammar exists to catch names no id at all.
+// gate for a bullet that names no id at all - the legacy shape this grammar
+// exists to catch.
 const CRITERION_BOX = /^- \[[ xX]\]\s/;
+
+// A checkbox bullet whose HEAD POSITION holds something id-shaped that
+// `CRITERION_HEAD` refused: a second space, emphasis around the token, a
+// lowercase `ac`, a missing colon. Anchored after the checkbox on purpose - an
+// id named later in the text (`- [ ] the AC3 pin holds`) is an UNIDDED bullet
+// whose prose mentions one, and telling its author to fix a malformed id would
+// send them looking for a fault that is not there.
+const CRITERION_HEAD_NEAR = /^- \[[ xX]\]\s*\**\s*AC\d+\b/i;
 
 // An `AC<N>` token anywhere on a line. Used ONLY to decide whether an
 // out-of-grammar line is worth reporting - a line naming no id declares
@@ -723,8 +731,12 @@ const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
  *   5. Every other line: at most ONE issue, in line order, each
  *      `{line, code, text}` through `issueText`'s trim-and-truncate.
  *        - a column-0 `- [ ]` bullet with no `AC<N>` head -> `criterion-unidded`
- *          (the legacy shape and the central diagnostic; tested before any
- *          token gate so a bullet naming no id at all still fires)
+ *          (the legacy shape and the central diagnostic)
+ *        - the same bullet when the HEAD POSITION does hold an id the canonical
+ *          head refused - `- [ ]  AC1: x`, `- [ ] **AC1**: x`, `- [ ] ac1: x`,
+ *          `- [ ] AC1 no colon` -> `criterion-malformed-id`. An id named later
+ *          in the text is not this: that bullet is unidded and its prose
+ *          happens to mention an id
  *        - a second bullet reusing an id -> `criterion-duplicate-id`, reported
  *          and NOT pushed
  *        - an id with no text after the colon -> `criterion-empty-text`, and
@@ -815,10 +827,13 @@ export function classifyAcceptanceCriteria(text) {
     }
     open = null;
     absorbing = false;
-    // The legacy shape: a checkbox bullet with no `AC<N>` head. Checked before
-    // the token gate, since the bullet this phase exists to catch names no id.
+    // A checkbox bullet that is not a criterion. Which fault it is depends on
+    // whether the head position holds an id at all: reporting `- [ ] **AC1**: x`
+    // as `criterion-unidded` names a fix - "add the phase-local id" - that is a
+    // no-op on a line whose id is right there.
     if (CRITERION_BOX.test(line)) {
-      issues.push({ line: i + 1, code: 'criterion-unidded', text: issueText(line) });
+      issues.push({ line: i + 1, text: issueText(line),
+        code: CRITERION_HEAD_NEAR.test(line) ? 'criterion-malformed-id' : 'criterion-unidded' });
       continue;
     }
     if (!CRITERION_TOKEN.test(line)) continue;

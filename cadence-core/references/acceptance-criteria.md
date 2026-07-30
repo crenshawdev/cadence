@@ -96,7 +96,8 @@ trailing `...`, the same issue shape the other three grammars use.
 
 | Code | Example line | What the classifier does | Fix |
 |---|---|---|---|
-| `criterion-unidded` | `- [ ] the tests pass` | Reports the line; the bullet declares no criterion. The CENTRAL diagnostic - the legacy shape every CONTEXT written before this grammar is in, and it is tested BEFORE any id-token gate so a bullet naming no id at all still fires | Add the phase-local id: `- [ ] AC1: the tests pass` |
+| `criterion-unidded` | `- [ ] the tests pass` | Reports the line; the bullet declares no criterion. The CENTRAL diagnostic - the legacy shape every CONTEXT written before this grammar is in. A bullet whose PROSE names an id (`- [ ] the AC3 pin still holds`) is this, not the row below: the head position is empty | Add the phase-local id: `- [ ] AC1: the tests pass` |
+| `criterion-malformed-id` | `- [ ] **AC1**: the tests pass` | Reports the line; the head position holds an id the canonical head refused - a second space after the checkbox, emphasis around the token, a lowercase `ac`, a missing colon. Split out of `criterion-unidded`, whose remedy ("add the id") is a no-op on a line whose id is right there | Write the head exactly: one space after the checkbox, a bare uppercase `AC<N>`, then a colon |
 | `criterion-duplicate-id` | a second `- [ ] AC3: ...` | Reports the line and does NOT push it: the id keeps first-occurrence-wins, so the second bullet is dropped from the coverage domain entirely. `/cad-audit` names this even though it moves no verdict, because a dropped criterion with a green gate is the failure this grammar exists to prevent | Renumber the second bullet to the next unused id |
 | `criterion-empty-text` | `- [ ] AC4:` | Reports the line AND pushes the criterion with `text: ''` - parse-then-diagnose, because the id is real and must still reach a UAT item | Write the criterion's text after the colon |
 | `criterion-unboxed-bullet` | `- AC1: the tests pass` | Reports the line; no checkbox, so it is not a criterion | Add the checkbox |
@@ -107,8 +108,9 @@ trailing `...`, the same issue shape the other three grammars use.
 | `criterion-prose-line` | `AC7 is the only human-verify criterion.` | Reports the line - the catch-all, so any other line naming an `AC<N>` token gets a diagnostic rather than silence | Move the sentence below the section's last criterion into its own `## ` section, or drop the token |
 
 A line naming no `AC<N>` token at all is ordinary section prose and is never
-reported - except a column-0 checkbox bullet, which is `criterion-unidded`
-whatever it carries.
+reported - except a column-0 checkbox bullet, which is always reported
+whatever it carries: `criterion-malformed-id` when its head position holds an
+id, `criterion-unidded` otherwise.
 
 **The entry-shaped codes fire regardless of how many criteria parsed.** This is
 deliberately unlike `classifyPhaseList`'s near-miss suppression and unlike
