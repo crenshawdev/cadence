@@ -81,12 +81,14 @@ configured.
 - **`/cad-audit` proves criterion coverage in both directions, and FAILs on a
   criterion that reached no UAT item**, naming the id and the phase with a
   concrete next action. Requirement tracing already caught work nobody committed
-  to deliver; this catches work nobody proved was delivered. Two of this cycle's
-  own 122 criteria were dropped at checklist-build time and recovered only
-  because a second verify pass happened to run. Upgrading costs nothing: an
-  existing checklist where no item carries `criterion` is read as a pre-field
-  legacy file, reported and never broken, and new checklists carry the link from
-  the next `/cad-verify` onward.
+  to deliver; this catches a criterion that never reached the checklist, which
+  is a weaker claim than proof of delivery and the honest one: an item counts as
+  coverage once it exists, whatever its result. Nothing structural connected the
+  two before - the checklist was worded from the criteria by hand, so the link
+  was model judgment and no later pass could recover it. Upgrading costs
+  nothing: a checklist written before the field existed is read as pre-field
+  legacy, reported and never broken, and new checklists carry the link from the
+  next `/cad-verify` onward.
 
 ### Added
 
@@ -139,20 +141,28 @@ configured.
   starts with a phase-local `AC<N>` token (`- [ ] AC1: ...`), which `/cad-context`
   writes from now on. The grammar is stated in full at
   `cadence-core/references/acceptance-criteria.md` and read by one function, with
-  a named diagnostic for each of nine shapes outside it - the central one being a
-  bullet carrying no id at all. The id never renumbers: `/cad-phase` insert and
-  remove move a phase directory whole and rewrite nothing inside it, which is why
-  the id is not phase-prefixed and not a path.
+  a named diagnostic for each of eleven shapes outside it - the central one being
+  a bullet carrying no id at all, and the section-level one a near-miss
+  `## Acceptance criteria` heading, which used to drop a whole phase's criteria
+  out of the coverage domain in silence. A fenced code block declares nothing, so
+  a documentation example cannot mint a phantom id. The id never renumbers:
+  `/cad-phase` insert and remove move a phase directory whole and rewrite
+  nothing inside it, which is why the id is not phase-prefixed and not a path.
 - **`planning.mjs criteria-coverage`**, a new seam subcommand that traces every
   criterion to the UAT item that tested it, in both directions. A criterion that
   reached no item is verdict-breaking and named by its id; an item that traces to
-  no criterion is reported and moves nothing.
+  no criterion is reported and moves nothing. A checked phase that declared
+  criteria and has no UAT.md at all breaks the same way, as `missing-uat` - the
+  total drop is the case the gate most has to see.
 - **Two UAT item fields, `criterion` and `origin`.** `criterion` names the
   `AC<N>` an item was built from, written by `/cad-verify` and carried through
   every later rewrite of the file. `origin` (`criterion | verifier | smoke`)
   declares an item that legitimately has no criterion - a gap the deep verifier
   appended, or the cold-start smoke check - so it is exempt rather than merely
-  unlinked, and `uat record --origin` can set it after the fact.
+  unlinked, and `uat record --origin` can set it after the fact. Every new
+  checklist also carries a `fields_version` frontmatter marker, which is what
+  the legacy exemption reads: a file the seam wrote is never mistaken for a
+  pre-field one, however few links its items hold.
 
 ### Fixed
 

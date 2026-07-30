@@ -4,10 +4,10 @@ The stated grammar for the `## Acceptance criteria` section of
 `.planning/phases/<N>/CONTEXT.md`, written by `workflows/context.md`'s
 `write_context` step. It answers one question - what counts as a criterion, and
 what is its id - so that `/cad-audit` can prove a TOTAL function: every
-criterion a phase declared reached that phase's UAT checklist. Two of 122
-criteria were silently dropped at checklist-build time in the cycle before this
-grammar existed, and were recovered only because a second verify pass happened
-to run.
+criterion a phase declared reached that phase's UAT checklist. Before the id,
+nothing structural connected the two: `/cad-verify` words each checklist item
+from the criteria in its own prose, so the link was model judgment at build
+time and no later pass could recover which criterion an item came from.
 
 One function in `cadence-core/bin/lib/planning-files.mjs` implements it:
 `classifyAcceptanceCriteria(text)`, returning

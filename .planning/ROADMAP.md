@@ -89,9 +89,10 @@ but not silently lower.
 
 ### Phase 5: Acceptance-criteria ids
 **Goal:** An audit can prove a total function - every acceptance criterion
-in CONTEXT reached the UAT checklist. Two of 122 criteria were silently
-dropped at checklist-build time and recovered only because a second verify
-pass happened to run.
+in CONTEXT reached the UAT checklist. Nothing structural connected the two:
+`/cad-verify` words each item from the criteria in its own prose, so the link
+was model judgment at build time and unrecoverable afterwards (D-15: the
+dropped-criteria incident this line first named was verified not to exist).
 **Depends on:** Nothing
 **Requirements:** ACR-01
 **Success Criteria:**
