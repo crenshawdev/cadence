@@ -1866,18 +1866,44 @@ test('criteria-coverage: an unchecked roadmap box counts uncovered but contribut
   assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 12 }]);
 });
 
-test('criteria-coverage: an absent CONTEXT.md or UAT.md leaves the phase out of the envelope, ok:true', () => {
+// D-10's exemption is the PRUNED phase, and the prune deletes the whole
+// directory - so it always takes CONTEXT.md with it. That is why absence of
+// CONTEXT is the exemption and absence of UAT is not.
+test('criteria-coverage: an absent CONTEXT.md leaves the phase out of the envelope, ok:true', () => {
   const noContext = coverageTree({ 1: { items: P1_ITEMS_DROPPED } });
   const a = run(['criteria-coverage'], noContext);
   assert.equal(a.ok, true);
   assert.deepEqual(a.phases, []);
   assert.equal(a.breaks, undefined);
   assert.deepEqual(a.counts, { criteria: 0, covered: 0, uncovered: 0, untraced: 0, phases: 0 });
-  const noUat = coverageTree({ 1: { criteria: P1_CRITERIA } });
-  const b = run(['criteria-coverage'], noUat);
-  assert.equal(b.ok, true);
-  assert.deepEqual(b.phases, []);
-  assert.equal(b.breaks, undefined);
+});
+
+// The hole this closes: a checked phase that declared seven criteria and never
+// got a checklist at all - the total drop - used to report nothing whatsoever.
+test('criteria-coverage: a CHECKED phase with criteria and no UAT.md breaks as missing-uat', () => {
+  const dir = coverageTree({ 1: { criteria: P1_CRITERIA } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 0 }]);
+  assert.deepEqual(r.breaks.map((b) => b.break), Array(7).fill('missing-uat'));
+  assert.deepEqual(r.breaks.map((b) => b.id), ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7']);
+  assert.deepEqual(r.counts, { criteria: 7, covered: 0, uncovered: 7, untraced: 0, phases: 1 });
+});
+
+test('criteria-coverage: an UNCHECKED phase with no UAT.md counts uncovered but never breaks', () => {
+  const dir = coverageTree({ 1: { checked: false, criteria: P1_CRITERIA } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.counts.uncovered, 7);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 0 }]);
+});
+
+test('criteria-coverage: a phase with no CONTEXT and no UAT is still exempt - the pruned case', () => {
+  const dir = coverageTree({ 1: {} });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.phases, []);
+  assert.equal(r.breaks, undefined);
 });
 
 // A typo'd heading used to leave no trace at all: criteria: null, issues: [],

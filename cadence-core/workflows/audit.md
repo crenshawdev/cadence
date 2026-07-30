@@ -121,10 +121,12 @@ already carry. A `legacy` phase is a checklist written before the `criterion`
 field existed, recognised by an absent `fields_version` frontmatter marker
 rather than by which item fields happen to be missing: reported, never a
 break. A checklist carrying the marker is never legacy, so links dropped from
-a live checklist break normally. An absent CONTEXT.md or UAT.md is
-nothing to prove either - this gate runs at `milestone.md` step 1 while the
-prune that deletes phase directories runs at step 3, so a prior milestone's
-phases are simply gone. Additive is not invisible: `context_issues` carrying
+a live checklist break normally. An absent CONTEXT.md is nothing to prove -
+this gate runs at `milestone.md` step 1 while the prune that deletes phase
+directories runs at step 3, so a prior milestone's phases are simply gone, and
+the prune takes CONTEXT with the directory. An absent UAT.md under a PRESENT
+CONTEXT is the opposite: on a checked box every declared criterion breaks as
+`missing-uat`, the total drop. Additive is not invisible: `context_issues` carrying
 `criterion-duplicate-id` or `criterion-unidded` on a phase NOT in `legacy` must
 be named in the report. The reader keeps first-occurrence-wins on a duplicate
 id, so a second bullet reusing one is dropped from the coverage domain

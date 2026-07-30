@@ -804,22 +804,41 @@ function cmdCriteriaCoverage(dir) {
     const pdir = join(dir, 'phases', String(p.n));
     const contextText = read(join(pdir, 'CONTEXT.md'));
     const uatText = read(join(pdir, 'UAT.md'));
-    // EITHER file absent -> the phase contributes nothing at all: no break, no
-    // `phases[]` entry (D-10). CONTEXT is a documented optional artifact, and
-    // `milestone.md` runs this gate at step 1 while the prune that DELETES
-    // phase dirs runs at step 3 - so a prior milestone's pruned phase must
-    // never make the gate unpassable.
-    if (contextText === null || uatText === null) continue;
+    // An absent CONTEXT.md is nothing to prove (D-10): CONTEXT is a documented
+    // optional artifact, and `milestone.md` runs this gate at step 1 while the
+    // prune that DELETES phase dirs runs at step 3, so a prior milestone's
+    // pruned phase must never make the gate unpassable. The prune removes the
+    // whole directory, so it always takes CONTEXT with it - which is why this
+    // arm, and not the UAT one below, is where D-10's exemption belongs.
+    if (contextText === null) continue;
 
     const classified = classifyAcceptanceCriteria(contextText);
     // `criteria: null` is an absent heading - "nothing declared", not a
-    // problem. Coerced to [] here because the phase's files both exist, so it
+    // problem. Coerced to [] here because the phase's CONTEXT exists, so it
     // still reports its `phases[]` entry and its items still trace (to nothing,
     // which is `untraced`'s additive job).
     const criteria = classified.criteria || [];
+    if (classified.issues.length) contextIssues.push({ phase: p.n, issues: classified.issues });
+
+    // CONTEXT present, UAT.md absent. Exempting this the way a pruned phase is
+    // exempted left the gate's one load-bearing direction with an unnamed hole:
+    // a checked phase that declared criteria and never got a checklist is the
+    // total drop this subcommand exists to catch, and it reported nothing at
+    // all. Every declared criterion counts uncovered, and on a CHECKED box each
+    // one breaks as `missing-uat` - the same unchecked-box rule as below, so a
+    // phase still in flight is counted and never breaks.
+    if (uatText === null) {
+      phases.push({ phase: p.n, criteria: criteria.length, items: 0 });
+      nCriteria += criteria.length;
+      for (const c of criteria) {
+        nUncovered++;
+        if (p.checked) breaks.push({ phase: p.n, id: c.id, break: 'missing-uat' });
+      }
+      continue;
+    }
+
     const uat = parseUat(uatText);
     const items = uat.items;
-    if (classified.issues.length) contextIssues.push({ phase: p.n, issues: classified.issues });
     phases.push({ phase: p.n, criteria: criteria.length, items: items.length });
 
     const withCriterion = items.filter((it) => it.criterion !== undefined);

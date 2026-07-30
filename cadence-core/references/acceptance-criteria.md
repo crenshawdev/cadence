@@ -133,7 +133,7 @@ that legitimately derives from no criterion declares `origin:` instead.
 
 | Key | Verdict | Meaning |
 |---|---|---|
-| `breaks` | BREAKING | `{phase, id, break: 'uncovered'}` - a declared criterion no item's `criterion` names. The only verdict-moving key |
+| `breaks` | BREAKING | `{phase, id, break: 'uncovered' \| 'missing-uat'}` - a declared criterion no item's `criterion` names, or one whose phase has no UAT.md at all. The only verdict-moving key |
 | `untraced` | additive | `{phase, item, name}` - an item with no `criterion` and no exempting `origin` |
 | `legacy` | additive | phase numbers whose checklist predates the field |
 | `unknown_criterion` | additive | `{phase, item, criterion}` - a `criterion` value naming no declared id |
@@ -174,12 +174,20 @@ Infer legacy from field absence again and the exemption absolves the drop.
 An EMPTY checklist is not legacy. An empty checklist is the drop itself, so
 every criterion in that phase breaks.
 
-**An absent CONTEXT.md or an absent UAT.md is nothing to prove.** Either file
-missing and the phase contributes nothing at all: no break, no `phases[]` entry.
-`workflows/milestone.md` runs this gate at step 1 while the prune that DELETES
-phase directories runs at step 3, so a prior milestone's phases are simply not
-on disk, and treating that as a break would make `/cad-milestone`'s own gate
-unpassable.
+**An absent CONTEXT.md is nothing to prove.** The phase contributes nothing at
+all: no break, no `phases[]` entry. `workflows/milestone.md` runs this gate at
+step 1 while the prune that DELETES phase directories runs at step 3, so a
+prior milestone's phases are simply not on disk, and treating that as a break
+would make `/cad-milestone`'s own gate unpassable. The prune removes the whole
+directory, so it always takes CONTEXT.md with it - which is why absence of
+CONTEXT is the exemption and absence of UAT is not.
+
+**An absent UAT.md, with CONTEXT.md present, is the total drop.** A phase that
+declared criteria and never got a checklist is exactly what this gate exists to
+catch, and exempting it left the one load-bearing direction with an unnamed
+hole. Every declared criterion counts `uncovered`, and on a CHECKED box each one
+breaks as `missing-uat`. The unchecked-box rule below applies unchanged, so a
+phase still in flight is counted and never breaks.
 
 **An unchecked roadmap box counts but never breaks.** A phase that has not
 reached verification yet contributes its `uncovered` count and its `phases[]`
