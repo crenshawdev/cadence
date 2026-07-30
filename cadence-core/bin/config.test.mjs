@@ -3,9 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 
@@ -578,6 +578,35 @@ test('set --global: a risk waiver is refused as repo-scoped, and the repo file a
   writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
   const ok = run(['set', '--file', repo, 'risk.override.auth=true'], join(dir, 'no-global-control.json'));
   assert.equal(ok.ok, true);
+  assert.equal(JSON.parse(readFileSync(repo, 'utf8')).risk.override.auth, true);
+});
+
+test('set --file: every ALIAS of the global path is refused, and writes nothing', () => {
+  // The refusal compared `file === GLOBAL_CONFIG` as strings, so
+  // `--file <global-dir>/./config.json` wrote straight through it - and a
+  // symlink, a relative path and a redundant `..` segment opened the same
+  // door. Identity, not spelling, is what "is this the global layer" means.
+  const gdir = mkdtempSync(join(tmpdir(), 'cad-config-alias-'));
+  const gpath = join(gdir, 'config.json');
+  const before = JSON.stringify({ stakes: 'solo' });
+  writeFileSync(gpath, before);
+  const link = join(gdir, 'link.json');
+  symlinkSync(gpath, link);
+
+  for (const alias of [join(gdir, '.', 'config.json'), link,
+    join(gdir, '..', basename(gdir), 'config.json')]) {
+    const r = run(['set', '--file', alias, 'risk.override.auth=true'], gpath);
+    assert.equal(r.ok, false, alias);
+    assert.match(r.detail[0].error, /repo-scoped/, alias);
+    assert.equal(readFileSync(gpath, 'utf8'), before, `${alias} wrote something`);
+  }
+
+  // The control that proves this did not become a blanket refusal: a
+  // genuinely different file still takes the same pair.
+  const repo = join(gdir, 'repo.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const ok = run(['set', '--file', repo, 'risk.override.auth=true'], gpath);
+  assert.equal(ok.ok, true, JSON.stringify(ok));
   assert.equal(JSON.parse(readFileSync(repo, 'utf8')).risk.override.auth, true);
 });
 

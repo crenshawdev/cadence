@@ -19,9 +19,9 @@
 // read time (precedence repo > global > defaults). Each file is validated on its
 // own - every layer must be independently valid.
 
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { surfaceKeyError, OVERRIDE_PREFIX } from './lib/risk-surfaces.mjs';
@@ -199,9 +199,31 @@ function setInto(obj, dotted, value) {
 // `config.mjs set risk.override.auth=true --global` would waive the auth floor
 // in every repository on the machine, forever, with nothing in any of those
 // repos recording it - the silent lowering this whole phase exists to prevent.
+/**
+ * Filesystem identity for a path that may not exist yet. `--global` AUTO-CREATES
+ * the global file, so absence is the ordinary case, not an error: fall back to
+ * the realpath of the parent directory joined with the basename, and to a plain
+ * absolute resolve when even the directory is absent. That is what lets the
+ * comparison below see through a symlinked ~/.claude, a relative path and a
+ * trailing-slash spelling alike.
+ * @param {string} p
+ * @returns {string}
+ */
+function fsIdentity(p) {
+  try { return realpathSync(p); } catch { /* not created yet - fall through */ }
+  try { return join(realpathSync(dirname(p)), basename(p)); } catch { /* dir absent too */ }
+  return resolvePath(p);
+}
+
 /** @param {string} file @param {boolean} create @param {{key:string}[]} pairs */
 function repoScopedErrors(file, create, pairs) {
-  const targetsGlobal = create || (Boolean(GLOBAL_CONFIG) && file === GLOBAL_CONFIG);
+  // Identity, not string equality: `--file <global-dir>/./config.json` wrote
+  // straight through the refusal, and a symlink, a relative path or a trailing
+  // slash opened the same door. The GLOBAL_CONFIG guard stays non-empty-only -
+  // lib/config-merge.mjs deliberately yields '' where homedir() throws, and ''
+  // must never match a real target.
+  const targetsGlobal = create
+    || (Boolean(GLOBAL_CONFIG) && fsIdentity(file) === fsIdentity(GLOBAL_CONFIG));
   if (!targetsGlobal) return [];
   return pairs.filter((p) => p.key.startsWith(OVERRIDE_PREFIX)).map((p) => ({
     key: p.key,
