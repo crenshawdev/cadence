@@ -868,3 +868,64 @@ test('the gate check FALLS BACK rather than skipping when the table declares no 
   assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
   assert.match(r.warnings[0], /blockign/);
 });
+
+// --- the risk waiver is repo-scoped in BOTH directions (CFG-01, D-06) --------
+
+// `risk.override.<surface>` is `src: repo` in config.schema.json. Read off the
+// MERGED config, one line in one user-global file disabled the risk floor in
+// every repository on the machine - the write face refused `--global` while
+// the resolver honoured whatever got there anyway. The repo layer is the only
+// one that waives now, and an ignored global waiver is named rather than
+// dropped silently.
+
+test('a waiver in the GLOBAL layer alone waives nothing and names itself', () => {
+  const g = rawCfg({ risk: { override: { auth: true } } }, 'g-waive-auth.json');
+  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.stakes, 'critical'); // the floor stands
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /risk\.override\.auth/);
+  assert.match(r.warnings[0], /src: repo/);            // the rule that ignored it
+  assert.match(r.warnings[0], /\.planning\/config\.json/); // and where it belongs
+  assert.deepEqual(floorEntries(r).filter((x) => /waive/.test(x)), []);
+});
+
+test('the SAME waiver in the repo file still waives - the regression guard', () => {
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.warnings, undefined);
+  assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
+});
+
+test('both layers naming it: the repo value waives, the global one is still named', () => {
+  const g = rawCfg({ risk: { override: { auth: true } } }, 'g-waive-auth2.json');
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.stakes, 'solo'); // waived, by the repo layer's own value
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /risk\.override\.auth/);
+});
+
+test('a global `risk.override` set to false warns about nothing', () => {
+  // A waiver the global layer only NAMES is not one it makes: warning here
+  // would put a "move your waiver" line on every dispatch in every repo.
+  const g = rawCfg({ risk: { override: { auth: false } } }, 'g-waive-false.json');
+  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.warnings, undefined);
+});
+
+test('a global layer carrying only `stakes` merges exactly as before', () => {
+  // The additive `layers` field must change nothing about the ordinary merge.
+  const g = cfg({ stakes: 'critical' }, 'g-only-stakes.json');
+  const file = planningRoot(null, { config: {} });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.model, 'opus');
+  assert.match(r.reason.join(' '), /config:global\+repo/);
+  assert.equal(r.warnings, undefined);
+});

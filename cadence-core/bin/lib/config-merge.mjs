@@ -88,6 +88,15 @@ export function isPlainObject(v) {
  * empty (not present at all) when nothing failed to parse or was skipped.
  * Defaults are the caller's concern (route has DEFAULTS, config.mjs get
  * builds them from the schema) - this merges only the two file layers.
+ *
+ * `layers` is ADDITIVE and carries the two validated per-layer objects (either
+ * one null when that layer was absent, unparseable, or not a JSON object), for
+ * one reason: the merge LOSES provenance, and a key whose schema `src` is
+ * `repo` has to know which file carried it. Without it a caller can only read
+ * the merged value, which is how a `risk.override.<surface>` written once in
+ * the user-global file waived a risk floor in every repository on the machine.
+ * `config`, `source` and `warnings` are unchanged - every existing caller
+ * destructures named fields, and their values here are byte-identical.
  * @param {string} repoFile
  */
 export function mergeLayers(repoFile) {
@@ -110,6 +119,7 @@ export function mergeLayers(repoFile) {
   return {
     config: deepMerge(globalValue || {}, repoValue || {}),
     source: layers.length ? layers.join('+') : 'defaults',
+    layers: { global: globalValue || null, repo: repoValue || null },
     // One file can resolve as BOTH layers (CADENCE_GLOBAL_CONFIG pointed at the
     // repo file). Merging it onto itself is a no-op, so the damage is confined
     // to reporting: every warning names its file, so identical strings mean the

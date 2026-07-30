@@ -36,8 +36,11 @@
 // phase's own PLAN `files:` list is matched against the table's `surfaces`
 // block, and a detected risk surface RAISES the level to that row's floor -
 // never lowers it. Lowering back takes a persisted `risk.override.<surface>`,
-// one per detected surface. Every unresolvable input (no `--phase` and no
-// cursor, no PLAN, an unreadable PLAN) resolves at the baseline with ok:true.
+// one per detected surface, read from the REPO layer alone - the key is
+// `src: repo`, and a waiver found in the user-global layer is ignored and
+// named in `warnings` rather than waiving a floor machine-wide. Every
+// unresolvable input (no `--phase` and no cursor, no PLAN, an unreadable PLAN)
+// resolves at the baseline with ok:true.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -92,8 +95,22 @@ const PRE_PLAN_ROLES = new Set(['cad-planner', 'cad-assumptions-analyzer']);
 // and _warnings carries what the read found wrong but did not block on: a
 // layer that failed to parse, and any key v2.0.0 retired.
 function readConfig(file) {
-  const { config: c, source, warnings } = mergeLayers(file);
+  const { config: c, source, warnings, layers } = mergeLayers(file);
   const m = c.model || {};
+  // `risk.override.<surface>` is `src: repo` in config.schema.json, so it is
+  // read from the REPO layer alone. Off the merged config, one line in one
+  // user-global file disabled the risk floor in every repository on the
+  // machine - the write face refused `--global` while the resolver honoured
+  // what got there anyway.
+  const globalWaivers = Object.entries(riskOverridesIn(layers ? layers.global : null))
+    // A waiver the global layer only NAMES is not one it makes: a global
+    // `risk.override.auth: false` is the ordinary not-waived case, and warning
+    // on it would put a "move your waiver" line on every dispatch in every
+    // repository for a waiver that does not exist.
+    .filter(([, value]) => Boolean(value))
+    .map(([surface]) => `risk.override.${surface} in the user-global config layer was `
+      + `IGNORED: it is repo-scoped (src: repo), so it waives nothing here - set it in `
+      + `this repo's own .planning/config.json to waive the ${surface} floor`);
   return {
     stakes: c.stakes ?? DEFAULTS.stakes,
     stakesSet: c.stakes !== undefined && c.stakes !== null,
@@ -104,10 +121,13 @@ function readConfig(file) {
     // field would make every `model.overrides.<role>` pin resolve undefined -
     // and a config carrying both a pin and a waiver would have two writers
     // fighting over one field.
-    riskOverrides: riskOverridesIn(c),
+    riskOverrides: riskOverridesIn(layers ? layers.repo : null),
     triggerGates: triggerGatesIn(c),
     _source: source,
-    _warnings: [...(warnings || []), ...retiredKeysIn(c)],
+    // The global waiver is warned about whether or not the repo layer also
+    // names that surface: the global value never applies either way, and a
+    // waiver that vanishes without a trace is the shape this milestone closes.
+    _warnings: [...(warnings || []), ...retiredKeysIn(c), ...globalWaivers],
   };
 }
 
