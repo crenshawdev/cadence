@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,48 @@ function run(args = []) {
     return JSON.parse(e.stdout); // problems found -> exit 1, JSON still on stdout
   }
 }
+
+/** The `## Reach rows` table body for a set of [key, reach] pairs. */
+function reachTable(rows) {
+  return '## Reach rows\n\n| Key | Reach | Honoured by |\n|---|---|---|\n'
+    + rows.map(([k, r]) => `| \`${k}\` | ${r} | prose |`).join('\n') + '\n';
+}
+
+/**
+ * A fixture for check 9 that writes BOTH its own `config.schema.json` and its
+ * own reach doc, so no expectation here is derived from the shipped schema -
+ * the subject of the load-bearing "the repo passes" assertion above. Three
+ * synthetic keys, one of them narrow.
+ * @param {string} doc the full text of cadence-core/references/config-reach.md
+ * @param {{narrowPurpose?: string}} [opts]
+ */
+function reachFixture(doc, { narrowPurpose = 'Something - alpha step only' } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-reach-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  writeFileSync(join(root, 'cadence-core', 'config.schema.json'), JSON.stringify({
+    keys: {
+      'alpha.wide': { type: 'bool', default: false, purpose: 'Something universal' },
+      'alpha.narrow': { type: 'bool', default: false, purpose: narrowPurpose },
+      'beta.wide': { type: 'bool', default: false, purpose: 'Another universal thing' },
+    },
+  }, null, 2));
+  writeFileSync(join(root, 'cadence-core', 'references', 'config-reach.md'), doc);
+  return root;
+}
+
+/** The reach problem kinds, for "this pair is consistent" assertions. */
+const REACH_KINDS = ['missing-reach-row', 'unknown-reach-key', 'unstated-reach',
+  'malformed-reach-row', 'missing-reach-section'];
+
+/** The consistent table over reachFixture's three keys. */
+const CONSISTENT_REACH = reachTable([
+  ['alpha.wide', 'universal'],
+  ['alpha.narrow', 'alpha step only'],
+  ['beta.wide', 'universal'],
+]);
 
 /** A minimal fixture repo: real schema, one prose file of the given text. */
 function fixture(proseText) {
@@ -133,6 +175,15 @@ function fullFixture() {
   writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
     JSON.stringify({ budgets: { 'agents/cad-verifier.md': Buffer.byteLength(agent, 'utf8') } }, null, 2));
   writeFileSync(join(root, 'INTERNALS.md'), 'Read the code: `cadence-core/config.schema.json`.\n');
+  // A reach row per key of the schema this fixture just copied, all
+  // `universal` - generated rather than spelled so a full-tree row breaks
+  // exactly the one thing it is about instead of also reporting 72 missing
+  // reach rows. No assertion reads this table's contents; the check-9 rows
+  // below use reachFixture's own synthetic schema instead.
+  const keys = Object.keys(JSON.parse(
+    readFileSync(join(root, 'cadence-core', 'config.schema.json'), 'utf8')).keys);
+  writeFileSync(join(root, 'cadence-core', 'references', 'config-reach.md'),
+    reachTable(keys.map((k) => [k, 'universal'])));
   return root;
 }
 
@@ -898,6 +949,106 @@ test('check 8: a drifted stakes_order or gates list fails ok:false', () => {
     assert.equal(r.ok, false, key);
     assert.ok(r.problems.some((p) => p.kind === kind), `${key}: ${JSON.stringify(r.problems)}`);
   }
+});
+
+// --- check 9: the config-key reach table (CFG-01) ----------------------------
+
+test('check 9: a table that agrees with the schema yields no reach problems', () => {
+  const r = run(['--root', reachFixture(CONSISTENT_REACH)]);
+  assert.ok(!r.problems.some((p) => REACH_KINDS.includes(p.kind)), JSON.stringify(r.problems));
+});
+
+test('check 9: a schema key with no row is missing-reach-row naming the key', () => {
+  const doc = reachTable([['alpha.wide', 'universal'], ['alpha.narrow', 'alpha step only']]);
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'missing-reach-row');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /beta\.wide/);
+  assert.equal(hit.file, 'cadence-core/references/config-reach.md');
+});
+
+test('check 9: a row for a key the schema lacks is unknown-reach-key naming it', () => {
+  const doc = CONSISTENT_REACH + '| `gamma.retired` | universal | prose |\n';
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'unknown-reach-key');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /gamma\.retired/);
+});
+
+test('check 9: a narrow reach absent from the key purpose is unstated-reach', () => {
+  // The defect shape the whole check exists for: the table knows the value is
+  // dropped for some callers, and the place the user sets it never says so.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH,
+    { narrowPurpose: 'Something that sounds like it always applies' })]).problems;
+  const hit = p.find((x) => x.kind === 'unstated-reach');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /alpha\.narrow/);
+  assert.match(hit.detail, /alpha step only/);
+});
+
+test('check 9: the same narrow reach WITH the phrase in the purpose yields nothing', () => {
+  // The control: the phrase is compared literally, so a purpose carrying it
+  // verbatim (and more besides) passes.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH,
+    { narrowPurpose: 'Something real - alpha step only; nothing else reads it' })]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unstated-reach'), JSON.stringify(p));
+});
+
+test('check 9: a two-cell body row is malformed-reach-row naming the line', () => {
+  const doc = CONSISTENT_REACH + '| `alpha.extra` | universal |\n';
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'malformed-reach-row');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /alpha\.extra/);
+});
+
+test('check 9: a renamed section heading is ONE missing-reach-section, not 3 missing rows', () => {
+  // rows === null vs [] - the distinction parseActiveIds keeps for the same
+  // reason: one authoring fault must not arrive as a copy of another per key.
+  const doc = CONSISTENT_REACH.replace('## Reach rows', '## The rows');
+  const p = run(['--root', reachFixture(doc)]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-reach-section'), JSON.stringify(p));
+  assert.ok(!p.some((x) => x.kind === 'missing-reach-row'), JSON.stringify(p));
+});
+
+test('check 9: a full tree with no reach doc fails ok:false naming the input', () => {
+  const root = fullFixture();
+  rmSync(join(root, 'cadence-core', 'references', 'config-reach.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'missing-input'
+    && x.file === 'cadence-core/references/config-reach.md'), JSON.stringify(r.problems));
+});
+
+test('check 9: a key named ONLY by the reach table is still inert-config-key', () => {
+  // The point of the seenTokens exclusion. The table names every key by
+  // construction, so letting it count as a reference would make 1b's
+  // inert-config-key unreachable forever.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH)]).problems;
+  for (const key of ['alpha.wide', 'alpha.narrow', 'beta.wide']) {
+    assert.ok(p.some((x) => x.kind === 'inert-config-key' && x.detail === key),
+      `${key}: ${JSON.stringify(p)}`);
+  }
+});
+
+test('check 9: a dead token in the reach doc PROSE is still scanned by check 1', () => {
+  // The exclusion is the seenTokens feed and nothing else: class 2 inspects
+  // the Key column only, so a retired key written in the grammar prose or an
+  // `Honoured by` cell must still report unknown-config-key.
+  const doc = 'Superseded by `alpha.gone`.\n\n' + CONSISTENT_REACH;
+  const p = run(['--root', reachFixture(doc)]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-config-key' && x.detail === 'alpha.gone'),
+    JSON.stringify(p));
+});
+
+test('check 1: a hyphenated key spelled in full is known, a truncated guess is not', () => {
+  // The tokenizer's segment class has no hyphen, so
+  // `model.overrides.cad-planner` tokenizes to `model.overrides.cad` - the
+  // correct spelling of a real key must not report unknown. `_` is in the
+  // class, so `git.on` is still a truncated guess, not a boundary.
+  const root = fixture('Pin one role with `model.overrides.cad-planner`, not `git.on`.\n');
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unknown-config-key');
+  assert.deepEqual(p.map((x) => x.detail), ['git.on'], JSON.stringify(p));
 });
 
 test('check 1 (reverse): `risk.override.<surface>` prose covers every surface key', () => {

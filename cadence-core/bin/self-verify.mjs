@@ -36,6 +36,12 @@
 //                    rung-suffixed agent file must be a rung some cell reaches. route.mjs returns an agent name it
 //                    never checks exists, so an unbuilt or stale rung would
 //                    surface as a failed spawn instead of in CI.
+//   9. config reach  references/config-reach.md must carry one reach row per
+//                    config.schema.json key, name no key the schema lacks, and
+//                    every reach narrower than `universal` must appear in that
+//                    key's own `purpose` - where a user setting the value reads
+//                    it. This is what makes "no key is resolved and then
+//                    silently dropped" re-runnable rather than a one-time sweep.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -49,8 +55,13 @@ import { weighAll } from './lib/surface-weight.mjs';
 import { rungBodyIssue, rungFile } from './lib/rung-agent.mjs';
 import { cellIssues, declaredRoles, routableAgents, surfaceIssues } from './lib/route-cells.mjs';
 import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
+import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// The reach table (check 9), root-relative and platform-separated so it can be
+// compared against a `relative(root, file)` walk result.
+const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 
 // --- the contract table: script -> subcommand -> allowed flags --------------
 // Global flags allowed everywhere on that script are listed under '*'.
@@ -306,13 +317,30 @@ function run(root) {
       if (!FAMILIES.has(family)) continue;
       if (raw.split('.').some((seg) => NON_KEY_SEGMENT.has(seg))) continue;
       const expansions = expand(raw, TRIGGERS, PROVIDERS, SURFACES);
-      for (const t of expansions) seenTokens.add(t);
+      // The reach table (check 9) names all 72 keys by construction, so
+      // letting it feed seenTokens would make 1b's inert-config-key
+      // unreachable forever - a key nothing but the table mentions would
+      // read as referenced. It still feeds the FORWARD scan below: class 2
+      // (unknown-reach-key) inspects the Key column only, so a dead token in
+      // that file's prose or an `Honoured by` cell would otherwise be scanned
+      // by nothing at all.
+      if (rel !== REACH_DOC) for (const t of expansions) seenTokens.add(t);
+      // A token is known when it IS a key or stops at a boundary inside one.
+      // The boundary arm is not cosmetic: this tokenizer's segment class is
+      // [a-z_0-9<>], so a hyphenated key like `model.overrides.cad-planner`
+      // tokenizes to `model.overrides.cad` and would report unknown for the
+      // correct spelling of a real key. `.` and `-` both end a token; `_`
+      // does not, so `git.on` still fails against `git.on_protected` and the
+      // check keeps its teeth on a truncated guess.
       const known = expansions.some((t) =>
-        schemaKeys.some((k) => k === t || k.startsWith(t + '.')));
+        schemaKeys.some((k) => k === t
+          || (k.startsWith(t) && !/[a-z0-9_]/.test(k.charAt(t.length)))));
       if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: raw });
     }
-    for (const k of BARE_KEYS) {
-      if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
+    if (rel !== REACH_DOC) {
+      for (const k of BARE_KEYS) {
+        if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
+      }
     }
 
     // 2. script invocations.
@@ -680,6 +708,47 @@ function run(root) {
       detail: 'always-expected input absent' });
   }
 
+  // 9. the config-key reach table, against config.schema.json in both
+  // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
+  // route-table.json and weight-budgets.json, so a --root fixture can supply
+  // its own schema AND its own table; an absent doc skips the check, and a
+  // full tree missing it is a missing-input like the other always-expected
+  // inputs. The read and the parse are guarded the way those two are: a
+  // malformed table is problems ON THE TABLE and the run continues, rather
+  // than unwinding run() into {ok:false,reason:"internal"} and discarding
+  // every problem found so far (the #49.1 collapse). The read failure itself
+  // pushes nothing - references/ is on the mdFiles walk, so the read-guard up
+  // there already named the file, the convention checks 3b and 5 follow.
+  const reachPath = join(root, REACH_DOC);
+  if (existsSync(reachPath)) {
+    let reachText = null;
+    try {
+      reachText = readFileSync(reachPath, 'utf8');
+    } catch { /* already reported by the mdFiles read-guard */ }
+    if (reachText !== null) {
+      try {
+        const { rows, issues } = parseReachTable(reachText);
+        for (const { code, detail } of issues) {
+          problems.push({ kind: code, file: REACH_DOC, detail });
+        }
+        // `rows === null` means the section heading is absent, already one
+        // problem above - reporting all 72 keys missing on top of it would
+        // bury the one fault under copies of another.
+        if (rows) {
+          for (const { code, detail } of reachIssues(schema, rows)) {
+            problems.push({ kind: code, file: REACH_DOC, detail });
+          }
+        }
+      } catch (e) {
+        problems.push({ kind: 'unreadable-surface', file: REACH_DOC,
+          detail: e && e.message ? e.message : String(e) });
+      }
+    }
+  } else if (isFullTree) {
+    problems.push({ kind: 'missing-input', file: REACH_DOC,
+      detail: 'always-expected input absent' });
+  }
+
   return problems;
 }
 
@@ -690,7 +759,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells, risk-surfaces', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells, risk-surfaces, config-reach', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
