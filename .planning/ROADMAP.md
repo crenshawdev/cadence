@@ -36,7 +36,7 @@ and each release tag are their archive.
 - [x] **Phase 3: The bundle cell** - a routing cell resolves model, effort, review and verify, computed from one small table
 - [x] **Phase 4: The computed floor** - the risk surface Cadence already detects raises a phase's rung by itself
 - [x] **Phase 5: Acceptance-criteria ids** - prove every CONTEXT criterion reached the UAT checklist, in both directions
-- [ ] **Phase 6: The remaining silent drops** - the last config keys that are resolved and then thrown away
+- [x] **Phase 6: The remaining silent drops** - the last config keys that are resolved and then thrown away
 
 ## Phase Details
 

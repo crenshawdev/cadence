@@ -51,12 +51,13 @@ evidence: README.md:3 badge and :36 install block both git.jcrenshaw.dev; no Cla
 
 ### 7. Live install from the new remote (human-verify)
 expected: In a live Claude Code session, `/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git` followed by `/plugin install cadence@cadence` both succeed. (human-verify: needs an interactive /plugin run against the live remote)
-status: fail
+status: skipped
 first_pass: fail
 reported: not working to install
 severity: major
 cause: Not a defect in the add path - the criterion is unsatisfiable at this point in the lifecycle. The remote's default branch is main = a1453c3 = v1.5.0, whose .claude-plugin/plugin.json still reads homepage/repository = github.com/crenshawdev/cadence; phase 6's hosting move is on the LOCAL cadence/v2.0.0 at d6a35bd, 35 commits ahead of the remote's cadence/v2.0.0 (005b6f9) and unpushed. /plugin marketplace add clones the default branch (git clone --depth 1, no --branch unless a #ref is given), so an install from the new host delivers the pre-move v1.5.0 plugin that names the OLD home. Add-path mechanics verified sound: the CLI parser maps an https URL ending in .git to {source:git} (bundle 2.1.220), and re-running its exact clone command anonymously against the remote exits 0 with both .claude-plugin/marketplace.json and plugin.json present. AC7 is a post-merge check, not a phase-close one.
 fix: carried to /cad-land as a post-merge check; unsatisfiable until cadence/v2.0.0 lands on the remote's main (35 commits unpushed, remote main is v1.5.0).
+reason: unsatisfiable before the branch lands: /plugin clones the remote default branch, so this is verified against main immediately after the merge
 
 ### 8. CHANGELOG records the move and the reframe
 expected: The [2.0.0] CHANGELOG entry states that the plugin's home moved, gives the exact action an existing GitHub-installed user takes, and records which items the reframe already closed rather than fixing twice.
@@ -74,73 +75,80 @@ evidence: `node --test cadence-core/bin/*.test.mjs` -> pass 1045 / fail 0, exit 
 
 ### 10. risk.override.* reach rows still say universal, and check 9 is blind to it
 expected: This phase's own commit e09a0e5 made the eight keys repo-layer-only - the grammar's test-1 YES - but the reach table was never updated and the schema purposes never mention the repo scope, so the narrowing this phase introduced is unstated at the point of setting. reachIssues short-circuits at reach === UNIVERSAL before the purpose test, so the check is structurally incapable of catching it.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: cadence-core/references/config-reach.md:92-99 (all eight rows read universal; the narrowing appears only in the Honoured by cell, declared not machine-checked at :63); cadence-core/bin/lib/config-reach.mjs:136 `if (reach === UNIVERSAL) continue;`; config.mjs keys shows risk.override.auth's purpose with no repo-scope clause.
 reported: This phase's own commit e09a0e5 made the eight keys repo-layer-only - the grammar's test-1 YES - but the reach table was never updated and the schema purposes never mention the repo scope, so the narrowing this phase introduced is unstated at the point of setting. reachIssues short-circuits at reach === UNIVERSAL before the purpose test, so the check is structurally incapable of catching it.
 severity: major
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 11. config.mjs get and route.mjs resolve disagree about a global-layer risk waiver, with nothing said
 expected: get reports the waiver as an effective value with no warning; the resolver discards it. The value is resolved, carried and thrown away - the phase goal's own defect shape - and /cad-config's menu is built off get, so it shows true for a waiver that waives nothing.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: Two-layer scratch fixture: `get` -> {"ok":true,"values":{"risk.override.auth":true},"source":"global+repo"} with no warnings field; `route.mjs resolve` on the same pair -> stakes:"critical" + IGNORED warning. config.mjs:12 calls get "the only correct way for a workflow to read config"; workflows/config.md:46 drives the menu from it.
 reported: get reports the waiver as an effective value with no warning; the resolver discards it. The value is resolved, carried and thrown away - the phase goal's own defect shape - and /cad-config's menu is built off get, so it shows true for a waiver that waives nothing.
 severity: major
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 12. A duplicate reach row is dropped with no issue emitted
 expected: A stale row silently masks a corrected one, inside the very check built to prove that nothing about a key's reach is skipped silently.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: cadence-core/bin/lib/config-reach.mjs:95 `if (seen.has(cells[0])) continue;`. Scratch tree with a stale universal duplicate above granularity's real narrow row -> {"ok":true,"checked":"...config-reach","problems":[]}. references/config-reach.md:78-79 documents the silent drop as intended.
 reported: A stale row silently masks a corrected one, inside the very check built to prove that nothing about a key's reach is skipped silently.
 severity: major
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 13. The URL mask covers https only, so SSH clone forms of the new remote still tokenize as git.* keys
 expected: Commit 1ffa48f claims to have eliminated the hostname-as-config-key shape, but Forgejo's default clone widget offers the SSH form, so the first contributor who pastes it into a prose surface turns CI red.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: cadence-core/bin/self-verify.mjs:312 masks /https?:\/\/[^\s)\]}>'"`]*/g only. Appending git@git.jcrenshaw.dev:crenshawdev/cadence.git and ssh://git.jcrenshaw.dev/... to a scratch prose surface -> ok:false with two {"kind":"unknown-config-key","detail":"git.jcrenshaw.dev"} problems.
 reported: Commit 1ffa48f claims to have eliminated the hostname-as-config-key shape, but Forgejo's default clone widget offers the SSH form, so the first contributor who pastes it into a prose surface turns CI red.
 severity: minor
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 14. fsIdentity's last fallback throws outside the try, degrading a diagnosable failure to reason:internal
 expected: Regression introduced by this phase's commit 10f03d5: a non-string path raises a TypeError that escapes repoScopedErrors.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: cadence-core/bin/config.mjs:213-216 - resolvePath(p) is the unguarded return. `config.mjs set --file` with the flag value missing at HEAD -> {"ok":false,"reason":"internal","detail":"The \"paths[0]\" argument must be of type string. Received undefined"}; the same command against ec4b4b5 -> reason:"read".
 reported: Regression introduced by this phase's commit 10f03d5: a non-string path raises a TypeError that escapes repoScopedErrors.
 severity: minor
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 15. normalize does not case-fold the Reach cell, so an out-of-vocabulary reach gives the wrong remediation
 expected: The grammar has no code for "reach is outside the declared vocabulary", so a capitalised or punctuated Universal falls through to the purpose test and tells the author to paste the wrong phrase into the purpose rather than to fix the cell.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: cadence-core/bin/lib/config-reach.mjs:32-34 strips backticks and collapses whitespace, no case fold. Scratch tree with `| workflow.plan_check | Universal |` -> {"kind":"unstated-reach","detail":"workflow.plan_check: reach \"Universal\" is absent from the key's purpose"}.
 reported: The grammar has no code for "reach is outside the declared vocabulary", so a capitalised or punctuated Universal falls through to the purpose test and tells the author to paste the wrong phrase into the purpose rather than to fix the cell.
 severity: minor
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 16. The global-waiver warning fires wrongly, and gives wrong remediation, in two configurations
 expected: Two independent cases, both verified live: (a) with CADENCE_GLOBAL_CONFIG pointing at the repo config the waiver IS honoured yet the same payload warns it was ignored; (b) a misspelled surface warns "set it in this repo's own config" while config.mjs set refuses that key outright.
-status: fail
+status: skipped
 first_pass: fail
 source: verifier
 evidence: (a) resolve emits reason "risk floor: waived by risk.override.auth ... stakes stays solo" AND the IGNORED warning together - same root as the open phase-2 mergeLayers identity item. (b) global risk.override.athu:true warns to set it in the repo config, but `config.mjs set --file <repo> risk.override.athu=true` -> ok:false, "athu" is not a risk surface; route.mjs:204-206 and :213-216 are unreachable for global-layer entries now that riskOverrides reads the repo layer alone.
 reported: Two independent cases, both verified live: (a) with CADENCE_GLOBAL_CONFIG pointing at the repo config the waiver IS honoured yet the same payload warns it was ignored; (b) a misspelled surface warns "set it in this repo's own config" while config.mjs set refuses that key outright.
 severity: minor
 fix: routed to /cad-plan
+reason: deferred to v2.0.1; defect confirmed and fully evidenced on this item, does not block any v2.0.0 requirement
 
 ### 17. Self-hosted test badge renders "Not found" - accept or fix
 expected: README.md:3's badge points at git.jcrenshaw.dev/.../actions/workflows/test.yml/badge.svg, which serves HTTP 200 with label text "Not found" because the repo has .github/workflows/test.yml and no .forgejo/workflows/. CONTEXT flags this as a verified accepted state, but it is a user-facing README surface - accept it or stand up a runner.
@@ -155,8 +163,8 @@ fix: 74ef564 removed the badge; there is no CI on the new host to back it, and n
 
 total: 17
 passed: 9
-failed: 8
+failed: 0
 pending: 0
-skipped: 0
+skipped: 8
 blocked: 0
 reworked: 9

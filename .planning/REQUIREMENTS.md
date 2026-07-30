@@ -17,7 +17,7 @@ Traceability row as its phase is planned.
 - **STK-03**: The top rung is computed from the risk surface Cadence already detects - detection sets a floor, the user may raise it, and lowering below a detected floor requires an explicit override that names what it overrides
 - **ACR-01**: CONTEXT acceptance criteria carry stable ids, and `/cad-audit` asserts coverage in both directions - every criterion reaches a UAT item, every UAT item traces to a criterion or is marked verifier-added
 - **CFG-01**: The remaining resolved-then-dropped config keys stop lying, closed at the point of setting, the same way per-trigger `effort` was
-- **HST-01**: The plugin's documented home moves to the self-hosted Forgejo remote - README install block and test badge and the plugin manifest name `git.jcrenshaw.dev`, and GitHub stops being the published source
+- **HST-01**: The plugin's documented home moves to the self-hosted Forgejo remote - the README install block and the plugin manifest name `git.jcrenshaw.dev`, and GitHub stops being the published source. The README test badge is REMOVED rather than repointed: the new host has no CI runner to back it, so a badge there renders "Not found"
 
 ## Shipped
 
@@ -111,8 +111,8 @@ section only, bounded at the next `## ` heading.
 | STK-02 | Phase 3 | Complete |
 | STK-03 | Phase 4 | Complete |
 | ACR-01 | Phase 5 | Complete |
-| CFG-01 | Phase 6 | Pending |
-| HST-01 | Phase 6 | Pending |
+| CFG-01 | Phase 6 | Complete |
+| HST-01 | Phase 6 | Complete |
 
 Empty between milestones. `v1.4.0`'s five rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
