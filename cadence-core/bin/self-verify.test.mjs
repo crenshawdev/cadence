@@ -150,6 +150,25 @@ test('an invented config key is flagged', () => {
   assert.ok(kinds.includes('unknown-config-key'));
 });
 
+test('a hostname inside a URL is not read as a config key', () => {
+  // `https://git.jcrenshaw.dev/crenshawdev/cadence.git` carries `git.jcrenshaw.dev`,
+  // which is shaped exactly like a `git.*` key and matches none - so the
+  // install line README ships would report unknown-config-key without the mask.
+  const root = fixture(
+    'Run `/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git`.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unknown-config-key'), JSON.stringify(p));
+});
+
+test('a bare dotted token OUTSIDE a URL is still flagged - the mask is bounded to URLs', () => {
+  // The narrowing must not blunt the check: a dotted token in ordinary prose
+  // is still a key claim, whatever it looks like.
+  const root = fixture('The host is git.jcrenshaw.dev these days.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-config-key'
+    && x.detail === 'git.jcrenshaw.dev'), JSON.stringify(p));
+});
+
 test('a phantom flag on a real subcommand is flagged (the --items regression)', () => {
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase 1 --items -\n');

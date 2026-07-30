@@ -287,7 +287,19 @@ function run(root) {
     }
 
     // 1. config-key tokens: family-rooted dotted identifiers.
-    for (const m of text.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
+    // Scanned over a copy with every URL masked out, because a HOSTNAME is
+    // shaped exactly like a config key: `https://git.jcrenshaw.dev/...` reads
+    // as a `git.*` token under the real `git` schema family, matches no key,
+    // and reports unknown-config-key the moment README carries the install
+    // URL. The narrowing is bounded to URLs on purpose - a dotted token in
+    // ordinary prose is still a key claim, so the check keeps its teeth
+    // everywhere a key is actually written; only the span between `https://`
+    // and the next whitespace, bracket or quote stops being read as prose.
+    // Only this loop uses the masked copy: the BARE_KEYS loop, the invocation
+    // join and the ${CLAUDE_PLUGIN_ROOT} loop below are unaffected by
+    // hostnames, and masking there would cost coverage for nothing.
+    const scanText = text.replace(/https?:\/\/[^\s)\]}>'"`]*/g, ' ');
+    for (const m of scanText.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
       // A closing placeholder bracket can trail the token (`<review.consult.effort>`).
       const raw = m[1].replace(/>+$/, '');
       const family = raw.split('.')[0];
