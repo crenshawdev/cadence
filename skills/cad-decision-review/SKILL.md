@@ -46,7 +46,9 @@ invoking this skill is the user's call, not a mechanical handoff.
 
 3. **Present** the per-objection rulings, groundings, and amendments - or, on
    a clean pass, the grounded load-bearing claims, never a bare "no findings"
-   - plus which providers/models/tier/effort ran. Do NOT auto-apply any
+   - plus which reviewers ran, and the tier/effort that reached the
+   cross-model arm (the `cad-reviewer` arm resolves neither: no routing cell
+   gives it a model, and its effort is frontmatter-frozen). Do NOT auto-apply any
    amendment - this is a review, not an edit; the user decides what to change
    and does it themselves.
 </process>
