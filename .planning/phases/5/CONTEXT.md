@@ -221,6 +221,8 @@ seam (AC1, AC2, AC3, AC5) versus the carrier seam (AC4, AC6).
       pass, and `self-verify` reports `ok:true` with the new subcommand and its flags
       in CONTRACTS and no `budget-overrun` on `audit.md`, `context.md` or `verify.md`.
 
+## Tooling
+
 Tooling probed on this machine: node, npx, local tsc and git all present. AC7 is
 the only human-verify criterion.
 
