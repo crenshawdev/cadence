@@ -4,7 +4,7 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-07-30
 
 The routing question changes. Cadence used to ask how much a dispatch should
 cost; it now asks what it costs if the work is wrong. The config key carrying
@@ -233,6 +233,23 @@ retired names outright, so the stale block has to come out of the file by hand:
    `"escalate_on_failure"` directly under `model`; it defaults to `true`.
 3. Run `/cad-config stakes=shipped`, or `solo`, or `critical`, to set the new
    key.
+
+### Known issues, deferred to 2.0.1
+
+Found by this cycle's own goal-backward verification and recorded rather than
+quietly shipped. Full evidence per item is in `.planning/phases/6/UAT.md`.
+
+- `config.mjs get` still returns a `risk.override.<surface>` set in the
+  user-global layer as an effective value, with no warning, while `route.mjs`
+  correctly ignores it. `/cad-config`'s menu reads `get`, so it shows `true`
+  for a waiver that waives nothing.
+- A duplicate row in `references/config-reach.md` is dropped without an issue,
+  so a stale row can mask a corrected one inside the check whose purpose is
+  that no key's reach is skipped silently.
+- Five smaller ones: the `https?://` URL mask does not cover SSH clone forms,
+  `fsIdentity` throws outside its guard on a non-string path, the reach-cell
+  parser does not case-fold, and the global-waiver warning misfires when both
+  config layers resolve to one file or the surface name is misspelled.
 
 ## [1.5.0] - 2026-07-28
 
@@ -987,6 +1004,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.0.0
 [1.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.5.0
 [1.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.1
 [1.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.0
