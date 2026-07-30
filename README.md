@@ -26,6 +26,28 @@ Every gate hands the work to a reviewer whose job is to break it, not to bless i
 
 [`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier, and reviewers actually do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing (one question about what a break costs, four knobs out - model, effort rung, review gates, deep verify), the publish seam, live provider detection, and why the decision cores are pure functions.
 
+## What a break costs
+
+Cadence used to ask how much you wanted a dispatch to cost. It now asks what happens if the work is wrong, which is a question you can actually answer about your own project, and that answer routes everything else. One key sets it:
+
+```
+/cad-config stakes=shipped
+```
+
+`solo` means nobody else runs this and a break costs you an afternoon. `shipped` means other people run it and a break comes back as a bug report. `critical` means a break is not a bug report.
+
+That one word lands in a grid of 18 cells, one per level and role pair, and the cell is what hands a dispatch its model, the effort rung it starts on, and the rung a failed attempt climbs to. At `solo` the planner runs Sonnet at `high`. At `shipped` it runs Opus. At `critical` it runs Opus at `xhigh` and a retry goes to `max`. The whole thing is `cadence-core/route-table.json` and you can read it in one screen, which was the point of getting rid of the old indirection where a field named after what you wanted to spend quietly decided which model you got.
+
+The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is not a per-dispatch parameter, it is fixed in an agent file's frontmatter, so a rung is a real file on disk and self-verify fails in both directions, on a cell naming a rung with no file and on a rung file no cell reaches.
+
+Escalation is one key, `model.escalate_on_failure`, on by default. A failed attempt gets re-dispatched at the retry rung its own cell names rather than retried at the rung that just failed it. Set it false and the retry holds where it started.
+
+Reviews resolve off the same level. Each trigger gets a gate, `off`, `advisory`, `blocking`, or `adjudicated`, so a plan review is advisory at `solo` and adjudicated at `shipped` and `critical`. The `risk_surface` trigger is blocking at every level including `solo`, on purpose, because the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input, and none of those care how casual your project is.
+
+Which is also the floor. Cadence reads the paths a phase's plan declares, and a match on one of those surfaces raises that phase's level by itself, you do not have to remember to do it. You can waive one surface at a time with `risk.override.<surface>`, and only in the repo's own config, because a single line in a global config should not be able to disable the floor in every project on the machine. A waiver sitting in the global layer is ignored and says so in the warnings.
+
+Deep verification follows the level too, off at `solo` and on at `shipped` and `critical`.
+
 ## Install
 
 Cadence is a Claude Code plugin. Add the marketplace, then install:
@@ -88,7 +110,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
-- **`/cad-config`** — workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly.
+- **`/cad-config`** — the `stakes` level, workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly, as in `/cad-config stakes=shipped`.
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
