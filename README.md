@@ -1,7 +1,5 @@
 # Cadence
 
-[![test](https://git.jcrenshaw.dev/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://git.jcrenshaw.dev/crenshawdev/cadence/actions/workflows/test.yml)
-
 The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
 
 ## What it costs you
