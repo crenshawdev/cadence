@@ -309,6 +309,25 @@ lever is trigger frequency (gating), never a weak reviewer.
   config.schema.json purposes say so at the point of setting). Turning it into a real per-trigger
   dial needs per-rung reviewer agent files, which is #63's proposal to land or reject - deliberately
   not half-built here.
+- ⚠️ **SCOPED (2026-07-29, CFG-01):** the same treatment for the key beside it. Six `tier` keys
+  survived the routing reframe untouched - `review.triggers.{plan,diff,risk_surface,phase_diff,
+  pre_ship}.tier` and `review.decision_review.tier` - and they read as a universal per-trigger
+  model dial while only the cross-model arm can honour them: `review.providers.<name>.tiers[
+  trigger.tier]` is the ONLY bridge from a trigger to a provider model id, and the
+  `claude-subagent` reviewer's model comes from the routing cell instead (for
+  `/cad-decision-review`, from nothing at all - that workflow never calls `route.mjs`, so its
+  `cad-reviewer` arm runs at the session default at every stakes level). Deletion was REJECTED:
+  it removes six keys out from under the only backend that reads them, and #75 - the issue that
+  raised it - is closed not-planned. Wiring `flagship|balanced|cheap` through as
+  `opus|sonnet|haiku` was REJECTED too: the cell grid owns model resolution one phase after it
+  shipped, and a second model axis beside it is the indirection that grid removed. So they are
+  scoped, in #64's shape - schema `purpose`, a degradation line where the value fires, a catalog
+  row - and the sweep is now re-runnable rather than a one-time pass:
+  `cadence-core/references/config-reach.md` carries a reach row for every schema key and
+  self-verify check 9 fails a key with no row, a row naming no key, and a reach narrower than
+  `universal` that the key's own `purpose` never states. Note the `SUPERSEDED (2026-07-29)` bullet
+  under Model routing says "the whole `tier` vocabulary is deleted with the matrix" - that is true
+  of the MODEL matrix only, and is left standing as the record it is.
 - **Live detection makes model IDs non-fatal (the key robustness win).** Three layers:
   1. Live detection - after the key is set, call the provider models endpoint (OpenAI
      `GET /v1/models`, Gemini `ListModels`) to enumerate what THAT key can access. This is truth;
@@ -421,6 +440,20 @@ lever is trigger frequency (gating), never a weak reviewer.
   `model_aliases` and `rung_order`. A config `review.triggers.<t>.gate` still WINS over the level's
   gate, with the disagreement in `warnings`: the level must not make a key the user explicitly set
   stop doing anything.
+- ⚠️ **REPO SCOPE CLOSED (2026-07-29, CFG-01):** `risk.override.<surface>` shipped one phase ago
+  with a documented hole in both directions, and both are closed. The resolver read the waiver off
+  the MERGED config while the schema marks all eight keys `src: repo`, so one line in one
+  user-global file disabled the risk floor in every repository on the machine; `mergeLayers` now
+  returns the two validated layers beside the merge, `route.mjs` reads waivers from the REPO layer
+  alone, and a truthy global one is IGNORED and named in `warnings` with the rule and the place it
+  belongs - warned whether or not the repo layer also names that surface, because a waiver that
+  vanishes without a trace is the shape this milestone closes, and NOT warned for a global
+  `false`, which waives nothing and would otherwise put a line on every dispatch in every repo.
+  The write face compared `file === GLOBAL_CONFIG` as strings, so
+  `set --file <global-dir>/./config.json` wrote straight through the refusal; it compares by
+  filesystem identity now, which closes the symlink, relative-path and trailing-slash spellings
+  with it. The read face is deliberately unchanged: `config.mjs get` still reports a global-layer
+  waiver as an effective value, because `get` returns the merged config by contract.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage

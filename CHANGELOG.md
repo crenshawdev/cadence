@@ -125,18 +125,51 @@ configured.
   when EVERY detected surface is named, the waived names stay in `reason`, and a
   value that is not strictly `true` waives nothing and says so. A misspelled
   surface is refused at the write face with the accepted names listed, and
-  `--global` is refused there too. That refusal is not yet airtight in either
-  direction: the resolver reads the waiver off the MERGED config, so a waiver
-  already sitting in the user-global layer is honored, and the write-face check
-  compares paths as strings, so an alias for the global file (`<dir>/./config.json`)
-  writes through it. Set a waiver only in a repo's own `.planning/config.json`
-  until both close.
+  `--global` is refused there too. That refusal is airtight in both directions:
+  the resolver reads waivers from the REPO layer alone and names an ignored
+  global one in `warnings`, with the repo-scope rule and the file it belongs in,
+  and the write face compares paths by filesystem identity rather than as
+  strings, so an alias for the global file (`<dir>/./config.json`, a symlink, a
+  relative path) is refused like the plain spelling.
 - **A `surfaces` walk in `self-verify`, both directions**, every problem naming
   the offending row: a floor that is not a stakes level, a floor below the level
   every shipped row is required to carry, a pattern list that is empty or holds
   a token no path can ever produce, a surface with no `risk.override` key to
   waive it, a `risk.override` key naming no surface row, and drift in either the
   `stakes_order` or `gates` vocabulary the resolver reads by index.
+- **Every config key's reach is stated where the key is set, and the sweep that
+  proves it is re-runnable.** Six `tier` keys - the five
+  `review.triggers.<t>.tier` and `review.decision_review.tier` - resolved as a
+  universal per-trigger model dial while only a cross-model reviewer can honour
+  one: `review.providers.<name>.tiers[trigger.tier]` is the only bridge from a
+  trigger to a provider model id, and the `claude-subagent` reviewer's model
+  comes from the routing cell instead. They now say `cross-model reviewers only`
+  in their own `purpose`, the same phrase per-trigger `effort` already carried.
+  Three more purposes stopped overstating what reads them: `granularity` sets a
+  roadmap phase count and splits no phase into tasks, `workflow.research` is
+  read by the new-project research step alone, and `workflow.skip_discuss`
+  selects which command `/cad-progress` suggests for an unplanned phase rather
+  than skipping any step. `cadence-core/references/config-reach.md` now carries
+  a reach row for every schema key, with the human test for a new one stated,
+  and `self-verify` check 9 fails a key with no row, a row naming no key, and a
+  reach narrower than `universal` that the key's own `purpose` never states -
+  so a key added later cannot arrive with its reach unanswered.
+- **The plugin's home moved to
+  `https://git.jcrenshaw.dev/crenshawdev/cadence.git`.** The GitHub repository
+  stops moving; the self-hosted Forgejo remote is the only published source
+  from this release on. An existing GitHub-installed user follows it with three
+  commands:
+
+  ```
+  /plugin uninstall cadence@cadence
+  /plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git
+  /plugin install cadence@cadence
+  ```
+
+  Nothing about the plugin changes with the move. `/plugin update
+  cadence@cadence` follows the manifest's `repository` field, so an install
+  that predates this release keeps pointing at a repository that no longer
+  receives commits until those three commands are run.
 - **Acceptance criteria carry ids.** Every criterion in a phase's CONTEXT.md now
   starts with a phase-local `AC<N>` token (`- [ ] AC1: ...`), which `/cad-context`
   writes from now on. The grammar is stated in full at
@@ -175,6 +208,18 @@ configured.
   same treatment an unknown model alias already got. A VALID gate that disagrees
   still wins and still reports the disagreement: this is a validity check in
   front of that precedence, not a change to it.
+
+### Closed on the way past
+
+The last sweep for keys that are resolved and then thrown away found most of
+them already closed by the work above, each carrying its own dated marker in
+`DESIGN.md` section 6 - recorded here rather than fixed a second time:
+
+- the `(stakes, tier)` model matrix, deleted with the routing cells;
+- per-trigger `review.triggers.<t>.effort`, scoped to the cross-model arm by
+  `#64` in `v1.5.0`;
+- the `escalate_effort_variant` shim, retired with the rung ladder;
+- `model.profile` and the `model.auto.*` keys, retired with the axis.
 
 ### Upgrading
 
