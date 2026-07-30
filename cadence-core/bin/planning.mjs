@@ -46,7 +46,7 @@ import {
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
-  classifyAcceptanceCriteria, UAT_ORIGINS,
+  classifyAcceptanceCriteria, UAT_ORIGINS, UAT_FIELDS_VERSION,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -425,7 +425,12 @@ function cmdUat(dir, sub, opts) {
       if (existsSync(uatFile(dir, n))) return fail('uat-exists', 'use refresh, or remove the file deliberately');
       const today = new Date().toISOString().slice(0, 10);
       const uat = {
-        fm: { status: 'testing', phase: String(n), started: today, updated: today,
+        // `fields_version` is written unconditionally, before any item is
+        // considered: it marks the FILE as post-field, so a payload that
+        // carries no `criterion` at all can never be mistaken for a checklist
+        // that predates the field.
+        fm: { status: 'testing', phase: String(n), fields_version: UAT_FIELDS_VERSION,
+          started: today, updated: today,
           ...(opts.sources ? { sources: opts.sources } : {}) },
         items: items.map((it, i) => build(it, i + 1)),
       };
@@ -812,25 +817,28 @@ function cmdCriteriaCoverage(dir) {
     // still reports its `phases[]` entry and its items still trace (to nothing,
     // which is `untraced`'s additive job).
     const criteria = classified.criteria || [];
-    const items = parseUat(uatText).items;
+    const uat = parseUat(uatText);
+    const items = uat.items;
     if (classified.issues.length) contextIssues.push({ phase: p.n, issues: classified.issues });
     phases.push({ phase: p.n, criteria: criteria.length, items: items.length });
 
     const withCriterion = items.filter((it) => it.criterion !== undefined);
     const withOrigin = items.filter((it) => it.origin !== undefined);
     // Pre-field legacy (D-16): a checklist written before either field existed.
-    // The `origin` half of the test is LOAD-BEARING. Every checklist written
-    // after this phase carries at least one `origin` - the cold-start smoke item
-    // is emitted with `origin: smoke` and every appended gap item gets
-    // `origin: verifier` - so a UAT carrying some `origin` but not one
-    // `criterion` is NOT an old project: it is a post-field checklist whose
-    // links were dropped, and its criteria break normally. Widen this back to a
-    // bare no-`criterion` test and the exemption absolves exactly the
-    // regression this subcommand exists to catch: a `/cad-verify` that silently
-    // stops emitting `criterion` reads as "an old project" and the gate stays
-    // green forever. An EMPTY checklist is not legacy - an empty checklist is
-    // the drop itself, so its criteria all break.
-    if (items.length && withCriterion.length === 0 && withOrigin.length === 0) {
+    // The test is the ABSENCE OF THE FRONTMATTER MARKER, not the absence of the
+    // item fields. The original conjunction (no `criterion` AND no `origin`)
+    // reasoned that every post-field checklist carries at least one `origin`,
+    // and that premise was false the day it shipped: `.planning/phases/3/UAT.md`
+    // carries 7 `criterion` lines and 0 `origin` lines, so a `/cad-verify` that
+    // silently stopped emitting `criterion` on a phase-3-shaped checklist read
+    // as "an old project" and the gate stayed green forever - exactly the
+    // regression this subcommand exists to catch. `uat init` writes
+    // `fields_version` unconditionally, so a file this seam produced can never
+    // present as legacy however few links its items carry. An EMPTY checklist is
+    // not legacy either - an empty checklist is the drop itself, so its criteria
+    // all break.
+    if (items.length && uat.fm.fields_version === undefined
+      && withCriterion.length === 0 && withOrigin.length === 0) {
       legacy.push(p.n);
       continue;
     }

@@ -917,6 +917,28 @@ test('uat: a criterion written by init is byte-present after a refresh AND after
   assert.equal(uatText(dir).match(/^criterion: AC5$/gm).length, 1);
 });
 
+// The marker is written before any item is looked at, so it cannot be lost by
+// a payload that carries no links - which is the whole point of moving the
+// legacy test off the item fields and onto the file.
+test('uat init: writes fields_version unconditionally, and it survives refresh and record', () => {
+  const dir = linkedTree();
+  assert.match(uatText(dir), /^---\nstatus: testing\nphase: 1\nfields_version: 1\n/);
+  run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Password reset', expected: 'email arrives', criterion: 'AC5' },
+  ]));
+  assert.equal(uatText(dir).match(/^fields_version: 1$/gm).length, 1);
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(uatText(dir).match(/^fields_version: 1$/gm).length, 1);
+});
+
+test('uat init: a payload with no criterion and no origin still gets the marker', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  run(['uat', 'init', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Bare item', expected: 'something observable' },
+  ]));
+  assert.match(uatText(dir), /^fields_version: 1$/m);
+});
+
 test('uat: an origin written by init survives refresh and record the same way', () => {
   const dir = linkedTree();
   assert.match(uatText(dir), /### 3\. The plugin loads at all\nexpected: [^\n]*\norigin: smoke\nstatus: pending/);
@@ -1659,7 +1681,9 @@ function coverageTree(spec) {
         `${it.criterion ? `criterion: ${it.criterion}\n` : ''}` +
         `${it.origin ? `origin: ${it.origin}\n` : ''}status: pass\n`);
       writeFileSync(join(pdir, 'UAT.md'),
-        `---\nstatus: testing\nphase: ${n}\nstarted: 2026-01-01\nupdated: 2026-01-01\n---\n\n` +
+        `---\nstatus: testing\nphase: ${n}\n` +
+        `${ph.fieldsVersion ? 'fields_version: 1\n' : ''}` +
+        `started: 2026-01-01\nupdated: 2026-01-01\n---\n\n` +
         `## Items\n\n${blocks.join('\n')}\n## Summary\n\ntotal: ${ph.items.length}\n`);
     }
   }
@@ -1757,6 +1781,46 @@ test('criteria-coverage: origin criterion with no id is STILL untraced - it name
 });
 
 test('criteria-coverage: a checklist carrying NO criterion and NO origin is pre-field legacy', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA, items: P1_ITEMS.map((it) => ({ name: it.name })) },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.legacy, [1]);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.untraced, undefined);
+  // Held out of counts, which is what keeps criteria === covered + uncovered.
+  assert.deepEqual(r.counts, { criteria: 0, covered: 0, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+// The dropped-link regression, closed by the frontmatter marker. The ORIGINAL
+// legacy rule was the two item fields alone, on the premise that every
+// post-field checklist carries at least one `origin` - and
+// `.planning/phases/3/UAT.md` (7 `criterion`, 0 `origin`) falsified it inside
+// the same commit. This is that file with its links dropped: it must break, not
+// absolve itself. Move the test back onto the item fields and this is what fails.
+test('criteria-coverage: fields_version present and NO criterion, NO origin is NOT legacy', () => {
+  const dir = coverageTree({
+    1: { fieldsVersion: true, criteria: P1_CRITERIA,
+      items: P1_ITEMS.slice(0, 7).map((it) => ({ name: it.name })) },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.legacy, undefined);
+  assert.deepEqual(r.breaks.map((b) => b.id), ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7']);
+  assert.equal(r.untraced.length, 7);
+  assert.equal(r.counts.uncovered, 7);
+});
+
+test('criteria-coverage: a marked checklist whose links are intact is unaffected by the marker', () => {
+  const dir = coverageTree({
+    1: { fieldsVersion: true, criteria: P1_CRITERIA, items: P1_ITEMS },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.legacy, undefined);
+  assert.equal(r.breaks, undefined);
+  assert.deepEqual(r.counts, { criteria: 7, covered: 7, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+test('criteria-coverage: legacy still applies to a genuinely pre-field checklist', () => {
   const dir = coverageTree({
     1: { criteria: P1_CRITERIA, items: P1_ITEMS.map((it) => ({ name: it.name })) },
   });

@@ -118,7 +118,10 @@ On the coverage arm, `breaks` is the only verdict-moving key; `untraced`,
 `legacy`, `unknown_criterion` and `context_issues` are additive and change
 neither counts nor the verdict - the same split `active_issues` and `unpicked`
 already carry. A `legacy` phase is a checklist written before the `criterion`
-field existed: reported, never a break. An absent CONTEXT.md or UAT.md is
+field existed, recognised by an absent `fields_version` frontmatter marker
+rather than by which item fields happen to be missing: reported, never a
+break. A checklist carrying the marker is never legacy, so links dropped from
+a live checklist break normally. An absent CONTEXT.md or UAT.md is
 nothing to prove either - this gate runs at `milestone.md` step 1 while the
 prune that deletes phase directories runs at step 3, so a prior milestone's
 phases are simply gone. Additive is not invisible: `context_issues` carrying

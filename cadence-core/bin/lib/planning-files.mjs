@@ -835,7 +835,16 @@ const UAT_FIELDS = ['expected', 'criterion', 'origin', 'status', 'first_pass',
 // declare an item legitimately built from no criterion, and they are the only
 // two `criteria-coverage` exempts from `untraced`.
 export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
-const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
+
+// The POSITIVE marker that a checklist was written by a seam that knows
+// `criterion` and `origin`. `criteria-coverage`'s legacy exemption reads it and
+// nothing else: inferring "pre-field" from the ABSENCE of both item fields is
+// what let a post-field checklist whose links were dropped absolve itself, and
+// `.planning/phases/3/UAT.md` (7 `criterion`, 0 `origin`) is the file that
+// falsified the old two-field conjunction. Absence of this marker is the only
+// thing that can mean legacy now, and no writer here can produce that absence.
+export const UAT_FIELDS_VERSION = '1';
+const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started', 'updated'];
 
 /**
  * Index of the first `## ` line in `lines` that sits OUTSIDE a fenced code

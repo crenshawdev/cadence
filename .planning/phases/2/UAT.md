@@ -1,6 +1,7 @@
 ---
 status: testing
 phase: 2
+fields_version: 1
 started: 2026-07-29
 updated: 2026-07-29
 ---

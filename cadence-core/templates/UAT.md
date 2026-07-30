@@ -12,6 +12,7 @@ the planning docs; survives /clear and session ends.
 ---
 status: testing | partial | complete
 phase: <N>
+fields_version: 1
 sources: [CONTEXT.md | PLAN.md + ROADMAP.md, SUMMARY.md]
 started: [ISO timestamp]
 updated: [ISO timestamp]
@@ -96,10 +97,13 @@ reworked: [N]
   unlinked. A verifier-appended gap gets `verifier`, the cold-start smoke
   item `smoke`. Written, never derived: a present `criterion` is itself the
   criterion-derived marker. `uat record --origin` repairs it after the fact.
-- A checklist where NO item carries `criterion` and none carries `origin`
-  predates both fields: `/cad-audit` reports it as legacy and never breaks
-  on it. One `origin` present without any `criterion` is NOT legacy - it is
-  a live checklist whose links were dropped, and it breaks.
+- `fields_version: 1` (frontmatter): written by `uat init` on every new
+  checklist, unconditionally. It is the POSITIVE marker that this file came
+  from a seam that knows `criterion` and `origin`, and it is what
+  `/cad-audit`'s legacy exemption reads. A checklist carrying no
+  `fields_version`, no `criterion` and no `origin` predates the fields:
+  reported as legacy, never broken on. A checklist carrying the marker is
+  never legacy however few links its items hold - dropped links break.
 - `source: verifier` marks results merged from a cad-verifier pass; they
   are skipped in the walk but stay visible here with their evidence. It is
   where a RESULT came from, never where an ITEM came from - that is

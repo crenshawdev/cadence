@@ -141,17 +141,24 @@ item is still `untraced`. `origin` is WRITTEN, never derived - a present
 `criterion` is itself the criterion-derived marker, so nothing fabricates a
 second one.
 
-**The legacy rule tests for no `criterion` AND no `origin`.** A checklist with
-at least one item, where NO item carries either field, is a pre-field checklist:
-reported in `legacy`, contributing no breaks, no `untraced` entries and nothing
-to `counts`, so an existing project does not hard-fail on upgrade. The `origin`
-half is load-bearing. Every checklist written after this grammar carries at
-least one `origin` - the cold-start smoke item is emitted with `origin: smoke`
-and every appended gap item gets `origin: verifier` - so a UAT carrying some
-`origin` value but not one `criterion` is NOT an old project: it is a live
-`/cad-verify` that stopped emitting the link, and its criteria break normally.
-Widen this back to a bare no-`criterion` test and the exemption absolves
-exactly the regression the check exists to catch.
+**The legacy rule tests for an absent `fields_version` frontmatter marker.** A
+checklist with at least one item, whose frontmatter carries no
+`fields_version` and none of whose items carries `criterion` or `origin`, is a
+pre-field checklist: reported in `legacy`, contributing no breaks, no
+`untraced` entries and nothing to `counts`, so an existing project does not
+hard-fail on upgrade.
+
+The marker is what makes the rule sound, and it replaced an unsound one. The
+original test was the two item fields alone - no `criterion` AND no `origin` -
+on the stated premise that every post-field checklist carries at least one
+`origin`. That premise was false the day it shipped: `.planning/phases/3/UAT.md`
+is a post-field checklist with seven `criterion` lines and zero `origin` lines,
+so a `/cad-verify` that silently stopped emitting `criterion` on a
+phase-3-shaped checklist read as an old project and the gate stayed green
+forever - precisely the regression this check exists to catch. `uat init`
+writes `fields_version` unconditionally, before it looks at a single item, so
+no file this seam produces can present as legacy however few links it carries.
+Infer legacy from field absence again and the exemption absolves the drop.
 
 An EMPTY checklist is not legacy. An empty checklist is the drop itself, so
 every criterion in that phase breaks.
