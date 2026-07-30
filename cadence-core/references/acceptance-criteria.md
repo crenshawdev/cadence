@@ -70,6 +70,15 @@ classification scan: CONTEXT.md has no template section that follows the
 criteria and can outlive them, so there is no interrupted-prune state to
 detect.
 
+**Both the heading scan and the section walk are FENCE-AWARE**, through the
+same scanner `parseUat`'s `sectionBound` uses. A fenced block inside the
+section is skipped whole: it declares no criterion, reports no diagnostic, does
+not bound the section, and does not close an open criterion. A `## ` line
+inside a fence is content, and a `## Acceptance criteria` line inside one is
+not the heading. Without this the illustrative `- [ ] AC1: ...` in this very
+document parses as a live criterion, minting a phantom id no UAT item can
+cover - a false FAIL out of a code block.
+
 An ABSENT heading returns `{criteria: null, issues: []}` - the datum "nothing
 declared", never an out-of-grammar report. CONTEXT.md is itself an optional
 artifact, and `null` (not `[]`) is what lets a caller tell "no criteria section"

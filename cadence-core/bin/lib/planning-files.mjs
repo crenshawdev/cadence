@@ -696,6 +696,31 @@ const CRITERION_TOKEN = /\bAC\d+\b/;
 const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 
 /**
+ * A stateful line filter: `true` while the line is a fence marker or sits
+ * inside a fenced code block, `false` when it is content. One scanner per walk,
+ * fed every line in order.
+ *
+ * Fence rules follow CommonMark closely enough for the job: up to three spaces
+ * of indent, a run of three or more backticks or tildes, and a closer that
+ * matches the opener's character, is at least as long, and carries no info
+ * string. Shared by `sectionBound` and the acceptance-criteria walk, which had
+ * the same bug in two places - a documentation example inside a fence read as
+ * live content.
+ */
+function fenceScanner() {
+  /** @type {{char: string, len: number}|null} */
+  let fence = null;
+  return (/** @type {string} */ line) => {
+    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
+    if (!f) return fence !== null;
+    const char = f[1][0], len = f[1].length;
+    if (fence === null) fence = { char, len };
+    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
+    return true;
+  };
+}
+
+/**
  * Classify the `## Acceptance criteria` section of a CONTEXT.md: the criteria
  * it declares as `{id, text}`, plus the lines that LOOK like they declare one
  * and fall outside the canonical head. Pure and total: no I/O, no throw.
@@ -765,7 +790,9 @@ const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 export function classifyAcceptanceCriteria(text) {
   const lines = normalize(text).split('\n');
   let heading = -1;
+  const headingFenced = fenceScanner();
   for (let i = 0; i < lines.length; i++) {
+    if (headingFenced(lines[i])) continue;
     if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
   }
   if (heading === -1) {
@@ -775,7 +802,9 @@ export function classifyAcceptanceCriteria(text) {
     // criterion under a typo'd heading is undeclared, every item pointing at
     // one lands in the additive `unknown_criterion`, and the gate stays green.
     // Reported once, on the first near-miss: the section is singular.
+    const nearFenced = fenceScanner();
     for (let i = 0; i < lines.length; i++) {
+      if (nearFenced(lines[i])) continue;
       if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
         return { criteria: null,
           issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
@@ -795,8 +824,16 @@ export function classifyAcceptanceCriteria(text) {
   // absorbs its continuation lines, so a wrapped duplicate reports once for the
   // bullet rather than once more for every line under it.
   let absorbing = false;
+  // Fresh scanner from the heading: the heading itself was matched outside a
+  // fence, so nothing is open here. A fenced block inside the section is
+  // skipped whole - it neither declares a criterion nor bounds the section nor
+  // closes an open one. Without this the `- [ ] AC1: ...` line in the grammar's
+  // own documentation example parses as a live criterion, minting a phantom id
+  // no UAT item can cover: a false FAIL out of a code block.
+  const fenced = fenceScanner();
   for (let i = heading + 1; i < lines.length; i++) {
     const line = lines[i];
+    if (fenced(line)) continue;
     if (/^## /.test(line)) break;
     const head = line.match(CRITERION_HEAD);
     if (head) {
@@ -899,17 +936,10 @@ const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started'
  * @returns {number}
  */
 function sectionBound(lines) {
-  /** @type {{char: string, len: number}|null} */
-  let fence = null;
+  const fenced = fenceScanner();
   for (let i = 0; i < lines.length; i++) {
-    const f = lines[i].match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
-    if (f) {
-      const char = f[1][0], len = f[1].length;
-      if (fence === null) fence = { char, len };
-      else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
-      continue;
-    }
-    if (fence === null && /^## /.test(lines[i])) return i;
+    if (fenced(lines[i])) continue;
+    if (/^## /.test(lines[i])) return i;
   }
   return -1;
 }

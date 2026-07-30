@@ -1034,6 +1034,31 @@ const CRITERION_ROWS = [
     criteria: [{ id: 'AC1', text: 'real' }], codes: [],
   },
   {
+    name: 'a criterion-shaped bullet inside a fence is an EXAMPLE, not a criterion',
+    text: criteriaDoc('- [ ] AC1: real\n\n```markdown\n- [ ] AC9: inside a fence\n```'),
+    criteria: [{ id: 'AC1', text: 'real' }], codes: [],
+  },
+  {
+    name: 'an out-of-grammar shape inside a fence reports nothing either',
+    text: criteriaDoc('- [ ] AC1: real\n\n```markdown\n- [ ] a bare bullet\n### AC8: heading\n```'),
+    criteria: [{ id: 'AC1', text: 'real' }], codes: [],
+  },
+  {
+    name: 'a ## line inside a fence does not bound the section',
+    text: criteriaDoc('- [ ] AC1: real\n\n```sh\n## build output\n```\n\n- [ ] AC2: also real'),
+    criteria: [{ id: 'AC1', text: 'real' }, { id: 'AC2', text: 'also real' }], codes: [],
+  },
+  {
+    name: 'a tilde fence closes only on tildes at least as long',
+    text: criteriaDoc('- [ ] AC1: real\n\n~~~~\n- [ ] AC9: still fenced\n~~~\n- [ ] AC8: also still fenced\n~~~~'),
+    criteria: [{ id: 'AC1', text: 'real' }], codes: [],
+  },
+  {
+    name: 'a fenced heading is not the section heading',
+    text: '# Phase 1 Context\n\n```markdown\n## Acceptance criteria\n\n- [ ] AC1: an example\n```\n',
+    criteria: null, codes: [],
+  },
+  {
     name: 'ordinary prose naming no AC<N> token is silent',
     text: criteriaDoc('- [ ] AC1: one\n\nTooling probed on this machine: node, npx, git.'),
     criteria: [{ id: 'AC1', text: 'one' }], codes: [],
