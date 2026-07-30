@@ -23,6 +23,25 @@
 //                    must resolve on disk and be model-invocable. The host
 //                    skips a missing or disabled one SILENTLY, so this check
 //                    is what keeps a preloaded contract from vanishing.
+//   7. agent body    an agent that preloads a contract (`skills:`) must carry
+//                    NO contract section tag in its own body. A rung file is
+//                    a pointer at one single-sourced contract; the moment one
+//                    grows behaviour, the ladder is N divergent variants
+//                    instead of one contract at N efforts.
+//   8. routing cells the three grids in route-table.json, cell by cell (every
+//                    problem NAMES the cell), the `surfaces` block against the
+//                    `risk.override.<surface>` schema keys in both directions,
+//                    plus both directions between the grids and agents/: every
+//                    rung a cell names must have an agent file, and every
+//                    rung-suffixed agent file must be a rung some cell reaches. route.mjs returns an agent name it
+//                    never checks exists, so an unbuilt or stale rung would
+//                    surface as a failed spawn instead of in CI.
+//   9. config reach  references/config-reach.md must carry one reach row per
+//                    config.schema.json key, name no key the schema lacks, and
+//                    every reach narrower than `universal` must appear in that
+//                    key's own `purpose` - where a user setting the value reads
+//                    it. This is what makes "no key is resolved and then
+//                    silently dropped" re-runnable rather than a one-time sweep.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -33,8 +52,16 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
+import { rungBodyIssue, rungFile } from './lib/rung-agent.mjs';
+import { cellIssues, declaredRoles, routableAgents, surfaceIssues } from './lib/route-cells.mjs';
+import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
+import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// The reach table (check 9), root-relative and platform-separated so it can be
+// compared against a `relative(root, file)` walk result.
+const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 
 // --- the contract table: script -> subcommand -> allowed flags --------------
 // Global flags allowed everywhere on that script are listed under '*'.
@@ -48,10 +75,11 @@ const CONTRACTS = {
     'uat init': ['--phase', '--sources'],
     'uat refresh': ['--phase'],
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--source'],
+      '--severity', '--cause', '--fix', '--evidence', '--source', '--origin'],
     'uat merge': ['--phase'],
     'uat status': ['--phase'],
     audit: [],
+    'criteria-coverage': [],
     'plan-overlap': ['--phase'],
     'seed-reqs': ['--phase'],
     recall: [],
@@ -85,7 +113,7 @@ const CONTRACTS = {
   },
   'route.mjs': {
     '*': [],
-    resolve: ['--role', '--attempt', '--files', '--ambiguity', '--file'],
+    resolve: ['--role', '--attempt', '--file', '--phase'],
     table: [],
   },
   'worktree-base.mjs': {
@@ -162,13 +190,15 @@ function* mdFiles(root) {
  * would under-cover the reverse check: prose that says
  * `review.triggers.<t>.tier` covers ALL triggers' tier keys, not just plan's.
  * @param {string} token @param {string[]} triggers @param {string[]} providers
+ * @param {string[]} [surfaces] the risk surfaces `risk.override.<surface>` stands for
  */
-function expand(token, triggers, providers) {
+function expand(token, triggers, providers, surfaces = []) {
   let out = [token];
   const subst = (list, re, values) =>
     list.flatMap((t) => re.test(t) ? values.map((v) => t.replace(re, v)) : [t]);
   out = subst(out, /<t(?:rigger)?>?/g, triggers);
   out = subst(out, /<(?:name|provider)>?/g, providers);
+  out = subst(out, /<surface>?/g, surfaces);
   return out;
 }
 
@@ -223,6 +253,11 @@ function run(root) {
     .filter((k) => k.startsWith('review.triggers.')).map((k) => k.split('.')[2]))];
   const PROVIDERS = [...new Set(schemaKeys
     .filter((k) => k.startsWith('review.providers.')).map((k) => k.split('.')[2]))];
+  // The risk-surface vocabulary, derived from the schema exactly as TRIGGERS and
+  // PROVIDERS are: prose writing `risk.override.<surface>` covers all eight keys
+  // in both directions of check 1, and check 8 walks the same list against
+  // route-table.json's `surfaces` block.
+  const SURFACES = surfacesFromKeys(schemaKeys);
   // Keys with no dot can never match the dotted-token regex; they are covered
   // by a bare-word mention instead.
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
@@ -263,20 +298,49 @@ function run(root) {
     }
 
     // 1. config-key tokens: family-rooted dotted identifiers.
-    for (const m of text.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
+    // Scanned over a copy with every URL masked out, because a HOSTNAME is
+    // shaped exactly like a config key: `https://git.jcrenshaw.dev/...` reads
+    // as a `git.*` token under the real `git` schema family, matches no key,
+    // and reports unknown-config-key the moment README carries the install
+    // URL. The narrowing is bounded to URLs on purpose - a dotted token in
+    // ordinary prose is still a key claim, so the check keeps its teeth
+    // everywhere a key is actually written; only the span between `https://`
+    // and the next whitespace, bracket or quote stops being read as prose.
+    // Only this loop uses the masked copy: the BARE_KEYS loop, the invocation
+    // join and the ${CLAUDE_PLUGIN_ROOT} loop below are unaffected by
+    // hostnames, and masking there would cost coverage for nothing.
+    const scanText = text.replace(/https?:\/\/[^\s)\]}>'"`]*/g, ' ');
+    for (const m of scanText.matchAll(/\b([a-z_]+(?:\.[a-z_0-9<>]+)+)/g)) {
       // A closing placeholder bracket can trail the token (`<review.consult.effort>`).
       const raw = m[1].replace(/>+$/, '');
       const family = raw.split('.')[0];
       if (!FAMILIES.has(family)) continue;
       if (raw.split('.').some((seg) => NON_KEY_SEGMENT.has(seg))) continue;
-      const expansions = expand(raw, TRIGGERS, PROVIDERS);
-      for (const t of expansions) seenTokens.add(t);
+      const expansions = expand(raw, TRIGGERS, PROVIDERS, SURFACES);
+      // The reach table (check 9) names all 72 keys by construction, so
+      // letting it feed seenTokens would make 1b's inert-config-key
+      // unreachable forever - a key nothing but the table mentions would
+      // read as referenced. It still feeds the FORWARD scan below: class 2
+      // (unknown-reach-key) inspects the Key column only, so a dead token in
+      // that file's prose or an `Honoured by` cell would otherwise be scanned
+      // by nothing at all.
+      if (rel !== REACH_DOC) for (const t of expansions) seenTokens.add(t);
+      // A token is known when it IS a key or stops at a boundary inside one.
+      // The boundary arm is not cosmetic: this tokenizer's segment class is
+      // [a-z_0-9<>], so a hyphenated key like `model.overrides.cad-planner`
+      // tokenizes to `model.overrides.cad` and would report unknown for the
+      // correct spelling of a real key. `.` and `-` both end a token; `_`
+      // does not, so `git.on` still fails against `git.on_protected` and the
+      // check keeps its teeth on a truncated guess.
       const known = expansions.some((t) =>
-        schemaKeys.some((k) => k === t || k.startsWith(t + '.')));
+        schemaKeys.some((k) => k === t
+          || (k.startsWith(t) && !/[a-z0-9_]/.test(k.charAt(t.length)))));
       if (!known) problems.push({ kind: 'unknown-config-key', file: rel, detail: raw });
     }
-    for (const k of BARE_KEYS) {
-      if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
+    if (rel !== REACH_DOC) {
+      for (const k of BARE_KEYS) {
+        if (new RegExp(`\\b${k}\\b`).test(text)) seenTokens.add(k);
+      }
     }
 
     // 2. script invocations.
@@ -431,8 +495,12 @@ function run(root) {
   // for an unreadable entry - just skips it, to avoid double-counting one
   // broken link.
   const agentsDir = join(root, 'agents');
+  // Hoisted: check 8's reverse direction (disk -> table) needs the same
+  // listing, and reading the directory twice invites the two checks to
+  // disagree about what is on disk.
+  /** @type {string[]} */
+  let agentFiles = [];
   if (existsSync(agentsDir)) {
-    let agentFiles;
     try {
       agentFiles = readdirSync(agentsDir, { encoding: 'utf8' });
     } catch {
@@ -497,6 +565,42 @@ function run(root) {
       }
 
       const body = fm ? text.slice(fm[0].length) : text;
+
+      // 7. an agent that preloads a contract carries no behaviour of its own.
+      // Scanned on the BODY only, never on the preloaded contract prose - the
+      // contracts legitimately use this whole vocabulary, which is the point
+      // of them. Gated on the `skills:` key rather than on size: a 200-byte
+      // behavioural instruction fits under any budget, so a size check would
+      // miss exactly the failure this exists to catch, and gating on `skills:`
+      // keeps a future one-off agent with inline prose legal (D-04).
+      //
+      // TWO arms, denylist first then allowlist, because the denylist alone
+      // enforced less than INTERNALS.md:11 and DESIGN.md:378 claim of it. A
+      // body carrying `<process>` is named by its tag, which is the more
+      // actionable message; a body carrying no tag at all is then held to the
+      // canonical template, which is what catches plain-prose behaviour and a
+      // same-size REPLACEMENT of the pointer paragraph. Byte budgets were the
+      // accidental backstop here - they catch an append and nothing else.
+      if (fm && /^skills:/m.test(fm[1])) {
+        const tags = [];
+        for (const m of body.matchAll(
+          /<(role|stance|process|returns|guardrails|success_criteria|dimensions)>/g)) {
+          if (!tags.includes(m[1])) tags.push(m[1]);
+        }
+        if (tags.length) {
+          problems.push({ kind: 'agent-carries-behaviour', file: rel,
+            detail: `body carries contract section ${tags.map((t) => `<${t}>`).join(', ')} - the contract belongs in the preloaded skill` });
+        } else {
+          const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
+          const issue = rungBodyIssue(body, effortLine ? effortLine[1] : undefined,
+            parseSkillsField(fm[1]));
+          if (issue) {
+            problems.push({ kind: 'agent-carries-behaviour', file: rel,
+              detail: `${issue.detail} - the contract belongs in the preloaded skill` });
+          }
+        }
+      }
+
       const referenced = new Set();
       for (const prose of [body, ...preloaded]) {
         for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
@@ -510,6 +614,141 @@ function run(root) {
     }
   }
 
+  // 8. the rung ladder, both directions. This iterates the TABLE, not a
+  // directory, so it cannot live inside the agents/ walk above. Root-relative
+  // like config.schema.json and weight-budgets.json, so a --root fixture can
+  // supply its own; an absent table skips the check (a full tree missing it is
+  // a missing-input, matching the other always-expected inputs). The read and
+  // the parse are guarded the way the budget manifest's are: a malformed table
+  // is ONE problem and the run continues, rather than unwinding run() into
+  // {ok:false,reason:"internal"} and discarding every problem found so far
+  // (the #49.1 collapse).
+  const routeTablePath = join(root, 'cadence-core', 'route-table.json');
+  if (existsSync(routeTablePath)) {
+    let table = null;
+    try {
+      table = JSON.parse(readFileSync(routeTablePath, 'utf8'));
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: 'cadence-core/route-table.json',
+        detail: e.code || e.message });
+    }
+    if (table && typeof table === 'object' && !Array.isArray(table)) {
+      // The grids' own well-formedness, cell by cell. The vocabulary comes from
+      // config.schema.json - the file that already defines these names (D-10) -
+      // rather than from parsing references/review-triggers.md's Wiring table,
+      // which has no stated grammar.
+      const gateSpec = schema['review.triggers.plan.gate'] || {};
+      const stakesSpec = schema.stakes || {};
+      for (const { code, detail } of cellIssues(table, {
+        levels: Array.isArray(stakesSpec.values) ? stakesSpec.values : [],
+        triggers: TRIGGERS,
+        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
+      })) {
+        problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
+      }
+
+      // The `surfaces` block, in BOTH directions against config.schema.json's
+      // `risk.override.<surface>` keys. `requiredFloor` is the LAST level of the
+      // schema's stakes enum, never the literal "critical": the level names come
+      // from the schema everywhere else in this check, and a hardcoded copy here
+      // would be the vocabulary drift this walk exists to catch.
+      const stakesValues = Array.isArray(stakesSpec.values) ? stakesSpec.values : [];
+      for (const { code, detail } of surfaceIssues(table, {
+        levels: stakesValues,
+        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
+        overrideSurfaces: SURFACES,
+        requiredFloor: stakesValues[stakesValues.length - 1],
+      })) {
+        problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
+      }
+
+      // table -> disk: every name route.mjs can return must exist. route.mjs
+      // never checks the name it returns, so without this an unbuilt or
+      // renamed rung fails at dispatch time instead of in CI.
+      const routable = routableAgents(table);
+      for (const [stem, cell] of routable) {
+        if (!existsSync(join(root, 'agents', `${stem}.md`))) {
+          problems.push({ kind: 'missing-rung-agent', file: 'cadence-core/route-table.json',
+            detail: `${cell}: agents/${stem}.md absent` });
+        }
+      }
+      // disk -> table, which "exactly the files the grids name" needs and the
+      // walk above does not give. Matched ONLY on the rung-suffixed shape: a
+      // blanket "not named by the table" rule would outlaw the one-off agent
+      // with inline prose D-04 deliberately keeps legal. Without this
+      // direction, a stale rung file - one no cell reaches - stays green while
+      // still paying standing context in every main-session prompt.
+      const order = Array.isArray(table.rung_order) ? table.rung_order : [];
+      // Longest role name first, so a role that prefixes another cannot claim
+      // the other's file.
+      const roleNames = declaredRoles(table).sort((a, b) => b.length - a.length);
+      for (const e of agentFiles) {
+        if (!e.endsWith('.md')) continue;
+        const stem = e.slice(0, -3);
+        if (routable.has(stem)) continue;
+        for (const role of roleNames) {
+          if (!stem.startsWith(`${role}-`)) continue;
+          const rung = stem.slice(role.length + 1);
+          if (order.includes(rung)) {
+            // Two faults reach here and want opposite fixes. A file the rung
+            // map names is a cell that went missing (add the cell); a file it
+            // does not name is a stale rung file (delete it).
+            const mapped = rungFile(role, rung) === stem;
+            problems.push({ kind: 'undeclared-rung-agent', file: `agents/${stem}.md`,
+              detail: mapped
+                ? `${rung} is ${role}'s rung in lib/rung-agent.mjs, but no cell at any level resolves to it`
+                : `no cell names ${role} at rung ${rung}, and lib/rung-agent.mjs maps no file to it` });
+          }
+          break;
+        }
+      }
+    }
+  } else if (isFullTree) {
+    problems.push({ kind: 'missing-input', file: 'cadence-core/route-table.json',
+      detail: 'always-expected input absent' });
+  }
+
+  // 9. the config-key reach table, against config.schema.json in both
+  // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
+  // route-table.json and weight-budgets.json, so a --root fixture can supply
+  // its own schema AND its own table; an absent doc skips the check, and a
+  // full tree missing it is a missing-input like the other always-expected
+  // inputs. The read and the parse are guarded the way those two are: a
+  // malformed table is problems ON THE TABLE and the run continues, rather
+  // than unwinding run() into {ok:false,reason:"internal"} and discarding
+  // every problem found so far (the #49.1 collapse). The read failure itself
+  // pushes nothing - references/ is on the mdFiles walk, so the read-guard up
+  // there already named the file, the convention checks 3b and 5 follow.
+  const reachPath = join(root, REACH_DOC);
+  if (existsSync(reachPath)) {
+    let reachText = null;
+    try {
+      reachText = readFileSync(reachPath, 'utf8');
+    } catch { /* already reported by the mdFiles read-guard */ }
+    if (reachText !== null) {
+      try {
+        const { rows, issues } = parseReachTable(reachText);
+        for (const { code, detail } of issues) {
+          problems.push({ kind: code, file: REACH_DOC, detail });
+        }
+        // `rows === null` means the section heading is absent, already one
+        // problem above - reporting all 72 keys missing on top of it would
+        // bury the one fault under copies of another.
+        if (rows) {
+          for (const { code, detail } of reachIssues(schema, rows)) {
+            problems.push({ kind: code, file: REACH_DOC, detail });
+          }
+        }
+      } catch (e) {
+        problems.push({ kind: 'unreadable-surface', file: REACH_DOC,
+          detail: e && e.message ? e.message : String(e) });
+      }
+    }
+  } else if (isFullTree) {
+    problems.push({ kind: 'missing-input', file: REACH_DOC,
+      detail: 'always-expected input absent' });
+  }
+
   return problems;
 }
 
@@ -520,7 +759,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells, risk-surfaces, config-reach', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

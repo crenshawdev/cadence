@@ -1,6 +1,6 @@
 ---
 name: cad-reviewer-contract
-description: "Internal role contract, preloaded into the cad-reviewer subagent. Not a user command."
+description: "Internal role contract, preloaded into every cad-reviewer rung agent. Not a user command."
 user-invocable: false
 ---
 

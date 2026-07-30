@@ -4,7 +4,252 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] - 2026-07-30
+
+The routing question changes. Cadence used to ask how much a dispatch should
+cost; it now asks what it costs if the work is wrong. The config key carrying
+that question is renamed rather than revalued, with no back-compat alias, and
+that is the one reason this release is major: a config you already wrote stops
+validating.
+
+### Removed
+
+- **`model.profile`**, replaced by the top-level **`stakes`** key. Its values
+  go with it: `fast`, `balanced`, `quality` and `auto` are gone, and `stakes`
+  takes `solo`, `shipped` or `critical`.
+- **`model.auto.escalate_on_failure`**, replaced by
+  **`model.escalate_on_failure`**, which is honoured at every stakes level
+  rather than only inside the retired `auto` mode.
+- **`model.auto.ceiling`**, removed outright. Escalation no longer steps a
+  spend ladder, so there is no ceiling left for it to stop at.
+- **`model.auto.max_escalations`**, removed outright. A role escalates to
+  exactly one rung, the retry rung its own routing cell names, so there is no
+  second step to cap.
+- The `auto` mode's difficulty signals go with it, so `route.mjs resolve` no
+  longer accepts `--files` or `--ambiguity`. No workflow or skill ever passed
+  them.
+
+None of these has a back-compat alias, and the break is on the KEY, not merely
+on the value it holds. `model.profile: "solo"` is exactly as invalid as
+`model.profile: "balanced"`. `/cad-config` refuses to write the retired name
+and names `stakes` in the refusal; `config.mjs validate` reports it as an
+unknown key; and both live read faces, `config.mjs get` and
+`route.mjs resolve`, emit a warning saying the key is present and ignored
+instead of resolving silently at the default and reporting that result as
+configured.
+
+### Changed
+
+- **The routing axis asks what a break costs, not what a dispatch costs.**
+  `stakes: solo` means nobody else runs this and a break costs only your own
+  time. `stakes: shipped` means other people run this and a break comes back
+  as a bug report. `stakes: critical` means a break is not a bug report. The
+  default is `shipped`. "How much should this dispatch cost" was answerable but
+  useless, and on a flat-rate plan it is not a question you have at all, while
+  "what happens if this is wrong" is answerable in about a second and is the
+  only form of the question a risk signal can ever set on your behalf.
+- **Escalate-on-failure is unconditional, and the rung ladder is reachable.**
+  It used to be gated behind `model.profile: "auto"`, a mode the shipped
+  default never selected, so a failed attempt was re-dispatched at the rung it
+  had just failed at. A retry now climbs to the retry rung its own routing cell
+  names, at every stakes level, and `model.escalate_on_failure` set to `false`
+  is how you turn that off. Every role climbs: the fixed per-role escalation
+  target that made five of six retries a no-op is gone, and the two cells whose
+  retry deliberately equals their starting rung report the rung as held rather
+  than claiming an escalation.
+- **A routing cell yields four knobs, not a model.** One question in - what
+  does a break cost - and out comes the model, the effort rung to start at, the
+  rung a failed attempt climbs to, the gate each review trigger fires at, and
+  whether the deep verify pass runs. Quality is not one dial, and no amount of
+  effort expresses "fire a blocking cross-model review before this ships".
+- **Review gates come from the stakes level.** `plan` is advisory on a solo
+  project and adjudicated once other people run it; `diff` is off, then
+  advisory, then blocking; `phase_diff` is opt-in until critical; `pre_ship`
+  is advisory, then adjudicated. `risk_surface` is blocking at every level,
+  because it fires only on a detection match. A
+  `review.triggers.<t>.gate` you set still WINS over the level's, and the
+  disagreement is reported rather than resolved silently - a key you set must
+  not quietly stop doing anything.
+- **The deep verify pass is level-driven.** It is off at `solo` and on above,
+  still once per phase, and `--deep` forces it at any level.
+  `workflow.verifier: false` remains the off switch.
+- **Models come from the cell, not from a role's tier.** The `(stakes, tier)`
+  matrix and the whole `tier` vocabulary are gone: a role's model was being
+  decided by a field named after something else. The routed vocabulary is
+  `sonnet` and `opus`; `haiku` and `fable` are reachable only by an explicit
+  `model.overrides.<role>` pin.
+- **`/cad-audit` proves criterion coverage in both directions, and FAILs on a
+  criterion that reached no UAT item**, naming the id and the phase with a
+  concrete next action. Requirement tracing already caught work nobody committed
+  to deliver; this catches a criterion that never reached the checklist, which
+  is a weaker claim than proof of delivery and the honest one: an item counts as
+  coverage once it exists, whatever its result. Nothing structural connected the
+  two before - the checklist was worded from the criteria by hand, so the link
+  was model judgment and no later pass could recover it. Upgrading costs
+  nothing: a checklist written before the field existed is read as pre-field
+  legacy, reported and never broken, and new checklists carry the link from the
+  next `/cad-verify` onward.
+
+### Added
+
+- **Six more rung agent files, 19 in total**: `cad-planner-max`,
+  `cad-verifier-medium`, `cad-verifier-max`, `cad-reviewer-max`,
+  `cad-plan-checker-medium` and `cad-plan-checker-xhigh`. Each is the same
+  contract at a different depth, and CI fails a rung file that carries any
+  instruction of its own.
+- **Cell validation in `self-verify`**, every problem naming the offending cell:
+  a (level, role) pair with no cell, a rung with no agent file, a rung file no
+  cell reaches, a model outside `model_aliases`, a rung outside `rung_order`, a
+  gate outside the four gate values, a trigger name the schema does not define,
+  and a retry rung that sits BELOW the rung it started on - which no membership
+  check can see and which would otherwise let a retry think less while
+  reporting that it thought more.
+- **A computed risk floor: detection raises the stakes level by itself.** The
+  eight risk surfaces Cadence already recognized in prose are now declared data
+  - a `surfaces` block in `cadence-core/route-table.json`, each row a list of
+  path tokens and the level it floors to. `route.mjs resolve` reads the phase's
+  declared PLAN `files:` list, matches it against those rows, and raises the
+  level to the highest floor it hits, so all four knobs come from the raised
+  row through the one cell grid. It only ever raises: a baseline already at or
+  above the floor changes nothing and says so in `reason`.
+- **`route.mjs resolve --phase <N>`, with a cursor fallback.** The phase comes
+  from the flag, or from `.planning/STATE.md` when the flag is absent, so an
+  existing call site keeps working. Every unresolvable input - no phase, no
+  PLAN, an unreadable PLAN, a `--phase` that is not a phase number - resolves at
+  the baseline with `ok:true` and a warning where there is something to say. A
+  refusal would route a possibly-risky phase LOWER than its own baseline, so
+  there is none. `cad-planner` and `cad-assumptions-analyzer` are never floored:
+  they run before the phase they are about has a plan.
+- **`risk.override.<surface>`, the per-surface waiver.** One boolean per surface,
+  DECLARED repo-scoped (`src: repo`). The level drops back to the baseline only
+  when EVERY detected surface is named, the waived names stay in `reason`, and a
+  value that is not strictly `true` waives nothing and says so. A misspelled
+  surface is refused at the write face with the accepted names listed, and
+  `--global` is refused there too. That refusal is airtight in both directions:
+  the resolver reads waivers from the REPO layer alone and names an ignored
+  global one in `warnings`, with the repo-scope rule and the file it belongs in,
+  and the write face compares paths by filesystem identity rather than as
+  strings, so an alias for the global file (`<dir>/./config.json`, a symlink, a
+  relative path) is refused like the plain spelling.
+- **A `surfaces` walk in `self-verify`, both directions**, every problem naming
+  the offending row: a floor that is not a stakes level, a floor below the level
+  every shipped row is required to carry, a pattern list that is empty or holds
+  a token no path can ever produce, a surface with no `risk.override` key to
+  waive it, a `risk.override` key naming no surface row, and drift in either the
+  `stakes_order` or `gates` vocabulary the resolver reads by index.
+- **Every config key's reach is stated where the key is set, and the sweep that
+  proves it is re-runnable.** Six `tier` keys - the five
+  `review.triggers.<t>.tier` and `review.decision_review.tier` - resolved as a
+  universal per-trigger model dial while only a cross-model reviewer can honour
+  one: `review.providers.<name>.tiers[trigger.tier]` is the only bridge from a
+  trigger to a provider model id, and the `claude-subagent` reviewer's model
+  comes from the routing cell instead. They now say `cross-model reviewers only`
+  in their own `purpose`, the same phrase per-trigger `effort` already carried.
+  Three more purposes stopped overstating what reads them: `granularity` sets a
+  roadmap phase count and splits no phase into tasks, `workflow.research` is
+  read by the new-project research step alone, and `workflow.skip_discuss`
+  selects which command `/cad-progress` suggests for an unplanned phase rather
+  than skipping any step. `cadence-core/references/config-reach.md` now carries
+  a reach row for every schema key, with the human test for a new one stated,
+  and `self-verify` check 9 fails a key with no row, a row naming no key, and a
+  reach narrower than `universal` that the key's own `purpose` never states -
+  so a key added later cannot arrive with its reach unanswered.
+- **The plugin's home moved to
+  `https://git.jcrenshaw.dev/crenshawdev/cadence.git`.** The GitHub repository
+  stops moving; the self-hosted Forgejo remote is the only published source
+  from this release on. An existing GitHub-installed user follows it with three
+  commands:
+
+  ```
+  /plugin uninstall cadence@cadence
+  /plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git
+  /plugin install cadence@cadence
+  ```
+
+  Nothing about the plugin changes with the move. `/plugin update
+  cadence@cadence` follows the manifest's `repository` field, so an install
+  that predates this release keeps pointing at a repository that no longer
+  receives commits until those three commands are run.
+- **Acceptance criteria carry ids.** Every criterion in a phase's CONTEXT.md now
+  starts with a phase-local `AC<N>` token (`- [ ] AC1: ...`), which `/cad-context`
+  writes from now on. The grammar is stated in full at
+  `cadence-core/references/acceptance-criteria.md` and read by one function, with
+  a named diagnostic for each of eleven shapes outside it - the central one being
+  a bullet carrying no id at all, and the section-level one a near-miss
+  `## Acceptance criteria` heading, which used to drop a whole phase's criteria
+  out of the coverage domain in silence. A fenced code block declares nothing, so
+  a documentation example cannot mint a phantom id. The id never renumbers:
+  `/cad-phase` insert and remove move a phase directory whole and rewrite
+  nothing inside it, which is why the id is not phase-prefixed and not a path.
+- **`planning.mjs criteria-coverage`**, a new seam subcommand that traces every
+  criterion to the UAT item that tested it, in both directions. A criterion that
+  reached no item is verdict-breaking and named by its id; an item that traces to
+  no criterion is reported and moves nothing. A checked phase that declared
+  criteria and has no UAT.md at all breaks the same way, as `missing-uat` - the
+  total drop is the case the gate most has to see.
+- **Two UAT item fields, `criterion` and `origin`.** `criterion` names the
+  `AC<N>` an item was built from, written by `/cad-verify` and carried through
+  every later rewrite of the file. `origin` (`criterion | verifier | smoke`)
+  declares an item that legitimately has no criterion - a gap the deep verifier
+  appended, or the cold-start smoke check - so it is exempt rather than merely
+  unlinked, and `uat record --origin` can set it after the fact. Every new
+  checklist also carries a `fields_version` frontmatter marker, which is what
+  the legacy exemption reads: a file the seam wrote is never mistaken for a
+  pre-field one, however few links its items hold.
+
+### Fixed
+
+- **A `review.triggers.<t>.gate` outside `off|advisory|blocking|adjudicated` no
+  longer reaches the bundle.** A value a config layer set used to win over the
+  level's gate without ever being checked, so `"blockign"` silently replaced
+  `critical`'s deliberately-blocking `risk_surface` gate - a one-character typo
+  disabling a review, on the axis the new risk floor rides on. An invalid or
+  non-string gate now loses to the level's gate and is named in `warnings`, the
+  same treatment an unknown model alias already got. A VALID gate that disagrees
+  still wins and still reports the disagreement: this is a validity check in
+  front of that precedence, not a change to it.
+
+### Closed on the way past
+
+The last sweep for keys that are resolved and then thrown away found most of
+them already closed by the work above, each carrying its own dated marker in
+`DESIGN.md` section 6 - recorded here rather than fixed a second time:
+
+- the `(stakes, tier)` model matrix, deleted with the routing cells;
+- per-trigger `review.triggers.<t>.effort`, scoped to the cross-model arm by
+  `#64` in `v1.5.0`;
+- the `escalate_effort_variant` shim, retired with the rung ladder;
+- `model.profile` and the `model.auto.*` keys, retired with the axis.
+
+### Upgrading
+
+`config.mjs set` writes keys and never removes them, and the seam refuses the
+retired names outright, so the stale block has to come out of the file by hand:
+
+1. Open `.planning/config.json`, and `~/.claude/cadence/config.json` as well if
+   you set a global layer.
+2. Delete `profile` and the whole `auto` block from the `model` object. If
+   `auto.escalate_on_failure` was set, keep that value as
+   `"escalate_on_failure"` directly under `model`; it defaults to `true`.
+3. Run `/cad-config stakes=shipped`, or `solo`, or `critical`, to set the new
+   key.
+
+### Known issues, deferred to 2.0.1
+
+Found by this cycle's own goal-backward verification and recorded rather than
+quietly shipped. Full evidence per item is in `.planning/phases/6/UAT.md`.
+
+- `config.mjs get` still returns a `risk.override.<surface>` set in the
+  user-global layer as an effective value, with no warning, while `route.mjs`
+  correctly ignores it. `/cad-config`'s menu reads `get`, so it shows `true`
+  for a waiver that waives nothing.
+- A duplicate row in `references/config-reach.md` is dropped without an issue,
+  so a stale row can mask a corrected one inside the check whose purpose is
+  that no key's reach is skipped silently.
+- Five smaller ones: the `https?://` URL mask does not cover SSH clone forms,
+  `fsIdentity` throws outside its guard on a non-string path, the reach-cell
+  parser does not case-fold, and the global-waiver warning misfires when both
+  config layers resolve to one file or the surface name is misspelled.
 
 ## [1.5.0] - 2026-07-28
 
@@ -759,6 +1004,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.0.0
 [1.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.5.0
 [1.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.1
 [1.4.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.0

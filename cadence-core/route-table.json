@@ -1,34 +1,68 @@
 {
   "_meta": {
-    "note": "Data table for bin/route.mjs (model routing). Editable: change the tier of a role or the model an (profile, tier) pair resolves to without touching code. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per role in agent frontmatter; escalating a low-effort role swaps to its `escalate_effort_variant` agent file.",
-    "tiers": "light < standard < heavy (order used for difficulty bumps and clamping)",
-    "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. `fable` is deliberately absent from the profile matrix: the profiles are a capability ladder, and placing fable on a rung would assert a ranking against opus/sonnet/haiku that is not established. It is reachable only by explicit pin, which is a user assertion, not ours."
+    "note": "Data table for bin/route.mjs (the routing bundle). Three grids, all editable without touching code: `cells` keys on (stakes level, role) and yields the model and the two rungs, `review` keys on (level, trigger) and yields a gate, `verify` keys on the level alone. Models are Claude dispatch aliases (opus/sonnet/haiku/fable) - stable, not dated ids, so no staleness. Effort is fixed per agent FILE in frontmatter, so varying it means varying the file: a cell's rung names a file, and cadence-core/bin/lib/rung-agent.mjs says which.",
+    "rungs": "A rung costs an agent file, and every registered agent's name/description/tools ride in the main session prompt - so the reachable rungs are exactly the ones some cell names, not a rung_order x roles cross product. The rung -> filename map is stated per role in cadence-core/bin/lib/rung-agent.mjs (it cannot be derived: the analyzer's unsuffixed file is its xhigh rung), and self-verify fails in BOTH directions - a cell naming a rung with no file, and a rung file no cell reaches.",
+    "cells": "The (stakes level, role) grid: one cell per pair, each yielding the `model` the role runs at, the `effort` rung it starts at and the `retry` rung a failed attempt climbs to. 18 cells, read in one screen - `tier` is gone, and with it the indirection that pinned a role's model to a field named after something else. A `retry` at or above its `effort` is the rule self-verify enforces; equal means the rung is held.",
+    "roles": "The declared ARRAY of routable role names, and what route.mjs checks a `--role` against.",
+    "review": "The `review` grid keys on (stakes level, trigger name) and yields the gate that trigger fires at, for the five triggers config.schema.json defines. `risk_surface` is deliberately `blocking` at EVERY level: it fires only on a detection match, so there is no level at which a matched risk surface is worth waving through. A `review.triggers.<t>.gate` a user set wins over the level's value and route.mjs reports the disagreement in `warnings`.",
+    "verify": "The `verify` grid keys on the stakes level ALONE - the deep-verify pass has no role in hand when it decides whether to run. It is two-state (`off`/`on`); the depth of that pass is carried by the cad-verifier row of the effort grid, not here.",
+    "surfaces": "The declared risk surfaces. A row's `patterns` are lowercase tokens matched for EQUALITY against the tokens of a path the phase's PLAN declares in its `files:` frontmatter; a match RAISES the resolved stakes level to that row's `floor` and never lowers it (the comparison order is `stakes_order`). `risk.override.<surface>` is the per-surface waiver: the floor drops back to the baseline only when every detected surface is named. Patterns are data - moving one is an edit here, not a code change - and self-verify walks the block against config.schema.json in both directions.",
+    "gates": "The accepted `review.triggers.<t>.gate` vocabulary, checked by route.mjs before a config-set gate may win over the level's gate - the same role model_aliases plays for a pin, in the same file, so the resolver never reads config.schema.json.",
+    "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. The ROUTED vocabulary is narrower - `sonnet` and `opus` - so `haiku` and `fable` are reachable by a pin only. For `fable` that is not a ranking claim: it requires 30-day data retention and returns 400 invalid_request_error for every zero-data-retention org, which is other people's orgs since Cadence ships as a public plugin; its safety classifiers return a refusal stop reason on cyber-adjacent content, and Cadence reviews its own git rails, secrets handling and shell tokenizer; and its multi-minute turns press against the configured provider request timeout inside the host's Bash ceiling. It is reachable only by explicit pin, which is a user assertion about their own org, not ours."
   },
-  "tier_order": ["light", "standard", "heavy"],
-  "profile_order": ["fast", "balanced", "quality"],
+  "rung_order": ["low", "medium", "high", "xhigh", "max"],
+  "stakes_order": ["solo", "shipped", "critical"],
+  "gates": ["off", "advisory", "blocking", "adjudicated"],
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
+  "roles": ["cad-planner", "cad-assumptions-analyzer", "cad-verifier", "cad-reviewer", "cad-executor", "cad-plan-checker"],
 
-  "roles": {
-    "cad-planner":              { "tier": "heavy",    "base_effort": "high" },
-    "cad-assumptions-analyzer": { "tier": "heavy",    "base_effort": "xhigh" },
-    "cad-verifier":             { "tier": "heavy",    "base_effort": "high" },
-    "cad-reviewer":             { "tier": "heavy",    "base_effort": "high" },
-    "cad-executor":             { "tier": "standard", "base_effort": "high" },
-    "cad-plan-checker":         { "tier": "light",    "base_effort": "low", "escalate_effort_variant": "cad-plan-checker-high" }
-  },
-
-  "profiles": {
-    "fast":     { "light": "haiku",  "standard": "haiku",  "heavy": "sonnet" },
-    "balanced": { "light": "haiku",  "standard": "sonnet", "heavy": "opus" },
-    "quality":  { "light": "sonnet", "standard": "opus",   "heavy": "opus" }
-  },
-
-  "auto": {
-    "base_profile": "balanced",
-    "signals": {
-      "files": { "threshold": 15, "note": "phase/plan touches >= this many files -> +1 tier" },
-      "ambiguity": { "threshold": 0.6, "note": "0-1 ambiguity score >= this -> +1 tier" }
+  "cells": {
+    "solo": {
+      "cad-planner":              { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-assumptions-analyzer": { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-verifier":             { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-reviewer":             { "model": "sonnet", "effort": "medium", "retry": "high" },
+      "cad-executor":             { "model": "sonnet", "effort": "high",   "retry": "xhigh" },
+      "cad-plan-checker":         { "model": "sonnet", "effort": "low",    "retry": "high" }
     },
-    "max_tier_bump": 1
+    "shipped": {
+      "cad-planner":              { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-assumptions-analyzer": { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-verifier":             { "model": "opus",   "effort": "medium", "retry": "high" },
+      "cad-reviewer":             { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-executor":             { "model": "opus",   "effort": "high",   "retry": "xhigh" },
+      "cad-plan-checker":         { "model": "sonnet", "effort": "medium", "retry": "high" }
+    },
+    "critical": {
+      "cad-planner":              { "model": "opus",   "effort": "xhigh",  "retry": "max" },
+      "cad-assumptions-analyzer": { "model": "opus",   "effort": "xhigh",  "retry": "xhigh" },
+      "cad-verifier":             { "model": "opus",   "effort": "xhigh",  "retry": "max" },
+      "cad-reviewer":             { "model": "opus",   "effort": "xhigh",  "retry": "max" },
+      "cad-executor":             { "model": "opus",   "effort": "xhigh",  "retry": "xhigh" },
+      "cad-plan-checker":         { "model": "opus",   "effort": "high",   "retry": "xhigh" }
+    }
+  },
+
+  "review": {
+    "solo":     { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off",         "pre_ship": "advisory" },
+    "shipped":  { "plan": "adjudicated", "diff": "advisory", "risk_surface": "blocking", "phase_diff": "off",         "pre_ship": "adjudicated" },
+    "critical": { "plan": "adjudicated", "diff": "blocking", "risk_surface": "blocking", "phase_diff": "adjudicated", "pre_ship": "adjudicated" }
+  },
+
+  "verify": {
+    "solo": "off",
+    "shipped": "on",
+    "critical": "on"
+  },
+
+  "surfaces": {
+    "auth":            { "patterns": ["auth", "authn", "authz", "authentication", "authorization", "oauth", "login", "logout", "signin", "signup", "session", "sessions", "permission", "permissions", "rbac", "acl", "jwt"], "floor": "critical" },
+    "migrations":      { "patterns": ["migration", "migrations", "migrate", "alembic", "flyway", "liquibase", "ddl", "seeds"], "floor": "critical" },
+    "billing":         { "patterns": ["billing", "payment", "payments", "pricing", "invoice", "invoices", "checkout", "subscription", "subscriptions", "stripe", "paypal", "ledger", "refund", "refunds"], "floor": "critical" },
+    "concurrency":     { "patterns": ["concurrency", "concurrent", "mutex", "semaphore", "lock", "locks", "locking", "thread", "threads", "threading", "scheduler", "worker", "workers", "queue", "queues"], "floor": "critical" },
+    "destructive":     { "patterns": ["delete", "deletion", "destroy", "drop", "purge", "prune", "truncate", "wipe", "teardown", "rollback"], "floor": "critical" },
+    "secrets":         { "patterns": ["secret", "secrets", "credential", "credentials", "keyring", "keystore", "keychain", "crypto", "cipher", "encrypt", "encryption", "decrypt", "signing", "gpg", "pgp", "env", "dotenv", "vault", "password", "passwd", "htpasswd"], "floor": "critical" },
+    "api_contract":    { "patterns": ["api", "openapi", "swagger", "graphql", "grpc", "proto", "protobuf", "wire", "dto", "rpc", "webhook", "webhooks", "idl"], "floor": "critical" },
+    "untrusted_input": { "patterns": ["parser", "parsers", "deserialize", "deserializer", "unmarshal", "sanitize", "sanitizer", "sanitizing", "upload", "uploads", "ingest", "untrusted", "xss", "injection"], "floor": "critical" }
   }
 }

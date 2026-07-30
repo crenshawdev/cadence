@@ -1,6 +1,6 @@
 ---
 name: cad-executor-contract
-description: "Internal role contract, preloaded into the cad-executor subagent. Not a user command."
+description: "Internal role contract, preloaded into every cad-executor rung agent. Not a user command."
 user-invocable: false
 ---
 

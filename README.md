@@ -1,8 +1,5 @@
 # Cadence
 
-[![test](https://github.com/crenshawdev/cadence/actions/workflows/test.yml/badge.svg)](https://github.com/crenshawdev/cadence/actions/workflows/test.yml)
-[![Listed on ClaudePluginHub](https://www.claudepluginhub.com/badge/crenshawdev-cadence)](https://www.claudepluginhub.com/plugins/crenshawdev-cadence?ref=badge)
-
 The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
 
 ## What it costs you
@@ -27,14 +24,36 @@ That rule is about one direction of reading, and v1.4.0 makes the direction expl
 
 Every gate hands the work to a reviewer whose job is to break it, not to bless it. The default is a fresh-context Claude subagent and needs no API key at all. Give it an OpenAI, Gemini, or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema, which lets you put up to four independent voices on one plan and have your main session adjudicate, opening the cited code and killing the false positives. Every backend returns the same shape, and that part is deliberate. The adjudicator cannot tell which finding came from the free local reviewer and which came from the one you are paying for, and it cannot discount a finding for being cheap. The single signal treated as strong is convergence. Two reviewers landing on the same defect independently is the whole reason to pay for a second voice.
 
-[`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier, and reviewers actually do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: model routing, the publish seam, live provider detection, and why the decision cores are pure functions.
+[`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier, and reviewers actually do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing (one question about what a break costs, four knobs out - model, effort rung, review gates, deep verify), the publish seam, live provider detection, and why the decision cores are pure functions.
+
+## What a break costs
+
+Cadence used to ask how much you wanted a dispatch to cost. It now asks what happens if the work is wrong, which is a question you can actually answer about your own project, and that answer routes everything else. One key sets it:
+
+```
+/cad-config stakes=shipped
+```
+
+`solo` means nobody else runs this and a break costs you an afternoon. `shipped` means other people run it and a break comes back as a bug report. `critical` means a break is not a bug report.
+
+That one word lands in a grid of 18 cells, one per level and role pair, and the cell is what hands a dispatch its model, the effort rung it starts on, and the rung a failed attempt climbs to. At `solo` the planner runs Sonnet at `high`. At `shipped` it runs Opus. At `critical` it runs Opus at `xhigh` and a retry goes to `max`. The whole thing is `cadence-core/route-table.json` and you can read it in one screen, which was the point of getting rid of the old indirection where a field named after what you wanted to spend quietly decided which model you got.
+
+The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is not a per-dispatch parameter, it is fixed in an agent file's frontmatter, so a rung is a real file on disk and self-verify fails in both directions, on a cell naming a rung with no file and on a rung file no cell reaches.
+
+Escalation is one key, `model.escalate_on_failure`, on by default. A failed attempt gets re-dispatched at the retry rung its own cell names rather than retried at the rung that just failed it. Set it false and the retry holds where it started.
+
+Reviews resolve off the same level. Each trigger gets a gate, `off`, `advisory`, `blocking`, or `adjudicated`, so a plan review is advisory at `solo` and adjudicated at `shipped` and `critical`. The `risk_surface` trigger is blocking at every level including `solo`, on purpose, because the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input, and none of those care how casual your project is.
+
+Which is also the floor. Cadence reads the paths a phase's plan declares, and a match on one of those surfaces raises that phase's level by itself, you do not have to remember to do it. You can waive one surface at a time with `risk.override.<surface>`, and only in the repo's own config, because a single line in a global config should not be able to disable the floor in every project on the machine. A waiver sitting in the global layer is ignored and says so in the warnings.
+
+Deep verification follows the level too, off at `solo` and on at `shipped` and `critical`.
 
 ## Install
 
 Cadence is a Claude Code plugin. Add the marketplace, then install:
 
 ```
-/plugin marketplace add https://github.com/crenshawdev/cadence.git
+/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git
 /plugin install cadence@cadence
 ```
 
@@ -78,7 +97,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 **Review & quality**
 - **`/cad-plan-review`** — adversarial review of a plan before any code is written.
 - **`/cad-decision-review`** — stress-test one load-bearing decision, grounded against live docs and the real repo.
-- **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification. Catches silently-dropped work.
+- **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification, and every acceptance criterion traced to the check that tested it. Catches silently-dropped work.
 - **`/cad-coverage`** — find a phase's requirements that have zero failing-capable test coverage, then close the gaps.
 - **`/cad-docs-verify`** — check factual claims in docs against the live codebase.
 - **`/cad-debug`** — systematic debugging with hypotheses that survive `/clear`.
@@ -91,7 +110,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
-- **`/cad-config`** — workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly.
+- **`/cad-config`** — the `stakes` level, workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly, as in `/cad-config stakes=shipped`.
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
@@ -108,7 +127,7 @@ Read that carefully, because it is a comparison between two piles of my own sess
 
 ## Where it came from
 
-Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence is 23 skills, 7 agents, and about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1.
+Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence carries about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1. Today it is 23 skills and 6 agent roles across 19 rung files.
 
 Every one of those cuts was made by hand and written down. [`DESIGN.md`](./DESIGN.md) numbers the locked decisions and the reversals, [`INTERNALS.md`](./INTERNALS.md) walks the handful that took more than one try to get right, [`LINEAGE.md`](./LINEAGE.md) publishes the counts and tells you how to reproduce them, and [`MANIFESTO.md`](./MANIFESTO.md) is the why. CI fails the build when the prose drifts from the code, because every config key, script flag, and file path named in these docs has to actually exist. There is nothing in here that nobody read.
 

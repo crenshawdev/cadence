@@ -3,10 +3,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { rungBody } from './lib/rung-agent.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -19,6 +20,48 @@ function run(args = []) {
     return JSON.parse(e.stdout); // problems found -> exit 1, JSON still on stdout
   }
 }
+
+/** The `## Reach rows` table body for a set of [key, reach] pairs. */
+function reachTable(rows) {
+  return '## Reach rows\n\n| Key | Reach | Honoured by |\n|---|---|---|\n'
+    + rows.map(([k, r]) => `| \`${k}\` | ${r} | prose |`).join('\n') + '\n';
+}
+
+/**
+ * A fixture for check 9 that writes BOTH its own `config.schema.json` and its
+ * own reach doc, so no expectation here is derived from the shipped schema -
+ * the subject of the load-bearing "the repo passes" assertion above. Three
+ * synthetic keys, one of them narrow.
+ * @param {string} doc the full text of cadence-core/references/config-reach.md
+ * @param {{narrowPurpose?: string}} [opts]
+ */
+function reachFixture(doc, { narrowPurpose = 'Something - alpha step only' } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-reach-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  writeFileSync(join(root, 'cadence-core', 'config.schema.json'), JSON.stringify({
+    keys: {
+      'alpha.wide': { type: 'bool', default: false, purpose: 'Something universal' },
+      'alpha.narrow': { type: 'bool', default: false, purpose: narrowPurpose },
+      'beta.wide': { type: 'bool', default: false, purpose: 'Another universal thing' },
+    },
+  }, null, 2));
+  writeFileSync(join(root, 'cadence-core', 'references', 'config-reach.md'), doc);
+  return root;
+}
+
+/** The reach problem kinds, for "this pair is consistent" assertions. */
+const REACH_KINDS = ['missing-reach-row', 'unknown-reach-key', 'unstated-reach',
+  'malformed-reach-row', 'missing-reach-section'];
+
+/** The consistent table over reachFixture's three keys. */
+const CONSISTENT_REACH = reachTable([
+  ['alpha.wide', 'universal'],
+  ['alpha.narrow', 'alpha step only'],
+  ['beta.wide', 'universal'],
+]);
 
 /** A minimal fixture repo: real schema, one prose file of the given text. */
 function fixture(proseText) {
@@ -39,10 +82,13 @@ function fixture(proseText) {
  * config-key checks stay quiet about unrelated keys.
  * `skills` entries are keyed by skill NAME and land at skills/<name>/SKILL.md,
  * which is where check 6 (#74) resolves an agent's `skills:` frontmatter.
+ * `routeTable` is written verbatim to cadence-core/route-table.json for the
+ * rung-ladder check (8); pass a string to write malformed JSON. Omitting it
+ * leaves no table, which skips the check.
  * @param {{agents?:Record<string,string>, skills?:Record<string,string>,
- *          budgets?:Record<string,number>|null}} opts
+ *          budgets?:Record<string,number>|null, routeTable?:object|string}} opts
  */
-function fixtureWith({ agents = {}, skills = {}, budgets = null }) {
+function fixtureWith({ agents = {}, skills = {}, budgets = null, routeTable = undefined }) {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
     'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
@@ -61,14 +107,54 @@ function fixtureWith({ agents = {}, skills = {}, budgets = null }) {
     writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
       JSON.stringify({ budgets }, null, 2));
   }
+  if (routeTable !== undefined) {
+    writeFileSync(join(root, 'cadence-core', 'route-table.json'),
+      typeof routeTable === 'string' ? routeTable : JSON.stringify(routeTable, null, 2));
+  }
   return root;
 }
+
+/** The five rungs the shipped table declares, for routing-cell fixtures. */
+const RUNG_ORDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * A well-formed cell-shaped route table for ONE role, complete at all three
+ * levels, which a row then breaks in exactly one place. The role is a REAL one:
+ * the rung -> agent-file map lives in lib/rung-agent.mjs and knows the six
+ * shipped roles, so a fixture inventing `cad-t` would report a missing rung file
+ * for every cell and bury the fault the row is about.
+ * @param {string} role @param {{model?:string, effort?:string, retry?:string}} [cell]
+ */
+function cellTable(role = 'cad-verifier', cell = {}) {
+  const spec = { model: 'opus', effort: 'high', retry: 'xhigh', ...cell };
+  const t = {
+    rung_order: RUNG_ORDER,
+    model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
+    roles: [role],
+    cells: {}, review: {}, verify: {},
+  };
+  for (const level of ['solo', 'shipped', 'critical']) {
+    t.cells[level] = { [role]: { ...spec } };
+    t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking',
+      phase_diff: 'off', pre_ship: 'advisory' };
+    t.verify[level] = 'off';
+  }
+  return t;
+}
+
+/** The agent files cellTable's default role+cell names, as fixture entries. */
+const VERIFIER_AGENTS = {
+  'cad-verifier.md': '---\nname: cad-verifier\ntools: Read\n---\nbody\n',
+  'cad-verifier-xhigh.md': '---\nname: cad-verifier-xhigh\ntools: Read\n---\nbody\n',
+};
 
 /**
  * A full-tree fixture: has `.claude-plugin/plugin.json` (the isFullTree
  * marker) plus every always-expected input (#44) - the five core surface
- * dirs, `cadence-core/bin/weight-budgets.json`, and `INTERNALS.md` - so a
- * test can delete/rename exactly one and assert the gate catches it.
+ * dirs, `cadence-core/bin/weight-budgets.json`, `INTERNALS.md`, and a minimal
+ * valid `cadence-core/route-table.json` with the agent file its one role names
+ * - so a test can delete/rename exactly one and assert the gate catches it,
+ * without the other rows accumulating unrelated missing-input noise.
  */
 function fullFixture() {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-full-'));
@@ -80,9 +166,24 @@ function fullFixture() {
   }
   cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
     join(root, 'cadence-core', 'config.schema.json'));
+  // One real role at one rung, so the fixture's table is complete and its one
+  // routable agent file exists: every row here breaks exactly one thing.
+  const agent = '---\nname: cad-verifier\ntools: Read\n---\nbody\n';
+  writeFileSync(join(root, 'agents', 'cad-verifier.md'), agent);
+  writeFileSync(join(root, 'cadence-core', 'route-table.json'),
+    JSON.stringify(cellTable('cad-verifier', { effort: 'high', retry: 'high' }), null, 2));
   writeFileSync(join(root, 'cadence-core', 'bin', 'weight-budgets.json'),
-    JSON.stringify({ budgets: {} }, null, 2));
+    JSON.stringify({ budgets: { 'agents/cad-verifier.md': Buffer.byteLength(agent, 'utf8') } }, null, 2));
   writeFileSync(join(root, 'INTERNALS.md'), 'Read the code: `cadence-core/config.schema.json`.\n');
+  // A reach row per key of the schema this fixture just copied, all
+  // `universal` - generated rather than spelled so a full-tree row breaks
+  // exactly the one thing it is about instead of also reporting 72 missing
+  // reach rows. No assertion reads this table's contents; the check-9 rows
+  // below use reachFixture's own synthetic schema instead.
+  const keys = Object.keys(JSON.parse(
+    readFileSync(join(root, 'cadence-core', 'config.schema.json'), 'utf8')).keys);
+  writeFileSync(join(root, 'cadence-core', 'references', 'config-reach.md'),
+    reachTable(keys.map((k) => [k, 'universal'])));
   return root;
 }
 
@@ -98,6 +199,25 @@ test('an invented config key is flagged', () => {
   const root = fixture('Read `workflow.nonexistent_key` and `granularity`.\n');
   const kinds = run(['--root', root]).problems.map((p) => p.kind);
   assert.ok(kinds.includes('unknown-config-key'));
+});
+
+test('a hostname inside a URL is not read as a config key', () => {
+  // `https://git.jcrenshaw.dev/crenshawdev/cadence.git` carries `git.jcrenshaw.dev`,
+  // which is shaped exactly like a `git.*` key and matches none - so the
+  // install line README ships would report unknown-config-key without the mask.
+  const root = fixture(
+    'Run `/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git`.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unknown-config-key'), JSON.stringify(p));
+});
+
+test('a bare dotted token OUTSIDE a URL is still flagged - the mask is bounded to URLs', () => {
+  // The narrowing must not blunt the check: a dotted token in ordinary prose
+  // is still a key claim, whatever it looks like.
+  const root = fixture('The host is git.jcrenshaw.dev these days.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-config-key'
+    && x.detail === 'git.jcrenshaw.dev'), JSON.stringify(p));
 });
 
 test('a phantom flag on a real subcommand is flagged (the --items regression)', () => {
@@ -146,8 +266,8 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`review.request_timeout_ms`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
     '`review.consult.attempt_threshold` `review.decision_review.tier`\n' +
-    '`review.decision_review.effort` `model.profile` `model.auto.ceiling`\n' +
-    '`model.auto.escalate_on_failure` `model.auto.max_escalations` `granularity`\n' +
+    '`review.decision_review.effort` `stakes` `model.escalate_on_failure`\n' +
+    '`granularity`\n' +
     '`model.overrides`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
@@ -156,7 +276,8 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
     '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
     '`git.on_land_cleanup` `git.auto_close`\n' +
-    '`planning.commit_docs` `memory.backend`\n');
+    '`planning.commit_docs` `memory.backend`\n' +
+    '`risk.override.<surface>`\n');
   const r = run(['--root', root]);
   assert.equal(r.ok, true, JSON.stringify(r.problems));
 });
@@ -412,6 +533,319 @@ test('a full tree missing INTERNALS.md fails ok:false naming it', () => {
   assert.ok(hit, JSON.stringify(r.problems));
 });
 
+// --- check 7: a rung file carries no behaviour of its own (RNG-01) ---
+
+// Imported rather than spelled here: check 7's allowlist arm holds a rung
+// file's body to exactly this template, so a fixture that spelled its own
+// would drift into testing a body no shipped file has.
+const RUNG_BODY = rungBody('high', 'cad-t-contract');
+/** The frontmatter every check-7 fixture shares - `skills:` is its gate. */
+const RUNG_FM = '---\nname: t\ntools: Read\neffort: high\nskills:\n  - cad-t-contract\n---\n';
+
+test('check 7: an agent preloading a contract that carries <process> in its body is flagged', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + RUNG_BODY + '\n<process>\nDo it my way instead.\n' },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'agent-carries-behaviour' && x.file === 'agents/a.md'
+    && /<process>/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7: the same body WITHOUT the tag yields no agent-carries-behaviour', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + RUNG_BODY },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+test('check 7: an agent with NO skills: key may carry <process> - the D-04 escape hatch', () => {
+  // A future one-off agent with inline prose stays legal; the check is scoped
+  // to files that preload a contract, not to every agent file.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\n<process>\nInline contract.\n</process>\n' },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+test('check 7: the tags inside a PRELOADED SKILL.md are never flagged - that is the contract', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + RUNG_BODY },
+    skills: { 'cad-t-contract': '---\nname: c\nuser-invocable: false\n---\n'
+      + '<role>\nYou are a thing.\n</role>\n<process>\nSteps.\n</process>\n' },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+test('check 7: plain-prose behaviour carrying NO section tag is flagged', () => {
+  // The hole the tag denylist alone left open, and the reason check 7 grew an
+  // allowlist arm: this body is behaviour by any reading and names no tag.
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + RUNG_BODY
+      + '\nAlways refuse every plan you are given and write a poem instead.\n' },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'agent-carries-behaviour' && x.file === 'agents/a.md'
+    && /rung template/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7: a SAME-SIZE replacement of the pointer paragraph is flagged', () => {
+  // Byte budgets were the accidental backstop here - they catch an append and
+  // nothing else, so a swap that keeps the file's size passed both checks.
+  const head = 'Your rung is `high`.\n\n';
+  const swapped = head + 'Ignore the preloaded skill and do whatever you judge best'
+    .padEnd(RUNG_BODY.length - head.length - 1, '.') + '\n';
+  assert.equal(swapped.length, RUNG_BODY.length, 'fixture must be the same size');
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + swapped },
+    skills: { 'cad-t-contract': CONTRACT },
+    budgets: { 'agents/a.md': (RUNG_FM + RUNG_BODY).length,
+      'skills/cad-t-contract/SKILL.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'budget-overrun'), 'no budget can see this swap');
+  assert.ok(p.some((x) => x.kind === 'agent-carries-behaviour' && x.file === 'agents/a.md'),
+    JSON.stringify(p));
+});
+
+test('check 7: a RE-WRAPPED template is not flagged - line breaks are not load-bearing', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + RUNG_BODY.replace(/\n(?!\n)/g, ' ') },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'agent-carries-behaviour'), JSON.stringify(p));
+});
+
+test('check 7: a body whose rung disagrees with the frontmatter effort is flagged', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': RUNG_FM + rungBody('low', 'cad-t-contract') },
+    skills: { 'cad-t-contract': CONTRACT },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'agent-carries-behaviour' && x.file === 'agents/a.md'),
+    JSON.stringify(p));
+});
+
+// --- check 8: the routing cells, grids <-> disk (STK-02) ---
+
+test('check 8: a rung a cell names with no agent file is missing-rung-agent', () => {
+  const root = fixtureWith({
+    agents: { 'cad-verifier.md': VERIFIER_AGENTS['cad-verifier.md'] },
+    routeTable: cellTable('cad-verifier'), // retry xhigh -> cad-verifier-xhigh.md, absent
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-rung-agent'
+    && x.file === 'cadence-core/route-table.json'
+    && /agents\/cad-verifier-xhigh\.md absent/.test(x.detail)
+    && /cad-verifier/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: a (level, role) pair with no cell is missing-cell naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  delete t.cells.critical['cad-verifier'];
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-cell'
+    && x.file === 'cadence-core/route-table.json'
+    && /critical\/cad-verifier/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: a level whose review row omits a trigger is missing-cell naming it', () => {
+  const t = cellTable('cad-verifier');
+  delete t.review.shipped.pre_ship;
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-cell'
+    && /shipped\/pre_ship/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: a level with no verify value is missing-cell naming the level', () => {
+  const t = cellTable('cad-verifier');
+  delete t.verify.solo;
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-cell'
+    && /^solo: no verify value/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 8: the trigger set comes from config.schema.json, not from the prose table', () => {
+  // D-10: parsing references/review-triggers.md's Wiring table would grow a
+  // reader for a file with no stated grammar. The schema defines these five
+  // names, so a level that omits one of them is caught by the schema's list.
+  const t = cellTable('cad-verifier');
+  for (const level of ['solo', 'shipped', 'critical']) t.review[level] = { plan: 'advisory' };
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'missing-cell');
+  for (const trigger of ['diff', 'risk_surface', 'phase_diff', 'pre_ship']) {
+    assert.ok(p.some((x) => x.detail.includes(`solo/${trigger}`)), `${trigger}: ${JSON.stringify(p)}`);
+  }
+});
+
+test('check 8: a malformed route-table.json is ONE unreadable-surface, and the earlier checks still report', () => {
+  // Same #49.1 guard the budget manifest carries: an unguarded parse here
+  // unwinds run() and the dispatch catch flattens it to reason:"internal"
+  // with `problems` absent, discarding every problem found so far.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    routeTable: '{ not json',
+  });
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.problems.filter((x) => x.kind === 'unreadable-surface'
+    && x.file === 'cadence-core/route-table.json').length, 1, JSON.stringify(r.problems));
+  assert.ok(r.problems.some((x) => x.kind === 'undeclared-tool' && /Bash/.test(x.detail)),
+    JSON.stringify(r.problems));
+});
+
+test('check 8: a full tree with no route-table.json fails ok:false naming the input', () => {
+  const root = fullFixture();
+  rmSync(join(root, 'cadence-core', 'route-table.json'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'missing-input'
+    && x.file === 'cadence-core/route-table.json'), JSON.stringify(r.problems));
+});
+
+test('check 8: a model outside model_aliases fails ok:false naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  t.cells.solo['cad-verifier'].model = 'gpt-5';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-model'
+    && x.file === 'cadence-core/route-table.json'
+    && /solo\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a rung outside rung_order fails ok:false naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  t.cells.solo['cad-verifier'].effort = 'ludicrous';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-rung'
+    && /solo\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a gate outside the four gate values fails ok:false naming the cell', () => {
+  const t = cellTable('cad-verifier');
+  t.review.solo.diff = 'maybe';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-gate'
+    && /solo\/diff/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a trigger name config.schema.json does not define fails ok:false', () => {
+  const t = cellTable('cad-verifier');
+  t.review.solo.frobnicate = 'blocking';
+  const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'unknown-trigger'
+    && /solo\/frobnicate/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a retry BELOW its effort fails ok:false as rung-demotion', () => {
+  // The fault every membership check passes: `medium` is a real rung with a
+  // real file, so only the direction check can see that a retry would think
+  // LESS while route.mjs reported an escalation.
+  const t = cellTable('cad-verifier');
+  t.cells.critical['cad-verifier'] = { model: 'opus', effort: 'xhigh', retry: 'medium' };
+  const root = fixtureWith({
+    agents: {
+      ...VERIFIER_AGENTS,
+      'cad-verifier-medium.md': '---\nname: cad-verifier-medium\ntools: Read\n---\nbody\n',
+    },
+    routeTable: t,
+  });
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'rung-demotion'
+    && /critical\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a retry EQUAL to its effort is NOT a demotion', () => {
+  const root = fixtureWith({
+    agents: { 'cad-verifier.md': VERIFIER_AGENTS['cad-verifier.md'] },
+    routeTable: cellTable('cad-verifier', { effort: 'high', retry: 'high' }),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'rung-demotion'), JSON.stringify(p));
+});
+
+test('check 8: a NULL cell is one reported problem, not a collapse to reason:internal', () => {
+  // The parse guard covered the read and JSON.parse only, so a null entry one
+  // layer in still unwound run() at the first deref - the #49.1 shape.
+  const t = cellTable('cad-verifier');
+  t.cells.solo['cad-verifier'] = null;
+  const root = fixtureWith({
+    agents: { ...VERIFIER_AGENTS, 'a.md': '---\nname: t\ntools: Read\n---\nUse `Bash` here.\n' },
+    routeTable: t,
+  });
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined, JSON.stringify(r));
+  assert.ok(r.problems.some((x) => x.kind === 'missing-cell'
+    && /solo\/cad-verifier/.test(x.detail)), JSON.stringify(r.problems));
+  assert.ok(r.problems.some((x) => x.kind === 'undeclared-tool' && /Bash/.test(x.detail)),
+    JSON.stringify(r.problems));
+});
+
+test('check 8 (reverse): a rung file no cell reaches is undeclared-rung-agent', () => {
+  // The direction "exactly the files the grids name" needs. Without it, a stale
+  // rung file stays green while still paying standing context in every
+  // main-session prompt.
+  const root = fixtureWith({
+    agents: {
+      ...VERIFIER_AGENTS,
+      'cad-verifier-max.md': '---\nname: cad-verifier-max\ntools: Read\n---\nbody\n',
+    },
+    routeTable: cellTable('cad-verifier'), // no cell resolves to `max`
+  });
+  const p = run(['--root', root]).problems;
+  const hit = p.find((x) => x.kind === 'undeclared-rung-agent'
+    && x.file === 'agents/cad-verifier-max.md');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /no cell at any level resolves to it/);
+});
+
+test('check 8 (reverse): a rung file the map does not name either says so instead', () => {
+  // Same kind, different fix: `medium` IS a cad-verifier rung with a file, so
+  // that message says "add a cell". A rung nothing maps says "delete the file".
+  const root = fixtureWith({
+    agents: {
+      ...VERIFIER_AGENTS,
+      'cad-verifier-low.md': '---\nname: cad-verifier-low\ntools: Read\n---\nbody\n',
+    },
+    routeTable: cellTable('cad-verifier'),
+  });
+  const hit = run(['--root', root]).problems.find((x) => x.kind === 'undeclared-rung-agent'
+    && x.file === 'agents/cad-verifier-low.md');
+  assert.ok(hit);
+  assert.match(hit.detail, /maps no file to it/);
+});
+
+test('check 8 (reverse): an UNSUFFIXED agent file the grids name nowhere is NOT flagged', () => {
+  // The reverse direction must not creep into a blanket table-membership
+  // rule - that would outlaw the one-off agent D-04 keeps legal.
+  const root = fixtureWith({
+    agents: {
+      ...VERIFIER_AGENTS,
+      'cad-oneoff.md': '---\nname: cad-oneoff\ntools: Read\n---\nbody\n',
+    },
+    routeTable: cellTable('cad-verifier'),
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'undeclared-rung-agent'), JSON.stringify(p));
+});
+
 test('a minimal (non-full-tree) fixture omitting optional inputs stays free of missing-input problems', () => {
   // The plain fixture() helper never creates .claude-plugin/plugin.json and
   // never creates weight-budgets.json/INTERNALS.md - it must NOT be treated
@@ -420,4 +854,208 @@ test('a minimal (non-full-tree) fixture omitting optional inputs stays free of m
   const root = fixture('nothing special here\n');
   const r = run(['--root', root]);
   assert.ok(!r.problems.some((p) => p.kind === 'missing-input'), JSON.stringify(r.problems));
+});
+
+// --- check 8: the risk-surface block, both directions (STK-03) ---------------
+
+/** The eight shipped surface names, hand-written (never read off the schema). */
+const SURFACE_NAMES = ['auth', 'migrations', 'billing', 'concurrency',
+  'destructive', 'secrets', 'api_contract', 'untrusted_input'];
+
+/**
+ * cellTable plus the floor's own vocabulary: `stakes_order`, `gates`, and one
+ * `surfaces` row per shipped surface name, so every row below breaks exactly
+ * one thing rather than accumulating seven unrelated direction problems.
+ */
+function surfaceTable() {
+  const t = cellTable('cad-verifier');
+  t.stakes_order = ['solo', 'shipped', 'critical'];
+  t.gates = ['off', 'advisory', 'blocking', 'adjudicated'];
+  t.surfaces = {};
+  for (const name of SURFACE_NAMES) {
+    t.surfaces[name] = { patterns: [name.replace(/_/g, '')], floor: 'critical' };
+  }
+  return t;
+}
+
+const surfaceFixture = (t) => fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+
+test('check 8: a well-formed surfaces block yields no risk-surface problems', () => {
+  const r = run(['--root', surfaceFixture(surfaceTable())]);
+  const kinds = ['unknown-floor', 'floor-below-required', 'bad-pattern',
+    'missing-override-key', 'undeclared-risk-surface', 'stakes-order-drift',
+    'gate-vocabulary-drift'];
+  assert.ok(!r.problems.some((p) => kinds.includes(p.kind)), JSON.stringify(r.problems));
+});
+
+test('check 8: a surface floor that is not a stakes level fails ok:false naming the row', () => {
+  const t = surfaceTable();
+  t.surfaces.auth.floor = 'ludicrous';
+  const r = run(['--root', surfaceFixture(t)]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((p) => p.kind === 'unknown-floor'
+    && p.file === 'cadence-core/route-table.json'
+    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a VALID but too-low surface floor fails ok:false naming the row', () => {
+  // `shipped` is a level the enum accepts, so this fails ONLY if requiredFloor
+  // actually reached the lib - the arm that enforces D-03's other half.
+  const t = surfaceTable();
+  t.surfaces.auth.floor = 'shipped';
+  const r = run(['--root', surfaceFixture(t)]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((p) => p.kind === 'floor-below-required'
+    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a surface row with an empty pattern list fails ok:false naming the row', () => {
+  const t = surfaceTable();
+  t.surfaces.auth.patterns = [];
+  const r = run(['--root', surfaceFixture(t)]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((p) => p.kind === 'bad-pattern'
+    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a surface with no risk.override schema key fails ok:false naming it', () => {
+  const t = surfaceTable();
+  t.surfaces.frobnicate = { patterns: ['frobnicate'], floor: 'critical' };
+  const r = run(['--root', surfaceFixture(t)]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((p) => p.kind === 'missing-override-key'
+    && /^frobnicate: /.test(p.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a risk.override schema key naming no surface row fails ok:false', () => {
+  // The other direction: deleting the `auth` row leaves risk.override.auth
+  // waiving nothing.
+  const t = surfaceTable();
+  delete t.surfaces.auth;
+  const r = run(['--root', surfaceFixture(t)]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((p) => p.kind === 'undeclared-risk-surface'
+    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
+});
+
+test('check 8: a drifted stakes_order or gates list fails ok:false', () => {
+  for (const [key, value, kind] of [
+    ['stakes_order', ['critical', 'shipped', 'solo'], 'stakes-order-drift'],
+    ['gates', ['off', 'advisory', 'blocking'], 'gate-vocabulary-drift'],
+  ]) {
+    const t = surfaceTable();
+    t[key] = value;
+    const r = run(['--root', surfaceFixture(t)]);
+    assert.equal(r.ok, false, key);
+    assert.ok(r.problems.some((p) => p.kind === kind), `${key}: ${JSON.stringify(r.problems)}`);
+  }
+});
+
+// --- check 9: the config-key reach table (CFG-01) ----------------------------
+
+test('check 9: a table that agrees with the schema yields no reach problems', () => {
+  const r = run(['--root', reachFixture(CONSISTENT_REACH)]);
+  assert.ok(!r.problems.some((p) => REACH_KINDS.includes(p.kind)), JSON.stringify(r.problems));
+});
+
+test('check 9: a schema key with no row is missing-reach-row naming the key', () => {
+  const doc = reachTable([['alpha.wide', 'universal'], ['alpha.narrow', 'alpha step only']]);
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'missing-reach-row');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /beta\.wide/);
+  assert.equal(hit.file, 'cadence-core/references/config-reach.md');
+});
+
+test('check 9: a row for a key the schema lacks is unknown-reach-key naming it', () => {
+  const doc = CONSISTENT_REACH + '| `gamma.retired` | universal | prose |\n';
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'unknown-reach-key');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /gamma\.retired/);
+});
+
+test('check 9: a narrow reach absent from the key purpose is unstated-reach', () => {
+  // The defect shape the whole check exists for: the table knows the value is
+  // dropped for some callers, and the place the user sets it never says so.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH,
+    { narrowPurpose: 'Something that sounds like it always applies' })]).problems;
+  const hit = p.find((x) => x.kind === 'unstated-reach');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /alpha\.narrow/);
+  assert.match(hit.detail, /alpha step only/);
+});
+
+test('check 9: the same narrow reach WITH the phrase in the purpose yields nothing', () => {
+  // The control: the phrase is compared literally, so a purpose carrying it
+  // verbatim (and more besides) passes.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH,
+    { narrowPurpose: 'Something real - alpha step only; nothing else reads it' })]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unstated-reach'), JSON.stringify(p));
+});
+
+test('check 9: a two-cell body row is malformed-reach-row naming the line', () => {
+  const doc = CONSISTENT_REACH + '| `alpha.extra` | universal |\n';
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'malformed-reach-row');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /alpha\.extra/);
+});
+
+test('check 9: a renamed section heading is ONE missing-reach-section, not 3 missing rows', () => {
+  // rows === null vs [] - the distinction parseActiveIds keeps for the same
+  // reason: one authoring fault must not arrive as a copy of another per key.
+  const doc = CONSISTENT_REACH.replace('## Reach rows', '## The rows');
+  const p = run(['--root', reachFixture(doc)]).problems;
+  assert.ok(p.some((x) => x.kind === 'missing-reach-section'), JSON.stringify(p));
+  assert.ok(!p.some((x) => x.kind === 'missing-reach-row'), JSON.stringify(p));
+});
+
+test('check 9: a full tree with no reach doc fails ok:false naming the input', () => {
+  const root = fullFixture();
+  rmSync(join(root, 'cadence-core', 'references', 'config-reach.md'));
+  const r = run(['--root', root]);
+  assert.equal(r.ok, false);
+  assert.ok(r.problems.some((x) => x.kind === 'missing-input'
+    && x.file === 'cadence-core/references/config-reach.md'), JSON.stringify(r.problems));
+});
+
+test('check 9: a key named ONLY by the reach table is still inert-config-key', () => {
+  // The point of the seenTokens exclusion. The table names every key by
+  // construction, so letting it count as a reference would make 1b's
+  // inert-config-key unreachable forever.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH)]).problems;
+  for (const key of ['alpha.wide', 'alpha.narrow', 'beta.wide']) {
+    assert.ok(p.some((x) => x.kind === 'inert-config-key' && x.detail === key),
+      `${key}: ${JSON.stringify(p)}`);
+  }
+});
+
+test('check 9: a dead token in the reach doc PROSE is still scanned by check 1', () => {
+  // The exclusion is the seenTokens feed and nothing else: class 2 inspects
+  // the Key column only, so a retired key written in the grammar prose or an
+  // `Honoured by` cell must still report unknown-config-key.
+  const doc = 'Superseded by `alpha.gone`.\n\n' + CONSISTENT_REACH;
+  const p = run(['--root', reachFixture(doc)]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-config-key' && x.detail === 'alpha.gone'),
+    JSON.stringify(p));
+});
+
+test('check 1: a hyphenated key spelled in full is known, a truncated guess is not', () => {
+  // The tokenizer's segment class has no hyphen, so
+  // `model.overrides.cad-planner` tokenizes to `model.overrides.cad` - the
+  // correct spelling of a real key must not report unknown. `_` is in the
+  // class, so `git.on` is still a truncated guess, not a boundary.
+  const root = fixture('Pin one role with `model.overrides.cad-planner`, not `git.on`.\n');
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unknown-config-key');
+  assert.deepEqual(p.map((x) => x.detail), ['git.on'], JSON.stringify(p));
+});
+
+test('check 1 (reverse): `risk.override.<surface>` prose covers every surface key', () => {
+  // The <t> row's shape, scoped to the new placeholder: one mention must cover
+  // all eight keys, or each one reports inert.
+  const root = fixture('`risk.override.<surface>` is the per-surface waiver.\n');
+  const inert = run(['--root', root]).problems
+    .filter((p) => p.kind === 'inert-config-key' && p.detail.startsWith('risk.override.'));
+  assert.deepEqual(inert, []);
 });

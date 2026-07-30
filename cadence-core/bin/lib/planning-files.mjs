@@ -657,13 +657,266 @@ export function parseContextDecisions(text) {
 }
 
 // ---------------------------------------------------------------------------
+// CONTEXT.md - the `## Acceptance criteria` grammar. Stated in full at
+// cadence-core/references/acceptance-criteria.md; this section is that
+// grammar's single implementation, and `planning.mjs criteria-coverage` is its
+// only consumer.
+// ---------------------------------------------------------------------------
+
+// The canonical criterion head: a column-0 dash, a checkbox, the bare `AC<N>`
+// token, a colon, then the text. The id is deliberately NOT hyphenated: `AC-01`
+// is admitted by `REQ_ID_EXACT` above, so a criterion id pasted into a plan's
+// `requirements:` frontmatter would read as a requirement id and mint a phantom
+// `orphans.plan_ids` entry in `audit` (D-01). `AC1` is structurally disjoint.
+const CRITERION_HEAD = /^- \[( |x|X)\] (AC\d+):[ \t]*(.*)$/;
+
+// A column-0 checkbox bullet, whatever it carries. The `criterion-unidded`
+// gate for a bullet that names no id at all - the legacy shape this grammar
+// exists to catch.
+const CRITERION_BOX = /^- \[[ xX]\]\s/;
+
+// A checkbox bullet whose HEAD POSITION holds something id-shaped that
+// `CRITERION_HEAD` refused: a second space, emphasis around the token, a
+// lowercase `ac`, a missing colon. Anchored after the checkbox on purpose - an
+// id named later in the text (`- [ ] the AC3 pin holds`) is an UNIDDED bullet
+// whose prose mentions one, and telling its author to fix a malformed id would
+// send them looking for a fault that is not there.
+const CRITERION_HEAD_NEAR = /^- \[[ xX]\]\s*\**\s*AC\d+\b/i;
+
+// An `AC<N>` token anywhere on a line. Used ONLY to decide whether an
+// out-of-grammar line is worth reporting - a line naming no id declares
+// nothing and is ordinary section prose. Unanchored on purpose, the same
+// division of labour `REQ_ID_TOKEN` / `isRequirementId` carries above.
+const CRITERION_TOKEN = /\bAC\d+\b/;
+
+// An INDENTED bullet whose content starts with an `AC<N>` token (a checkbox
+// tolerated between). The one exception to the continuation rule below: a
+// criterion bullet that got indented is a criterion the grammar cannot see, so
+// it must report rather than be swallowed as continuation prose.
+const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
+
+/**
+ * A stateful line filter: `true` while the line is a fence marker or sits
+ * inside a fenced code block, `false` when it is content. One scanner per walk,
+ * fed every line in order.
+ *
+ * Fence rules follow CommonMark closely enough for the job: up to three spaces
+ * of indent, a run of three or more backticks or tildes, and a closer that
+ * matches the opener's character, is at least as long, and carries no info
+ * string. Shared by `sectionBound` and the acceptance-criteria walk, which had
+ * the same bug in two places - a documentation example inside a fence read as
+ * live content.
+ */
+function fenceScanner() {
+  /** @type {{char: string, len: number}|null} */
+  let fence = null;
+  return (/** @type {string} */ line) => {
+    const f = line.match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
+    if (!f) return fence !== null;
+    const char = f[1][0], len = f[1].length;
+    if (fence === null) fence = { char, len };
+    else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
+    return true;
+  };
+}
+
+/**
+ * Classify the `## Acceptance criteria` section of a CONTEXT.md: the criteria
+ * it declares as `{id, text}`, plus the lines that LOOK like they declare one
+ * and fall outside the canonical head. Pure and total: no I/O, no throw.
+ *
+ * Rules, in order:
+ *
+ *   1. Normalize through the shared `normalize` (BOM, CRLF and lone CR) rather
+ *      than `normalizeCrlf`. This is a PURE READER: CONTEXT.md has no writer
+ *      anywhere in this codebase (D-03) - no seam creates or edits one, only
+ *      `parseContextDecisions` reads it - so the roadmap's write-path carve-out
+ *      (a lone-CR file must stay unparseable because `setPhaseBox` and friends
+ *      split raw bytes) does not apply. Nothing here writes text back.
+ *   2. No `^## Acceptance criteria$` line -> `{criteria: null, issues: []}`.
+ *      An absent heading is the datum "nothing declared", NOT an
+ *      out-of-grammar report - the same absent-heading rule
+ *      `classifyActiveSection` uses. CONTEXT.md is itself optional.
+ *      The ONE exception: a line that was meant to be that heading and missed
+ *      (`## Acceptance Criteria`, `## Acceptance criteria:`, `### Acceptance
+ *      criteria`) reports `criteria-heading-near-miss` and still returns
+ *      `criteria: null`. Unlike an absent heading, a typo'd one silently drops
+ *      declared criteria out of the coverage domain - the section-level twin
+ *      of the in-section near-misses below, and reported for the same reason.
+ *   3. Otherwise walk from that heading to the next `^## ` or end of text.
+ *      A line matching `CRITERION_HEAD` opens a criterion, ids de-duplicated
+ *      first-occurrence-wins.
+ *   4. An INDENTED, non-blank line while a criterion is open is a
+ *      CONTINUATION: appended to that criterion's text joined with one space
+ *      and never classified on its own, which is what keeps a wrapped
+ *      criterion that happens to name another id silent (the same silence
+ *      `classifyActiveSection`'s continuation row pins). The one exception is
+ *      `CRITERION_SUB`, reported as `criterion-indented-bullet`. A blank line
+ *      or any non-indented line closes the open criterion.
+ *   5. Every other line: at most ONE issue, in line order, each
+ *      `{line, code, text}` through `issueText`'s trim-and-truncate.
+ *        - a column-0 `- [ ]` bullet with no `AC<N>` head -> `criterion-unidded`
+ *          (the legacy shape and the central diagnostic)
+ *        - the same bullet when the HEAD POSITION does hold an id the canonical
+ *          head refused - `- [ ]  AC1: x`, `- [ ] **AC1**: x`, `- [ ] ac1: x`,
+ *          `- [ ] AC1 no colon` -> `criterion-malformed-id`. An id named later
+ *          in the text is not this: that bullet is unidded and its prose
+ *          happens to mention an id
+ *        - a second bullet reusing an id -> `criterion-duplicate-id`, reported
+ *          and NOT pushed
+ *        - an id with no text after the colon -> `criterion-empty-text`, and
+ *          the criterion IS still pushed with `text: ''` (parse-then-diagnose,
+ *          the `trailing-value-content` precedent: the id is real and must
+ *          still reach a UAT item)
+ *        - `- AC1: ...` with no checkbox -> `criterion-unboxed-bullet`
+ *        - a column-0 `*`/`+` marker -> `criterion-nondash-bullet`
+ *        - an indented bullet outside a continuation -> `criterion-indented-bullet`
+ *        - `^\s*\d+[.)]\s`  -> `criterion-ordered-item`
+ *        - `^#{1,6}\s`      -> `criterion-heading`
+ *        - anything else naming an `AC<N>` token -> `criterion-prose-line`
+ *   6. The entry-shaped codes fire REGARDLESS of how many criteria parsed -
+ *      deliberately unlike `classifyPhaseList`'s near-miss suppression, and
+ *      unlike `active-prose-line`'s conditional arm. One idded bullet beside
+ *      six bare ones is exactly the mixed-authoring migration case this exists
+ *      to catch, and suppressing the codes once anything parsed would hide it.
+ *
+ * Trailing prose after the criterion text, `(human-verify: needs <tool>)`
+ * included, is IN grammar and stays in `text` verbatim (D-11): the classifier
+ * admits and ignores it, and `workflows/verify.md` keeps its current prose read
+ * of that suffix.
+ * @param {string} text
+ * @returns {{criteria: Array<{id: string, text: string}>|null, issues: Issue[]}}
+ */
+export function classifyAcceptanceCriteria(text) {
+  const lines = normalize(text).split('\n');
+  let heading = -1;
+  const headingFenced = fenceScanner();
+  for (let i = 0; i < lines.length; i++) {
+    if (headingFenced(lines[i])) continue;
+    if (/^## Acceptance criteria\s*$/.test(lines[i])) { heading = i; break; }
+  }
+  if (heading === -1) {
+    // No exact heading. Before returning "nothing declared", look for a line
+    // that was MEANT to be it: a capital C, a trailing colon, a `###`. Without
+    // this arm the whole section leaves the coverage domain in silence - every
+    // criterion under a typo'd heading is undeclared, every item pointing at
+    // one lands in the additive `unknown_criterion`, and the gate stays green.
+    // Reported once, on the first near-miss: the section is singular.
+    const nearFenced = fenceScanner();
+    for (let i = 0; i < lines.length; i++) {
+      if (nearFenced(lines[i])) continue;
+      if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
+        return { criteria: null,
+          issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
+      }
+    }
+    return { criteria: null, issues: [] };
+  }
+
+  /** @type {Array<{id: string, text: string}>} */
+  const criteria = [];
+  /** @type {Issue[]} */
+  const issues = [];
+  const seen = new Set();
+  /** @type {{id: string, text: string}|null} The criterion continuations extend. */
+  let open = null;
+  // A head-shaped bullet whose criterion was NOT pushed (a duplicate id) still
+  // absorbs its continuation lines, so a wrapped duplicate reports once for the
+  // bullet rather than once more for every line under it.
+  let absorbing = false;
+  // Fresh scanner from the heading: the heading itself was matched outside a
+  // fence, so nothing is open here. A fenced block inside the section is
+  // skipped whole - it neither declares a criterion nor bounds the section nor
+  // closes an open one. Without this the `- [ ] AC1: ...` line in the grammar's
+  // own documentation example parses as a live criterion, minting a phantom id
+  // no UAT item can cover: a false FAIL out of a code block.
+  const fenced = fenceScanner();
+  for (let i = heading + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (fenced(line)) continue;
+    if (/^## /.test(line)) break;
+    const head = line.match(CRITERION_HEAD);
+    if (head) {
+      const id = head[2];
+      const body = head[3].trim();
+      if (seen.has(id)) {
+        issues.push({ line: i + 1, code: 'criterion-duplicate-id', text: issueText(line) });
+        open = null;
+        absorbing = true;
+        continue;
+      }
+      seen.add(id);
+      if (!body) {
+        issues.push({ line: i + 1, code: 'criterion-empty-text', text: issueText(line) });
+      }
+      open = { id, text: body };
+      criteria.push(open);
+      absorbing = false;
+      continue;
+    }
+    if ((open || absorbing) && /^\s/.test(line) && line.trim()) {
+      if (CRITERION_SUB.test(line)) {
+        issues.push({ line: i + 1, code: 'criterion-indented-bullet', text: issueText(line) });
+        continue;
+      }
+      if (open) open.text = open.text ? `${open.text} ${line.trim()}` : line.trim();
+      continue;
+    }
+    open = null;
+    absorbing = false;
+    // A checkbox bullet that is not a criterion. Which fault it is depends on
+    // whether the head position holds an id at all: reporting `- [ ] **AC1**: x`
+    // as `criterion-unidded` names a fix - "add the phase-local id" - that is a
+    // no-op on a line whose id is right there.
+    if (CRITERION_BOX.test(line)) {
+      issues.push({ line: i + 1, text: issueText(line),
+        code: CRITERION_HEAD_NEAR.test(line) ? 'criterion-malformed-id' : 'criterion-unidded' });
+      continue;
+    }
+    if (!CRITERION_TOKEN.test(line)) continue;
+    let code = 'criterion-prose-line'; // the catch-all: outside the grammar, never silent
+    if (/^\s*[-*+]\s/.test(line)) {
+      if (/^\s/.test(line)) code = 'criterion-indented-bullet';
+      else if (/^[*+]\s/.test(line)) code = 'criterion-nondash-bullet';
+      else code = 'criterion-unboxed-bullet';
+    } else if (/^\s*\d+[.)]\s/.test(line)) code = 'criterion-ordered-item';
+    else if (/^#{1,6}\s/.test(line)) code = 'criterion-heading';
+    issues.push({ line: i + 1, code, text: issueText(line) });
+  }
+  return { criteria, issues };
+}
+
+// ---------------------------------------------------------------------------
 // UAT.md - the persistent checklist (templates/UAT.md).
 // ---------------------------------------------------------------------------
 
 // Item field order in the rendered file - pinned so rewrites are stable.
-const UAT_FIELDS = ['expected', 'status', 'first_pass', 'source', 'evidence',
-  'reported', 'severity', 'cause', 'fix', 'reason'];
-const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
+//
+// Registration is what makes a field SURVIVE: `parseUat` accepts any
+// `^(\w+):\s*(.+?)\s*$` line, but `renderUat` filters against this whitelist
+// and every `uat record` rewrites the whole file, so an unregistered field
+// survives `init` and is destroyed by the first `record` (D-05). `criterion`
+// and `origin` sit directly after `expected` because that is where a hand-added
+// line has to be for the first rewrite not to move it.
+const UAT_FIELDS = ['expected', 'criterion', 'origin', 'status', 'first_pass',
+  'source', 'evidence', 'reported', 'severity', 'cause', 'fix', 'reason'];
+
+// The one place the `origin` enum lives. `criterion` is the criterion-derived
+// marker by its own presence, so `origin: criterion` is only ever a repair for
+// an item whose link is known-lost; `verifier` and `smoke` are the values that
+// declare an item legitimately built from no criterion, and they are the only
+// two `criteria-coverage` exempts from `untraced`.
+export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
+
+// The POSITIVE marker that a checklist was written by a seam that knows
+// `criterion` and `origin`. `criteria-coverage`'s legacy exemption reads it and
+// nothing else: inferring "pre-field" from the ABSENCE of both item fields is
+// what let a post-field checklist whose links were dropped absolve itself, and
+// `.planning/phases/3/UAT.md` (7 `criterion`, 0 `origin`) is the file that
+// falsified the old two-field conjunction. Absence of this marker is the only
+// thing that can mean legacy now, and no writer here can produce that absence.
+export const UAT_FIELDS_VERSION = '1';
+const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started', 'updated'];
 
 /**
  * Index of the first `## ` line in `lines` that sits OUTSIDE a fenced code
@@ -683,17 +936,10 @@ const UAT_FM_FIELDS = ['status', 'phase', 'sources', 'started', 'updated'];
  * @returns {number}
  */
 function sectionBound(lines) {
-  /** @type {{char: string, len: number}|null} */
-  let fence = null;
+  const fenced = fenceScanner();
   for (let i = 0; i < lines.length; i++) {
-    const f = lines[i].match(/^ {0,3}(`{3,}|~{3,})\s*(.*)$/);
-    if (f) {
-      const char = f[1][0], len = f[1].length;
-      if (fence === null) fence = { char, len };
-      else if (char === fence.char && len >= fence.len && !f[2].trim()) fence = null;
-      continue;
-    }
-    if (fence === null && /^## /.test(lines[i])) return i;
+    if (fenced(lines[i])) continue;
+    if (/^## /.test(lines[i])) return i;
   }
   return -1;
 }

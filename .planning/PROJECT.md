@@ -5,14 +5,16 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v1.4.0` is the current release: four formats Cadence owns are now
-read by stated grammars with written-down references and per-row tests, so an
-input outside a grammar is reported rather than silently over- or under-read.
-Earlier cycles shipped file-based memory and BM25 recall (`v1.1.0`), the
-cross-model review repairs and durable-decision recall (`v1.2.0`), the
-sweep-highs patch (`v1.2.1`), the liteSpeed flow-and-latency pass (`v1.3.0`),
-and the tech-debt cycle that closed all 13 post-`v1.2.0` sweep bugs (`v1.3.1`),
-on the `v1.0.0` planning baseline.
+subsystem. `v1.5.0` is the current release: four corrections to things Cadence
+said about itself, and one structural change - each agent's contract is now
+stored once, as a skill preloaded through `skills:` - so there are fewer places
+left to say them. Earlier cycles shipped file-based memory and BM25 recall
+(`v1.1.0`), the cross-model review repairs and durable-decision recall
+(`v1.2.0`), the sweep-highs patch (`v1.2.1`), the liteSpeed flow-and-latency
+pass (`v1.3.0`), the tech-debt cycle that closed all 13 post-`v1.2.0` sweep
+bugs (`v1.3.1`), the four stated grammars (`v1.4.0`) and the two
+internally-inconsistent contracts closed by subtraction (`v1.4.1`), on the
+`v1.0.0` planning baseline.
 
 ## Core Value
 
@@ -53,29 +55,58 @@ context-gathering, and debugging — without any external memory system.
 - ✓ One quote-state tokenizer drives both git-guard rails, closing the six verified rail-3 push holes plus the `eval` wrapper family (TOK-01) — v1.4.0
 - ✓ The roadmap phase list has a stated grammar, so an empty `## Phases` is a derived closed-milestone state and `/cad-progress` works between milestones (RDM-01) — v1.4.0
 - ✓ `/cad-audit` counts an `## Active` requirement no phase picked up, so the traceability gate holds in the partially-planned state (AUD-01) — v1.4.0
+- ✓ Two contracts that contradicted themselves closed by subtraction: the executor's terminal success-criteria check (#65) and `conventions.md`'s claim to reach every skill (#67) — v1.4.1
+- ✓ The worktree fork point stated as `worktree.baseRef`-selectable across six surfaces, with `/cad-execute` refusing the parallel path under `fresh` (#68) — v1.5.0
+- ✓ Per-trigger `effort` scoped to the backend that can honour it, rather than resolved and silently dropped on the `claude-subagent` arm (#64) — v1.5.0
+- ✓ Each agent's contract stored once as a preloaded contract skill, with self-verify asserting every one resolves and is model-invocable (#74) — v1.5.0
 
 ### Active
 
-No milestone is open. **v1.4.0 — Stated grammars** closed 2026-07-28 with all
-five requirements shipped and verified; the roadmap is pruned and the cursor
-reads `no active cycle`. The next cycle opens at `/cad-phase add`.
+**v2.0.0 — Stakes, not spend**, opened 2026-07-28. Seven requirements across
+six phases, tracked as GitHub milestone `v2.0.0`.
 
-Candidates for it, none chosen yet:
+- **RNG-01** — per-rung agent files materialize effort off the preloaded
+  contract skills, retiring `escalate_effort_variant` and the
+  `cad-plan-checker-high` runtime-read shim
+- **STK-01** — `model.profile`'s enum becomes the stakes question, no
+  back-compat alias. This is the break that makes the release major
+- **STK-02** — a routing cell resolves `{model, effort, review, verify}`
+  rather than a bare model, computed from one small table
+- **STK-03** — the risk surface Cadence already detects raises a phase's rung
+  by itself; detection is a floor, lowering it needs a named override
+- **ACR-01** — CONTEXT acceptance criteria get stable ids and `/cad-audit`
+  proves coverage in both directions
+- **CFG-01** — the remaining resolved-then-dropped config keys, closed the way
+  per-trigger effort was
+- **HST-01** — the plugin's documented home moves to the self-hosted Forgejo
+  remote, and GitHub stops being the published source
+
+Two things deliberately left open at setup. The rung names
+(`personal`/`production`/`critical`) are a proposal the issue holds least
+firmly; they lock at `/cad-context 2`, and whatever they become must describe
+a situation rather than grade an effort. And the executor-model claim behind
+the cell values ("heavier model on the executor produced fewer review cycles")
+has only an informal result behind it — a spike inside phase 3, not a gate on
+the cycle, since it decides which model lands in which cell and not whether
+the axis is right.
+
+Not chosen for this cycle:
 
 - **Streaming provider responses.** The evidence is good (the same model at the
   same effort measured 292s and 118s on two payloads, so no fixed timeout is
   ever right), but `review.request_timeout_ms` at 540000 plus the 600000ms Bash
   ceiling bounds the damage, and the rewrite touches every adapter, response
   handling, and the structured-output assertion. It is a cycle, not a phase.
-  Deferred out of v1.4.0 for that reason.
 - **v1.4.0's own known gaps**, listed under `[1.4.0] Known gaps` in
   CHANGELOG.md: one stated rule for markdown inside a frontmatter value (the
   interior-backtick class, where `` lib/a`b.mjs `` and `` **`src/a.rs`** `` are
   structurally identical inputs), scoping `backtick-wrapped-value` off prose
   keys, surfacing `seed-reqs`' computed-but-unread `mismatched`, and the
   missing orchestrator-side worktree refresh behind a `blocked` halt.
-- **The 12 open `[enhancement]` issues** (#14-#31, #54) — features, not
-  correctness, which is why they have sat out three cycles.
+- **The remaining open `[enhancement]` issues** (#14-#31) — features, not
+  correctness, which is why they have sat out four cycles. #54 left that set
+  and joined this milestone, where it closes as superseded rather than ships:
+  the reframe deletes the tier ladder it wanted to expose.
 
 ### Out of Scope
 
@@ -111,7 +142,7 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 - **Compatibility**: existing `.planning/` layouts must work unchanged; recall on a project with no SUMMARYs degrades to empty results, never an error
 - **Determinism**: same corpus + same query → same results; no timestamps, no randomness in ranking
 - **Toolchain**: Node 22/24 (CI matrix), `node --test`, `tsc --checkJs` must stay green
-- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version.
+- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version. `v2.0.0` is major for one reason only: `model.profile`'s enum values change with no back-compat alias, so a config a user wrote stops validating.
 
 ## Key Decisions
 
@@ -135,6 +166,8 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | The two roadmap readers keep DIFFERENT extents | Canonical parse stops at the next `## `; classification runs to end of text, so a wiped checkbox list whose `### Phase N:` sections survive reports as an interrupted prune instead of a clean close | ✓ Shipped v1.4.0 — restoring "consistency" re-opens the false close |
 | `unseeded` became verdict-breaking, reversing v1.4.0's own earlier shape | A diagnostic that never moves the verdict leaves the ship gate exactly as permeable as it was; the additive form shipped in phase 2 is what phase 5 had to undo | ✓ Shipped v1.4.0 (breaking for `total === rows.length` callers) |
 | The release tag is cut after the merge, not at the close | A tag made during `/cad-milestone` names a commit on the integration branch that base never contains as a tip; publishing is `/cad-land`'s step, and the tag rides with it | ✓ Adopted at the v1.4.0 close |
+| The routing axis asks stakes, not spend | "How much will you spend" is answerable but useless, and on a Max subscription it is not a question the user has; "what happens if this is wrong" is answerable in one second and is the only form a risk signal can auto-set. MANIFESTO's principle is value per dispatch — stakes is the numerator it was always reaching for | Adopted for v2.0.0 (STK-01); breaking, no alias |
+| The rung ladder is one contract materialized N times, not N variants | The host freezes `effort` per agent file on the Agent/Task dispatch path, so rungs need files; the contract lives in exactly one skill and a rung file that ever carries behaviour fails self-verify. Without that check this is the GSD namespace-variant sin the MANIFESTO names | Adopted for v2.0.0 (RNG-01), on the v1.5.0 contract skills |
 
 ---
-*Last updated: 2026-07-28 shipped v1.4.0 (four stated grammars + the spine's own bookkeeping); no milestone open*
+*Last updated: 2026-07-29 HST-01 added at phase 6 (7 requirements, 6 phases)*

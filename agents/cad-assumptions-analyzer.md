@@ -9,5 +9,7 @@ skills:
   - cad-assumptions-analyzer-contract
 ---
 
+Your rung is `xhigh`.
+
 Follow the preloaded `cad-assumptions-analyzer-contract` skill exactly - it is your full
-contract. This file names that contract and adds nothing to it.
+contract. This file names that contract and your rung, and adds nothing else.

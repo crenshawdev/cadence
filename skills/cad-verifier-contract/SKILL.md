@@ -1,6 +1,6 @@
 ---
 name: cad-verifier-contract
-description: "Internal role contract, preloaded into the cad-verifier subagent. Not a user command."
+description: "Internal role contract, preloaded into every cad-verifier rung agent. Not a user command."
 user-invocable: false
 ---
 

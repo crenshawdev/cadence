@@ -42,6 +42,28 @@ whose Status is `Deferred` - the one pinned marker), and `counts` (whose
 If a milestone scope was given, filter the returned requirements to that
 milestone's IDs before judging; the seam always traces the whole file.
 
+Then the second arm - the criterion -> UAT trace, one verdict over both:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-coverage
+```
+
+Per phase holding both a CONTEXT.md and a UAT.md: `phases`
+(`{phase, criteria, items}`), `breaks` (`{phase, id, break:"uncovered"}` - a
+criterion that reached NO item), `untraced` (an item with no `criterion` and no
+exempting `origin`), `legacy` (checklists predating the fields),
+`unknown_criterion`, `context_issues` (lines outside the criterion grammar) and
+`counts` (`criteria = covered + uncovered`). Grammar and field semantics:
+`references/acceptance-criteria.md`.
+
+The milestone filter above does NOT apply to `breaks`, and they need none:
+`milestone.md` step 3 removes completed phases from ROADMAP.md's live
+`## Phases` list, so `parseRoadmapPhases` only ever holds the current cycle's
+phases; and within that cycle a phase whose checkbox is unchecked contributes
+its `uncovered` count but no `breaks` entry, so work still in flight cannot fail
+a mid-cycle run. Filtering by id is impossible anyway - a criterion break
+carries no requirement id.
+
 ## 3. Interpret the breaks
 - `no-phase` / `no-plan` - a dropped requirement: nothing committed to
   deliver it. This is the silent-drop this audit exists to catch.
@@ -58,16 +80,24 @@ milestone's IDs before judging; the seam always traces the whole file.
   below it (`## v2 Requirements` in the shipped template). A row with an
   em-dash Phase cell is `no-phase`, not an exit. Expected mid-cycle exactly
   like `not-verified`, a defect at ship time.
+- `uncovered` (coverage arm) - an acceptance criterion that reached no UAT
+  item: the phase was verified against a checklist missing that criterion, so
+  the criterion was never proven and nothing said so. Two exits: add the item
+  through `/cad-verify <N>`, or correct the criterion id in CONTEXT.md.
 
 ## 4. Verdict
-Arithmetic over the seam's output - in-scope `counts.broken` (after any
-milestone filter):
-- **PASS** - zero broken: every in-scope requirement traces requirement ->
-  phase -> plan -> verified. Deferred rows are allowed (list them; they are
-  not counted as delivered).
-- **FAIL** - any requirement is untraced, unverified, dropped, or in drift.
-  List each failing requirement with exactly where its chain breaks. This gate
-  is meant to block a ship; do not soften it or mark it PASS-with-warnings.
+Arithmetic over both seam calls - in-scope `counts.broken` (after any milestone
+filter) and coverage `breaks`:
+- **PASS** - zero broken and zero `breaks`: every in-scope requirement traces
+  requirement -> phase -> plan -> verified, and every acceptance criterion
+  reached a UAT item. Deferred rows are allowed (list them; they are not
+  counted as delivered).
+- **FAIL** - any requirement is untraced, unverified, dropped, or in drift, OR
+  any criterion is `uncovered`. List each failing requirement with exactly where
+  its chain breaks, and each uncovered criterion BY ID with its phase and its
+  next action (add the missing UAT item through `/cad-verify <N>`, or correct
+  the criterion id in CONTEXT.md). This gate is meant to block a ship; do not
+  soften it or mark it PASS-with-warnings.
 
 A `frontmatter_issues` entry is additive, not itself a `break` - but a
 payload-dropping diagnostic code can still leave a requirement untraced;
@@ -84,7 +114,27 @@ every id it names also carries an `unpicked` break and is already counted.
 Either way there is no third, softened state: a broken requirement still fails
 this gate.
 
+On the coverage arm, `breaks` is the only verdict-moving key; `untraced`,
+`legacy`, `unknown_criterion` and `context_issues` are additive and change
+neither counts nor the verdict - the same split `active_issues` and `unpicked`
+already carry. A `legacy` phase is a checklist written before the `criterion`
+field existed, recognised by an absent `fields_version` frontmatter marker
+rather than by which item fields happen to be missing: reported, never a
+break. A checklist carrying the marker is never legacy, so links dropped from
+a live checklist break normally. An absent CONTEXT.md is nothing to prove -
+this gate runs at `milestone.md` step 1 while the prune that deletes phase
+directories runs at step 3, so a prior milestone's phases are simply gone, and
+the prune takes CONTEXT with the directory. An absent UAT.md under a PRESENT
+CONTEXT is the opposite: on a checked box every declared criterion breaks as
+`missing-uat`, the total drop. Additive is not invisible: `context_issues` carrying
+`criterion-duplicate-id` or `criterion-unidded` on a phase NOT in `legacy` must
+be named in the report. The reader keeps first-occurrence-wins on a duplicate
+id, so a second bullet reusing one is dropped from the coverage domain
+entirely - a real criterion left unproven with the gate green, which is the
+failure this arm exists to close.
+
 Report: the one-line verdict, the trace table (requirement | phase | plan |
-verified), the dropped/unmapped/drift lists, and - on FAIL - the concrete next
-action per failing requirement (assign to a phase, plan it, verify it, or mark
-it deferred). Ends here; fixing is a separate, deliberate step.
+verified), the dropped/unmapped/drift lists, the uncovered criteria by phase and
+id, and - on FAIL - the concrete next action per failing requirement (assign to a
+phase, plan it, verify it, or mark it deferred) and per uncovered criterion.
+Ends here; fixing is a separate, deliberate step.

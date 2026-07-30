@@ -131,14 +131,14 @@ verifier, debugger, doc-verifier, nyquist/coverage). Cut all ai-*, ui-*, doc-cla
 synthesizer, mempalace-curator, user-profiler, codebase-mapper, intel-updater,
 framework-selector, domain-researcher, eval-*, advisor-researcher, research-synthesizer,
 pattern-mapper (→ mem-*), project-researcher (→ Codex), security-auditor (→ Codex),
-integration-checker, code-reviewer/code-fixer (→ panel-review). Effort-variant files
-(`planner-high`/`planner-low` etc., §6) add ~4–8 files but are variants of kept roles, not new agents.
+integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
+(`cad-planner-xhigh` etc., §6) add ~4–8 files but are rungs of kept roles, not new agents.
 
 ---
 
 ## 4. Rough magnitude
 - Skills: 69 → ~22 (−68%)
-- Agents: 34 → ~9 roles (−74%), plus ~4–8 effort-variant files of the same roles (§6)
+- Agents: 34 → ~9 roles (−74%), plus ~4–8 rung files of the same roles (§6)
 - The spine alone: ~5,100 workflow lines → ~900, with no loss of solo-dev value.
 - Whole subsystems deleted: update/patch/pristine, CLI shim, STATE audit logs, MemPalace,
   graphify, AI track, doc-ingest, UI track, workstreams/workspace.
@@ -309,6 +309,25 @@ lever is trigger frequency (gating), never a weak reviewer.
   config.schema.json purposes say so at the point of setting). Turning it into a real per-trigger
   dial needs per-rung reviewer agent files, which is #63's proposal to land or reject - deliberately
   not half-built here.
+- ⚠️ **SCOPED (2026-07-29, CFG-01):** the same treatment for the key beside it. Six `tier` keys
+  survived the routing reframe untouched - `review.triggers.{plan,diff,risk_surface,phase_diff,
+  pre_ship}.tier` and `review.decision_review.tier` - and they read as a universal per-trigger
+  model dial while only the cross-model arm can honour them: `review.providers.<name>.tiers[
+  trigger.tier]` is the ONLY bridge from a trigger to a provider model id, and the
+  `claude-subagent` reviewer's model comes from the routing cell instead (for
+  `/cad-decision-review`, from nothing at all - that workflow never calls `route.mjs`, so its
+  `cad-reviewer` arm runs at the session default at every stakes level). Deletion was REJECTED:
+  it removes six keys out from under the only backend that reads them, and #75 - the issue that
+  raised it - is closed not-planned. Wiring `flagship|balanced|cheap` through as
+  `opus|sonnet|haiku` was REJECTED too: the cell grid owns model resolution one phase after it
+  shipped, and a second model axis beside it is the indirection that grid removed. So they are
+  scoped, in #64's shape - schema `purpose`, a degradation line where the value fires, a catalog
+  row - and the sweep is now re-runnable rather than a one-time pass:
+  `cadence-core/references/config-reach.md` carries a reach row for every schema key and
+  self-verify check 9 fails a key with no row, a row naming no key, and a reach narrower than
+  `universal` that the key's own `purpose` never states. Note the `SUPERSEDED (2026-07-29)` bullet
+  under Model routing says "the whole `tier` vocabulary is deleted with the matrix" - that is true
+  of the MODEL matrix only, and is left standing as the record it is.
 - **Live detection makes model IDs non-fatal (the key robustness win).** Three layers:
   1. Live detection - after the key is set, call the provider models endpoint (OpenAI
      `GET /v1/models`, Gemini `ListModels`) to enumerate what THAT key can access. This is truth;
@@ -349,7 +368,7 @@ lever is trigger frequency (gating), never a weak reviewer.
   → **Design:** MODEL is the primary auto-routing lever (native per-dispatch). EFFORT is fixed per
   agent *role* (planner=high, formatter=low; role is known so this is fine). Runtime effort
   *escalation* uses a small set of **variant agent files** (`planner-high`/`planner-low`, etc.) for
-  the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps effort-variant
+  the ~4 heavy reasoners only — not every agent. Auto escalates model freely + swaps the rung file
   when needed, bounded by guardrails.
 - ✅ **IMPLEMENTED (2026-07-10):** resolver `bin/route.mjs` + editable data `route-table.json`
   (role→tier, profile→model matrix over Claude aliases, auto signals). The spawn-agent seam
@@ -366,6 +385,75 @@ lever is trigger frequency (gating), never a weak reviewer.
   an unranked model on a rung would assert a comparison we cannot support. A pin is the user
   asserting it instead. Guardrail: unknown alias → warning + routed model stands, never a silent
   redirect of spend. If this grows a second knob, re-read the cut before adding it.
+- ⚠️ **SUPERSEDED (2026-07-28):** the single `escalate_effort_variant` key is gone, replaced by a
+  declared rung ladder: `route-table.json` states `rung_order` and gives every role its own `rungs`
+  array plus a key naming its escalation target, and all 13 reachable rungs exist as agent files
+  (6 base at `agents/<role>.md`, 7 suffixed at `agents/<role>-<rung>.md`). The
+  VERIFIED finding above is untouched — effort is still definition-time frontmatter, which is
+  exactly why a rung needs a file. What changed is that the rung set is data rather than one
+  hardcoded variant, so the routing layer can vary effort per role. The rungs are declared PER ROLE
+  rather than as a cross product because each one costs standing context in every main-session
+  prompt. Two self-verify checks bound the cost: a routable rung with no file (and a rung file no
+  role declares) fails CI, and a rung file that carries behaviour of its own fails CI — the
+  contract lives once, in the preloaded contract skill (#74), and a rung file may only point at it.
+- ⚠️ **AXIS REPLACED (2026-07-28):** the spend axis this whole record describes is replaced by a
+  stakes axis. `model.profile` over `fast`/`balanced`/`quality` becomes a bare top-level `stakes`
+  key over `solo`/`shipped`/`critical` (nobody else runs this / other people run this and a break
+  comes back as a bug report / a break is not a bug report), with no back-compat alias: a config
+  written against the old name stops validating on the KEY and not merely on its value, which is
+  the whole reason v2.0.0 is major. The `auto` mode is deleted rather than kept as a fourth value,
+  because three values answer what a break costs while the fourth answered how the resolver should
+  behave - the same category error one level up from the one this change exists to fix - and its
+  difficulty signals go with it (`--files`, `--ambiguity`, and the table's `auto` block), having
+  never been passed by a live workflow or skill. `escalate_on_failure` is promoted to
+  `model.escalate_on_failure` and honoured at every stakes level, so the rung ladder above is
+  reached by the shipped default rather than only under a mode nobody selected - though what each
+  role escalates TO is still its own table row, and only `cad-plan-checker` names a rung above its
+  base today, so the other five roles' retries hold their rung until those rows change;
+  `auto.ceiling` and `max_escalations` are dropped outright, since the surviving escalation is a
+  single swap to the role's escalation rung and has no second step to cap. One correction to the
+  PARTIALLY REOPENED bullet: its stated reason for keeping `fable` pin-only is now stale, because
+  the ranking IS established and `fable` ranks above `opus`. That decision still stands, on three
+  operational facts instead. A zero-data-retention org gets a hard `400 invalid_request_error` on
+  every request to it, and Cadence is a public plugin, so those are other people's orgs. Its safety
+  classifiers refuse cyber-adjacent content, and Cadence reviews its own git rails, secrets
+  handling and shell tokenizer. And its multi-minute turns press against the configured provider
+  request timeout inside the host's Bash ceiling.
+- ⚠️ **SUPERSEDED (2026-07-29):** the per-role start-rung/escalation-rung ladder and the
+  `(stakes, tier)` model matrix are both replaced by three grids in `route-table.json`. A routing
+  cell keys on `(stakes level, role)` and yields the whole quality bundle - `model`, the `effort`
+  rung to start at, and the `retry` rung a failed attempt climbs to - while `review` keys on
+  `(level, trigger)` and yields a gate, and `verify` keys on the level alone. The whole `tier`
+  vocabulary is deleted with the matrix: a role's model came from a column named after
+  something else, which is the indirection this removes. 18 cells read in one screen, so nothing
+  is enumerated in code. Two claims above are now false and left standing as the record they are:
+  the SUPERSEDED bullet's "13 reachable rungs" is 19, and its per-role rung-list shape is gone;
+  the AXIS REPLACED bullet's "only `cad-plan-checker` names a rung above its base" was the defect,
+  not the design - an escalation target equal to the starting rung for five of six roles meant six
+  of the 13 rung files were reachable by no config and no attempt count, and the retry ladder the
+  previous entry claimed to ship did not exist. Reversing that earlier decision is safe for a reason
+  that did not exist when it was made: a FIXED escalation target can point BELOW what a cell set,
+  which makes a retry think less while reporting an escalation, and a per-cell retry cannot. The
+  direction guard moves with it - self-verify now fails a cell whose `retry` sits below its
+  `effort`, cell-named, and the same walk checks every gate and every trigger name against the
+  vocabulary `config.schema.json` defines, and the model and both rungs against the table's own
+  `model_aliases` and `rung_order`. A config `review.triggers.<t>.gate` still WINS over the level's
+  gate, with the disagreement in `warnings`: the level must not make a key the user explicitly set
+  stop doing anything.
+- ⚠️ **REPO SCOPE CLOSED (2026-07-29, CFG-01):** `risk.override.<surface>` shipped one phase ago
+  with a documented hole in both directions, and both are closed. The resolver read the waiver off
+  the MERGED config while the schema marks all eight keys `src: repo`, so one line in one
+  user-global file disabled the risk floor in every repository on the machine; `mergeLayers` now
+  returns the two validated layers beside the merge, `route.mjs` reads waivers from the REPO layer
+  alone, and a truthy global one is IGNORED and named in `warnings` with the rule and the place it
+  belongs - warned whether or not the repo layer also names that surface, because a waiver that
+  vanishes without a trace is the shape this milestone closes, and NOT warned for a global
+  `false`, which waives nothing and would otherwise put a line on every dispatch in every repo.
+  The write face compared `file === GLOBAL_CONFIG` as strings, so
+  `set --file <global-dir>/./config.json` wrote straight through the refusal; it compares by
+  filesystem identity now, which closes the symlink, relative-path and trailing-slash spellings
+  with it. The read face is deliberately unchanged: `config.mjs get` still reports a global-layer
+  waiver as an effective value, because `get` returns the merged config by contract.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage

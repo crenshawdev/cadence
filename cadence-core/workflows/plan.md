@@ -35,9 +35,15 @@ Read config through the seam - one call for every key this workflow uses:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   workflow.plan_check workflow.inline_plan_threshold planning.commit_docs \
-  review.triggers.plan.gate git.protected_branches git.on_protected \
+  git.protected_branches git.on_protected \
   git.base_branch memory.backend
 ```
+
+The `plan` gate is NOT in that batch: fire(trigger) takes every gate from the
+routing bundle (`route.mjs resolve`), so the stakes level reaches this fire site
+rather than only the seam. `config.mjs get` returns the schema DEFAULT for a
+gate no layer set, which would fire at the default while the seam reported the
+level's.
 
 `memory.backend` rides this same batch so the effective recall backend is read
 through the config touchpoint already here - no extra Bash round-trip. It gates
@@ -201,10 +207,12 @@ Handle the return:
     1. Plans came from cad-planner: re-dispatch it FRESH in revision mode with
        the issues (see spawn_planner) - a new spawn, never a resume of the prior
        run; the plan on disk preserves its grounding - with `--attempt 2` so the
-       routing seam can escalate under `auto`. Plans were written inline: apply
-       the fixes in the main context.
+       routing seam climbs the re-dispatch to the retry rung this level's
+       cad-planner cell names, and dispatches that rung's file. Plans were
+       written inline: apply the fixes in the main context.
     2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
-       (routing seam escalates it to the `-high` effort variant under `auto`).
+       (the seam climbs it to the retry rung its own cell names, and returns
+       the file for it - never a rung name this prose hardcodes).
     3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
        blockers and ask (ask-user seam): proceed to execution anyway, or stop
        and revise by hand. Never loop again.

@@ -16,19 +16,32 @@ Every reviewer returns the same shape:
 ## fire(trigger)
 
 ### 1. Gate
-Read `review.triggers.<trigger>` from `.planning/config.json` - an object
-`{ gate, tier, effort }`. If `gate == "off"`, return immediately (no-op). Else
-`gate` is one of `advisory | blocking | adjudicated` (step 6).
+Resolve the bundle ONCE through the routing seam:
 
-**Which fields reach which backend.** `gate` governs both. `tier` and `effort`
-govern the cross-model backend ONLY - they resolve the provider's model id and
-its reasoning-effort API parameter (step 4). The `claude-subagent` backend can
-honour neither: its model comes from the routing seam (`bin/route.mjs`), and
-its effort is frozen in `agents/cad-reviewer.md` frontmatter, because effort is
-definition-time only on the spawn-agent seam - not per-dispatch overridable
-(seams.md). That is a host constraint, not an omission here. So a configured
-`effort` is not a promise this backend can keep, and step 4 names the gap
-instead of dropping the value silently.
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-reviewer
+```
+
+Take the gate from the resolved bundle's review map, keyed by this trigger's
+name; take the reviewer's `agent` and `model` from the same line (step 4). If
+the gate is `off`, return immediately (no-op). Else it is one of
+`advisory | blocking | adjudicated` (step 6). The stakes level sets it, so the
+same trigger gates differently on a solo project and a critical one.
+
+The seam has ALREADY applied config-wins precedence: a
+`review.triggers.<trigger>.gate` the user set beats the level's gate, and the
+disagreement arrives as a `warnings[]` entry - relay it (seams.md) rather than
+resolving it again here. A degraded resolve (`ok:false`) means no bundle: fall
+back to the config gate and say so.
+
+**Which fields reach which backend.** The gate governs both. The per-trigger
+`tier` and `effort` govern the cross-model backend ONLY - they resolve the
+provider's model id and its reasoning-effort API parameter (step 4). The
+`claude-subagent` backend can honour neither: its model and its rung both come
+from the routing seam, and effort is definition-time only on the spawn-agent
+seam - not per-dispatch overridable (seams.md). That is a host constraint, not
+an omission here. So a configured `effort` is not a promise this backend can
+keep, and step 4 names the gap instead of dropping the value silently.
 
 ### 2. Payload
 Assemble `{ instruction, artifact }` from the wiring table:
@@ -54,16 +67,20 @@ fallback; never silently skip a `blocking` trigger.
 ### 4. Run the reviewers
 For each reviewer in the set, in parallel where the host allows:
 
-- **claude-subagent**: dispatch `cad-reviewer` through the spawn-agent seam with
-  the payload as its prompt. Parse the JSON object it returns. `trigger.effort`
-  is NOT passed and cannot be - the seam's surface is
-  `(agent_name, prompt, model?)` - so `cad-reviewer` runs at the `effort:` its
-  own file pins (`high`), whatever the config says.
-  **When `trigger.effort` differs from that pinned effort, say so in one line
-  before dispatching**, e.g. "`diff` is configured at effort `medium`; the
-  claude-subagent reviewer is frontmatter-pinned at `high`, so it runs `high` -
-  per-trigger effort reaches cross-model reviewers only". One line per fire, not
-  per reviewer, and nothing at all when the two already agree. A resolved value
+- **claude-subagent**: dispatch the `agent` and `model` the step-1 resolve
+  returned, through the spawn-agent seam, with the payload as its prompt. Parse
+  the JSON object it returns. That agent is the reviewer rung the LEVEL names -
+  `cad-reviewer-medium` at solo, `cad-reviewer` at shipped,
+  `cad-reviewer-xhigh` at critical, and `cad-reviewer-max` when a critical-level
+  fire is re-dispatched with `--attempt 2`. The per-trigger `effort` is NOT
+  passed and cannot be - the seam's surface is `(agent_name, prompt, model?)` -
+  so the reviewer runs at the `effort:` its own rung file pins.
+  **When the per-trigger `effort` differs from the rung actually dispatched, say
+  so in one line before dispatching**, e.g. "`diff` is configured at effort
+  `medium`; the shipped level dispatches `cad-reviewer`, frontmatter-pinned at
+  `high`, so it runs `high` - per-trigger effort reaches cross-model reviewers
+  only". One line per fire, not per reviewer, and nothing at all when the two
+  already agree. A resolved value
   the backend cannot deliver is a degradation like any other: name it, the same
   way a dropped cross-model reviewer is named below. Do not "fix" the mismatch
   by editing the config or by pretending the effort applied.
@@ -129,13 +146,19 @@ fix list) instead of spawning its own fixer loop.
 
 ## Wiring (which skill fires what)
 
-| Trigger | Fired by | When | Payload artifact | Shipped gate |
+The gate column is per LEVEL: solo / shipped / critical, in that order.
+
+| Trigger | Fired by | When | Payload artifact | Gate (solo/shipped/critical) |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | the plan | adjudicated |
-| `diff` | `cad-execute` | at plan completion | `git diff <pre-plan HEAD>..HEAD` | advisory |
-| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | the flagged diff | blocking |
-| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | `git diff <PHASE_START>..HEAD` | off (opt-in) |
-| `pre_ship` | `cad-land` | before executing the publish mechanism | full branch diff | adjudicated |
+| `plan` | `cad-plan` | after PLAN.md is written | the plan | advisory / adjudicated / adjudicated |
+| `diff` | `cad-execute` | at plan completion | `git diff <pre-plan HEAD>..HEAD` | off / advisory / blocking |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | the flagged diff | blocking / blocking / blocking |
+| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | `git diff <PHASE_START>..HEAD` | off / off / adjudicated |
+| `pre_ship` | `cad-land` | before executing the publish mechanism | full branch diff | advisory / adjudicated / adjudicated |
+
+`risk_surface` is `blocking` at every level on purpose: it fires only on a
+detection match, and there is no level at which a matched risk surface is worth
+waving through.
 
 ## risk_surface detection (shipped defaults, configurable)
 
@@ -144,7 +167,23 @@ auth/authz/sessions - DB schema/migrations - money/billing/pricing -
 concurrency/async/locking - destructive ops (deletes, bulk updates, drops) -
 secrets/crypto/keys - public API/wire contracts - untrusted-input parsing.
 
+This list is also the operative definition of the `critical` stakes value: a
+diff touching one of these surfaces is a break that does not come back as a bug
+report. A machine translation of it now lives in `cadence-core/route-table.json`
+as the `surfaces` block, where a path match against the phase's own PLAN
+`files:` list RAISES the resolved stakes level at dispatch time (see
+`references/seams.md` § Routing).
+
+So TWO detectors exist and neither replaces the other. The dispatch-time one is
+a path match: coarse, with no diff in hand, and it sets the stakes floor for the
+whole phase. This section's one is model judgment at commit time: it reads the
+actual diff and fires the trigger. A phase can be floored without this trigger
+firing, and this trigger can fire on a phase the floor never raised.
+
 **Pre-filter before escalating (avoid a blocking panel on a non-risk).**
+These two drops are judgments about diff CONTENT, so they apply to the
+COMMIT-TIME detection only - the dispatch-time floor has no diff to judge, and
+the per-surface override is its escape hatch instead.
 A heuristic match is dropped - it does NOT fire the trigger - when the match
 is provably harmless:
 

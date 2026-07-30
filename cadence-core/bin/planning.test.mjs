@@ -8,6 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, exist
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 
@@ -878,6 +879,143 @@ test('uat merge: fills pending only, appends unmatched gaps and human checks', (
   assert.doesNotMatch(text, /would overwrite/);
 });
 
+// --- uat: the criterion / origin carrier (registration is what makes it last)
+// Registration in UAT_FIELDS is the whole mechanism: parseUat accepts any
+// `field: value` line, so an UNregistered field survives init and is destroyed
+// by the first record, which rewrites the whole file. Every assertion here
+// reads the raw bytes rather than the envelope for that reason.
+
+const LINKED_ITEMS = JSON.stringify([
+  { name: 'Login works', expected: 'user lands on dashboard', criterion: 'AC3' },
+  { name: 'Logout works', expected: 'session cleared', criterion: 'AC4' },
+  { name: 'The plugin loads at all', expected: 'no error on startup', origin: 'smoke' },
+]);
+
+/** The raw bytes of a fixture's UAT.md - never the envelope. */
+const uatText = (dir) => readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+
+function linkedTree() {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  run(['uat', 'init', '--phase', '1'], dir, LINKED_ITEMS);
+  return dir;
+}
+
+test('uat: a criterion written by init is byte-present after a refresh AND after a record', () => {
+  const dir = linkedTree();
+  assert.match(uatText(dir), /### 1\. Login works\nexpected: user lands on dashboard\ncriterion: AC3\nstatus: pending/);
+  // The refresh payload carries a NEW item name, so the file is actually
+  // rewritten (`if (fresh.length) writeUat`) - re-sending the identical payload
+  // would leave it untouched and prove nothing about the refresh arm.
+  const r = run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Password reset', expected: 'email arrives', criterion: 'AC5' },
+  ]));
+  assert.equal(r.added, 1);
+  assert.equal(uatText(dir).match(/^criterion: AC3$/gm).length, 1);
+  assert.match(uatText(dir), /### 4\. Password reset\nexpected: email arrives\ncriterion: AC5\nstatus: pending/);
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(uatText(dir).match(/^criterion: AC3$/gm).length, 1);
+  assert.equal(uatText(dir).match(/^criterion: AC5$/gm).length, 1);
+});
+
+// The marker is written before any item is looked at, so it cannot be lost by
+// a payload that carries no links - which is the whole point of moving the
+// legacy test off the item fields and onto the file.
+test('uat init: writes fields_version unconditionally, and it survives refresh and record', () => {
+  const dir = linkedTree();
+  assert.match(uatText(dir), /^---\nstatus: testing\nphase: 1\nfields_version: 1\n/);
+  run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Password reset', expected: 'email arrives', criterion: 'AC5' },
+  ]));
+  assert.equal(uatText(dir).match(/^fields_version: 1$/gm).length, 1);
+  run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(uatText(dir).match(/^fields_version: 1$/gm).length, 1);
+});
+
+test('uat init: a payload with no criterion and no origin still gets the marker', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  run(['uat', 'init', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Bare item', expected: 'something observable' },
+  ]));
+  assert.match(uatText(dir), /^fields_version: 1$/m);
+});
+
+test('uat: an origin written by init survives refresh and record the same way', () => {
+  const dir = linkedTree();
+  assert.match(uatText(dir), /### 3\. The plugin loads at all\nexpected: [^\n]*\norigin: smoke\nstatus: pending/);
+  run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'A deliverable', expected: 'ships', origin: 'verifier' },
+  ]));
+  run(['uat', 'record', '--phase', '1', '--item', '3', '--result', 'pass'], dir);
+  assert.equal(uatText(dir).match(/^origin: smoke$/gm).length, 1);
+  assert.equal(uatText(dir).match(/^origin: verifier$/gm).length, 1);
+});
+
+test('uat refresh: carries source, criterion and origin onto an appended item, in lockstep with init', () => {
+  const dir = linkedTree();
+  run(['uat', 'refresh', '--phase', '1'], dir, JSON.stringify([
+    { name: 'Deep-pass find', expected: 'observable', criterion: 'AC6', origin: 'criterion', source: 'verifier' },
+  ]));
+  assert.match(uatText(dir),
+    /### 4\. Deep-pass find\nexpected: observable\ncriterion: AC6\norigin: criterion\nstatus: pending\nsource: verifier/);
+});
+
+test('uat record --origin: sets provenance after the fact on an existing item', () => {
+  const dir = uatTree(); // no field on either item
+  const r = run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass',
+    '--origin', 'verifier'], dir);
+  assert.equal(r.ok, true);
+  assert.match(uatText(dir), /### 2\. Logout works\nexpected: session cleared\norigin: verifier\nstatus: pass/);
+});
+
+test('uat record: an out-of-enum --origin is refused with the file byte-unchanged', () => {
+  const dir = linkedTree();
+  const before = uatText(dir);
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--origin', 'verifer'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /criterion \| verifier \| smoke/);
+  assert.equal(uatText(dir), before);
+});
+
+test('uat init: an out-of-shape criterion or origin is bad-payload, nothing written', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  const badId = run(['uat', 'init', '--phase', '1'], dir,
+    JSON.stringify([{ name: 'X', expected: 'y', criterion: 'AC-01' }]));
+  assert.equal(badId.reason, 'bad-payload');
+  assert.match(badId.detail, /AC<N>/);
+  assert.equal(existsSync(join(dir, 'phases', '1', 'UAT.md')), false);
+  const badOrigin = run(['uat', 'init', '--phase', '1'], dir,
+    JSON.stringify([{ name: 'X', expected: 'y', origin: 'verified' }]));
+  assert.equal(badOrigin.reason, 'bad-payload');
+  assert.match(badOrigin.detail, /criterion \| verifier \| smoke/);
+  assert.equal(existsSync(join(dir, 'phases', '1', 'UAT.md')), false);
+});
+
+test('uat merge: both append paths write origin verifier - the item-level provenance source cannot carry', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    gaps: [{ name: 'Rate limiting', reason: 'no limiter found on /login' }],
+    human_checks: [{ name: 'Email renders in dark mode', expected: 'readable' }],
+  }));
+  assert.equal(r.added, 2);
+  // The gap append.
+  assert.match(uatText(dir), /### 3\. Rate limiting\nexpected: [^\n]*\norigin: verifier\nstatus: fail/);
+  // The human_checks append, which wrote no provenance of any kind before.
+  assert.match(uatText(dir), /### 4\. Email renders in dark mode\nexpected: readable\norigin: verifier\nstatus: pending/);
+});
+
+test('uat merge: a MATCHED pending item gets source verifier and no origin - it was not verifier-added', () => {
+  const dir = linkedTree();
+  run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    passes: [{ name: 'Login works', evidence: 'src/auth.ts:42' }],
+  }));
+  // Item 1 keeps its criterion and gains no origin: source records where the
+  // RESULT came from, origin where the ITEM came from (D-12).
+  assert.match(uatText(dir), /### 1\. Login works\nexpected: [^\n]*\ncriterion: AC3\nstatus: pass\nfirst_pass: pass\nsource: verifier/);
+  assert.equal(uatText(dir).match(/^origin: verifier$/gm), null);
+});
+
 test('uat merge: an entry with no usable name is rejected, never written (#46.2)', () => {
   const dir = uatTree();
   const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
@@ -1509,6 +1647,334 @@ test('audit: missing REQUIREMENTS or ROADMAP degrades with named reasons', () =>
   assert.equal(run(['audit'], noRoadmap).reason, 'no-roadmap');
 });
 
+// --- criteria-coverage: the CONTEXT criterion -> UAT item trace ----------------
+// The direction asymmetry (D-09) is the contract these pin: `breaks` moves the
+// verdict, `untraced` / `legacy` / `unknown_criterion` / `context_issues` never
+// do. Deliberately independent of the UAT_FIELDS registration - `parseUat`
+// accepts any `field: value` line, so these write `criterion:` by hand.
+
+/**
+ * A .planning tree carrying RAW CONTEXT/UAT text per phase:
+ *   coverageTree({1: {checked: true, criteria: [[id, text], ...],
+ *                     items: [{name, criterion?, origin?}]}})
+ * `criteria`/`items` omitted writes no CONTEXT.md / no UAT.md at all (the
+ * absent-file rule); `contextText`/`uatText` write raw text instead.
+ * `checked: false` leaves the phase's roadmap box unchecked.
+ */
+function coverageTree(spec) {
+  const roadmap = Object.entries(spec).map(([n, ph]) =>
+    ({ n: Number(n), name: `Phase ${n}`, checked: ph.checked !== false }));
+  const dir = makeTree({ roadmap });
+  for (const [n, ph] of Object.entries(spec)) {
+    const pdir = join(dir, 'phases', n);
+    mkdirSync(pdir, { recursive: true });
+    if (ph.contextText !== undefined) writeFileSync(join(pdir, 'CONTEXT.md'), ph.contextText);
+    else if (ph.criteria) {
+      const bullets = ph.criteria.map(([id, text]) => `- [ ] ${id}: ${text}`).join('\n');
+      writeFileSync(join(pdir, 'CONTEXT.md'),
+        `# Phase ${n} Context\n\n## Acceptance criteria\n\n${bullets}\n\n## Flagged assumptions\n\nnone\n`);
+    }
+    if (ph.uatText !== undefined) writeFileSync(join(pdir, 'UAT.md'), ph.uatText);
+    else if (ph.items) {
+      const blocks = ph.items.map((it, i) =>
+        `### ${i + 1}. ${it.name}\nexpected: behavior ${i + 1}\n` +
+        `${it.criterion ? `criterion: ${it.criterion}\n` : ''}` +
+        `${it.origin ? `origin: ${it.origin}\n` : ''}status: pass\n`);
+      writeFileSync(join(pdir, 'UAT.md'),
+        `---\nstatus: testing\nphase: ${n}\n` +
+        `${ph.fieldsVersion ? 'fields_version: 1\n' : ''}` +
+        `started: 2026-01-01\nupdated: 2026-01-01\n---\n\n` +
+        `## Items\n\n${blocks.join('\n')}\n## Summary\n\ntotal: ${ph.items.length}\n`);
+    }
+  }
+  return dir;
+}
+
+// The synthesized fixture (D-15): this cycle's phase-1 criteria prose and its
+// 14 real item names, with the AC4 and AC5 items deleted below. Real prose,
+// synthetic defect - ROADMAP's earlier claim of a v1.4.0 checklist that dropped
+// AC4 and AC5 was verified not to exist, so nothing is recovered from history.
+const P1_CRITERIA = [
+  ['AC1', '`agents/` holds exactly the 13 files the `rungs` arrays in `route-table.json` name'],
+  ['AC2', 'Adding a contract-skill section tag to the body of an agent file that declares `skills:` reports `ok:false`'],
+  ['AC3', 'the retired effort-variant grep returns matches only under `.planning/` and in `CHANGELOG.md`'],
+  ['AC4', '`route-table.json` carries `rung_order: ["low","medium","high","xhigh","max"]`'],
+  ['AC5', "`resolve('cad-plan-checker', autoCfg, ['--attempt','2'])` still returns `cad-plan-checker-high`"],
+  ['AC6', '`node --test cadence-core/bin/*.test.mjs` exits 0 and `npx tsc -p tsconfig.ci.json` exits 0'],
+  ['AC7', '`node cadence-core/bin/self-verify.mjs` reports `ok:true` with `agent-skills` still checked'],
+];
+
+const P1_ITEMS = [
+  { name: "13 rung files exist, each carrying its own rung's effort", criterion: 'AC1' },
+  { name: 'A rung file carrying behaviour fails CI', criterion: 'AC2' },
+  { name: 'Retired effort-variant vocabulary is gone from live surfaces', criterion: 'AC3' },
+  { name: 'rung_order is declared and out-of-ladder rungs fail with the role named', criterion: 'AC4' },
+  { name: 'Escalation still resolves, now through escalate_to', criterion: 'AC5' },
+  { name: 'Full test suite and typecheck are green', criterion: 'AC6' },
+  { name: 'self-verify reports ok:true with the agent checks intact', criterion: 'AC7' },
+  { name: 'Weight-budget manifest is exact, not a stale ceiling', origin: 'verifier' },
+  { name: 'No live doc names a rung file the ladder cannot produce', origin: 'verifier' },
+  { name: 'A malformed route-table role does not collapse self-verify', origin: 'verifier' },
+  { name: 'A downward escalate_to is caught, not reported ok:true', origin: 'verifier' },
+  { name: "Check 7's enforcement matches what the docs claim it enforces", origin: 'verifier' },
+  { name: 'undeclared-rung-agent names the real fault', origin: 'verifier' },
+  { name: 'LINEAGE.md agent figures and vocabulary: decided', origin: 'verifier' },
+];
+
+/** The 14 items minus the two carrying AC4 and AC5 - the synthetic defect. */
+const P1_ITEMS_DROPPED = P1_ITEMS.filter((it) => it.criterion !== 'AC4' && it.criterion !== 'AC5');
+
+test('criteria-coverage: the synthesized fixture breaks on exactly the two dropped ids', () => {
+  const dir = coverageTree({ 1: { criteria: P1_CRITERIA, items: P1_ITEMS_DROPPED } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.breaks, [
+    { phase: 1, id: 'AC4', break: 'uncovered' },
+    { phase: 1, id: 'AC5', break: 'uncovered' },
+  ]);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 12 }]);
+  assert.equal(r.counts.criteria, 7);
+  assert.equal(r.counts.covered, 5);
+  assert.equal(r.counts.uncovered, 2);
+  assert.equal(r.untraced, undefined);
+  assert.equal(r.legacy, undefined);
+});
+
+test('criteria-coverage: the same fixture with all 14 items returns zero breaks', () => {
+  const dir = coverageTree({ 1: { criteria: P1_CRITERIA, items: P1_ITEMS } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.untraced, undefined);
+  assert.deepEqual(r.counts, { criteria: 7, covered: 7, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+test('criteria-coverage: an item with neither criterion nor origin is untraced, never a break', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA, items: [...P1_ITEMS, { name: 'A deliverable from the PLAN fallback branch' }] },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.untraced, [{ phase: 1, item: 15, name: 'A deliverable from the PLAN fallback branch' }]);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.counts.uncovered, 0);
+  assert.equal(r.counts.untraced, 1);
+});
+
+test('criteria-coverage: origin verifier and smoke exempt an item from untraced entirely', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA,
+      items: [...P1_ITEMS, { name: 'The plugin loads at all', origin: 'smoke' }] },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.untraced, undefined); // the 7 verifier items + the smoke item
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.counts.untraced, 0);
+});
+
+test('criteria-coverage: origin criterion with no id is STILL untraced - it names nothing', () => {
+  const dir = coverageTree({
+    1: { criteria: [['AC1', 'one']], items: [{ name: 'Item one', origin: 'criterion' }] },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.untraced, [{ phase: 1, item: 1, name: 'Item one' }]);
+  assert.deepEqual(r.breaks, [{ phase: 1, id: 'AC1', break: 'uncovered' }]);
+});
+
+test('criteria-coverage: a checklist carrying NO criterion and NO origin is pre-field legacy', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA, items: P1_ITEMS.map((it) => ({ name: it.name })) },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.legacy, [1]);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.untraced, undefined);
+  // Held out of counts, which is what keeps criteria === covered + uncovered.
+  assert.deepEqual(r.counts, { criteria: 0, covered: 0, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+// The dropped-link regression, closed by the frontmatter marker. The ORIGINAL
+// legacy rule was the two item fields alone, on the premise that every
+// post-field checklist carries at least one `origin` - and
+// `.planning/phases/3/UAT.md` (7 `criterion`, 0 `origin`) falsified it inside
+// the same commit. This is that file with its links dropped: it must break, not
+// absolve itself. Move the test back onto the item fields and this is what fails.
+test('criteria-coverage: fields_version present and NO criterion, NO origin is NOT legacy', () => {
+  const dir = coverageTree({
+    1: { fieldsVersion: true, criteria: P1_CRITERIA,
+      items: P1_ITEMS.slice(0, 7).map((it) => ({ name: it.name })) },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.legacy, undefined);
+  assert.deepEqual(r.breaks.map((b) => b.id), ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7']);
+  assert.equal(r.untraced.length, 7);
+  assert.equal(r.counts.uncovered, 7);
+});
+
+test('criteria-coverage: a marked checklist whose links are intact is unaffected by the marker', () => {
+  const dir = coverageTree({
+    1: { fieldsVersion: true, criteria: P1_CRITERIA, items: P1_ITEMS },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.legacy, undefined);
+  assert.equal(r.breaks, undefined);
+  assert.deepEqual(r.counts, { criteria: 7, covered: 7, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+test('criteria-coverage: legacy still applies to a genuinely pre-field checklist', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA, items: P1_ITEMS.map((it) => ({ name: it.name })) },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.legacy, [1]);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.untraced, undefined);
+  // Held out of counts, which is what keeps criteria === covered + uncovered.
+  assert.deepEqual(r.counts, { criteria: 0, covered: 0, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+// The sharpest test in this file: the dropped-link regression. A checklist
+// written AFTER this phase always carries at least one `origin`, so a UAT with
+// some `origin` but no `criterion` is NOT an old project - it is a live
+// `/cad-verify` that stopped emitting the link. Widen the legacy rule back to a
+// bare no-`criterion` test and this test is what fails.
+test('criteria-coverage: no criterion but at least one origin is NOT legacy - every criterion breaks', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA,
+      items: P1_ITEMS.map((it) => (it.origin ? it : { name: it.name })) },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.legacy, undefined);
+  assert.deepEqual(r.breaks.map((b) => b.id), ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7']);
+  assert.equal(r.counts.uncovered, 7);
+});
+
+test('criteria-coverage: an EMPTY checklist is not legacy - the drop itself, every criterion breaks', () => {
+  const dir = coverageTree({ 1: { criteria: P1_CRITERIA, items: [] } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.legacy, undefined);
+  assert.equal(r.breaks.length, 7);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 0 }]);
+});
+
+test('criteria-coverage: an unchecked roadmap box counts uncovered but contributes no break', () => {
+  const dir = coverageTree({
+    1: { checked: false, criteria: P1_CRITERIA, items: P1_ITEMS_DROPPED },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.counts.uncovered, 2);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 12 }]);
+});
+
+// D-10's exemption is the PRUNED phase, and the prune deletes the whole
+// directory - so it always takes CONTEXT.md with it. That is why absence of
+// CONTEXT is the exemption and absence of UAT is not.
+test('criteria-coverage: an absent CONTEXT.md leaves the phase out of the envelope, ok:true', () => {
+  const noContext = coverageTree({ 1: { items: P1_ITEMS_DROPPED } });
+  const a = run(['criteria-coverage'], noContext);
+  assert.equal(a.ok, true);
+  assert.deepEqual(a.phases, []);
+  assert.equal(a.breaks, undefined);
+  assert.deepEqual(a.counts, { criteria: 0, covered: 0, uncovered: 0, untraced: 0, phases: 0 });
+});
+
+// The hole this closes: a checked phase that declared seven criteria and never
+// got a checklist at all - the total drop - used to report nothing whatsoever.
+test('criteria-coverage: a CHECKED phase with criteria and no UAT.md breaks as missing-uat', () => {
+  const dir = coverageTree({ 1: { criteria: P1_CRITERIA } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 0 }]);
+  assert.deepEqual(r.breaks.map((b) => b.break), Array(7).fill('missing-uat'));
+  assert.deepEqual(r.breaks.map((b) => b.id), ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7']);
+  assert.deepEqual(r.counts, { criteria: 7, covered: 0, uncovered: 7, untraced: 0, phases: 1 });
+});
+
+test('criteria-coverage: an UNCHECKED phase with no UAT.md counts uncovered but never breaks', () => {
+  const dir = coverageTree({ 1: { checked: false, criteria: P1_CRITERIA } });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.counts.uncovered, 7);
+  assert.deepEqual(r.phases, [{ phase: 1, criteria: 7, items: 0 }]);
+});
+
+test('criteria-coverage: a phase with no CONTEXT and no UAT is still exempt - the pruned case', () => {
+  const dir = coverageTree({ 1: {} });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.phases, []);
+  assert.equal(r.breaks, undefined);
+});
+
+// A typo'd heading used to leave no trace at all: criteria: null, issues: [],
+// so the phase reported zero criteria and the items pointing at AC1 landed in
+// the additive unknown_criterion with the gate green. Now the heading itself is
+// named, which is what makes the drop findable.
+test('criteria-coverage: a near-miss criteria heading is reported, not silent', () => {
+  const dir = coverageTree({
+    1: {
+      contextText: '# Phase 1 Context\n\n## Acceptance Criteria\n\n- [ ] AC1: the tests pass\n',
+      items: [{ name: 'Tests pass', criterion: 'AC1' }],
+    },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.context_issues[0].issues.map((i) => i.code), ['criteria-heading-near-miss']);
+  assert.equal(r.context_issues[0].issues[0].line, 3);
+  assert.deepEqual(r.unknown_criterion, [{ phase: 1, item: 1, criterion: 'AC1' }]);
+  assert.equal(r.counts.criteria, 0);
+});
+
+test('criteria-coverage: a CONTEXT of bare bullets surfaces criterion-unidded, additively', () => {
+  const dir = coverageTree({
+    1: {
+      contextText: '# Phase 1 Context\n\n## Acceptance criteria\n\n- [ ] the tests pass\n- [ ] the linter is clean\n',
+      items: [{ name: 'Tests pass', origin: 'verifier' }],
+    },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.context_issues[0].issues.map((i) => i.code),
+    ['criterion-unidded', 'criterion-unidded']);
+  assert.equal(r.breaks, undefined);
+  assert.equal(r.counts.criteria, 0);
+});
+
+test('criteria-coverage: a criterion value naming no declared id reports unknown_criterion', () => {
+  const dir = coverageTree({
+    1: { criteria: [['AC1', 'one']], items: [{ name: 'Item one', criterion: 'AC9' }] },
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.unknown_criterion, [{ phase: 1, item: 1, criterion: 'AC9' }]);
+  assert.deepEqual(r.breaks, [{ phase: 1, id: 'AC1', break: 'uncovered' }]);
+  assert.equal(r.untraced, undefined); // it carries a criterion, wrong or not
+});
+
+test('criteria-coverage: the counts identity holds across a mixed tree', () => {
+  const dir = coverageTree({
+    1: { criteria: P1_CRITERIA, items: P1_ITEMS },
+    2: { criteria: P1_CRITERIA, items: P1_ITEMS.map((it) => ({ name: it.name })) }, // legacy
+    3: { criteria: [['AC1', 'one'], ['AC2', 'two'], ['AC3', 'three']],
+      items: [{ name: 'Item one', criterion: 'AC1' }, { name: 'A gap', origin: 'verifier' }] },
+    4: { items: P1_ITEMS }, // no CONTEXT: contributes nothing
+  });
+  const r = run(['criteria-coverage'], dir);
+  assert.deepEqual(r.legacy, [2]);
+  assert.deepEqual(r.breaks, [
+    { phase: 3, id: 'AC2', break: 'uncovered' },
+    { phase: 3, id: 'AC3', break: 'uncovered' },
+  ]);
+  assert.deepEqual(r.counts, { criteria: 10, covered: 8, uncovered: 2, untraced: 0, phases: 3 });
+  assert.equal(r.counts.criteria, r.counts.covered + r.counts.uncovered);
+});
+
+test('criteria-coverage: an absent ROADMAP.md degrades with no-roadmap', () => {
+  const dir = makeTree({ reqs: [['REQ-1', 1, 'Pending']] });
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-roadmap');
+  assert.equal(r._exit, 1);
+});
+
 // --- frontmatter grammar: normalization + the diagnostic's both envelopes ---
 
 test('audit + plan-overlap: a CRLF-checked-out PLAN.md reads identically to its LF twin', () => {
@@ -1809,6 +2275,59 @@ test('renumber insert at total+1 appends: nothing shifts, only the slot opens', 
   const cursor = run(['cursor', 'get'], dir);
   assert.equal(cursor.phase, 2); // below the insertion point - untouched
   assert.equal(cursor.total, 4); // but the denominator grew
+});
+
+// --- renumber vs CONTEXT acceptance-criteria ids: a NON-event ----------------
+// What these pin is that NOTHING happens. cmdRenumber's computed edits are
+// ROADMAP/REQUIREMENTS/STATE only, and phase dirs move whole via gitMv with
+// their contents never rewritten - so `shiftPhaseTokens` never reaches a
+// CONTEXT.md, and a `Phase 2` token INSIDE the fixture proves it (drop that
+// token and the byte assertion passes vacuously). The only way to fail these is
+// for a criterion id to embed the phase number, which is exactly what D-02
+// forbids: an id that renumbers under the user is worse than no id at all.
+//
+// Falsification is a mutation of the CODE, not the fixture: add
+// `phases/<n>/CONTEXT.md` to the files cmdRenumber shifts tokens over and both
+// tests fail. "Rewrite one fixture id to P2-AC1 and watch it fail" proves
+// nothing - it moves the expected and the actual bytes together.
+
+const CRITERIA_CONTEXT = '# Phase 2: Two - Context\n\n' +
+  'Gathered: 2026-01-01\nFeeds: /cad-plan 2\n\n' +
+  '## Scope boundary\n\nIn: the work Phase 2 delivers\n\n' +
+  '## Acceptance criteria\n\n' +
+  '- [ ] AC1: the first observable behavior\n' +
+  '- [ ] AC2: the second observable behavior\n' +
+  '- [ ] AC3: the third observable behavior\n';
+
+/** renumberTree plus a real criteria section (and a `Phase 2` token) in phase 2. */
+function criteriaRenumberTree() {
+  const dir = renumberTree();
+  writeFileSync(join(dir, 'phases', '2', 'CONTEXT.md'), CRITERIA_CONTEXT);
+  return dir;
+}
+
+test('renumber insert: an existing phase CONTEXT keeps its AC ids byte-identical (D-02)', () => {
+  const dir = criteriaRenumberTree();
+  const r = run(['renumber', 'insert', '--at', '2'], dir);
+  assert.equal(r.ok, true);
+  // phases/2 moved to phases/3; its bytes did not change, `Phase 2` included.
+  const moved = readFileSync(join(dir, 'phases', '3', 'CONTEXT.md'), 'utf8');
+  assert.equal(moved, CRITERIA_CONTEXT);
+  // Hardcoded, NOT re-derived from the same file, so the assertion still fails
+  // if the grammar itself is deleted.
+  assert.deepEqual(classifyAcceptanceCriteria(moved).criteria.map((c) => c.id),
+    ['AC1', 'AC2', 'AC3']);
+});
+
+test('renumber remove: the shift DOWN leaves an existing phase CONTEXT byte-identical too', () => {
+  const dir = criteriaRenumberTree();
+  const r = run(['renumber', 'remove', '--n', '1'], dir);
+  assert.equal(r.ok, true);
+  // phases/2 moved down to phases/1; same bytes, same ids.
+  const moved = readFileSync(join(dir, 'phases', '1', 'CONTEXT.md'), 'utf8');
+  assert.equal(moved, CRITERIA_CONTEXT);
+  assert.deepEqual(classifyAcceptanceCriteria(moved).criteria.map((c) => c.id),
+    ['AC1', 'AC2', 'AC3']);
 });
 
 test('renumber insert: integer dirs shift even when a decimal phase is highest (#36)', () => {

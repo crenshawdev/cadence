@@ -264,9 +264,9 @@ embeds its own reviewer loop; that rule lives in
 `cadence-core/references/conventions.md`. It is why gates are configurable at all
 rather than scattered across twenty workflows.
 
-### Five triggers, three consequences, three combination modes
+### Five triggers, four consequences, three combination modes
 
-| Trigger | Fired by | On | Shipped gate |
+| Trigger | Fired by | On | Gate at `shipped` |
 |---|---|---|---|
 | `plan` | `/cad-plan` | after PLAN.md is written | adjudicated |
 | `diff` | `/cad-execute` | at plan completion | advisory |
@@ -275,14 +275,24 @@ rather than scattered across twenty workflows.
 | `pre_ship` | `/cad-land` | before publishing | adjudicated |
 
 Four of the five fire on their own; `phase_diff` ships off because most projects
-never run the parallel path. The gate (`advisory`, `blocking`, `adjudicated`)
-decides the consequence, `review.mode` (`single`, `panel`, `adjudicated`) decides
-how multiple reviewers combine, and where they disagree the gate wins, because it
-is the stronger signal.
+never run the parallel path. The gate (`off`, `advisory`, `blocking`,
+`adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
+`adjudicated`) decides how multiple reviewers combine, and where they disagree the
+gate wins, because it is the stronger signal.
 
-The shipped defaults encode an opinion about where scrutiny pays: heavy before
-code exists, heavy before publishing, blocking on risk, merely advisory on an
-ordinary diff.
+That gate column is the `shipped` level, not a fixed default. Every gate is
+resolved from the project's `stakes` level, so the same trigger fires differently
+depending on what a break costs you: a `plan` review is advisory at `solo` and
+adjudicated at `shipped` and `critical`, an ordinary `diff` is off at `solo`,
+advisory at `shipped`, and blocking at `critical`. `risk_surface` is the one that
+does not move, blocking at all three levels. An explicit gate you set in config
+beats the level's, as long as it is one of the four values above; a typo loses to
+the level's gate and is named in the warnings rather than silently disabling a
+review.
+
+The defaults encode an opinion about where scrutiny pays: heavy before code
+exists, heavy before publishing, blocking on risk, merely advisory on an ordinary
+diff.
 
 ### Reviewers are merged blind
 
@@ -361,6 +371,15 @@ A match on any of these fires the blocking `risk_surface` trigger: auth and
 authorization and sessions, DB schema and migrations, money and billing and
 pricing, concurrency and async and locking, destructive operations, secrets and
 crypto and keys, public API and wire contracts, and untrusted-input parsing.
+
+Detection also sets a floor. When a phase's own plan declares a path on one of
+those surfaces, that phase's `stakes` level is raised for the phase, the reason
+names which surface and which file matched, and the raise only ever goes up, so a
+project already at `critical` is unaffected. Lowering it back takes a named
+per-surface `risk.override.<surface>` rather than nothing at all, and that waiver
+is read from the repo's own config alone: one set in a user-global config is
+ignored and named in the warnings, because a single line in one file should not
+disable the floor in every project on the machine.
 
 A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
 there is a narrow, evidence-based pre-filter. A destructive op drops only when

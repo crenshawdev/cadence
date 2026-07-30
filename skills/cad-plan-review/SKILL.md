@@ -39,8 +39,9 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    batched step - independent; conventions.md Parallel work.)
 
 2. **Fire the `plan` trigger** per references/review-triggers.md with the
-   resolved PLAN file(s) as the artifact. Honor `review.triggers.plan` (gate,
-   tier, effort); default gate is adjudicated. This resolves the reviewer set
+   resolved PLAN file(s) as the artifact. Honor `review.triggers.plan.gate`
+   (default adjudicated) always; its `tier` and `effort` reach cross-model
+   reviewers only. This resolves the reviewer set
    (claude-subagent and/or a configured cross-model reviewer), runs them, and -
    for an adjudicated gate - grounds each finding against the real repo, kills
    false positives, and merges convergent findings.

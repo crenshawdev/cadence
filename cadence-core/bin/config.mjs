@@ -19,10 +19,12 @@
 // read time (precedence repo > global > defaults). Each file is validated on its
 // own - every layer must be independently valid.
 
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
+import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
+import { surfaceKeyError, OVERRIDE_PREFIX } from './lib/risk-surfaces.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -108,6 +110,11 @@ function validate(file) {
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {
+    // Same message the write face gives, for the same reason the retired-key
+    // check states: a value refused at `set` with one message and named
+    // differently at `validate` is the drift this repo keeps closing.
+    const surfaceErr = surfaceKeyError(path, Object.keys(SCHEMA));
+    if (surfaceErr) { errors.push({ key: path, error: surfaceErr }); continue; }
     const spec = SCHEMA[path];
     if (!spec) { errors.push({ key: path, error: 'unknown key' }); continue; }
     const msg = checkValue(spec, v);
@@ -124,6 +131,18 @@ function checkPairs(tokens) {
     const kv = splitPair(tok);
     if (!kv) { errors.push({ key: tok, error: 'not a key=value pair' }); continue; }
     const [key, raw] = kv;
+    // BEFORE the schema lookup, deliberately: a retired key is one the schema
+    // no longer holds, so the `!spec` arm below would answer a rename with the
+    // generic 'unknown key' and leave the user to find the replacement. This
+    // runs inside checkPairs, which both `set` and `check` reach before any
+    // read or write, so the refusal stays atomic.
+    const retired = retiredKeyError(key);
+    if (retired) { errors.push({ key, error: retired }); continue; }
+    // Same placement, same reason: `risk.override.athu` is a misspelled surface,
+    // and the generic `unknown key` arm below would answer it with nothing the
+    // user can act on. This names every accepted surface instead.
+    const surfaceErr = surfaceKeyError(key, Object.keys(SCHEMA));
+    if (surfaceErr) { errors.push({ key, error: surfaceErr }); continue; }
     const spec = SCHEMA[key];
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
@@ -132,30 +151,6 @@ function checkPairs(tokens) {
     pairs.push({ key, value });
   }
   return { pairs, errors };
-}
-
-// Cross-key checks the per-key schema types cannot express. Advisory only:
-// warnings, never errors - a legal-but-surprising value stays settable (a
-// user may deliberately disable escalation this way).
-function crossWarnings(pairs) {
-  const warnings = [];
-  for (const { key, value } of pairs) {
-    if (key === 'model.auto.ceiling') {
-      try {
-        const t = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-        const order = t.profile_order || [];
-        const base = t.auto && t.auto.base_profile;
-        if (order.indexOf(String(value)) <= order.indexOf(base)) {
-          warnings.push({
-            key,
-            warning: `ceiling "${value}" is at/below auto's base profile "${base}": ` +
-              'failure escalation holds at base (it never demotes) - use a higher ceiling to enable raises',
-          });
-        }
-      } catch { /* no table -> no cross-check; per-key validation already ran */ }
-    }
-  }
-  return warnings;
 }
 
 // A dotted key writes through intermediate containers. Auto-vivifying one that
@@ -197,11 +192,55 @@ function setInto(obj, dotted, value) {
   node[parts[parts.length - 1]] = value;
 }
 
+// The `risk.override.<surface>` family is the one key family whose whole purpose
+// is to LOWER a floor, and its schema `src` says `repo`. `src` is metadata
+// nothing in bin/ reads today (closing that generally is phase 6's shape), so
+// without this one narrow refusal a single
+// `config.mjs set risk.override.auth=true --global` would waive the auth floor
+// in every repository on the machine, forever, with nothing in any of those
+// repos recording it - the silent lowering this whole phase exists to prevent.
+/**
+ * Filesystem identity for a path that may not exist yet. `--global` AUTO-CREATES
+ * the global file, so absence is the ordinary case, not an error: fall back to
+ * the realpath of the parent directory joined with the basename, and to a plain
+ * absolute resolve when even the directory is absent. That is what lets the
+ * comparison below see through a symlinked ~/.claude, a relative path and a
+ * trailing-slash spelling alike.
+ * @param {string} p
+ * @returns {string}
+ */
+function fsIdentity(p) {
+  try { return realpathSync(p); } catch { /* not created yet - fall through */ }
+  try { return join(realpathSync(dirname(p)), basename(p)); } catch { /* dir absent too */ }
+  return resolvePath(p);
+}
+
+/** @param {string} file @param {boolean} create @param {{key:string}[]} pairs */
+function repoScopedErrors(file, create, pairs) {
+  // Identity, not string equality: `--file <global-dir>/./config.json` wrote
+  // straight through the refusal, and a symlink, a relative path or a trailing
+  // slash opened the same door. The GLOBAL_CONFIG guard stays non-empty-only -
+  // lib/config-merge.mjs deliberately yields '' where homedir() throws, and ''
+  // must never match a real target.
+  const targetsGlobal = create
+    || (Boolean(GLOBAL_CONFIG) && fsIdentity(file) === fsIdentity(GLOBAL_CONFIG));
+  if (!targetsGlobal) return [];
+  return pairs.filter((p) => p.key.startsWith(OVERRIDE_PREFIX)).map((p) => ({
+    key: p.key,
+    error: `"${p.key}" is repo-scoped (src: repo): a risk-floor waiver applies to `
+      + 'ONE repository, so it cannot be written to the user-global layer - '
+      + 'set it with --file <repo config> instead',
+  }));
+}
+
 // `create` (the --global path) starts from an empty config and makes the parent
 // dir if the file does not exist yet; a corrupt existing file still fails.
 function set(file, tokens, create) {
   const { pairs, errors } = checkPairs(tokens);
-  if (errors.length) fail('invalid', errors);
+  // Both refusals land in ONE detail list, before any read or write, so a
+  // multi-pair set stays all-or-nothing.
+  const scoped = repoScopedErrors(file, create, pairs);
+  if (errors.length || scoped.length) fail('invalid', [...errors, ...scoped]);
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {
@@ -216,8 +255,7 @@ function set(file, tokens, create) {
   // atomicWrite (temp + rename), not a bare write: config is a live layer
   // every other seam reads mid-session; a crash must never leave it torn.
   atomicWrite(file, JSON.stringify(cfg, null, 2) + '\n');
-  const warnings = crossWarnings(pairs);
-  out({ ok: true, file, changed: pairs, ...(warnings.length ? { warnings } : {}) });
+  out({ ok: true, file, changed: pairs });
 }
 
 // The effective value set: schema defaults, overlaid by the global then the
@@ -225,6 +263,10 @@ function set(file, tokens, create) {
 // a flat dotted-key map, so callers read values without re-flattening.
 function get(file, keys) {
   const { config, source, warnings } = mergeLayers(file);
+  // A key the schema dropped is invisible to the read below - it resolves at
+  // the default and looks configured. Naming it here is what keeps an upgraded
+  // repo from silently routing on a value nothing reads.
+  const allWarnings = [...(warnings || []), ...retiredKeysIn(config)];
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};
@@ -234,7 +276,7 @@ function get(file, keys) {
   for (const k of wanted) {
     values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
   }
-  out({ ok: true, values, source, ...(warnings && warnings.length ? { warnings } : {}) });
+  out({ ok: true, values, source, ...(allWarnings.length ? { warnings: allWarnings } : {}) });
 }
 
 // --- dispatch ----------------------------------------------------------------
@@ -258,9 +300,11 @@ try {
   }
   if (cmd === 'validate') { const { file } = optFile(rest); validate(file); }
   else if (cmd === 'check') {
-    const { pairs, errors } = checkPairs(rest);
-    const warnings = crossWarnings(pairs);
-    out({ ok: errors.length === 0, errors, ...(warnings.length ? { warnings } : {}) });
+    // The same failure contract `set` speaks (and workflows/config.md
+    // documents): one shape for both faces, so a caller reads `detail` once.
+    const { errors } = checkPairs(rest);
+    if (errors.length) out({ ok: false, reason: 'invalid', detail: errors });
+    else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
   else if (cmd === 'get') { const { file, tokens } = optFile(rest); get(file, tokens); }

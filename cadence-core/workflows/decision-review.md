@@ -12,12 +12,6 @@ wiring table). It runs only when a human invokes `/cad-decision-review
 <path>` on a decision they chose to stress-test - durability (cad-context's
 `## Durable decisions` filter) names candidates; picking one for this deeper
 pass is the human's call, not a mechanical handoff.
-
-The ruling and amendment list are this workflow's own prose output, not a
-`review-provider.mjs` FINDING_SCHEMA change and not a new self-verify
-CONTRACTS entry - the shared finding schema (`{findings:[...]}`) still comes
-back from step 2 unchanged; step 3 is where this workflow's own judgment
-turns those findings into a ruling.
 </purpose>
 
 <process>
@@ -50,7 +44,10 @@ Resolve the reviewer set exactly as references/review-triggers.md step 3
 does, from `review.reviewers[]`:
 - **claude-subagent** (always available): dispatch `cad-reviewer` through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
-  `{findings:[...]}`.
+  `{findings:[...]}`. No routing cell resolves a model for this arm - it is the
+  base `cad-reviewer` at the session default, at every stakes level - and
+  `review.decision_review.tier` and `.effort` reach the cross-model arm below
+  only, whatever the stakes level is (D-04).
 - **cross-model** (any provider in `review.reviewers` - `openai`, `gemini`,
   `deepseek`, ...), only when `review.reviewers` names it
   AND `review.providers.<name>.tiers[review.decision_review.tier]` is a
@@ -124,7 +121,10 @@ Report, qualitatively (D-09 - the runtime exposes no per-turn token/dollar
 figures, so never fabricate one):
 - which reviewers ran (`claude-subagent` always; the cross-model provider(s)
   and model id(s), when the panel path ran)
-- the resolved `review.decision_review.tier` and `.effort`
+- the `review.decision_review.tier` and `.effort` the cross-model call used,
+  and that `cad-reviewer` ran at the session default with neither applied -
+  say the second half even when no cross-model reviewer ran, which is exactly
+  when a bare tier/effort line reads as if the run had honoured one
 - the call count (one `cad-reviewer` dispatch, plus one
   `review-provider.mjs` call per surviving cross-model reviewer)
 - any reviewer that was offered but dropped (no-key, no tier assigned), and why
@@ -172,10 +172,12 @@ amend and does it themselves (or via a follow-up `/cad-context` correction,
 - [ ] At least one library/API claim was checked against Context7 and at
       least one factual claim against the codebase, on whichever claim set
       applied - or that set was noted to contain none of that kind
-- [ ] The report names which reviewers/models/tier/effort ran, qualitatively
-      - no fabricated token/dollar figures
-- [ ] Single-model (claude-subagent) ran when no cross-model provider was
-      configured; the panel ran through the review seam, resolving the model
-      from `review.decision_review.{tier,effort}`, when one was
+- [ ] The report names which reviewers ran and the tier/effort that reached
+      the cross-model arm, qualitatively, never presented as applying to
+      `cad-reviewer` - no fabricated token/dollar figures
+- [ ] Single-model (`cad-reviewer`, no model resolved) ran when no cross-model
+      provider was configured; the panel ran through the review seam, resolving
+      the cross-model call's model and effort from
+      `review.decision_review.{tier,effort}`, when one was
 - [ ] No file was edited - the target decision doc is untouched
 </success_criteria>

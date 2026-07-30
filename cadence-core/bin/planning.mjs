@@ -23,6 +23,10 @@
 //                                   plans' declared file lists (parallel gate)
 //   seed-reqs --phase N             insert Traceability rows for a phase's
 //                                   plan-declared, ## Active-bounded req ids
+//   criteria-coverage               every CONTEXT `## Acceptance criteria` id
+//                                   against its phase's UAT items, both
+//                                   directions; uncovered breaks, untraced
+//                                   reports (references/acceptance-criteria.md)
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
 //                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
@@ -42,6 +46,7 @@ import {
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
+  classifyAcceptanceCriteria, UAT_ORIGINS, UAT_FIELDS_VERSION,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
@@ -396,28 +401,53 @@ function cmdUat(dir, sub, opts) {
     if (!Array.isArray(items) || items.some((i) => !i.name || !i.expected)) {
       return fail('bad-payload', 'expected a JSON array of {name, expected}');
     }
+    // The traceability fields are OPTIONAL but validated before any write, so a
+    // typo lands as a named refusal rather than as an item whose `criterion`
+    // names nothing (which `criteria-coverage` would then report as
+    // `unknown_criterion` on a file already on disk).
+    const badCriterion = items.find((i) => i.criterion !== undefined && !/^AC\d+$/.test(i.criterion));
+    if (badCriterion) {
+      return fail('bad-payload', `criterion must be AC<N> (got: ${badCriterion.criterion})`);
+    }
+    const badOrigin = items.find((i) => i.origin !== undefined && !UAT_ORIGINS.includes(i.origin));
+    if (badOrigin) {
+      return fail('bad-payload', `origin must be one of: ${UAT_ORIGINS.join(' | ')} (got: ${badOrigin.origin})`);
+    }
+    // Carried onto the item by BOTH arms. `origin` is never derived from the
+    // presence of `criterion`: a present `criterion` is itself the
+    // criterion-derived marker, and fabricating a second one would put this
+    // seam's output out of step with the four backfilled checklists (D-16).
+    const build = (it, k) => ({ k, name: it.name, expected: it.expected,
+      ...(it.criterion ? { criterion: it.criterion } : {}),
+      ...(it.origin ? { origin: it.origin } : {}),
+      status: 'pending', ...(it.source ? { source: it.source } : {}) });
     if (sub === 'init') {
       if (existsSync(uatFile(dir, n))) return fail('uat-exists', 'use refresh, or remove the file deliberately');
       const today = new Date().toISOString().slice(0, 10);
       const uat = {
-        fm: { status: 'testing', phase: String(n), started: today, updated: today,
+        // `fields_version` is written unconditionally, before any item is
+        // considered: it marks the FILE as post-field, so a payload that
+        // carries no `criterion` at all can never be mistaken for a checklist
+        // that predates the field.
+        fm: { status: 'testing', phase: String(n), fields_version: UAT_FIELDS_VERSION,
+          started: today, updated: today,
           ...(opts.sources ? { sources: opts.sources } : {}) },
-        items: items.map((it, i) => ({ k: i + 1, name: it.name, expected: it.expected,
-          status: 'pending', ...(it.source ? { source: it.source } : {}) })),
+        items: items.map((it, i) => build(it, i + 1)),
       };
       writeUat(dir, n, uat);
       return ok({ file: uatFile(dir, n), items: uat.items.length, next: nextPending(uat.items) });
     }
     // refresh: append only items whose name matches nothing existing; never
-    // touch a recorded result.
+    // touch a recorded result. It carries the same fields `init` does, in
+    // LOCKSTEP with it (D-06): `verify.md` routes every re-run of a phase
+    // through refresh, so an arm that dropped them would make any phase
+    // verified across two sessions untraceable even with init right.
     const uat = loadUat(dir, n);
     if (!uat) return;
     const have = new Set(uat.items.map((i) => String(i.name)));
     const fresh = items.filter((i) => !have.has(i.name));
     let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
-    for (const it of fresh) {
-      uat.items.push({ k: ++k, name: it.name, expected: it.expected, status: 'pending' });
-    }
+    for (const it of fresh) uat.items.push(build(it, ++k));
     if (fresh.length) writeUat(dir, n, uat);
     return ok({ added: fresh.length, total: uat.items.length, next: nextPending(uat.items) });
   }
@@ -436,10 +466,17 @@ function cmdUat(dir, sub, opts) {
     if (source === 'verifier' && item.status !== 'pending') {
       return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
     }
+    // Validated BEFORE any write: `--origin` is the after-the-fact repair for
+    // an item whose provenance was never declared, so an out-of-enum value must
+    // leave the file byte-unchanged rather than record a marker nothing reads.
+    if (opts.origin !== undefined && !UAT_ORIGINS.includes(opts.origin)) {
+      return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`);
+    }
     item.status = opts.result;
     if (source === 'verifier') item.source = 'verifier';
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
-      ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence']]) {
+      ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence'],
+      ['origin', 'origin']]) {
       if (opts[flag] !== undefined) item[field] = opts[flag];
     }
     // Invariant: first_pass is the FIRST pass/fail verdict, set once, never after.
@@ -514,7 +551,13 @@ function cmdUat(dir, sub, opts) {
         // entry that wrote nothing must not inflate it - otherwise the
         // envelope reports three gaps found for one item written.
         if (!name) { rejected++; continue; }
+        // `origin: verifier` is the item-level provenance `source: verifier` is
+        // not: source records where a RESULT came from and is set identically on
+        // an existing pending item above, so it cannot mark an item the verifier
+        // ADDED (D-12). Without this the reverse-direction exemption would
+        // swallow nearly every item in every shipped checklist.
         uat.items.push({ k: ++k, name, expected: g.expected || g.reason || '',
+          origin: 'verifier',
           status: 'fail', source: 'verifier', severity: g.severity || 'major',
           ...(g.reason ? { reported: g.reason } : {}),
           ...(g.evidence ? { evidence: g.evidence } : {}), first_pass: 'fail' });
@@ -525,7 +568,13 @@ function cmdUat(dir, sub, opts) {
       if (find(h)) continue;
       const name = usableName(h);
       if (!name) { rejected++; continue; } // appends the identical phantom, at pending
-      uat.items.push({ k: ++k, name, expected: h.expected || '', status: 'pending' });
+      // This path wrote NO provenance of any kind before this phase - observable
+      // at .planning/phases/1/UAT.md items 12 and 14, which carry neither
+      // `source` nor an origin. The bare-`continue` counting bug above (an entry
+      // matching an existing item lands in neither `skipped` nor `rejected`) is
+      // deliberately untouched: it is deferred to its own phase (D-14).
+      uat.items.push({ k: ++k, name, expected: h.expected || '',
+        origin: 'verifier', status: 'pending' });
       added++;
     }
     writeUat(dir, n, uat);
@@ -708,6 +757,158 @@ function cmdAudit(dir) {
       traced: requirements.length - broken,
       broken,
       deferred: deferred.length,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// criteria-coverage - the CONTEXT acceptance criterion -> UAT item trace, as
+// data. Proves the function is TOTAL: every criterion a phase declared reached
+// that phase's checklist. `/cad-audit` folds this into its ONE verdict.
+//
+// A NEW subcommand rather than an extension of `audit` (D-08): audit's
+// `counts` identity is pinned at :702-711 with a comment stating why, and
+// audit.md section 4 filters `requirements[]` BY milestone id - a criterion
+// break carries no requirement id to filter on, so an out-of-scope phase's
+// break would block a ship it should not.
+//
+// The two directions are ASYMMETRIC (D-09): `breaks` is the only verdict-moving
+// key; `untraced`, `legacy`, `unknown_criterion` and `context_issues` are
+// additive. Four of four phases this cycle appended legitimate verifier gap
+// items, so making the reverse direction breaking would make the gate
+// unpassable.
+// ---------------------------------------------------------------------------
+
+// An `origin` value that declares an item legitimately built from no criterion.
+// Mirrors UAT_ORIGINS in lib/planning-files.mjs minus `criterion`, which names
+// no id by itself and therefore exempts nothing.
+const ORIGIN_EXEMPT = new Set(['verifier', 'smoke']);
+
+function cmdCriteriaCoverage(dir) {
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+  // The same phase list `cmdAudit` walks - no new source of truth for which
+  // phases exist. `milestone.md` step 3 prunes completed phases out of the live
+  // `## Phases` list, so this only ever holds the current cycle's phases.
+  const roadmap = parseRoadmapPhases(roadmapText);
+
+  const phases = [];
+  const breaks = [];
+  const untraced = [];
+  const legacy = [];
+  const unknownCriterion = [];
+  const contextIssues = [];
+  let nCriteria = 0, nCovered = 0, nUncovered = 0;
+
+  for (const p of roadmap) {
+    const pdir = join(dir, 'phases', String(p.n));
+    const contextText = read(join(pdir, 'CONTEXT.md'));
+    const uatText = read(join(pdir, 'UAT.md'));
+    // An absent CONTEXT.md is nothing to prove (D-10): CONTEXT is a documented
+    // optional artifact, and `milestone.md` runs this gate at step 1 while the
+    // prune that DELETES phase dirs runs at step 3, so a prior milestone's
+    // pruned phase must never make the gate unpassable. The prune removes the
+    // whole directory, so it always takes CONTEXT with it - which is why this
+    // arm, and not the UAT one below, is where D-10's exemption belongs.
+    if (contextText === null) continue;
+
+    const classified = classifyAcceptanceCriteria(contextText);
+    // `criteria: null` is an absent heading - "nothing declared", not a
+    // problem. Coerced to [] here because the phase's CONTEXT exists, so it
+    // still reports its `phases[]` entry and its items still trace (to nothing,
+    // which is `untraced`'s additive job).
+    const criteria = classified.criteria || [];
+    if (classified.issues.length) contextIssues.push({ phase: p.n, issues: classified.issues });
+
+    // CONTEXT present, UAT.md absent. Exempting this the way a pruned phase is
+    // exempted left the gate's one load-bearing direction with an unnamed hole:
+    // a checked phase that declared criteria and never got a checklist is the
+    // total drop this subcommand exists to catch, and it reported nothing at
+    // all. Every declared criterion counts uncovered, and on a CHECKED box each
+    // one breaks as `missing-uat` - the same unchecked-box rule as below, so a
+    // phase still in flight is counted and never breaks.
+    if (uatText === null) {
+      phases.push({ phase: p.n, criteria: criteria.length, items: 0 });
+      nCriteria += criteria.length;
+      for (const c of criteria) {
+        nUncovered++;
+        if (p.checked) breaks.push({ phase: p.n, id: c.id, break: 'missing-uat' });
+      }
+      continue;
+    }
+
+    const uat = parseUat(uatText);
+    const items = uat.items;
+    phases.push({ phase: p.n, criteria: criteria.length, items: items.length });
+
+    const withCriterion = items.filter((it) => it.criterion !== undefined);
+    const withOrigin = items.filter((it) => it.origin !== undefined);
+    // Pre-field legacy (D-16): a checklist written before either field existed.
+    // The test is the ABSENCE OF THE FRONTMATTER MARKER, not the absence of the
+    // item fields. The original conjunction (no `criterion` AND no `origin`)
+    // reasoned that every post-field checklist carries at least one `origin`,
+    // and that premise was false the day it shipped: `.planning/phases/3/UAT.md`
+    // carries 7 `criterion` lines and 0 `origin` lines, so a `/cad-verify` that
+    // silently stopped emitting `criterion` on a phase-3-shaped checklist read
+    // as "an old project" and the gate stayed green forever - exactly the
+    // regression this subcommand exists to catch. `uat init` writes
+    // `fields_version` unconditionally, so a file this seam produced can never
+    // present as legacy however few links its items carry. An EMPTY checklist is
+    // not legacy either - an empty checklist is the drop itself, so its criteria
+    // all break.
+    if (items.length && uat.fm.fields_version === undefined
+      && withCriterion.length === 0 && withOrigin.length === 0) {
+      legacy.push(p.n);
+      continue;
+    }
+
+    const declared = new Set(criteria.map((c) => c.id));
+    const covered = new Set();
+    for (const it of items) {
+      if (it.criterion !== undefined) {
+        const id = String(it.criterion);
+        // An item COVERS the id in its `criterion` field.
+        if (declared.has(id)) covered.add(id);
+        else unknownCriterion.push({ phase: p.n, item: Number(it.k), criterion: id });
+        continue;
+      }
+      // Untraced: no `criterion`, and no `origin` that declares the item has
+      // none. `origin: criterion` with no id is still untraced - it names
+      // nothing, so it proves nothing.
+      if (!ORIGIN_EXEMPT.has(String(it.origin))) {
+        untraced.push({ phase: p.n, item: Number(it.k), name: String(it.name) });
+      }
+    }
+    nCriteria += criteria.length;
+    nCovered += covered.size;
+    for (const c of criteria) {
+      if (covered.has(c.id)) continue;
+      nUncovered++;
+      // An UNCHECKED roadmap box means the phase has not reached verification
+      // yet, so its uncovered criteria are counted but never break: a gate run
+      // mid-cycle must not FAIL on work still in flight.
+      if (p.checked) breaks.push({ phase: p.n, id: c.id, break: 'uncovered' });
+    }
+  }
+
+  ok({
+    phases,
+    ...(breaks.length ? { breaks } : {}),
+    ...(untraced.length ? { untraced } : {}),
+    ...(legacy.length ? { legacy } : {}),
+    ...(unknownCriterion.length ? { unknown_criterion: unknownCriterion } : {}),
+    ...(contextIssues.length ? { context_issues: contextIssues } : {}),
+    // `criteria === covered + uncovered` holds by construction, and it is what
+    // legacy phases are held OUT of these counts to preserve - the same pinned
+    // identity `audit`'s `total = traced + broken + deferred` carries above.
+    // `uncovered` is the count; `breaks` is the subset of it whose phase box is
+    // checked, which is why the two can differ mid-cycle.
+    counts: {
+      criteria: nCriteria,
+      covered: nCovered,
+      uncovered: nUncovered,
+      untraced: untraced.length,
+      phases: phases.length,
     },
   });
 }
@@ -1198,6 +1399,7 @@ const COMMANDS = {
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
+  'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
   // Bare words are JOINED, never rejected: every workflow caller quotes, so

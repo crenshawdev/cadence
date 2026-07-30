@@ -1,33 +1,57 @@
 #!/usr/bin/env node
 // @ts-check
-// route.mjs - zero-dep model-routing resolver. Given an agent role (and, for
-// `auto`, difficulty signals + attempt number), resolve which model alias and
-// which agent file the spawn-agent seam should dispatch. The route-table.json
-// beside ../route-table.json is editable data (role tiers + profile->model
-// matrix); this file is the logic. DESIGN "model routing" (§ model routing).
+// route.mjs - zero-dep routing resolver. Given an agent role and an attempt
+// number, resolve the whole quality bundle the spawn-agent seam and the review
+// subsystem need: {model, effort, review, verify}. The route-table.json beside
+// ../route-table.json is editable data (three grids); this file is the logic.
+// DESIGN "model routing" (§ model routing).
+//
+// The question the table asks is what a break COSTS, not what a dispatch costs:
+// the project's stakes level picks the row, and the role picks the cell in it.
+// One question in, four knobs out - because quality is not one dial, and effort
+// alone cannot express "fire a blocking cross-model review".
 //
 // Never blocks the spine: on any problem it returns {ok:false,...} and the
 // caller dispatches the base agent at the session-default model (no override).
 //
 // Subcommands (one JSON line on stdout):
-//   resolve --role <name> [--attempt N] [--files N] [--ambiguity 0..1] [--file <config>]
+//   resolve --role <name> [--attempt N] [--file <config>] [--phase N]
 //   table                                  dump the routing table
 //
 // Config is layered: a global file (see GLOBAL_CONFIG below) provides defaults,
 // the per-repo --file (default .planning/config.json) overrides it, and the
 // built-in DEFAULTS backstop both. Precedence: repo > global > defaults.
 // Config keys read:
-//   model.profile          fast | balanced | quality | auto
-//   model.auto.ceiling     highest profile auto may escalate to
-//   model.auto.escalate_on_failure (bool), model.auto.max_escalations (int)
-//   model.overrides.<role> pin one role to a model alias, bypassing the matrix
+//   stakes                     solo | shipped | critical
+//   model.escalate_on_failure  re-dispatch a failed attempt at the retry rung
+//                              its own cell names (bool, every stakes level)
+//   model.overrides.<role>     pin one role to a model alias, bypassing the cell
+//   review.triggers.*.gate     a gate a LAYER set, which must be one of the
+//                              table's `gates` and then wins over the level's
+//                              gate, reporting the disagreement (D-04); a value
+//                              outside that vocabulary loses to the level's gate
+//                              and is named in `warnings`
+//
+// The stakes level a config layer set is a FLOOR question too (STK-03): the
+// phase's own PLAN `files:` list is matched against the table's `surfaces`
+// block, and a detected risk surface RAISES the level to that row's floor -
+// never lowers it. Lowering back takes a persisted `risk.override.<surface>`,
+// one per detected surface, read from the REPO layer alone - the key is
+// `src: repo`, and a waiver found in the user-global layer is ignored and
+// named in `warnings` rather than waiving a floor machine-wide. Every
+// unresolvable input (no `--phase` and no cursor, no PLAN, an unreadable PLAN)
+// resolves at the baseline with ok:true.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { rungFile } from './lib/rung-agent.mjs';
+import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { requireInt } from './lib/require-int.mjs';
+import { matchSurfaces, raiseTo } from './lib/risk-surfaces.mjs';
+import { cursorPhase, declaredPhaseFiles } from './lib/phase-plans.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // TABLE is loaded lazily, inside the dispatch try block below, so a missing
@@ -39,119 +63,360 @@ const TABLE_PATH = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-ta
 const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
-const DEFAULTS = { profile: 'balanced', ceiling: 'quality', escalate_on_failure: true, max_escalations: 1 };
+const DEFAULTS = { stakes: 'shipped', escalate_on_failure: true };
+
+// The accepted `review.triggers.<t>.gate` vocabulary, used ONLY when the table
+// carries no usable `gates` array. Never skip the check on an absent list:
+// skipping leaves the hole open on exactly the tables most likely to be wrong -
+// an older or hand-edited route-table.json, or one injected through
+// CADENCE_ROUTE_TABLE - so a `"blockign"` typo would still reach the bundle
+// intact on the very input shape the check exists to cover.
+const DEFAULT_GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+
+// The shape a `--phase` value must have: an integer phase, or a decimal
+// insertion (`2.1`), which is the phase directory's own name.
+const PHASE_RE = /^\d+(\.\d+)?$/;
+
+// D-09 by ROLE. These two dispatches happen BEFORE the phase they are about has
+// a PLAN, so there is no declared file list to floor them off - and the "no PLAN
+// yet" mechanism does not deliver that on its own, because the cursor lags:
+// workflows/context.md dispatches cad-assumptions-analyzer well before it sets
+// the cursor, so during `/cad-context 5` the cursor still reads phase 4 and the
+// analyzer would be floored off phase 4's file list. A floor computed from a
+// DIFFERENT phase's plan is not a safe-direction superset, and no `reason`
+// string would reveal it as wrong. So these two resolve at the project baseline,
+// which is what D-09 says.
+const PRE_PLAN_ROLES = new Set(['cad-planner', 'cad-assumptions-analyzer']);
 
 // Resolve the effective config from global + repo layers (repo wins, via the
 // shared merge lib), falling back to DEFAULTS for anything unset. _source
-// names the layers that applied.
+// names the layers that applied, `stakesSet` says whether any layer actually
+// carried the key (a default must never be reported as a configured value),
+// and _warnings carries what the read found wrong but did not block on: a
+// layer that failed to parse, and any key v2.0.0 retired.
 function readConfig(file) {
-  const { config: c, source } = mergeLayers(file);
+  const { config: c, source, warnings, layers } = mergeLayers(file);
   const m = c.model || {};
-  const a = m.auto || {};
+  // `risk.override.<surface>` is `src: repo` in config.schema.json, so it is
+  // read from the REPO layer alone. Off the merged config, one line in one
+  // user-global file disabled the risk floor in every repository on the
+  // machine - the write face refused `--global` while the resolver honoured
+  // what got there anyway.
+  const globalWaivers = Object.entries(riskOverridesIn(layers ? layers.global : null))
+    // A waiver the global layer only NAMES is not one it makes: a global
+    // `risk.override.auth: false` is the ordinary not-waived case, and warning
+    // on it would put a "move your waiver" line on every dispatch in every
+    // repository for a waiver that does not exist.
+    .filter(([, value]) => Boolean(value))
+    .map(([surface]) => `risk.override.${surface} in the user-global config layer was `
+      + `IGNORED: it is repo-scoped (src: repo), so it waives nothing here - set it in `
+      + `this repo's own .planning/config.json to waive the ${surface} floor`);
   return {
-    profile: m.profile ?? DEFAULTS.profile,
-    ceiling: a.ceiling ?? DEFAULTS.ceiling,
-    escalate_on_failure: a.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
-    max_escalations: a.max_escalations ?? DEFAULTS.max_escalations,
+    stakes: c.stakes ?? DEFAULTS.stakes,
+    stakesSet: c.stakes !== undefined && c.stakes !== null,
+    escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
+    // NOT folded into `overrides` above: that map is read as
+    // `cfg.overrides[opts.role]` for the per-role model pin, so sharing the
+    // field would make every `model.overrides.<role>` pin resolve undefined -
+    // and a config carrying both a pin and a waiver would have two writers
+    // fighting over one field.
+    riskOverrides: riskOverridesIn(layers ? layers.repo : null),
+    triggerGates: triggerGatesIn(c),
     _source: source,
+    // The global waiver is warned about whether or not the repo layer also
+    // names that surface: the global value never applies either way, and a
+    // waiver that vanishes without a trace is the shape this milestone closes.
+    _warnings: [...(warnings || []), ...retiredKeysIn(c), ...globalWaivers],
   };
 }
 
-/** @param {number} i @param {number} lo @param {number} hi */
-const clampIdx = (i, lo, hi) => Math.max(lo, Math.min(hi, i));
-
-/** @param {string} tier @param {number} n */
-function bumpTier(tier, n) {
-  const order = TABLE.tier_order;
-  return order[clampIdx(order.indexOf(tier) + n, 0, order.length - 1)];
+// Per-trigger gates a LAYER actually wrote, keyed by trigger name. mergeLayers
+// merges the two FILE layers only and never folds in a schema default, so
+// everything this returns is a user assertion - which is the whole reason D-04
+// can let it win over the level's gate. Reading a default here would turn "the
+// schema says advisory" into "the user asked for advisory" and the grid would
+// decide nothing. Defensive at every hop: this runs on whatever a user's config
+// happens to hold, and a scalar where an object belongs contributes nothing
+// rather than throwing.
+function triggerGatesIn(c) {
+  const out = {};
+  const triggers = (c && typeof c === 'object' ? (c.review || {}) : {}).triggers;
+  if (!triggers || typeof triggers !== 'object' || Array.isArray(triggers)) return out;
+  for (const [name, spec] of Object.entries(triggers)) {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue;
+    if (spec.gate !== undefined && spec.gate !== null) out[name] = spec.gate;
+  }
+  return out;
 }
 
-// Step from base profile UP toward ceiling by `steps`, never overshooting.
-// Escalation only ever raises: a ceiling at or below the base profile
-// disables it entirely (re-running a FAILED attempt on a weaker model would
-// be a demotion, not an escalation). Unknown names also resolve at base.
-/** @param {string} base @param {string} ceiling @param {number} steps */
-function stepProfile(base, ceiling, steps) {
-  const order = TABLE.profile_order;
-  const b = order.indexOf(base);
-  const c = order.indexOf(ceiling);
-  if (b < 0 || c <= b) return base;
-  return order[clampIdx(b + steps, b, c)];
+/**
+ * The EFFECTIVE stakes level for this dispatch: the configured baseline, raised
+ * to the highest floor among the risk surfaces the phase's own declared PLAN
+ * `files:` list matches (STK-03). Pushes its own entries onto the `reason` and
+ * `warnings` arrays the caller already carries.
+ *
+ * Every unresolvable input returns the BASELINE with no entry at all - a
+ * `{ok:false}` here would make the caller dispatch the base agent at the session
+ * default (references/seams.md), routing a possibly-risky phase LOWER than its
+ * own baseline, and an entry saying nothing fired would appear on every dispatch
+ * of every phase for the life of every project.
+ *
+ * Reason entries name only what is identical between the two entry points - the
+ * phase number, the surface, the path, the pattern - and never HOW the phase was
+ * obtained, because a `--phase N` resolve and the cursor fallback must return
+ * the same bundle.
+ * @param {{role: string, file: string, phase?: string}} opts
+ * @param {{stakes: string, riskOverrides: Record<string, any>}} cfg
+ * @param {string[]} reason @param {string[]} warnings
+ * @returns {string} the effective level
+ */
+function riskFloor(opts, cfg, reason, warnings) {
+  const baseline = cfg.stakes;
+  if (PRE_PLAN_ROLES.has(opts.role)) return baseline; // D-09
+  const root = dirname(opts.file);
+
+  // A `--phase` that was PASSED but is out of shape does NOT fall through to the
+  // cursor: answering a typo with a floor computed from a different phase is
+  // worse than the value the user typed. Only an ABSENT flag reaches the cursor.
+  let phase = null;
+  if (opts.phase !== undefined) {
+    if (!PHASE_RE.test(String(opts.phase))) {
+      warnings.push(`--phase "${opts.phase}" is not a phase number; no risk floor was `
+        + `computed and this resolved at the ${baseline} baseline`);
+      return baseline;
+    }
+    phase = String(opts.phase);
+  } else {
+    const cursor = cursorPhase(root);
+    if (cursor === null) return baseline; // no phase in hand: no floor, silently
+    phase = String(cursor);
+  }
+
+  const declared = declaredPhaseFiles(root, phase);
+  warnings.push(...declared.warnings);
+  const detected = matchSurfaces(declared.files, TABLE.surfaces);
+
+  // The waiver is PER SURFACE (D-05): the floor drops to the baseline only when
+  // every detected surface is named, so waiving one of two still floors. A typo
+  // must not silently lower a floor any more than it may silently redirect a
+  // model, so only a strict `true` waives and every other shape speaks.
+  const declaredSurfaces = TABLE.surfaces && typeof TABLE.surfaces === 'object'
+    && !Array.isArray(TABLE.surfaces) ? Object.keys(TABLE.surfaces) : [];
+  const waived = new Set();
+  for (const [surface, value] of Object.entries(cfg.riskOverrides)) {
+    if (!declaredSurfaces.includes(surface)) {
+      warnings.push(`risk.override.${surface} names no declared risk surface `
+        + `(${declaredSurfaces.join(', ')}); it waives nothing`);
+      continue;
+    }
+    if (value === true) { waived.add(surface); continue; }
+    if (value === false || value === null) continue; // the ordinary "not waived"
+    warnings.push(`risk.override.${surface}=${JSON.stringify(value)} is not true or `
+      + `false; the ${surface} risk floor stands`);
+  }
+  const matches = detected.filter((m) => !waived.has(m.surface));
+  const waivedHits = detected.filter((m) => waived.has(m.surface));
+
+  if (!matches.length) {
+    // A full waiver still leaves its names in the record: a floor that vanishes
+    // without a trace is the resolved-then-dropped shape this milestone closes.
+    if (waivedHits.length) {
+      reason.push(`risk floor: waived by ${waivedHits.map((m) => `risk.override.${m.surface}`).join(', ')}`
+        + ` - every detected surface is named; stakes stays ${baseline}`);
+    }
+    return baseline;
+  }
+  for (const m of waivedHits) {
+    reason.push(`risk floor: risk.override.${m.surface} waives "${m.surface}"`);
+  }
+
+  const order = Array.isArray(TABLE.stakes_order) ? TABLE.stakes_order : [];
+  let effective = baseline;
+  for (const m of matches) effective = raiseTo(effective, m.floor, order);
+  for (const m of matches) {
+    if (raiseTo(baseline, m.floor, order) !== baseline) {
+      reason.push(`risk floor: phase ${phase} surface "${m.surface}" matched ${m.path} `
+        + `(pattern "${m.pattern}"); stakes ${baseline} -> ${effective}`);
+    } else {
+      // Criterion 3, the raise-never-caps behaviour: a detected surface whose
+      // floor sits at or below the baseline changes no knob and says so.
+      reason.push(`risk floor: phase ${phase} surface "${m.surface}" detected `
+        + `(floor ${m.floor}); baseline ${baseline} already at or above it`);
+    }
+  }
+  return effective;
+}
+
+// The `risk.override.<surface>` waivers a LAYER actually wrote, keyed by surface
+// name - collected exactly the way `triggerGatesIn` collects per-trigger gates,
+// and defensive at every hop for the same reason: this runs on whatever a user's
+// config happens to hold, so a scalar where an object belongs contributes
+// nothing rather than throwing. The VALUES are kept verbatim; only a strict
+// `true` waives, and the resolve side speaks about anything else.
+function riskOverridesIn(c) {
+  const out = {};
+  const risk = c && typeof c === 'object' && !Array.isArray(c) ? c.risk : null;
+  if (!risk || typeof risk !== 'object' || Array.isArray(risk)) return out;
+  const overrides = risk.override;
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return out;
+  for (const [surface, value] of Object.entries(overrides)) {
+    if (value !== undefined) out[surface] = value;
+  }
+  return out;
 }
 
 function resolve(opts) {
-  const role = TABLE.roles[opts.role];
-  if (!role) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${Object.keys(TABLE.roles).join(', ')}` }); return; }
+  // The declared role list, not a lookup in a spec object: a role IS routable
+  // or it is not, and after this phase the table carries no per-role block for
+  // the question to be asked of.
+  const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
+  if (!roles.includes(opts.role)) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${roles.join(', ')}` }); return; }
 
   const cfg = readConfig(opts.file);
-  const reason = [`config:${cfg._source}`];
-  let profile = cfg.profile;
-  let tier = role.tier;
-  let agent = opts.role;
-  let effort = role.base_effort;
-  let escalated = false;
+  // An honest first reason: `config:<layers>` is a claim that a layer supplied
+  // the value, so a default that no layer carried says so instead. Reporting
+  // `config:repo` for a value the repo file never held is how a retired key
+  // reads as a configured one.
+  const reason = [cfg.stakesSet
+    ? `config:${cfg._source}`
+    : `stakes default "${cfg.stakes}" (unset in layers: ${cfg._source})`];
 
-  if (profile === 'auto') {
-    const A = TABLE.auto;
-    // difficulty -> tier bump (capped)
-    let bumps = 0;
-    const sig = [];
-    if (opts.files != null && opts.files >= A.signals.files.threshold) { bumps++; sig.push(`files>=${A.signals.files.threshold}`); }
-    if (opts.ambiguity != null && opts.ambiguity >= A.signals.ambiguity.threshold) { bumps++; sig.push(`ambiguity>=${A.signals.ambiguity.threshold}`); }
-    bumps = Math.min(bumps, A.max_tier_bump);
-    if (bumps > 0) { tier = bumpTier(role.tier, bumps); escalated = true; reason.push(`tier +${bumps} (${sig.join(', ')})`); }
-    // failure -> profile escalation toward ceiling (bounded by max_escalations)
-    const steps = cfg.escalate_on_failure ? Math.min(Math.max((opts.attempt || 1) - 1, 0), cfg.max_escalations) : 0;
-    const resolveProfile = stepProfile(A.base_profile, cfg.ceiling, steps);
-    if (steps > 0) {
-      // `escalated` reflects what actually changed: a ceiling at/below base
-      // holds the profile (stepProfile), but a failure still swaps the
-      // effort-variant - same model spend, harder reasoning.
-      if (resolveProfile !== A.base_profile) {
-        escalated = true;
-        reason.push(`profile ${A.base_profile}->${resolveProfile} (attempt ${opts.attempt}, ceiling ${cfg.ceiling}, max ${cfg.max_escalations})`);
-      } else {
-        reason.push(`profile held at ${A.base_profile} (ceiling ${cfg.ceiling} at/below base - escalation never demotes)`);
-      }
-      if (role.escalate_effort_variant) { escalated = true; agent = role.escalate_effort_variant; effort = 'high'; reason.push(`effort-variant ${agent}`); }
-    }
-    profile = resolveProfile;
-    if (!escalated) reason.push(`auto base ${A.base_profile}`);
-  } else {
-    reason.push('explicit profile (no escalation; user pick wins)');
+  // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
+  // retired key, an unreadable PLAN, a gate disagreement and an unknown pin
+  // alias can all be true at once. Built before the floor so the floor's own
+  // diagnostics ride on it.
+  const warnings = [...cfg._warnings];
+
+  // The computed floor (STK-03), BEFORE the grid lookups: a detected risk
+  // surface pins the stakes LEVEL, so all four knobs come from the floored
+  // row through the one cell grid rather than from a second ladder beside it.
+  // The baseline stays visible in `reason` - a bundle that reports the baseline
+  // level while dispatching the floored cell is worse than no floor.
+  const stakes = riskFloor(opts, cfg, reason, warnings);
+
+  // The three grids (D-01). `model`, `effort` and `retry` come from ONE cell
+  // keyed on (level, role); `review` keys on (level, trigger) because a gate
+  // belongs to a trigger, not to an agent; `verify` keys on the level alone
+  // because deep_check runs once per phase with no role in hand. A level
+  // missing any of the three is a TORN table, so it degrades the same way a bad
+  // stakes value already does rather than emitting a partial bundle - half a
+  // bundle read as a whole one is worse than no bundle at all.
+  const level = TABLE.cells && TABLE.cells[stakes];
+  const cell = level && typeof level === 'object' && !Array.isArray(level) ? level[opts.role] : null;
+  const reviewRow = TABLE.review && TABLE.review[stakes];
+  const verify = TABLE.verify ? TABLE.verify[stakes] : undefined;
+  if (!cell || typeof cell !== 'object' || Array.isArray(cell)
+    || !reviewRow || typeof reviewRow !== 'object' || Array.isArray(reviewRow)
+    || verify === undefined) {
+    out({ ok: false, reason: 'unresolved', role: opts.role, stakes }); return;
   }
 
-  const table = TABLE.profiles[profile];
-  if (!table || !table[tier]) { out({ ok: false, reason: 'unresolved', role: opts.role, profile, tier }); return; }
+  // The agent FILE is what carries the effort (route.mjs reports effort, it
+  // cannot set it - seams.md), and the unsuffixed file is one rung among the
+  // others, so the file comes from the explicit map in lib/rung-agent.mjs
+  // rather than from a naming convention. Fail-open by design: a rung the map
+  // does not carry is self-verify's problem, and this still dispatches - at the
+  // unsuffixed file, saying it did, rather than naming a file that is not there.
+  const agentFor = (rung) => {
+    const stem = rungFile(opts.role, rung);
+    if (stem) return stem;
+    reason.push(`rung "${rung}" maps to no agent file; dispatching ${opts.role}`);
+    return opts.role;
+  };
 
-  // A per-role pin is an explicit user assertion, so it wins over the whole
-  // profile/tier matrix - including an `auto` escalation, which may still have
-  // raised the tier above. What it does NOT touch is effort: that is fixed per
-  // role in agent frontmatter, so a pinned role keeps its effort-variant swap
-  // (same reasoning depth, user's model). An unknown alias is reported as a
-  // warning and the routed model stands - a typo must not silently redirect
-  // the spend, nor block the spawn.
-  let model = table[tier];
+  let effort = cell.effort;
+  let agent = agentFor(effort);
+  let escalated = false;
+
+  // Escalation is unconditional: a failed attempt climbs to the rung its OWN
+  // cell names, at EVERY stakes level. Gating it behind a routing mode is what
+  // left the rung ladder unreachable on a default install; a fixed per-role
+  // target beside a cell that also sets effort is what let five of six roles
+  // resolve their escalation to a no-op (D-02).
+  if ((opts.attempt || 1) > 1) {
+    if (cfg.escalate_on_failure) {
+      const target = cell.retry;
+      if (target && target !== effort) {
+        escalated = true;
+        agent = agentFor(target);
+        reason.push(`rung ${effort}->${target} (${agent})`);
+        effort = target;
+      } else {
+        // Honest no-op: a cell whose retry IS its starting rung has nothing to
+        // climb to, and saying so beats reporting an escalation that never
+        // happened.
+        reason.push(`rung held at ${effort} (retry rung is the same rung)`);
+      }
+    } else {
+      reason.push(`rung held at ${effort} (model.escalate_on_failure: false)`);
+    }
+  }
+
+  // Config-wins precedence (D-04): a `review.triggers.<t>.gate` a layer SET
+  // beats the level's gate, and the disagreement is spoken rather than
+  // resolved silently. Level-wins was rejected because it makes a key the user
+  // explicitly set stop doing anything, which is the resolved-then-dropped
+  // defect this milestone exists to close. The walk is over the LEVEL's row, so
+  // a trigger name no level names contributes no gate and no warning - naming
+  // the accepted set is config.mjs validate's job, not a dispatch's.
+  //
+  // A gate must be one of the table's accepted values BEFORE it can win. This
+  // adds a validity check in front of that precedence and changes no part of it:
+  // a valid gate that disagrees still wins and still warns. Without it a
+  // one-character typo (`"blockign"`) silently replaced `critical`'s
+  // deliberately-blocking `risk_surface` gate - a silent lowering of the very
+  // signal the risk floor rides on.
+  const gateNames = Array.isArray(TABLE.gates) && TABLE.gates.length
+    && TABLE.gates.every((g) => typeof g === 'string') ? TABLE.gates : DEFAULT_GATES;
+  const review = {};
+  for (const [trigger, levelGate] of Object.entries(reviewRow)) {
+    const configured = cfg.triggerGates[trigger];
+    if (configured !== undefined && configured !== levelGate) {
+      if (!gateNames.includes(configured)) {
+        // Same treatment an unknown model alias gets: name it, let the routed
+        // value stand, never block the spawn.
+        review[trigger] = levelGate;
+        warnings.push(`review.triggers.${trigger}.gate=${JSON.stringify(configured)} is not one of `
+          + `[${gateNames.join(', ')}]; the ${stakes} level gate "${levelGate}" stands`);
+        continue;
+      }
+      review[trigger] = configured;
+      warnings.push(`review.triggers.${trigger}.gate="${configured}" (config) wins over the ${stakes} level gate "${levelGate}"`);
+    } else {
+      review[trigger] = levelGate;
+    }
+  }
+
+  // A per-role pin is an explicit user assertion, so it wins over the cell's
+  // model. What it does NOT touch is effort: that is fixed per agent file in
+  // frontmatter, so a pinned role keeps its rung and its rung escalation (same
+  // reasoning depth, user's model). An unknown alias is reported as a warning
+  // and the routed model stands - a typo must not silently redirect the spend,
+  // nor block the spawn.
+  let model = cell.model;
   let pinned = false;
-  let warning;
   const pin = cfg.overrides[opts.role];
   if (pin != null) {
     if (TABLE.model_aliases.includes(pin)) {
       if (pin === model) {
         reason.push(`override ${opts.role}=${pin} (already the routed model)`);
       } else {
-        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over ${profile}/${tier})`);
+        reason.push(`override ${opts.role}: ${model} -> ${pin} (config, wins over the ${stakes}/${opts.role} cell)`);
         model = pin;
       }
       pinned = true;
     } else {
-      warning = `model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`;
+      warnings.push(`model.overrides.${opts.role}="${pin}" is not a known alias (${TABLE.model_aliases.join(', ')}); routed ${model} stands`);
       reason.push('override ignored (unknown alias)');
     }
   }
 
-  out({ ok: true, role: opts.role, agent, model, effort, tier, profile, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warning ? { warning } : {}) });
+  // The bundle: four knobs, not a bare model. `review` is the whole
+  // trigger->gate map for this level (no --trigger flag: the map rides on one
+  // resolve, and a flag would change the CONTRACTS entry for no reader), and
+  // `verify` is the level's two-state deep-verify switch.
+  out({ ok: true, role: opts.role, agent, model, effort, review, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
@@ -167,8 +432,10 @@ function parseArgs(a) {
       if (parsed.ok) o.attempt = parsed.value;
       else { o.attempt = raw; o.attemptInvalid = true; }
     }
-    else if (k === '--files') o.files = parseInt(a[++i], 10);
-    else if (k === '--ambiguity') o.ambiguity = parseFloat(a[++i]);
+    // Stored RAW: a `--phase` outside the accepted shape is a warning at the
+    // baseline, never a `usage` refusal (which would route the phase lower than
+    // its own baseline), so the check belongs where the floor is computed.
+    else if (k === '--phase') o.phase = a[++i];
     else if (k === '--file') o.file = a[++i];
   }
   return o;
@@ -184,7 +451,7 @@ try {
   const cmd = argv[0];
   if (cmd === 'resolve') {
     const o = parseArgs(argv.slice(1));
-    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--files N] [--ambiguity 0..1]' }); }
+    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]' }); }
     else if (o.attemptInvalid) { out({ ok: false, reason: 'usage', detail: 'resolve --attempt must be an integer' }); }
     else resolve(o);
   } else if (cmd === 'table') {
