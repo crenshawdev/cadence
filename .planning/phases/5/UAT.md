@@ -81,63 +81,68 @@ evidence: node --test cadence-core/bin/*.test.mjs -> 1002/1002 pass; npx tsc -p 
 ### 9. legacy exemption premise is false - phase 3 is the counterexample
 expected: planning.mjs:833 exempts a checklist with zero criterion AND zero origin, on the premise that every post-field checklist carries at least one origin. .planning/phases/3/UAT.md has 7 criterion and 0 origin, so a phase-3-shaped checklist that silently stopped emitting criterion reads as pre-field legacy and the gate stays green forever - the exact regression the subcommand exists to catch.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
 evidence: Verifier built that tree (phase 3 CONTEXT + its UAT with criterion: lines removed, box checked): {ok:true, phases:[{phase:3,criteria:7,items:7}], legacy:[3], counts:{criteria:0}} - seven declared criteria, zero breaks, zero counted. False premise written into planning.mjs:821-832, references/acceptance-criteria.md:144-154, templates/UAT.md:99-101, workflows/audit.md:120-122.
 reported: planning.mjs:833 exempts a checklist with zero criterion AND zero origin, on the premise that every post-field checklist carries at least one origin. .planning/phases/3/UAT.md has 7 criterion and 0 origin, so a phase-3-shaped checklist that silently stopped emitting criterion reads as pre-field legacy and the gate stays green forever - the exact regression the subcommand exists to catch.
 severity: major
 cause: planning.mjs:833 infers 'legacy' from the ABSENCE of two fields (withCriterion.length === 0 && withOrigin.length === 0) rather than from a positive marker of file vintage. The second conjunct was assumed implied by every post-field checklist, but uat init writes origin only when the caller supplies it, so a post-field file can carry zero origin - .planning/phases/3/UAT.md is that file, created by this same phase.
+fix: fd31c04, retest
 
 ### 10. Criteria leave the coverage domain silently through undiagnosed near-misses
 expected: Three paths drop declared criteria out of counts with no diagnostic and no break: a near-miss section heading, a checked phase with CONTEXT but no UAT.md, and an idded bullet misreported as criterion-unidded.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
 evidence: (a) planning-files.mjs:751 admits only /^## Acceptance criteria\s*$/; '## Acceptance Criteria' and '## Acceptance criteria:' both return {criteria:null,issues:[]}. (b) checked phase, CONTEXT present, UAT absent -> {phases:[],counts:{criteria:0}} (planning.mjs:807), no missing-uat diagnostic. (c) '- [ ]  AC1: x' (two spaces), '- [ ] **AC1**: x', '- [ ] ac1: x' all report criterion-unidded though an id is present - CRITERION_BOX :800 is tested before any id gate, so the named fix is a no-op.
 reported: Three paths drop declared criteria out of counts with no diagnostic and no break: a near-miss section heading, a checked phase with CONTEXT but no UAT.md, and an idded bullet misreported as criterion-unidded.
 severity: major
 cause: Three distinct root causes in one theme - a criterion can leave counts with no diagnostic. (a) planning-files.mjs:751 matches the section heading exactly with no near-miss arm, so a capital-C or trailing-colon typo returns criteria:null and issues:[]. (b) planning.mjs:807 keys D-10's absence exemption on file absence alone, so a pruned phase and a checked phase that never got a UAT.md are indistinguishable; no missing-uat code exists. (c) the classifier's ordered cascade tests CRITERION_BOX before any id-token gate, so a bullet WITH a malformed id falls through to criterion-unidded and the named remedy is a no-op.
+fix: 34c023d + b4950d4 + bdf111b, retest
 
 ### 11. Criteria-section walk is not fence-aware
 expected: classifyAcceptanceCriteria walks raw lines to the next '## ', unlike parseUat's own sectionBound (planning-files.mjs:857), so a fenced example bullet mints a phantom criterion no UAT item can cover - a false FAIL.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
 evidence: classifyAcceptanceCriteria('## Acceptance criteria\n\n```markdown\n- [ ] AC9: inside a fence\n```\n') returns [{id:'AC9',text:'inside a fence'}]. It is exactly the shape references/acceptance-criteria.md:21-23 uses to illustrate the grammar.
 reported: classifyAcceptanceCriteria walks raw lines to the next '## ', unlike parseUat's own sectionBound (planning-files.mjs:857), so a fenced example bullet mints a phantom criterion no UAT item can cover - a false FAIL.
 severity: minor
 cause: The criteria-section walk scans raw lines to the next '## ' instead of reusing the fence tracker parseUat already has at planning-files.mjs:857 (sectionBound), so a fenced illustrative bullet is read as a live criterion.
+fix: 534c1a3, retest
 
 ### 12. CHANGELOG.md:84 states a number the repo contradicts
 expected: 'Two of this cycle's own 122 criteria were dropped at checklist-build time' is contradicted three ways, and it shipped into a public changelog.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
 evidence: references/acceptance-criteria.md:7 attributes the incident to 'the cycle before this grammar existed'; criteria-coverage reports counts.criteria 36 for this cycle (28 in phases 1-4 plus 8 in phase 5), not 122; CONTEXT D-15 records the analyzer found no committed checklist with fewer items than its phase's criteria. .planning/ROADMAP.md:92 still carries the same sentence in the phase-5 Goal though :99 was corrected under D-15.
 reported: 'Two of this cycle's own 122 criteria were dropped at checklist-build time' is contradicted three ways, and it shipped into a public changelog.
 severity: minor
 cause: The incident count in CHANGELOG.md:84 was written from recollection rather than from criteria-coverage output; D-15 had already established the opposite in the same phase, and .planning/ROADMAP.md:92 carries the same unverified sentence though :99 was corrected.
+fix: 8dc88fa, retest
 
 ### 13. Phase 5's own CONTEXT is out of the grammar it shipped
 expected: A prose footer inside '## Acceptance criteria' names an AC token, so every criteria-coverage run reports a context_issues entry against phase 5 for the rest of the cycle.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
 source: verifier
 evidence: .planning/phases/5/CONTEXT.md:224 -> context_issues:[{phase:5,issues:[{line:224,code:'criterion-prose-line'}]}] on every live repo run.
 reported: A prose footer inside '## Acceptance criteria' names an AC token, so every criteria-coverage run reports a context_issues entry against phase 5 for the rest of the cycle.
 severity: minor
 cause: A prose footer sits below the last bullet but above the next '## ' heading in .planning/phases/5/CONTEXT.md, so it is inside the criteria section by the grammar's own bounds. The classifier is behaving correctly; the file is what is out of grammar.
+fix: eff5696, retest
 
 ## Summary
 
 total: 13
-passed: 7
-failed: 5
+passed: 12
+failed: 0
 pending: 0
 skipped: 0
 blocked: 1
