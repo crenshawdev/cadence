@@ -1,5 +1,4 @@
 {
-  "stakes": "critical",
   "model": {
     "escalate_on_failure": true
   },
