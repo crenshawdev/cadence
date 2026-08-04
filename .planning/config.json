@@ -21,11 +21,6 @@
     "consult": {
       "enabled": true
     },
-    "triggers": {
-      "diff": {
-        "gate": "adjudicated"
-      }
-    },
     "providers": {
       "deepseek": {
         "tiers": {
