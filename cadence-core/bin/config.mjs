@@ -24,7 +24,10 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
-import { surfaceKeyError, OVERRIDE_PREFIX } from './lib/risk-surfaces.mjs';
+import {
+  surfaceKeyError, surfacesFromKeys, riskOverridesIn, overrideShapeWarning,
+  GLOBAL_LAYER, OVERRIDE_PREFIX,
+} from './lib/risk-surfaces.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -60,7 +63,12 @@ function checkValue(spec, v) {
     case 'string_or_null':
       return v === null || typeof v === 'string' ? null : 'expected a string or null';
     case 'enum':
-      return spec.values.includes(v) ? null : `must be one of: ${spec.values.join(', ')}`;
+      // `null` is rendered as the literal, not left to Array#join's empty
+      // string: every `default: null` enum ends its accepted set with null, and
+      // joining it produced a dangling `", "` that reads as a truncated message
+      // rather than as the settable value it is ("must be one of: high, xhigh, ").
+      return spec.values.includes(v) ? null
+        : `must be one of: ${spec.values.map((x) => (x === null ? 'null' : x)).join(', ')}`;
     case 'array_string':
       if (!Array.isArray(v) || !v.every((x) => typeof x === 'string')) return 'expected a list of strings';
       return null;
@@ -206,13 +214,20 @@ function setInto(obj, dotted, value) {
  * absolute resolve when even the directory is absent. That is what lets the
  * comparison below see through a symlinked ~/.claude, a relative path and a
  * trailing-slash spelling alike.
- * @param {string} p
- * @returns {string}
+ *
+ * TOTAL: a non-string or empty path yields `null`, which equals nothing (not
+ * even another `null`). The last fallback sits OUTSIDE the try blocks above and
+ * `resolvePath(undefined)` throws a TypeError there, which escaped
+ * repoScopedErrors and turned a diagnosable input into `reason:"internal"`
+ * carrying a raw Node message.
+ * @param {any} p
+ * @returns {string|null}
  */
 function fsIdentity(p) {
+  if (typeof p !== 'string' || p === '') return null;
   try { return realpathSync(p); } catch { /* not created yet - fall through */ }
   try { return join(realpathSync(dirname(p)), basename(p)); } catch { /* dir absent too */ }
-  return resolvePath(p);
+  try { return resolvePath(p); } catch { return null; }
 }
 
 /** @param {string} file @param {boolean} create @param {{key:string}[]} pairs */
@@ -222,8 +237,12 @@ function repoScopedErrors(file, create, pairs) {
   // slash opened the same door. The GLOBAL_CONFIG guard stays non-empty-only -
   // lib/config-merge.mjs deliberately yields '' where homedir() throws, and ''
   // must never match a real target.
+  // An UNRESOLVABLE identity (null) equals nothing, including another null: a
+  // path that cannot be resolved must never land on the global layer by
+  // accident, which is what a `null === null` comparison would do.
+  const fileId = fsIdentity(file);
   const targetsGlobal = create
-    || (Boolean(GLOBAL_CONFIG) && fsIdentity(file) === fsIdentity(GLOBAL_CONFIG));
+    || (Boolean(GLOBAL_CONFIG) && fileId !== null && fileId === fsIdentity(GLOBAL_CONFIG));
   if (!targetsGlobal) return [];
   return pairs.filter((p) => p.key.startsWith(OVERRIDE_PREFIX)).map((p) => ({
     key: p.key,
@@ -258,15 +277,73 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
+/**
+ * One warning per truthy `risk.override.<surface>` the USER-GLOBAL layer holds.
+ *
+ * `get` returns the MERGED value by contract, so a waiver only the global layer
+ * carries reads here as an effective `true` while route.mjs honours the repo
+ * layer alone and ignores it - two read faces describing one situation
+ * differently, with nothing said. The divergence closes by becoming audible:
+ * the value returned is unchanged, and the key is named.
+ *
+ * Scoped to `risk.override.*` deliberately, NOT to the schema's `src: repo`
+ * generally - 42 of 73 keys carry `src: repo`, including `stakes`, whose
+ * global-layer inheritance is ordinary and pinned by route.test.mjs.
+ *
+ * The SHAPE check and the traversal both come from lib/risk-surfaces.mjs, the
+ * same ones route.mjs resolves through. That is the whole point: an entry
+ * route.mjs calls malformed must not be an entry this face offers to relocate.
+ * Telling a user to move `risk.override.athu` into their repo config sends them
+ * at a key `config.mjs set` and `config.mjs check` both refuse, and a
+ * non-boolean value would not waive anything in the repo layer either - so only
+ * an entry the repo layer would actually honour earns the move-it remediation,
+ * and everything else earns the diagnostic naming what is wrong with it.
+ * @param {{global: any, repo: any}} layers
+ * @param {boolean} [asGlobal] the read addressed the user-global layer itself
+ */
+function globalScopeWarnings(layers, asGlobal) {
+  // The global slot is null on nearly every real invocation - no
+  // ~/.claude/cadence/config.json, an unparseable one, a non-object one -
+  // which `riskOverridesIn` answers for with an empty set. On a `--global` read
+  // the ONE file read is the user-global layer and mergeLayers collapsed it into
+  // the repo slot, so that is where to look instead.
+  const globalLayer = layers ? (asGlobal ? layers.repo : layers.global) : null;
+  // The accepted surface vocabulary, derived from the schema keys - route.mjs
+  // reads its own from route-table.json's `surfaces`, and self-verify's job is
+  // to prove the two files agree.
+  const declared = surfacesFromKeys(Object.keys(SCHEMA));
+  return Object.entries(riskOverridesIn(globalLayer))
+    .map(([surface, value]) => {
+      const shape = overrideShapeWarning(surface, value, declared, GLOBAL_LAYER);
+      if (shape) return shape;
+      // A waiver the global layer only NAMES is not one it makes: a global
+      // `risk.override.auth: false` is the ordinary not-waived case, and warning
+      // on it would put a line on every `get` in every repository.
+      if (value !== true) return null;
+      return `${OVERRIDE_PREFIX}${surface} is set in the user-global config layer, `
+        + `which is repo-scoped (src: repo): the value reported here is the MERGED `
+        + `one, while bin/route.mjs honours the repo layer alone - write it to this `
+        + `repo's own .planning/config.json for it to waive anything`;
+    })
+    .filter(Boolean);
+}
+
 // The effective value set: schema defaults, overlaid by the global then the
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
 // a flat dotted-key map, so callers read values without re-flattening.
-function get(file, keys) {
-  const { config, source, warnings } = mergeLayers(file);
+// `asGlobal` is the --global arm saying so: that path hands GLOBAL_CONFIG in as
+// the file to read, which makes one file BOTH layers, and only the caller knows
+// the read was addressed at the user-global layer rather than at a repo config
+// the global env happens to alias. It moves the `source` label, nothing else.
+function get(file, keys, asGlobal) {
+  const { config, source, warnings, layers } = mergeLayers(file, { asGlobal });
   // A key the schema dropped is invisible to the read below - it resolves at
   // the default and looks configured. Naming it here is what keeps an upgraded
-  // repo from silently routing on a value nothing reads.
-  const allWarnings = [...(warnings || []), ...retiredKeysIn(config)];
+  // repo from silently routing on a value nothing reads. A repo-scoped waiver
+  // sitting in the user-global layer is the same species: resolved here,
+  // ignored by the resolver, and until now said by neither.
+  const allWarnings = [...(warnings || []), ...retiredKeysIn(config),
+    ...globalScopeWarnings(layers, asGlobal)];
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};
@@ -289,6 +366,20 @@ function optFile(tokens) {
   if (gi >= 0) return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
   const i = tokens.indexOf('--file');
   if (i < 0) return { file: '.planning/config.json', global: false, tokens };
+  // A `--file` with nothing usable after it is what an interpolated
+  // `--file $VAR` on an unset variable produces. Left alone it fell through as
+  // `file: undefined`: `set` degraded to reason:"internal" with a raw Node type
+  // error, `validate` said "cannot read/parse undefined", and `get` answered
+  // ok:true - a full effective read of the user-global layer alone, silently
+  // answering about a file the caller never named.
+  //
+  // Both spellings, because the shell produces both: unquoted `$VAR` drops the
+  // token entirely (undefined), quoted `"$VAR"` passes an EMPTY one. Testing
+  // only for undefined left the quoted spelling - the one a careful script
+  // writer uses - falling through to that silent `get`.
+  if (!tokens[i + 1]) {
+    fail('usage', '--file needs a path after it: --file <config file> (or --global)');
+  }
   return { file: tokens[i + 1], global: false, tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
 }
 
@@ -307,7 +398,7 @@ try {
     else out({ ok: true });
   }
   else if (cmd === 'set') { const { file, tokens, global } = optFile(rest); set(file, tokens, global); }
-  else if (cmd === 'get') { const { file, tokens } = optFile(rest); get(file, tokens); }
+  else if (cmd === 'get') { const { file, tokens, global } = optFile(rest); get(file, tokens, global); }
   else if (cmd === 'keys') { out({ ok: true, keys: SCHEMA }); }
   else fail('usage', 'subcommand: validate | check | set | get | keys');
 } catch (e) {

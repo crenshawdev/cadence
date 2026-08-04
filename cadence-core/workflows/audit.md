@@ -48,21 +48,29 @@ Then the second arm - the criterion -> UAT trace, one verdict over both:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-coverage
 ```
 
+`version` (`{plugin, uat_fields}`, always first) - the plugin version and UAT
+fields version the check ran as; quote it in the report, since a stale plugin
+cache silently downgrading this gate is what it exists to expose.
 Per phase holding both a CONTEXT.md and a UAT.md: `phases`
 (`{phase, criteria, items}`), `breaks` (`{phase, id, break:"uncovered"}` - a
-criterion that reached NO item), `untraced` (an item with no `criterion` and no
-exempting `origin`), `legacy` (checklists predating the fields),
-`unknown_criterion`, `context_issues` (lines outside the criterion grammar) and
-`counts` (`criteria = covered + uncovered`). Grammar and field semantics:
-`references/acceptance-criteria.md`.
+criterion that reached NO item - or `{phase, break:"fieldless-checklist", file}`,
+one per phase), `untraced` (an item with no `criterion` and no exempting
+`origin`), `legacy` (`{phase, reason}` - checklists predating the fields, with
+the exemption's reason stated), `unknown_criterion`, `context_issues` (lines
+outside the criterion grammar) and `counts` (`criteria = covered + uncovered`).
+Grammar and field semantics: `references/acceptance-criteria.md`.
 
 The milestone filter above does NOT apply to `breaks`, and they need none:
 `milestone.md` step 3 removes completed phases from ROADMAP.md's live
 `## Phases` list, so `parseRoadmapPhases` only ever holds the current cycle's
 phases; and within that cycle a phase whose checkbox is unchecked contributes
-its `uncovered` count but no `breaks` entry, so work still in flight cannot fail
-a mid-cycle run. Filtering by id is impossible anyway - a criterion break
-carries no requirement id.
+its `uncovered` count but no `uncovered` or `missing-uat` break, so unfinished
+work cannot fail a mid-cycle run on those two. `fieldless-checklist` is NOT
+box-gated and fires on an unchecked phase: `uat init` writes `fields_version`
+before it looks at an item, so no phase is ever transiently fieldless, and the
+break is a real drop rather than work in progress - do not explain it away as
+mid-cycle. Filtering by id is impossible anyway - a criterion break carries no
+requirement id.
 
 ## 3. Interpret the breaks
 - `no-phase` / `no-plan` - a dropped requirement: nothing committed to
@@ -84,6 +92,13 @@ carries no requirement id.
   item: the phase was verified against a checklist missing that criterion, so
   the criterion was never proven and nothing said so. Two exits: add the item
   through `/cad-verify <N>`, or correct the criterion id in CONTEXT.md.
+- `fieldless-checklist` (coverage arm) - the checklist carries items but none of
+  the traceability fields, beside a CONTEXT that DID declare ids: nothing in it
+  can be traced, so the phase's whole coverage claim is unchecked. One break per
+  phase, naming the file. Two exits: repair the links per item with
+  `uat record --phase <N> --item <k> --result <its current status> --criterion AC<N>`,
+  or re-run `/cad-verify <N>` if the phase never got a real checklist.
+  `--origin criterion` is not a repair - it names no id.
 
 ## 4. Verdict
 Arithmetic over both seam calls - in-scope `counts.broken` (after any milestone
@@ -93,11 +108,12 @@ filter) and coverage `breaks`:
   reached a UAT item. Deferred rows are allowed (list them; they are not
   counted as delivered).
 - **FAIL** - any requirement is untraced, unverified, dropped, or in drift, OR
-  any criterion is `uncovered`. List each failing requirement with exactly where
-  its chain breaks, and each uncovered criterion BY ID with its phase and its
-  next action (add the missing UAT item through `/cad-verify <N>`, or correct
-  the criterion id in CONTEXT.md). This gate is meant to block a ship; do not
-  soften it or mark it PASS-with-warnings.
+  the coverage arm returned ANY break, whatever its code. List each failing
+  requirement with exactly where its chain breaks; each `uncovered` criterion BY
+  ID with its phase and its next action (add the missing UAT item through
+  `/cad-verify <N>`, or correct the criterion id in CONTEXT.md); and each
+  `fieldless-checklist` break by the file it names, with the repair. This gate is
+  meant to block a ship; do not soften it or mark it PASS-with-warnings.
 
 A `frontmatter_issues` entry is additive, not itself a `break` - but a
 payload-dropping diagnostic code can still leave a requirement untraced;
@@ -117,11 +133,17 @@ this gate.
 On the coverage arm, `breaks` is the only verdict-moving key; `untraced`,
 `legacy`, `unknown_criterion` and `context_issues` are additive and change
 neither counts nor the verdict - the same split `active_issues` and `unpicked`
-already carry. A `legacy` phase is a checklist written before the `criterion`
-field existed, recognised by an absent `fields_version` frontmatter marker
-rather than by which item fields happen to be missing: reported, never a
-break. A checklist carrying the marker is never legacy, so links dropped from
-a live checklist break normally. An absent CONTEXT.md is nothing to prove -
+already carry. `legacy` exempts only a checklist that predates the fields on all
+five terms - items present, no `fields_version` marker, no `criterion` or
+`origin` on any item, and a CONTEXT declaring no `AC<N>` ids - and it states its
+reason, so the exemption can be checked rather than taken on trust. Miss the
+last term alone and it is a `fieldless-checklist` break: the AC-id grammar
+post-dates the fields, so a marker-less checklist beside declared ids is a
+dropped link, not an old file. DECLARED is what the CONTEXT says, not what the
+grammar could parse: an id written in a shape the grammar refuses
+(`- [ ] **AC1**: x`, `### AC1: x`, a missing colon) is declared and breaks, and
+a near-miss heading is unknown rather than none, so it breaks too.
+An absent CONTEXT.md is nothing to prove -
 this gate runs at `milestone.md` step 1 while the prune that deletes phase
 directories runs at step 3, so a prior milestone's phases are simply gone, and
 the prune takes CONTEXT with the directory. An absent UAT.md under a PRESENT

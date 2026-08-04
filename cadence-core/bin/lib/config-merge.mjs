@@ -4,9 +4,9 @@
 // import from here so the merge semantics can never drift between them.
 'use strict';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 
 // User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps
 // tests hermetic); otherwise ~/.claude/cadence/config.json.
@@ -76,6 +76,28 @@ export function isPlainObject(v) {
 }
 
 /**
+ * Filesystem identity of a layer path, mirroring config.mjs's `fsIdentity` on
+ * the write face: the realpath, else the realpath'd parent joined with the
+ * basename (the file may not exist - an absent layer is ordinary here), else a
+ * plain absolute resolve. That is what lets the comparison below see through a
+ * symlink, a relative spelling, a `.`/`..` segment and a trailing slash alike,
+ * rather than comparing two rendered strings.
+ *
+ * TOTAL, and never-matching for a non-string or EMPTY path: GLOBAL_CONFIG is
+ * deliberately '' where homedir() throws, and '' must never match a real target
+ * (the same guard config.mjs states at its own identity check). `null` is equal
+ * to nothing here, including another `null`.
+ * @param {any} p
+ * @returns {string|null}
+ */
+function layerIdentity(p) {
+  if (typeof p !== 'string' || p === '') return null;
+  try { return realpathSync(p); } catch { /* absent - fall through */ }
+  try { return join(realpathSync(dirname(p)), basename(p)); } catch { /* dir absent too */ }
+  try { return resolvePath(p); } catch { return null; }
+}
+
+/**
  * Merge the global and repo layers (repo wins). Returns {config, source,
  * warnings} where source names the layers that applied ("global+repo",
  * "defaults"...) and warnings names any layer that failed to PARSE (distinct
@@ -97,16 +119,42 @@ export function isPlainObject(v) {
  * the user-global file waived a risk floor in every repository on the machine.
  * `config`, `source` and `warnings` are unchanged - every existing caller
  * destructures named fields, and their values here are byte-identical.
+ *
+ * One file can resolve as BOTH layer paths (CADENCE_GLOBAL_CONFIG pointed at
+ * the repo config, `--global`, a symlink, a relative spelling). It is ONE
+ * layer, so it is read once and collapses to the REPO slot: `layers.repo` holds
+ * it and `layers.global` stays null. Collapsing toward repo, never global, is
+ * what preserves today's behaviour - a waiver in such a file IS honoured
+ * through `layers.repo`, and resolving the other way would silently revoke it.
+ * The merged VALUE never moves either way (`deepMerge(x, x)` is a no-op); what
+ * changes is provenance and warnings, which is where the damage was: one broken
+ * file diagnosed twice, and a `source` naming a repo layer the user does not
+ * have.
+ *
+ * `asGlobal` is how a caller says it addressed the USER-GLOBAL layer itself
+ * (config.mjs's `--global` arm, which hands GLOBAL_CONFIG in as the file to
+ * read). On a collapse the two paths ARE one file, so nothing on disk can say
+ * which layer the caller meant, and guessing from the spelling would re-import
+ * the string compare this function just removed - so the caller states it. It
+ * changes the `source` LABEL only: `global` for a `--global` read, `repo` for
+ * every other spelling of a shared file.
  * @param {string} repoFile
+ * @param {{asGlobal?: boolean}} [opts]
  */
-export function mergeLayers(repoFile) {
-  const global = readLayer(GLOBAL_CONFIG);
+export function mergeLayers(repoFile, opts = {}) {
+  // Identity BEFORE either read, not a compare of two rendered strings after:
+  // a symlink and an absolute-vs-relative spelling of one file render
+  // differently and were read - and diagnosed - twice.
+  const gid = layerIdentity(GLOBAL_CONFIG);
+  const rid = layerIdentity(repoFile);
+  const shared = gid !== null && rid !== null && gid === rid;
+  const global = shared ? null : readLayer(GLOBAL_CONFIG);
   const repo = readLayer(repoFile);
   const layers = [];
-  const warnings = [global.warning, repo.warning].filter(Boolean);
-  let globalValue = global.value;
+  const warnings = [global ? global.warning : null, repo.warning].filter(Boolean);
+  let globalValue = global ? global.value : null;
   let repoValue = repo.value;
-  if (global.present && !isPlainObject(globalValue)) {
+  if (global && global.present && !isPlainObject(globalValue)) {
     warnings.push(`config layer ${GLOBAL_CONFIG} top-level is not an object; skipped`);
     globalValue = null;
   }
@@ -116,20 +164,18 @@ export function mergeLayers(repoFile) {
   }
   if (globalValue) layers.push('global');
   if (repoValue) layers.push('repo');
+  // The label for a collapsed file cannot come from the filesystem - both paths
+  // ARE that file - so it comes from what the caller says it addressed. A
+  // `--global` read has no repo layer to name; every other caller asked for a
+  // repo config that the user's global env happens to alias.
+  const sharedSource = opts && opts.asGlobal ? 'global' : 'repo';
   return {
     config: deepMerge(globalValue || {}, repoValue || {}),
-    source: layers.length ? layers.join('+') : 'defaults',
+    source: layers.length ? (shared ? sharedSource : layers.join('+')) : 'defaults',
     layers: { global: globalValue || null, repo: repoValue || null },
-    // One file can resolve as BOTH layers (CADENCE_GLOBAL_CONFIG pointed at the
-    // repo file). Merging it onto itself is a no-op, so the damage is confined
-    // to reporting: every warning names its file, so identical strings mean the
-    // same layer and collapse, while two genuinely broken layers still get one
-    // entry each. This keys on the RENDERED path, so it collapses an exact
-    // string match only - a symlink or an absolute-vs-relative alias for the
-    // same file still doubles, and `source` still labels one shared file
-    // "global+repo" in every one of those cases. Closing both arms needs a
-    // realpath/inode identity check on the two layer paths before they are
-    // read, not a string compare here.
+    // Kept alongside the collapse above: two genuinely different layers that
+    // are both broken still get one entry each, and a caller pushing its own
+    // strings in (route.mjs) never doubles a diagnostic.
     warnings: [...new Set(warnings)],
   };
 }

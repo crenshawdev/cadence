@@ -223,10 +223,15 @@ Handle the return:
 Fire the `plan` review trigger per references/review-triggers.md, payload =
 the PLAN file(s). Act on the configured gating level (default adjudicated):
 advisory -> report findings and continue; blocking -> halt on FAIL until
-findings are fixed or the user overrides; adjudicated -> apply the
-surviving, grounded findings to the plan file(s) directly. Do not re-enter
-the checker loop afterward - this trigger is the second opinion, not
-another iteration.
+findings are fixed or the user overrides; adjudicated -> triage the
+survivors, then apply ONLY the ones the user picked to the plan file(s) and
+leave the rest recorded in this step's report. The survivors are a numbered
+list the user triages, NONE is the default, and only what the user names is
+acted on - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
+§ 6 Consequence before presenting, since this workflow does not preload it. Do
+not re-enter the checker loop afterward - this trigger is the second opinion,
+not another iteration.
 </step>
 
 <step name="commit">
@@ -299,6 +304,7 @@ on disk and each executor runs in a fresh context.
 - [ ] Every phase requirement ID appears in a plan's `requirements`
 - [ ] Checker gate honored (ran, or skipped via config/flag), max one revision
 - [ ] `plan` review trigger fired after the plan was written
+- [ ] Its adjudicated survivors triaged by the user, not applied wholesale
 - [ ] seed-reqs run; seeded/orphan_ids/no_active_section reported to the user
 - [ ] Cursor updated; docs committed per planning.commit_docs
 - [ ] No existing plans overwritten without asking

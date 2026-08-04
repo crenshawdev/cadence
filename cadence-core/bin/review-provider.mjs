@@ -25,6 +25,13 @@
 //   - Any failure (offline, bad key, http error, bad shape) degrades to a
 //     structured {ok:false, reason, detail} on stdout with a nonzero exit -
 //     the review subsystem never crashes the spine on a provider problem.
+//   - review and consult are the two PAID commands, so both are bounded by
+//     `review.max_prompt_tokens` (chars/4 estimated, default 120000). An
+//     over-cap payload is REFUSED - {ok:false, reason:"over-cap"} before any
+//     request is issued - never truncated and never merely warned about. A
+//     non-string payload field is refused as bad-payload first, since an
+//     unmeasurable field is an unbounded one. The free claude-subagent
+//     reviewer never runs this script and is exempt.
 //
 // Usage:
 //   review-provider.mjs review  --provider <openai|gemini|deepseek> --model <id>
@@ -52,6 +59,7 @@ import https from 'node:https';
 import { fileURLToPath } from 'node:url';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { measure } from './lib/surface-weight.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -162,6 +170,16 @@ function resolveKey(provider, keyFile) {
 const DEFAULT_REQUEST_TIMEOUT_MS = 540000;
 const MAX_REQUEST_TIMEOUT_MS = 600000;
 
+// The prompt-token cap (#16, REV-03), bounding the two PAID commands - review
+// and consult - and nothing else. The free `claude-subagent` reviewer never
+// runs this script, so it is exempt by construction rather than by omission;
+// that arm's own payload bound, if the host has one, is the host's.
+// 120000 estimated tokens because of the three shipped providers DeepSeek's
+// context window is the tightest at ~128k: the default sits just under the
+// smallest window a configured payload could be sent to, and `chars/4` is an
+// estimate rather than a tokenizer, so the margin is deliberate.
+const DEFAULT_MAX_PROMPT_TOKENS = 120000;
+
 // Pure so the unit tests can exercise it without touching config or the network.
 // Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
 // back to the default rather than throwing: a bad timeout must never sink a
@@ -194,6 +212,60 @@ function requestTimeoutMs() {
     timeoutCache = resolveTimeoutMs(configured);
   }
   return timeoutCache;
+}
+
+// Same pure/lazy split as the timeout above, and the same degrade-never-crash
+// contract: anything unusable falls back to the default rather than throwing.
+// UNLIKE the timeout it is not clamped from above - there is no host ceiling to
+// overflow here, and a user who raises the cap has made that call in writing.
+export function resolveMaxPromptTokens(configured) {
+  if (!Number.isInteger(configured) || configured <= 0) return DEFAULT_MAX_PROMPT_TOKENS;
+  return configured;
+}
+
+let maxPromptCache = null;
+function maxPromptTokens() {
+  if (maxPromptCache === null) {
+    let configured;
+    try {
+      const { config } = mergeLayers('.planning/config.json');
+      configured = config && config.review ? config.review.max_prompt_tokens : undefined;
+    } catch { configured = undefined; }
+    maxPromptCache = resolveMaxPromptTokens(configured);
+  }
+  return maxPromptCache;
+}
+
+// The repo's existing deterministic chars/4 proxy, reused rather than
+// reimplemented: zero runtime deps forbids a real tokenizer, and both #16 and
+// REV-03 ask for a TOKEN cap, so a byte key would rename what was asked for.
+// Only the payload is measured. The adapters' schema-injection bytes are a
+// small fixed per-provider constant and counting them would make one payload
+// cap differently per provider - the number stays reproducible from the
+// payload alone.
+// The non-string filter is a safety net, NOT the type gate: a non-string part
+// measures as nothing, so if the filter were the only guard a `{blob: <480KB>}`
+// artifact would estimate ~0 tokens, clear the cap, and still be serialized
+// into the request by JSON.stringify. Both callers therefore reject a
+// non-string field as `bad-payload` BEFORE calling this - the cap can only
+// bound what it can measure.
+export function estimatePromptTokens(...parts) {
+  return measure(parts.filter((p) => typeof p === 'string').join('')).estTokens;
+}
+
+// The refusal both paid commands share. It happens BEFORE any request is
+// issued and is neither a truncation nor a warning: truncating still pays the
+// provider and returns findings on a fragment while reporting as though it saw
+// the whole artifact, which is worse than the unbounded bill, and
+// warn-and-send changes no outcome at all. No new caller machinery is needed -
+// references/review-triggers.md step 4 already handles any {ok:false} (name
+// the reason, drop the reviewer, fall back if the set empties).
+function assertUnderCap(...parts) {
+  const est = estimatePromptTokens(...parts);
+  const cap = maxPromptTokens();
+  if (est > cap) {
+    fail('over-cap', `payload is ~${est} estimated tokens, over review.max_prompt_tokens (${cap})`);
+  }
 }
 
 function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
@@ -501,9 +573,10 @@ async function callStructured(adapter, key, reqSpec) {
 async function cmdReview(opts) {
   const { provider, adapter, key } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
-  if (!payload || !payload.instruction || !payload.artifact) {
-    fail('bad-payload', 'payload needs {instruction, artifact}');
+  if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {
+    fail('bad-payload', 'payload needs {instruction, artifact}, both strings');
   }
+  assertUnderCap(payload.instruction, payload.artifact);
   const parsed = await callStructured(adapter, key, adapter.structuredRequest({
     model: opts.model, effort: opts.effort,
     system: payload.instruction, user: payload.artifact,
@@ -517,9 +590,10 @@ async function cmdReview(opts) {
 async function cmdConsult(opts) {
   const { provider, adapter, key } = resolveProvider(opts, 'consult');
   const payload = await readPayload(opts);
-  if (!payload || !payload.situation) {
-    fail('bad-payload', 'payload needs {situation}');
+  if (!payload || typeof payload.situation !== 'string') {
+    fail('bad-payload', 'payload needs {situation}, a string');
   }
+  assertUnderCap(payload.situation);
   const system =
     'You are a second-opinion consultant to an engineer stuck at a dead-end. ' +
     'Return angles to investigate - concrete things to try or check, each with ' +

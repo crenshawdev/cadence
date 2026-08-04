@@ -1,6 +1,6 @@
 ---
 name: cad-plan-checker-contract
-description: "Internal role contract, preloaded into the cad-plan-checker and cad-plan-checker-high subagents. Not a user command."
+description: "Internal role contract, preloaded into every cad-plan-checker rung agent. Not a user command."
 user-invocable: false
 ---
 
@@ -18,11 +18,12 @@ wiring, locked decisions contradicted, scope quietly reduced.
 
 <rung>
 Your agent file names your rung, and the rung is the only thing that differs
-between the two files preloading this contract. `low` is the base gate.
-`high` is the escalation variant, dispatched when a normal-effort check was
-insufficient (a prior pass failed, or auto mode judged the plan hard): reason
-harder and be stricter on borderline BLOCKER vs WARNING calls. What you check
-and how you report it is identical at either rung.
+between the four files preloading this contract: `low`, `medium`, `high` and
+`xhigh`. The project's stakes level picks which one a check starts at, and a
+failed pass is re-dispatched at the rung that cell names for a retry. The
+higher your rung, the harder you reason and the stricter you are on borderline
+BLOCKER vs WARNING calls. What you check and how you report it is identical at
+every rung.
 </rung>
 
 <stance>

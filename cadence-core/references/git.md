@@ -123,173 +123,62 @@ via a remote-tracking delete (that would trip the push guard).
 
 ### What the guard sees
 
-Both rails read one left-to-right tokenizer
-(`cadence-core/bin/lib/shell-tokens.mjs`), so they always agree on what a
-command IS. What follows is the grammar it implements. It is a **detection
-widener, not a security boundary**: being wrong here costs a prompt, never a
-bypass, and the sanctioned publish never reaches this hook at all (it runs
-through the git-publish seam as a subprocess). Anything a determined command
-can hide from a reader of the string, it hides from this too.
+Both rails read one function (`cadence-core/bin/lib/git-segments.mjs`), so they
+always agree on what a command IS. It is about thirty lines, and it reads one
+thing: **a segment counts only when its COMMAND WORD is `git`, and the verb is
+its first non-flag word.** Segments split on `;`, a newline, `|`, `||`, `&&` and
+`&`. The seven git global options that take a separate argument (`-C`, `-c`,
+`--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env`) are
+skipped WITH that argument, which is the only reason the scan looks past a flag
+at all. Nothing else is inferred. That is the entire grammar.
 
-**Words and quoting.** One pass carries one quote state (outside / single /
-double). A quoted span is word CONTENT, never stripped: `git -C "my repo" push
-origin main` keeps its word boundaries and reads `push`, and an empty quoted
-span (`git -C "" push`) is still a word. Single quotes honor no escapes. Double
-quotes honor a backslash before `"`, `` ` ``, `\`, `$` and a newline only; any
-other backslash is a literal backslash plus the following character. Outside
-quotes a backslash escapes the next character, which can then never be read as
-a separator, quote or region opener, and backslash-newline (or backslash-CRLF)
-is a line continuation. Parity follows from that rule rather than from a
-pre-pass: an ODD trailing run of backslashes continues the line, an EVEN run is
-a literal backslash and the newline still separates.
+It is a **detection widener, not a security boundary**: being wrong here costs a
+prompt, never a bypass, and the sanctioned publish never reaches this hook at
+all (it runs through the git-publish seam as a subprocess). The reader is total
+and linear, because it runs on every Bash tool call and a guard that stalls or
+aborts is worse than one that misses.
 
-**Separators.** `;`, a newline, `|`, `||`, `&&` and `&` each end a simple
-command. A `#` that OPENS a word is a comment to end of line, and that newline
-still separates, so `git add . # git push` is one `add`; a `#` inside a word
-(`file#1`) is ordinary content.
+The anchor is also why there is no deny gate any more. Detection used to be
+any-position, so `rg -t sh "git commit"` was read as a commit, so refusal had to
+be narrowed back to command position by a second rule with an enumerated prefix
+set. Reading only the command word makes those shapes silent up front:
+`rg -n "git push" .`, `grep git commit`, `command -v git commit` and
+`echo "git commit"` produce no decision at all, rather than a decision that then
+has to be gated back down. One rule where there were two, and nothing to
+enumerate.
 
-**Regions.** `$(...)`, backticks and a `(` in command position are descended
-into as their own command lists, so `$(git push)`, `` `git push` ``,
-`(git push origin main)` and `( git push )` all read alike. `<(...)` and
-`>(...)` process substitutions are descended into as well. A region
-contributes no CONTENT to the enclosing word, but it does leave an empty
-placeholder WORD in its place rather than deleting the word - the word COUNT
-is what the rules around it depend on. `git -C $(pwd) push origin main` reads
-`push` because the placeholder is what `-C` consumes, and a `#` glued onto a
-region (`echo hi $(echo)#x; git push origin main`) is mid-word content rather
-than a comment, because the region left the word started. `$'...'` is a single-quoted span with the `$` dropped, and `$"..."` a
-double-quoted span with the `$` dropped, because that is how bash evaluates
-them.
+### What the guard does NOT see (rail 3)
 
-**Redirection.** `<` and `>` are word BOUNDARIES, not word characters, and the
-operator absorbs a leading all-digit fd and a trailing `&` (`2>&1`), so
-`git push>/tmp/out` and `git 2>out push origin main` both still read `push`.
-The target word that follows is DROPPED, the way the shell removes a
-redirection from the word list - but the dropped word is still read for a
-`git` token, because for a redirect-fed wrapper (`bash <<< "git push origin
-main"`) it is the only evidence there is.
+v2.2.0 deleted an 840-line shell tokenizer and a 367-line model of git's option
+grammar. The bet behind them was sound in kind - a widener is safe to be wrong -
+but the price was not. The escape surface behind `bash -c`, `$(...)`, `${...}`,
+aliases and `ssh` is unbounded, so three consecutive blocking review panels each
+found new holes and each patch bought more grammar, and the reader still went
+silent on `git switch -f main`. Then the scan turned out to be O(K x N) in
+memory: 3.1GB at 224KB of input, a V8 abort at 280KB, in a hook that runs on
+every Bash call and fails OPEN. A long enough command line switched the guard
+off entirely and let the push inside it run unprompted.
 
-**Wrappers.** The stated set is `bash`, `sh`, `zsh`, `dash` and `eval`, matched
-on a word equal to a member or ending in `/` plus a member (`/bin/bash`
-counts). It is matched AT ANY POSITION in a simple command, which covers
-`sudo bash -c ...`, `timeout 60 bash -c ...`, `nohup`, `xargs`, an `env` or
-`/usr/bin/env` prefix and `VAR=value` prefixes with one rule instead of a
-second enumerated prefix set. Every operand that is not a genuine flag cluster
-(`-c`, `-lc`, `-exc` - tolerated rather than enumerated) is re-tokenized. A
-`-`-leading operand that is NOT a flag cluster is a payload, read whole and
-again with its leading flag letters stripped, so `bash -c "-n; git push origin
-main"` and the glued `bash -c"git push origin main"` are both seen. `eval`'s
-operands are CONCATENATED with a space before re-tokenization, because that is
-what the shell executes: `eval "git" "push origin main"` is a real push. A
-matched wrapper with NO operand at all is being fed by a pipe, a heredoc or a
-redirect (`echo "git push origin main" | bash`); there the whole original
-command text is read for a `git` token and the guard asks. No pipeline
-data-flow analysis is attempted.
+So these shapes really can run git and are now invisible. Each is a pinned test
+row in `cadence-core/bin/git-segments.test.mjs` and
+`cadence-core/bin/git-guard.test.mjs`, not an absence:
 
-**`env`.** GNU `env -S` / `--split-string` splits its operand and executes it,
-so that operand is a command line rather than an argument: `env -S "git push
-origin main"` really pushes, and it is re-tokenized like a wrapper operand.
-Finding it means walking env's whole option region rather than stopping at the
-first non-flag word, so the options that take a SEPARATE argument (`-a` /
-`--argv0`, `-u` / `--unset`, `-C` / `--chdir`, and `-S` itself) are skipped
-WITH that argument: stopping early is what made `env -u HOME -S "git push
-origin main"` silent. A short cluster is walked letter by letter, because `-S`
-is an option wherever it sits in one (`env -iS "git push origin main"`), and
-the argument of an arg-taking letter is the rest of its cluster when there is
-one and the next word otherwise. The long options whose argument is OPTIONAL
-(`--block-signal`, `--default-signal`, `--ignore-signal`) consume no following
-word, since getopt_long reads an optional argument only from an `=`-glued
-spelling. `--` ends the options; a mere `-` implies `-i` and the operands
-follow it.
-
-An `env` option this walk does NOT know is the important case, and it does not
-end the walk quietly: env's operands were never located, so a `-S` further
-along may have been missed, and the guard reads the command text for a `git`
-token and ASKS. That fallback is what keeps the next env option nobody
-anticipated from becoming the next silent bypass. An `env` word whose options
-resolve with no `-S` among them is just a transparent prefix.
-
-**Detection is any-position, refusal is command-position only.** Matching a
-wrapper anywhere is what keeps `sudo bash -c "git push"` from going silent, but
-at any position other than the command word the "wrapper" is very often an
-ordinary argument: `rg -t sh "git commit"` and `echo bash -c "git commit -m x"`
-both resolve to `commit`. The same is true one level down, of the git word
-itself: `grep git commit`, `command -v git commit` and
-`bash -c "echo git commit"` mention a git word without invoking git. So a
-subcommand can produce a `git.on_protected` refusal only when the wrapper it
-was reached through (if any) sat at command position in its simple command AND
-the git word itself sat at command position in its own; anything else can only
-ever ASK. A read-only search must not be hard-blocked by a rail meant for real
-commits.
-
-Command position is one rule with nothing to enumerate: word 0 of the simple
-command, after leading `VAR=value` assignments and empty placeholder words (a
-descended region leaves a slot, and `$(echo) git commit -m x` really commits),
-and past an `env` word with its whole option region as described above. It is
-the same rule for the wrapper and for the git word.
-
-The consequence to know: a transparent prefix costs the refusal. `sudo git
-commit -m x` on a protected branch under `git.on_protected: refuse` ASKS
-rather than denying, and so do `timeout 60 git commit`, `nice -n 5 git commit`,
-`{ git commit; }` and `find . -exec git commit \;`. The guard still SEES every
-one of them and still prompts. An earlier cut kept those denies with an
-enumerated set of prefix commands and shell keywords, and that set was dropped
-because every prefix carries its own option grammar - `sudo -u john`,
-`timeout --signal KILL 60`, `find -exec` - so the enumeration had an
-open-ended tail that three review rounds kept finding new members of, and it
-produced a false deny on `command -v git commit`, a lookup that runs nothing.
-A missing deny costs a prompt on a real commit; a wrong deny hard-blocks
-read-only work.
-
-**The git word and the subcommand.** A word is a git word when it EQUALS `git`
-or ends with `/git` - word content, so the single word produced by
-`echo "git push"` is not one. From the word after it, a global option that
-takes an argument (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`,
-`--exec-path`, `--config-env`) is skipped with its argument, other `-`-leading
-words are skipped, an empty word (a region placeholder, an empty quoted span)
-is skipped, and the first remaining word is the subcommand. The scan
-then continues, so EVERY git invocation in a command is reported, not just the
-first. `git stash push -m wip` reads `stash`.
-
-**Unplaced git words.** A shape the tokenizer cannot resolve stays silent
-unless its raw text carries a `git` token, in which case the guard ASKS and
-never denies - it could not place the word, so it cannot know what the command
-is. `echo "unterminated` and `eval $CMD` are silent; an unterminated quote
-around `git push origin main` asks.
-
-**Budgets.** Descent stops at 8 nested regions and operand re-tokenization at
-200 expansions per command, both threaded through every recursive call rather
-than counted per call. At either bound the guard stops descending and sets the
-unplaced flag, so a pathological input fails toward asking instead of stalling
-the hook - which runs on every Bash call - or aborting it. When it checks
-undescended raw text for a `git` token it splits on whitespace AND on region
-openers and closers (`$ ( ) ' " ;` `|` `&` and a backtick), so a nest holding
-no space at all still trips it.
-
-Two consequences worth knowing: quoted text is word content, so
-`echo "git push"` is one word and stays silent while `echo "git" "push"` is two
-words and asks; and the guard prefers a needless prompt to a missed one
-everywhere the two conflict.
-
-### Out of grammar (rail 3)
-
-These shapes are NOT implemented. Each is listed with the behavior the
-tokenizer actually has, so none of them is a silent unknown:
-
-| Shape | What the guard does |
+| Shape | Why it is silent |
 |---|---|
-| Heredoc (`bash <<EOF` ... `EOF`) | The body is read as ordinary command lines, not as data: `git push` in a heredoc body is read as a command and asks. A heredoc that really runs git therefore never goes silent, but a heredoc that merely CONTAINS the text can ask. |
-| Herestring (`bash <<< "git push origin main"`) | The string is a redirection target, dropped from the word list; it is read for a `git` token, so this asks rather than going silent. The guard does not read the string as a command. |
-| `${...}` expansion, including nested in `$()` (`echo $(echo ${x:-git push})`) | No expansion is performed; `${x:-git` and `push}` stay ordinary word content, so this is SILENT. Resolving it needs the variable's value, which a static reader does not have. |
-| Brace expansion (`{git,echo} push origin main`) | Not expanded: `{git,echo}` is one ordinary word and is not a git word, so this is SILENT. Braces in ARGUMENTS are harmless - `git push origin {main,dev}` reads `push` normally. |
-| ANSI-C escape sequences inside `$'...'` (`bash -c $'g\x69t push'`) | The span IS read and the `$` dropped, but escape sequences stay literal two-character content, so `g\x69t` is not the word `git` and this is SILENT. Plain `bash -c $'git push origin main'` reads `push`. |
-| A command word supplied by a substitution (`$(echo git) push origin main`) | The substitution's own words are read as their own command; its OUTPUT is not fed back, so nothing supplies the command word and this is SILENT. `$(echo git push) origin main` asks, but for the inner command, not the outer one. |
-| Aliases and shell functions (`gp origin main`) | Only the words present are read, so a call to an alias or function defined elsewhere is SILENT. A function DEFINITION whose body holds `git push` asks, because the body's words are present. |
-| Variable indirection (`CMD="git push"; $CMD`, `eval $CMD`) | Not expanded, and no `git` token survives outside the assignment word, so this is SILENT - the same limit as `${...}`. |
-| Remote execution (`ssh host "git push origin main"`) | `ssh` is not in the wrapper set, so the quoted command stays word content and this is SILENT. It also pushes from another machine, which is outside what a local rail can see. |
-| Redirect-both (`git &>/dev/null push origin main`, `git &>>out push`) | The `&` separator is read before `&>` can be recognized as a redirection operator, so the command splits at it and `git` is left with no subcommand: SILENT. The trailing-`&` form is unaffected (`git 2>&1 push origin main` reads `push`). This is a real push, and it predates the tokenizer - the strip-and-split arms were silent on it too. |
-| A brace list in the SUBCOMMAND slot (`git {push,fetch} origin main`) | Not expanded, so the subcommand reads as the literal word `{push,fetch}`, which is not a known subcommand: SILENT. Bash really runs `git push fetch origin main`. This is the case the brace-expansion row above does NOT cover - braces in later ARGUMENTS (`git push origin {main,dev}`) are genuinely harmless, braces in the subcommand slot are not. |
-| Negation or a pattern glued to a subshell (`!(git push)`) | A `(` opens a descended region only when it STARTS a word, so the leading `!` glues it into the word `!(git`, which is not a git word: SILENT. Bash runs `git push`. A bare `(git push)` and `( git push )` both read `push` normally. |
+| Shell wrappers (`bash -c "git push"`, `sh -c`, `zsh`, `dash`, `eval`) | The command word is the wrapper, not `git`. Operands are not re-tokenized. |
+| Command substitution and subshells (`$(git push)`, `` `git push` ``, `(git push)`) | The command word is `$(git`, `` `git `` or `(git`, none of which is a git word. Regions are not descended into. |
+| Transparent prefixes (`sudo git push`, `timeout 60 git push`, `nice`, `xargs git push`, `VAR=x git push`) | The command word is the prefix. There is no prefix set to enumerate, which is the point: every prefix carries its own option grammar and that enumeration never closed. |
+| `env -S "git push origin main"` | The command word is `env`. Its option region is not walked. |
+| A quoted path with a space (`git -C "my repo" push origin main`) | Quoting is not tracked, so `-C` consumes `"my` and the verb reads as `repo"`. |
+| Line continuation (`git \` + newline + `push origin main`) | The newline is a separator; neither half is a `git` segment with a verb. |
+| Remote execution (`ssh host "git push origin main"`) | The command word is `ssh`, and it pushes from another machine anyway, which is outside what a local rail can see. |
+| Heredocs, herestrings, `${...}` expansion, brace expansion, `$'...'` escapes, aliases and shell functions, variable indirection (`CMD="git push"; $CMD`) | Nothing is expanded and no body is read as commands. These were out of grammar for the tokenizer too. |
+
+The trade, stated plainly: the guard now catches the shapes a model actually
+writes when it is doing its job, and misses the shapes it would have to be
+deliberately routing around. The adversary here is the model issuing the
+command, not an attacker, and a rail that costs a prompt when it fires is not
+worth an unbounded parser to make exhaustive.
 
 ## 4. Risk surfaces
 

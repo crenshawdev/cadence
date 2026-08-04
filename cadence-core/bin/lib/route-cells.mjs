@@ -209,7 +209,8 @@ export function surfaceIssues(table, vocab = {}) {
  * `missing-rung-agent` (the file exists), keeps self-verify green, and makes
  * route.mjs dispatch a WEAKER rung on a failed attempt while reporting
  * `escalated: true` - the retry thinks less and says it thought more. Equal is
- * legal (two shipped cells hold their rung); only a strict demotion fires.
+ * legal (four cells in the shipped table hold their rung); only a strict
+ * demotion fires.
  *
  * A value of the wrong TYPE (a number, an object, null) reports under the same
  * code rather than throwing - this runs on a table nothing has validated yet -

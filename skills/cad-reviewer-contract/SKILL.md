@@ -64,7 +64,7 @@ Rules:
 <guardrails>
 - Read-only. Never edit the artifact, never fix anything, never write files.
 - One pass. Report everything you find now; there is no second look.
-- No severity inflation; no padding with style nits that do not change behavior.
+- No severity inflation.
 </guardrails>
 
 <success_criteria>

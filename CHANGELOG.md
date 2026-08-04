@@ -4,6 +4,194 @@ All notable changes to Cadence are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Cadence follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.2.0] - 2026-08-04
+
+The six requirements v2.1.0 opened with and never picked up, carried forward
+whole and closed. The cycle also produced the first end-to-end proof of the
+documented install path: from a fully cold state - plugin uninstalled,
+marketplace removed, cache deleted - `/plugin marketplace add
+https://git.jcrenshaw.dev/crenshawdev/cadence.git` and
+`/plugin install cadence@cadence` were walked live against the Forgejo remote,
+and the fresh install matched the published manifest exactly (version, commit
+sha, install timestamp). Nothing beyond the two documented commands was
+needed; the transcripts are committed in the phase record.
+
+### Changed
+
+- **Two routing cells now START where they used to climb.**
+  `critical`/`cad-plan-checker` and `shipped`/`cad-reviewer` move their `effort`
+  to `xhigh`, which each cell's `retry` already was. Nothing else in
+  `cadence-core/route-table.json` moves.
+
+  The measurement behind it: a retry rewrites the whole subagent prompt at the
+  2x cache-write tier and re-runs every turn of the work, while effort costs
+  output tokens alone - so winning on attempt one is cheaper than climbing to
+  it. The plan checker is the case that matters most, because it is one gate
+  turn, and a plan waved through costs dozens of executor turns plus a revert.
+
+  This is a forward correction to `[2.0.0]`'s "Escalate-on-failure is
+  unconditional, and the rung ladder is reachable" entry: where that entry says
+  "the two cells whose retry deliberately equals their starting rung", it now
+  reads four. A live resolve over all 18 cells returns 14 that escalate and 4
+  that hold. Every rung file stays cell-reachable -
+  `agents/cad-plan-checker-high.md` through solo's and shipped's retry, and the
+  unsuffixed `agents/cad-reviewer.md` (its `high` rung) through solo's.
+
+- **The release seam can no longer ship a number, or notes, it never got from
+  the close.** Three changes to `release-bump.mjs` and its pure core, all
+  breaking for anyone scripting the seam directly:
+
+  `bump` now REQUIRES `--version`. The shipping number is the one
+  `/cad-milestone` already confirmed with the user; the seam reads no planning
+  prose at all, where it used to fall back to `PROJECT.md`'s `### Active`
+  section and then the roadmap title - prose no path keeps current between
+  cycles, and which the shipped project template carries no version token for.
+
+  Every refusal emits `ok:false` and exits 1 with a named `reason`
+  (`no-target-version`, `unparseable-version`, `unreadable-manifest`,
+  `downgrade`, `not-an-upgrade`), replacing the `ok:true, action:"error"` shape
+  a scripted caller could read as success. A target that is not a strict semver
+  upgrade over the manifest's current version is now one of those refusals: a
+  downgrade used to pass, because any `from !== to` counted as a bump.
+
+  Content staged under `## [Unreleased]` is PROMOTED into the dated
+  `## [<version>]` section rather than left above it, so a release stops
+  shipping a dated heading over an empty section while its notes sit in
+  Unreleased. `## [Unreleased]` survives as an empty stub, and a run whose
+  dated section ends up with no body reports `changelog.section_empty` so the
+  close authors the notes before the bump commit.
+
+### Removed
+
+- **The git guard's shell parser, 2,251 lines of it.**
+  `cadence-core/bin/lib/shell-tokens.mjs` (the quote-state tokenizer),
+  `cadence-core/bin/lib/destructive-git.mjs` (a model of git's option grammar)
+  and both their test files are deleted, along with `references/git.md`'s
+  rail-3 evasion grammar and out-of-grammar table. This supersedes **TOK-01**
+  on both halves: the six push-hole closures v1.4.0 shipped, and the
+  command-position deny gate that v2.0.0 added on top of them.
+
+  Both rails now read `cadence-core/bin/lib/git-segments.mjs`, about thirty
+  lines: a segment counts only when its command word is `git`, and the verb is
+  its first non-flag word. `git.on_protected` keeps its `refuse` hard block on
+  `git commit`, which remains the guard's only deny surface.
+
+  Why, since the tokenizer was closing real holes. A detection widener is safe
+  to get wrong (being wrong costs a prompt, not a bypass), which turned out not
+  to mean cheap to get wrong. The escape surface behind `bash -c`, `$(...)`,
+  `${...}`, aliases and `ssh` is unbounded, so it billed as an open-ended review
+  debt: three consecutive blocking `risk_surface` panels in a single phase, each
+  finding new holes, each answered with more grammar, and `git switch -f main`
+  still silent at the end of it. Then the measurement that settled it - the scan
+  was O(K x N) in memory (3.1GB at 224KB of input, a V8 abort at 280KB) inside a
+  hook that runs on every Bash call and **fails open**, so a long enough command
+  line switched the guard off and let the push inside it run unprompted. The
+  replacement is total and linear; a test pins the same input deciding in
+  milliseconds, above the measured abort point.
+
+  Deleting the wide reader also retired a second rule. Detection had been
+  any-position, so `rg -t sh "git commit"` was read as a commit, so refusal had
+  to be narrowed back to command position by an enumerated prefix set that three
+  review rounds kept finding new members of. Anchoring detection to the command
+  word makes those silent up front, so `denyable` and `unplaced` are gone with
+  nothing replacing them.
+
+  **The accepted cost.** These shapes can really run git and are now silent, by
+  construction rather than by oversight. Each is a pinned test row in
+  `git-segments.test.mjs` and `git-guard.test.mjs`, and `references/git.md`
+  rail 3 carries the same list: `bash -c` / `sh -c` / `zsh` / `dash` / `eval`
+  wrappers; `$(...)`, backticks and subshells; transparent prefixes (`sudo`,
+  `timeout`, `nice`, `xargs`, `VAR=x`); `env -S`; a quoted path with a space
+  (`git -C "my repo" push`); line continuation; and `ssh host "git push"`.
+  Heredocs, `${...}`, brace expansion, `$'...'` escapes, aliases and variable
+  indirection were out of grammar before and remain so.
+
+- **`git.on_destructive`**, removed outright. The key shipped across the schema,
+  the template, `references/config-reach.md` and `workflows/config.md` on the
+  premise that a destructive rail would follow it. That rail was the parser's
+  reason to exist, so it does not follow. The key reached no hook on any commit,
+  which made its reach row a claim nothing honoured: `ask` and `off` did the
+  same nothing. Git's own reflog and `ORIG_HEAD` remain the recovery path for
+  `reset --hard` and friends, as they were before the key existed.
+
+### Fixed
+
+- **The config read face merges a layer once, whatever its spelling.**
+  `mergeLayers` computes file identity before either read
+  (`cadence-core/bin/lib/config-merge.mjs`), so a symlinked or
+  relative-vs-absolute spelling of one file reports a single layer instead of
+  `global+repo`, and a broken such file earns one parse warning instead of
+  two. Six of the seven config-reach and risk-waiver defects deferred from the
+  v2.0.0 cycle closed in the same pass, each pinned by its own test; the
+  seventh (`validate --global` blessing a file `set --global` refuses) is
+  named open rather than silently dropped.
+
+- **`route.mjs`'s warnings reach the caller on every shape.** `warnings[]` now
+  rides the `unknown-role` and `unresolved` `ok:false` shapes too, and a held
+  risk floor is audible in both `reason` and `warnings` - a workflow relaying
+  the bundle relays the disagreement instead of swallowing it with the error.
+
+## [2.1.0] - 2026-07-30
+
+Two gates that were meant to protect the work after them, and did not. An
+adjudicated review used to hand its survivor list back as something that read
+like a work order, so the model went straight to fixing all of it; and the
+coverage gate exempted the exact checklists it existed to check. Both close
+here, along with the paid seam's missing payload bound.
+
+Backfilled 2026-08-03: this milestone closed in the planning docs at `e457e47`
+but its release section was never written, so the notes below are reconstructed
+from the phase summaries at `643663e~1` and the commit range
+`fe2310f..e457e47`. The gap is itself an instance of what REL-03 exists to fix.
+
+### Added
+
+- **`review.max_prompt_tokens`** (default 120000 estimated tokens), refusing an
+  over-cap payload on both paid commands BEFORE any request is made
+  (`review-provider.mjs`: `resolveMaxPromptTokens`, `estimatePromptTokens`,
+  `assertUnderCap`). Present on all four config surfaces (REV-03).
+- **self-verify check 10, `dispatch-phrasing`** - a new pure lib
+  (`bin/lib/dispatch-phrasing.mjs`) that FAILS a concurrent dispatch whose prose
+  does not say ONE message, run over `workflows/` and `references/` (REV-03).
+- **A persisted findings envelope** at `phases/<N>/FINDINGS.json`, carrying
+  `rejected_entries` and `skipped_entries`, so a discarded verifier entry
+  outlives the dispatch that produced it (COV-01).
+- **`uat record --criterion`**, which repairs a dropped criterion link after the
+  fact rather than requiring the checklist be rebuilt (COV-01).
+- **Provenance in the coverage envelope** - `version: {plugin, uat_fields}`, so a
+  coverage result states which seam version produced it (COV-01).
+
+### Changed
+
+- **An adjudicated review ends at a triage gate, not a queue.** Survivors are
+  presented as a numbered list with severity and `file:line`, NONE listed first
+  and taken as the default, and the turn ends on that question. Authored once in
+  `references/review-triggers.md` § 6 and reached from five firing sites by
+  pointer rather than by copy: `cad-land` step 3, `workflows/plan.md`,
+  `workflows/verify.md` `route_failures`, and `workflows/execute.md`'s
+  sequential-diff and parallel fires (TRI-02).
+- **A trigger's reviewers dispatch concurrently in one message**, stated as an
+  instruction with the hedge removed, and one route resolve per set rather than
+  per reviewer (REV-03).
+
+### Removed
+
+- **The reviewer contract's anti-padding clause**
+  (`skills/cad-reviewer-contract/SKILL.md`). Anti-inflation is kept. The clause
+  was pre-filtering findings the user never got to see, which is the same defect
+  the triage gate closes from the other end (TRI-02).
+
+### Fixed
+
+- **The coverage gate exempted the checklists it existed to check.**
+  `criteria-coverage` treated a fieldless checklist as legacy and passed it
+  silently; it now reports a `fieldless-checklist` break. The legacy exemption is
+  decided on ids DECLARED (a `declaresIds: none | some | unknown` signal computed
+  from raw source lines) rather than on ids successfully parsed, so an unreadable
+  criteria section can no longer buy an exemption (COV-01).
+
 ## [2.0.0] - 2026-07-30
 
 The routing question changes. Cadence used to ask how much a dispatch should
@@ -1004,6 +1192,8 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.2.0
+[2.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/commit/e457e47
 [2.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.0.0
 [1.5.0]: https://github.com/crenshawdev/cadence/releases/tag/v1.5.0
 [1.4.1]: https://github.com/crenshawdev/cadence/releases/tag/v1.4.1

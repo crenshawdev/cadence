@@ -156,3 +156,127 @@ export function rungBodyIssue(body, rung, skills) {
   if (wanted.includes(found)) return null;
   return { detail: `body is not the rung template - expected exactly ${JSON.stringify(wanted[0])}` };
 }
+
+/** The config-key prefix every per-role start rung is written under. */
+export const EFFORT_PREFIX = 'model.effort.';
+
+/**
+ * Whether the shipped `model.effort.<role>` schema enums still say what
+ * RUNG_FILES says. It belongs beside the map because the map is the statement
+ * it checks against, and because the refusal it protects is one a USER meets:
+ * `config.mjs` refuses a start rung by key off these enums, so an enum that
+ * drifts from the map starts refusing the wrong values - accepting a rung with
+ * no file (which route.mjs then has to warn its way out of) or refusing one
+ * this role really has.
+ *
+ * self-verify never reads a user's config and so cannot refuse a user's value;
+ * this is its half of that criterion (D-08), which is why every detail NAMES
+ * THE KEY a maintainer would edit.
+ *
+ * `rungOrder` is the caller's rung vocabulary (route-table.json's `rung_order`).
+ * An empty or absent one skips the vocabulary arm ALONE, the way `cellIssues`
+ * tolerates an absent vocabulary - the schema-vs-map proof must still run on a
+ * tree with no table, which is where a drifted enum is likeliest and least
+ * noticed.
+ *
+ * @param {any} schema the `keys` map of config.schema.json, trusted for nothing
+ * @param {any} [rungOrder] the declared rung vocabulary, lowest first
+ * @returns {{code: string, detail: string}[]}
+ */
+export function effortEnumIssues(schema, rungOrder) {
+  /** @type {{code: string, detail: string}[]} */
+  const out = [];
+  const keys = schema !== null && typeof schema === 'object' && !Array.isArray(schema)
+    ? schema : {};
+  const order = Array.isArray(rungOrder) ? rungOrder.filter((r) => typeof r === 'string') : [];
+
+  for (const role of Object.keys(RUNG_FILES)) {
+    const key = `${EFFORT_PREFIX}${role}`;
+    const spec = keys[key];
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      out.push({ code: 'missing-effort-key',
+        detail: `${key} is absent, but lib/rung-agent.mjs files ${
+          Object.keys(RUNG_FILES[role]).length} rungs for ${role}` });
+      continue;
+    }
+    // Type BEFORE values: `checkValue` enforces an enum's `values` only when
+    // `type` IS "enum", so a key whose type drifted to "string" keeps a correct
+    // values list while the write face silently accepts any rung - the exact
+    // accepting-a-rung-with-no-file drift this function exists to refuse.
+    if (spec.type !== 'enum') {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} has type ${JSON.stringify(spec.type)}, must be "enum" - `
+          + 'a non-enum type disables the write-face refusal' });
+      continue;
+    }
+    // The map's rungs in DECLARED order, then null - the exact shape D-03 ships,
+    // so a reordered enum reads as drift too: the order is what a reader of the
+    // refusal message sees, and it is meant to be the ladder's own order.
+    const want = [...Object.keys(RUNG_FILES[role]), null];
+    const got = Array.isArray(spec.values) ? spec.values : null;
+    if (!got || got.length !== want.length || want.some((v, i) => got[i] !== v)) {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} holds ${JSON.stringify(got)}, but lib/rung-agent.mjs files ${
+          role} at ${JSON.stringify(want)}` });
+      continue;
+    }
+    if (!order.length) continue;
+    const strays = want.filter((v) => v !== null && !order.includes(v));
+    if (strays.length) {
+      out.push({ code: 'effort-enum-drift',
+        detail: `${key} offers ${JSON.stringify(strays)}, which route-table.json's `
+          + `rung_order (${order.join(', ')}) does not carry` });
+    }
+  }
+
+  for (const key of Object.keys(keys)) {
+    if (!key.startsWith(EFFORT_PREFIX)) continue;
+    const role = key.slice(EFFORT_PREFIX.length);
+    if (Object.prototype.hasOwnProperty.call(RUNG_FILES, role)) continue;
+    out.push({ code: 'unknown-effort-role',
+      detail: `${key} names "${role}", which lib/rung-agent.mjs files no rungs for `
+        + `(${Object.keys(RUNG_FILES).join(', ')})` });
+  }
+  return out;
+}
+
+/**
+ * Whether the file a rung is filed under carries a DIFFERENT effort than that
+ * rung. The third link in the chain, and the one that was open.
+ *
+ * A cell states a rung, RUNG_FILES turns it into a file NAME, and the dispatch
+ * carries only that name - so the depth that actually runs is the `effort` in
+ * that file's frontmatter. Two checks already sit near this and neither closes
+ * it: `rungBodyIssue` holds a file's body against its OWN frontmatter, so a
+ * file that is internally consistent and externally wrong passes, and check
+ * 8's reachability arm reads the rung out of the FILENAME rather than out of
+ * the file. Leave the gap and `route-table.json` can name `xhigh`, this map
+ * can resolve it to a file carrying `effort: high`, and the resolver's JSON,
+ * the transcript's `subagent_type` and the escalation `reason` all report
+ * `xhigh` while nothing ran at it. Subagent turns record no effort anywhere,
+ * so no observable downstream disagrees either - it is unfalsifiable outside
+ * the file. It is also the same invariant CI already holds against the table,
+ * where a retry rung may not sit below the rung it started on; this holds it
+ * against the filesystem, so a rung cannot think less while every surface
+ * reports that it thought more.
+ *
+ * A stem this map does not name is not this rule's business - check 8's
+ * reachability arm owns stale and unreachable files - and returns null.
+ *
+ * @param {string} stem the agent file's basename without `.md`
+ * @param {string} [effort] the file's frontmatter `effort`
+ * @returns {null|{role: string, rung: string, detail: string}} null when they agree
+ */
+export function rungEffortIssue(stem, effort) {
+  for (const role of Object.keys(RUNG_FILES)) {
+    const map = RUNG_FILES[role];
+    for (const rung of Object.keys(map)) {
+      if (map[rung] !== stem) continue;
+      if (effort === rung) return null;
+      const found = effort === undefined ? 'carries no effort' : `carries effort: ${effort}`;
+      return { role, rung,
+        detail: `lib/rung-agent.mjs files this as ${role}'s ${rung} rung, but it ${found}` };
+    }
+  }
+  return null;
+}

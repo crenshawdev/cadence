@@ -5,31 +5,97 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  deriveTargetVersion, decideManifestBump, prependChangelogEntry,
+  normalizeTargetVersion, compareVersions, decideManifestBump, prependChangelogEntry,
+  promoteUnreleased,
 } from './lib/release-decision.mjs';
 
-// --- deriveTargetVersion ----------------------------------------------------
+// --- normalizeTargetVersion -------------------------------------------------
 
-test('derive: strips a single leading v from an explicit argVersion', () => {
-  assert.equal(deriveTargetVersion({ argVersion: 'v1.1.0-rc.2' }), '1.1.0-rc.2');
-  assert.equal(deriveTargetVersion({ argVersion: '1.1.0-rc.2' }), '1.1.0-rc.2');
+test('normalize: strips a single leading v from the explicit version', () => {
+  assert.equal(normalizeTargetVersion('v1.1.0-rc.2'), '1.1.0-rc.2');
+  assert.equal(normalizeTargetVersion('1.1.0-rc.2'), '1.1.0-rc.2');
+  assert.equal(normalizeTargetVersion('  v2.0.0  '), '2.0.0');
 });
 
-test('derive: precedence argVersion > ### Active > ROADMAP title', () => {
-  const project = '### Active\n\n`v2.0.0` - next\n\n### Out of Scope\n';
-  const roadmap = '# Roadmap: Cadence v3.0.0\n';
-  // argVersion wins over both prose surfaces.
-  assert.equal(deriveTargetVersion({ argVersion: 'v9.9.9', projectText: project, roadmapText: roadmap }), '9.9.9');
-  // no argVersion: ### Active wins over the ROADMAP title.
-  assert.equal(deriveTargetVersion({ projectText: project, roadmapText: roadmap }), '2.0.0');
-  // no argVersion, no Active version: fall back to the ROADMAP title.
-  assert.equal(deriveTargetVersion({ projectText: '### Active\n\nno version\n', roadmapText: roadmap }), '3.0.0');
+test('normalize: null when no explicit version is given (never invent one)', () => {
+  assert.equal(normalizeTargetVersion(null), null);
+  assert.equal(normalizeTargetVersion(undefined), null);
+  assert.equal(normalizeTargetVersion(''), null);
+  assert.equal(normalizeTargetVersion('   '), null);
+  assert.equal(normalizeTargetVersion(/** @type {any} */ (42)), null);
 });
 
-test('derive: null when nothing carries a version (never invent one)', () => {
-  assert.equal(deriveTargetVersion({ projectText: '### Active\n\nnothing\n', roadmapText: '# Roadmap\n' }), null);
-  assert.equal(deriveTargetVersion({}), null);
-  assert.equal(deriveTargetVersion(), null);
+// --- compareVersions --------------------------------------------------------
+//
+// The canonical semver §11 precedence chain, one test() per adjacent PAIR (the
+// convention and its reason are at retired-keys.test.mjs:4-6): a loop of
+// asserts inside one test() reports the loop's count, not the rows', so a pair
+// that never ran still looks green. Each pair is asserted in both directions.
+//   1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-alpha.beta < 1.0.0-beta
+//     < 1.0.0-beta.2 < 1.0.0-beta.11 < 1.0.0-rc.1 < 1.0.0
+
+/** Assert `lo` sorts strictly below `hi`, in both directions. */
+function below(lo, hi) {
+  assert.equal(compareVersions(lo, hi), -1, `${lo} must sort below ${hi}`);
+  assert.equal(compareVersions(hi, lo), 1, `${hi} must sort above ${lo}`);
+  assert.equal(compareVersions(lo, lo), 0, `${lo} must equal itself`);
+}
+
+test('compare §11: 1.0.0-alpha < 1.0.0-alpha.1 (a longer identifier list wins a tie)', () => {
+  below('1.0.0-alpha', '1.0.0-alpha.1');
+});
+
+test('compare §11: 1.0.0-alpha.1 < 1.0.0-alpha.beta (numeric ranks below alphanumeric)', () => {
+  below('1.0.0-alpha.1', '1.0.0-alpha.beta');
+});
+
+test('compare §11: 1.0.0-alpha.beta < 1.0.0-beta (ASCII order, left to right)', () => {
+  below('1.0.0-alpha.beta', '1.0.0-beta');
+});
+
+test('compare §11: 1.0.0-beta < 1.0.0-beta.2', () => {
+  below('1.0.0-beta', '1.0.0-beta.2');
+});
+
+test('compare §11: 1.0.0-beta.2 < 1.0.0-beta.11 (numeric identifiers compare numerically, not as text)', () => {
+  below('1.0.0-beta.2', '1.0.0-beta.11');
+});
+
+test('compare §11: 1.0.0-beta.11 < 1.0.0-rc.1', () => {
+  below('1.0.0-beta.11', '1.0.0-rc.1');
+});
+
+test('compare §11: 1.0.0-rc.1 < 1.0.0 (a prerelease sorts below its own release)', () => {
+  below('1.0.0-rc.1', '1.0.0');
+});
+
+test('compare: the numeric triple dominates - 2.0.0 > 1.9.9', () => {
+  below('1.9.9', '2.0.0');
+});
+
+test('compare: build metadata is ignored entirely - 1.0.0+a, 1.0.0+b and 1.0.0 are all equal', () => {
+  assert.equal(compareVersions('1.0.0+a', '1.0.0+b'), 0);
+  assert.equal(compareVersions('1.0.0+a', '1.0.0'), 0);
+  assert.equal(compareVersions('1.0.0', '1.0.0+b'), 0);
+});
+
+test('compare: an out-of-grammar version is null, never a guessed order', () => {
+  assert.equal(compareVersions('1.0', '1.0.0'), null, 'a two-part version is not semver');
+  assert.equal(compareVersions('latest', '1.0.0'), null, 'a channel name is not a version');
+  assert.equal(compareVersions('01.2.3', '1.2.3'), null, 'a leading zero is out of grammar');
+  assert.equal(compareVersions('', '1.0.0'), null);
+  assert.equal(compareVersions('1.0.0', /** @type {any} */ (null)), null);
+});
+
+test('compare: a leading v is out of grammar here (normalizeTargetVersion strips it upstream)', () => {
+  // Accepting `v` in two places is how the two drift apart.
+  assert.equal(compareVersions('v1.0.0', '1.0.0'), null);
+});
+
+test('compare: majors above Number.MAX_SAFE_INTEGER still order correctly', () => {
+  // 9007199254740993 and ...92 are indistinguishable as JS numbers; the
+  // length-then-lexicographic digit compare keeps them apart.
+  below('9007199254740992.0.0', '9007199254740993.0.0');
 });
 
 // --- decideManifestBump -----------------------------------------------------
@@ -56,13 +122,74 @@ test('bump: no version field on the manifest -> skip (D-03 sibling guard)', () =
   assert.equal(decideManifestBump(null, '1.1.0-rc.2').action, 'skip');
 });
 
-test('bump: no target version -> error, never write a null', () => {
+test('bump: no target version -> refuse, never write a null', () => {
   const r = decideManifestBump('1.0.0', null);
-  assert.equal(r.action, 'error');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'no-target-version');
   assert.equal(r.bumped, false);
   assert.match(r.reason, /no-target-version/);
-  assert.equal(decideManifestBump('1.0.0', undefined).action, 'error');
-  assert.equal(decideManifestBump('1.0.0', '').action, 'error');
+  assert.equal(decideManifestBump('1.0.0', undefined).action, 'refuse');
+  assert.equal(decideManifestBump('1.0.0', '').action, 'refuse');
+});
+
+test('bump: every verdict carries a machine code from the closed set', () => {
+  assert.equal(decideManifestBump('1.0.0', '1.1.0').code, 'bump');
+  assert.equal(decideManifestBump('1.1.0', '1.1.0').code, 'already-at-target');
+  assert.equal(decideManifestBump(undefined, '1.1.0').code, 'no-version-field');
+  assert.equal(decideManifestBump('1.0.0', null).code, 'no-target-version');
+});
+
+test('bump: a target BELOW the manifest version refuses downgrade (never any-difference)', () => {
+  const r = decideManifestBump('2.0.0', '1.9.9');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'downgrade');
+  assert.equal(r.bumped, false);
+  assert.match(r.reason, /2\.0\.0/);
+  assert.match(r.reason, /1\.9\.9/);
+});
+
+test('bump: 1.1.0-rc.2 -> 1.1.0 is still an upgrade (a release outranks its prerelease)', () => {
+  const r = decideManifestBump('1.1.0-rc.2', '1.1.0');
+  assert.equal(r.action, 'bump');
+  assert.equal(r.code, 'bump');
+  assert.equal(r.bumped, true);
+});
+
+test('bump: 1.1.0 -> 1.1.0-rc.2 refuses downgrade (going back to a prerelease)', () => {
+  const r = decideManifestBump('1.1.0', '1.1.0-rc.2');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'downgrade');
+});
+
+test('bump: an unparseable TARGET refuses by name, naming the side and the value', () => {
+  const r = decideManifestBump('1.0.0', 'latest');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'unparseable-version');
+  assert.match(r.reason, /target/);
+  assert.match(r.reason, /latest/);
+});
+
+test('bump: an unparseable MANIFEST version refuses by name, naming the side and the value', () => {
+  const r = decideManifestBump('1.0', '2.0.0');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'unparseable-version');
+  assert.match(r.reason, /current/);
+  assert.match(r.reason, /1\.0/);
+});
+
+test('bump: the TARGET is checked before the manifest - one bad number refuses every manifest alike', () => {
+  // A version-less manifest would otherwise `skip`; the bad target must win, so
+  // a run can never write one manifest and refuse the next on the same number.
+  const r = decideManifestBump(undefined, 'latest');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'unparseable-version');
+});
+
+test('bump: a build-metadata-only difference is not an upgrade', () => {
+  const r = decideManifestBump('1.0.0', '1.0.0+build');
+  assert.equal(r.action, 'refuse');
+  assert.equal(r.code, 'not-an-upgrade');
+  assert.equal(r.bumped, false);
 });
 
 // --- prependChangelogEntry --------------------------------------------------
@@ -167,4 +294,154 @@ test('changelog: empty url omits the link reference line entirely (no malformed 
   assert.ok(!r.text.includes('[1.1.0-rc.2]: \n'), 'no trailing-empty link reference');
   // The pre-existing [1.0.0] link reference is left intact.
   assert.ok(r.text.includes('[1.0.0]: https://github.com/crenshawdev/cadence/releases'));
+});
+
+// --- promoteUnreleased ------------------------------------------------------
+
+const STAGED_FIXTURE = [
+  '# Changelog',
+  '',
+  '## [Unreleased]',
+  '',
+  '### Removed',
+  '- the rail-3 evasion grammar',
+  '',
+  '## [1.0.0] - 2026-07-16',
+  '',
+  'First public release.',
+  '',
+  '[1.0.0]: https://x/releases',
+  '',
+].join('\n');
+
+/** Scaffold the dated heading, then promote - the order the seam composes in. */
+function scaffoldThenPromote(text, version, date = '2026-08-03') {
+  const scaffold = prependChangelogEntry(text, { version, date, url: `https://x/releases/tag/v${version}` });
+  return promoteUnreleased(scaffold.text, version);
+}
+
+test('promote: staged content ends up INSIDE the dated section, not stranded above it', () => {
+  const r = scaffoldThenPromote(STAGED_FIXTURE, '2.0.0');
+  assert.equal(r.changed, true);
+  const iUnrel = r.text.indexOf('## [Unreleased]');
+  const iNew = r.text.indexOf('## [2.0.0]');
+  const iBullet = r.text.indexOf('- the rail-3 evasion grammar');
+  const iOld = r.text.indexOf('## [1.0.0]');
+  assert.ok(iUnrel < iNew, 'Unreleased still leads the file');
+  assert.ok(iNew < iBullet, 'the staged bullet sits BELOW the dated heading, which is the whole point');
+  assert.ok(iBullet < iOld, 'and above the previous release');
+  assert.ok(r.text.includes('### Removed'), 'the sub-heading travels with its bullets');
+});
+
+test('promote: [Unreleased] survives as an empty stub with nothing stranded under it', () => {
+  const r = scaffoldThenPromote(STAGED_FIXTURE, '2.0.0');
+  const lines = r.text.split('\n');
+  const at = lines.findIndex((l) => /^## \[Unreleased\]/.test(l));
+  const next = lines.findIndex((l, i) => i > at && /^## /.test(l));
+  assert.ok(at >= 0, 'the Unreleased heading is still there - the next cycle stages into it');
+  assert.ok(next > at, 'a following section exists');
+  for (let i = at + 1; i < next; i++) {
+    assert.equal(lines[i].trim(), '', `line ${i} between Unreleased and the next heading must be blank`);
+  }
+});
+
+test('promote: a second call is a no-op and byte-identical (idempotent on an empty body)', () => {
+  const once = scaffoldThenPromote(STAGED_FIXTURE, '2.0.0');
+  const twice = promoteUnreleased(once.text, '2.0.0');
+  assert.equal(twice.changed, false);
+  assert.equal(twice.reason.startsWith('empty-unreleased'), true);
+  assert.equal(twice.text, once.text);
+});
+
+test('promote: a re-run that staged NEW content promotes that too (not first-run-only)', () => {
+  const once = scaffoldThenPromote(STAGED_FIXTURE, '2.0.0');
+  const restaged = once.text.replace('## [Unreleased]\n', '## [Unreleased]\n\n- a late fix\n');
+  const again = promoteUnreleased(restaged, '2.0.0');
+  assert.equal(again.changed, true);
+  const iNew = again.text.indexOf('## [2.0.0]');
+  const iLate = again.text.indexOf('- a late fix');
+  const iOld = again.text.indexOf('## [1.0.0]');
+  assert.ok(iNew < iLate && iLate < iOld, 'the late bullet lands inside the same dated section');
+  assert.ok(again.text.indexOf('- the rail-3 evasion grammar') > iNew, 'the first promotion is left in place');
+});
+
+test('promote: no [Unreleased] section -> no-op, nothing invented', () => {
+  const r = promoteUnreleased('# Changelog\n\n## [2.0.0] - 2026-08-03\n\n- something\n', '2.0.0');
+  assert.equal(r.changed, false);
+  assert.equal(r.reason.startsWith('no-unreleased-section'), true);
+});
+
+test('promote: no dated heading for the target -> no-op, content stays staged', () => {
+  const r = promoteUnreleased(STAGED_FIXTURE, '2.0.0');
+  assert.equal(r.changed, false);
+  assert.equal(r.reason.startsWith('no-release-heading'), true);
+  assert.equal(r.text, STAGED_FIXTURE, 'the staged content is left exactly where it was');
+});
+
+test('promote: trailing link references stay put when [Unreleased] is the last section', () => {
+  const unreleasedLast = [
+    '# Changelog',
+    '',
+    '## [2.0.0] - 2026-08-03',
+    '',
+    '## [Unreleased]',
+    '',
+    '- staged work',
+    '',
+    '[2.0.0]: https://x/releases/tag/v2.0.0',
+    '[1.0.0]: https://x/releases',
+    '',
+  ].join('\n');
+  const r = promoteUnreleased(unreleasedLast, '2.0.0');
+  assert.equal(r.changed, true);
+  const lines = r.text.split('\n');
+  // The two reference definitions are still the file's trailing block, in order.
+  const refs = lines.filter((l) => /^\[[^\]]+\]:\s/.test(l));
+  assert.deepEqual(refs, ['[2.0.0]: https://x/releases/tag/v2.0.0', '[1.0.0]: https://x/releases']);
+  const iBullet = r.text.indexOf('- staged work');
+  assert.ok(iBullet < r.text.indexOf('[2.0.0]: '), 'the promoted bullet is above the reference block');
+  assert.ok(iBullet > r.text.indexOf('## [2.0.0] - 2026-08-03'), 'and inside the dated section');
+});
+
+test('promote: a reference definition INSIDE the body travels with the content that cites it', () => {
+  const withInnerRef = [
+    '# Changelog',
+    '',
+    '## [Unreleased]',
+    '',
+    '- closes [#87]',
+    '[#87]: https://git.example/issues/87',
+    '',
+    '- and a second bullet below the definition',
+    '',
+    '## [2.0.0] - 2026-08-03',
+    '',
+    '## [1.0.0] - 2026-07-16',
+    '',
+    '[1.0.0]: https://x/releases',
+    '',
+  ].join('\n');
+  const r = promoteUnreleased(withInnerRef, '2.0.0');
+  assert.equal(r.changed, true);
+  const iNew = r.text.indexOf('## [2.0.0]');
+  const iOld = r.text.indexOf('## [1.0.0] - 2026-07-16');
+  for (const needle of ['- closes [#87]', '[#87]: https://git.example/issues/87', '- and a second bullet below the definition']) {
+    const at = r.text.indexOf(needle);
+    assert.ok(at > iNew && at < iOld, `"${needle}" promoted into the dated section, not truncated at the definition`);
+  }
+});
+
+test('promote: sectionEmpty is false once content landed, true when the section stays bare', () => {
+  assert.equal(scaffoldThenPromote(STAGED_FIXTURE, '2.0.0').sectionEmpty, false);
+  const nothingStaged = STAGED_FIXTURE.replace('### Removed\n- the rail-3 evasion grammar\n', '');
+  assert.equal(scaffoldThenPromote(nothingStaged, '2.0.0').sectionEmpty, true);
+});
+
+test('promote: total on junk input - a non-string text and a falsy version never throw', () => {
+  const r = promoteUnreleased(/** @type {any} */ (null), '2.0.0');
+  assert.equal(r.changed, false);
+  assert.equal(r.text, '');
+  const noVersion = promoteUnreleased(STAGED_FIXTURE, /** @type {any} */ (''));
+  assert.equal(noVersion.changed, false);
+  assert.equal(noVersion.text, STAGED_FIXTURE);
 });

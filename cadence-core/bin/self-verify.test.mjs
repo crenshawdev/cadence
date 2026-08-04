@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, re
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -33,9 +34,12 @@ function reachTable(rows) {
  * the subject of the load-bearing "the repo passes" assertion above. Three
  * synthetic keys, one of them narrow.
  * @param {string} doc the full text of cadence-core/references/config-reach.md
- * @param {{narrowPurpose?: string}} [opts]
+ * `extraKeys` adds synthetic keys to that schema (still not the shipped one),
+ * for a row whose key name has to be a real shape - `risk.override.<surface>`.
+ * @param {{narrowPurpose?: string, extraKeys?: Record<string, any>}} [opts]
  */
-function reachFixture(doc, { narrowPurpose = 'Something - alpha step only' } = {}) {
+function reachFixture(doc, { narrowPurpose = 'Something - alpha step only',
+  extraKeys = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-reach-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
     'cadence-core/templates', 'skills', 'agents']) {
@@ -46,6 +50,7 @@ function reachFixture(doc, { narrowPurpose = 'Something - alpha step only' } = {
       'alpha.wide': { type: 'bool', default: false, purpose: 'Something universal' },
       'alpha.narrow': { type: 'bool', default: false, purpose: narrowPurpose },
       'beta.wide': { type: 'bool', default: false, purpose: 'Another universal thing' },
+      ...extraKeys,
     },
   }, null, 2));
   writeFileSync(join(root, 'cadence-core', 'references', 'config-reach.md'), doc);
@@ -234,14 +239,13 @@ test('#50: a CRLF backslash continuation joins like an LF one (the --items regre
   assert.ok(p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
 });
 
-test('#50: an EVEN backslash run does NOT continue the line - the next line is a separate command (D-15 parity, one rule with the git rails)', () => {
+test('#50: an EVEN backslash run does NOT continue the line - the next line is a separate command (D-15 parity)', () => {
   // `\\` at EOL is a literal backslash, not a continuation, so `--items` sits
   // on a line of its own and belongs to no planning.mjs invocation. A
   // parity-blind join merges it in and invents an unknown-flag that the prose
-  // never wrote. The same parity rule holds for the git rails, spelled as
-  // escape state in lib/shell-tokens.mjs because that input is a shell command
-  // string rather than prose (D-13): ONE rule, two spellings, each fitted to
-  // its input. This test asserts self-verify's own behavior only.
+  // never wrote. This rule used to be shared with the git rails, which carried
+  // it as escape state in a shell tokenizer; that tokenizer is deleted and
+  // self-verify's prose join is now its only home.
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat refresh --phase 1 \\\\\n--items -\n');
   const p = run(['--root', root]).problems;
@@ -263,12 +267,16 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
   const root = fixture(
     '`review.triggers.<t>.gate` `review.triggers.<t>.tier` `review.triggers.<t>.effort`\n' +
     '`review.providers.<name>.tiers` `review.mode` `review.reviewers` `review.key_file`\n' +
-    '`review.request_timeout_ms`\n' +
+    '`review.request_timeout_ms` `review.max_prompt_tokens`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
     '`review.consult.attempt_threshold` `review.decision_review.tier`\n' +
     '`review.decision_review.effort` `stakes` `model.escalate_on_failure`\n' +
     '`granularity`\n' +
-    '`model.overrides`\n' +
+    // Two-segment FAMILY tokens, one each for the six per-role pins and the six
+    // per-role start rungs: 1b counts a >=2-segment prefix as a reader, and
+    // `model.effort.<role>` would report unknown-config-key (expand() carries no
+    // <role> placeholder).
+    '`model.overrides` `model.effort`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
@@ -1002,6 +1010,74 @@ test('check 9: a two-cell body row is malformed-reach-row naming the line', () =
   assert.match(hit.detail, /alpha\.extra/);
 });
 
+test('check 9: a SECOND row for a declared key is duplicate-reach-row naming both lines', () => {
+  // The authoring mistake it catches: narrowing a key by APPENDING a row. The
+  // stale row still wins, so the purpose test ran against the reach the author
+  // had just replaced - and the check whose point is that nothing is skipped
+  // silently skipped it silently (.planning/CAPTURE.md:170).
+  const doc = CONSISTENT_REACH + '| `alpha.wide` | alpha step only | prose |\n';
+  const p = run(['--root', reachFixture(doc)]).problems;
+  const hit = p.find((x) => x.kind === 'duplicate-reach-row');
+  assert.ok(hit, JSON.stringify(p));
+  assert.match(hit.detail, /alpha\.wide/);
+  assert.equal(hit.file, 'cadence-core/references/config-reach.md');
+  // both lines: the row that declares nothing, and the one that won
+  const lines = (hit.detail.match(/line (\d+)/g) || []);
+  assert.equal(lines.length, 2, hit.detail);
+  assert.notEqual(lines[0], lines[1]);
+  // first-occurrence-wins is unchanged: the appended narrow reach is NOT read,
+  // so it raises no unstated-reach against alpha.wide's universal purpose.
+  assert.ok(!p.some((x) => x.kind === 'unstated-reach' && /alpha\.wide/.test(x.detail)),
+    JSON.stringify(p));
+});
+
+test('check 9: `Universal` and `universal.` are the sentinel, not a narrow phrase', () => {
+  // Read strictly, either spelling fell through to the purpose test and
+  // reported unstated-reach - telling the author to paste "Universal" into the
+  // key's purpose rather than to fix the cell (.planning/CAPTURE.md:171).
+  for (const spelling of ['Universal', 'universal.', 'UNIVERSAL', 'Universal.']) {
+    const doc = reachTable([['alpha.wide', spelling], ['alpha.narrow', 'alpha step only'],
+      ['beta.wide', 'universal']]);
+    const p = run(['--root', reachFixture(doc)]).problems;
+    assert.ok(!p.some((x) => x.kind === 'unstated-reach' && /alpha\.wide/.test(x.detail)),
+      `${spelling}: ${JSON.stringify(p)}`);
+  }
+
+  // The control, and the half that must NOT fold: a narrower phrase is still
+  // compared verbatim, so a case difference against the purpose is reported.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH,
+    { narrowPurpose: 'Something - Alpha Step Only' })]).problems;
+  assert.ok(p.some((x) => x.kind === 'unstated-reach' && /alpha\.narrow/.test(x.detail)),
+    JSON.stringify(p));
+});
+
+test('check 9: the risk.override narrowing is now VISIBLE to the check', () => {
+  // Until the eight rows stopped reading `universal`, reachIssues returned at
+  // the sentinel before the purpose test, so the one narrowing that phase
+  // introduced was the one thing check 9 could not see (.planning/CAPTURE.md:165).
+  // A row carrying the phrase whose key's purpose does not is now reported.
+  const waiver = (purpose) => ({
+    'risk.override.auth': { type: 'bool', default: false, src: 'repo', purpose },
+  });
+  const doc = reachTable([['alpha.wide', 'universal'], ['alpha.narrow', 'alpha step only'],
+    ['beta.wide', 'universal'], ['risk.override.auth', 'repo config layer only']]);
+
+  const silent = run(['--root', reachFixture(doc, {
+    extraKeys: waiver('Waive the detected risk floor for the auth surface ALONE'),
+  })]).problems;
+  const hit = silent.find((x) => x.kind === 'unstated-reach' && /risk\.override\.auth/.test(x.detail));
+  assert.ok(hit, JSON.stringify(silent));
+  assert.match(hit.detail, /repo config layer only/);
+
+  // ...and the shipped shape - the phrase in the purpose too - is silent.
+  const stated = run(['--root', reachFixture(doc, {
+    extraKeys: waiver('Waive the detected risk floor for the auth surface ALONE. '
+      + 'Honoured from the repo config layer only: a waiver written to the '
+      + "user-global layer is ignored and named in the resolver's warnings."),
+  })]).problems;
+  assert.ok(!stated.some((x) => x.kind === 'unstated-reach'), JSON.stringify(stated));
+});
+
 test('check 9: a renamed section heading is ONE missing-reach-section, not 3 missing rows', () => {
   // rows === null vs [] - the distinction parseActiveIds keeps for the same
   // reason: one authoring fault must not arrive as a copy of another per key.
@@ -1058,4 +1134,152 @@ test('check 1 (reverse): `risk.override.<surface>` prose covers every surface ke
   const inert = run(['--root', root]).problems
     .filter((p) => p.kind === 'inert-config-key' && p.detail.startsWith('risk.override.'));
   assert.deepEqual(inert, []);
+});
+
+test('check 10: a loop-shaped concurrent dispatch under workflows is unbatched-dispatch', () => {
+  const root = fixture('For each reviewer in the set, in parallel where the host allows:\n');
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unbatched-dispatch');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'workflows', 'x.md'));
+  assert.match(p[0].detail, /^line 1: /);
+});
+
+test('check 10: the batch-shaped rewrite of the same instruction yields nothing', () => {
+  const root = fixture('Issue the resolved set in ONE message; serialize only when one\n'
+    + "dispatch consumes another's output, which a reviewer set never does.\n");
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unbatched-dispatch');
+  assert.deepEqual(p, []);
+});
+
+test('check 10: a bare concurrent set-dispatch under workflows is unbatched-dispatch', () => {
+  // The UAT reproduction: no loop head, no host hedge. The first-shipped rule
+  // returned 0 problems here, so this row is what makes the widening provable
+  // at the seam and not only in the lib.
+  const root = fixture('Dispatch each reviewer concurrently.\n');
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unbatched-dispatch');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'workflows', 'x.md'));
+  assert.match(p[0].detail, /^line 1: /);
+});
+
+test('check 10: the references half of the scope is checked too, not just workflows', () => {
+  // Both directories are in scope, and until now only the workflows half had a
+  // row - a check that silently stopped walking references/ would have shipped
+  // green.
+  const root = fixture('Nothing dispatch-shaped here.\n');
+  writeFileSync(join(root, 'cadence-core', 'references', 'y.md'),
+    'Dispatch each reviewer concurrently.\n');
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unbatched-dispatch');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'references', 'y.md'));
+});
+
+test('check 10: a compliant sentence does not excuse the next one in the same item', () => {
+  const root = fixture('- Dispatch the reviewer set in one message.'
+    + ' Then dispatch a verifier per doc, in parallel where the host allows.\n');
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unbatched-dispatch');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.match(p[0].detail, /^line 1: Then dispatch a verifier per doc/);
+  assert.doesNotMatch(p[0].detail, /Dispatch the reviewer set/);
+});
+
+test('check 10: the SAME sentence in a skill is out of scope (directory scope)', () => {
+  // What pins the scope to the two instruction surfaces: skills, agents and
+  // templates carry no dispatch instructions of their own, and references/ is
+  // in scope only because no other check reaches it at all.
+  const root = fixtureWith({
+    skills: { 'cad-x': 'For each reviewer in the set, in parallel where the host allows:\n' },
+  });
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unbatched-dispatch');
+  assert.deepEqual(p, []);
+});
+
+// --- 8b. the shipped model.effort enums against RUNG_FILES (RNG-02) ----------
+
+/**
+ * A tree carrying its OWN config.schema.json (the shipped one, with `transform`
+ * applied to its keys) and NO cadence-core/route-table.json at all - the tree
+ * that proves check 8b is not conditional on the table parsing, or existing.
+ * @param {(keys: Record<string, any>) => Record<string, any>} transform
+ */
+function schemaFixture(transform) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-effort-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  const shipped = JSON.parse(
+    readFileSync(join(REPO, 'cadence-core', 'config.schema.json'), 'utf8'));
+  writeFileSync(join(root, 'cadence-core', 'config.schema.json'),
+    JSON.stringify({ ...shipped, keys: transform(shipped.keys) }, null, 2));
+  return root;
+}
+
+test('a drifted model.effort enum fails with no route table in the tree', () => {
+  const root = schemaFixture((keys) => ({
+    ...keys,
+    'model.effort.cad-planner': { ...keys['model.effort.cad-planner'], values: ['high', null] },
+  }));
+  const r = run(['--root', root]);
+  const drift = r.problems.filter((p) => p.kind === 'effort-enum-drift');
+  assert.equal(drift.length, 1, JSON.stringify(r.problems));
+  assert.match(drift[0].detail, /model\.effort\.cad-planner/);   // BY KEY
+  assert.equal(drift[0].file, 'cadence-core/config.schema.json'); // the file to edit
+  // ...and it really did run without a table, which is the point of the row
+  assert.equal(existsSyncSafe(join(root, 'cadence-core', 'route-table.json')), false);
+});
+
+test('a model.effort key naming no role in the map is named too', () => {
+  const root = schemaFixture((keys) => ({
+    ...keys,
+    'model.effort.cad-nonesuch': { type: 'enum', values: ['high', null], default: null,
+      purpose: 'a role lib/rung-agent.mjs does not file' },
+  }));
+  const kinds = run(['--root', root]).problems;
+  const named = kinds.filter((p) => p.kind === 'unknown-effort-role');
+  assert.equal(named.length, 1, JSON.stringify(kinds));
+  assert.match(named[0].detail, /model\.effort\.cad-nonesuch/);
+});
+
+test('an unmutated schema in that same tree reports no effort-enum problem', () => {
+  // The control: the fixture shape itself must not manufacture the finding.
+  const r = run(['--root', schemaFixture((keys) => keys)]);
+  assert.deepEqual(
+    r.problems.filter((p) => /effort-key|effort-role|effort-enum/.test(p.kind)), []);
+});
+
+// --- 11. the relay rule reaches every surface the walk yields (D-04) ---------
+
+/** The plugin-root invocation form, exactly as a workflow writes it. */
+const RESOLVE_CMD =
+  'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier';
+/** A paragraph that states the relay rule. */
+const RELAY_PARA = 'Relay every `warnings[]` entry the resolve returns, each\n'
+  + 'distinct warning once per run (seams.md).';
+
+test('check 11: a workflow that issues a resolve with no relay rule is named', () => {
+  const root = fixture(`# Step\n\n\`\`\`\n${RESOLVE_CMD}\n\`\`\`\n\nThen continue.\n`);
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unrelayed-route-resolve');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'workflows', 'x.md'));
+  assert.match(p[0].detail, /line 4\b/);
+});
+
+test('check 11: the same text plus the relay paragraph is clean', () => {
+  const root = fixture(`# Step\n\n\`\`\`\n${RESOLVE_CMD}\n\`\`\`\n\n${RELAY_PARA}\n`);
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unrelayed-route-resolve');
+  assert.deepEqual(p, []);
+});
+
+test('check 11: the walk reaches skills/, not just check 10\'s two directories', () => {
+  // The widening this check argues for, PINNED - a call site in skills/ would
+  // relay nothing just as loudly, and leaving the scope to a manual
+  // revert-and-re-run step is how it silently narrows again.
+  const root = fixture('Nothing route-shaped here.\n');
+  mkdirSync(join(root, 'skills', 'a'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'a', 'SKILL.md'),
+    `# A\n\n\`\`\`\n${RESOLVE_CMD}\n\`\`\`\n`);
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'unrelayed-route-resolve');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('skills', 'a', 'SKILL.md'));
 });

@@ -44,10 +44,24 @@ rather than a schema default no layer wrote.
    (references/review-triggers.md) with the full branch diff
    `git diff <base>..HEAD` as the artifact, honoring `review.triggers.pre_ship`
    (default adjudicated). Report the outcome; a blocking FAIL halts the land
-   until fixed or the user overrides. Under `git.auto_close` (autonomous close,
-   step 4b), a surviving blocker/high finding is additionally a HARD halt before
+   until fixed or the user overrides.
+
+   **Triage, then publish.** When the resolved gate is `adjudicated`, run the
+   triage gate exactly as review-triggers.md § 6 Consequence defines it - that
+   file is preloaded above, so read it there rather than restating it here. Act
+   ONLY on the survivors the user names, each as an atomic conventional commit
+   (references/git.md), then re-fire `pre_ship` ONCE so the publish decision is
+   made against the tree that actually ships: at most one re-fire per `/cad-land`
+   run, and report that re-fire's survivors rather than triaging them again -
+   iterating review->revise->review is the convergence loop review-triggers.md
+   forbids. Name which ask is which as they run: this triage ask carries a
+   default (NONE), and the step-4a publish ask carries none and never gets one.
+
+   Under `git.auto_close: true` (autonomous close, step 4b) the triage gate does
+   not prompt at all - the unattended close's triage is NONE by construction -
+   and a surviving blocker/high finding is instead a HARD halt before
    any merge, regardless of the configured gate mode (even the default
-   adjudicated, which normally hands off rather than auto-halting) - pass the
+   adjudicated, which normally asks rather than auto-halting) - pass the
    adjudicated survivors as `{findings}` on stdin to
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate` and on
    `action:"halt"` stop the chain and surface the findings instead of merging
@@ -104,19 +118,20 @@ rather than a schema default no layer wrote.
 
 5. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
    default on).** Run this ONLY when a merge actually landed on this machine
-   (skip it after an open-PR-only or leave-local land). Because the auto_close
-   merge lands on the platform, the LOCAL base is stale, so pull FIRST:
-   `git checkout <base>` then `git pull`, then compute the reap decision against
-   the now-current base:
+   (skip it after an open-PR-only or leave-local land). The auto_close merge
+   lands on the platform, so the LOCAL base is stale - pull FIRST:
+   `git checkout <base>` then `git pull`, then compute the reap decision
+   against the now-current base:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup`.
-   In the auto_close path append `--merged true` (step 4b already confirmed the
-   PR/MR MERGED) so the reap never hinges on local-base freshness; a manual land
+   In the auto_close path append `--merged true` (step 4b confirmed the PR/MR
+   MERGED) so the reap never hinges on local-base freshness; a manual land
    omits it and the seam falls back to `git branch --merged <base>`. When the
-   seam returns `reap:true`, reap the merged integration branch locally only -
-   `git branch -D <decision.branch>` - never a remote-tracking delete (that
-   would trip the push guard); it is idempotent (a no-op if
-   `--delete-branch`/`--remove-source-branch` already removed it). When the seam
-   returns `action:"skip"` (`git.on_land_cleanup` off), leave HEAD and the
+   seam returns `reap:true`, reap through the git-publish seam - never a Bash
+   git call, never a remote-tracking delete (that trips the push guard):
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" reap --dir <root> --branch <decision.branch>`.
+   It deletes by subprocess argv and refuses an unsafe, protected or
+   checked-out branch. When either seam returns `action:"skip"` - the branch
+   was already removed, or `git.on_land_cleanup` is off - leave HEAD and the
    branch in place. Report the final state: HEAD on `<base>`, pulled, branch
    reaped (or left).
 </process>
@@ -133,4 +148,7 @@ rather than a schema default no layer wrote.
   default in it, and it still halts on a blocking `pre_ship` finding.
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.
+- No survivor is acted on that the user did not pick: adjudicated `pre_ship`
+  survivors are triaged (default NONE) before anything is committed, and the
+  unattended arm acts on none.
 </guardrails>

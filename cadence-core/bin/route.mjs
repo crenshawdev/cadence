@@ -26,6 +26,9 @@
 //   model.escalate_on_failure  re-dispatch a failed attempt at the retry rung
 //                              its own cell names (bool, every stakes level)
 //   model.overrides.<role>     pin one role to a model alias, bypassing the cell
+//   model.effort.<role>        the rung one role STARTS at, replacing the one
+//                              its cell names - never below a computed risk
+//                              floor, and never demoted by a retry
 //   review.triggers.*.gate     a gate a LAYER set, which must be one of the
 //                              table's `gates` and then wins over the level's
 //                              gate, reporting the disagreement (D-04); a value
@@ -46,11 +49,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { rungFile } from './lib/rung-agent.mjs';
+import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
 import { requireInt } from './lib/require-int.mjs';
-import { matchSurfaces, raiseTo } from './lib/risk-surfaces.mjs';
+import {
+  matchSurfaces, raiseTo, riskOverridesIn, overrideShapeWarning, GLOBAL_LAYER,
+} from './lib/risk-surfaces.mjs';
 import { cursorPhase, declaredPhaseFiles } from './lib/phase-plans.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -88,6 +93,22 @@ const PHASE_RE = /^\d+(\.\d+)?$/;
 // which is what D-09 says.
 const PRE_PLAN_ROLES = new Set(['cad-planner', 'cad-assumptions-analyzer']);
 
+/**
+ * The risk surfaces the route table declares. Defensive by design: a table with
+ * no usable `surfaces` block declares none, and every override then reads as
+ * naming no surface rather than throwing.
+ *
+ * This is the vocabulary half of lib/risk-surfaces.mjs's `overrideShapeWarning`
+ * - the table is this seam's source for it, while config.mjs derives the same
+ * list from the schema keys. Both faces run the shared check; only the list
+ * comes from here.
+ * @returns {string[]}
+ */
+function declaredSurfaces() {
+  return TABLE && TABLE.surfaces && typeof TABLE.surfaces === 'object'
+    && !Array.isArray(TABLE.surfaces) ? Object.keys(TABLE.surfaces) : [];
+}
+
 // Resolve the effective config from global + repo layers (repo wins, via the
 // shared merge lib), falling back to DEFAULTS for anything unset. _source
 // names the layers that applied, `stakesSet` says whether any layer actually
@@ -103,19 +124,35 @@ function readConfig(file) {
   // machine - the write face refused `--global` while the resolver honoured
   // what got there anyway.
   const globalWaivers = Object.entries(riskOverridesIn(layers ? layers.global : null))
-    // A waiver the global layer only NAMES is not one it makes: a global
-    // `risk.override.auth: false` is the ordinary not-waived case, and warning
-    // on it would put a "move your waiver" line on every dispatch in every
-    // repository for a waiver that does not exist.
-    .filter(([, value]) => Boolean(value))
-    .map(([surface]) => `risk.override.${surface} in the user-global config layer was `
-      + `IGNORED: it is repo-scoped (src: repo), so it waives nothing here - set it in `
-      + `this repo's own .planning/config.json to waive the ${surface} floor`);
+    .map(([surface, value]) => {
+      // The SAME shape diagnostics the repo layer earns, naming this layer:
+      // telling a user to move `risk.override.athu` into their repo config
+      // sends them at a key `config.mjs set` refuses outright, and a non-boolean
+      // value would not waive anything in the repo layer either. Only an entry
+      // the repo layer would actually honour gets the move-it remediation.
+      const shape = overrideShapeWarning(surface, value, declaredSurfaces(), GLOBAL_LAYER);
+      if (shape) return shape;
+      // A waiver the global layer only NAMES is not one it makes: a global
+      // `risk.override.auth: false` is the ordinary not-waived case, and warning
+      // on it would put a "move your waiver" line on every dispatch in every
+      // repository for a waiver that does not exist.
+      if (value !== true) return null;
+      return `risk.override.${surface}${GLOBAL_LAYER} was IGNORED: it is repo-scoped `
+        + `(src: repo), so it waives nothing here - set it in this repo's own `
+        + `.planning/config.json to waive the ${surface} floor`;
+    })
+    .filter(Boolean);
   return {
     stakes: c.stakes ?? DEFAULTS.stakes,
     stakesSet: c.stakes !== undefined && c.stakes !== null,
     escalate_on_failure: m.escalate_on_failure ?? DEFAULTS.escalate_on_failure,
     overrides: m.overrides ?? {},
+    // Its own map for the same reason `riskOverrides` below is: `overrides` is
+    // read as `cfg.overrides[opts.role]` for the per-role MODEL pin, so a config
+    // carrying both a pin and a start rung would have two writers fighting over
+    // one entry - and a start rung read as a model alias would be reported as an
+    // unknown alias rather than honoured.
+    effort: m.effort ?? {},
     // NOT folded into `overrides` above: that map is read as
     // `cfg.overrides[opts.role]` for the per-role model pin, so sharing the
     // field would make every `model.overrides.<role>` pin resolve undefined -
@@ -151,10 +188,14 @@ function triggerGatesIn(c) {
 }
 
 /**
- * The EFFECTIVE stakes level for this dispatch: the configured baseline, raised
- * to the highest floor among the risk surfaces the phase's own declared PLAN
- * `files:` list matches (STK-03). Pushes its own entries onto the `reason` and
- * `warnings` arrays the caller already carries.
+ * The EFFECTIVE stakes level for this dispatch AND the surfaces holding it: the
+ * configured baseline, raised to the highest floor among the risk surfaces the
+ * phase's own declared PLAN `files:` list matches (STK-03), plus the names of
+ * the unwaived detected surfaces whose own floor sits at that level. The second
+ * field is what lets the caller REFUSE to route below a floor and name the
+ * surface doing the holding - a floor nobody can name is one nothing can honour.
+ * Pushes its own entries onto the `reason` and `warnings` arrays the caller
+ * already carries.
  *
  * Every unresolvable input returns the BASELINE with no entry at all - a
  * `{ok:false}` here would make the caller dispatch the base agent at the session
@@ -169,11 +210,13 @@ function triggerGatesIn(c) {
  * @param {{role: string, file: string, phase?: string}} opts
  * @param {{stakes: string, riskOverrides: Record<string, any>}} cfg
  * @param {string[]} reason @param {string[]} warnings
- * @returns {string} the effective level
+ * @returns {{level: string, floorSurfaces: string[]}} the effective level, and
+ *   the unwaived detected surfaces whose declared floor holds it ([] when no
+ *   floor is in force)
  */
 function riskFloor(opts, cfg, reason, warnings) {
   const baseline = cfg.stakes;
-  if (PRE_PLAN_ROLES.has(opts.role)) return baseline; // D-09
+  if (PRE_PLAN_ROLES.has(opts.role)) return { level: baseline, floorSurfaces: [] }; // D-09
   const root = dirname(opts.file);
 
   // A `--phase` that was PASSED but is out of shape does NOT fall through to the
@@ -184,12 +227,13 @@ function riskFloor(opts, cfg, reason, warnings) {
     if (!PHASE_RE.test(String(opts.phase))) {
       warnings.push(`--phase "${opts.phase}" is not a phase number; no risk floor was `
         + `computed and this resolved at the ${baseline} baseline`);
-      return baseline;
+      return { level: baseline, floorSurfaces: [] };
     }
     phase = String(opts.phase);
   } else {
     const cursor = cursorPhase(root);
-    if (cursor === null) return baseline; // no phase in hand: no floor, silently
+    // no phase in hand: no floor, silently
+    if (cursor === null) return { level: baseline, floorSurfaces: [] };
     phase = String(cursor);
   }
 
@@ -201,19 +245,13 @@ function riskFloor(opts, cfg, reason, warnings) {
   // every detected surface is named, so waiving one of two still floors. A typo
   // must not silently lower a floor any more than it may silently redirect a
   // model, so only a strict `true` waives and every other shape speaks.
-  const declaredSurfaces = TABLE.surfaces && typeof TABLE.surfaces === 'object'
-    && !Array.isArray(TABLE.surfaces) ? Object.keys(TABLE.surfaces) : [];
   const waived = new Set();
   for (const [surface, value] of Object.entries(cfg.riskOverrides)) {
-    if (!declaredSurfaces.includes(surface)) {
-      warnings.push(`risk.override.${surface} names no declared risk surface `
-        + `(${declaredSurfaces.join(', ')}); it waives nothing`);
-      continue;
-    }
-    if (value === true) { waived.add(surface); continue; }
-    if (value === false || value === null) continue; // the ordinary "not waived"
-    warnings.push(`risk.override.${surface}=${JSON.stringify(value)} is not true or `
-      + `false; the ${surface} risk floor stands`);
+    // Same two arms readConfig applies to the user-global layer, from the same
+    // helper: a diagnostic that differs by layer is how one of them goes stale.
+    const shape = overrideShapeWarning(surface, value, declaredSurfaces());
+    if (shape) { warnings.push(shape); continue; }
+    if (value === true) waived.add(surface);
   }
   const matches = detected.filter((m) => !waived.has(m.surface));
   const waivedHits = detected.filter((m) => waived.has(m.surface));
@@ -225,7 +263,7 @@ function riskFloor(opts, cfg, reason, warnings) {
       reason.push(`risk floor: waived by ${waivedHits.map((m) => `risk.override.${m.surface}`).join(', ')}`
         + ` - every detected surface is named; stakes stays ${baseline}`);
     }
-    return baseline;
+    return { level: baseline, floorSurfaces: [] };
   }
   for (const m of waivedHits) {
     reason.push(`risk floor: risk.override.${m.surface} waives "${m.surface}"`);
@@ -245,35 +283,55 @@ function riskFloor(opts, cfg, reason, warnings) {
         + `(floor ${m.floor}); baseline ${baseline} already at or above it`);
     }
   }
-  return effective;
+  // The surfaces whose OWN floor HOLDS the level being returned, through the one
+  // comparison helper every level test in this seam goes through: `raiseTo`
+  // answers `m.floor` exactly when that floor sits at or above `effective`.
+  //
+  // NOT "the surfaces that moved the baseline". Every surface in
+  // cadence-core/route-table.json declares `"floor": "critical"`, so on a project
+  // already at `stakes: critical` a detected, unwaived `auth` moves nothing: a
+  // moved-the-baseline list is empty there, and a configured start rung would
+  // then sit BELOW the floor with no surface named and no hold - a second,
+  // unnamed way down (D-01 rejects it) handed to the exact population STK-03
+  // exists to protect, while a `shipped` project with the identical phase is
+  // held. The loop above keeps its own `raiseTo(baseline, ...)` test untouched:
+  // that one picks the PHRASING, this one decides whether a floor is in force.
+  //
+  // A detected surface whose floor sits BELOW the returned level is correctly
+  // absent - it changes no knob today either, and what holds the level there is
+  // the baseline, which is not a floor.
+  const floorSurfaces = matches
+    .filter((m) => raiseTo(effective, m.floor, order) === m.floor)
+    .map((m) => m.surface);
+  return { level: effective, floorSurfaces };
 }
 
-// The `risk.override.<surface>` waivers a LAYER actually wrote, keyed by surface
-// name - collected exactly the way `triggerGatesIn` collects per-trigger gates,
-// and defensive at every hop for the same reason: this runs on whatever a user's
-// config happens to hold, so a scalar where an object belongs contributes
-// nothing rather than throwing. The VALUES are kept verbatim; only a strict
-// `true` waives, and the resolve side speaks about anything else.
-function riskOverridesIn(c) {
-  const out = {};
-  const risk = c && typeof c === 'object' && !Array.isArray(c) ? c.risk : null;
-  if (!risk || typeof risk !== 'object' || Array.isArray(risk)) return out;
-  const overrides = risk.override;
-  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return out;
-  for (const [surface, value] of Object.entries(overrides)) {
-    if (value !== undefined) out[surface] = value;
-  }
-  return out;
-}
+// `riskOverridesIn` collects the waivers a LAYER actually wrote, exactly the way
+// `triggerGatesIn` below collects per-trigger gates. It lives in
+// lib/risk-surfaces.mjs rather than here because config.mjs's `get` face reads
+// the same entries to warn about them: two traversals would let the faces
+// disagree about which entries a layer even holds, one level below the shape
+// check they now share.
 
 function resolve(opts) {
+  // Read the config BEFORE the role check, not after (D-04). `unknown-role`
+  // used to return without any layer being read, so a config holding a retired
+  // key answered a mistyped role with nothing about the key that is redirecting
+  // every OTHER dispatch in the project - the breaking-change notice sitting
+  // unread in JSON while a stale config routes.
+  const cfg = readConfig(opts.file);
+
   // The declared role list, not a lookup in a spec object: a role IS routable
   // or it is not, and after this phase the table carries no per-role block for
   // the question to be asked of.
   const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
-  if (!roles.includes(opts.role)) { out({ ok: false, reason: 'unknown-role', role: opts.role, detail: `known roles: ${roles.join(', ')}` }); return; }
+  if (!roles.includes(opts.role)) {
+    out({ ok: false, reason: 'unknown-role', role: opts.role,
+      detail: `known roles: ${roles.join(', ')}`,
+      ...(cfg._warnings.length ? { warnings: cfg._warnings } : {}) });
+    return;
+  }
 
-  const cfg = readConfig(opts.file);
   // An honest first reason: `config:<layers>` is a claim that a layer supplied
   // the value, so a default that no layer carried says so instead. Reporting
   // `config:repo` for a value the repo file never held is how a retired key
@@ -293,7 +351,7 @@ function resolve(opts) {
   // row through the one cell grid rather than from a second ladder beside it.
   // The baseline stays visible in `reason` - a bundle that reports the baseline
   // level while dispatching the floored cell is worse than no floor.
-  const stakes = riskFloor(opts, cfg, reason, warnings);
+  const { level: stakes, floorSurfaces } = riskFloor(opts, cfg, reason, warnings);
 
   // The three grids (D-01). `model`, `effort` and `retry` come from ONE cell
   // keyed on (level, role); `review` keys on (level, trigger) because a gate
@@ -309,7 +367,12 @@ function resolve(opts) {
   if (!cell || typeof cell !== 'object' || Array.isArray(cell)
     || !reviewRow || typeof reviewRow !== 'object' || Array.isArray(reviewRow)
     || verify === undefined) {
-    out({ ok: false, reason: 'unresolved', role: opts.role, stakes }); return;
+    // The live array, not `cfg._warnings`: by here it also carries the floor's
+    // own diagnostics (an unreadable PLAN, a malformed waiver, a `--phase` out
+    // of shape). Dropping them made a torn table answer with the ONE thing the
+    // caller cannot act on and none of the things it can.
+    out({ ok: false, reason: 'unresolved', role: opts.role, stakes,
+      ...(warnings.length ? { warnings } : {}) }); return;
   }
 
   // The agent FILE is what carries the effort (route.mjs reports effort, it
@@ -326,6 +389,57 @@ function resolve(opts) {
   };
 
   let effort = cell.effort;
+
+  // The configured START rung (RNG-02). `model.effort.<role>` selects the rung
+  // this role begins at, replacing the cell's - the dial the ladder was missing,
+  // living in the config LAYERS so a plugin update cannot take it away. Exactly
+  // one of four arms fires, and each one SAYS what it did: a rung that silently
+  // did not apply is the resolved-then-dropped shape this milestone closes.
+  const wanted = cfg.effort[opts.role];
+  let startFromConfig = false;
+  if (wanted !== null && wanted !== undefined) {
+    const key = `model.effort.${opts.role}`;
+    const rungOrder = Array.isArray(TABLE.rung_order) ? TABLE.rung_order : [];
+    const has = Object.keys(RUNG_FILES[opts.role] || {});
+    if (!rungFile(opts.role, wanted)) {
+      // (a) A rung this role has no FILE for - only a hand-edited config gets
+      // past the schema enum. Never hand it to agentFor: that fails open to the
+      // base file while `effort` still reports the requested rung, which is the
+      // report-a-rung-nothing-ran-at shape `rungEffortIssue` exists to close.
+      warnings.push(`${key}=${JSON.stringify(wanted)} names no rung this role has `
+        + `(${has.join(', ')}); the ${stakes}/${opts.role} cell's "${effort}" rung stands`);
+    } else if (floorSurfaces.length
+      && (rungOrder.indexOf(wanted) < 0 || rungOrder.indexOf(effort) < 0)) {
+      // (b, torn table) A floor that cannot be PROVEN is never lowered.
+      warnings.push(`${key}=${JSON.stringify(wanted)} could not be compared with the `
+        + `floored "${effort}" rung - rung_order does not carry both; the floor held by `
+        + `${floorSurfaces.join(', ')} stands`);
+    } else if (floorSurfaces.length && rungOrder.indexOf(wanted) < rungOrder.indexOf(effort)) {
+      // (b) Below a computed floor: hold AT the floor and name the surface
+      // holding it. `risk.override.<surface>` stays the only way under a floor
+      // (D-01) - a config key that could also go under it would be a second,
+      // unnamed way down, which is what STK-03 refuses.
+      reason.push(`${key}="${wanted}" sits below the "${effort}" rung the risk floor `
+        + `holds (${floorSurfaces.map((s) => `surface ${s}`).join(', ')}); resolved AT the `
+        + `floor - ${floorSurfaces.map((s) => `risk.override.${s}`).join(' + ')} is the only `
+        + 'way under it');
+      // The hold rides `warnings` too: seams.md mandates relaying warnings[],
+      // not reason[], and on a baseline already at the floor no `risk floor:`
+      // reason entry fires either - without this line the key is silently
+      // dropped, the resolved-then-dropped shape this milestone closes.
+      warnings.push(`${key}="${wanted}" held at "${effort}" by the risk floor `
+        + `(${floorSurfaces.join(', ')})`);
+    } else if (wanted === effort) {
+      reason.push(`${key}="${wanted}" (already the routed rung)`);
+    } else {
+      // (d) The configured rung wins.
+      reason.push(`${key}: ${effort} -> ${wanted} (config, wins over the `
+        + `${stakes}/${opts.role} cell)`);
+      effort = wanted;
+      startFromConfig = true;
+    }
+  }
+
   let agent = agentFor(effort);
   let escalated = false;
 
@@ -336,17 +450,63 @@ function resolve(opts) {
   // resolve their escalation to a no-op (D-02).
   if ((opts.attempt || 1) > 1) {
     if (cfg.escalate_on_failure) {
-      const target = cell.retry;
+      // max(cell.retry, the rung this attempt actually STARTED at) in
+      // `rung_order` (D-02): a retry never thinks LESS than the attempt that
+      // just failed. lib/route-cells.mjs refuses that inversion inside the
+      // TABLE (`rung-demotion`); a configured start rung is the second door onto
+      // it, and an xhigh start stepping down to a `high` retry while reporting
+      // an escalation is the same defect wearing the config layer's clothes.
+      // A rung either index cannot place falls back to `cell.retry` VERBATIM
+      // when the start rung is the CELL's own - the pre-phase behavior, where a
+      // demotion needs an in-table `rung-demotion` CI catches. A start rung the
+      // CONFIG raised is different: swapping it for an incomparable `cell.retry`
+      // could demote the retry below the rung that just failed while reporting
+      // an escalation, so an unprovable comparison holds the configured start
+      // and says why - the same never-lower-on-a-torn-table rule the floor arm
+      // above applies.
+      const rungOrder = Array.isArray(TABLE.rung_order) ? TABLE.rung_order : [];
+      const ri = rungOrder.indexOf(cell.retry);
+      const si = rungOrder.indexOf(effort);
+      const torn = ri < 0 || si < 0;
+      if (torn && startFromConfig && cell.retry !== effort) {
+        warnings.push(`rung_order cannot compare the configured "${effort}" start with `
+          + `the ${stakes}/${opts.role} retry rung "${cell.retry}"; the configured start stands`);
+      }
+      const target = torn
+        ? (startFromConfig ? effort : cell.retry)
+        : (si > ri ? effort : cell.retry);
       if (target && target !== effort) {
         escalated = true;
         agent = agentFor(target);
         reason.push(`rung ${effort}->${target} (${agent})`);
         effort = target;
+      } else if (cell.retry === effort) {
+        // Honest no-op, two causes told apart: a cell whose retry IS its
+        // starting rung has nothing to climb to - but when the CONFIG raised
+        // the start onto the retry rung, the cell's own start was lower and
+        // "retry rung is the same rung" would misattribute the hold to cell
+        // design (the conflation route.test.mjs pins the messages apart for).
+        if (startFromConfig && cell.effort !== effort) {
+          reason.push(`rung held at ${effort}: model.effort.${opts.role}="${effort}" `
+            + `already sits at the ${stakes}/${opts.role} retry rung`);
+        } else {
+          reason.push(`rung held at ${effort} (retry rung is the same rung)`);
+        }
       } else {
-        // Honest no-op: a cell whose retry IS its starting rung has nothing to
-        // climb to, and saying so beats reporting an escalation that never
-        // happened.
-        reason.push(`rung held at ${effort} (retry rung is the same rung)`);
+        // Held because the START rung out-ranks the cell's retry rung. Says
+        // WHICH rung it out-ranked, so a held retry stays diagnosable rather
+        // than reading like the equal-rungs case above.
+        const source = effort === wanted
+          ? `model.effort.${opts.role}="${effort}"`
+          : `the "${effort}" start rung`;
+        // On a torn table the out-ranking is exactly what could NOT be proven -
+        // the warning above already names rung_order, so the reason must not
+        // assert a comparison nothing performed.
+        reason.push(torn
+          ? `rung held at ${effort}: ${source} stands - rung_order cannot place the `
+            + `${stakes}/${opts.role} retry rung "${cell.retry}"`
+          : `rung held at ${effort}: ${source} out-ranks the `
+            + `${stakes}/${opts.role} retry rung "${cell.retry}"`);
       }
     } else {
       reason.push(`rung held at ${effort} (model.escalate_on_failure: false)`);
@@ -436,7 +596,13 @@ function parseArgs(a) {
     // baseline, never a `usage` refusal (which would route the phase lower than
     // its own baseline), so the check belongs where the floor is computed.
     else if (k === '--phase') o.phase = a[++i];
-    else if (k === '--file') o.file = a[++i];
+    // A `--file` with nothing usable after it is refused, not resolved: `o.file`
+    // reaches `dirname()` on the way to the layer read, so an undefined value
+    // escaped as reason:"internal" carrying a raw Node type error. Both
+    // spellings, matching config.mjs's own guard - unquoted `$VAR` drops the
+    // token, quoted `"$VAR"` passes an empty one, and defaulting either to
+    // .planning/config.json would answer about a file the caller never named.
+    else if (k === '--file') { o.file = a[++i]; if (!o.file) o.fileMissing = true; }
   }
   return o;
 }
@@ -450,9 +616,14 @@ try {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   if (cmd === 'resolve') {
+    // The three `usage` refusals below carry no `warnings` on purpose: they fail
+    // on ARGUMENT SHAPE before any config file is named, so there is no layer
+    // whose diagnostics could ride along. Every other ok:false return does carry
+    // them (D-04).
     const o = parseArgs(argv.slice(1));
     if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]' }); }
     else if (o.attemptInvalid) { out({ ok: false, reason: 'usage', detail: 'resolve --attempt must be an integer' }); }
+    else if (o.fileMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --file needs a path after it: --file <config file>' }); }
     else resolve(o);
   } else if (cmd === 'table') {
     out({ ok: true, table: TABLE });

@@ -452,8 +452,25 @@ lever is trigger frequency (gating), never a weak reviewer.
   The write face compared `file === GLOBAL_CONFIG` as strings, so
   `set --file <global-dir>/./config.json` wrote straight through the refusal; it compares by
   filesystem identity now, which closes the symlink, relative-path and trailing-slash spellings
-  with it. The read face is deliberately unchanged: `config.mjs get` still reports a global-layer
-  waiver as an effective value, because `get` returns the merged config by contract.
+  with it.
+- ⚠️ **READ FACE CLOSED (2026-07-30, CFG-02):** the marker above left `config.mjs get` reporting a
+  global-layer waiver as an effective value with nothing said, so the two read faces described one
+  situation differently. `get` still returns the MERGED value - the alternative, answering
+  repo-scoped keys from the repo layer alone, would make a workflow batching keys through `get`
+  read a differently-scoped answer per key with no way to tell which - and it now NAMES a truthy
+  global-layer `risk.override.*` in `warnings`, so the divergence closed by becoming audible rather
+  than by changing what `get` returns. `mergeLayers` gained the identity check the write face got
+  first: it collapses two layer paths that resolve to ONE file, reading it once, into the REPO layer
+  (`layers.repo` populated, `layers.global` null), which is what keeps such a file's waiver honoured
+  while ending the spurious "IGNORED ... waives nothing here", the duplicate parse warning, and a
+  `source` naming a repo layer the user does not have. A collapsed file is labelled by what the
+  caller addressed - `--global` says so and reads `global`; everything else reads `repo` - because
+  on a collapse both paths ARE the file and deciding by spelling would restore the string compare
+  this removed. `route.mjs`'s global-layer diagnostics now come from the same helpers the repo layer
+  uses, so a misspelled surface or a non-boolean value is no longer told to move into a repo config
+  that would refuse it too, and the eight `risk.override.*` reach rows read `repo config layer only`
+  with the phrase in all eight schema `purpose` strings, which is what makes check 9 able to see the
+  narrowing at all.
 
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
@@ -529,6 +546,19 @@ rewritten.
   shape carrying a `git` word asks), and the sanctioned publish still bypasses the hook
   entirely through the git-publish seam. Being wrong in a predicate is a bypass; being
   wrong here is a prompt. R2 is not an argument for deleting it.
+- *Note, 2026-08-03 (v2.2.0):* the tokenizer is deleted anyway, and the note above is
+  why it took a milestone longer than it should have. "Being wrong here is a prompt" is
+  true and it is not the whole cost. The escape surface behind `bash -c`, `$(...)`,
+  `${...}`, aliases and `ssh` is unbounded, so it billed as an open-ended review debt:
+  three consecutive blocking `risk_surface` panels in one phase, each finding new holes,
+  each answered with more grammar, and `git switch -f main` still silent at the end of
+  it. What settled it was a measurement rather than an argument. The scan was O(K x N)
+  in memory, 3.1GB at 224KB of input and a V8 abort at 280KB, inside a hook that runs on
+  every Bash call and fails OPEN, so a sufficiently long command line turned the guard
+  off and let the push inside it run unprompted. A widener that can be switched off by
+  its own input is not widening anything. `cadence-core/bin/lib/git-segments.mjs`
+  replaces 2,251 lines with about thirty: a segment counts only when its command word is
+  `git`. R2's rule finally applied to R2's own successor.
 
 **Sequence (with R3, §7).** These reconcile with R3 — the `git.auto_push` config switch cut
 2026-07-16 (§7) — as one honest sequence, not a contradiction: `auto_push` was cut for

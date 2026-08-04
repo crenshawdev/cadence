@@ -339,6 +339,19 @@ The one signal treated as strong is convergence. A defect found independently by
 more than one reviewer is high confidence, and that is the entire justification
 in this system for paying for more voices.
 
+What survives is not a work order. The survivors are presented as a numbered
+list and the session asks which of them to act on, with none as the default, so
+the model that just spent four voices on the artifact does not also get to
+decide what happens next. Three gates end this way as shipped: the plan review
+in `/cad-plan` and the pre-ship review in `/cad-land`, both adjudicated from
+`shipped` upward, and the fix list in `/cad-verify`, which has no resolved gate
+and is always triaged. Two more end this way wherever their gate resolves
+adjudicated: `/cad-execute`'s per-plan diff review, advisory by default, and
+its `phase_diff` review, adjudicated at `critical`. The one exception is the
+opt-in unattended close at pre-ship, where nothing is acted on at all - its
+triage is none by construction, and a surviving blocker or high finding halts
+the merge instead.
+
 ### Decision review rules three ways, and grounds itself
 
 `cadence-core/workflows/decision-review.md`, invoked by `/cad-decision-review`
@@ -494,11 +507,20 @@ judgment moment where past experience should shape the candidate set.
 
 `cadence-core/references/git.md`
 
-The protected-branch guard is a PreToolUse hook, a real hook the model cannot
-talk its way around rather than a paragraph of instructions it can rationalize
-away. Before the first commit of any task or phase, the guard checks
-`git.protected_branches` and applies `git.on_protected`, and base integrity is
-checked in the same pass so work cannot drift onto an unrelated line.
+The protected-branch guard is a PreToolUse hook, enforced by the harness rather
+than by a paragraph of instructions the model can rationalize away. Before the
+first commit of any task or phase, the guard checks `git.protected_branches` and
+applies `git.on_protected`, and base integrity is checked in the same pass so
+work cannot drift onto an unrelated line.
+
+What it reads is deliberately small: a command counts when its first word is
+`git`, and the verb is the first non-flag word after it. A wrapped or
+substituted invocation (`bash -c "git commit"`, `$(git commit)`, `sudo git
+commit`) is invisible to it. That is a stated limit, not a gap - v2.2.0 deleted
+the 2,251-line reader that tried to close it, because the escape surface behind
+a shell is unbounded and the parser could be switched off by its own input.
+The guard is a rail against drift, not a boundary against an adversary, and
+`cadence-core/references/git.md` rail 3 lists exactly what it misses.
 
 Two decisions are marked in `cadence-core/references/seams.md` as deliberately
 undefaulted, meaning they are presented with no recommended option and no
@@ -548,7 +570,13 @@ needs. A raw file read sees at most one layer and therefore lies about the rest.
 CI lints the documentation against the code. Every config key, script
 invocation, and file path named in the workflows must actually exist or the build
 fails. Agent prose reaching for a tool its frontmatter never declared fails the
-build too.
+build too. A block that claims a set of dispatches is concurrent has to issue
+that set in one message, and every sentence in it that ISSUES the set - an
+imperative, or the colon that introduces a list - fails the build when it
+serializes, hedges on what the host allows, or hands the set out concurrently
+without saying "in one message". A sentence that explains the rule, forbids the
+serial shape, or describes dispatch already arranged carries the same words in a
+different mood, and is left alone.
 
 It also weighs every agent, skill and workflow surface against a byte budget in
 `cadence-core/bin/weight-budgets.json` and fails when one outgrows it. That

@@ -62,28 +62,34 @@ Start from `review.reviewers[]`. For each entry, keep only if available:
 
 If the resolved set is empty (e.g. `reviewers: ["openai"]` but its `<tier>` is
 unassigned), fall back to `["claude-subagent"]` so a review always runs. Log the
-fallback; never silently skip a `blocking` trigger.
+fallback; never silently skip a `blocking` trigger. Step 1's resolve serves
+the set, reused by every dispatch: payloads differ, routing does not.
 
 ### 4. Run the reviewers
-For each reviewer in the set, in parallel where the host allows:
+Issue the resolved set in ONE message (seams.md Concurrent dispatch);
+serialize only when one dispatch consumes another's output, which a reviewer
+set never does. Per backend:
 
 - **claude-subagent**: dispatch the `agent` and `model` the step-1 resolve
   returned, through the spawn-agent seam, with the payload as its prompt. Parse
   the JSON object it returns. That agent is the reviewer rung the LEVEL names -
-  `cad-reviewer-medium` at solo, `cad-reviewer` at shipped,
-  `cad-reviewer-xhigh` at critical, and `cad-reviewer-max` when a critical-level
-  fire is re-dispatched with `--attempt 2`. The per-trigger `effort` is NOT
+  `cad-reviewer-medium` at solo, `cad-reviewer-xhigh` at shipped AND critical,
+  and `cad-reviewer-max` when a critical-level
+  fire is re-dispatched with `--attempt 2`. The unsuffixed `cad-reviewer` is
+  this role's `high` rung, reachable only through solo's retry. That
+  enumeration is the DEFAULT table's: a configured `model.effort.cad-reviewer`
+  start rung replaces the level's rung, so the resolve's own `agent` field,
+  never this list, is what dispatches and what any mismatch line names. The per-trigger
+  `effort` is NOT
   passed and cannot be - the seam's surface is `(agent_name, prompt, model?)` -
   so the reviewer runs at the `effort:` its own rung file pins.
   **When the per-trigger `effort` differs from the rung actually dispatched, say
   so in one line before dispatching**, e.g. "`diff` is configured at effort
-  `medium`; the shipped level dispatches `cad-reviewer`, frontmatter-pinned at
-  `high`, so it runs `high` - per-trigger effort reaches cross-model reviewers
-  only". One line per fire, not per reviewer, and nothing at all when the two
-  already agree. A resolved value
-  the backend cannot deliver is a degradation like any other: name it, the same
-  way a dropped cross-model reviewer is named below. Do not "fix" the mismatch
-  by editing the config or by pretending the effort applied.
+  `medium`; the shipped level dispatches `cad-reviewer-xhigh`, pinned at `xhigh`, so it
+  runs `xhigh` - per-trigger effort reaches cross-model reviewers only". One line
+  per fire, not per reviewer, and nothing when the two agree. A resolved value
+  the backend cannot deliver is a degradation like any other: name it. Do not
+  "fix" it by editing the config or by pretending the effort applied.
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): resolve
   `model = review.providers.<name>.tiers[trigger.tier]`
   and `effort = trigger.effort`, then run the seam:
@@ -100,9 +106,9 @@ For each reviewer in the set, in parallel where the host allows:
   first, and a host kill prints NOTHING - the "one JSON line" below is then an
   empty string, strictly worse than the `{ok:false, reason:"transport"}` this
   seam degrades to on its own timer. A high-effort review legitimately takes
-  minutes: the same flagship model on a ~13KB diff measured 292s once and 118s
-  another time, and the bound is a socket INACTIVITY timeout on an unstreamed
-  response, so it caps total thinking time rather than detecting a dead
+  minutes (a flagship model on a ~13KB diff measured 292s), and the bound is a
+  socket INACTIVITY timeout on an unstreamed response, so it caps total
+  thinking time rather than detecting a dead
   connection. Set it too low and the blocking gates lose their cross-model
   voices to `reason:"transport"` while still reporting PASS.
   - `ok:false` -> this reviewer is unavailable or unusable. Before dropping it,
@@ -112,7 +118,8 @@ For each reviewer in the set, in parallel where the host allows:
     reviewer set". Do not swallow the reason silently. Drop the reviewer from
     the set. If dropping it
     empties the set, fall back to `claude-subagent` (step 3 rule) rather than
-    return nothing.
+    return nothing. A payload over `review.max_prompt_tokens` arrives here as
+    `reason: over-cap`, refused before any request was issued.
 
 ### 5. Combine (review.mode)
 - `single` - use the first available reviewer only; its findings are the result.
@@ -133,16 +140,25 @@ uses: reviewers critique, the main model grounds and owns the verdict.
   FAIL, halt and surface the findings; resume only after they are fixed (re-run
   fire) or the user explicitly overrides. A reviewer that could not run does not
   silently PASS - report that the gate could not be evaluated and ask.
-- **adjudicated** - the survivors are already grounded (false positives killed),
-  so hand the survivor list back to the firing workflow to act on: `cad-plan`
-  applies them to the plan file(s), `cad-land` factors them into the publish
-  decision. It does not auto-halt like `blocking`, and it is not the auto-replan
-  convergence loop (cut in DESIGN §6) - it grounds once and hands off, it does
-  not iterate review->revise->review on its own. Use for the deep, rare gates
-  (plan, pre_ship).
+- **adjudicated** - the survivors are already grounded, so what remains is the
+  USER's choice, not the model's. Present a NUMBERED list, one line per survivor:
+  severity, `file:line`, claim. Ask which to act on and END THE TURN on that
+  question - open-ended prose, not `AskUserQuestion` (a subset of N items is not
+  2-4 exclusive options). NONE is the first option and the default. Nothing is
+  applied, committed, published or re-planned against a survivor the user did not
+  name. When nothing survives, say the review RAN and adjudication killed
+  everything, not a bare "no findings". At `pre_ship` ONLY, under
+  `git.auto_close: true`, it does not prompt: triage is NONE by construction and
+  `land-cleanup.mjs gate`'s blocker/high halt the only consequence. No other
+  trigger reads that key - suppressing the ask elsewhere drops survivors with
+  nothing left to halt on them. It does not auto-halt like
+  `blocking`, and it is not the auto-replan convergence loop (cut in DESIGN §6) -
+  it grounds once and asks. Use for the deep, rare gates (plan, pre_ship).
 
-`cad-verify` routes fix requests through fire() (as a review that produces the
-fix list) instead of spawning its own fixer loop.
+`cad-verify` routes fix requests through fire() (a review producing the fix
+list), not its own fixer loop. That fire names no wiring-table trigger and has
+no resolved gate: its list is always triaged through the `adjudicated`
+rule above, before any of it is proposed as a fix.
 
 ## Wiring (which skill fires what)
 

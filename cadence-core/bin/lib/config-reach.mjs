@@ -36,6 +36,23 @@ export function normalize(s) {
 /** The reach value that claims a key is honoured everywhere it can be set. */
 export const UNIVERSAL = 'universal';
 
+/**
+ * Is this Reach cell the universal sentinel? Read case-insensitively and
+ * tolerant of ONE trailing period, because `Universal` and `universal.` are the
+ * same declaration written by a human and neither is a narrower phrase. Read
+ * strictly, they fell through to the purpose test and reported `unstated-reach`,
+ * which tells the author to paste the wrong phrase into the key's `purpose`
+ * rather than to fix the cell.
+ *
+ * The NARROW phrase stays compared verbatim: the doc's stated rule is a literal
+ * comparison, and folding one side of it would break the single-vocabulary
+ * contract the row and the purpose share.
+ * @param {any} reach a Reach cell, already normalized or not
+ */
+function isUniversal(reach) {
+  return normalize(reach).toLowerCase().replace(/\.$/, '') === UNIVERSAL;
+}
+
 /** The heading the reach rows live under. */
 export const ROWS_HEADING = '## Reach rows';
 
@@ -59,7 +76,8 @@ export const ROWS_HEADING = '## Reach rows';
  * The section is bounded at the next `## ` heading, like every other section
  * parser in this repo. Inside it, a body row is a line starting with `|`; the
  * header row (first cell exactly `Key`) and any delimiter row (every cell
- * `---`-shaped) declare nothing. First occurrence of a key wins.
+ * `---`-shaped) declare nothing. First occurrence of a key wins, and every
+ * later one is reported as `duplicate-reach-row` naming both lines.
  * @param {any} text
  * @returns {{rows: ReachRow[]|null, issues: {code: string, detail: string}[]}}
  */
@@ -80,7 +98,8 @@ export function parseReachTable(text) {
 
   /** @type {ReachRow[]} */
   const rows = [];
-  const seen = new Set();
+  /** @type {Map<string, number>} key -> the 1-based line that declared it */
+  const seen = new Map();
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
     if (/^## /.test(line)) break;
@@ -92,8 +111,19 @@ export function parseReachTable(text) {
       issues.push({ code: 'malformed-reach-row', detail: `line ${i + 1}: ${line.trim()}` });
       continue;
     }
-    if (seen.has(cells[0])) continue; // first occurrence wins
-    seen.add(cells[0]);
+    // First occurrence still wins - what changes is that the loser is REPORTED.
+    // Narrowing a key's reach by appending a row rather than editing the old one
+    // left the stale row winning, the purpose test skipped, and self-verify
+    // ok:true, in the check whose whole point is that nothing about a key's
+    // reach is skipped silently.
+    const first = seen.get(cells[0]);
+    if (first !== undefined) {
+      issues.push({ code: 'duplicate-reach-row',
+        detail: `${cells[0]}: line ${i + 1} repeats the row declared on line ${first}; `
+          + 'the first occurrence wins, so this row declares nothing' });
+      continue;
+    }
+    seen.set(cells[0], i + 1);
     rows.push({ key: cells[0], reach: cells[1], honouredBy: cells[2], line: i + 1 });
   }
   return { rows, issues };
@@ -133,7 +163,7 @@ export function reachIssues(schema, rows) {
       continue;
     }
     const reach = normalize(row.reach);
-    if (reach === UNIVERSAL) continue;
+    if (isUniversal(reach)) continue;
     const purpose = normalize(isObj(schema[row.key]) ? schema[row.key].purpose : '');
     if (!purpose.includes(reach)) {
       out.push({ code: 'unstated-reach',

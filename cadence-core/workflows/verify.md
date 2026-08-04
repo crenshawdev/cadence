@@ -82,8 +82,11 @@ Item rules (the model's judgment, before the seam call):
   deliverable sends neither field - `/cad-audit` reports it as untraced
   without moving the verdict.
 - A CONTEXT whose criteria carry no `AC<N>` ids yields no `criterion` values
-  at all; that reads as a pre-field legacy checklist, reported and never a
-  failure.
+  at all. Those items report as `untraced`, which is additive. They are NOT
+  legacy: `uat init` writes `fields_version` before it looks at an item, so a
+  checklist this seam writes always carries the marker, and legacy now also
+  requires a CONTEXT declaring no ids beside a checklist carrying none of the
+  fields - which no seam-written file can be.
 - Deduplicate: a PLAN verification restating a ROADMAP criterion is one
   item, worded as the ROADMAP criterion (the contract).
 - A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT
@@ -116,6 +119,9 @@ UAT session for the phase AND the stakes level says to:
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-verifier
 ```
+
+Relay every `warnings[]` entry that resolve returns to the user before running
+the pass, each distinct warning once per run (`references/seams.md`).
 
 `verify` on that line is `on` or `off`. This step holds no role and the seam
 refuses a resolve without one, so it resolves as `cad-verifier` - the role it is
@@ -176,7 +182,14 @@ For each item with `status: fail` and no recorded cause:
    record it: `uat record ... --result fail --cause "<root cause>"` (a
    re-record of the same result adds the field; first_pass is safe). If a
    diagnosis deserves a second opinion, use the review-trigger interface
-   (references/review-triggers.md) - never an embedded reviewer loop.
+   (references/review-triggers.md) - never an embedded reviewer loop. That
+   fire names no wiring-table trigger, so it has no resolved gate and its fix
+   list is ALWAYS triaged before any of it becomes a proposed fix: the
+   survivors are a numbered list the user triages, NONE is the default, and
+   only what the user names goes on to step 2, so an unpicked finding never
+   reaches step 3's "Apply now". RE-READ
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
+   § 6 Consequence before presenting, since this workflow does not preload it.
 2. **Propose the fix**, then ask the user (ask-user seam):
    1. Apply the fix now
    2. Re-plan it through /cad-plan (phase-sized gap)
@@ -219,8 +232,9 @@ one commit:
 On a **partial** session, do neither - the phase is not done.
 
 If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
-commit UAT.md plus whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md
-changed: `docs: phase <N> UAT - {passed} passed, {failed} failed`.
+commit UAT.md, `phases/<N>/FINDINGS.json` if a deep pass wrote one, plus
+whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md changed:
+`docs: phase <N> UAT - {passed} passed, {failed} failed`.
 
 Report tersely:
 

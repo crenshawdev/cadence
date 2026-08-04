@@ -96,14 +96,21 @@ reworked: [N]
   legitimately has no criterion, so it is exempt rather than merely
   unlinked. A verifier-appended gap gets `verifier`, the cold-start smoke
   item `smoke`. Written, never derived: a present `criterion` is itself the
-  criterion-derived marker. `uat record --origin` repairs it after the fact.
+  criterion-derived marker. The two repairs are different: `uat record
+  --criterion AC<N>` restores a LINK that was never written or was lost,
+  while `uat record --origin` declares an item that legitimately has none.
+  `--origin criterion` is not a substitute for the link - it names no id, so
+  it proves nothing.
 - `fields_version: 1` (frontmatter): written by `uat init` on every new
   checklist, unconditionally. It is the POSITIVE marker that this file came
-  from a seam that knows `criterion` and `origin`, and it is what
-  `/cad-audit`'s legacy exemption reads. A checklist carrying no
-  `fields_version`, no `criterion` and no `origin` predates the fields:
-  reported as legacy, never broken on. A checklist carrying the marker is
-  never legacy however few links its items hold - dropped links break.
+  from a seam that knows `criterion` and `origin`. `/cad-audit`'s legacy
+  exemption needs it absent AND five terms in all: items present, no
+  `criterion` or `origin` on any of them, and a CONTEXT declaring no `AC<N>`
+  ids. That is legacy - reported, never broken on. The same file beside a
+  CONTEXT that DID declare ids is a `fieldless-checklist` break naming the
+  file to repair, because the AC-id grammar post-dates the fields. And a
+  checklist carrying the marker is never legacy however few links its items
+  hold - dropped links break.
 - `source: verifier` marks results merged from a cad-verifier pass; they
   are skipped in the walk but stay visible here with their evidence. It is
   where a RESULT came from, never where an ITEM came from - that is

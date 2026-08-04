@@ -20,7 +20,8 @@
 //     cadence/* branch that actually merged. --merged is a test hook forcing the
 //     merged-into-base verdict (else inferred from the merged list).
 //   gate [--dir <path>]
-//     Read {findings} JSON from stdin (empty -> []) and, under git.auto_close,
+//     Read {findings} JSON from stdin (empty -> []) and, under the MERGED
+//     git.auto_close (the value the prose branched on - see gate() below),
 //     decide whether a surviving blocker/high pre_ship finding halts the chain
 //     before merge.
 'use strict';
@@ -89,6 +90,26 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
 }
 
 function gate(dir) {
+  // The MERGED value, deliberately - NOT git-publish.mjs's repo-layer-only read.
+  // The two seams ask different questions of one key. `repoAutoClose`
+  // (git-publish.mjs:53-61) asks "am I authorized to push unattended HERE", which
+  // D-08 answers repo-only so a user-global value starts no close in an unrelated
+  // project. This gate asks "is anybody WATCHING", and that answer has to match
+  // whatever the prose branched on - skills/cad-land/SKILL.md:27 reads the merged
+  // value through `config.mjs get` and suppresses the pre_ship triage ask under it
+  // (references/review-triggers.md:146: "triage is NONE by construction and
+  // land-cleanup.mjs gate's blocker/high halt the only consequence").
+  //
+  // So `proceed` on false is not this gate waving a blocker through; it is the
+  // gate saying a human is looking at that blocker in the triage prompt. The halt
+  // exists ONLY to replace the human who was switched off, which makes the
+  // suppression and the halt a matched pair that must read the SAME value.
+  // Narrowing this to `layers.repo` (0b1c322, reverted here) aligned the two
+  // seams' VALUES and broke that pairing: with a global-only auto_close the prose
+  // still entered the unattended chain and still suppressed triage while this gate
+  // believed no chain was running. On GitHub the chain then died at the publish
+  // seam; on GitLab nothing gates it at all (`glab mr create` publishes the source
+  // branch itself), so a surviving blocker merged with no triage and no halt.
   const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const autoClose = git.auto_close === true;

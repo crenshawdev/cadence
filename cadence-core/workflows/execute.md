@@ -145,7 +145,14 @@ Handle the executor's return:
 
 After each plan completes, fire the `diff` review trigger
 (references/review-triggers.md) with `git diff {pre-plan HEAD}..HEAD` as the
-payload. Default is advisory: report findings, continue.
+payload. Default is advisory: report findings, continue. When
+`review.triggers.diff.gate` resolves it to `adjudicated` instead, the
+survivors are a numbered list the user triages, NONE is the default, and only
+what the user names is acted on - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
+§ 6 Consequence before presenting, since this workflow does not preload it. The
+`risk_surface` arm is untouched by any of that: a matched risk surface still
+halts, and triage is not an override for it.
 </step>
 
 <step name="handle_checkpoint">
@@ -177,8 +184,8 @@ fork-point default.)
 
 1. In batches of `parallelization.max_concurrent_agents`: dispatch one
    cad-executor per plan, each in its own git worktree on branch
-   `cadence/phase-<N>-plan-<k>` (spawn-agent seam, worktree isolation), one
-   dispatch per message, in the background. Resolve the route ONCE for
+   `cadence/phase-<N>-plan-<k>` (spawn-agent seam, worktree isolation), the
+   whole batch issued in ONE message. Resolve the route ONCE for
    (cad-executor, attempt 1) and reuse it for every executor in the batch -
    identical role and attempt, so re-resolving per dispatch is wasted (seams.md
    concurrent dispatch). Same prompt as sequential except the mode line:
@@ -190,14 +197,21 @@ fork-point default.)
 5. After all batches: run `workflow.test_command` once if set; then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (payload: each
    plan's commits as a diff) - the diffs are static and independent, so the
-   per-plan reviews need not serialize (seams.md concurrent dispatch).
+   per-plan reviews need not serialize (seams.md concurrent dispatch). The
+   `diff` gate reports and continues as today at `advisory`; at `adjudicated`
+   each plan's survivors go through the triage gate -
+   references/review-triggers.md § 6 Consequence, NONE the default - before
+   any of them is acted on.
 6. Fire the `phase_diff` trigger (references/review-triggers.md) with
    `git diff {PHASE_START}..HEAD` as the payload. Off by default (opt-in) -
    it exists because the per-plan reviews above each see one plan's diff in
    isolation, so a bug in the INTERACTION of two merged plans is invisible
    to them until pre_ship at land time. Parallel path only: on the
    sequential path each diff review already sees a tree containing all
-   prior plans' work.
+   prior plans' work. It is `adjudicated` wherever it is on at all (critical
+   only), so its survivors go through the same triage gate -
+   references/review-triggers.md § 6 Consequence, NONE the default - before
+   any of them is acted on.
 
 Checkpoints on this path route exactly as in handle_checkpoint; the
 continuation executor is dispatched back into the same worktree.

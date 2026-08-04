@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, dirname } from 'node:path';
+import { basename, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
+import { RUNG_FILES } from './lib/rung-agent.mjs';
 
 const CONFIG = join(dirname(fileURLToPath(import.meta.url)), 'config.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-config-'));
@@ -475,6 +476,136 @@ test('get: one file resolving as both layers warns once, not twice', () => {
   assert.equal(r2.warnings.length, 2);
 });
 
+// --- one file, two layer paths: identity, not spelling (CAPTURE.md:46) --------
+
+test('get: a SYMLINKED global layer is the same file, so one layer is reported', () => {
+  // 28bd532 deduped the rendered warning strings, which closes the exact-path
+  // case and nothing else: an alias renders a different string, so the same
+  // file was read twice and `source` named a repo layer the user never had.
+  const shared = join(dir, 'alias-shared.json');
+  writeFileSync(shared, JSON.stringify({ stakes: 'solo' }));
+  const link = join(dir, 'alias-shared-link.json');
+  symlinkSync(shared, link);
+  const r = run(['get', '--file', shared, 'stakes'], link);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['stakes'], 'solo'); // the merge is unchanged
+  assert.equal(r.source, 'repo');           // ONE layer, not 'global+repo'
+  assert.equal(r.warnings, undefined);
+
+  // the control that proves this is not a blanket collapse: a genuinely
+  // different global file still layers under the repo one.
+  const other = join(dir, 'alias-control-global.json');
+  writeFileSync(other, JSON.stringify({ granularity: 'coarse' }));
+  const r2 = run(['get', '--file', shared, 'stakes', 'granularity'], other);
+  assert.equal(r2.source, 'global+repo');
+  assert.equal(r2.values['granularity'], 'coarse');
+});
+
+test('get: a RELATIVE spelling of the repo file is the same file too', () => {
+  const shared = join(dir, 'rel-shared.json');
+  writeFileSync(shared, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', shared, 'stakes'], relative(process.cwd(), shared));
+  assert.equal(r.ok, true);
+  assert.equal(r.values['stakes'], 'solo');
+  assert.equal(r.source, 'repo');
+});
+
+test('get: a BROKEN file reached under two spellings warns exactly once', () => {
+  for (const [label, bytes, pattern] of [
+    ['unparseable', '{ torn', /failed to parse/],
+    ['non-object', 'null', /not an object/],
+  ]) {
+    const shared = join(dir, `alias-broken-${label}.json`);
+    writeFileSync(shared, bytes);
+    const link = join(dir, `alias-broken-${label}-link.json`);
+    symlinkSync(shared, link);
+    const r = run(['get', '--file', shared, 'stakes'], link);
+    assert.equal(r.ok, true, label);
+    assert.equal(r.warnings.length, 1, `${label}: ${JSON.stringify(r.warnings)}`);
+    assert.match(r.warnings[0], pattern, label);
+    assert.match(r.warnings[0], /alias-broken-/, label); // names the file, once
+    assert.equal(r.source, 'defaults', label);
+  }
+});
+
+test('get --global: the one file it reads by construction is the GLOBAL layer', () => {
+  // config.mjs:289 hands GLOBAL_CONFIG in as the repo file, so `--global` makes
+  // one file both layers on every invocation - it reported `global+repo`, i.e.
+  // a repo layer that cannot exist on this path (CAPTURE.md:46 (b)).
+  const gpath = join(dir, 'get-global-single.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'critical' }));
+  const r = run(['get', '--global', 'stakes'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['stakes'], 'critical');
+  assert.equal(r.source, 'global'); // the literal string, pinned
+
+  // ...and the same file addressed as a REPO config is labelled `repo`, even
+  // spelled exactly as the env carries it. On a collapse both paths ARE the
+  // file, so the label follows what the caller addressed; deciding it by
+  // string equality would report `global` here and `repo` for a symlinked
+  // spelling of the identical situation.
+  const asRepo = run(['get', '--file', gpath, 'stakes'], gpath);
+  assert.equal(asRepo.source, 'repo');
+  assert.equal(asRepo.values['stakes'], 'critical');
+});
+
+// --- a flag whose value is missing (.planning/CAPTURE.md:168) -----------------
+
+test('a valueless --file is a named usage failure on every subcommand', () => {
+  // `--file $CFG` on an unset variable. Measured at HEAD: `set` answered
+  // reason:"internal" with a raw Node TypeError (fsIdentity's last fallback
+  // throwing outside its try), `validate` said "cannot read/parse undefined",
+  // and `get` answered ok:true - the user-global layer read back as if it were
+  // the file the caller named.
+  for (const args of [['set', 'stakes=solo', '--file'], ['get', '--file'],
+    ['validate', '--file']]) {
+    const r = run(args, join(dir, 'no-global-usage.json'));
+    assert.equal(r.ok, false, args.join(' '));
+    assert.equal(r.reason, 'usage', `${args.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--file/, args.join(' '));
+    assert.doesNotMatch(r.detail, /undefined/, args.join(' '));
+  }
+});
+
+test('a QUOTED empty --file is refused too, not answered about the global layer', () => {
+  // `--file "$CFG"` on an unset variable: the quoted spelling of the row above,
+  // and a distinct token - the shell drops an unquoted `$CFG` but passes an
+  // empty string for a quoted one. Guarding on `=== undefined` alone left this
+  // one falling through, and `get` is the dangerous arm: it answered ok:true
+  // with source "global" and a real waiver value read out of the user-global
+  // layer, about a file the caller never named. Silent, unlike the loud
+  // reason:"internal" the unquoted spelling used to give.
+  const gpath = join(dir, 'empty-file-global.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped', risk: { override: { auth: true } } }));
+  for (const args of [['set', 'stakes=solo', '--file', ''], ['get', '--file', '', 'stakes'],
+    ['validate', '--file', '']]) {
+    const r = run(args, gpath);
+    assert.equal(r.ok, false, args.join(' '));
+    assert.equal(r.reason, 'usage', `${args.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--file/, args.join(' '));
+    assert.equal(r.values, undefined, args.join(' ')); // never an answer about another file
+  }
+});
+
+test('fsIdentity is total: an unresolvable path never lands on the global layer', () => {
+  // The write-face half of the same defect. A path that cannot resolve has NO
+  // identity, and null-equals-null would aim it straight at the layer the
+  // repo-scope refusal protects.
+  const gpath = join(dir, 'total-identity-global.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'solo' }));
+  const repo = join(dir, 'total-identity-repo.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  // a real repo file still takes the waiver (not swept into the refusal)...
+  assert.equal(run(['set', '--file', repo, 'risk.override.auth=true'], gpath).ok, true);
+  // ...and a path under a directory that does not exist reads as a read
+  // failure naming the file, never reason:internal.
+  const nested = join(dir, 'no-such-dir', 'deep', 'config.json');
+  const r = run(['set', '--file', nested, 'risk.override.auth=true'], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'read');
+  assert.match(r.detail, /no-such-dir/);
+});
+
 // --- shipped config.schema.json absent/malformed (#40) ------------------------
 
 function runWithSchema(args, schemaPath) {
@@ -610,8 +741,218 @@ test('set --file: every ALIAS of the global path is refused, and writes nothing'
   assert.equal(JSON.parse(readFileSync(repo, 'utf8')).risk.override.auth, true);
 });
 
+// --- both read faces describe a global-layer waiver the same way (:164 a) ----
+
+test('get: a truthy waiver in the GLOBAL layer is returned AND named as repo-scoped', () => {
+  // `get` returns the merged value by contract, so it read `true` for a waiver
+  // route.mjs ignores, and said nothing. The value is unchanged; the key is
+  // named (.planning/CAPTURE.md:164, first half).
+  const gpath = join(dir, 'scope-global-waiver.json');
+  writeFileSync(gpath, JSON.stringify({ risk: { override: { auth: true } } }));
+  const repo = join(dir, 'scope-repo-plain.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'risk.override.auth'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['risk.override.auth'], true); // the MERGED value stands
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /risk\.override\.auth/);
+  assert.match(r.warnings[0], /src: repo/);
+  assert.match(r.warnings[0], /\.planning\/config\.json/);
+  assert.doesNotMatch(r.warnings[0], /--global/); // never the write face's refusal
+});
+
+test('get: a FALSE waiver in the global layer says nothing at all', () => {
+  const gpath = join(dir, 'scope-global-false.json');
+  writeFileSync(gpath, JSON.stringify({ risk: { override: { auth: false } } }));
+  const repo = join(dir, 'scope-repo-plain2.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'risk.override.auth'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['risk.override.auth'], false);
+  assert.equal(r.warnings, undefined);
+});
+
+test('get: the same waiver in the REPO layer is honoured, so nothing is said', () => {
+  const gpath = join(dir, 'scope-no-global.json');
+  const repo = join(dir, 'scope-repo-waiver.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo', risk: { override: { auth: true } } }));
+  const r = run(['get', '--file', repo, 'risk.override.auth'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['risk.override.auth'], true);
+  assert.equal(r.warnings, undefined);
+});
+
+test('get --global: the collapsed single layer still earns the repo-scoped warning', () => {
+  // The reachability the collapse must not cost: with one file as both paths,
+  // mergeLayers puts it in the repo slot, so keying the warning off a non-null
+  // global slot would go silent exactly where the waiver is most global.
+  const gpath = join(dir, 'scope-global-only.json');
+  writeFileSync(gpath, JSON.stringify({ risk: { override: { auth: true } } }));
+  const r = run(['get', '--global', 'risk.override.auth'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['risk.override.auth'], true);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /risk\.override\.auth/);
+  assert.match(r.warnings[0], /src: repo/);
+});
+
+// The move-it remediation is only ever offered for an entry the repo layer
+// would honour. These three rows are the other direction of :164/:166: `get`
+// warning about a global waiver is only an improvement if it stops short of
+// sending the user at a key the write face refuses.
+
+test('get: an UNDECLARED global surface earns the shape diagnostic, not the move-it line', () => {
+  const gpath = join(dir, 'scope-global-typo.json');
+  writeFileSync(gpath, JSON.stringify({ risk: { override: { athu: true } } }));
+  const repo = join(dir, 'scope-repo-typo.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /names no declared risk surface/);
+  assert.match(r.warnings[0], /in the user-global config layer/);
+  // The defect: relocating `athu` is advice `config.mjs set`/`check` refuse.
+  assert.doesNotMatch(r.warnings[0], /\.planning\/config\.json/);
+  assert.equal(run(['check', 'risk.override.athu=true']).ok, false);
+});
+
+test('get: a NON-BOOLEAN global waiver earns the shape diagnostic, not the move-it line', () => {
+  const gpath = join(dir, 'scope-global-nonbool.json');
+  writeFileSync(gpath, JSON.stringify({ risk: { override: { auth: 'yes' } } }));
+  const repo = join(dir, 'scope-repo-nonbool.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'stakes'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /is not true or false/);
+  assert.doesNotMatch(r.warnings[0], /\.planning\/config\.json/);
+  assert.equal(run(['check', 'risk.override.auth=yes']).ok, false);
+});
+
+test('get and route.mjs resolve emit the IDENTICAL shape warning for one bad entry', () => {
+  // AC2's closing clause, asserted as string equality rather than as two
+  // separately-worded diagnostics that happen to agree today. Both faces call
+  // lib/risk-surfaces.mjs `overrideShapeWarning` over the same traversal; a
+  // second copy in either seam fails this row.
+  const ROUTE = join(dirname(CONFIG), 'route.mjs');
+  const gpath = join(dir, 'scope-global-agree.json');
+  writeFileSync(gpath, JSON.stringify({ risk: { override: { athu: true, auth: 'yes' } } }));
+  const repo = join(dir, 'scope-repo-agree.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: gpath };
+  const routed = (() => {
+    try {
+      return JSON.parse(execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-executor',
+        '--file', repo], { encoding: 'utf8', env }));
+    } catch (e) { return JSON.parse(e.stdout); }
+  })();
+  const got = run(['get', '--file', repo, 'stakes'], gpath);
+  assert.equal(got.ok, true);
+  assert.equal(routed.ok, true);
+  const shape = (w) => (w || []).filter((s) => /names no declared risk surface|is not true or false/.test(s));
+  assert.equal(shape(got.warnings).length, 2, JSON.stringify(got.warnings));
+  assert.deepEqual(shape(got.warnings).sort(), shape(routed.warnings).sort());
+});
+
+test('get: no global layer at all never throws on the null slot', () => {
+  // `flatten` opens with Object.entries(obj) and throws on null, and an absent
+  // ~/.claude/cadence/config.json is the ordinary case - unguarded, every `get`
+  // on a machine without one returns {"ok":false,"reason":"internal"}.
+  const repo = join(dir, 'scope-repo-nog.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  const r = run(['get', '--file', repo, 'stakes'], join(dir, 'scope-absent-global.json'));
+  assert.equal(r.ok, true);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.values['stakes'], 'solo');
+});
+
 test('set --global: a non-waiver key is unaffected by the repo-scope refusal', () => {
   const gpath = join(dir, 'global-still-works.json');
   const r = run(['set', '--global', 'stakes=critical'], gpath);
   assert.equal(r.ok, true);
+});
+
+// --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---
+
+test('check: a rung the role HAS is accepted', () => {
+  // `cad-verifier` carries medium/high/xhigh/max in lib/rung-agent.mjs.
+  assert.deepEqual(run(['check', 'model.effort.cad-verifier=xhigh']), { ok: true });
+});
+
+test('check: a rung the role LACKS is refused by key, naming that role\'s set', () => {
+  // `max` is a real rung of the ladder and a real value of OTHER roles' enums -
+  // which is why one uniform rung_order enum would have accepted it here and
+  // sent an unmapped rung down the dispatch path. cad-executor has two rungs.
+  const r = run(['check', 'model.effort.cad-executor=max']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail.length, 1);
+  assert.equal(r.detail[0].key, 'model.effort.cad-executor'); // BY KEY
+  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, null');
+});
+
+test('check: null renders as the literal, not as a dangling separator', () => {
+  // Every `default: null` enum ends its accepted set with null; Array#join
+  // rendered it as '' and the message read "…: high, xhigh, " - a truncated
+  // sentence rather than a settable value.
+  const r = run(['check', 'model.effort.cad-planner=medium']);
+  assert.equal(r.ok, false);
+  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, max, null');
+  assert.ok(!/,\s*$/.test(r.detail[0].error));
+  // and the literal IS accepted, so the message is not advertising a fiction
+  assert.deepEqual(run(['check', 'model.effort.cad-planner=null']), { ok: true });
+});
+
+test('set: the WRITE face refuses the same value and writes nothing', () => {
+  // `check` alone cannot prove `set` writes nothing - the refusal has to land
+  // before the read-modify-write, which is the atomicity contract checkPairs
+  // already holds for retired and surface keys.
+  const repo = join(dir, 'effort-write.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'shipped' }, null, 2) + '\n');
+  const before = readFileSync(repo, 'utf8');
+  const r = run(['set', '--file', repo, 'model.effort.cad-executor=max'],
+    join(dir, 'effort-no-global.json'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'model.effort.cad-executor');
+  assert.equal(r.detail[0].error, 'must be one of: high, xhigh, null');
+  assert.equal(readFileSync(repo, 'utf8'), before); // byte-identical
+});
+
+test('set: an accepted rung is written into the config layer, not the plugin', () => {
+  const repo = join(dir, 'effort-write-ok.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'shipped' }, null, 2) + '\n');
+  const r = run(['set', '--file', repo, 'model.effort.cad-verifier=xhigh'],
+    join(dir, 'effort-no-global.json'));
+  assert.equal(r.ok, true);
+  assert.deepEqual(JSON.parse(readFileSync(repo, 'utf8')),
+    { stakes: 'shipped', model: { effort: { 'cad-verifier': 'xhigh' } } });
+});
+
+test('validate: a whole config carrying a bad start rung names the key', () => {
+  const repo = join(dir, 'effort-validate.json');
+  writeFileSync(repo, JSON.stringify({ model: { effort: { 'cad-plan-checker': 'max' } } }));
+  const r = run(['validate', '--file', repo], join(dir, 'effort-no-global.json'));
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.errors, [{
+    key: 'model.effort.cad-plan-checker',
+    error: 'must be one of: low, medium, high, xhigh, null',
+    value: 'max',
+  }]);
+});
+
+test('every model.effort enum is exactly that role\'s rung set from RUNG_FILES', () => {
+  // The schema shipped here is the one config.mjs refuses against; if it drifts
+  // from the map, the refusal starts refusing the wrong values. self-verify
+  // holds the same invariant for CI - this row holds it for the write face.
+  const schema = JSON.parse(readFileSync(
+    join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
+  for (const [role, map] of Object.entries(RUNG_FILES)) {
+    const spec = schema[`model.effort.${role}`];
+    assert.ok(spec, `no model.effort.${role} key`);
+    assert.deepEqual(spec.values, [...Object.keys(map), null]);
+    assert.equal(spec.default, null);
+  }
+  assert.equal(Object.keys(schema).filter((k) => k.startsWith('model.effort.')).length,
+    Object.keys(RUNG_FILES).length);
 });

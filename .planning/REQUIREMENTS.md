@@ -1,23 +1,14 @@
-# Requirements: Cadence (v1.5.0 shipped)
+# Requirements: Cadence (v2.0.0 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v2.0.0 — Stakes, not spend`. The routing axis stops asking how much a user
-wants to spend and starts asking what happens if the work is wrong. The
-breaking change is the enum rename with no back-compat alias; everything else
-in the cycle either enables it or rides with it. `/cad-plan` seeds each id's
-Traceability row as its phase is planned.
-
-- **RNG-01**: Per-rung agent files materialize effort off the preloaded contract skills, retiring `escalate_effort_variant` and the `cad-plan-checker-high` runtime-read shim; a rung file that carries behaviour fails self-verify
-- **STK-01**: The routing axis asks stakes rather than spend - the `model.profile` key is REPLACED by `stakes` (solo/shipped/critical), the `auto` mode is retired, and every surface naming the old key or values moves with them. No back-compat alias: a config a user wrote stops validating on the KEY, not just the value
-- **STK-02**: A routing cell resolves `{model, effort, review, verify}` rather than a bare model, computed from a small table, with self-verify asserting every cell resolves to a valid model, a valid effort and a real trigger
-- **STK-03**: The top rung is computed from the risk surface Cadence already detects - detection sets a floor, the user may raise it, and lowering below a detected floor requires an explicit override that names what it overrides
-- **ACR-01**: CONTEXT acceptance criteria carry stable ids, and `/cad-audit` asserts coverage in both directions - every criterion reaches a UAT item, every UAT item traces to a criterion or is marked verifier-added
-- **CFG-01**: The remaining resolved-then-dropped config keys stop lying, closed at the point of setting, the same way per-trigger `effort` was
-- **HST-01**: The plugin's documented home moves to the self-hosted Forgejo remote - the README install block and the plugin manifest name `git.jcrenshaw.dev`, and GitHub stops being the published source. The README test badge is REMOVED rather than repointed: the new host has no CI runner to back it, so a badge there renders "Not found"
+No active milestone. `v2.2.0 — the rest of the residue` closed 2026-08-04 with
+all six requirements delivered; the next milestone was deliberately left
+unopened (user hold at the close). Opening it is `/cad-phase add` for the first
+phase, with this section reseeded from the next cycle's intent at that point.
 
 ## Shipped
 
@@ -69,7 +60,7 @@ parses only the Traceability table).
 | #50 (git-guard joins backslash line-continuations before parsing) | 4 | Complete | v1.3.1 |
 | GRM-01 (plan-file frontmatter grammar: exact reads, byte-exact paths, a named diagnostic for every out-of-grammar input) | 1 | Complete | v1.4.0 |
 | SPN-01 (`/cad-plan` seeds its own traceability rows; worktree executor asserts its plan file before task 1) | 2 | Complete | v1.4.0 |
-| TOK-01 (one quote-state tokenizer closes the six rail-3 push holes and the `eval` wrapper family) | 3 | Complete | v1.4.0 |
+| TOK-01 (one quote-state tokenizer closes the six rail-3 push holes and the `eval` wrapper family) | 3 | Superseded by TOK-02 (v2.2.0) | v1.4.0 |
 | RDM-01 (stated roadmap phase-list grammar; empty `## Phases` is a derived closed-milestone state) | 4 | Complete | v1.4.0 |
 | AUD-01 (`audit` counts an unpicked `## Active` id, so the gate holds while a milestone is partly planned) | 5 | Complete | v1.4.0 |
 | #65 (executor's terminal success-criteria check deleted; `goal_check` already does that assessment) | — | Complete | v1.4.1 |
@@ -77,6 +68,22 @@ parses only the Traceability table).
 | #68 (worktree fork point stated as `worktree.baseRef`-selectable; parallel execute refuses under `fresh`) | — | Complete | v1.5.0 |
 | #64 (per-trigger `effort` scoped to the backend that can honour it) | — | Complete | v1.5.0 |
 | #74 (each agent contract stored once as a preloaded contract skill; self-verify asserts every one resolves) | — | Complete | v1.5.0 |
+| RNG-01 (per-rung agent files materialize effort off the contract skills; a rung file carrying behaviour fails self-verify) | 1 | Complete | v2.0.0 |
+| STK-01 (`model.profile` REPLACED by `stakes` (solo/shipped/critical), `auto` retired, no back-compat alias) | 2 | Complete | v2.0.0 |
+| STK-02 (a routing cell resolves `{model, effort, review, verify}` from one small table, every cell self-verified) | 3 | Complete | v2.0.0 |
+| STK-03 (detected risk surface sets a rung FLOOR; lowering below it needs an override naming the surface) | 4 | Complete | v2.0.0 |
+| ACR-01 (CONTEXT acceptance criteria carry stable ids; `/cad-audit` asserts coverage in both directions) | 5 | Complete | v2.0.0 |
+| CFG-01 (the remaining resolved-then-dropped config keys closed at the point of setting) | 6 | Complete | v2.0.0 |
+| HST-01 (documented home moved to the self-hosted Forgejo remote; the unbacked README test badge removed) | 6 | Complete | v2.0.0 |
+| COV-01 (a fields-less checklist stops being exempt from the coverage gate; the seam states its plugin version; the verifier's findings envelope is persisted beside the phase's artifacts) | 1 | Complete | v2.1.0 |
+| TRI-02 (an adjudicated review's survivors are a numbered list the user triages, defaulting to NONE, at every firing site; the reviewer's anti-padding clause removed) | 2 | Complete | v2.1.0 |
+| REV-03 (a trigger's reviewers dispatch concurrently in one message; `review.max_prompt_tokens` bounds the paid call) | 2 | Complete | v2.1.0 |
+| CFG-02 (the config read face merges a layer once whatever its spelling; six of phase 6's seven deferred config-reach/risk-waiver defects closed, the seventh named open) | 1 | Complete | v2.2.0 |
+| TOK-02 (the guard's parser deleted, both rails on one small anchored reader; `git.on_destructive` removed; accepted-cost shapes stated in CHANGELOG) | 2 | Complete | v2.2.0 |
+| REL-03 (release seam refuses downgrades, promotes Unreleased into the dated heading, requires `--version` instead of deriving from prose) | 3 | Complete | v2.2.0 |
+| DOC-01 (rung-ladder claims corrected in CHANGELOG; `route.mjs` `warnings[]` rides every shape including `ok:false`) | 4 | Complete | v2.2.0 |
+| RNG-02 (per-role effort configurable and update-surviving; a rung the role lacks fails self-verify by key) | 4 | Complete | v2.2.0 |
+| HST-02 (install path proven live against Forgejo from a fully cold state; transcripts committed in the phase record) | 5 | Complete | v2.2.0 |
 
 ## Deferred
 
@@ -106,18 +113,11 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RNG-01 | Phase 1 | Complete |
-| STK-01 | Phase 2 | Complete |
-| STK-02 | Phase 3 | Complete |
-| STK-03 | Phase 4 | Complete |
-| ACR-01 | Phase 5 | Complete |
-| CFG-01 | Phase 6 | Complete |
-| HST-01 | Phase 6 | Complete |
 
-Empty between milestones. `v1.4.0`'s five rows moved to `## Shipped` at its
+Empty between milestones. `v2.2.0`'s six rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
 from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-07-29 HST-01 added at phase 6 (7 active requirements declared)*
+*Last updated: 2026-08-04 v2.2.0 closed with all 6 delivered - CFG-02/TOK-02/REL-03/DOC-01/RNG-02/HST-02 archived to `## Shipped`, Traceability emptied, no next milestone opened (user hold)*

@@ -1172,15 +1172,248 @@ test('classifyAcceptanceCriteria: an issue carries its exact line, code and trun
     [{ line: 6, code: 'criterion-unidded', text: '- [ ] a bare bullet' }]);
 });
 
-// This repo's own four completed phases, as the fixture no synthetic row can
-// replace: the grammar must read the files it was written against.
+// `declaresIds` (rule 7), the signal `criteria.length` cannot carry. Every
+// `'some'` row below parses to ZERO criteria while naming an id in the same
+// text: read as "declared nothing", each one hands `criteria-coverage`'s legacy
+// exemption a phase whose CONTEXT declares ids on its face. The `'none'` rows
+// are what the exemption is FOR, and they must keep it.
+//
+// Each row: {name, text, declares}.
+const DECLARES_ROWS = [
+  // --- in grammar -----------------------------------------------------------
+  { name: 'a parsed criterion declares its id',
+    text: criteriaDoc('- [ ] AC1: the tests pass'), declares: 'some' },
+
+  // --- refused by the grammar, declared by the author -----------------------
+  { name: 'a missing colon is still a declaration',
+    text: criteriaDoc('- [ ] AC1 the feature works'), declares: 'some' },
+  { name: 'emphasis around the token is still a declaration',
+    text: criteriaDoc('- [ ] **AC1**: bolded'), declares: 'some' },
+  { name: 'a backticked token is still a declaration, though its code is unidded',
+    text: criteriaDoc('- [ ] `AC1`: quoted'), declares: 'some' },
+  { name: 'a lowercase ac1 is still a declaration',
+    text: criteriaDoc('- [ ] ac1: lowercased'), declares: 'some' },
+  { name: 'a second space after the checkbox is still a declaration',
+    text: criteriaDoc('- [ ]  AC1: re-indented'), declares: 'some' },
+  { name: 'an indented criterion bullet is still a declaration',
+    text: criteriaDoc('  - [ ] AC1: indented'), declares: 'some' },
+  { name: 'an unboxed bullet is still a declaration',
+    text: criteriaDoc('- AC1: no checkbox'), declares: 'some' },
+  { name: 'a non-dash marker is still a declaration',
+    text: criteriaDoc('* [ ] AC1: nondash'), declares: 'some' },
+  { name: 'a criterion written as a heading is still a declaration',
+    text: criteriaDoc('### AC1: heading'), declares: 'some' },
+  { name: 'an ordered list item is still a declaration',
+    text: criteriaDoc('1. AC1: ordered'), declares: 'some' },
+  { name: 'a bare `AC1: text` prose line is still a declaration',
+    text: criteriaDoc('AC1: no marker at all'), declares: 'some' },
+
+  // --- declares nothing: the exemption's own population ----------------------
+  { name: 'bare checkbox bullets declare nothing - the pre-id shape',
+    text: criteriaDoc('- [ ] the tests pass\n- [ ] the linter is clean'), declares: 'none' },
+  { name: 'a bullet whose PROSE names an id declares nothing - the head is empty',
+    text: criteriaDoc('- [ ] the AC3 pin still holds'), declares: 'none' },
+  { name: 'a prose line mentioning an id mid-sentence declares nothing',
+    text: criteriaDoc('- [ ] the tests pass\n\nThe gate proves AC3 elsewhere.'), declares: 'none' },
+  { name: 'a criterion inside a fence is an EXAMPLE and declares nothing',
+    text: criteriaDoc('```markdown\n- [ ] AC1: an example\n```'), declares: 'none' },
+  { name: 'a present-but-empty section declares nothing',
+    text: criteriaDoc(''), declares: 'none' },
+  { name: 'an absent heading declares nothing',
+    text: '# Phase 1 Context\n\n## Scope boundary\n\nIn: everything.\n', declares: 'none' },
+
+  // --- unreadable: not the same datum as nothing ----------------------------
+  { name: 'a near-miss heading is unknown, never none - its section is never walked',
+    text: '# Phase 1 Context\n\n## Acceptance Criteria\n\n- [ ] AC1: the tests pass\n',
+    declares: 'unknown' },
+  { name: 'a near-miss heading is unknown even when nothing under it names an id',
+    text: '# Phase 1 Context\n\n## Acceptance criteria:\n\n- [ ] the tests pass\n',
+    declares: 'unknown' },
+];
+
+for (const row of DECLARES_ROWS) {
+  test(`acceptance-criteria declaresIds: ${row.name}`, () => {
+    assert.equal(classifyAcceptanceCriteria(row.text).declaresIds, row.declares);
+  });
+}
+
+// This repo's own four v2.0.0 phases, FROZEN: the fixture no synthetic row can
+// replace, because the grammar must keep reading the files it was written
+// against - wrapped continuations, backticks, embedded colons and all.
+//
+// Each entry runs from that phase's `## Acceptance criteria` heading through the
+// following `## Flagged assumptions` heading, so the section bound is exercised
+// too. Recover any of them verbatim with
+// `git show v2.0.0:.planning/phases/<N>/CONTEXT.md`.
+//
+// Inlined rather than read from disk (D-11): `/cad-milestone`'s prune DELETES
+// the live `.planning/phases/<N>/` directories at a milestone close, so the read
+// this replaces ENOENTed on phases 2-4 and silently classified a different
+// phase 1 where it still resolved. The two alternatives are worse - a committed
+// fixtures path under `cadence-core/` re-creates a second copy that drifts, and
+// shelling out to `git show` adds a git dependency to a suite that has none.
+const V200_CRITERIA_SECTIONS = [
+  // Phase 1
+  [
+    '## Acceptance criteria',
+    '',
+    '- [ ] AC1: `agents/` holds exactly the 13 files the `rungs` arrays in',
+    "      `route-table.json` name (6 base + 7 suffixed), each file's frontmatter",
+    '      `effort` equal to the rung in its name; deleting any one makes',
+    '      `node --test cadence-core/bin/self-verify.test.mjs` fail with a problem',
+    '      naming that agent',
+    '- [ ] AC2: Adding a contract-skill section tag (`<process>`, `<guardrails>`,',
+    '      ...) to the body of an agent file that declares `skills:` makes',
+    '      `node cadence-core/bin/self-verify.mjs` report `ok:false` with that file',
+    '      named; removing it returns `ok:true`',
+    '- [ ] AC3: `grep -rn "escalate_effort_variant\\|effort-variant" --include="*.md"',
+    '      --include="*.json" --include="*.mjs" .` returns matches only under',
+    '      `.planning/` and in `CHANGELOG.md`',
+    '- [ ] AC4: `route-table.json` carries',
+    '      `rung_order: ["low","medium","high","xhigh","max"]`, and a role whose',
+    '      `base_effort` or `escalate_to` falls outside its own `rungs` array fails',
+    '      self-verify with the role named',
+    "- [ ] AC5: `resolve('cad-plan-checker', autoCfg, ['--attempt','2'])` still",
+    "      returns `agent: 'cad-plan-checker-high'`, `effort: 'high'`,",
+    '      `escalated: true` - the four existing escalation rows in',
+    '      `cadence-core/bin/route.test.mjs` (`:88`, `:119`, `:255`, `:339`) pass',
+    '      unchanged, plus a new row pinning `escalate_to` as the source of the swap',
+    '- [ ] AC6: `node --test cadence-core/bin/*.test.mjs` exits 0 and',
+    '      `npx tsc -p tsconfig.ci.json` exits 0',
+    '- [ ] AC7: `node cadence-core/bin/self-verify.mjs` reports `ok:true` with',
+    '      `agent-skills` still in its `checked` list; all 13 agent files have',
+    '      `weight-budgets.json` entries (no `unbudgeted-surface`), and no rung',
+    "      file's contract skill sets `disable-model-invocation: true`",
+    '',
+    '## Flagged assumptions',
+  ].join('\n'),
+  // Phase 2
+  [
+    '## Acceptance criteria',
+    '',
+    '- [ ] AC1: `node cadence-core/bin/config.mjs check model.profile=balanced`',
+    '      returns `{ok:false, reason:"invalid"}` whose `detail[].error` names',
+    '      `stakes` as the replacement rather than the generic `unknown key`; and a',
+    '      retired VALUE (`stakes=quality`) is refused with a message naming the',
+    '      three valid ones',
+    '- [ ] AC2: Given a repo config still holding `model.profile: "balanced"`, both',
+    '      live read faces speak - `node cadence-core/bin/config.mjs get stakes` and',
+    '      `node cadence-core/bin/route.mjs resolve --role cad-planner` each emit one',
+    '      warning naming `model.profile` and pointing at `stakes`; neither resolves',
+    "      silently at the default, and route's reason string does not report",
+    '      `config:repo` for a value it never read',
+    '- [ ] AC3: `grep -rn "model\\.profile\\|profile_order\\|model\\.auto\\."',
+    '      --include="*.md" --include="*.json" --include="*.mjs" .` returns matches',
+    "      only under `.planning/`, in `CHANGELOG.md`, and in `DESIGN.md`'s dated",
+    '      marker; and `git diff` touches no `review.providers.*.tiers.*` line, no',
+    '      `tier_order` line and no `rung_order` line',
+    '- [ ] AC4: With NO `stakes` key set anywhere,',
+    "      `resolve('cad-plan-checker', cfg, ['--attempt','2'])` returns",
+    "      `agent: 'cad-plan-checker-high'`, `escalated: true` - phase 1's rung",
+    '      ladder is reachable at the shipped default, which it is not today',
+    '- [ ] AC5: `config.schema.json` holds `stakes`',
+    '      (`["solo","shipped","critical"]`, default `"shipped"`) and',
+    '      `model.escalate_on_failure`, and holds no `model.profile`, no',
+    '      `model.auto.ceiling` and no `model.auto.max_escalations`',
+    '- [ ] AC6: `node --test cadence-core/bin/*.test.mjs` exits 0 and',
+    '      `npx tsc -p tsconfig.ci.json` exits 0',
+    '- [ ] AC7: `node cadence-core/bin/self-verify.mjs` reports `ok:true` with no',
+    '      `unknown-config-key`, no `inert-config-key` and no budget overage; and',
+    "      `CHANGELOG.md`'s `## [Unreleased]` names the break plus the exact command",
+    '      a user runs on upgrade',
+    '',
+    '## Flagged assumptions',
+  ].join('\n'),
+  // Phase 3
+  [
+    '## Acceptance criteria',
+    '',
+    '- [ ] AC1: `node cadence-core/bin/route.mjs resolve --role <role>` returns',
+    '      `model`, `effort`, `review` and `verify` for all 18 level-and-role pairs,',
+    '      and `cadence-core/bin/route.test.mjs` carries one row per pair with',
+    '      literal expected values rather than values derived from the table under',
+    '      test',
+    '- [ ] AC2: With `--attempt 2`, each cell resolves to the retry rung its grid',
+    "      row names and returns that rung's agent file; where retry equals the",
+    '      starting rung (level 3 analyzer and executor) the `reason` string says the',
+    '      rung was held; and `escalate_to` appears in no shipped `.json`, `.mjs` or',
+    '      `.md`',
+    "- [ ] AC3: `agents/` holds the 19 files the grids name, each file's frontmatter",
+    '      `effort` equals the rung in its name, each has a `weight-budgets.json`',
+    '      entry, and `node cadence-core/bin/self-verify.mjs` names the cell when a',
+    '      grid names a rung with no file',
+    '- [ ] AC4: `node cadence-core/bin/self-verify.mjs` reports `ok:false` naming',
+    '      the offending cell for each of four bad-value classes - a model outside',
+    '      `model_aliases`, a rung outside `rung_order`, a gate outside',
+    '      `off|advisory|blocking|adjudicated`, and a trigger name',
+    '      `config.schema.json` does not define',
+    "- [ ] AC5: `model.overrides.<role>` replaces a cell's model and leaves its",
+    '      effort unchanged; no cell at any level holds `fable`; and',
+    "      `cad-executor`'s model comes from its own cells (sonnet / opus / opus)",
+    '      rather than from a tier lookup',
+    "- [ ] AC6: A config whose `review.triggers.<t>.gate` disagrees with the level's",
+    '      gate resolves to the CONFIG value and emits one warning naming the',
+    '      trigger, the config value and the level value',
+    '- [ ] AC7: `node --test cadence-core/bin/*.test.mjs` exits 0,',
+    '      `npx tsc -p tsconfig.ci.json` exits 0, and',
+    '      `node cadence-core/bin/self-verify.mjs` reports `ok:true` with no budget',
+    '      overage and no `unknown-config-key`',
+    '',
+    '## Flagged assumptions',
+  ].join('\n'),
+  // Phase 4
+  [
+    '## Acceptance criteria',
+    '',
+    '- [ ] AC1: With `stakes: "solo"` in every config layer,',
+    '      `node cadence-core/bin/route.mjs resolve --role <r> --phase <N>` against a',
+    '      phase whose PLAN `files:` matches a `surfaces` row returns',
+    '      `stakes: "critical"` and that row\'s `model`, `effort`, `review` and',
+    '      `verify`, and the `reason` array carries an entry naming the matched',
+    '      surface and the path that matched it; the same resolve with no `--phase`',
+    '      flag, against a STATE cursor pointing at that phase, returns the identical',
+    '      bundle',
+    '- [ ] AC2: The floor is absent in every non-detecting state and never blocks - a',
+    '      phase whose PLAN `files:` match no surface row, a phase with no PLAN file,',
+    '      and a resolve with neither `--phase` nor a cursor all return the baseline',
+    "      level's bundle with `ok:true` and no floor entry in `reason`; a PLAN",
+    '      present but unreadable returns the same baseline bundle plus one warning',
+    '      naming the file',
+    '- [ ] AC3: With `stakes: "critical"` configured and a detected surface whose row',
+    '      floors below critical, resolve returns `critical` with no override set and',
+    '      no refusal - the floor raises and never caps',
+    '- [ ] AC4: With `stakes: "solo"` and a phase detecting two surfaces, setting',
+    '      `risk.override.<first>` alone still resolves `critical`; setting both',
+    '      resolves `solo` with the `reason` array naming each waived surface; and',
+    '      `node cadence-core/bin/config.mjs set risk.override.<not-a-surface> true`',
+    '      is refused with a message listing the accepted surface names',
+    '- [ ] AC5: `node cadence-core/bin/self-verify.mjs` reports `ok:false` naming the',
+    '      offending row for each of four classes - a surface whose `floor` is not a',
+    '      stakes level, a surface row with an empty pattern list, a surface in',
+    '      `route-table.json` with no `risk.override.<surface>` schema key, and a',
+    '      `risk.override.<surface>` schema key naming no surface row',
+    '- [ ] AC6: A config `review.triggers.<t>.gate` outside',
+    '      `off|advisory|blocking|adjudicated`, or not a string, no longer reaches the',
+    "      bundle - `resolve` returns the LEVEL's gate for that trigger plus one",
+    '      warning naming the rejected value, verified with `{"gate":"blockign"}` on',
+    '      `risk_surface` at `critical`, which today resolves `ok:true` carrying',
+    '      `"blockign"`',
+    '- [ ] AC7: `node --test cadence-core/bin/*.test.mjs` exits 0,',
+    '      `npx tsc -p tsconfig.ci.json` exits 0, and',
+    '      `node cadence-core/bin/self-verify.mjs` reports `ok:true` with `--phase`',
+    '      accepted in the `route.mjs` CONTRACTS entry, no budget overage and no',
+    '      `unknown-config-key`',
+    '',
+    '## Flagged assumptions',
+  ].join('\n'),
+];
+
 test('classifyAcceptanceCriteria: phases 1-4 of this repo read AC1-AC7 with no issues', () => {
-  for (const n of [1, 2, 3, 4]) {
-    const res = classifyAcceptanceCriteria(
-      readFileSync(new URL(`../../.planning/phases/${n}/CONTEXT.md`, import.meta.url), 'utf8'));
+  for (const [i, text] of V200_CRITERIA_SECTIONS.entries()) {
+    const res = classifyAcceptanceCriteria(text);
     assert.deepEqual(res.criteria.map((c) => c.id),
-      ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7'], `phase ${n} ids`);
-    assert.deepEqual(res.issues, [], `phase ${n} issues`);
+      ['AC1', 'AC2', 'AC3', 'AC4', 'AC5', 'AC6', 'AC7'], `phase ${i + 1} ids`);
+    assert.deepEqual(res.issues, [], `phase ${i + 1} issues`);
   }
 });
 

@@ -5,16 +5,16 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v1.5.0` is the current release: four corrections to things Cadence
-said about itself, and one structural change - each agent's contract is now
-stored once, as a skill preloaded through `skills:` - so there are fewer places
-left to say them. Earlier cycles shipped file-based memory and BM25 recall
-(`v1.1.0`), the cross-model review repairs and durable-decision recall
-(`v1.2.0`), the sweep-highs patch (`v1.2.1`), the liteSpeed flow-and-latency
-pass (`v1.3.0`), the tech-debt cycle that closed all 13 post-`v1.2.0` sweep
-bugs (`v1.3.1`), the four stated grammars (`v1.4.0`) and the two
-internally-inconsistent contracts closed by subtraction (`v1.4.1`), on the
-`v1.0.0` planning baseline.
+subsystem. `v2.2.0` is the current release: the config read face merges a
+layer once whatever its spelling, the git guard's parser is deleted in favor
+of one small anchored reader, the release seam can no longer ship a number or
+notes it never got from the close, every shipped rung-ladder claim is true or
+gone, and the documented Forgejo install path is proven live rather than
+inferred. Earlier cycles: `v2.1.0` coverage and triage gates, `v2.0.0` the
+stakes routing axis, `v1.5.0` self-description corrections, `v1.4.x` stated
+grammars, `v1.3.x` flow and tech-debt passes, `v1.2.x` cross-model review
+repairs, `v1.1.0` file-based memory and BM25 recall, on the `v1.0.0` planning
+baseline.
 
 ## Core Value
 
@@ -52,61 +52,40 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Every open bug from the post-v1.2.0 sweep triaged and fixed, no won't-fix: silent data-file failures surfaced (#39, #40, #43, #44), seam flag inputs validated before any write (#42, #45), planning parsers de-phantomed and widened (#41, #46, #47, #48), renumber and git-guard hardened (#37, #49, #50) — v1.3.1
 - ✓ Plan-file frontmatter reads to exactly what is declared, byte-exact to `plan-overlap`, and every out-of-grammar input carries a named diagnostic instead of changing what was read (GRM-01) — v1.4.0
 - ✓ `/cad-plan` seeds its own REQUIREMENTS traceability rows via `seed-reqs`; a worktree executor asserts its own plan file before task 1 (SPN-01) — v1.4.0
-- ✓ One quote-state tokenizer drives both git-guard rails, closing the six verified rail-3 push holes plus the `eval` wrapper family (TOK-01) — v1.4.0
+- ✓ One quote-state tokenizer drives both git-guard rails, closing the six verified rail-3 push holes plus the `eval` wrapper family (TOK-01) — v1.4.0, SUPERSEDED by TOK-02 in v2.2.0 on both halves: the tokenizer and the command-position deny gate are deleted, and the six shapes it closed are silent again as the stated cost of an anchored reader
 - ✓ The roadmap phase list has a stated grammar, so an empty `## Phases` is a derived closed-milestone state and `/cad-progress` works between milestones (RDM-01) — v1.4.0
 - ✓ `/cad-audit` counts an `## Active` requirement no phase picked up, so the traceability gate holds in the partially-planned state (AUD-01) — v1.4.0
 - ✓ Two contracts that contradicted themselves closed by subtraction: the executor's terminal success-criteria check (#65) and `conventions.md`'s claim to reach every skill (#67) — v1.4.1
 - ✓ The worktree fork point stated as `worktree.baseRef`-selectable across six surfaces, with `/cad-execute` refusing the parallel path under `fresh` (#68) — v1.5.0
 - ✓ Per-trigger `effort` scoped to the backend that can honour it, rather than resolved and silently dropped on the `claude-subagent` arm (#64) — v1.5.0
 - ✓ Each agent's contract stored once as a preloaded contract skill, with self-verify asserting every one resolves and is model-invocable (#74) — v1.5.0
+- ✓ Effort became a dial the routing layer varies per role: each contract skill materialized at the rungs it needs, the runtime-read shim and `escalate_effort_variant` retired, a rung file carrying behaviour failing self-verify (RNG-01) — v2.0.0
+- ✓ The routing axis asks what happens if the work is wrong, not what it costs: `model.profile` REPLACED by `stakes` (solo/shipped/critical), `auto` retired, no back-compat alias, refused at the write face (STK-01) — v2.0.0
+- ✓ A routing cell resolves the whole quality bundle `{model, effort, review, verify}` from one readable table, with every cell's model, effort and trigger asserted by self-verify (STK-02) — v2.0.0
+- ✓ The risk surface Cadence already detects sets a rung FLOOR by itself; raising is free, lowering below it is refused without an override naming the surface (STK-03) — v2.0.0
+- ✓ CONTEXT acceptance criteria carry stable ids and `/cad-audit` proves coverage in both directions, so a criterion that never reached the UAT checklist fails the gate by id (ACR-01) — v2.0.0
+- ✓ The remaining resolved-then-dropped config keys closed at the point of setting, with a re-runnable written-down sweep reporting zero left (CFG-01) — v2.0.0
+- ✓ The plugin's documented home moved to the self-hosted Forgejo remote, GitHub retired as the published source, and the README test badge removed rather than repointed (HST-01) — v2.0.0
+- ✓ A coverage gate stops being able to pass a phase it never checked: a fieldless checklist is reported rather than exempted, the seam states its plugin version, and the verifier's findings envelope is persisted beside the phase's artifacts (COV-01) — v2.1.0
+- ✓ An adjudicated review's survivors are a numbered list the user triages, defaulting to NONE, at every firing site, and the reviewer contract stops pre-filtering ahead of the adjudicator (TRI-02) — v2.1.0
+- ✓ A trigger's reviewers dispatch concurrently in one message, and `review.max_prompt_tokens` bounds the paid call before it is sent (REV-03) — v2.1.0
+- ✓ The config read face merges a layer once whatever its spelling; six of the seven deferred config-reach/risk-waiver defects closed, the seventh named open (CFG-02) — v2.2.0
+- ✓ The guard's parser deleted, both rails on one ~30-line anchored reader; `git.on_destructive` removed with it, accepted-cost shapes stated in the CHANGELOG (TOK-02) — v2.2.0
+- ✓ The release seam refuses downgrades, promotes Unreleased into the dated heading, and requires `--version` instead of deriving from prose (REL-03) — v2.2.0
+- ✓ Every shipped rung-ladder claim true or corrected; `route.mjs` `warnings[]` rides every result shape including `ok:false` (DOC-01) — v2.2.0
+- ✓ Per-role effort configurable from the config layer and update-surviving; a rung the role lacks fails self-verify by key (RNG-02) — v2.2.0
+- ✓ The documented install path proven live against the Forgejo remote from a fully cold state, transcripts committed in the phase record (HST-02) — v2.2.0
 
 ### Active
 
-**v2.0.0 — Stakes, not spend**, opened 2026-07-28. Seven requirements across
-six phases, tracked as GitHub milestone `v2.0.0`.
-
-- **RNG-01** — per-rung agent files materialize effort off the preloaded
-  contract skills, retiring `escalate_effort_variant` and the
-  `cad-plan-checker-high` runtime-read shim
-- **STK-01** — `model.profile`'s enum becomes the stakes question, no
-  back-compat alias. This is the break that makes the release major
-- **STK-02** — a routing cell resolves `{model, effort, review, verify}`
-  rather than a bare model, computed from one small table
-- **STK-03** — the risk surface Cadence already detects raises a phase's rung
-  by itself; detection is a floor, lowering it needs a named override
-- **ACR-01** — CONTEXT acceptance criteria get stable ids and `/cad-audit`
-  proves coverage in both directions
-- **CFG-01** — the remaining resolved-then-dropped config keys, closed the way
-  per-trigger effort was
-- **HST-01** — the plugin's documented home moves to the self-hosted Forgejo
-  remote, and GitHub stops being the published source
-
-Two things deliberately left open at setup. The rung names
-(`personal`/`production`/`critical`) are a proposal the issue holds least
-firmly; they lock at `/cad-context 2`, and whatever they become must describe
-a situation rather than grade an effort. And the executor-model claim behind
-the cell values ("heavier model on the executor produced fewer review cycles")
-has only an informal result behind it — a spike inside phase 3, not a gate on
-the cycle, since it decides which model lands in which cell and not whether
-the axis is right.
-
-Not chosen for this cycle:
-
-- **Streaming provider responses.** The evidence is good (the same model at the
-  same effort measured 292s and 118s on two payloads, so no fixed timeout is
-  ever right), but `review.request_timeout_ms` at 540000 plus the 600000ms Bash
-  ceiling bounds the damage, and the rewrite touches every adapter, response
-  handling, and the structured-output assertion. It is a cycle, not a phase.
-- **v1.4.0's own known gaps**, listed under `[1.4.0] Known gaps` in
-  CHANGELOG.md: one stated rule for markdown inside a frontmatter value (the
-  interior-backtick class, where `` lib/a`b.mjs `` and `` **`src/a.rs`** `` are
-  structurally identical inputs), scoping `backtick-wrapped-value` off prose
-  keys, surfacing `seed-reqs`' computed-but-unread `mismatched`, and the
-  missing orchestrator-side worktree refresh behind a `blocked` halt.
-- **The remaining open `[enhancement]` issues** (#14-#31) — features, not
-  correctness, which is why they have sat out four cycles. #54 left that set
-  and joined this milestone, where it closes as superseded rather than ships:
-  the reframe deletes the tier ladder it wanted to expose.
+**No active milestone.** `v2.2.0 — the rest of the residue` closed 2026-08-04
+with all six requirements delivered (CFG-02, TOK-02, REL-03, DOC-01, RNG-02,
+HST-02 — rows above), the audit gate green, and the manifest at `2.2.0`. The
+next milestone was deliberately left unopened at the close; `/cad-phase add`
+opens its first phase, and REQUIREMENTS `## Active` gets reseeded from that
+cycle's intent. Candidate scope when it opens: the open CAPTURE todos (the
+digit-prefix requirement-id regression filed at HIGH among them), the open
+Forgejo issues, and the deferred follow-ups tracked in project memory.
 
 ### Out of Scope
 

@@ -3,7 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, mkdirSync, chmodSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, mkdirSync, chmodSync, readFileSync, existsSync,
+  symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,7 +91,7 @@ const CELLS = [
   { stakes: 'shipped', role: 'cad-planner', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-planner', retryAgent: 'cad-planner-xhigh' },
   { stakes: 'shipped', role: 'cad-assumptions-analyzer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-assumptions-analyzer-high', retryAgent: 'cad-assumptions-analyzer' },
   { stakes: 'shipped', role: 'cad-verifier', model: 'opus', effort: 'medium', retry: 'high', agent: 'cad-verifier-medium', retryAgent: 'cad-verifier' },
-  { stakes: 'shipped', role: 'cad-reviewer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-reviewer', retryAgent: 'cad-reviewer-xhigh' },
+  { stakes: 'shipped', role: 'cad-reviewer', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-reviewer-xhigh', retryAgent: 'cad-reviewer-xhigh' },
   { stakes: 'shipped', role: 'cad-executor', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-executor', retryAgent: 'cad-executor-xhigh' },
   { stakes: 'shipped', role: 'cad-plan-checker', model: 'sonnet', effort: 'medium', retry: 'high', agent: 'cad-plan-checker-medium', retryAgent: 'cad-plan-checker-high' },
 
@@ -99,7 +100,7 @@ const CELLS = [
   { stakes: 'critical', role: 'cad-verifier', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-verifier-xhigh', retryAgent: 'cad-verifier-max' },
   { stakes: 'critical', role: 'cad-reviewer', model: 'opus', effort: 'xhigh', retry: 'max', agent: 'cad-reviewer-xhigh', retryAgent: 'cad-reviewer-max' },
   { stakes: 'critical', role: 'cad-executor', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-executor-xhigh', retryAgent: 'cad-executor-xhigh' },
-  { stakes: 'critical', role: 'cad-plan-checker', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-plan-checker-high', retryAgent: 'cad-plan-checker-xhigh' },
+  { stakes: 'critical', role: 'cad-plan-checker', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-plan-checker-xhigh', retryAgent: 'cad-plan-checker-xhigh' },
 ];
 
 // ONE test case per cell, never one case walking all 18: node:test aborts a
@@ -123,12 +124,23 @@ for (const c of CELLS) {
   });
 }
 
-test('the two held retries say the rung was held, not that it escalated', () => {
-  const file = cfg({ stakes: 'critical' }, 'cell-critical.json');
-  for (const role of ['cad-assumptions-analyzer', 'cad-executor']) {
+test('the four held retries say the rung was held, not that it escalated', () => {
+  // A (stakes, role) pair list, not one config: after the retune the held cells
+  // span two levels - critical/cad-plan-checker and shipped/cad-reviewer now
+  // START at their retry rung, which is the whole point of the retune (winning
+  // on attempt one is cheaper than a re-dispatch that rewrites the entire
+  // subagent prompt at the cache-write tier).
+  const held = [
+    ['critical', 'cad-assumptions-analyzer'],
+    ['critical', 'cad-executor'],
+    ['critical', 'cad-plan-checker'],
+    ['shipped', 'cad-reviewer'],
+  ];
+  for (const [stakes, role] of held) {
+    const file = cfg({ stakes }, `cell-${stakes}.json`);
     const r = resolve(role, file, ['--attempt', '2']);
-    assert.equal(r.escalated, false, role);
-    assert.match(r.reason.join(' '), /rung held at xhigh/, role);
+    assert.equal(r.escalated, false, `${stakes}/${role}`);
+    assert.match(r.reason.join(' '), /rung held at xhigh/, `${stakes}/${role}`);
   }
 });
 
@@ -260,9 +272,14 @@ test('escalation fires at the shipped DEFAULT, with no stakes key set anywhere',
 });
 
 test('escalation fires at every stakes level, not just the default', () => {
-  const expected = { solo: 'cad-plan-checker-high', shipped: 'cad-plan-checker-high', critical: 'cad-plan-checker-xhigh' };
+  // cad-planner, not cad-plan-checker: the retune makes critical/cad-plan-checker
+  // a HELD cell, so the checker can no longer carry a per-level proof of the
+  // escalation claim. The planner climbs at all three levels, which is the claim
+  // this row exists for - flipping the critical assertion to `false` instead
+  // would have kept the row green while it stopped proving anything.
+  const expected = { solo: 'cad-planner-xhigh', shipped: 'cad-planner-xhigh', critical: 'cad-planner-max' };
   for (const [stakes, agent] of Object.entries(expected)) {
-    const r = resolve('cad-plan-checker', cfg({ stakes }), ['--attempt', '2']);
+    const r = resolve('cad-planner', cfg({ stakes }), ['--attempt', '2']);
     assert.equal(r.agent, agent, stakes);
     assert.equal(r.escalated, true, stakes);
   }
@@ -312,6 +329,22 @@ test('resolve: a non-integer --attempt is usage, not silently coerced (#45.2)', 
   const ok = resolve('cad-planner', cfg({ stakes: 'solo' }), ['--attempt', '2']);
   assert.equal(ok.ok, true);
   assert.equal(ok.attempt, 2);
+});
+
+test('resolve: a valueless --file is usage, not reason:"internal" (both spellings)', () => {
+  // The sibling of config.mjs's own guard, which phase 1 fixed on that seam
+  // alone: `o.file` reaches dirname() on the way to the layer read, so an
+  // undefined value escaped as reason:"internal" with a raw Node type error.
+  // Unquoted `--file $VAR` drops the token, quoted `"$VAR"` passes an empty one.
+  for (const extra of [['--file'], ['--file', '']]) {
+    const r = resolve('cad-planner', null, extra);
+    assert.equal(r.ok, false, extra.join(' '));
+    assert.equal(r.reason, 'usage', `${extra.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--file/, extra.join(' '));
+    assert.doesNotMatch(r.detail, /undefined/, extra.join(' '));
+  }
+  // The control: a real path still resolves, so the guard refuses only the gap.
+  assert.equal(resolve('cad-planner', cfg({ stakes: 'solo' })).ok, true);
 });
 
 test('usage degradation: missing --role and unknown subcommand', () => {
@@ -382,7 +415,7 @@ test('layers deep-merge: a global model block and a repo stakes key combine', ()
   const r = resolve('cad-plan-checker', repo, ['--attempt', '2'], { global: g });
   assert.equal(r.stakes, 'critical');
   assert.equal(r.model, 'opus');    // the critical/cad-plan-checker cell
-  assert.equal(r.agent, 'cad-plan-checker-high');
+  assert.equal(r.agent, 'cad-plan-checker-xhigh'); // ...its STARTING rung
   assert.equal(r.escalated, false);
 });
 
@@ -919,6 +952,78 @@ test('a global `risk.override` set to false warns about nothing', () => {
   assert.equal(r.warnings, undefined);
 });
 
+test('a MISSPELLED surface in the global layer is not sent to a key `set` refuses', () => {
+  // The remediation the warning handed out was one the write face rejects
+  // outright ("athu" is not a risk surface), so following it produced a second
+  // refusal (.planning/CAPTURE.md:166). The shape diagnostic comes first now,
+  // from the same helper the repo layer uses, and it names the layer.
+  const g = rawCfg({ risk: { override: { athu: true } } }, 'g-waive-athu.json');
+  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.stakes, 'critical'); // the floor stands
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /athu/);
+  assert.match(r.warnings[0], /names no declared risk surface/);
+  assert.match(r.warnings[0], /auth/);                        // the accepted names
+  assert.match(r.warnings[0], /user-global config layer/);    // ...and which layer
+  assert.doesNotMatch(r.warnings[0], /\.planning\/config\.json/); // no dead-end remedy
+});
+
+test('a NON-BOOLEAN global waiver is told what the repo layer would also refuse', () => {
+  const g = rawCfg({ risk: { override: { auth: 'yes' } } }, 'g-waive-yes.json');
+  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /is not true or false/);
+  assert.match(r.warnings[0], /user-global config layer/);
+  assert.doesNotMatch(r.warnings[0], /\.planning\/config\.json/);
+});
+
+test('the two layers report one malformed entry each, never deduped into one', () => {
+  // Both layers holding the identical bad entry is two findings in two files;
+  // without the layer name they render as the same sentence twice, with nothing
+  // saying which file to open.
+  const g = rawCfg({ risk: { override: { athu: true } } }, 'g-waive-athu2.json');
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { athu: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
+  assert.equal(r.warnings.length, 2, JSON.stringify(r.warnings));
+  assert.equal(r.warnings.filter((w) => /user-global config layer/.test(w)).length, 1);
+});
+
+test('the global env pointed AT the repo config: one layer, waiver honoured, nothing IGNORED', () => {
+  // CADENCE_GLOBAL_CONFIG aimed at the repo file is the case
+  // lib/config-merge.mjs contemplates: the waiver IS honoured (it reaches
+  // `layers.repo`), yet the resolver asserted it was ignored and waives
+  // nothing, and the routing reason named a `global+repo` pair of one file
+  // (.planning/CAPTURE.md:169, :46).
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: file });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo'); // honoured through the repo layer, as before
+  assert.deepEqual((r.warnings || []).filter((w) => /IGNORED|waives nothing here/.test(w)), [],
+    JSON.stringify(r.warnings));
+  assert.match(r.reason.join(' '), /config:repo\b/);
+  assert.doesNotMatch(r.reason.join(' '), /global\+repo/);
+  assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
+});
+
+test('the same through a SYMLINK: identity, not the spelling of the two paths', () => {
+  const file = planningRoot(['src/auth/login.rs'],
+    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
+  const link = join(dirname(file), 'config-link.json');
+  symlinkSync(file, link);
+  const r = resolve('cad-executor', file, ['--phase', '9'], { global: link });
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'solo');
+  assert.deepEqual((r.warnings || []).filter((w) => /IGNORED|waives nothing here/.test(w)), [],
+    JSON.stringify(r.warnings));
+  assert.match(r.reason.join(' '), /config:repo\b/);
+  assert.doesNotMatch(r.reason.join(' '), /global\+repo/);
+});
+
 test('a global layer carrying only `stakes` merges exactly as before', () => {
   // The additive `layers` field must change nothing about the ordinary merge.
   const g = cfg({ stakes: 'critical' }, 'g-only-stakes.json');
@@ -928,4 +1033,274 @@ test('a global layer carrying only `stakes` merges exactly as before', () => {
   assert.equal(r.model, 'opus');
   assert.match(r.reason.join(' '), /config:global\+repo/);
   assert.equal(r.warnings, undefined);
+});
+
+// --- the configured START rung, model.effort.<role> (RNG-02) ------------------
+
+test('a configured start rung replaces the cell\'s, and picks that rung\'s file', () => {
+  // shipped/cad-verifier is medium/cad-verifier-medium, so an xhigh row FAILS
+  // the moment the config value stops being read - a value equal to the cell's
+  // could not tell the two apart.
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'xhigh' } }, 'eff-verifier.json');
+  const r = resolve('cad-verifier', file);
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'xhigh');
+  assert.equal(r.agent, 'cad-verifier-xhigh');
+  assert.equal(r.model, 'opus');      // the cell still supplies the model
+  assert.match(r.reason.join(' '), /model\.effort\.cad-verifier: medium -> xhigh/);
+});
+
+test('a configured start rung reaches the top of a role\'s own ladder', () => {
+  const file = cfg({ stakes: 'solo', effort: { 'cad-planner': 'max' } }, 'eff-planner.json');
+  const r = resolve('cad-planner', file);
+  assert.equal(r.effort, 'max');
+  assert.equal(r.agent, 'cad-planner-max'); // solo/cad-planner starts at high
+});
+
+test('a start rung equal to the cell\'s says so rather than claiming a change', () => {
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-executor': 'high' } }, 'eff-same.json');
+  const r = resolve('cad-executor', file);
+  assert.equal(r.effort, 'high');
+  assert.match(r.reason.join(' '), /model\.effort\.cad-executor="high" \(already the routed rung\)/);
+});
+
+test('the start rung is read from the merged config LAYERS, never a plugin file', () => {
+  // The update-survival claim itself: a global layer that does not carry the key
+  // plus a repo layer that does resolves the repo value. Nothing under the
+  // plugin root is consulted, so a plugin update cannot take the setting away.
+  const g = cfg({ stakes: 'shipped' }, 'g-no-effort.json');
+  const repo = cfg({ effort: { 'cad-verifier': 'xhigh' } }, 'repo-effort-only.json');
+  const r = resolve('cad-verifier', repo, [], { global: g });
+  assert.equal(r.stakes, 'shipped');        // from the global layer
+  assert.equal(r.effort, 'xhigh');          // from the repo layer
+  assert.equal(r.agent, 'cad-verifier-xhigh');
+  assert.match(r.reason.join(' '), /config:global\+repo/);
+});
+
+test('a hand-edited rung the role has no FILE for is refused, never fail-open dispatched', () => {
+  // `max` passes no schema enum for cad-executor, so only a hand-edited config
+  // reaches here. Handing it to the agentFor fail-open would dispatch the base
+  // file while reporting `max` - a rung nothing ran at.
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-executor': 'max' } }, 'eff-unmapped.json');
+  const r = resolve('cad-executor', file);
+  assert.equal(r.ok, true);                 // never blocks the spine
+  assert.equal(r.effort, 'high');           // the cell's rung stands
+  assert.equal(r.agent, 'cad-executor');    // ...and its file
+  const named = (r.warnings || []).filter((w) => /model\.effort\.cad-executor/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /"max"/);          // the value the user wrote
+  assert.match(named[0], /high, xhigh/);    // ...and the rungs this role does have
+});
+
+// --- the floor wins over the configured start rung (D-01) --------------------
+
+test('a start rung below a computed risk floor resolves AT the floor, surface named', () => {
+  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
+    config: { stakes: 'shipped', model: { effort: { 'cad-executor': 'high' } } },
+  });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.effort, 'xhigh');            // the floored cell's rung, not "high"
+  assert.equal(r.agent, 'cad-executor-xhigh');
+  const held = r.reason.filter((x) => /model\.effort\.cad-executor/.test(x));
+  assert.equal(held.length, 1, JSON.stringify(r.reason));
+  assert.match(held[0], /surface auth/);      // AC3: the surface is named in the output
+  assert.match(held[0], /risk\.override\.auth/); // ...along with the one way under it
+});
+
+test('risk.override.<surface> - and only that - is what lets the start rung sit lower', () => {
+  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
+    config: {
+      stakes: 'shipped',
+      model: { effort: { 'cad-executor': 'high' } },
+      risk: { override: { auth: true } },
+    },
+  });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'shipped');   // the waiver drops the level back
+  assert.equal(r.effort, 'high');      // ...and the configured rung stands
+  assert.equal(r.agent, 'cad-executor');
+});
+
+test('a project ALREADY at critical is floored too - the floor is not "what moved"', () => {
+  // The row that discriminates. Every surface in route-table.json declares
+  // floor "critical", so on a critical baseline a detected auth surface moves
+  // NOTHING: computing the floor as "the surfaces that raised the baseline"
+  // yields [] here, the hold never fires, and model.effort.cad-executor=high
+  // walks under the floor on an auth phase with no surface named - the second,
+  // unnamed way down D-01 rejects, handed to the population STK-03 protects.
+  // The two rows above pass either way, so neither can stand in for this one.
+  const authFloored = planningRoot(['README.md', 'src/auth/session.rs'], {
+    config: { stakes: 'critical', model: { effort: { 'cad-executor': 'high' } } },
+  });
+  const r = resolve('cad-executor', authFloored, ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(r.effort, 'xhigh');            // held AT the floor
+  assert.equal(r.agent, 'cad-executor-xhigh');
+  const held = r.reason.filter((x) => /model\.effort\.cad-executor/.test(x));
+  assert.equal(held.length, 1, JSON.stringify(r.reason));
+  assert.match(held[0], /surface auth/);
+
+  // ...and the named waiver is still what lets it sit lower, on that same tree
+  const waived = planningRoot(['README.md', 'src/auth/session.rs'], {
+    config: {
+      stakes: 'critical',
+      model: { effort: { 'cad-executor': 'high' } },
+      risk: { override: { auth: true } },
+    },
+  });
+  const w = resolve('cad-executor', waived, ['--phase', '9']);
+  assert.equal(w.stakes, 'critical');   // the baseline itself, not a floor
+  assert.equal(w.effort, 'high');
+  assert.equal(w.agent, 'cad-executor');
+});
+
+test('a start rung ABOVE the floored cell\'s rung still wins - raising is free', () => {
+  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
+    config: { stakes: 'solo', model: { effort: { 'cad-verifier': 'max' } } },
+  });
+  const r = resolve('cad-verifier', file, ['--phase', '9']);
+  assert.equal(r.stakes, 'critical');   // floored off a solo baseline
+  assert.equal(r.effort, 'max');        // above the critical cell's xhigh
+  assert.equal(r.agent, 'cad-verifier-max');
+});
+
+// --- a retry never resolves below the rung that failed (D-02) -----------------
+
+test('a configured start above the cell\'s retry HOLDS, and says what it out-ranked', () => {
+  // shipped/cad-verifier retries at `high`. A start rung of xhigh would step
+  // DOWN to high on attempt 2 - a retry thinking less than the attempt that
+  // failed, which is exactly what lib/route-cells.mjs refuses inside the table.
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'xhigh' } }, 'eff-retry-hold.json');
+  const r = resolve('cad-verifier', file, ['--attempt', '2']);
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'xhigh');            // held, not demoted to the cell's high
+  assert.equal(r.agent, 'cad-verifier-xhigh');
+  assert.equal(r.escalated, false);           // and never reported as an escalation
+  assert.match(r.reason.join(' '), /retry rung "high"/);
+  assert.match(r.reason.join(' '), /model\.effort\.cad-verifier="xhigh"/);
+});
+
+test('a configured start BELOW the cell\'s retry climbs exactly as it does today', () => {
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'medium' } }, 'eff-retry-climb.json');
+  const r = resolve('cad-verifier', file, ['--attempt', '2']);
+  assert.equal(r.effort, 'high');             // the cell's retry rung
+  assert.equal(r.agent, 'cad-verifier');
+  assert.equal(r.escalated, true);
+  assert.match(r.reason.join(' '), /rung medium->high/);
+});
+
+test('the equal-rungs no-op and the out-ranked hold are different messages', () => {
+  // Both hold at the same rung; conflating them would make an out-ranked retry
+  // read as a cell whose retry rung is simply the same rung.
+  const outranked = resolve('cad-plan-checker',
+    cfg({ stakes: 'solo', effort: { 'cad-plan-checker': 'xhigh' } }, 'eff-outrank.json'),
+    ['--attempt', '2']);
+  assert.equal(outranked.effort, 'xhigh');
+  assert.equal(outranked.escalated, false);
+  assert.match(outranked.reason.join(' '), /out-ranks the solo\/cad-plan-checker retry rung "high"/);
+  assert.doesNotMatch(outranked.reason.join(' '), /retry rung is the same rung/);
+});
+
+test('a floor-held start rung rides warnings[] too - the relay surface, not just reason', () => {
+  // seams.md mandates relaying warnings[]; on a baseline already at the floor
+  // no raising `risk floor:` reason entry fires either, so without a warnings
+  // entry the user's key is silently dropped - the resolved-then-dropped shape.
+  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
+    config: { stakes: 'critical', model: { effort: { 'cad-executor': 'high' } } },
+  });
+  const r = resolve('cad-executor', file, ['--phase', '9']);
+  assert.equal(r.effort, 'xhigh');
+  const held = (r.warnings || []).filter((w) => /model\.effort\.cad-executor/.test(w));
+  assert.equal(held.length, 1, JSON.stringify(r.warnings));
+  assert.match(held[0], /held at "xhigh" by the risk floor/);
+  assert.match(held[0], /auth/);
+});
+
+test('a torn rung_order never demotes a CONFIGURED start on retry - it holds and says why', () => {
+  // Pre-phase, a torn table's fallback to cell.retry could not demote (the
+  // start was always the cell's own). A configured max start swapped for an
+  // incomparable "high" retry WOULD - two rungs less than the attempt that
+  // failed, reported as an escalation.
+  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
+  delete t.rung_order;
+  const tablePath = join(dir, 'no-rung-order-table.json');
+  writeFileSync(tablePath, JSON.stringify(t));
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'max' } }, 'eff-torn-retry.json');
+  const r = resolve('cad-verifier', file, ['--attempt', '2'], { table: tablePath });
+  assert.equal(r.ok, true);
+  assert.equal(r.effort, 'max');              // the configured start stands
+  assert.equal(r.agent, 'cad-verifier-max');
+  assert.equal(r.escalated, false);
+  const named = (r.warnings || []).filter((w) => /rung_order cannot compare/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.match(named[0], /"max"/);
+  assert.match(named[0], /retry rung "high"/);
+  assert.doesNotMatch(r.reason.join(' '), /out-ranks/); // unprovable, so unclaimed
+});
+
+test('a config start that LANDS ON the retry rung is attributed to the config, not the cell', () => {
+  // shipped/cad-verifier is medium start / high retry: a configured high start
+  // holds at high on attempt 2, but "retry rung is the same rung" would claim
+  // the CELL was designed that way - the conflation the messages exist to avoid.
+  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'high' } }, 'eff-retry-equal.json');
+  const r = resolve('cad-verifier', file, ['--attempt', '2']);
+  assert.equal(r.effort, 'high');
+  assert.equal(r.escalated, false);
+  assert.match(r.reason.join(' '),
+    /model\.effort\.cad-verifier="high" already sits at the shipped\/cad-verifier retry rung/);
+  assert.doesNotMatch(r.reason.join(' '), /retry rung is the same rung/);
+});
+
+test('model.escalate_on_failure: false still wins over the start rung, unchanged', () => {
+  const file = cfg({
+    stakes: 'shipped', escalate_on_failure: false, effort: { 'cad-verifier': 'medium' },
+  }, 'eff-esc-off.json');
+  const r = resolve('cad-verifier', file, ['--attempt', '2']);
+  assert.equal(r.effort, 'medium');
+  assert.equal(r.escalated, false);
+  assert.match(r.reason.join(' '), /model\.escalate_on_failure: false/);
+});
+
+// --- ok:false carries what the config read found wrong (D-04) ----------------
+
+test('unknown-role still reports the retired key the config is holding', () => {
+  // The role check used to return BEFORE any layer was read, so a typo'd role
+  // answered with nothing about the key redirecting every other dispatch.
+  const stale = rawCfg({ model: { profile: 'balanced' } }, 'nofail-role-stale.json');
+  const r = resolve('cad-nonesuch', stale);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unknown-role');
+  assert.match(r.detail, /known roles:/);          // the existing contract stands
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /model\.profile/);
+});
+
+test('unresolved still reports it too, where the whole array was dropped', () => {
+  const stale = rawCfg({ stakes: 'nonesuch', model: { profile: 'balanced' } },
+    'nofail-unres-stale.json');
+  const r = resolve('cad-planner', stale);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unresolved');
+  assert.equal(r.stakes, 'nonesuch');              // the value that resolved nothing
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /model\.profile/);
+});
+
+test('a clean ok:false carries no empty warnings array', () => {
+  // The field stays ABSENT when there is nothing to say, matching every ok:true
+  // return - a caller testing `warnings` for truthiness must not start seeing
+  // an empty array on every degraded resolve.
+  const clean = cfg({ stakes: 'shipped' }, 'nofail-clean.json');
+  assert.equal('warnings' in resolve('cad-nonesuch', clean), false);
+});
+
+test('a usage refusal names no config layer, because none was read', () => {
+  const r = resolve('', null, []);                 // no --role at all
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+  assert.equal('warnings' in r, false);
 });

@@ -49,6 +49,6 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
 3. **Report** the outcome: for advisory, the findings; for blocking, the
    PASS/FAIL and surviving blocker/high findings; for adjudicated, the grounded
    survivor list. Do NOT auto-apply changes to the plan - present the survivors
-   and let the user decide what to fix (this is a manual review, not the
-   plan-creation flow where cad-plan applies them).
+   and let the user decide what to fix (the plan-creation flow triages the same
+   way).
 </process>

@@ -152,3 +152,70 @@ export function surfaceKeyError(key, schemaKeys) {
   const accepted = surfacesFromKeys(keys);
   return `"${name}" is not a risk surface; accepted surfaces are ${accepted.join(', ')}`;
 }
+
+/**
+ * How a warning names the user-global layer, so the same malformed entry in both
+ * layers reads as two findings rather than deduping into one line.
+ */
+export const GLOBAL_LAYER = ' in the user-global config layer';
+
+/**
+ * The `risk.override.<surface>` waivers a LAYER actually wrote, keyed by surface
+ * name - defensive at every hop because this runs on whatever a user's config
+ * happens to hold, so a scalar where an object belongs contributes nothing
+ * rather than throwing. The VALUES are kept verbatim; only a strict `true`
+ * waives, and the caller speaks about anything else.
+ *
+ * Shared by both read faces on purpose: route.mjs and config.mjs disagreeing
+ * about which entries a layer even HOLDS would put them back to describing one
+ * situation two ways, one traversal below the shape check.
+ * @param {any} c a config layer, trusted for nothing
+ * @returns {Record<string, any>}
+ */
+export function riskOverridesIn(c) {
+  /** @type {Record<string, any>} */
+  const out = {};
+  const risk = isObj(c) ? c.risk : null;
+  if (!isObj(risk)) return out;
+  const overrides = risk.override;
+  if (!isObj(overrides)) return out;
+  for (const [surface, value] of Object.entries(overrides)) {
+    if (value !== undefined) out[surface] = value;
+  }
+  return out;
+}
+
+/**
+ * The diagnostic a `risk.override.<surface>` entry earns for its own SHAPE, or
+ * null when the entry is well formed - a strict `true`, or the ordinary
+ * `false`/`null`. Layer-independent on purpose: a typo'd surface and a
+ * non-boolean value are refused identically wherever they were written, which is
+ * what stops either read face telling a user to move an entry the write face
+ * would refuse and the repo layer would not honour.
+ *
+ * `declared` is the caller's own surface vocabulary - route.mjs reads it from
+ * route-table.json's `surfaces`, config.mjs derives it from the schema keys via
+ * `surfacesFromKeys`. They are separate files and self-verify's job is to prove
+ * they agree, so this lib takes the list rather than picking a side.
+ *
+ * The names are SORTED before they are printed. The two sources hold the same
+ * set in different orders - the table in declaration order, the schema keys
+ * alphabetically - so an unsorted list makes the two faces emit different text
+ * for one entry, which is the divergence this function exists to close. Sorted
+ * also matches `surfaceKeyError`, so the write face names them the same way.
+ * @param {string} surface
+ * @param {any} value
+ * @param {any} declared the accepted surface names, in any order
+ * @param {string} [where] names the layer, or '' for the repo layer
+ * @returns {string|null}
+ */
+export function overrideShapeWarning(surface, value, declared, where = '') {
+  const names = Array.isArray(declared) ? declared.filter((s) => typeof s === 'string') : [];
+  if (!names.includes(surface)) {
+    return `risk.override.${surface}${where} names no declared risk surface `
+      + `(${[...names].sort().join(', ')}); it waives nothing`;
+  }
+  if (value === true || value === false || value === null) return null;
+  return `risk.override.${surface}=${JSON.stringify(value)}${where} is not true or `
+    + `false; the ${surface} risk floor stands`;
+}

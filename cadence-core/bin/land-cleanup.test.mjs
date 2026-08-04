@@ -47,9 +47,19 @@ function gitFixture(gitConfig) {
   return dir;
 }
 
-/** Run a land-cleanup subcommand against a fixture; optional stdin string. */
-function seam(args, stdin = '') {
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+/** A user-global config layer holding `cfg`; returns its path. */
+function globalLayer(cfg) {
+  const file = join(mkdtempSync(join(tmpdir(), 'cad-lc-global-')), 'global.json');
+  writeFileSync(file, JSON.stringify(cfg));
+  return file;
+}
+
+/**
+ * Run a land-cleanup subcommand against a fixture; optional stdin string and an
+ * optional user-global layer (default: none, so the dev's real one is never read).
+ */
+function seam(args, stdin = '', globalFile = NO_GLOBAL) {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: globalFile };
   try {
     return JSON.parse(execFileSync('node', [SEAM, ...args],
       { encoding: 'utf8', env, input: stdin }));
@@ -119,6 +129,42 @@ test('gate with only a medium finding: proceed', () => {
 test('gate with git.auto_close=false + a blocker: proceed (chain not running)', () => {
   const dir = fixture({ auto_close: false });
   const r = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}');
+  assert.equal(r.action, 'proceed');
+});
+
+test('gate: auto_close ONLY in the global layer (repo omits) -> halt', () => {
+  // The safety property, pinned in the direction that a repo-layer-only read
+  // breaks. skills/cad-land/SKILL.md:27 reads the MERGED auto_close and
+  // suppresses the pre_ship triage ask under it, so on this input the prose has
+  // already entered the unattended chain with no human watching - and this halt
+  // is the only consequence left (references/review-triggers.md:146). Reading
+  // the repo layer here (0b1c322, reverted) answered `proceed` on exactly this
+  // input while triage stayed suppressed, and on the GitLab arm - where no
+  // publish seam gates the chain - the blocker merged.
+  const dir = fixture({ on_land_cleanup: true });
+  const r = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}',
+    globalLayer({ git: { auto_close: true } }));
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'halt');
+});
+
+test('gate: the repo layer wins the merge over a global auto_close:false -> halt', () => {
+  // The other direction, so the arm above pins the merged VALUE rather than
+  // merely the presence of a global key: repo `true` beats global `false`, which
+  // is ordinary repo-wins precedence and not a layer narrowing.
+  const dir = fixture({ auto_close: true });
+  const r = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}',
+    globalLayer({ git: { auto_close: false } }));
+  assert.equal(r.action, 'halt');
+});
+
+test('gate: global auto_close:true beaten by repo false -> proceed (repo wins)', () => {
+  // The merge is what this gate reads, so a repo layer that turns the chain OFF
+  // wins over a global layer that turns it on - and with no chain running the
+  // triage ask is live, so the blocker is the user's call rather than a halt.
+  const dir = fixture({ auto_close: false });
+  const r = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}',
+    globalLayer({ git: { auto_close: true } }));
   assert.equal(r.action, 'proceed');
 });
 

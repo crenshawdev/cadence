@@ -28,23 +28,40 @@ Otherwise confirm the version (`$ARGUMENTS`, else propose the next from
 PROJECT.md's current).
 
 Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
-own line (add `--version <version>` when the user named one via `$ARGUMENTS`):
+own line, naming the version you just confirmed - `--version` is REQUIRED, the
+seam derives no number of its own and refuses without it:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/release-bump.mjs" bump --dir <root> --version <version>
 ```
 
 The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"`
 when absent (non-plugin projects are unaffected). Otherwise it bumps the
-manifest `version` to the shipping release (and any versioned sibling) and
-scaffolds the dated `## [<version>]` CHANGELOG heading + link reference. Then
-YOU author the entry's bullet prose under that heading - what shipped this
-milestone, including any default flips - the seam owns the deterministic
-scaffold, prose owns the judgment. Commit the manifest + changelog as
+manifest `version` to the shipping release (and any versioned sibling),
+scaffolds the dated `## [<version>]` CHANGELOG heading + link reference, and
+PROMOTES whatever was staged under `## [Unreleased]` into that dated section.
+Then YOU author bullet prose only for what the promotion did NOT already move -
+re-authoring what it moved lists one change twice. The seam owns the
+deterministic scaffold, prose owns the judgment.
+
+Three halts, each BEFORE the tag and before the bump commit:
+
+- `ok:false` (exit 1). The seam wrote NOTHING and named a `reason`:
+  `no-target-version`, `unparseable-version`, `unreadable-manifest`,
+  `downgrade` or `not-an-upgrade`. Report that reason and STOP the close. A tag
+  cut after a refused bump names a commit whose manifest still carries the
+  previous version.
+- a `siblings[]` entry with `action:"refuse"`. Top-level `ok` stays true (the
+  primary manifest already wrote), but that sibling still ships the old
+  version - name the file and STOP.
+- `changelog.section_empty: true`. The dated heading has no body at all;
+  author the release notes into it before the bump commit rather than shipping
+  a heading over silence.
+
+Commit the manifest + changelog as
 `chore: bump manifest to <version> + changelog` BEFORE the tag, so the tag
-captures the bumped manifest. This runs before step 4 evolves `### Active`, so
-derivation reads the shipping version, and the `git.auto_close` chain (step 7)
-inherits it because step 2 always runs pre-tag.
+captures the bumped manifest. The `git.auto_close` chain (step 7) inherits the
+bump because step 2 always runs pre-tag.
 
 Then create an annotated tag at HEAD (`git tag -a <version> -m ...`), and do
 NOT push it - publishing the tag is /cad-land's decision.

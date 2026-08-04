@@ -29,7 +29,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
-import { gitSubcommands } from './lib/shell-tokens.mjs';
+import { gitVerbs } from './lib/git-segments.mjs';
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -58,23 +58,16 @@ function planningRoot(start) {
   }
 }
 
-// What a command IS, is read by lib/shell-tokens.mjs - one left-to-right
-// quote/escape-state tokenizer, the single home for that rule. The grammar it
-// implements and the shapes declared out of it are written down in
-// cadence-core/references/git.md rail 3 ("What the guard sees"), not restated
-// here. Two properties this file depends on: BOTH rails read the same
-// tokenizer output, because they must agree on what a wrapped command IS
-// (D-07) - so a wrapped `git commit` on a protected branch follows the same
-// git.on_protected path as the bare form; and an unrecognized shape yields no
-// subcommand, so the guard stays silent rather than blocking normal work. The
-// one exception to that silence is a shape the tokenizer could not place that
-// still carries a `git` word: it reports `unplaced` and the guard asks, never
-// denies (D-03). Detection is wide, refusal is narrow: a subcommand the
-// tokenizer reached through a shell wrapper that was NOT the command word
-// (`rg -t sh "git commit"`), or from a git word that was not itself a command
-// word (`grep git commit`, `command -v git commit`, `sudo git commit`),
-// arrives in `subs` but not in `denyable`, so it can ask and can never
-// hard-block.
+// What a command IS, is read by lib/git-segments.mjs: a segment counts only
+// when its command word is `git`, and the verb is its first non-flag word.
+// Both rails read that one function, so they always agree on what a command IS
+// (D-07). The anchor is also what retired the old deny gate: detection used to
+// be any-position and refusal was then narrowed back to command-position with
+// a second rule, because a wide reader saw `rg -t sh "git commit"` too. Reading
+// only the command word makes those silent up front, so there is one rule
+// instead of two and `denyable` has nothing left to express. What the reader
+// declines to see is listed in references/git.md rail 3 as the accepted cost of
+// deleting the tokenizer.
 
 // The current branch name, or '' on any failure (not a repo / no commits).
 function currentBranch(cwd) {
@@ -86,23 +79,13 @@ function currentBranch(cwd) {
 
 // The protected-branch decision for a `git commit`, or null when there is
 // nothing to say (on_protected: allow, no branch, branch not protected). It
-// returns rather than writes so main() can order the rails: a resolved commit
-// decision is emitted before the unplaced rail can ever mask it.
+// returns rather than writes so main() can order the rails.
 /**
  * @param {string} root Cadence project root (holds .planning/)
  * @param {string} cwd
- * @param {boolean} canDeny whether the commit was read from a command word -
- *   the git word itself in command position, or a command-position wrapper
- *   whose operand held one (see gitSubcommands: detection is any-position,
- *   refusal is command-position only). False downgrades a `refuse` hard block
- *   to an ask, so a read-only `rg -t sh "git commit"`, a bare mention like
- *   `grep git commit` and a lookup like `command -v git commit` can never be
- *   blocked by a rail meant for real commits. A transparent prefix
- *   (`sudo git commit`) lands on that same ask - the deliberate cost of a gate
- *   with no prefix set to enumerate.
  * @returns {{decision: string, reason: string} | null}
  */
-function commitDecision(root, cwd, canDeny) {
+function commitDecision(root, cwd) {
   const { config } = mergeLayers(join(root, '.planning', 'config.json'));
   const git = config.git || {};
   // A lone string is an easy hand-edit; honor it rather than silently
@@ -125,19 +108,13 @@ function commitDecision(root, cwd, canDeny) {
   if (!branch) return null; // not a repo / no commits - nothing to guard
   if (!protectedBranches.includes(branch)) return null;
 
-  const refuse = onProtected === 'refuse' && canDeny;
+  const refuse = onProtected === 'refuse';
   return {
     decision: refuse ? 'deny' : 'ask',
     reason: `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
       (refuse
         ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
-        : onProtected === 'refuse'
-          ? 'A `git commit` was read from a non-command position - an argument, a ' +
-            'shell-wrapper operand, or a transparent prefix like `sudo` - rather than ' +
-            'from a command word, so the guard asks instead of applying ' +
-            'git.on_protected=refuse (references/git.md rail 3). Approve only if this ' +
-            'really commits.'
-          : 'Create a task branch first, or approve to commit here deliberately.'),
+        : 'Create a task branch first, or approve to commit here deliberately.'),
   };
 }
 
@@ -153,37 +130,21 @@ function main() {
   // Only police Cadence projects (walk-up, see planningRoot).
   const root = planningRoot(cwd);
   if (!root) return;
-  const { subs, unplaced, denyable } = gitSubcommands(command);
-  const isPush = subs.includes('push');
-  const isCommit = subs.includes('commit');
+  const verbs = gitVerbs(command);
 
   // A push needs no config: EVERY Bash `git push` asks unconditionally - no
   // exemption of any kind lives here (rail 3). cad-land's sanctioned unattended
   // publish runs through the git-publish seam as a subprocess argv push, which
   // is not a Bash tool call, so this hook never sees it.
-  if (isPush) {
+  if (verbs.includes('push')) {
     decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
       'call (references/git.md rail 3). Approve only if you are deliberately publishing.');
     return;
   }
 
-  if (isCommit) {
-    const d = commitDecision(root, cwd, denyable.includes('commit'));
+  if (verbs.includes('commit')) {
+    const d = commitDecision(root, cwd);
     if (d) { decide(d.decision, d.reason); return; }
-  }
-
-  // Ordering is load-bearing. This rail runs AFTER the commit rail so it can
-  // never mask a deny, and BEFORE returning silent so a task-branch commit
-  // carrying an unterminated quote still asks. There is no `if (!isPush &&
-  // !isCommit) return;` above it: an unplaced command has both false, so an
-  // early return there would leave this rail dead on exactly the inputs it
-  // exists for. It never emits deny - the tokenizer could not place the word,
-  // so it cannot know the command is a commit (D-03, D-04).
-  if (unplaced) {
-    decide('ask', 'Cadence rail: this command carries a `git` word inside a shape ' +
-      'the guard could not parse (an unterminated quote or substitution), so it may ' +
-      'be a push (references/git.md rail 3, "What the guard sees"). Approve only if ' +
-      'you are deliberately running it.');
   }
 }
 

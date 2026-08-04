@@ -15,6 +15,7 @@ import {
   parseArgs, parseEnvFile, stripAdditionalProperties,
   validateFindings, validateConsult, classify, ADAPTERS,
   readModelHints, detectEnvelope, resolveTimeoutMs,
+  resolveMaxPromptTokens, estimatePromptTokens,
 } from './review-provider.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
@@ -92,6 +93,40 @@ test('resolveTimeoutMs: the default fits between a real review and the host ceil
   assert.ok(DEFAULT_TIMEOUT > 292000, 'must clear a measured high-effort review');
   assert.ok(DEFAULT_TIMEOUT < MAX_TIMEOUT, 'seam must abort before the host kills it');
   assert.equal(resolveTimeoutMs(undefined), DEFAULT_TIMEOUT);
+});
+
+const DEFAULT_MAX_PROMPT_TOKENS = 120000;
+
+test('resolveMaxPromptTokens: a usable configured value wins', () => {
+  assert.equal(resolveMaxPromptTokens(3000), 3000);
+  assert.equal(resolveMaxPromptTokens(1), 1);                   // schema min
+});
+
+test('resolveMaxPromptTokens: anything unusable falls back to the default, never throws', () => {
+  for (const bad of [undefined, null, 0, -1, 1.5, NaN, Infinity, '3000', {}, [3000]]) {
+    assert.equal(resolveMaxPromptTokens(/** @type {any} */ (bad)), DEFAULT_MAX_PROMPT_TOKENS);
+  }
+});
+
+test('resolveMaxPromptTokens: a huge value is NOT clamped', () => {
+  // Unlike the timeout there is no host ceiling to overflow: raising the cap
+  // costs money, not correctness, and the user made that call in writing.
+  assert.equal(resolveMaxPromptTokens(999999999), 999999999);
+});
+
+test('estimatePromptTokens: ceil of chars/4 over the string parts only', () => {
+  assert.equal(estimatePromptTokens('abcd'), 1);
+  assert.equal(estimatePromptTokens('abcde'), 2);               // ceil, not floor
+  assert.equal(estimatePromptTokens('ab', 'cd'), 1);            // parts are joined
+  assert.equal(estimatePromptTokens('abcd', /** @type {any} */ (null)), 1); // non-string ignored
+  assert.equal(estimatePromptTokens(), 0);                      // no part at all
+});
+
+test('estimatePromptTokens: the cap boundary - at the cap is not over it', () => {
+  const at = 'x'.repeat(4 * DEFAULT_MAX_PROMPT_TOKENS);
+  assert.equal(estimatePromptTokens(at), DEFAULT_MAX_PROMPT_TOKENS);
+  assert.ok(!(estimatePromptTokens(at) > DEFAULT_MAX_PROMPT_TOKENS), 'exactly at the cap passes');
+  assert.ok(estimatePromptTokens(`${at}x`) > DEFAULT_MAX_PROMPT_TOKENS, 'one char past is over');
 });
 
 test('parseEnvFile quirks: = in values, asymmetric quotes, inline comments kept', () => {
@@ -366,6 +401,57 @@ test('cli: key file is actually parsed (env absent, file supplies the key, flow 
     '--key-file', keyFile], { stdin: 'not json {' });
   // Getting bad-payload (not no-key) proves resolveKey read the file.
   assert.equal(r.reason, 'bad-payload');
+});
+
+test('cli: an over-cap review payload is refused before any request', () => {
+  // These two rows also prove no request was issued: the key is a stub, so a
+  // payload that got PAST the cap would come back http 401 (or transport) -
+  // and the suite forbids network. Getting over-cap is the proof it stopped
+  // at the cap check.
+  const keyFile = join(dir, 'providers.env');
+  writeFileSync(keyFile, 'OPENAI_API_KEY="from-file"\n');
+  const artifact = 'x'.repeat(4 * 120000 + 8);
+  const r = run(['review', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
+    { stdin: JSON.stringify({ instruction: 'refute this', artifact }) });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'over-cap');
+  assert.match(r.detail, /review\.max_prompt_tokens/);
+});
+
+test('cli: an over-cap consult payload is refused the same way', () => {
+  // consult is the same script hitting the same paid provider; bounding review
+  // alone would leave the identical defect one function away (#16, D-07).
+  const keyFile = join(dir, 'providers.env');
+  writeFileSync(keyFile, 'OPENAI_API_KEY="from-file"\n');
+  const situation = 'x'.repeat(4 * 120000 + 8);
+  const r = run(['consult', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
+    { stdin: JSON.stringify({ situation }) });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'over-cap');
+  assert.match(r.detail, /review\.max_prompt_tokens/);
+});
+
+test('cli: a non-string payload field is refused, so the cap cannot be walked past', () => {
+  // The bypass this pins: a non-string field measures as ~0 estimated tokens,
+  // so with a truthiness-only shape check a 480KB object cleared the cap and
+  // was serialized into the request. Same suite rule as the over-cap rows -
+  // the key is a stub and the suite forbids network, so anything other than
+  // bad-payload here means the payload reached the transport.
+  const keyFile = join(dir, 'providers.env');
+  writeFileSync(keyFile, 'OPENAI_API_KEY="from-file"\n');
+  const blob = { blob: 'x'.repeat(4 * 120000 + 8) };
+  const rev = run(['review', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
+    { stdin: JSON.stringify({ instruction: 'refute this', artifact: blob }) });
+  assert.equal(rev.ok, false);
+  assert.equal(rev.reason, 'bad-payload');
+  const con = run(['consult', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
+    { stdin: JSON.stringify({ situation: blob }) });
+  assert.equal(con.ok, false);
+  assert.equal(con.reason, 'bad-payload');
+  // A number is the same case: truthy, unmeasurable, and not a prompt.
+  const num = run(['review', '--provider', 'openai', '--model', 'gpt-test', '--key-file', keyFile],
+    { stdin: JSON.stringify({ instruction: 'refute this', artifact: 42 }) });
+  assert.equal(num.reason, 'bad-payload');
 });
 
 test('cli: review and consult without --model degrade to bad-args before key lookup', () => {

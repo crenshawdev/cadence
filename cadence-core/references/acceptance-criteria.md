@@ -11,10 +11,10 @@ time and no later pass could recover which criterion an item came from.
 
 One function in `cadence-core/bin/lib/planning-files.mjs` implements it:
 `classifyAcceptanceCriteria(text)`, returning
-`{criteria: Array<{id, text}>|null, issues: Issue[]}`. Its only consumer is
-`planning.mjs criteria-coverage`, whose contract is stated below. Every claim
-here is pinned by a row in the `CRITERION_ROWS` table in
-`cadence-core/bin/planning-files.test.mjs` - one `test()` per row.
+`{criteria: Array<{id, text}>|null, issues: Issue[], declaresIds}`. Its only
+consumer is `planning.mjs criteria-coverage`, whose contract is stated below.
+Every claim here is pinned by a row in the `CRITERION_ROWS` or `DECLARES_ROWS`
+table in `cadence-core/bin/planning-files.test.mjs` - one `test()` per row.
 
 ## The canonical criterion
 
@@ -121,6 +121,21 @@ reported - except a column-0 checkbox bullet, which is always reported
 whatever it carries: `criterion-malformed-id` when its head position holds an
 id, `criterion-unidded` otherwise.
 
+**A refused id is still a DECLARED id.** Beside `criteria` and `issues` the
+classifier reports `declaresIds`, because an empty `criteria` is three distinct
+data: nothing declared, an id this grammar REFUSED, or a section it never read.
+It is `'some'` when a criterion parsed OR a reported line carries an `AC<N>`
+token in DECLARATION POSITION - the head of the line, after at most one list or
+heading marker, an optional checkbox, and any emphasis or code wrapper around
+the token. It is `'none'` when nothing does, an absent heading included, and
+`'unknown'` for a near-miss heading, whose section is never walked. Which code a
+line reports does not decide this; its head position does, drawing the same line
+`criterion-malformed-id` draws - `- [ ] the AC3 pin still holds` mentions an id
+rather than declaring one, while a backtick-wrapped token declares one this
+grammar still reports as `criterion-unidded`. A criterion inside a fence
+declares nothing, exactly as it is no criterion. The coverage contract's legacy
+exemption is the only consumer, and it requires a provable `'none'`.
+
 **The entry-shaped codes fire regardless of how many criteria parsed.** This is
 deliberately unlike `classifyPhaseList`'s near-miss suppression and unlike
 `active-prose-line`'s conditional arm: one idded bullet beside six bare ones is
@@ -144,9 +159,9 @@ that legitimately derives from no criterion declares `origin:` instead.
 
 | Key | Verdict | Meaning |
 |---|---|---|
-| `breaks` | BREAKING | `{phase, id, break: 'uncovered' \| 'missing-uat'}` - a declared criterion no item's `criterion` names, or one whose phase has no UAT.md at all. The only verdict-moving key |
+| `breaks` | BREAKING | Two shapes. `{phase, id, break: 'uncovered' \| 'missing-uat'}` - a declared criterion no item's `criterion` names, or one whose phase has no UAT.md at all. `{phase, break: 'fieldless-checklist', file}` - ONE per phase, naming the checklist to repair. The only verdict-moving key |
 | `untraced` | additive | `{phase, item, name}` - an item with no `criterion` and no exempting `origin` |
-| `legacy` | additive | phase numbers whose checklist predates the field |
+| `legacy` | additive | `{phase, reason}` - a checklist that genuinely predates the fields, with the reason it was exempted stated |
 | `unknown_criterion` | additive | `{phase, item, criterion}` - a `criterion` value naming no declared id |
 | `context_issues` | additive | `{phase, issues}` - this reader's diagnostics |
 | `counts` | - | `{criteria, covered, uncovered, untraced, phases}`, where `criteria === covered + uncovered` |
@@ -163,12 +178,57 @@ item is still `untraced`. `origin` is WRITTEN, never derived - a present
 `criterion` is itself the criterion-derived marker, so nothing fabricates a
 second one.
 
-**The legacy rule tests for an absent `fields_version` frontmatter marker.** A
-checklist with at least one item, whose frontmatter carries no
-`fields_version` and none of whose items carries `criterion` or `origin`, is a
-pre-field checklist: reported in `legacy`, contributing no breaks, no
-`untraced` entries and nothing to `counts`, so an existing project does not
-hard-fail on upgrade.
+**The legacy rule has five terms, and an absent marker is only one of them.** A
+checklist is exempt when it has at least one item, its frontmatter carries no
+`fields_version`, none of its items carries `criterion` or `origin`, AND its
+phase's CONTEXT declares no `AC<N>` ids at all. Then it is reported in `legacy`
+as `{phase, reason}` - the reason stated, never a bare phase number, because a
+modern seam reporting green over an old file is exactly the skew the report has
+to be readable for - contributing no breaks, no `untraced` entries and nothing
+to `counts`, so an existing project does not hard-fail on upgrade.
+
+Satisfy the first three terms but not the fourth and it is a
+`fieldless-checklist` break instead. Both the AC-id grammar and `fields_version`
+post-date `v1.5.0`, so no CONTEXT carrying `AC<N>` ids can predate the fields:
+a marker-less checklist beside declared ids is a DROPPED LINK, not an old file.
+This repo's own v2.0.0 phase 6 is the shipped counterexample - 17 items, zero
+`criterion`, zero `origin`, no marker, beside a CONTEXT declaring `AC1`-`AC9`.
+The old four-term rule exempted it, which is how the closing audit counted 36
+criteria against 45 declared and passed.
+
+**That last term is `declaresIds === 'none'`, never `criteria.length === 0`.**
+Those are different questions, and reading the second as the first is what let
+this gate pass a phase it never checked. `- [ ] AC1 the feature works`,
+`- [ ] **AC1**: x`, `- AC1: x`, `* [ ] AC1: x`, `### AC1: x`, `1. AC1: x` and an
+indented criterion bullet each parse to ZERO criteria while `context_issues`
+names the id in the SAME envelope - so a fieldless checklist beside any of them
+collected an exemption whose stated reason asserted the phase declared no ids.
+An id the grammar refused is an id the author declared. `'unknown'` is not
+`'none'` either: a near-miss heading (`## Acceptance Criteria`) returns
+`criteria: null` with a `criteria-heading-near-miss` issue, which reads as zero
+ids by length alone, and a capital-C typo must not collect an exemption whose
+reason asserts the phase declared nothing. Only a provable `'none'` exempts;
+everything else takes the break arm. Whether the grammar should ADMIT those
+shapes as criteria is a separate, deferred question - this one is about what an
+empty list is allowed to prove.
+
+**The `fieldless-checklist` break fires whatever the roadmap box says.**
+`uncovered` and `missing-uat` are box-gated because work still in flight
+legitimately passes through them. This one is not: `uat init` writes
+`fields_version` before it looks at a single item, so no phase is ever
+transiently fieldless, and finishing the work does not repair it.
+
+The repair is per item, and it is `criterion`, not `origin`:
+
+```
+uat record --phase <N> --item <k> --result <its current status> --criterion AC<N>
+```
+
+`record` has no field-only mode, so the repair is a re-record at the status the
+item already holds. `--origin criterion` is NOT a substitute: it names no id, so
+it proves nothing, and on a fieldless checklist it disqualifies the phase from
+the legacy rule and converts zero breaks into one per criterion with no seam
+able to add the link back.
 
 The marker is what makes the rule sound, and it replaced an unsound one. The
 original test was the two item fields alone - no `criterion` AND no `origin` -
@@ -181,6 +241,19 @@ forever - precisely the regression this check exists to catch. `uat init`
 writes `fields_version` unconditionally, before it looks at a single item, so
 no file this seam produces can present as legacy however few links it carries.
 Infer legacy from field absence again and the exemption absolves the drop.
+
+**Every run states the versions it ran as.** `version` is the first key of the
+envelope and is always present - a statement about the run, not a finding.
+`version.plugin` is read from `.claude-plugin/plugin.json` relative to the
+SCRIPT's own location, with `CADENCE_PLUGIN_MANIFEST` overriding the path for
+hermetic tests only, and is `null` on any unreadable, malformed or version-less
+manifest rather than a throw. `version.uat_fields` is `UAT_FIELDS_VERSION`.
+Both, because neither is sufficient alone: mid-cycle the manifest names the last
+RELEASED version, so the capability number is the half that does not lag, while
+the manifest is the half that names what is installed. The skew this catches is
+a MODERN seam reporting green over an old file; the opposite skew already fails
+loudly, because a seam genuinely predating the fields has no `criteria-coverage`
+subcommand at all and returns `ok:false, reason:"usage"`.
 
 An EMPTY checklist is not legacy. An empty checklist is the drop itself, so
 every criterion in that phase breaks.
@@ -200,10 +273,14 @@ hole. Every declared criterion counts `uncovered`, and on a CHECKED box each one
 breaks as `missing-uat`. The unchecked-box rule below applies unchanged, so a
 phase still in flight is counted and never breaks.
 
-**An unchecked roadmap box counts but never breaks.** A phase that has not
-reached verification yet contributes its `uncovered` count and its `phases[]`
-entry, and no `breaks` entry, so a gate run mid-cycle does not FAIL on work
-still in flight.
+**An unchecked roadmap box gates `uncovered` and `missing-uat`, and nothing
+else.** For those two, a phase that has not reached verification yet contributes
+its `uncovered` count and its `phases[]` entry and no `breaks` entry, so a gate
+run mid-cycle does not FAIL on work still in flight. `fieldless-checklist` is
+NOT box-gated and fires on an unchecked phase exactly as it does on a checked
+one: `uat init` writes `fields_version` before it looks at an item, so no phase
+passes through the fieldless state in flight, and a mid-cycle run reporting it
+is reporting a real drop rather than unfinished work.
 
 ## Not in this grammar
 
@@ -242,10 +319,13 @@ trees are synthesized from this repo's own phase-1 pair - real prose, a
 synthetic defect:
 
 1. `mkdir -p /tmp/cadence-phase5-fixture/{fail,pass}/.planning/phases/1`.
-2. Copy `.planning/phases/1/CONTEXT.md` (criteria `AC1`-`AC7`) and
-   `.planning/phases/1/UAT.md` into each tree's `phases/1/`. That checklist
-   already carries `criterion: AC1` through `AC7` on items 1-7 and
-   `origin: verifier` on items 8-14.
+2. Recover the pair from history into each tree's `phases/1/`:
+   `git show v2.0.0:.planning/phases/1/CONTEXT.md` (criteria `AC1`-`AC7`) and
+   `git show v2.0.0:.planning/phases/1/UAT.md`. That checklist already carries
+   `criterion: AC1` through `AC7` on items 1-7 and `origin: verifier` on items
+   8-14. From history, not from the live paths: the v2.0.0 milestone prune
+   DELETED them, and `.planning/phases/1/` now holds a different cycle's phase,
+   so copying the live files silently builds the wrong fixture.
 3. In the `fail` tree ONLY, delete the whole `### 4.` and `### 5.` item blocks -
    the two carrying `criterion: AC4` and `criterion: AC5` - and set the
    `## Summary` `total:` and `passed:` to 12. The `pass` tree keeps all 14.

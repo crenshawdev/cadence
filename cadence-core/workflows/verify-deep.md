@@ -39,3 +39,7 @@ rejected and counted, never appended as a nameless item. Failed items route
 through verify.md `route_failures` exactly like user-reported failures.
 
 Report the seam's one-line summary (`auto_passed`, `gaps`, `added`, `skipped`, `rejected`).
+The seam persists those same counters to `.planning/phases/<N>/FINDINGS.json`,
+plus `rejected_entries` and `skipped_entries` holding the entries it discarded
+verbatim - so a finding counted and then dropped survives the dispatch that
+produced it. That write is the seam's; the read-only contract is unchanged.

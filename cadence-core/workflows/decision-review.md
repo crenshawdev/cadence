@@ -66,8 +66,8 @@ does, from `review.reviewers[]`:
 When the resolved set has more than one reviewer (claude-subagent plus a
 surviving cross-model provider, or several), dispatch them CONCURRENTLY in one
 message - they refute the same static artifact independently, so serializing
-them only adds latency (seams.md concurrent dispatch; review-triggers.md's "in
-parallel where the host allows").
+them only adds latency (seams.md concurrent dispatch; review-triggers.md step
+4's one-message batch).
 
 If the resolved set (after any drops) is only `claude-subagent`, this is the
 single-model default; when a cross-model provider survives, this is the

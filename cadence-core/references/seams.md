@@ -140,10 +140,21 @@ that is not a phase number all resolve at the baseline with `ok:true`.
   requires 30-day data
   retention, so a zero-data-retention org gets a hard `400` on every request;
   its safety classifiers refuse cyber-adjacent content, and Cadence reviews its
-  own git rails, secrets handling and shell tokenizer; and its multi-minute
+  own git rails and secrets handling; and its multi-minute
   turns press against `review.request_timeout_ms` inside the host's Bash
   ceiling. Pinning it is the user's assertion to make about their own org, not
   the table's.
+- **Per-role start rung.** The `model.effort` family names the rung a role
+  STARTS at, replacing the one its cell holds. One key per role
+  (`model.effort.cad-verifier` and so on, six in all), and the accepted values
+  are exactly that role's own rungs - the write face refuses any other by key,
+  naming the set that role does have. The value lives in the config layers,
+  never in the shipped table. It raises freely and never lowers a floor: where a
+  risk surface fired, a configured rung below the floored cell's rung resolves AT
+  that rung, with the holding surface named in `reason`, and
+  `risk.override.<surface>` is the only way under it. A retry never resolves
+  below it either: `--attempt 2` takes whichever of the cell's retry rung and the
+  configured start rung sits higher, and says which one it out-ranked.
 - **Tell the user when a pin fires.** A dispatch is approved through a UI that
   generally shows the agent name and not the model, so a pinned dispatch looks
   identical to a routed one at the moment of approval. When `pinned` is true,
@@ -217,8 +228,12 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   and NEVER logs it; the workflow passes no key.
 - Degradation is structured, not exceptional: `ok:false` with `reason` one of
   `no-key | transport | http | no-output | bad-json | bad-shape` (call-shape
-  problems surface as `bad-payload | bad-provider | bad-args | bad-command`,
-  and an unforeseen bug as `internal`). On `no-key`
+  problems surface as `over-cap | bad-payload | bad-provider | bad-args |
+  bad-command`, and an unforeseen bug as `internal`). `over-cap` is the prompt
+  bound: `review` and `consult` both refuse a payload over
+  `review.max_prompt_tokens` estimated tokens (chars/4, default 120000) BEFORE
+  any request is issued; `claude-subagent` never runs this script and is
+  exempt. On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
 - The default backend `claude-subagent` does NOT use this seam - it goes

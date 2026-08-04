@@ -695,6 +695,23 @@ const CRITERION_TOKEN = /\bAC\d+\b/;
 // it must report rather than be swallowed as continuation prose.
 const CRITERION_SUB = /^\s+[-*+]\s+(?:\[[ xX]\]\s+)?AC\d+\b/;
 
+// An `AC<N>` token in DECLARATION POSITION: at the head of the line, after at
+// most one list or heading marker, an optional checkbox, and any emphasis or
+// code wrapper around the token. This is NOT part of the criterion grammar -
+// it pushes nothing and admits nothing - it answers the one narrower question
+// `declaresIds` below reports: did the author write an id on this line at all?
+//
+// Deliberately WIDER than `CRITERION_HEAD_NEAR`, which inspects checkbox
+// bullets only. Every out-of-grammar shape can carry a refused id (`### AC1:`,
+// `1. AC1:`, `- AC1:`, a backtick-wrapped token), and the only consumer is an
+// EXEMPTION that must not claim "this phase declared nothing" while an id sits
+// in the text - so this errs toward "declared".
+//
+// Anchored at the head for the same reason `CRITERION_HEAD_NEAR` is: an id
+// named later in a line (`- [ ] the AC3 pin holds`) is prose that mentions an
+// id, not a declaration of one, and that bullet is `criterion-unidded`.
+const CRITERION_ID_DECLARED = /^\s*(?:[-*+]|#{1,6}|\d+[.)])?\s*(?:\[[ xX]\]\s*)?[*_`]*\s*AC\d+\b/i;
+
 /**
  * A stateful line filter: `true` while the line is a fence marker or sits
  * inside a fenced code block, `false` when it is content. One scanner per walk,
@@ -779,13 +796,25 @@ function fenceScanner() {
  *      unlike `active-prose-line`'s conditional arm. One idded bullet beside
  *      six bare ones is exactly the mixed-authoring migration case this exists
  *      to catch, and suppressing the codes once anything parsed would hide it.
+ *   7. `declaresIds` answers what `criteria` cannot: did this section DECLARE
+ *      an `AC<N>` id, whether or not this grammar could read it? `'some'` when
+ *      a criterion parsed OR a reported line carries an id in declaration
+ *      position (`CRITERION_ID_DECLARED`); `'none'` when nothing did, an
+ *      absent heading included; `'unknown'` on a near-miss heading, whose
+ *      section is never walked, so what it declares is not known here.
+ *      An empty `criteria` is three different data - nothing declared, an id
+ *      the grammar REFUSED, or a section it never read - and every consumer
+ *      that reasons about "declared nothing" needs them separated. Reported
+ *      here rather than re-derived by the caller, which holds only
+ *      `issueText`'s truncated copy of each line.
  *
  * Trailing prose after the criterion text, `(human-verify: needs <tool>)`
  * included, is IN grammar and stays in `text` verbatim (D-11): the classifier
  * admits and ignores it, and `workflows/verify.md` keeps its current prose read
  * of that suffix.
  * @param {string} text
- * @returns {{criteria: Array<{id: string, text: string}>|null, issues: Issue[]}}
+ * @returns {{criteria: Array<{id: string, text: string}>|null, issues: Issue[],
+ *            declaresIds: 'none'|'some'|'unknown'}}
  */
 export function classifyAcceptanceCriteria(text) {
   const lines = normalize(text).split('\n');
@@ -806,11 +835,14 @@ export function classifyAcceptanceCriteria(text) {
     for (let i = 0; i < lines.length; i++) {
       if (nearFenced(lines[i])) continue;
       if (/^#{1,6}\s*acceptance\s+criteri/i.test(lines[i])) {
-        return { criteria: null,
+        // `declaresIds: 'unknown'`, never `'none'`: the section under that
+        // heading is never walked, so this reader has no idea what it declares.
+        // An exemption that means "declared nothing" must not be handed a typo.
+        return { criteria: null, declaresIds: 'unknown',
           issues: [{ line: i + 1, code: 'criteria-heading-near-miss', text: issueText(lines[i]) }] };
       }
     }
-    return { criteria: null, issues: [] };
+    return { criteria: null, issues: [], declaresIds: 'none' };
   }
 
   /** @type {Array<{id: string, text: string}>} */
@@ -883,7 +915,16 @@ export function classifyAcceptanceCriteria(text) {
     else if (/^#{1,6}\s/.test(line)) code = 'criterion-heading';
     issues.push({ line: i + 1, code, text: issueText(line) });
   }
-  return { criteria, issues };
+  // Rule 7. Every issue in this walk carries `line: i + 1`, so `lines[line - 1]`
+  // is its source line as written. Deciding it HERE, against the source, is what
+  // keeps the answer independent of `issueText`: `issues[].text` is a display
+  // copy, trimmed and capped at 120 characters, so a caller re-scanning it for
+  // an id would be reading the report rather than the file. Fenced lines never
+  // reach `issues`, so a documented example inside a code block declares nothing
+  // here either - exactly as it declares no criterion above.
+  const declared = criteria.length > 0
+    || issues.some((i) => CRITERION_ID_DECLARED.test(lines[i.line - 1]));
+  return { criteria, issues, declaresIds: declared ? 'some' : 'none' };
 }
 
 // ---------------------------------------------------------------------------
@@ -909,12 +950,15 @@ const UAT_FIELDS = ['expected', 'criterion', 'origin', 'status', 'first_pass',
 export const UAT_ORIGINS = ['criterion', 'verifier', 'smoke'];
 
 // The POSITIVE marker that a checklist was written by a seam that knows
-// `criterion` and `origin`. `criteria-coverage`'s legacy exemption reads it and
-// nothing else: inferring "pre-field" from the ABSENCE of both item fields is
-// what let a post-field checklist whose links were dropped absolve itself, and
-// `.planning/phases/3/UAT.md` (7 `criterion`, 0 `origin`) is the file that
-// falsified the old two-field conjunction. Absence of this marker is the only
-// thing that can mean legacy now, and no writer here can produce that absence.
+// `criterion` and `origin`. Inferring "pre-field" from the ABSENCE of both item
+// fields is what let a post-field checklist whose links were dropped absolve
+// itself, and `.planning/phases/3/UAT.md` (7 `criterion`, 0 `origin`) is the
+// file that falsified the old two-field conjunction. Absence of this marker is
+// NECESSARY for `criteria-coverage`'s legacy exemption and no longer sufficient:
+// the exemption also requires the phase's CONTEXT to declare no `AC<N>` ids,
+// because the AC-id grammar post-dates the fields, so a marker-less checklist
+// beside declared ids is a dropped link rather than an old file - reported as a
+// `fieldless-checklist` break. No writer here can produce the absence either way.
 export const UAT_FIELDS_VERSION = '1';
 const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started', 'updated'];
 

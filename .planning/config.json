@@ -1,1 +1,38 @@
-{}
+{
+  "stakes": "critical",
+  "model": {
+    "escalate_on_failure": true
+  },
+  "workflow": {
+    "research": true,
+    "subagent_timeout": 900000,
+    "inline_plan_threshold": 2,
+    "test_command": "node --test cadence-core/bin/*.test.mjs"
+  },
+  "parallelization": {
+    "max_concurrent_agents": 6
+  },
+  "git": {
+    "auto_branch": "auto",
+    "base_branch": "main",
+    "create_tag": false
+  },
+  "review": {
+    "request_timeout_ms": 600000,
+    "consult": {
+      "enabled": true
+    },
+    "triggers": {
+      "diff": {
+        "gate": "adjudicated"
+      }
+    },
+    "providers": {
+      "deepseek": {
+        "tiers": {
+          "cheap": "deepseek-v4-flash"
+        }
+      }
+    }
+  }
+}

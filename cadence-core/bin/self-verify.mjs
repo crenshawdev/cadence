@@ -42,26 +42,51 @@
 //                    key's own `purpose` - where a user setting the value reads
 //                    it. This is what makes "no key is resolved and then
 //                    silently dropped" re-runnable rather than a one-time sweep.
+//  10. dispatch      prose under cadence-core/workflows or references that
+//      phrasing      claims concurrency for a set of dispatches must issue them
+//                    in ONE message, and every sentence in such a block that
+//                    ISSUES the set - a bare dispatch verb opening a clause, or
+//                    the colon that introduces the list below it - is reported
+//                    when it hands the set out one at a time ("one dispatch per
+//                    message"), hedges on the host ("where the host allows"),
+//                    or dispatches the set concurrently without saying so
+//                    (#88). Per sentence, because one compliant sentence must
+//                    not excuse its neighbour - which is how the first-shipped
+//                    rule missed the very sentence it was written to prevent
+//                    returning. Only an imperative one, because a rationale, a
+//                    negation and a catalog row carry the same vocabulary in
+//                    another mood and issue nothing. Without this check the
+//                    prose repair is UAT-walk-only.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, statSync, readlinkSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
-import { rungBodyIssue, rungFile } from './lib/rung-agent.mjs';
+import {
+  rungBodyIssue, rungEffortIssue, rungFile, effortEnumIssues,
+} from './lib/rung-agent.mjs';
 import { cellIssues, declaredRoles, routableAgents, surfaceIssues } from './lib/route-cells.mjs';
 import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
+import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
+import { relayIssues } from './lib/route-relay.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // The reach table (check 9), root-relative and platform-separated so it can be
 // compared against a `relative(root, file)` walk result.
 const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
+
+// The two surfaces check 10 applies to, same shape and same reason: compared
+// against a `relative(root, file)` walk result, with the separator appended so
+// a sibling directory whose name merely starts the same cannot match.
+const WORKFLOWS_DIR = join('cadence-core', 'workflows') + sep;
+const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
 // --- the contract table: script -> subcommand -> allowed flags --------------
 // Global flags allowed everywhere on that script are listed under '*'.
@@ -75,7 +100,8 @@ const CONTRACTS = {
     'uat init': ['--phase', '--sources'],
     'uat refresh': ['--phase'],
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--source', '--origin'],
+      '--severity', '--cause', '--fix', '--evidence', '--source', '--origin',
+      '--criterion'],
     'uat merge': ['--phase'],
     'uat status': ['--phase'],
     audit: [],
@@ -101,6 +127,7 @@ const CONTRACTS = {
   'git-publish.mjs': {
     '*': ['--dir'],
     publish: ['--remote'],
+    reap: ['--branch'],
   },
   'land-cleanup.mjs': {
     '*': ['--dir'],
@@ -346,19 +373,19 @@ function run(root) {
     // 2. script invocations.
     // Join backslash continuations so multi-line commands read as one. The
     // `\r?` arm exists so a CRLF-checked-out prose file joins like an LF one.
-    // The RULE this join encodes is shared with the git rails, in two
-    // spellings fitted to two inputs: here the input is PROSE, so a regex
-    // join is the whole job; in cadence-core/bin/lib/shell-tokens.mjs the
-    // input is a shell command string, so the same rule lives as escape state
-    // in a left-to-right pass and no regex remains (D-13, D-06). The shared
+    // This join is now the only place in the plugin that reads continuations:
+    // the git rails once carried the same rule as escape state in a shell
+    // tokenizer, and that tokenizer is deleted (the guard reads a segment's
+    // command word and nothing else, so a continued command is silent to it by
+    // design). The input here is PROSE, so a regex join is the whole job. The
     // invariant is the PARITY requirement below - an even trailing run is a
-    // literal backslash, not a continuation - and it must hold in both. The
+    // literal backslash, not a continuation. The
     // trailing class is `[ \t]*`, not `\s*`: `\s` matches `\n`, so `\s*`
     // would swallow the newline that ends the continued line and merge the
     // NEXT line into the joined command, letting the flag-checking regex
     // below (bounded by `[^\n]*`) read words that were never on that
-    // command line. Parity matters here for the same reason it does in the
-    // tokenizer: a trailing RUN of backslashes continues the line only when
+    // command line. Parity is the point: a trailing RUN of backslashes
+    // continues the line only when
     // its length is ODD, so `\\` at EOL is a literal backslash and the newline
     // still ends the command. Joining anyway merges the next line in and
     // reports a flag that was never on this command (a false unknown-flag).
@@ -390,6 +417,37 @@ function run(root) {
       if (!existsSync(join(root, p))) {
         problems.push({ kind: 'missing-path', file: rel, detail: p });
       }
+    }
+
+    // 10. dispatch phrasing: in a block claiming concurrency for a set, every
+    // sentence that ISSUES the set - imperative mood, or a trailing colon -
+    // and hands it out one member at a time, hedges on the host, or dispatches
+    // it concurrently without saying it goes out in one message. The rule, its
+    // masking, its imperative gate and its false-positive cost live in
+    // lib/dispatch-phrasing.mjs; this side only decides WHERE it applies.
+    // Scoped to these two directories because they are where dispatch
+    // instructions are AUTHORED, and because references/ is outside
+    // lib/surface-weight.mjs's weighed walk, so no other check reaches it at
+    // all. Not because the other surfaces are dispatch-free - skills/ carries
+    // at least one concurrent-dispatch instruction of its own - but because
+    // widening the scope to skills/ is a separate decision this check does not
+    // make; self-verify.test.mjs pins the skills case as out of scope on
+    // purpose.
+    if (rel.startsWith(WORKFLOWS_DIR) || rel.startsWith(REFERENCES_DIR)) {
+      for (const { code, detail } of dispatchPhrasingIssues(text)) {
+        problems.push({ kind: code, file: rel, detail });
+      }
+    }
+
+    // 11. a prose file that ISSUES a route.mjs resolve must carry the relay rule
+    // for the warnings[] that resolve returns. The rule and its accepted cost
+    // live in lib/route-relay.mjs; this side only decides WHERE it applies -
+    // EVERY surface this walk yields, not check 10's two directories. A call
+    // site in skills/ would relay nothing just as loudly, and unlike the
+    // phrasing rule this one triggers on a literal invocation form rather than
+    // on prose shape, so widening it costs no false positives.
+    for (const { code, detail } of relayIssues(text)) {
+      problems.push({ kind: code, file: rel, detail });
     }
   }
 
@@ -601,6 +659,21 @@ function run(root) {
         }
       }
 
+      // 7b. a rung file carries the effort the rung map filed it under.
+      // Runs on the frontmatter of EVERY agent file, not only the ones
+      // preloading a contract, because the map may name any of them. Check 7
+      // above holds the body against this same field and check 8 below reads
+      // the rung out of the filename, so without this the one link that
+      // decides how deep the dispatch actually thinks goes unchecked.
+      if (fm) {
+        const effortLine = fm[1].match(/^effort:[ \t]*(\S+)[ \t]*$/m);
+        const mismatch = rungEffortIssue(e.slice(0, -3),
+          effortLine ? effortLine[1] : undefined);
+        if (mismatch) {
+          problems.push({ kind: 'rung-effort-mismatch', file: rel, detail: mismatch.detail });
+        }
+      }
+
       const referenced = new Set();
       for (const prose of [body, ...preloaded]) {
         for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
@@ -624,8 +697,11 @@ function run(root) {
   // {ok:false,reason:"internal"} and discarding every problem found so far
   // (the #49.1 collapse).
   const routeTablePath = join(root, 'cadence-core', 'route-table.json');
+  // Hoisted out of the existsSync arm - the same hoist, for the same reason,
+  // that `agentFiles` already carries above: step 8b below needs the parsed
+  // table's `rung_order` when there is one and must still run when there is not.
+  let table = null;
   if (existsSync(routeTablePath)) {
-    let table = null;
     try {
       table = JSON.parse(readFileSync(routeTablePath, 'utf8'));
     } catch (e) {
@@ -708,6 +784,20 @@ function run(root) {
       detail: 'always-expected input absent' });
   }
 
+  // 8b. the shipped `model.effort.<role>` enums against RUNG_FILES. OUTSIDE both
+  // of check 8's table guards on purpose: nesting it under "the table exists AND
+  // parses" would make a schema-vs-map proof conditional on a file it does not
+  // read, on exactly the two trees where a drifted enum is likeliest and least
+  // noticed - and would contradict effortEnumIssues's own tolerance of an absent
+  // `rungOrder`, which exists so it can run without a table.
+  //
+  // Filed against config.schema.json, not the table: that is the file a
+  // maintainer edits to fix it.
+  for (const { code, detail } of effortEnumIssues(schema,
+    table && Array.isArray(table.rung_order) ? table.rung_order : [])) {
+    problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+  }
+
   // 9. the config-key reach table, against config.schema.json in both
   // directions, plus the narrow-reach-must-be-stated rule. Root-relative like
   // route-table.json and weight-budgets.json, so a --root fixture can supply
@@ -759,7 +849,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, routing-cells, risk-surfaces, config-reach', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

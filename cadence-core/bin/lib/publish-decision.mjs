@@ -1,13 +1,20 @@
 // @ts-check
 // publish-decision.mjs - the pure, testable core of the git-publish seam (Phase
-// 2, GIT-03). Zero-dep (node builtins only, and it uses none): one TOTAL
-// function that decides, from repo config + live git facts the seam supplies,
-// whether cad-land's sanctioned unattended integration-branch publish may run,
-// and if so returns the byte-exact `git push` argv (minus the runtime `-C <dir>`
-// prefix the seam prepends). It never runs live git and never does I/O - the
-// git-publish.mjs seam reads the branch, the configured remotes, and the
-// repo-layer auto_close, then hands them here. Mirrors branch-decision.mjs and
-// close-decision.mjs discipline: unknown/missing inputs never throw.
+// 2, GIT-03). Zero-dep (node builtins only, and it uses none): TOTAL functions
+// that decide, from repo config + live git facts the seam supplies, whether one
+// of the seam's two mutating actions may run, and if so return the byte-exact
+// git argv (minus the runtime `-C <dir>` prefix the seam prepends). They never
+// run live git and never do I/O - the git-publish.mjs seam reads the branch, the
+// configured remotes, and the repo-layer auto_close, then hands them here.
+// Mirrors branch-decision.mjs and close-decision.mjs discipline:
+// unknown/missing inputs never throw.
+//
+//   decidePublish - cad-land's sanctioned unattended integration-branch push.
+//   decideReap    - cad-land's local reap of the merged integration branch.
+//
+// decideReap lives HERE rather than in a lib of its own because it needs the
+// same SAFE_BRANCH rule, and duplicating a security-relevant regex across two
+// decision modules is how the two drift.
 
 // A branch name safe to interpolate into a refspec: starts with an alphanumeric
 // (forbids a leading '-' so a branch can never be read as an option) and carries
@@ -77,5 +84,63 @@ export function decidePublish({ autoClose, currentBranch, protectedBranches, rem
     branch,
     remote: rem,
     reason: 'sanctioned unattended integration-branch publish',
+  };
+}
+
+/**
+ * Decide whether the seam may delete a merged local integration branch, and
+ * build the exact argv if so. PURE and TOTAL, same discipline as decidePublish:
+ * a non-array `protectedBranches` coerces to [], a non-string `branch` refuses,
+ * nothing throws. Gates run FIRST-FAILING-WINS; every refuse is total
+ * (`argv:[]`):
+ *   1. no branch / not a string / empty        -> refuse 'no-branch'
+ *   2. branch fails SAFE_BRANCH                 -> refuse 'bad-branch'
+ *   3. branch is protected                      -> refuse 'protected-branch'
+ *   4. branch === currentBranch                  -> refuse 'current-branch'
+ *   5. exists === false                          -> skip   'already-absent'
+ *   6. else reap.
+ *
+ * Gate 4 exists because git itself refuses to delete the checked-out branch
+ * ("error: cannot delete branch 'main' used by worktree at ..."), and a named
+ * reason beats a git error the caller has to parse. Gate 5 is how cad-land's
+ * stated idempotency survives the platform's own `--delete-branch` having
+ * already removed it: an absent branch is a SKIP, not a failure.
+ *
+ * It deliberately does NOT re-derive merged-ness: `land-cleanup.mjs cleanup`
+ * owns that verdict, and the auto_close arm's merge lands on the platform, so a
+ * local merged check would refuse exactly the case the seam exists for. It also
+ * deliberately does NOT gate on `git.auto_close`: deleting an already-merged
+ * local branch publishes nothing and needs no publish authorization, unlike
+ * `publish`.
+ *
+ * The argv carries the `--` end-of-options separator for the same reason
+ * decidePublish's does - verified accepted by git 2.55 - so the one variable
+ * token can never be read as an option even if a future SAFE_BRANCH regression
+ * let a leading dash through.
+ *
+ * @param {{ branch?: unknown, currentBranch?: unknown, protectedBranches?: unknown,
+ *   exists?: unknown }} args
+ * @returns {{ action:'reap'|'skip'|'refuse', argv:string[], branch:string|null, reason:string }}
+ */
+export function decideReap({ branch, currentBranch, protectedBranches, exists } = {}) {
+  const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
+  const name = typeof branch === 'string' && branch ? branch : null;
+
+  /** @param {'skip'|'refuse'} action
+   *  @param {string} reason
+   *  @returns {{ action:'skip'|'refuse', argv:string[], branch:string|null, reason:string }} */
+  const stop = (action, reason) => ({ action, argv: [], branch: name, reason });
+
+  if (!name) return stop('refuse', 'no-branch');
+  if (!SAFE_BRANCH.test(name)) return stop('refuse', 'bad-branch');
+  if (protectedList.includes(name)) return stop('refuse', 'protected-branch');
+  if (name === currentBranch) return stop('refuse', 'current-branch');
+  if (exists === false) return stop('skip', 'already-absent');
+
+  return {
+    action: 'reap',
+    argv: ['branch', '-D', '--', name],
+    branch: name,
+    reason: 'merged integration branch reaped locally',
   };
 }

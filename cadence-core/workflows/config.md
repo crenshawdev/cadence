@@ -24,12 +24,13 @@ Parse `$ARGUMENTS`:
 ## Interactive menu (no args)
 
 Goal: let the user adjust every knob the catalog below carries, presented as
-selectable lists. Three sets stay edit-the-file-only and have no catalog row:
+selectable lists. Four sets stay edit-the-file-only and have no catalog row:
 `review.providers.*`, which needs live detection, so the menu routes it to
 **Review provider setup** rather than free-typing model ids; the six
 `model.overrides` role pins, which override a decision the routing cells
-otherwise make; and `review.decision_review`'s two keys, which belong to an
-on-demand command rather than the phase loop.
+otherwise make; the six `model.effort` per-role start rungs, which override the
+other half of that same decision; and `review.decision_review`'s two keys, which
+belong to an on-demand command rather than the phase loop.
 
 ### The walk
 
@@ -111,11 +112,12 @@ selectable option and its `description`.
 | `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |
 | `review.key_file` | str\|null | Path override for the provider key env file | path, or empty→`null` (default location) | null |
 | `review.request_timeout_ms` | int | ms before a provider request is aborted | e.g. `540000` (9 min); clamped to the 600000 host ceiling | 540000 |
+| `review.max_prompt_tokens` | int | Estimated tokens (chars/4) a review or consult payload may reach | e.g. `120000` (just under the tightest shipped provider window); over-cap is refused before any request, cross-model only | 120000 |
 | `review.consult.enabled` | bool | Allow a second-model consult at dead-ends | `true`→offer consult · `false`→don't | false |
 | `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
 | `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
 | `review.consult.attempt_threshold` | int | Failed fix attempts on one bug before cad-debug offers a consult | e.g. `3` | 3 |
-| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground then hand off | per §7 |
+| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground, then present the survivors and ask which to act on (default none) | per §7 |
 | `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger - **cross-model only** (the claude-subagent reviewer's model comes from the routing cell) | `flagship` · `balanced` · `cheap` | per §7 |
 | `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger - **cross-model only** (claude-subagent effort is frontmatter-frozen) | `minimal` · `low` · `medium` · `high` | per §7 |
 

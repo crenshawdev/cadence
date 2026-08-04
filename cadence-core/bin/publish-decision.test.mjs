@@ -3,7 +3,7 @@
 // function is pure, so this needs no subprocess or live git.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decidePublish } from './lib/publish-decision.mjs';
+import { decidePublish, decideReap } from './lib/publish-decision.mjs';
 
 // A well-formed publish call: auto_close on, a non-protected feature branch, a
 // configured bare-name remote.
@@ -138,4 +138,96 @@ test('total: a bare call with no args refuses (auto-close-off), no throw', () =>
   assert.deepEqual(d.argv, []);
   assert.equal(d.branch, null);
   assert.equal(d.remote, null);
+});
+
+// --- decideReap: the local reap of a merged integration branch ---------------
+
+// A well-formed reap call: a safe, non-protected, not-checked-out branch that
+// still exists.
+const REAP_OK = {
+  branch: 'cadence/v2.2.0',
+  currentBranch: 'main',
+  protectedBranches: ['main', 'master'],
+  exists: true,
+};
+
+test('reap: byte-exact argv with the branch behind a -- end-of-options marker', () => {
+  const d = decideReap(REAP_OK);
+  assert.equal(d.action, 'reap');
+  assert.deepEqual(d.argv, ['branch', '-D', '--', 'cadence/v2.2.0']);
+  assert.equal(d.branch, 'cadence/v2.2.0');
+  // The branch appears in exactly one token, and it is the last one - behind
+  // `--`, so no name can ever be read as an option (verified accepted by git
+  // 2.55: `git branch -D -- reapme` deletes reapme).
+  assert.equal(d.argv.filter((a) => a.includes('cadence/v2.2.0')).length, 1);
+  assert.equal(d.argv[d.argv.length - 1], 'cadence/v2.2.0');
+});
+
+test('reap: an absent branch is a SKIP, not a failure (idempotent close)', () => {
+  const d = decideReap({ ...REAP_OK, exists: false });
+  assert.equal(d.action, 'skip');
+  assert.equal(d.reason, 'already-absent');
+  assert.deepEqual(d.argv, []);
+  assert.equal(d.branch, 'cadence/v2.2.0');
+});
+
+test('reap: an UNKNOWN exists (undefined) still reaps - only false skips', () => {
+  assert.equal(decideReap({ ...REAP_OK, exists: undefined }).action, 'reap');
+});
+
+test('refuse: no branch at all -> no-branch', () => {
+  for (const branch of [undefined, null, '', 42, {}]) {
+    const d = decideReap({ ...REAP_OK, branch });
+    assert.equal(d.action, 'refuse', JSON.stringify(branch));
+    assert.equal(d.reason, 'no-branch');
+    assert.deepEqual(d.argv, []);
+  }
+});
+
+test('refuse: an unsafe branch name -> bad-branch, and the argv stays empty', () => {
+  // Same SAFE_BRANCH rule decidePublish uses - shared on purpose, because two
+  // copies of a security-relevant regex are two things to keep in step.
+  for (const branch of ['-D', '--force', 'a:b', '../etc', '.hidden', 'a b', 'a;rm -rf /', 'a$(x)']) {
+    const d = decideReap({ ...REAP_OK, branch });
+    assert.equal(d.action, 'refuse', branch);
+    assert.equal(d.reason, 'bad-branch', branch);
+    assert.deepEqual(d.argv, []);
+  }
+});
+
+test('refuse: a protected branch is never reaped', () => {
+  const d = decideReap({ ...REAP_OK, branch: 'main', currentBranch: 'other' });
+  assert.equal(d.action, 'refuse');
+  assert.equal(d.reason, 'protected-branch');
+});
+
+test('refuse: the checked-out branch -> current-branch, a name for what git errors on', () => {
+  const d = decideReap({ ...REAP_OK, branch: 'cadence/v2.2.0', currentBranch: 'cadence/v2.2.0' });
+  assert.equal(d.action, 'refuse');
+  assert.equal(d.reason, 'current-branch');
+});
+
+test('reap gate order: bad-branch beats protected, protected beats current, current beats absent', () => {
+  assert.equal(decideReap({ branch: '-D', protectedBranches: ['-D'], currentBranch: '-D', exists: false }).reason,
+    'bad-branch');
+  assert.equal(decideReap({ branch: 'main', protectedBranches: ['main'], currentBranch: 'main', exists: false }).reason,
+    'protected-branch');
+  assert.equal(decideReap({ branch: 'x', protectedBranches: [], currentBranch: 'x', exists: false }).reason,
+    'current-branch');
+});
+
+test('reap total: a bare call and non-array protectedBranches never throw', () => {
+  const bare = decideReap();
+  assert.equal(bare.action, 'refuse');
+  assert.equal(bare.reason, 'no-branch');
+  assert.equal(bare.branch, null);
+  assert.deepEqual(bare.argv, []);
+  assert.equal(decideReap({ ...REAP_OK, protectedBranches: 'main' }).action, 'reap'); // coerced to []
+});
+
+test('reap authorizes nothing: no auto_close input exists to pass it', () => {
+  // Deleting an already-merged LOCAL branch publishes nothing, so it needs no
+  // publish authorization. Passing one changes no verdict.
+  const d = decideReap({ ...REAP_OK, autoClose: false });
+  assert.equal(d.action, 'reap');
 });

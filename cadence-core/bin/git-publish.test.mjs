@@ -131,3 +131,106 @@ test('usage: an unknown subcommand -> ok:false reason usage', () => {
   assert.equal(d.ok, false);
   assert.equal(d.reason, 'usage');
 });
+
+// --- the reap path ----------------------------------------------------------
+
+const REAP_REF = 'refs/heads/cadence/v2.2.0';
+
+/** Run the seam and return the parsed JSON line AND the exit status, so ok/exit
+ * parity is asserted rather than assumed (an `already-absent` skip is ok:true
+ * and must therefore exit 0, or an autonomous close reads it as a failure). */
+function seamStatus(args, globalCfg = NO_GLOBAL) {
+  const opts = { encoding: 'utf8', env: { ...GIT_ENV, CADENCE_GLOBAL_CONFIG: globalCfg } };
+  try { return { d: JSON.parse(execFileSync('node', [SEAM, ...args], opts).trim()), status: 0 }; }
+  catch (e) { return { d: JSON.parse(String(e.stdout).trim()), status: e.status }; }
+}
+
+test('reap: a merged integration branch is actually deleted', () => {
+  const { dir } = repo({ branch: 'main' });
+  git(['-C', dir, 'branch', 'cadence/v2.2.0']);
+  assert.equal(refExists(dir, REAP_REF), true);
+  const { d, status } = seamStatus(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0']);
+  assert.equal(d.ok, true);
+  assert.equal(d.action, 'reaped');
+  assert.equal(d.branch, 'cadence/v2.2.0');
+  assert.equal(status, 0);
+  assert.equal(refExists(dir, REAP_REF), false, 'the local branch is gone');
+});
+
+test('reap: an UNMERGED branch is deleted too - land-cleanup owns the merged verdict', () => {
+  // Deliberate: the auto_close arm's merge lands on the PLATFORM, so a local
+  // merged check would refuse exactly the case the seam exists for. Pinned so
+  // the omission reads as a decision rather than a missing gate.
+  const { dir } = repo({ branch: 'main' });
+  git(['-C', dir, 'checkout', '-q', '-b', 'cadence/v2.2.0']);
+  writeFileSync(join(dir, 'g.txt'), 'y');
+  git(['-C', dir, 'add', '.']);
+  git(['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '-m', 'ahead']);
+  git(['-C', dir, 'checkout', '-q', 'main']);
+  const d = seam(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0']);
+  assert.equal(d.ok, true);
+  assert.equal(d.action, 'reaped');
+  assert.equal(refExists(dir, REAP_REF), false);
+});
+
+test('reap: an already-absent branch SKIPS with ok:true and exit 0 (idempotent close)', () => {
+  const { dir } = repo({ branch: 'main' });
+  const { d, status } = seamStatus(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0']);
+  assert.equal(d.ok, true);
+  assert.equal(d.action, 'already-absent');
+  assert.equal(d.branch, 'cadence/v2.2.0');
+  assert.equal(status, 0, 'ok:true must exit 0 - the platform may already have deleted it');
+});
+
+test('reap refuse: a protected branch, and it is still there afterwards', () => {
+  const { dir } = repo({ branch: 'cadence/v2.2.0' });
+  const { d, status } = seamStatus(['reap', '--dir', dir, '--branch', 'main']);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'protected-branch');
+  assert.equal(status, 1);
+  assert.equal(refExists(dir, 'refs/heads/main'), true, 'main survives');
+});
+
+test('reap refuse: the CHECKED-OUT branch, named rather than left to a git error', () => {
+  const { dir } = repo({ branch: 'cadence/v2.2.0' });
+  const d = seam(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0']);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'current-branch');
+  assert.equal(refExists(dir, REAP_REF), true);
+});
+
+test('reap refuse: an option-shaped branch name never reaches git', () => {
+  const { dir } = repo({ branch: 'main' });
+  git(['-C', dir, 'branch', 'cadence/v2.2.0']);
+  const d = seam(['reap', '--dir', dir, '--branch', '--force']);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'bad-branch');
+  assert.equal(refExists(dir, REAP_REF), true, 'nothing else was deleted');
+});
+
+test('reap refuse: no --branch at all -> no-branch, and no git ran', () => {
+  const { dir } = repo({ branch: 'main' });
+  git(['-C', dir, 'branch', 'cadence/v2.2.0']);
+  const d = seam(['reap', '--dir', dir]);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'no-branch');
+  assert.equal(refExists(dir, REAP_REF), true);
+});
+
+test('reap needs no auto_close: a close-off repo still reaps its local branch', () => {
+  // Deleting a local branch publishes nothing, so unlike publish it carries no
+  // authorization gate.
+  const { dir } = repo({ branch: 'main', config: { git: { auto_close: false } } });
+  git(['-C', dir, 'branch', 'cadence/v2.2.0']);
+  const d = seam(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0']);
+  assert.equal(d.ok, true);
+  assert.equal(d.action, 'reaped');
+  assert.equal(refExists(dir, REAP_REF), false);
+});
+
+test('usage: the detail names both subcommands', () => {
+  const d = seam(['frobnicate']);
+  assert.equal(d.ok, false);
+  assert.match(d.detail, /publish/);
+  assert.match(d.detail, /reap/);
+});

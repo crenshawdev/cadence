@@ -8,11 +8,14 @@
 // seam that wraps it: the seam and the rail-1 prose it drives share this one
 // source of truth, and it runs fully under `node --test` with no live git.
 //
-// Public surface: `integrationBranchName` and `decideBranch` drive the branch
-// seam; `activeVersion` and `titleVersion` are also exported because the
-// release-bump derivation (lib/release-decision.mjs) reuses the exact same
-// `### Active` -> ROADMAP-title version precedence - the reuse is deliberate
-// and documented here, not incidental.
+// Public surface: `integrationBranchName` and `decideBranch`, and nothing else.
+// `activeVersion` and `titleVersion` are module-private inputs to
+// `integrationBranchName`. They used to be exported for the release-bump
+// derivation to reuse; REL-03 removed that consumer, because a RELEASE number
+// read from prose no path keeps current is how the wrong version ships. Branch
+// naming keeps the `### Active` -> ROADMAP-title precedence exactly as it was
+// (D-11): a misnamed branch is visible and recoverable, a mis-shipped version
+// is not.
 
 // A semver-ish version token: v1.2.3 with an optional prerelease/build suffix
 // (v1.1.0-rc.2). Matches the milestone-of-record Cadence names a branch after.
@@ -24,7 +27,7 @@ const VERSION_RE = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
  * heading) for the first version token.
  * @param {string} projectText
  */
-export function activeVersion(projectText) {
+function activeVersion(projectText) {
   if (!projectText) return null;
   const lines = String(projectText).split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
@@ -41,7 +44,7 @@ export function activeVersion(projectText) {
  * The version named in the first `# ` (level-1) heading of ROADMAP.md, or null.
  * @param {string} roadmapText
  */
-export function titleVersion(roadmapText) {
+function titleVersion(roadmapText) {
   if (!roadmapText) return null;
   const title = String(roadmapText).split('\n').find((l) => /^#\s/.test(l));
   if (!title) return null;

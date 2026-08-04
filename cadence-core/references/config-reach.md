@@ -25,7 +25,7 @@ It proves the reach table and the schema agree **with each other**:
 It does **not** prove either document agrees with the code. A key whose real
 reader is narrower than both say so is invisible to this check - that judgment
 is the human test below, and it is the accepted cost of a table over a `reach`
-field on all 72 keys. What the pair buys is that a NEW key cannot arrive
+field on every key. What the pair buys is that a NEW key cannot arrive
 silently: adding one to the schema fails CI until someone answers the reach
 question for it in writing.
 
@@ -45,9 +45,21 @@ is `universal`.
 
 The phrase is compared literally (backticks stripped, whitespace collapsed),
 so a reach and a `purpose` are kept in one vocabulary rather than two
-paraphrases. Four phrases are in use today: `cross-model reviewers only`,
-`new-project roadmap step only`, `new-project research step only`, and
-`progress next-step suggestion only`.
+paraphrases. The phrases in use today:
+
+- `cross-model reviewers only`
+- `cross-model provider calls only`
+- `new-project roadmap step only`
+- `new-project research step only`
+- `progress next-step suggestion only`
+- `repo config layer only`
+- `repo config layer only for the unattended publish`
+
+Nothing machine-checks this list against the rows, so it is a reading aid: the
+rows below are the declaration. Deliberately unenumerated - a stated count has
+now gone stale twice in two phases, each time in the same commit that added a
+phrase, and a wrong count reads as authority where a missing one reads as a
+list to check.
 
 ## Row grammar
 
@@ -63,6 +75,12 @@ Columns are `Key | Reach | Honoured by`. `Key` is the schema key verbatim.
 is prose naming the consumer; it is **not** machine-checked, and is here so a
 reader can go straight to the reader rather than grep for it.
 
+The sentinel `universal` is read case-insensitively and with one optional
+trailing period, so `Universal` and `universal.` declare exactly what
+`universal` does. A NARROWER phrase is compared verbatim, in both directions -
+that literal comparison is what keeps a row and a `purpose` in one vocabulary
+instead of two paraphrases, so folding the narrow half would defeat the row.
+
 ### The forms this grammar does not read
 
 | Code | Example | What the check does with it | Fix |
@@ -72,9 +90,11 @@ reader can go straight to the reader rather than grep for it.
 | `missing-reach-row` | a schema key no row names | reported, naming the key | add a row and answer the test above |
 | `unknown-reach-key` | `\| frobnicate.enabled \| universal \| ... \|` | reported, naming the key | delete the row, or fix the typo; a retired key keeps no row |
 | `unstated-reach` | a row reading `cross-model reviewers only` whose key's `purpose` never says so | reported, naming the key | put the phrase in the `purpose`, verbatim - that is the whole point of the row |
+| `duplicate-reach-row` | a second row for a key an earlier row already declared | reported, naming the key and BOTH lines; the first occurrence still wins and the later row declares nothing | edit the existing row rather than appending a new one, then delete the duplicate |
 
-A duplicate row for a key already declared is ignored rather than reported:
-the first occurrence wins, and the duplicate can say nothing the check reads.
+Narrowing a key by appending a row rather than editing the old one is the
+authoring mistake that motivates the last code: the stale row wins, so the
+purpose test runs against the reach the author just replaced.
 
 ## Reach rows
 
@@ -89,14 +109,20 @@ the first occurrence wins, and the duplicate can say nothing the check reads.
 | `model.overrides.cad-reviewer` | universal | `bin/route.mjs` - pins this role to a model alias, bypassing the cell |
 | `model.overrides.cad-executor` | universal | `bin/route.mjs` - pins this role to a model alias, bypassing the cell |
 | `model.overrides.cad-plan-checker` | universal | `bin/route.mjs` - pins this role to a model alias, bypassing the cell |
-| `risk.override.auth` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.migrations` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.billing` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.concurrency` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.destructive` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.secrets` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.api_contract` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
-| `risk.override.untrusted_input` | universal | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings` |
+| `model.effort.cad-planner` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's; no floor reaches it (pre-plan role, dispatched before the PLAN the floor reads) |
+| `model.effort.cad-assumptions-analyzer` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's; no floor reaches it (pre-plan role, dispatched before the PLAN the floor reads) |
+| `model.effort.cad-verifier` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
+| `model.effort.cad-reviewer` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
+| `model.effort.cad-executor` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
+| `model.effort.cad-plan-checker` | universal | `bin/route.mjs` - selects the rung this role starts at, replacing the cell's, floored by any detected risk surface |
+| `risk.override.auth` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.migrations` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.billing` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.concurrency` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.destructive` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.secrets` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.api_contract` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
+| `risk.override.untrusted_input` | repo config layer only | `bin/route.mjs` - waives this surface's detected floor, read from the repo layer alone (`src: repo`); a global-layer waiver is ignored and named in `warnings`, unless both layer paths resolve to one file - then there is a single layer, it is the repo layer, and the waiver holds |
 | `workflow.research` | new-project research step only | `workflows/new-project.md`'s research pass; no other workflow reads it |
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
@@ -108,20 +134,21 @@ the first occurrence wins, and the duplicate can say nothing the check reads.
 | `parallelization.max_concurrent_agents` | universal | `workflows/execute.md` - dispatch batch size |
 | `parallelization.min_plans_for_parallel` | universal | `workflows/execute.md` - the parallel-path gate |
 | `parallelization.use_worktrees` | universal | `workflows/execute.md` - worktree isolation for parallel writes |
-| `git.protected_branches` | universal | `bin/git-guard.mjs` and `bin/land-cleanup.mjs` |
+| `git.protected_branches` | universal | `bin/git-guard.mjs`, `bin/land-cleanup.mjs` and `bin/git-publish.mjs` |
 | `git.on_protected` | universal | `bin/git-guard.mjs` - ask / refuse / allow on a protected branch |
 | `git.integration_branch` | universal | `bin/git-branch.mjs` - milestone branch or trunk |
 | `git.auto_branch` | universal | `bin/git-branch.mjs` - how that branch is created |
 | `git.base_branch` | universal | `bin/land-cleanup.mjs` - the base a land returns to |
 | `git.create_tag` | universal | `workflows/milestone.md` - release-mode detection |
 | `git.on_land_cleanup` | universal | `bin/land-cleanup.mjs` - return, pull, reap after a merge |
-| `git.auto_close` | universal | `bin/land-cleanup.mjs` gate - the autonomous close |
+| `git.auto_close` | repo config layer only for the unattended publish | `bin/git-publish.mjs` publish reads the repo layer alone - a user-global value authorizes no push (D-08); `bin/land-cleanup.mjs` gate, `skills/cad-land/SKILL.md` and `cadence-core/workflows/milestone.md` read the MERGED value, because the triage ask and the gate's halt are a matched pair and must agree |
 | `planning.commit_docs` | universal | `references/git.md` and `workflows/task.md` - whether `.planning/` docs are committed |
 | `memory.backend` | universal | `bin/planning.mjs recall` - `builtin` BM25 or `none` |
 | `review.mode` | universal | `references/review-triggers.md` step 5, how multiple reviewers combine |
 | `review.reviewers` | universal | `references/review-triggers.md` step 1, the backend set fire() resolves |
 | `review.key_file` | universal | `bin/review-provider.mjs` - the provider env-file path |
 | `review.request_timeout_ms` | universal | `bin/review-provider.mjs` - ms before a provider request aborts |
+| `review.max_prompt_tokens` | cross-model provider calls only | `bin/review-provider.mjs` `review` and `consult` - both refuse an over-cap payload before any request; the claude-subagent reviewer never runs the script |
 | `review.providers.openai.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
 | `review.providers.openai.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
 | `review.providers.openai.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |

@@ -25,8 +25,10 @@
 //                                   plan-declared, ## Active-bounded req ids
 //   criteria-coverage               every CONTEXT `## Acceptance criteria` id
 //                                   against its phase's UAT items, both
-//                                   directions; uncovered breaks, untraced
-//                                   reports (references/acceptance-criteria.md)
+//                                   directions; uncovered and
+//                                   fieldless-checklist break, untraced and
+//                                   legacy {phase, reason} report
+//                                   (references/acceptance-criteria.md)
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
 //                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
@@ -35,7 +37,8 @@
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
 import {
@@ -60,6 +63,28 @@ const fail = (reason, detail, hint) =>
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {
   try { return readFileSync(file, 'utf8'); } catch { return null; }
+}
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+// The one path this script resolves outside `--dir`. Read relative to the
+// SCRIPT, not the cwd, so it names the plugin actually executing - the whole
+// point, given the skew this reports on. CADENCE_PLUGIN_MANIFEST overrides it
+// (hermetic test injection only; production always uses the shipped file), the
+// same precedent as CADENCE_CONFIG_SCHEMA and CADENCE_ROUTE_TABLE.
+const MANIFEST_PATH = process.env.CADENCE_PLUGIN_MANIFEST
+  || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
+
+/**
+ * The running plugin's version, or null when the manifest is unreadable,
+ * malformed or version-less. Never throws: this is PROVENANCE, and a statement
+ * about the run must not be able to sink the run it describes.
+ * @returns {string|null}
+ */
+function pluginVersion() {
+  try {
+    const v = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')).version;
+    return typeof v === 'string' ? v : null;
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------------------
@@ -472,11 +497,29 @@ function cmdUat(dir, sub, opts) {
     if (opts.origin !== undefined && !UAT_ORIGINS.includes(opts.origin)) {
       return fail('bad-args', `--origin must be one of: ${UAT_ORIGINS.join(' | ')}`);
     }
+    // `--criterion` is the repair for a link that was never written or was lost,
+    // and it is where the `fieldless-checklist` diagnostic routes users. Same
+    // `^AC\d+$` test `uat init` applies at the payload face, so the two cannot
+    // drift - a flag given with no value parses as boolean `true` and is refused
+    // by it too. Validated BEFORE any write: a rejected value leaves the file
+    // byte-unchanged rather than recording a marker nothing reads.
+    //
+    // The repair also needs `--result`: record has no field-only mode, so
+    // re-recording the item's CURRENT status is the repair form. Without this
+    // flag the diagnostic would have to route users to `--origin`, which on a
+    // fieldless checklist writes `origin: criterion` - a value naming no id,
+    // which disqualifies the phase from the legacy rule, converts zero breaks
+    // into one per criterion, and leaves no seam able to add `criterion` back.
+    if (opts.criterion !== undefined && !/^AC\d+$/.test(String(opts.criterion))) {
+      return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
+    }
     item.status = opts.result;
     if (source === 'verifier') item.source = 'verifier';
+    // `criterion` is already registered in UAT_FIELDS, so an accepted value
+    // renders directly after `expected` and survives every later rewrite.
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
       ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence'],
-      ['origin', 'origin']]) {
+      ['origin', 'origin'], ['criterion', 'criterion']]) {
       if (opts[flag] !== undefined) item[field] = opts[flag];
     }
     // Invariant: first_pass is the FIRST pass/fail verdict, set once, never after.
@@ -524,6 +567,12 @@ function cmdUat(dir, sub, opts) {
       return name !== null && name === usableName(ref);
     });
     let auto = 0, gaps = 0, added = 0, skipped = 0, rejected = 0;
+    // The DISCARDED entries, collected as they are counted (D-06). The counters
+    // alone add nothing a transcript already had - `verify-deep.md` prints them
+    // - and an ACCEPTED finding is recoverable from the item it wrote. The
+    // unrecoverable material is exactly this: what was counted and then dropped.
+    const rejectedEntries = [];
+    const skippedEntries = [];
     for (const p of f.passes || []) {
       const it = find(p);
       if (it && it.status === 'pending') {
@@ -531,8 +580,14 @@ function cmdUat(dir, sub, opts) {
         if (p.evidence) it.evidence = p.evidence;
         if (it.first_pass === undefined) it.first_pass = 'pass';
         auto++;
-      } else if (it) skipped++;
-      else rejected++; // a pass matching no item can never be applied
+      } else if (it) {
+        skipped++;
+        skippedEntries.push({ list: 'passes', reason: 'already-recorded',
+          item: Number(it.k), status: String(it.status), entry: p });
+      } else {
+        rejected++; // a pass matching no item can never be applied
+        rejectedEntries.push({ list: 'passes', reason: 'no-matching-item', entry: p });
+      }
     }
     let k = Math.max(0, ...uat.items.map((i) => Number(i.k)));
     for (const g of f.gaps || []) {
@@ -544,13 +599,20 @@ function cmdUat(dir, sub, opts) {
         it.severity = g.severity || 'major';
         if (it.first_pass === undefined) it.first_pass = 'fail';
         gaps++;
-      } else if (it) skipped++;
-      else {
+      } else if (it) {
+        skipped++;
+        skippedEntries.push({ list: 'gaps', reason: 'already-recorded',
+          item: Number(it.k), status: String(it.status), entry: g });
+      } else {
         const name = usableName(g);
         // `gaps` counts gaps actually recorded in the file, so a rejected
         // entry that wrote nothing must not inflate it - otherwise the
         // envelope reports three gaps found for one item written.
-        if (!name) { rejected++; continue; }
+        if (!name) {
+          rejected++;
+          rejectedEntries.push({ list: 'gaps', reason: 'no-usable-name', entry: g });
+          continue;
+        }
         // `origin: verifier` is the item-level provenance `source: verifier` is
         // not: source records where a RESULT came from and is set identically on
         // an existing pending item above, so it cannot mark an item the verifier
@@ -565,20 +627,66 @@ function cmdUat(dir, sub, opts) {
       }
     }
     for (const h of f.human_checks || []) {
-      if (find(h)) continue;
+      const match = find(h);
+      if (match) {
+        // The COUNTING gap here (an entry matching an existing item lands in
+        // neither `skipped` nor `rejected`) is deferred to its own phase (D-14)
+        // and stays open: no counter moves on this line. The ENTRY is recorded
+        // anyway, with the same `already-recorded` reason, because a file whose
+        // whole purpose is making a discarded finding recoverable must not be
+        // the one place a discarded finding disappears. So this row is present
+        // in FINDINGS.json while absent from the `skipped` count, deliberately.
+        skippedEntries.push({ list: 'human_checks', reason: 'already-recorded',
+          item: Number(match.k), status: String(match.status), entry: h });
+        continue;
+      }
       const name = usableName(h);
-      if (!name) { rejected++; continue; } // appends the identical phantom, at pending
+      if (!name) {
+        rejected++; // appends the identical phantom, at pending
+        rejectedEntries.push({ list: 'human_checks', reason: 'no-usable-name', entry: h });
+        continue;
+      }
       // This path wrote NO provenance of any kind before this phase - observable
       // at .planning/phases/1/UAT.md items 12 and 14, which carry neither
-      // `source` nor an origin. The bare-`continue` counting bug above (an entry
-      // matching an existing item lands in neither `skipped` nor `rejected`) is
-      // deliberately untouched: it is deferred to its own phase (D-14).
+      // `source` nor an origin.
       uat.items.push({ k: ++k, name, expected: h.expected || '',
         origin: 'verifier', status: 'pending' });
       added++;
     }
     writeUat(dir, n, uat);
-    return ok({ auto_passed: auto, gaps, added, skipped, rejected, next: nextPending(uat.items) });
+    // The findings envelope, persisted beside the phase's other artifacts
+    // (D-05/D-09). A NEW file, never a UAT.md section: `parseUat`/`renderUat`
+    // split on `^### ` and cut each part at `sectionBound`, so a
+    // `## Verifier findings` block is silently dropped by the next `uat record`
+    // - worse than not persisting, because it looks durable - and a `### `
+    // extra is promised user-owned and verbatim by templates/UAT.md. Resolved
+    // under the run's `--dir` exactly as `uatFile` is, never as a bare relative
+    // path, or every merge on a temp tree would write into the process cwd.
+    //
+    // Written on EVERY successful merge, all-zero ones included, so its absence
+    // means no merge ran. A second merge on the same phase overwrites it with
+    // that merge's envelope: the deep pass is once per phase, and the envelope
+    // is the merge's own return value, not an accumulating log.
+    const findingsRel = `phases/${n}/FINDINGS.json`;
+    let findingsError = null;
+    try {
+      atomicWrite(join(dir, 'phases', String(n), 'FINDINGS.json'),
+        `${JSON.stringify({ auto_passed: auto, gaps, added, skipped, rejected,
+          rejected_entries: rejectedEntries, skipped_entries: skippedEntries }, null, 2)}\n`);
+    } catch (e) {
+      // REPORTED, never thrown. A throw here unwinds to the dispatch catch,
+      // which emits `{ok:false, reason:'internal'}` and takes the counters down
+      // with it - AFTER writeUat has already rewritten UAT.md. The merge would
+      // then be neither undone nor reported, and a retry would re-merge against
+      // non-pending items and persist an envelope claiming every finding was a
+      // conflict. Losing the counters to protect the file that exists to
+      // preserve them is the wrong trade.
+      findingsError = e instanceof Error ? e.message : String(e);
+    }
+    return ok({ auto_passed: auto, gaps, added, skipped, rejected,
+      findings: findingsError === null ? findingsRel : null,
+      ...(findingsError !== null ? { findings_error: findingsError } : {}),
+      next: nextPending(uat.items) });
   }
 
   if (sub === 'status') {
@@ -777,12 +885,30 @@ function cmdAudit(dir) {
 // additive. Four of four phases this cycle appended legitimate verifier gap
 // items, so making the reverse direction breaking would make the gate
 // unpassable.
+//
+// break codes: uncovered (a declared id no item covers) | missing-uat (a
+// declared id on a phase carrying no checklist at all) | fieldless-checklist
+// (ONE per phase, `{phase, break, file}`: the checklist carries items but none
+// of the traceability fields, beside a CONTEXT that did declare ids - so nothing
+// in it can be traced in either direction). A `legacy` entry is `{phase,
+// reason}`, never a bare phase number: an exemption that states no reason reads
+// exactly like a clean pass, which is the skew D-04 wants readable.
 // ---------------------------------------------------------------------------
 
 // An `origin` value that declares an item legitimately built from no criterion.
 // Mirrors UAT_ORIGINS in lib/planning-files.mjs minus `criterion`, which names
 // no id by itself and therefore exempts nothing.
 const ORIGIN_EXEMPT = new Set(['verifier', 'smoke']);
+
+// The one sentence every `legacy` entry carries. Fixed rather than computed
+// per phase: all of the terms hold identically for every phase the exemption
+// reaches, so a per-phase string would differ only in wording while costing the
+// reader a comparison. Naming the conditions is the point - the exemption is a
+// modern seam reporting green over an old file, and a bare phase number gives a
+// reviewer nothing to check it against.
+const LEGACY_REASON = 'pre-field checklist: no `fields_version` frontmatter '
+  + 'marker, no `criterion` or `origin` on any item, and its CONTEXT declares '
+  + 'no AC<N> ids';
 
 function cmdCriteriaCoverage(dir) {
   const roadmapText = read(join(dir, 'ROADMAP.md'));
@@ -843,22 +969,64 @@ function cmdCriteriaCoverage(dir) {
 
     const withCriterion = items.filter((it) => it.criterion !== undefined);
     const withOrigin = items.filter((it) => it.origin !== undefined);
-    // Pre-field legacy (D-16): a checklist written before either field existed.
-    // The test is the ABSENCE OF THE FRONTMATTER MARKER, not the absence of the
-    // item fields. The original conjunction (no `criterion` AND no `origin`)
-    // reasoned that every post-field checklist carries at least one `origin`,
-    // and that premise was false the day it shipped: `.planning/phases/3/UAT.md`
-    // carries 7 `criterion` lines and 0 `origin` lines, so a `/cad-verify` that
-    // silently stopped emitting `criterion` on a phase-3-shaped checklist read
-    // as "an old project" and the gate stayed green forever - exactly the
-    // regression this subcommand exists to catch. `uat init` writes
-    // `fields_version` unconditionally, so a file this seam produced can never
-    // present as legacy however few links its items carry. An EMPTY checklist is
-    // not legacy either - an empty checklist is the drop itself, so its criteria
-    // all break.
-    if (items.length && uat.fm.fields_version === undefined
-      && withCriterion.length === 0 && withOrigin.length === 0) {
-      legacy.push(p.n);
+    // `fieldless` is the FILE-shaped half of the old legacy test (D-16): a
+    // non-empty checklist carrying no `fields_version` marker and no traceability
+    // field on any item. An EMPTY checklist is not fieldless - an empty checklist
+    // is the drop itself, so its criteria all break below.
+    //
+    // The marker is what this tests, not the item fields. The original
+    // conjunction (no `criterion` AND no `origin`) reasoned that every post-field
+    // checklist carries at least one `origin`, and that premise was false the day
+    // it shipped: `.planning/phases/3/UAT.md` carries 7 `criterion` lines and 0
+    // `origin` lines, so a `/cad-verify` that silently stopped emitting
+    // `criterion` on a phase-3-shaped checklist read as "an old project" and the
+    // gate stayed green forever - exactly the regression this subcommand exists
+    // to catch.
+    const fieldless = items.length > 0 && uat.fm.fields_version === undefined
+      && withCriterion.length === 0 && withOrigin.length === 0;
+    if (fieldless) {
+      // Legacy is now FIVE terms, the fifth being D-01's: the phase's CONTEXT
+      // declares no `AC<N>` ids. The AC-id grammar (`5a3327a`) and
+      // `fields_version` (`fd31c04`) both shipped after `v1.5.0`, so no CONTEXT
+      // carrying AC ids can predate the fields - which makes a fieldless
+      // checklist beside declared ids a DROPPED LINK, not an old file. `uat init`
+      // writes `fields_version` unconditionally, so a file this seam produced
+      // can never present as legacy however few links its items carry.
+      //
+      // DECLARED, not parsed - the fifth term asks the classifier
+      // (`declaresIds`), never `criteria.length`. Those two are not the same
+      // question, and reading the second as the first is what let this gate
+      // pass a phase it never checked: `- [ ] AC1 the feature works`,
+      // `- [ ] **AC1**: x`, `- AC1: x`, `* [ ] AC1: x`, `### AC1: x`,
+      // `1. AC1: x` and an indented bullet each parse to ZERO criteria while
+      // `context_issues` names the id in the same envelope, so a fieldless
+      // checklist beside any of them collected an exemption whose stated reason
+      // asserted the phase declared nothing. An id this grammar REFUSED is
+      // still an id the author declared, and `'unknown'` (a near-miss heading,
+      // whose section is never walked) is not `'none'` either. Only a provable
+      // `'none'` may exempt. Widening the grammar to ADMIT those shapes is a
+      // separate, still-deferred item; this only stops the exemption inheriting
+      // the gap.
+      if (classified.declaresIds === 'none') {
+        legacy.push({ phase: p.n, reason: LEGACY_REASON });
+        continue;
+      }
+      // ONE break for the phase (D-02), naming the file to repair. Nine
+      // per-criterion `uncovered` breaks plus seventeen `untraced` entries are
+      // all symptoms of one missing marker, so both are suppressed here and the
+      // phase's criteria are restored to `counts` instead of exempted out of
+      // them. It has to be a BREAK: `breaks` is the only verdict-moving key, so
+      // an additive-only report would leave the gate exactly as permeable as the
+      // exemption it replaces.
+      //
+      // It fires REGARDLESS of the roadmap checkbox, deliberately unlike
+      // `uncovered` and `missing-uat`. Those two are box-gated because work in
+      // flight legitimately passes through them; this one is not, because `uat
+      // init` writes `fields_version` before it looks at a single item. No phase
+      // is ever transiently fieldless, and finishing the work does not repair it.
+      breaks.push({ phase: p.n, break: 'fieldless-checklist', file: `phases/${p.n}/UAT.md` });
+      nCriteria += criteria.length;
+      nUncovered += criteria.length;
       continue;
     }
 
@@ -892,6 +1060,21 @@ function cmdCriteriaCoverage(dir) {
   }
 
   ok({
+    // FIRST key, and always present: a statement about the run, not an optional
+    // finding. BOTH halves are reported (D-03) because neither is sufficient
+    // alone - mid-cycle the manifest names the last RELEASED version (`2.0.0`
+    // today, on a tree running v2.1.0-dev code), so `uat_fields` is the half
+    // that does not lag, while `plugin` is the half that names what a user
+    // actually has installed.
+    //
+    // The skew this exists for is a MODERN seam reporting green over an old
+    // file (D-04). The opposite skew already fails loudly: `v1.5.0`'s
+    // planning.mjs has no `criteria-coverage` subcommand at all, so an old seam
+    // returns `ok:false, reason:"usage"` rather than a quiet pass. What had no
+    // signal was a stale `${CLAUDE_PLUGIN_ROOT}`-resolved cache silently
+    // downgrading this gate, which is the unclosed half of phase 5's human
+    // verify: record the plugin version the check runs against.
+    version: { plugin: pluginVersion(), uat_fields: UAT_FIELDS_VERSION },
     phases,
     ...(breaks.length ? { breaks } : {}),
     ...(untraced.length ? { untraced } : {}),
