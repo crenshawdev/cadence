@@ -5,10 +5,27 @@
 
 ## Active
 
-No active milestone. `v2.2.0 — the rest of the residue` closed 2026-08-04 with
-all six requirements delivered; the next milestone was deliberately left
-unopened (user hold at the close). Opening it is `/cad-phase add` for the first
-phase, with this section reseeded from the next cycle's intent at that point.
+`v2.3.0 — where the bytes live`. A context-efficiency cycle grounded in a
+burnrate measurement over the 30 days ending 2026-08-01: 108.5k resident
+context per assistant turn against 565 output tokens, so cost is
+`context_size × turn_count` and reasoning depth is very nearly free. Every item
+below is a site where the shipped code disagrees with a rule
+`references/seams.md` already states. The cycle is transport-only except where
+noted: it moves bytes and changes when they load, and removes no review, gate,
+rung or guardrail. `/cad-plan` seeds each id's Traceability row as its phase is
+planned.
+
+- **RES-01**: Executor reports leave the orchestrator context — `cad-executor` writes `.planning/phases/<N>/reports/plan-<k>.md` and returns only a digest (status, task count, commit range, deviation count, open-item count); the `summary` step reads them back once. The `partial` and `timeout` continuation branches read the FILE, not the return, or a continuation silently re-runs finished tasks
+- **RES-02**: Verifier findings leave the orchestrator context — `cad-verifier` writes one findings file under `.planning/phases/<N>/` and returns a digest plus the path; `verify-deep` pipes `uat merge` straight from it and `route_failures` opens it at the point it acts. Carries the cycle's one deliberate safety exception: a NARROW `Write` grant, one file under `.planning/phases/<N>/`, with `Edit`/`MultiEdit` still denied on all four rungs
+- **RES-03**: Review artifacts stop being paid for twice — `claude-subagent` receives `{base_ref, head_ref}` and runs the diff itself, cross-model receives the existing `--payload <file>`. `assertUnderCap` moves to measuring the file's CONTENTS, which also closes the open non-string-payload bypass of the same cap
+- **RES-04**: `references/seams.md` states WHEN a file round-trip is worth its extra turn, so the next application of the rule saves rather than costs: it pays only when the parent's read-back folds into a turn it was taking anyway and lands late in the run, and extraction belongs to whichever side has the smaller resident context
+- **LOD-01**: `references/git.md` splits into `git-guard.md` (rails 1, 2, 4) and `git-publish.md` (rail 3), so the four skills that only need the guard stop loading publish policy and hook internals. Every citation moves with it, including the ones that cite rails by NUMBER
+- **LOD-02**: The triage gate lives in its own small reference rather than being re-read as part of a 13KB file three times per phase, and its adjudicated arm becomes a structured multi-select over the survivors — NONE still the default — replacing the open-ended-prose mandate that made every adjudicated review a wall of text
+- **LOD-03**: `conventions.md` stops being half-referenced — every bare parenthetical citation is either inlined at its use site and deleted, or backed by a real `@`-include where the rule is load-bearing
+- **LOD-04**: Whether `/cad-config`'s catalog derives from the schema is DECIDED on a measured menu-vs-non-menu run count rather than assumed. The derivation adds a turn on exactly the runs that need it, so it only pays if non-menu runs dominate; the measurement and the decision are both recorded either way
+- **LOD-05**: Each conditional `@`-include is judged per skill against the break-even test rather than blanket-converted — a reference consulted on EVERY path stays eager — and every keep-or-move call is stated with its reason
+- **BUD-01**: The 29 skill and 19 rung-agent descriptions that ride the system prompt of every session in every project cut to one routing line each, without dropping the trigger words that make a skill discoverable. `weight-budgets.json` regenerates in the same commit, since the budget is a ceiling and a shrunk file otherwise leaves pre-approved headroom
+- **BUD-02**: `cadence-core/references/**` and `templates/**` come under the weight budget that already ratchets workflows, skills and agents — 156KB currently capped by nothing, including a 22,506-byte reference larger than any budgeted workflow. The walker's whole-subtree blindness on one unreadable descendant is fixed in the same pass or explicitly declined
 
 ## Shipped
 

@@ -78,14 +78,31 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**No active milestone.** `v2.2.0 — the rest of the residue` closed 2026-08-04
-with all six requirements delivered (CFG-02, TOK-02, REL-03, DOC-01, RNG-02,
-HST-02 — rows above), the audit gate green, and the manifest at `2.2.0`. The
-next milestone was deliberately left unopened at the close; `/cad-phase add`
-opens its first phase, and REQUIREMENTS `## Active` gets reseeded from that
-cycle's intent. Candidate scope when it opens: the open CAPTURE todos (the
-digit-prefix requirement-id regression filed at HIGH among them), the open
-Forgejo issues, and the deferred follow-ups tracked in project memory.
+**`v2.3.0 — where the bytes live`**, opened 2026-08-04. The predecessor
+`v2.2.0 — the rest of the residue` closed 2026-08-04 with all six requirements
+delivered (CFG-02, TOK-02, REL-03, DOC-01, RNG-02, HST-02 — rows above), the
+audit gate green, and the manifest at `2.2.0`.
+
+This cycle is a context-efficiency pass, grounded in a burnrate measurement
+over the 30 days ending 2026-08-01: Cadence billed 330.2M billed-equiv across
+19,087 assistant messages, of which cache read alone is 62.7%. Per assistant
+turn that is 108.5k resident context against 565 output tokens — a 1:192 ratio
+that makes cost a function of `context_size × turn_count` and leaves reasoning
+depth very nearly free.
+
+The cycle is therefore **transport-only by default**: it moves bytes and
+changes when they load. It does not remove a review, weaken a gate, lower an
+effort rung, or drop a guardrail. Two deliberate exceptions, both decided by
+the user rather than assumed: a narrow `Write` grant to `cad-verifier` (one
+file, under `.planning/phases/<N>/`, `Edit`/`MultiEdit` still denied), and
+rewriting `review-triggers.md` §6's triage gate from open-ended prose to a
+structured multi-select with NONE still the default.
+
+Two items from the source work order were tested against the break-even
+arithmetic and did not survive intact: deferring `/cad-land`'s eager includes
+wholesale (it loses ~11k on any run that reaches the step, to save ~3.3k on one
+that does not) and moving workflow rationale to design-notes (dropped outright
+— rationale that stops a model working around a rule earns its bytes).
 
 ### Out of Scope
 
