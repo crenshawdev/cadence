@@ -18,14 +18,14 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 </objective>
 
 <execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md
 </execution_context>
 
 <process>
 1. **WIP commit.** If the tree has changes, stage exactly what the user was
    working on and commit `wip: <short description>` (protected-branch guard
-   applies - references/git.md). If the tree is clean, skip this; there is
+   applies - references/git-guard.md). If the tree is clean, skip this; there is
    nothing to preserve.
 
 2. **Set the cursor** through the seam (never hand-edit STATE.md):

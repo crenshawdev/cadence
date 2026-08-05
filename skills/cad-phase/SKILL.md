@@ -21,7 +21,7 @@ references rot. This skill keeps them consistent.
 
 <execution_context>
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/phase.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
 <process>

@@ -24,7 +24,7 @@ that silently dropped a requirement (cad-audit gates it).
 
 <execution_context>
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/milestone.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
 <process>

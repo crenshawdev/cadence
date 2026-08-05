@@ -18,7 +18,7 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 
 <execution_context>
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
 <process>
@@ -31,14 +31,14 @@ rather than a schema default no layer wrote.
 
 1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
-   exists here (git.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
+   exists here (references/git-guard.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
    changes; and the remote host detected from the origin URL (gitlab -> MR,
    github -> PR, none -> local only). Show this plainly before doing anything.
 
 2. **Uncommitted changes.** If the tree is dirty, do NOT auto-commit. Ask
    (ask-user seam): commit them first (then continue), leave them out of this
    land, or stop. If HEAD is a protected branch, the protected-branch guard
-   (git.md) applies to any commit here.
+   (references/git-guard.md) applies to any commit here.
 
 3. **Fire `pre_ship`.** Run the `pre_ship` review trigger
    (references/review-triggers.md) with the refs
@@ -51,7 +51,7 @@ rather than a schema default no layer wrote.
    triage gate exactly as review-triggers.md § 6 Consequence defines it - that
    file is preloaded above, so read it there rather than restating it here. Act
    ONLY on the survivors the user names, each as an atomic conventional commit
-   (references/git.md), then re-fire `pre_ship` ONCE - same `base`, the NEW
+   (references/git-guard.md), then re-fire `pre_ship` ONCE - same `base`, the NEW
    HEAD - so the publish decision is
    made against the tree that actually ships: at most one re-fire per `/cad-land`
    run, and report that re-fire's survivors rather than triaging them again -
@@ -88,10 +88,19 @@ rather than a schema default no layer wrote.
    **(b) `git.auto_close` true: land the integration branch on base via
    `PR -> merge`, no prompts.** Skip the 4a ask entirely (this is the single
    opt-in that lets the close run unattended; it never installs a default into
-   the 4a ask). The integration branch is local-only (git.md rail 3 never
+   the 4a ask). The integration branch is local-only
+   (references/git-publish.md rail 3 never
    auto-pushes). On GitHub, `gh pr create --head <branch>` will NOT push a
    remoteless branch non-interactively, so publish it first through the
    git-publish seam:
+   - **Read the publish rails first.** Read
+     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` before the
+     seam call: rail 3 and the `git.auto_close` policy apply from here on, and
+     this skill no longer preloads them. That costs one extra tool call, not an
+     extra turn - step 4a ends the turn on the publish-mechanism ask, so the
+     Read is the first call of the turn that starts with the user's answer, and
+     only the arms that publish reach it at all. The trade: ~4.5 KB off turn one
+     of every `/cad-land` run for one round-trip on the publish path.
    - **Publish the branch (GitHub arm).** Run the seam on its own physical line:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
      It does ONE sanctioned `git push` of the current non-protected branch as a

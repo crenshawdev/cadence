@@ -21,7 +21,7 @@ whether later phases exist and lets the user decide.
 
 <execution_context>
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/undo.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
 <process>
