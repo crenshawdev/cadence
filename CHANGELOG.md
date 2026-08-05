@@ -6,6 +6,8 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-05
+
 ### Changed
 
 - **A subagent's full output no longer stays resident in the context that
@@ -100,11 +102,56 @@ All notable changes to Cadence are recorded here. The format follows
   Two things a reader should keep an eye on. The `/cad-land` guard include
   stays eager only while every run reaches rails 1-2 through its steps 1, 2 and
   triage commits; a `/cad-land` path that commits nothing would make that
-  include a candidate in its own right. And the two new reference files
-  deliberately get no `weight-budgets.json` entry, since
-  `cadence-core/bin/lib/surface-weight.mjs` walks only `agents/*.md`,
-  `skills/**/SKILL.md` and `cadence-core/workflows/*.md`; `references/` comes
-  under budget separately.
+  include a candidate in its own right. And the two new reference files got no
+  `weight-budgets.json` entry when they were created, because
+  `cadence-core/bin/lib/surface-weight.mjs` walked only `agents/*.md`,
+  `skills/**/SKILL.md` and `cadence-core/workflows/*.md` at the time; the last
+  entry in these notes closes that gap and budgets them along with the rest of
+  `references/`.
+
+- **The adjudicated review triage gate is now a tapped multi-select, and it
+  lives in its own reference.** The gate used to mandate "open-ended prose, not
+  `AskUserQuestion`", which turned every adjudicated review into a wall of
+  findings to read and answer in free text. It is now `AskUserQuestion` with
+  `multiSelect: true`, NONE still first and still the default, and the turn
+  still ends on the question. The batch arithmetic is stated as two caps rather
+  than one, because collapsing them is what produces a malformed prompt:
+  survivors are OPTIONS inside a question and NONE occupies one of the four
+  option slots, so N survivors become `ceil(N/3)` questions, and those questions
+  batch four per call. An answer that comes back with NONE selected alongside
+  survivors is contradictory and re-asks that one question rather than guessing
+  which half was meant.
+
+  `§ 6 Consequence` moved out of the 15.7 KB `references/review-triggers.md`
+  into a 3.0 KB `references/triage-gate.md`, so the five sites that consult it -
+  three in `execute.md`, one each in `plan.md` and `verify.md` - read the gate
+  instead of the whole trigger file; `review-triggers.md` keeps a pointer.
+
+  One behavior fix rode along. The `git.auto_close` carve-out that suppresses
+  the triage prompt sat in the generic adjudicated arm, so a repo opting into
+  the unattended land close suppressed the prompt at EVERY adjudicated gate -
+  including `plan` and `diff`, where `land-cleanup.mjs gate` does not run and so
+  nothing was left to halt on the discarded survivors. It is now scoped to
+  `pre_ship` inside `/cad-land`, which is what the decision always said.
+
+- **The 17 `conventions.md` citations in `cadence-core/workflows/` read at their
+  own sites.** Each was a bare parenthetical pointing at a file the workflow
+  does not load, so the rule it named was unreachable at the moment it applied.
+  The operative clause is now inlined at all 17 - 13 Parallel-work, 3
+  batch-asks, 1 lazy-create - rather than the 611-byte source paragraph pasted
+  17 times, which would have added ~8 KB to workflows in a byte-cutting cycle.
+  `grep -rn "conventions.md" cadence-core/workflows/` returns nothing.
+  `references/conventions.md` itself is unchanged and stays the on-demand
+  reference it says it is.
+
+- **`references/git.md` is split into `git-guard.md` and `git-publish.md`.**
+  Rails 1, 2 and 4 (the protected-branch guard, atomic commits, risk surfaces)
+  plus the shared "what the guard sees" prose go to the guard file; rail 3
+  (never auto-push) and the `git.auto_close` policy go to the publish file. The
+  four guard-only skills stop carrying 11,330 B to reach a guard that is 6,166,
+  and `/cad-land` reads the publish half at each step that actually publishes -
+  both the manual mechanism answers and the unattended-close arm, GitLab's
+  `glab mr create` included.
 
 - **`/cad-config`'s catalog stays transcribed rather than derived, and
   `config.md` now says so.** The candidate change was to generate the catalog
@@ -1360,6 +1407,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.3.0
 [2.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.2.0
 [2.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/commit/e457e47
 [2.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.0.0
