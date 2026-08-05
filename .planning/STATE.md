@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 3 (The orchestrator stops holding what its children returned)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 3 (References load where they are used)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-05
