@@ -682,20 +682,23 @@ function run(root) {
       // the milestone's one deliberate exception from widening silently in a
       // later edit. Write must be GRANTED (the verifier writes its findings
       // JSON); Edit and MultiEdit must stay DENIED and must never appear in
-      // tools:. Keyed on `name:` because that is the identity the host
-      // dispatches by; the rung map in lib/rung-agent.mjs resolves the same
-      // agent by FILENAME, so the two must not be allowed to diverge - a rung
-      // file the map still routes must not slip out of this check.
+      // tools:. Keyed on the UNION of the two identities this agent has, never
+      // one of them: the host dispatches by `name:`, while the rung map in
+      // lib/rung-agent.mjs resolves the same agent by FILENAME. Checking either
+      // alone leaves the other as an edit that slips a still-routed rung file
+      // out of the check - rename `name:` and a filename-routed file goes
+      // unchecked; rename the file and check 8 catches it, but only because
+      // that map is the thing it audits. The union has no such seam.
       if (fm) {
         const nameLine = fm[1].match(/^name:[ \t]*(\S+)[ \t]*$/m);
         // YAML permits a quoted scalar, so the raw token can arrive as
         // `"cad-verifier"`. Strip one matched surrounding quote pair before
-        // comparing: without it a quoted name matches neither arm below, the
-        // whole grant check skips SILENTLY, and the rung map keeps routing that
-        // file because it resolves by filename. A silent skip in the only
-        // mechanical backstop is the exact failure this check exists to prevent.
+        // comparing: without it a quoted name matches neither arm below and the
+        // `name:` half of the union goes silently dead. A silent skip in the
+        // only mechanical backstop is the exact failure this check prevents.
         const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
-        if (agentName === 'cad-verifier' || agentName.startsWith('cad-verifier-')) {
+        const isVerifier = (id) => id === 'cad-verifier' || id.startsWith('cad-verifier-');
+        if (isVerifier(agentName) || isVerifier(e.slice(0, -3))) {
           const denied = new Set();
           const denyLine = fm[1].match(/^disallowedTools:\s*(.+)$/m);
           if (denyLine) {

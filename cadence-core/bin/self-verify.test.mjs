@@ -710,6 +710,22 @@ test('check 7c: Edit appearing in tools: is flagged', () => {
     && /Edit in tools:/.test(x.detail)), JSON.stringify(p));
 });
 
+test('check 7c: a routed rung FILENAME is checked even when name: was renamed', () => {
+  // The evasion the union closes: lib/rung-agent.mjs routes this file by its
+  // filename, so a `name:` edit must not take it out of the grant check.
+  const root = fixtureWith({
+    agents: {
+      'cad-verifier-max.md': '---\nname: cad-planner\ntools: Read, Bash\n'
+        + 'disallowedTools: Edit, MultiEdit\n---\nbody\n',
+    },
+    budgets: { 'agents/cad-verifier-max.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant'
+    && x.file === 'agents/cad-verifier-max.md'
+    && /Write not in tools:/.test(x.detail)), JSON.stringify(p));
+});
+
 test('check 7c: a non-verifier agent without Write yields no problem', () => {
   const root = fixtureWith({
     agents: { 'a.md': '---\nname: cad-planner\ntools: Read, Bash\n---\nbody\n' },
