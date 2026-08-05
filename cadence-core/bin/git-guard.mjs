@@ -10,7 +10,7 @@
 //
 // Rails:
 //   git push          -> permissionDecision "ask" - publishing is /cad-land's
-//                        call (references/git.md rail 3); the user decides at
+//                        call (references/git-publish.md rail 3); the user decides at
 //                        the prompt. No exemption lives here: EVERY Bash `git
 //                        push` this hook sees asks unconditionally. cad-land's
 //                        sanctioned unattended publish runs through the
@@ -66,7 +66,7 @@ function planningRoot(start) {
 // a second rule, because a wide reader saw `rg -t sh "git commit"` too. Reading
 // only the command word makes those silent up front, so there is one rule
 // instead of two and `denyable` has nothing left to express. What the reader
-// declines to see is listed in references/git.md rail 3 as the accepted cost of
+// declines to see is listed in references/git-publish.md rail 3 as the accepted cost of
 // deleting the tokenizer.
 
 // The current branch name, or '' on any failure (not a repo / no commits).
@@ -138,7 +138,7 @@ function main() {
   // is not a Bash tool call, so this hook never sees it.
   if (verbs.includes('push')) {
     decide('ask', 'Cadence rail: workflows never push - publishing is /cad-land\'s ' +
-      'call (references/git.md rail 3). Approve only if you are deliberately publishing.');
+      'call (references/git-publish.md rail 3). Approve only if you are deliberately publishing.');
     return;
   }
 

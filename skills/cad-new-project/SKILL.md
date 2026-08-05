@@ -1,6 +1,6 @@
 ---
 name: cad-new-project
-description: "Initialize a project through deep questioning - PROJECT.md, REQUIREMENTS.md, phased ROADMAP.md, and .planning/ state"
+description: "Initialize a project through deep questioning - PROJECT.md, REQUIREMENTS.md, a phased ROADMAP.md and .planning/ state"
 argument-hint: "[--research]"
 allowed-tools:
   - Read

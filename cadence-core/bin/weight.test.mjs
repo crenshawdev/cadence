@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,14 +32,18 @@ test('shape: ok true, non-empty surfaces with typed fields', () => {
   }
 });
 
-test('surface set is exactly agents/skills/workflows (D-02 narrowing)', () => {
+test('surface set is agents, skills, workflows plus references/** and templates/** (D-01)', () => {
   const paths = run(REPO).surfaces.map((s) => s.surface);
   assert.ok(paths.includes('agents/cad-planner.md'));
   assert.ok(paths.some((p) => /^skills\/.+\/SKILL\.md$/.test(p)));
   assert.ok(paths.some((p) => /^cadence-core\/workflows\/.+\.md$/.test(p)));
-  // Excluded: self-verify's wider surface (references/templates/README).
-  assert.ok(!paths.some((p) => p.startsWith('cadence-core/references/')));
-  assert.ok(!paths.some((p) => p.startsWith('cadence-core/templates/')));
+  // Widened by D-01: both directories are walked whole, so a reference that
+  // grows fails the budget the same way a workflow does.
+  assert.ok(paths.some((p) => p.startsWith('cadence-core/references/')));
+  assert.ok(paths.some((p) => p.startsWith('cadence-core/templates/')));
+  // And by EVERY file, not just `.md` - a JSON reference is budgeted too.
+  assert.ok(paths.includes('cadence-core/references/model-hints.json'));
+  // Still excluded: README is on self-verify's lint walk, not the weighed one.
   assert.ok(!paths.includes('README.md'));
 });
 
@@ -82,6 +86,46 @@ test('#49.1: a dangling symlink or symlink cycle under a measured surface is ski
     'cadence-core/workflows/good.md',
     'skills/y/SKILL.md',
   ]);
+});
+
+test('BUD-02: an unreadable sibling directory hides only itself', {
+  skip:
+    typeof process.getuid === 'function' && process.getuid() === 0
+      ? 'root bypasses mode bits'
+      : false,
+}, () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-weight-unreadable-'));
+  mkdirSync(join(root, 'skills', 'good'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'good', 'SKILL.md'), 'good skill body');
+  const priv = join(root, 'skills', 'private');
+  mkdirSync(priv);
+  chmodSync(priv, 0o000);
+  try {
+    const j = run(root);
+    assert.equal(j.ok, true);
+    assert.ok(j.surfaces.map((s) => s.surface).includes('skills/good/SKILL.md'));
+  } finally {
+    chmodSync(priv, 0o755);
+  }
+});
+
+test('D-07: a symlinked directory is not descended, so a cycle counts one surface', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-weight-dircycle-'));
+  mkdirSync(join(root, 'skills', 'a'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'a', 'SKILL.md'), 'x');
+  symlinkSync('..', join(root, 'skills', 'a', 'loop'));
+  assert.deepEqual(
+    run(root).surfaces.map((s) => s.surface),
+    ['skills/a/SKILL.md'],
+  );
+});
+
+test('a symlinked branch ROOT is descended (the qualified half of D-07)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-weight-linkroot-'));
+  mkdirSync(join(root, 'skills-real', 'a'), { recursive: true });
+  writeFileSync(join(root, 'skills-real', 'a', 'SKILL.md'), 'y');
+  symlinkSync('skills-real', join(root, 'skills'));
+  assert.ok(run(root).surfaces.map((s) => s.surface).includes('skills/a/SKILL.md'));
 });
 
 test('chars/4: estTokens and bytes match the measurement proxy', () => {

@@ -64,6 +64,10 @@ belong to an on-demand command rather than the phase loop.
 `bin/config.mjs` seam - this table is the menu's *presentation layer* (purpose +
 per-value copy) and must stay in sync with the schema's keys/types/enums. Never
 hand-validate against this table; call the seam (see **Validation seam** below).
+It is deliberately transcribed, NOT derived from `config.mjs keys`: the schema
+carries no per-value explanation field, while the walk above requires each
+option to carry its Explanation as the option `description`, so deriving would
+drop required copy rather than save bytes.
 
 Type key: `bool` = true/false · `int` = free-typed number (Other) · `str|null`
 = free-typed string or empty→null · `list` = comma-typed → array · `enum` =

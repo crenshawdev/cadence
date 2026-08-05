@@ -1,6 +1,6 @@
 ---
 name: cad-phase
-description: "CRUD phases in ROADMAP - add, insert, remove, edit. The op that earns the skill is remove/insert: it renumbers the following phases, their .planning/phases dirs, and every phase-number reference in one consistent pass - the thing humans botch by hand"
+description: "CRUD phases in ROADMAP - add, insert, remove, edit, with remove/insert renumbering the following phases, their .planning dirs and every phase reference"
 argument-hint: "add | insert <N> | remove <N> | edit <N>"
 allowed-tools:
   - Read
@@ -21,7 +21,7 @@ references rot. This skill keeps them consistent.
 
 <execution_context>
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/phase.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
 <process>

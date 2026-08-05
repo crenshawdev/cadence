@@ -1,6 +1,6 @@
 ---
 name: cad-planner-max
-description: The `max` rung of `cad-planner`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
+description: The `max` rung of `cad-planner`; `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: green
 effort: max

@@ -6,6 +6,221 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-05
+
+### Changed
+
+- **A subagent's full output no longer stays resident in the context that
+  dispatched it.** The content is identical; only where the bytes live and when
+  they load changed.
+
+  `cad-executor` now writes its report to `<plandir>/reports/plan-<k>.md` after
+  every task commit and returns a five-field digest - status, task count, commit
+  range, deviation count, open-item count. No task table, no deviation text and
+  no open-item text rides any return, checkpoints included. The path is derived
+  from the plan file's own directory, so `/cad-execute` writes under
+  `.planning/phases/<N>/` and `/cad-task` beside its own plan. A `PLAN PARTIAL`,
+  timeout or checkpoint continuation is built from that file, so a re-run cannot
+  re-execute a task the file already lists complete. In worktree mode the
+  executor commits the report itself, by pathspec, which is what carries it
+  across the merge without sweeping in a `risk_surface` checkpoint's
+  deliberately-uncommitted staged files.
+
+  `cad-verifier` writes exactly one file, `.planning/phases/<N>/verifier-findings.json`,
+  in the `uat merge` payload shape, and returns a digest plus that path. It is
+  deliberately NOT named `FINDINGS.json`: the seam owns that name and overwrites
+  it on every successful merge, so a verifier writing it would destroy its own
+  input. `/cad-verify --deep` pipes the file straight in, and the
+  hand-transcription step between the two is gone.
+
+  Reviewers receive a reference, never artifact bytes: a `{base_ref, head_ref}`
+  pair, a staged-diff scope to re-run in the cwd it inherits, or a path. Every
+  fire site - `diff`, `risk_surface`, `phase_diff`, `pre_ship`, `plan` - names
+  the shape it uses. Cross-model reviewers, which can run nothing themselves,
+  get a composed `--payload <file>`.
+
+  `cadence-core/references/seams.md` now states the break-even rule the pattern
+  rests on, so the judgment is written down rather than re-derived per site: a
+  file round-trip costs one extra turn and pays only when the read-back folds
+  into a turn the parent was taking anyway AND the artifact lands late enough
+  that the bytes would otherwise ride every remaining turn.
+
+- **`cad-verifier` gains `Write`, narrowly, and self-verify asserts the
+  boundary.** `Write` is on all four rungs; `Edit` and `MultiEdit` stay in
+  `disallowedTools`. Agent frontmatter exposes no path-scoped tool permission,
+  so a blocking self-verify check (`verifier-write-grant`) asserts the grant and
+  both denials on every rung, in both directions. Without it the milestone's one
+  deliberate exception could widen silently in a later edit.
+
+- **`planning.mjs uat merge` takes `--payload <file>` and refuses a bad
+  envelope.** Two live holes are closed. A literal `null` payload used to exit 0
+  printing nothing at all, from a seam whose entire contract is one JSON line;
+  and any parseable non-payload JSON, `"hello"` or `{}` included, used to merge
+  as an all-zero `ok:true` success, so a truncated findings file reported a
+  clean deep pass instead of falling through to the human walk. Both now refuse
+  with a named reason (`no-payload` / `bad-payload`) and exit 1, before
+  `loadUat` and before any write, leaving UAT.md and FINDINGS.json
+  byte-identical. `uat init` and `uat refresh` share the reader and gain the
+  same refusal. Stdin still works unchanged when the flag is absent.
+
+  `assertUnderCap` is deliberately UNCHANGED. It still measures the parsed
+  string fields, which under `--payload <file>` already ARE the file's
+  contents, so a payload's contents are bounded exactly as before. Measuring
+  raw bytes instead would count JSON escaping and the `{instruction, artifact}`
+  envelope, and a payload that passes today would newly refuse `over-cap` at
+  the same `review.max_prompt_tokens` - a behaviour change inside a
+  transport-only cycle.
+
+- **Every eager `@`-include in `skills/` carries a stated keep-or-move
+  reason.** The break-even rule in `cadence-core/references/seams.md` now covers
+  any deferred read rather than a subagent round-trip alone, so each call below
+  cites it exactly instead of by analogy: deferring pays when the read folds
+  into a turn the command was taking anyway AND only some branches reach it, and
+  an extra tool call inside a turn already being taken counts as folded while a
+  read that forces a new turn does not.
+
+  The tree carries 26 include lines across 21 skills. The 17 workflow includes
+  all stay eager - a skill's own workflow is its entire body, consulted on every
+  path - and so do `cad-help`'s `COMMANDS.md` and `cad-verify`'s
+  `templates/UAT.md`, for the same reason. `cad-plan-review` and `cad-land` keep
+  `references/review-triggers.md` eager as an explicit KEEP rather than an
+  oversight: `cad-plan-review`'s whole body is one `fire('plan')`, and every
+  `/cad-land` run fires `pre_ship`. What moved: the four guard-only skills
+  (`/cad-phase`, `/cad-pause`, `/cad-undo`, `/cad-milestone`) and `/cad-land`
+  swapped `references/git.md` for `references/git-guard.md`, with the publish
+  half deferred to the `/cad-land` step that acts on it, and `cad-pause`'s
+  `references/conventions.md` include is gone, leaving `conventions.md` eager
+  nowhere in the plugin.
+
+  Measured turn-one totals the calls were made against (SKILL.md plus every
+  `@`-included file, before this cycle's edits): `cad-land` 36,235 ·
+  `cad-milestone` 20,855 · `cad-verify` 19,834 · `cad-config` 19,601 ·
+  `cad-pause` 18,523 · `cad-execute` 18,452 · `cad-plan-review` 18,182 ·
+  `cad-context` 17,233 · `cad-phase` 15,941 · `cad-undo` 15,633 · `cad-plan`
+  15,584 · `cad-new-project` 15,349.
+
+  Two things a reader should keep an eye on. The `/cad-land` guard include
+  stays eager only while every run reaches rails 1-2 through its steps 1, 2 and
+  triage commits; a `/cad-land` path that commits nothing would make that
+  include a candidate in its own right. And the two new reference files got no
+  `weight-budgets.json` entry when they were created, because
+  `cadence-core/bin/lib/surface-weight.mjs` walked only `agents/*.md`,
+  `skills/**/SKILL.md` and `cadence-core/workflows/*.md` at the time; the last
+  entry in these notes closes that gap and budgets them along with the rest of
+  `references/`.
+
+- **The adjudicated review triage gate is now a tapped multi-select, and it
+  lives in its own reference.** The gate used to mandate "open-ended prose, not
+  `AskUserQuestion`", which turned every adjudicated review into a wall of
+  findings to read and answer in free text. It is now `AskUserQuestion` with
+  `multiSelect: true`, NONE still first and still the default, and the turn
+  still ends on the question. The batch arithmetic is stated as two caps rather
+  than one, because collapsing them is what produces a malformed prompt:
+  survivors are OPTIONS inside a question and NONE occupies one of the four
+  option slots, so N survivors become `ceil(N/3)` questions, and those questions
+  batch four per call. An answer that comes back with NONE selected alongside
+  survivors is contradictory and re-asks that one question rather than guessing
+  which half was meant.
+
+  `§ 6 Consequence` moved out of the 15.7 KB `references/review-triggers.md`
+  into a 3.0 KB `references/triage-gate.md`, so the five sites that consult it -
+  three in `execute.md`, one each in `plan.md` and `verify.md` - read the gate
+  instead of the whole trigger file; `review-triggers.md` keeps a pointer.
+
+  One behavior fix rode along. The `git.auto_close` carve-out that suppresses
+  the triage prompt sat in the generic adjudicated arm, so a repo opting into
+  the unattended land close suppressed the prompt at EVERY adjudicated gate -
+  including `plan` and `diff`, where `land-cleanup.mjs gate` does not run and so
+  nothing was left to halt on the discarded survivors. It is now scoped to
+  `pre_ship` inside `/cad-land`, which is what the decision always said.
+
+- **The 17 `conventions.md` citations in `cadence-core/workflows/` read at their
+  own sites.** Each was a bare parenthetical pointing at a file the workflow
+  does not load, so the rule it named was unreachable at the moment it applied.
+  The operative clause is now inlined at all 17 - 13 Parallel-work, 3
+  batch-asks, 1 lazy-create - rather than the 611-byte source paragraph pasted
+  17 times, which would have added ~8 KB to workflows in a byte-cutting cycle.
+  `grep -rn "conventions.md" cadence-core/workflows/` returns nothing.
+  `references/conventions.md` itself is unchanged and stays the on-demand
+  reference it says it is.
+
+- **`references/git.md` is split into `git-guard.md` and `git-publish.md`.**
+  Rails 1, 2 and 4 (the protected-branch guard, atomic commits, risk surfaces)
+  plus the shared "what the guard sees" prose go to the guard file; rail 3
+  (never auto-push) and the `git.auto_close` policy go to the publish file. The
+  four guard-only skills stop carrying 11,330 B to reach a guard that is 6,166,
+  and `/cad-land` reads the publish half at each step that actually publishes -
+  both the manual mechanism answers and the unattended-close arm, GitLab's
+  `glab mr create` included.
+
+- **`/cad-config`'s catalog stays transcribed rather than derived, and
+  `config.md` now says so.** The candidate change was to generate the catalog
+  table from `config.mjs keys` instead of maintaining the copy by hand. Two
+  independent grounds refuse it.
+
+  The measurement: parsing every slash-command invocation across the local
+  transcript corpus yields 5 `/cad-config` runs in total, none carrying
+  `--review` or a `<key>=<value>` token, so by `config.md`'s Route rule all
+  five reached the interactive menu. Non-menu runs are not a minority here,
+  they are zero of five - for scale, `cad-verify` 46, `cad-plan` 44,
+  `cad-execute` 39.
+
+  The arithmetic: `node cadence-core/bin/config.mjs keys` emits 20,769 B on one
+  JSON line against a 6,827 B catalog table, and the schema's field union
+  (`type`, `values`, `default`, `src`, `purpose`, `min`, `max`) carries no
+  per-value explanation field, while the walk requires each option to carry its
+  Explanation as the option `description`. Deriving would cost three times the
+  bytes AND drop required copy, or force re-authoring that copy into the schema
+  - a schema change, not a transport change.
+
+  The stated limit: n=5 is thin enough that the smallness is itself the
+  finding, which is why the decision rests primarily on the arithmetic. That
+  half is independent of run mix, so a wider window showing non-menu runs
+  dominating still refuses the derivation.
+
+- **Every skill and agent description is one routing line.** The 29
+  `skills/cad-*/SKILL.md` descriptions, which ride the system prompt of every
+  session in every project, fall from 5,078 B to 3,759 B, and the 19
+  `agents/*.md` descriptions from 3,472 B to 1,638 B - each agent line now
+  states its rung and that `bin/route.mjs` picks it rather than the user. What
+  came out is positioning, design rationale, implementation detail nobody routes
+  on, and flag lists `argument-hint:` already carries verbatim. What stayed is
+  every trigger word a user would type, plus the three negative clauses that
+  disambiguate confusable commands at selection time (`/cad-health` is not
+  `/cad-audit`, `/cad-docs-verify` reports rather than rewrites, `/cad-land`
+  never decides how you publish). The six `cad-*-contract` descriptions and all
+  `effort:`, `tools:`, `disallowedTools:` and `skills:` frontmatter are
+  byte-identical. Per-skill before/after text with the trigger-word check is in
+  `.planning/phases/3/MEASUREMENTS.md`.
+
+- **`cadence-core/references/**` and `cadence-core/templates/**` come under the
+  weight budget.** 23 files and 162,186 B that five workflows name and no ceiling
+  watched are now weighed surfaces with exact per-file budgets, so a reference
+  that grows fails CI the same way a workflow does. The walk covers every file,
+  not just `.md`, so `references/model-hints.json` and `templates/config.json`
+  are budgeted too - which means editing either now requires regenerating the
+  manifest.
+
+  The measurement was fixed first, because it was not honest. Both walkers -
+  `lib/surface-weight.mjs` and self-verify's `mdFiles` - wrapped one
+  `recursive: true` `readdirSync` per branch, so a single unreadable descendant
+  returned nothing for the WHOLE subtree: with `skills/private/` at mode 000,
+  `weight.mjs` reported zero surfaces and self-verify reported
+  `{"kind":"unreadable-surface","file":"skills","detail":"EISDIR"}` - naming a
+  directory that reads fine, with the errno of a failed `readFileSync` rather
+  than the EACCES that occurred, while every readable sibling went unlinted.
+  Both now recurse per entry: one unreadable directory hides only its own
+  children, is named by its own path with its own errno, and its siblings are
+  still weighed and still linted.
+
+  Deliberate behavior change in the same fix: descent is decided on the dirent,
+  so a symlinked DIRECTORY met during a walk is no longer descended. A
+  `skills/a/loop -> ..` cycle measured 41 surfaces of one file before and
+  measures 1 now, which makes `surface-weight.mjs`'s long-standing "a symlink
+  cycle is silently skipped" claim true for directory links for the first time.
+  An explicitly named branch root that is itself a symlink IS still descended -
+  the dirent test only ever sees descendants - and a test row pins each half.
+
 ## [2.2.0] - 2026-08-04
 
 The six requirements v2.1.0 opened with and never picked up, carried forward
@@ -1192,6 +1407,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.3.0
 [2.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.2.0
 [2.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/commit/e457e47
 [2.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.0.0

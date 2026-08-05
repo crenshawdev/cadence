@@ -1,6 +1,6 @@
 ---
 name: cad-debug
-description: "Systematic debugging - scientific method with hypothesis state persisted across /clear, and a user-gated second-model consult at dead-ends. Single pass, no session-manager layer"
+description: "Systematic debugging - hypothesis and symptom tracked in a state file that survives /clear, with a user-gated second-model consult at dead ends"
 argument-hint: "[list | status <slug> | continue <slug> | --diagnose] [symptom]"
 allowed-tools:
   - Read

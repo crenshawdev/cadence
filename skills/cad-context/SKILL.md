@@ -1,6 +1,6 @@
 ---
 name: cad-context
-description: "Gather phase context before planning - codebase assumptions, locked decisions, falsifiable acceptance criteria - in one conversational pass"
+description: "Gather phase context before planning - codebase assumptions, locked decisions, falsifiable acceptance criteria - in one pass"
 argument-hint: "[phase number]"
 allowed-tools:
   - Read

@@ -137,7 +137,7 @@ test('gate: auto_close ONLY in the global layer (repo omits) -> halt', () => {
   // breaks. skills/cad-land/SKILL.md:27 reads the MERGED auto_close and
   // suppresses the pre_ship triage ask under it, so on this input the prose has
   // already entered the unattended chain with no human watching - and this halt
-  // is the only consequence left (references/review-triggers.md:146). Reading
+  // is the only consequence left (references/triage-gate.md:34). Reading
   // the repo layer here (0b1c322, reverted) answered `proceed` on exactly this
   // input while triage stayed suppressed, and on the GitLab arm - where no
   // publish seam gates the chain - the blocker merged.

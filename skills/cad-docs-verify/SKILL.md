@@ -1,6 +1,6 @@
 ---
 name: cad-docs-verify
-description: "Verify factual claims in docs against the live codebase - file paths, commands, code symbols, config keys, structure - and report which are accurate, stale, or unverifiable. Reports; it does not rewrite docs"
+description: "Verify docs claims against the live codebase - paths, commands, symbols, config keys - each reported accurate, stale or unverifiable. Reports; it does not rewrite docs"
 argument-hint: "[path or glob | defaults to README + docs/]"
 allowed-tools:
   - Read

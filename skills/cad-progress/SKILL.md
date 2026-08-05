@@ -1,6 +1,6 @@
 ---
 name: cad-progress
-description: "Show where the project stands and what's next - count-based status from files and git, auto-resume of incomplete work, --stats for a quick summary"
+description: "Project progress - count-based status from files and git, auto-resume of incomplete work, --stats for a quick summary"
 argument-hint: "[--stats]"
 allowed-tools:
   - Read

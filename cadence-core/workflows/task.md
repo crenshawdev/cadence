@@ -1,6 +1,6 @@
 <purpose>
 Execute a small, off-roadmap task with Cadence's two guarantees - atomic
-conventional commits and the git.md rail-1 guard (the protected-branch check
+conventional commits and the references/git-guard.md rail-1 guard (the protected-branch check
 plus base-integrity and the integration-branch decision, not a bare branch
 check) - and no planning apparatus beyond that: inline by default (no subagents,
 no plan files). `--plan` opts into a written PLAN.md for genuinely multi-step
@@ -20,7 +20,7 @@ Store as $TASK.
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` before any work.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
 </step>
 
 <step name="scope">
@@ -45,7 +45,7 @@ When unsure between inline and planned, pick planned.
 2. Make the change.
 3. Verify: run `workflow.test_command` from config if set and relevant,
    otherwise do a direct sanity check of the changed behavior.
-4. Commit per references/git.md rail 2 (specific files, conventional message).
+4. Commit per references/git-guard.md rail 2 (specific files, conventional message).
 
 No PLAN.md, no SUMMARY.md, no state writes.
 </step>
@@ -63,14 +63,18 @@ No PLAN.md, no SUMMARY.md, no state writes.
    from a fresh context, dispatch cad-executor with the plan via the
    spawn-agent seam instead, and wait for its result.
 3. Append a 3-5 line "Outcome" section to the PLAN.md (what shipped, commit
-   hashes, deviations). No separate SUMMARY.md for tasks.
-4. If `planning.commit_docs` is true and the plan file exists, commit it
-   (`docs: task plan {slug}`).
+   hashes, deviations). When step 2's cad-executor exception was taken, write
+   it from `.planning/tasks/{slug}/reports/plan-1.md` - the executor returns a
+   digest, not a table - read once here. No separate SUMMARY.md for tasks.
+4. If `planning.commit_docs` is true and the plan file exists, commit it, plus
+   that report file when one was written (`docs: task plan {slug}`).
 </step>
 
 <step name="risk_check">
 If any commit's diff touched a risk surface, fire the `risk_surface` review
-trigger per references/review-triggers.md before reporting done.
+trigger per references/review-triggers.md before reporting done. The commits
+already exist, so the artifact is refs - shape (a):
+`{base_ref: parent of the task's first commit, head_ref: HEAD}`.
 </step>
 
 <step name="done">

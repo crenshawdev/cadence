@@ -1,6 +1,6 @@
 ---
 name: cad-help
-description: "The Cadence command reference - every /cad-* skill grouped by cluster (spine, review & quality, lifecycle, support), plus the review and consult capabilities. Pass a command name to show just that entry"
+description: "Cadence's own help - the command reference for every /cad-* skill, grouped by cluster; pass a command name for just that entry"
 argument-hint: "[command name]"
 allowed-tools:
   - Read

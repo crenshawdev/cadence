@@ -131,7 +131,7 @@ all of it.
 
 **First-commit guard.** If `planning.commit_docs` is false, skip this commit
 and every later commit in this workflow. Otherwise apply the
-protected-branch guard from references/git.md now, before the first commit.
+protected-branch guard from references/git-guard.md now, before the first commit.
 Exception: a repo with no commits yet (`git rev-parse HEAD` fails) has
 nothing to branch from - skip the guard and let the initial docs commit
 create the root commit on the current branch.
@@ -192,8 +192,8 @@ scope boundaries.
 - options: the category's features, plus "None for v1"
 
 Batch the category questions ceil(N/4) per AskUserQuestion call (up to 4
-categories at once), not one blocking turn per category (conventions.md
-batch-asks).
+categories at once), not one blocking turn per category; only a question whose
+wording depends on an earlier answer stays sequential.
 
 Track the outcome: selected features are v1; unselected table stakes go to
 v2; unselected differentiators go to Out of Scope.
@@ -275,8 +275,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
   --phase 1 --status "ready to plan" --next "/cad-context 1"
 ```
 
-Do NOT create `.planning/phases/` directories - the first skill that needs
-one creates it lazily (cad-context or cad-plan; conventions.md).
+Do NOT create `.planning/phases/` directories. A phase directory is
+`.planning/phases/<N>/`, where `<N>` is the bare phase integer from ROADMAP.md
+(no zero-padding, no slug suffix), created lazily by the first skill that needs
+it (cad-context or cad-plan) and matched to an existing directory's name if one
+is already present.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
 `.planning/STATE.md`, `.planning/REQUIREMENTS.md`.
@@ -334,7 +337,7 @@ transcript need not be carried forward.
 - [ ] Every `## Active` id appears in a ROADMAP phase (100% coverage);
       Traceability table left as bare headers for `/cad-plan` to seed
 - [ ] STATE.md is a 4-line cursor pointing at phase 1
-- [ ] Commits follow references/git.md (guard before first commit, docs:
+- [ ] Commits follow references/git-guard.md (guard before first commit, docs:
       prefix, specific files, no push) and respect planning.commit_docs
 - [ ] At most one research agent spawned, only when enabled
 </success_criteria>

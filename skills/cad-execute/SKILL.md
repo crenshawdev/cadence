@@ -1,6 +1,6 @@
 ---
 name: cad-execute
-description: "Execute all plans in a phase - one cad-executor per plan, atomic commit per task, slim per-phase SUMMARY"
+description: "Execute a phase's plans - a subagent per plan, an atomic commit per task, a slim per-phase SUMMARY"
 argument-hint: "[phase number]"
 allowed-tools:
   - Read

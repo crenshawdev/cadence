@@ -73,8 +73,8 @@ scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
 Recall prior-project memory before dispatching. Read the config this step needs
-in ONE call - the recall gate and the dispatch timeout together (conventions.md
-Parallel work):
+in ONE call - the recall gate and the dispatch timeout together, independent of
+each other, so nothing in this step is serialized behind a prior result:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend workflow.subagent_timeout
@@ -135,8 +135,9 @@ Adaptive questioning - ask only what the analyzer could not resolve.
 question (ask-user seam, structured): the analyzer's alternatives as
 options, recommended first, described by user-visible outcome, annotated
 with evidence and prior decisions. These per-item questions are independent -
-batch them ceil(N/4) per AskUserQuestion call, not one blocking turn each
-(conventions.md batch-asks). If more than ~5 items are Unclear, ask
+batch them ceil(N/4) per AskUserQuestion call (up to four questions per call),
+not one blocking turn each; only a question whose wording depends on an earlier
+answer stays sequential. If more than ~5 items are Unclear, ask
 the highest-consequence ones (worst "if wrong") and leave the rest as
 flagged assumptions.
 
@@ -175,7 +176,8 @@ Then ask (ask-user seam, structured):
 On "Correct some": multiSelect over the assumptions (label = statement,
 description = "If wrong: {consequence}"), then one focused question per
 selected item with 2-3 concrete alternatives, batched ceil(N/4) per
-AskUserQuestion call (conventions.md batch-asks). Corrections override the
+AskUserQuestion call, up to four questions per call; only a question whose
+wording depends on an earlier answer stays sequential. Corrections override the
 original.
 
 Everything confirmed or corrected becomes a numbered decision (D-01, D-02,
@@ -323,7 +325,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N
 
 <step name="commit">
 If `planning.commit_docs` is true: apply the protected-branch guard
-(references/git.md rail 1 - context is the first act of a phase), then
+(references/git-guard.md rail 1 - context is the first act of a phase), then
 commit exactly `{phase_dir}/CONTEXT.md`, `.planning/STATE.md`, and - only
 when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:
 `docs: capture context for phase {N}`. Nothing this workflow wrote may be

@@ -27,7 +27,8 @@ Resolve the phase:
   Run /cad-plan first."
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
-it) and the config in one message - independent (conventions.md Parallel work).
+it) and the config in one message - independent, so only a call that consumes a
+prior call's output is serialized.
 Config through the seam - one call:
 
 ```
@@ -47,7 +48,7 @@ would fire at the default while the seam reported the level's.
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` in the cwd (planning) repo
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` in the cwd (planning) repo
 BEFORE dispatching the first executor - this covers both the executors' commits
 and the docs commit. Executors commit; the guard question belongs here, once,
 never inside a subagent.
@@ -127,37 +128,55 @@ report format) - `cad-executor.md` already carries them as its stable, cached
 definition. Repeating them in the volatile dispatch tail pays for cached
 content twice.
 
+**The report file (both paths).** An executor writes its task table to
+`<plandir>/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
+and returns a five-field digest. Derive that path from the plan file you
+dispatched; the digest deliberately does not carry it. Open a report file at
+two kinds of moment only: the `summary` step, once per plan, and a continuation
+branch, where you read ONLY the task numbers and commit hashes for the `git log`
+confirmation that branch already performs. Nowhere else, and never back into a
+dispatch prompt - re-inlining the table returns the bytes the file exists to
+move out, on the most expensive path there is. Before a worktree branch is
+merged its report lives in the worktree, not here: `git worktree list
+--porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`.
+
 Handle the executor's return:
-- **complete** (`PLAN COMPLETE`) -> collect its report (tasks, hashes,
-  deviations, open items).
+- **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
+  path `<plandir>/reports/plan-<k>.md`. Do not open the file here; `summary`
+  reads it.
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
-- **partial** (`PLAN PARTIAL`, a report but no checkpoint) -> the report's
-  completed-task table is authoritative; confirm its hashes against
-  `git log {pre-plan HEAD}..HEAD`, then ask the user (ask-user seam):
-  dispatch a fresh continuation executor for the remaining tasks (prompt
-  extended with the completed-task table and "continue from task <k>", as
-  in handle_checkpoint) or stop here - the incomplete tasks become SUMMARY
-  open items. Never silently re-run completed tasks.
-- **timeout or no report** -> inspect `git log {pre-plan HEAD}..HEAD` to see
-  what actually landed, report the state, and ask the user (ask-user seam)
-  whether to re-dispatch the remainder or stop. Never silently re-run a plan
-  on top of partial commits.
+- **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
+  is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers
+  and hashes, confirm them against `git log {pre-plan HEAD}..HEAD`, then ask
+  the user (ask-user seam): dispatch a fresh continuation executor for the
+  remaining tasks (prompt carrying the report PATH and "continue from task
+  <k>", as in handle_checkpoint) or stop here - the incomplete tasks become
+  SUMMARY open items. Never silently re-run completed tasks.
+- **timeout or no report** -> the executor rewrites its report after every task
+  commit, so a file exists even when nothing was returned: read it, confirm it
+  against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
+  the state, and ask the user (ask-user seam) whether to re-dispatch the
+  remainder or stop. Never silently re-run a plan on top of partial commits.
 
 After each plan completes, fire the `diff` review trigger
-(references/review-triggers.md) with `git diff {pre-plan HEAD}..HEAD` as the
-payload. Default is advisory: report findings, continue. When
+(references/review-triggers.md) with the refs
+`{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
+reviewer runs the diff itself. Default is advisory: report findings, continue.
+When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the
 survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
-§ 6 Consequence before presenting, since this workflow does not preload it. The
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+before presenting, since this workflow does not preload it. The
 `risk_surface` arm is untouched by any of that: a matched risk surface still
 halts, and triage is not an override for it.
 </step>
 
 <step name="handle_checkpoint">
-A checkpoint return carries: completed tasks with commit hashes, the current
-task, and what the executor needs. Route by type:
+A checkpoint return carries no completed-task table - only the digest, the
+checkpoint type, the current task, and what the executor needs. The completed
+tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
+`CHECKPOINT` status line before returning. Route by type:
 
 - **structural** (architectural change needed, plan wrong at its core) ->
   present to the user via the ask-user seam: approve the proposed change /
@@ -165,15 +184,18 @@ task, and what the executor needs. Route by type:
   offer_consult per references/consult.md with the deviation as the
   situation.
 - **risk_surface** (staged diff matches a risk surface) -> fire the
-  `risk_surface` review trigger with the flagged diff. Blocking: on FAIL,
-  findings are fixed or the user explicitly overrides - never silently
-  proceed.
+  `risk_surface` review trigger with the flagged-diff FILE path the checkpoint
+  returned - shape (c). It is a path and not refs because the diff is staged
+  and uncommitted, and in worktree mode it is not in this tree at all.
+  Blocking: on FAIL, findings are fixed or the user explicitly overrides -
+  never silently proceed.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
-Then dispatch a FRESH cad-executor for the same plan, its prompt extended
-with the completed-task table (hashes included), the checkpoint outcome, and
-"continue from task <k>". Fresh context each time - never resume.
+Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
+report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
+"continue from task <k>". Fresh context each time - never resume, and never
+re-inline the table.
 </step>
 
 <step name="execute_parallel">
@@ -191,27 +213,41 @@ fork-point default.)
    concurrent dispatch). Same prompt as sequential except the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
 2. Wait for every executor in the batch (same timeout).
-3. Merge each worktree branch back sequentially: `git merge {branch}`; on
-   conflict, stop and ask the user - never force, never auto-resolve.
+3. Merge each worktree branch back sequentially: record each branch's pre-merge
+   HEAD first, then `git merge {branch}`, then record the HEAD it produced; on
+   conflict, stop and ask the user - never force, never auto-resolve. The merge
+   is also what carries that executor's own report commit into phase history.
+   BOTH ends are recorded here because step 5 runs after every branch has
+   merged, when the tree holds only the final HEAD: a plan's post-merge HEAD is
+   not recoverable then, and pairing its pre-merge HEAD with the current HEAD
+   would hand that plan's reviewer every later plan's work as well.
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
-   `diff` trigger for every plan CONCURRENTLY in one message (payload: each
-   plan's commits as a diff) - the diffs are static and independent, so the
-   per-plan reviews need not serialize (seams.md concurrent dispatch). The
+   `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
+   (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
+   that plan's post-merge HEAD from step 3}`) - the ranges are static and
+   independent, so
+   the per-plan reviews need not serialize (seams.md concurrent dispatch). This
+   step runs AFTER step 3 merged every branch, so a per-plan `diff` review never
+   fires before the merge and its refs always resolve in THIS tree, which is the
+   tree a dispatched subagent inherits. The
    `diff` gate reports and continues as today at `advisory`; at `adjudicated`
-   each plan's survivors go through the triage gate -
-   references/review-triggers.md § 6 Consequence, NONE the default - before
-   any of them is acted on.
-6. Fire the `phase_diff` trigger (references/review-triggers.md) with
-   `git diff {PHASE_START}..HEAD` as the payload. Off by default (opt-in) -
+   each plan's survivors go through the triage gate, NONE the default: RE-READ
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
+   presenting, since this workflow does not preload it, and act only on what
+   the user names.
+6. Fire the `phase_diff` trigger (references/review-triggers.md) with the refs
+   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). Off by default
+   (opt-in) -
    it exists because the per-plan reviews above each see one plan's diff in
    isolation, so a bug in the INTERACTION of two merged plans is invisible
    to them until pre_ship at land time. Parallel path only: on the
    sequential path each diff review already sees a tree containing all
    prior plans' work. It is `adjudicated` wherever it is on at all (critical
-   only), so its survivors go through the same triage gate -
-   references/review-triggers.md § 6 Consequence, NONE the default - before
-   any of them is acted on.
+   only), so its survivors go through the same triage gate, NONE the default:
+   RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+   before presenting, since this workflow does not preload it, and act only on
+   what the user names.
 
 Checkpoints on this path route exactly as in handle_checkpoint; the
 continuation executor is dispatched back into the same worktree.
@@ -222,8 +258,9 @@ Light, inline, no subagent. Read the phase goal and
 `git log --oneline {PHASE_START}..HEAD`, then write one honest paragraph:
 does the sum of these commits plausibly deliver the phase goal? Name
 anything that looks missing. Every concrete claim in the paragraph carries
-its evidence inline - a file:line or a command output, drawn from the
-executor reports or a direct look - never an unevidenced "X now works":
+its evidence inline - a file:line or a command output, drawn from
+`git log --oneline`, the returned digests, or a direct look (the report files
+open at `summary`, not here) - never an unevidenced "X now works":
 cad-verifier later treats SUMMARY claims as assertions to falsify, so an
 evidenced claim closes that loop and an unevidenced one is just a guess
 wearing a verdict. This is an assessment, not a gate - gaps become
@@ -232,8 +269,9 @@ SUMMARY open items, not a fix loop.
 
 <step name="summary">
 Write `.planning/phases/<N>/SUMMARY.md` from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/SUMMARY.md`, aggregating the executor
-reports: what shipped, commits per task with hashes, deviations, open items,
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/SUMMARY.md`, aggregating the
+executor reports - read each plan's `<plandir>/reports/plan-<k>.md` once, at
+this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
 
@@ -253,10 +291,15 @@ Update the cursor through the seam:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
 ```
 
-If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, and
-`.planning/CAPTURE.md` if the summary step appended open items to it -
-`docs(<N>): phase <N> summary` - staging exactly those files. The cursor
-is never left uncommitted.
+If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
+`<plandir>/reports/plan-<k>.md`, and `.planning/CAPTURE.md` if the summary step
+appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
+those files. Never stage a `plan-<k>-risk-task-<n>.diff`: it is the transient
+flagged diff and the continuation deletes it. With the key false the reports
+stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
+that key is the user's standing answer for all of them - the worktree path
+commits regardless not as a docs decision but because the commit is the only
+transport across the merge. The cursor is never left uncommitted.
 </step>
 
 <step name="done">

@@ -1,6 +1,6 @@
 ---
 name: cad-coverage
-description: "Find which of a completed phase's requirements have zero failing-capable test coverage, then generate tests to close the gaps - using the project's own test framework, not a fixed one"
+description: "Find a completed phase's requirements with no failing-capable test coverage and generate tests to close the gaps, in the project's own framework"
 argument-hint: "[phase number]"
 allowed-tools:
   - Read

@@ -5,10 +5,24 @@
 
 ## Active
 
-No active milestone. `v2.2.0 — the rest of the residue` closed 2026-08-04 with
-all six requirements delivered; the next milestone was deliberately left
-unopened (user hold at the close). Opening it is `/cad-phase add` for the first
-phase, with this section reseeded from the next cycle's intent at that point.
+`v2.4.0 — what Cadence says about itself`. A reconciliation cycle, not a
+construction one. `.planning/CAPTURE.md` holds 182 open items accumulated over
+nine milestones; some were closed by work that shipped and never struck, some
+describe code that no longer exists, and the real ones have gone unread because
+the file is too long to triage in passing. That same file is the input to
+`/cad-plan`'s recall, so its noise is paid for at every planning dispatch. The
+outward half is the same problem: what Cadence claims about itself in
+`README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and its workflow
+prose has never been checked end to end against the code. Nothing here changes
+runtime behavior except where a doc claim turns out to describe a real defect.
+An item is closed only against evidence from the tree, naming the commit that
+closed it — never because it reads as done. `/cad-plan` seeds each id's
+Traceability row as its phase is planned.
+
+- **REC-01**: Every open `CAPTURE.md` item is triaged against the live tree and lands in exactly one of three states — closed with the commit that closed it named, deleted as moot with the reason stated, or kept with its claim re-verified and its file:line citations corrected. No item survives on its original wording alone
+- **REC-02**: The capture file stops being an append-only log: closed and moot items move out of the live queue to an archive section or file, so what `/cad-plan`'s recall reads is the set of things still true. The recall path is measured before and after, since a shorter corpus changes what BM25 ranks
+- **DOC-02**: `/cad-docs-verify` runs across the whole doc surface — `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md` — and every claim it reports stale is either corrected or recorded as a known divergence with its reason. The run is repeatable and its output is committed, so the next cycle starts from a diff rather than a fresh sweep
+- **DOC-03**: A claim that turns out to describe a real defect rather than stale prose is filed as its own requirement rather than silently reworded, so the cycle cannot quietly convert a bug into a documentation edit
 
 ## Shipped
 
@@ -84,6 +98,17 @@ parses only the Traceability table).
 | DOC-01 (rung-ladder claims corrected in CHANGELOG; `route.mjs` `warnings[]` rides every shape including `ok:false`) | 4 | Complete | v2.2.0 |
 | RNG-02 (per-role effort configurable and update-surviving; a rung the role lacks fails self-verify by key) | 4 | Complete | v2.2.0 |
 | HST-02 (install path proven live against Forgejo from a fully cold state; transcripts committed in the phase record) | 5 | Complete | v2.2.0 |
+| RES-01 (executor reports to `reports/plan-<k>.md`, five-field digest return) | 1 | Complete | v2.3.0 |
+| RES-02 (verifier findings to one file, narrow `Write` grant, `uat merge` piped from it) | 1 | Complete | v2.3.0 |
+| RES-03 (reviewers get refs or `--payload <file>`, `assertUnderCap` on contents) | 1 | Complete | v2.3.0 |
+| RES-04 (`seams.md` states when a file round-trip pays, extended to any deferred read) | 1 | Complete | v2.3.0 |
+| LOD-01 (`git.md` split into `git-guard.md` + `git-publish.md`, all citations moved) | 2 | Complete | v2.3.0 |
+| LOD-02 (triage gate its own reference, adjudicated arm a tapped multi-select) | 2 | Complete | v2.3.0 |
+| LOD-03 (all 17 `conventions.md` parentheticals inlined, eager nowhere) | 2 | Complete | v2.3.0 |
+| LOD-04 (`/cad-config` catalog decided on a measured run count, recorded transcribed) | 2 | Complete | v2.3.0 |
+| LOD-05 (every eager `@`-include judged per skill with a stated reason) | 2 | Complete | v2.3.0 |
+| BUD-01 (29 skill + 19 agent descriptions to one routing line, 8,550 B to 5,397) | 3 | Complete | v2.3.0 |
+| BUD-02 (`references/**` + `templates/**` budgeted, both walkers fixed) | 3 | Complete | v2.3.0 |
 
 ## Deferred
 
@@ -114,10 +139,10 @@ section only, bounded at the next `## ` heading.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 
-Empty between milestones. `v2.2.0`'s six rows moved to `## Shipped` at its
+Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
 from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-04 v2.2.0 closed with all 6 delivered - CFG-02/TOK-02/REL-03/DOC-01/RNG-02/HST-02 archived to `## Shipped`, Traceability emptied, no next milestone opened (user hold)*
+*Last updated: 2026-08-05 v2.3.0 closed with all 11 delivered - RES-01..04/LOD-01..05/BUD-01..02 archived to `## Shipped`, Traceability emptied, v2.4.0 opened*

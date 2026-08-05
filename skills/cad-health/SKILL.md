@@ -1,6 +1,6 @@
 ---
 name: cad-health
-description: "Quick planning-health check - are .planning's core docs present, and is the STATE cursor / ROADMAP / REQUIREMENTS parseable and mutually consistent? Reports issues and offers to fix trivial ones. Not a traceability audit (that is /cad-audit)"
+description: "Planning-health check - .planning's core docs present, the STATE cursor, ROADMAP and REQUIREMENTS parseable and consistent. Not a traceability audit (that is /cad-audit)"
 argument-hint: ""
 allowed-tools:
   - Read

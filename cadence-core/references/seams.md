@@ -10,7 +10,12 @@ A future runtime port edits this file, not the workflows.
 How a workflow asks the human a question and blocks on the answer.
 
 **Claude Code binding:**
-- Structured choice (2-4 mutually exclusive options): the `AskUserQuestion` tool.
+- Structured choice: the `AskUserQuestion` tool, at most four options per
+  question, and `multiSelect: true` when more than one option may be picked. A
+  set larger than the option cap splits across questions - minus any
+  always-present option such as NONE, which consumes a slot - and the questions
+  batch at most four per call. Two caps, not one: options per question, and
+  questions per call.
 - Open-ended question: end the turn with the question in plain prose.
 - Never fabricate or default an answer the seam was supposed to collect.
 
@@ -31,7 +36,7 @@ are consequential either/ors the tool must not steer: present them plainly, no
 recommended option, no reordering toward one -
 - the publish mechanism in /cad-land (push / MR or PR / tag / leave local), and
 - the protected-branch guard when work would land on a protected branch
-  (references/git.md rail 1).
+  (references/git-guard.md rail 1).
 These stay undefaulted by design; a nudge there is a bug, not a convenience.
 
 ## Seam: spawn-agent
@@ -71,6 +76,10 @@ base as `--worktree`. Claim holds for Claude Code >= 2.1.208 (before that a
 - `head` branches from the local `HEAD`, carrying the integration branch's
   unpushed commits. Inside a worktree, `head` resolves to THAT worktree's
   `HEAD`, not the main checkout's.
+
+`git.base_branch` stays the landing and guard base, distinct from the
+integration branch: the integration branch is what work merges back down to,
+not a claimed worktree fork point.
 
 It is a settings value, not a per-dispatch parameter, and a plugin must never
 silently write a user's settings. So Cadence reads it and refuses: the
@@ -203,6 +212,27 @@ when it will DISTILL it into the dispatch prompt. If the spawned agent reads the
 file whole itself, pass the pointer (the path), not the bytes - reading it in the
 orchestrator just to hand it down doubles the read and bloats the main context
 with a file the agent is about to open anyway.
+
+**File round-trip (when the extra turn pays).** Routing an artifact through a
+file costs one extra turn - the parent's read-back - so it pays only when BOTH
+hold: the read-back folds into a turn the parent was taking anyway (writing
+SUMMARY, making the docs commit, merging a worktree), and the artifact lands
+LATE enough in the run that its bytes would otherwise ride every remaining turn.
+A small return the parent acts on immediately is pure overhead and stays inline.
+Which side extracts: whichever side has the SMALLER resident context, which is
+why the child (holding one plan) writes the file and the parent (holding the
+whole phase) reads a digest. Corollary: a parent must never read a file only to
+hand it down - see Handoff read discipline above. The same two-clause test
+covers any deferred read, not only a subagent round-trip: deferring a reference
+pays when the read folds into a turn the command was taking anyway AND only some
+branches reach it, so an eager `@`-include whose file is consulted on EVERY path
+is already at break-even and stays eager. "Folds into" admits an extra tool
+round-trip inside a turn the command was already taking; it does not admit a
+read that forces a turn the command would not otherwise have taken. Shipped
+applications: the
+executor report read back at `workflows/execute.md`'s `summary`, the verifier
+findings file consumed by `workflows/verify-deep.md`, and the cross-model
+`--payload <file>`.
 
 ## Seam: call-review-provider
 

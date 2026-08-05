@@ -1,6 +1,6 @@
 ---
 name: cad-assumptions-analyzer
-description: Studies the codebase for a single phase and returns structured, evidence-backed assumptions a planner would otherwise have to guess. Spawned by cad-context.
+description: The `xhigh` rung of `cad-assumptions-analyzer` (codebase assumption gathering); `bin/route.mjs` picks it, not the user.
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: cyan

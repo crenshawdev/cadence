@@ -173,7 +173,10 @@ function fullFixture() {
     join(root, 'cadence-core', 'config.schema.json'));
   // One real role at one rung, so the fixture's table is complete and its one
   // routable agent file exists: every row here breaks exactly one thing.
-  const agent = '---\nname: cad-verifier\ntools: Read\n---\nbody\n';
+  // Grant-compliant per check 7c: a cad-verifier rung that fails 7c would add
+  // an unrelated problem to every row built on this fixture.
+  const agent = '---\nname: cad-verifier\ntools: Read, Write\n'
+    + 'disallowedTools: Edit, MultiEdit\n---\nbody\n';
   writeFileSync(join(root, 'agents', 'cad-verifier.md'), agent);
   writeFileSync(join(root, 'cadence-core', 'route-table.json'),
     JSON.stringify(cellTable('cad-verifier', { effort: 'high', retry: 'high' }), null, 2));
@@ -493,6 +496,46 @@ test('#49.1: an unreadable INTERNALS.md is reported exactly once, not twice', {
   }
 });
 
+test('#49.1: an unreadable CHILD directory is named, and its readable siblings are still linted', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0
+    ? 'root bypasses mode bits' : false,
+}, () => {
+  const root = fullFixture();
+  mkdirSync(join(root, 'skills', 'good'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'good', 'SKILL.md'),
+    '---\nname: good\n---\nReads `git.bogus_key` at land time.\n');
+  const priv = join(root, 'skills', 'private');
+  mkdirSync(priv);
+  writeFileSync(join(priv, 'SKILL.md'), '---\nname: private\n---\nbody\n');
+  chmodSync(priv, 0o000);
+  try {
+    const r = run(['--root', root]);
+    assert.equal(r.reason, undefined);
+    // The path that is ACTUALLY unreadable, with ITS errno - not the branch
+    // root above it with the errno of a readFileSync that never applied.
+    assert.equal(r.problems.filter((p) => p.kind === 'unreadable-surface'
+      && p.file === 'skills/private' && p.detail === 'EACCES').length, 1);
+    assert.ok(!r.problems.some((p) => p.file === 'skills'));
+    // The under-linting half: the readable sibling is still linted.
+    assert.ok(r.problems.some((p) => p.kind === 'unknown-config-key'
+      && p.file === 'skills/good/SKILL.md'));
+  } finally {
+    chmodSync(priv, 0o755);
+  }
+});
+
+test('a symlinked directory is not descended, so a cycle lints each file once', () => {
+  const root = fullFixture();
+  mkdirSync(join(root, 'skills', 'a'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'a', 'SKILL.md'),
+    '---\nname: a\n---\nReads `git.bogus_key` at land time.\n');
+  symlinkSync('..', join(root, 'skills', 'a', 'loop'));
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.problems.filter((p) => p.kind === 'unknown-config-key'
+    && p.file === 'skills/a/SKILL.md').length, 1);
+});
+
 test('INTERNALS.md: a backticked repo path that does not exist is flagged; a real one and a glob are not', () => {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
@@ -638,6 +681,97 @@ test('check 7: a body whose rung disagrees with the frontmatter effort is flagge
   const p = run(['--root', root]).problems;
   assert.ok(p.some((x) => x.kind === 'agent-carries-behaviour' && x.file === 'agents/a.md'),
     JSON.stringify(p));
+});
+
+// --- check 7c: the verifier's narrow Write grant (D-08) ---
+//
+// Agent frontmatter has no path-scoped tool permission, so this check is the
+// only mechanical backstop on the one deliberate exception. One test per row.
+
+/**
+ * A cad-verifier rung fixture with the grant's lists spelled out. The NAME is a
+ * parameter, not a constant: the check is keyed on `name:`, so a fixture that
+ * hardcoded one rung would let `agentName === '<that rung>'` pass every row
+ * while the other three shipped rungs lost coverage entirely. The failing rows
+ * below therefore spread across the real names, bare `cad-verifier` included.
+ * @param {string} tools @param {string} disallowed @param {string} [name]
+ */
+function verifierFixture(tools, disallowed, name = 'cad-verifier-max') {
+  return fixtureWith({
+    agents: {
+      'v.md': `---\nname: ${name}\ntools: ${tools}\n`
+        + `disallowedTools: ${disallowed}\n---\nbody\n`,
+    },
+    budgets: { 'agents/v.md': 10000 },
+  });
+}
+
+test('check 7c: Write granted and Edit/MultiEdit denied yields no problem', () => {
+  const root = verifierFixture('Read, Write, Bash', 'Edit, MultiEdit');
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'verifier-write-grant'));
+});
+
+test('check 7c: Write missing from tools: is flagged (bare cad-verifier)', () => {
+  const root = verifierFixture('Read, Bash', 'Edit, MultiEdit', 'cad-verifier');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant' && x.file === 'agents/v.md'
+    && /Write not in tools:/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7c: a QUOTED verifier name is still checked', () => {
+  // YAML permits a quoted scalar. If the name regex's capture is compared raw,
+  // `"cad-verifier"` matches no arm and the whole check skips silently while
+  // lib/rung-agent.mjs still routes the file by its FILENAME - a silent skip in
+  // the only mechanical backstop.
+  const root = verifierFixture('Read, Bash', 'Edit, MultiEdit', '"cad-verifier"');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant' && x.file === 'agents/v.md'
+    && /Write not in tools:/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7c: Edit missing from disallowedTools: is flagged', () => {
+  const root = verifierFixture('Read, Write, Bash', 'MultiEdit', 'cad-verifier-medium');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant'
+    && /Edit not in disallowedTools:/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7c: MultiEdit missing from disallowedTools: is flagged', () => {
+  const root = verifierFixture('Read, Write, Bash', 'Edit', 'cad-verifier-xhigh');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant'
+    && /MultiEdit not in disallowedTools:/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7c: Edit appearing in tools: is flagged', () => {
+  const root = verifierFixture('Read, Write, Edit, Bash', 'Edit, MultiEdit');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant'
+    && /Edit in tools:/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7c: a routed rung FILENAME is checked even when name: was renamed', () => {
+  // The evasion the union closes: lib/rung-agent.mjs routes this file by its
+  // filename, so a `name:` edit must not take it out of the grant check.
+  const root = fixtureWith({
+    agents: {
+      'cad-verifier-max.md': '---\nname: cad-planner\ntools: Read, Bash\n'
+        + 'disallowedTools: Edit, MultiEdit\n---\nbody\n',
+    },
+    budgets: { 'agents/cad-verifier-max.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'verifier-write-grant'
+    && x.file === 'agents/cad-verifier-max.md'
+    && /Write not in tools:/.test(x.detail)), JSON.stringify(p));
+});
+
+test('check 7c: a non-verifier agent without Write yields no problem', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: cad-planner\ntools: Read, Bash\n---\nbody\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'verifier-write-grant'));
 });
 
 // --- check 8: the routing cells, grids <-> disk (STK-02) ---

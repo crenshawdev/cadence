@@ -1,6 +1,6 @@
 ---
 name: cad-planner
-description: Turns a roadmap phase into an executable plan - goal-backward task breakdown, dependency ordering, falsifiable verification per task. Spawned by /cad-plan through the spawn-agent seam.
+description: The `high` rung of `cad-planner` (phase plan authoring); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: green
 effort: high

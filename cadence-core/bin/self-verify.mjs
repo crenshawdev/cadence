@@ -102,7 +102,7 @@ const CONTRACTS = {
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
       '--severity', '--cause', '--fix', '--evidence', '--source', '--origin',
       '--criterion'],
-    'uat merge': ['--phase'],
+    'uat merge': ['--phase', '--payload'],
     'uat status': ['--phase'],
     audit: [],
     'criteria-coverage': [],
@@ -166,6 +166,24 @@ const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
 
 // --- helpers -----------------------------------------------------------------
 
+/**
+ * Yield every `.md` surface this linter reads, as `{ file }`, plus a
+ * `{ file, unreadable }` marker for each directory whose own listing threw.
+ *
+ * The walk is per ENTRY, one directory's own children at a time: a single
+ * `recursive: true` read wrapped in one try returns nothing for a WHOLE
+ * subtree the moment one descendant throws, and the old fallback then yielded
+ * the BRANCH root as the unreadable surface - so a mode-000 `skills/private`
+ * was reported as `skills` with the errno of a failed readFileSync (EISDIR),
+ * never naming the directory that is actually unreadable, while every readable
+ * sibling under `skills` went unlinted (#49.1, D-06). Descending only on
+ * `isDirectory()` also stops this walker at symlinked DIRECTORIES, matching
+ * lib/surface-weight.mjs so the reporting and enforcing halves traverse the
+ * same set. A named branch root is still descended - the dirent test only ever
+ * sees descendants.
+ * @param {string} root
+ * @returns {Generator<{ file: string, unreadable?: string }>}
+ */
 function* mdFiles(root) {
   const dirs = [
     join(root, 'cadence-core', 'workflows'),
@@ -174,21 +192,24 @@ function* mdFiles(root) {
     join(root, 'skills'),
     join(root, 'agents'),
   ];
-  for (const d of dirs) {
-    if (!existsSync(d)) continue;
-    // The walker never drops an entry it cannot inspect - it yields the
-    // path so run()'s read-guard can report it as an unreadable surface,
-    // rather than the whole run collapsing to one opaque internal error
-    // (#49.1). An unreadable directory is itself the unreadable surface.
+  /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
+  function* walk(dir) {
     let list;
     try {
-      list = readdirSync(d, { recursive: true, encoding: 'utf8' });
-    } catch {
-      yield d;
-      continue;
+      list = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      // This directory alone is the unreadable surface, named by its own
+      // path and with its OWN errno - and the walk descends no further
+      // into it, while its siblings stay linted.
+      yield { file: dir, unreadable: e.code || e.message };
+      return;
     }
-    for (const e of list) {
-      const f = join(d, String(e));
+    for (const d of list) {
+      const f = join(dir, d.name);
+      if (d.isDirectory()) {
+        yield* walk(f);
+        continue;
+      }
       if (!f.endsWith('.md')) continue;
       // Deliberately optimistic on the throw: a symlink that fails the
       // stat (dangling, cycle) still reaches the reporter as a file,
@@ -199,15 +220,19 @@ function* mdFiles(root) {
       } catch {
         isFile = true;
       }
-      if (isFile) yield f;
+      if (isFile) yield { file: f };
     }
+  }
+  for (const d of dirs) {
+    if (!existsSync(d)) continue;
+    yield* walk(d);
   }
   // README, INTERNALS and METHOD name user-facing switches and live file paths -
   // they are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay
   // out: they legitimately name keys that were later cut, while explaining the cut.
   for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
     const p = join(root, doc);
-    if (existsSync(p)) yield p;
+    if (existsSync(p)) yield { file: p };
   }
 }
 
@@ -303,8 +328,14 @@ function run(root) {
     }
   }
 
-  for (const file of mdFiles(root)) {
+  for (const { file, unreadable } of mdFiles(root)) {
     const rel = relative(root, file);
+    // A directory the walker could not list: report THAT path with the errno
+    // its own readdirSync threw, before any read is attempted on it.
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
     let text;
     try {
       text = readFileSync(file, 'utf8');
@@ -426,9 +457,8 @@ function run(root) {
     // masking, its imperative gate and its false-positive cost live in
     // lib/dispatch-phrasing.mjs; this side only decides WHERE it applies.
     // Scoped to these two directories because they are where dispatch
-    // instructions are AUTHORED, and because references/ is outside
-    // lib/surface-weight.mjs's weighed walk, so no other check reaches it at
-    // all. Not because the other surfaces are dispatch-free - skills/ carries
+    // instructions are AUTHORED. Not because the other surfaces are
+    // dispatch-free - skills/ carries
     // at least one concurrent-dispatch instruction of its own - but because
     // widening the scope to skills/ is a separate decision this check does not
     // make; self-verify.test.mjs pins the skills case as out of scope on
@@ -674,6 +704,56 @@ function run(root) {
         }
       }
 
+      // 7c. the verifier's narrow `Write` grant, asserted in both directions on
+      // EVERY cad-verifier rung. Claude Code agent frontmatter exposes no
+      // path-scoped tool permission - `tools:` and `disallowedTools:` are name
+      // lists - so "one file under .planning/phases/<N>/" cannot be
+      // host-enforced, and this check is the only mechanical backstop keeping
+      // the milestone's one deliberate exception from widening silently in a
+      // later edit. Write must be GRANTED (the verifier writes its findings
+      // JSON); Edit and MultiEdit must stay DENIED and must never appear in
+      // tools:. Keyed on the UNION of the two identities this agent has, never
+      // one of them: the host dispatches by `name:`, while the rung map in
+      // lib/rung-agent.mjs resolves the same agent by FILENAME. Checking either
+      // alone leaves the other as an edit that slips a still-routed rung file
+      // out of the check - rename `name:` and a filename-routed file goes
+      // unchecked; rename the file and check 8 catches it, but only because
+      // that map is the thing it audits. The union has no such seam.
+      if (fm) {
+        const nameLine = fm[1].match(/^name:[ \t]*(\S+)[ \t]*$/m);
+        // YAML permits a quoted scalar, so the raw token can arrive as
+        // `"cad-verifier"`. Strip one matched surrounding quote pair before
+        // comparing: without it a quoted name matches neither arm below and the
+        // `name:` half of the union goes silently dead. A silent skip in the
+        // only mechanical backstop is the exact failure this check prevents.
+        const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
+        const isVerifier = (id) => id === 'cad-verifier' || id.startsWith('cad-verifier-');
+        if (isVerifier(agentName) || isVerifier(e.slice(0, -3))) {
+          const denied = new Set();
+          const denyLine = fm[1].match(/^disallowedTools:\s*(.+)$/m);
+          if (denyLine) {
+            for (const t of denyLine[1].split(',')) {
+              const name = t.trim();
+              if (name) denied.add(name);
+            }
+          }
+          if (!declared.has('Write')) {
+            problems.push({ kind: 'verifier-write-grant', file: rel,
+              detail: 'Write not in tools: - the verifier cannot write its findings file' });
+          }
+          for (const tool of ['Edit', 'MultiEdit']) {
+            if (!denied.has(tool)) {
+              problems.push({ kind: 'verifier-write-grant', file: rel,
+                detail: `${tool} not in disallowedTools:` });
+            }
+            if (declared.has(tool)) {
+              problems.push({ kind: 'verifier-write-grant', file: rel,
+                detail: `${tool} in tools: - the grant is Write only` });
+            }
+          }
+        }
+      }
+
       const referenced = new Set();
       for (const prose of [body, ...preloaded]) {
         for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
@@ -849,7 +929,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

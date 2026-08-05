@@ -388,9 +388,50 @@ function cmdPhaseDone(dir, opts) {
 // set-once, verifier never overwrites user results, counts always recomputed,
 // atomic writes); the model owns item wording and result inference.
 // ---------------------------------------------------------------------------
-function readStdinJson() {
-  try { return JSON.parse(readFileSync(0, 'utf8')); }
-  catch (e) { fail('bad-payload', e.message); return null; }
+/**
+ * Read a JSON payload from `--payload <file>` when one is named, otherwise from
+ * stdin, as a DISCRIMINATED result.
+ *
+ * The reader this replaces returned `null` for BOTH a parse failure and a
+ * legitimate `null` payload, and `merge`'s `if (f === null) return;` then exited
+ * 0 having printed NOTHING - from a seam whose entire contract is one JSON line
+ * on stdout, so the caller saw neither a result nor a refusal. Distinguishing
+ * the two is what lets a `null` payload be refused like any other non-object
+ * instead of vanishing. `ok:false` here means a refusal has ALREADY been
+ * emitted; the caller returns without emitting a second one.
+ *
+ * Empty input is `no-payload`, not `bad-payload`: "you handed me nothing" and
+ * "what you handed me is not the shape" are different repairs, and the first is
+ * what a truncated or never-written findings file actually looks like.
+ * @param {string|boolean} [file] `opts.payload`; stdin when undefined
+ * @returns {{ok: true, value: any} | {ok: false}}
+ */
+function readJsonPayload(file) {
+  let text;
+  let where = 'stdin';
+  if (file !== undefined) {
+    // parseArgs gives a valueless flag the boolean `true`, so `--payload` with
+    // no path must be refused here rather than reaching readFileSync.
+    if (typeof file !== 'string' || !file.trim()) {
+      fail('no-payload', '--payload needs a file path');
+      return { ok: false };
+    }
+    where = file;
+    text = read(file);
+    if (text === null) {
+      fail('no-payload', `${file} not found or unreadable`);
+      return { ok: false };
+    }
+  } else {
+    try { text = readFileSync(0, 'utf8'); }
+    catch (e) { fail('no-payload', `stdin: ${e.message}`); return { ok: false }; }
+  }
+  if (!text.trim()) {
+    fail('no-payload', `${where} is empty`);
+    return { ok: false };
+  }
+  try { return { ok: true, value: JSON.parse(text) }; }
+  catch (e) { fail('bad-payload', e.message); return { ok: false }; }
 }
 
 function uatFile(dir, n) { return join(dir, 'phases', String(n), 'UAT.md'); }
@@ -421,9 +462,13 @@ function cmdUat(dir, sub, opts) {
   if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'uat needs --phase <N>');
 
   if (sub === 'init' || sub === 'refresh') {
-    const items = readStdinJson();
-    if (items === null) return;
-    if (!Array.isArray(items) || items.some((i) => !i.name || !i.expected)) {
+    // stdin only - `--payload` is merge's flag. A literal `null` on stdin now
+    // reaches the Array.isArray guard below and is refused `bad-payload`,
+    // where the old sentinel-collision reader exited 0 printing nothing.
+    const payload = readJsonPayload();
+    if (!payload.ok) return;
+    const items = payload.value;
+    if (!Array.isArray(items) || items.some((i) => !i || !i.name || !i.expected)) {
       return fail('bad-payload', 'expected a JSON array of {name, expected}');
     }
     // The traceability fields are OPTIONAL but validated before any write, so a
@@ -544,8 +589,39 @@ function cmdUat(dir, sub, opts) {
     //              invariant stands; the drop just stops being silent.
     //   rejected - the entry resolves to no usable item at all, so it can
     //              never be applied to one or appended as one.
-    const f = readStdinJson();
-    if (f === null) return;
+    //
+    // The ENVELOPE is all-or-nothing even though the entries inside it are
+    // partial-success, and both refusals land BEFORE loadUat and before any
+    // write, so a refused merge leaves UAT.md and FINDINGS.json byte-identical.
+    // Without the array test below, `"hello"` and `{}` both merged as an
+    // all-zero ok:true success - so a truncated findings file reported a clean
+    // deep pass instead of falling through to the walk, which is the one
+    // outcome the deep pass must never be able to fake.
+    const payload = readJsonPayload(opts.payload);
+    if (!payload.ok) return;
+    const f = payload.value;
+    if (f === null || typeof f !== 'object' || Array.isArray(f)) {
+      return fail('bad-payload',
+        'expected a JSON object carrying passes, gaps or human_checks');
+    }
+    if (!Array.isArray(f.passes) && !Array.isArray(f.gaps)
+      && !Array.isArray(f.human_checks)) {
+      return fail('bad-payload',
+        'payload carries none of passes, gaps, human_checks as an array');
+    }
+    // ...and every list that IS present must be an array. The disjunction above
+    // only proves ONE of them is, so a sibling holding a string used to reach
+    // the `for..of` below and be iterated per CHARACTER: `{"passes":[],
+    // "gaps":"oops"}` merged ok:true with rejected:4. No phantom item was
+    // written - the usableName guard drops each character - but the deep pass
+    // reported a merge instead of falling through, which is the one outcome it
+    // must never be able to fake. Check presence, not truthiness: a payload may
+    // legitimately omit a list, and `undefined` is not a malformed one.
+    for (const key of ['passes', 'gaps', 'human_checks']) {
+      if (f[key] !== undefined && !Array.isArray(f[key])) {
+        return fail('bad-payload', `${key} is present but not an array`);
+      }
+    }
     const uat = loadUat(dir, n);
     if (!uat) return;
     // Guard the shape the CONSUMER accepts - a name that renders a heading -

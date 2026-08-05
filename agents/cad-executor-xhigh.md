@@ -1,6 +1,6 @@
 ---
 name: cad-executor-xhigh
-description: The `xhigh` rung of `cad-executor`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
+description: The `xhigh` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: yellow
 effort: xhigh

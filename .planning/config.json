@@ -1,5 +1,4 @@
 {
-  "stakes": "critical",
   "model": {
     "escalate_on_failure": true
   },
@@ -21,11 +20,6 @@
     "request_timeout_ms": 600000,
     "consult": {
       "enabled": true
-    },
-    "triggers": {
-      "diff": {
-        "gate": "adjudicated"
-      }
     },
     "providers": {
       "deepseek": {

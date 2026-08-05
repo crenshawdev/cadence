@@ -1,6 +1,6 @@
 ---
 name: cad-pause
-description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line 'where I was' as the resume pointer. Resume is /cad-progress, which auto-detects it. No Stop hook"
+description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line resume pointer (/cad-progress resumes it)"
 argument-hint: "[one-line note about where you are]"
 allowed-tools:
   - Read
@@ -18,14 +18,13 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 </objective>
 
 <execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md
+@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
 <process>
 1. **WIP commit.** If the tree has changes, stage exactly what the user was
    working on and commit `wip: <short description>` (protected-branch guard
-   applies - references/git.md). If the tree is clean, skip this; there is
+   applies - references/git-guard.md). If the tree is clean, skip this; there is
    nothing to preserve.
 
 2. **Set the cursor** through the seam (never hand-edit STATE.md):
@@ -39,9 +38,10 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
    action (from `$ARGUMENTS`, or ask via the ask-user seam if not given).
    This line IS the pause note /cad-progress surfaces. `--phase <current>` is
    required - the seam does NOT preserve a prior `Phase:` (it fails `bad-args`
-   without it); supply the current phase from `cursor get`, which can batch with
-   step 1's protected-branch git probes (independent; conventions.md Parallel
-   work). The seam derives name/total from ROADMAP and stamps `Updated:` itself.
+   without it); supply the current phase from `cursor get`, which goes in one
+   message with step 1's protected-branch git probes - they are independent, and
+   only a call that consumes a prior call's output is serialized. The seam
+   derives name/total from ROADMAP and stamps `Updated:` itself.
    Commit the cursor (`docs:`), or fold it into the WIP commit if one was made.
    Never leave the tree dirty.
 

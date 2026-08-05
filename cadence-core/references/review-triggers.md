@@ -45,10 +45,22 @@ keep, and step 4 names the gap instead of dropping the value silently.
 
 ### 2. Payload
 Assemble `{ instruction, artifact }` from the wiring table:
-- `artifact` = the plan text, the diff, or the files under review.
 - `instruction` = what to critique and how, e.g. "Refute this phase plan against
   its goal" / "Refute this diff; find the input that breaks it." Keep it specific
   to the trigger.
+- `artifact` = a REFERENCE, never the material itself. Inlining a diff keeps
+  every byte of it resident here for the rest of the run, when the reviewer can
+  produce it in one command. Three shapes; every fire site names the one it uses:
+  - **(a) refs** - `{base_ref, head_ref}`, an already-committed range.
+  - **(b) staged-diff scope** - `git diff --cached` plus the paths, for an
+    uncommitted change in the ORCHESTRATOR's OWN tree. The reviewer re-runs the
+    command: a Task-dispatched subagent inherits the parent's cwd, so it reads
+    the same index.
+  - **(c) a path** - a file artifact (a PLAN), or one the reviewer's tree cannot
+    reach. An executor's flagged staged diff is the latter: no ref pair names an
+    uncommitted change, and in worktree mode it is not in this tree at all, so
+    the executor writes it to a file and its checkpoint returns the absolute
+    path.
 
 ### 3. Resolve the reviewer set
 Start from `review.reviewers[]`. For each entry, keep only if available:
@@ -71,7 +83,9 @@ serialize only when one dispatch consumes another's output, which a reviewer
 set never does. Per backend:
 
 - **claude-subagent**: dispatch the `agent` and `model` the step-1 resolve
-  returned, through the spawn-agent seam, with the payload as its prompt. Parse
+  returned, through the spawn-agent seam, with the payload as its prompt. It
+  gets the refs, the scope, or the path and PRODUCES the artifact itself - it
+  holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
   the JSON object it returns. That agent is the reviewer rung the LEVEL names -
   `cad-reviewer-medium` at solo, `cad-reviewer-xhigh` at shipped AND critical,
   and `cad-reviewer-max` when a critical-level
@@ -90,15 +104,36 @@ set never does. Per backend:
   per fire, not per reviewer, and nothing when the two agree. A resolved value
   the backend cannot deliver is a degradation like any other: name it. Do not
   "fix" it by editing the config or by pretending the effort applied.
-- **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): resolve
+- **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
+  call runs nothing, so this is the one backend that cannot resolve a reference
+  itself. Compose the payload FILE in two shell steps and pass it with the
+  EXISTING `--payload <file>` flag - no new subcommand or flag:
+  ```
+  git diff <base_ref>..<head_ref> > "${TMPDIR:-/tmp}/cad-artifact.txt"
+  node -e 'const f=require("fs"),d=process.env.TMPDIR||"/tmp";f.writeFileSync(d+"/cad-payload.json",JSON.stringify({instruction:process.argv[1],artifact:f.readFileSync(process.argv[2],"utf8")}))' "<instruction>" "${TMPDIR:-/tmp}/cad-artifact.txt"
+  ```
+  The second step takes the artifact path as an ARGUMENT, which is what lets
+  all three shapes share it: shape (b) redirects `git diff --cached` into the
+  same scratch path, shape (c) drops the first step and passes its OWN absolute
+  path instead. Hardcode the scratch name and shape (c) has no command at all -
+  it silently ships the previous review's file. NEVER hand-assemble that JSON
+  with `echo` or a heredoc - one
+  unescaped quote or backslash anywhere in a diff makes the payload
+  unparseable, which comes back as `bad-payload` after the shell already did
+  the work. Both temp files are the model's scratch, never a phase artifact.
+  `assertUnderCap` is UNCHANGED and still measures the parsed string fields,
+  which under `--payload <file>` ARE the file's contents; a non-string
+  `artifact` is still refused `bad-payload` before the cap is consulted. Then
+  resolve
   `model = review.providers.<name>.tiers[trigger.tier]`
-  and `effort = trigger.effort`, then run the seam:
+  and `effort = trigger.effort`, and run the seam:
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <model> --effort <effort> \
+    --payload "${TMPDIR:-/tmp}/cad-payload.json" \
     [--key-file <review.key_file, only if set>]
   ```
-  with `{instruction, artifact}` on stdin. Read the one JSON line.
+  Read the one JSON line.
   - `ok:true` -> use `findings`.
   **Run this with an explicit command timeout of at least
   `review.request_timeout_ms`** (default 540000; the host's own default is
@@ -135,30 +170,12 @@ the stronger signal). Adjudication is the same discipline the panel-review skill
 uses: reviewers critique, the main model grounds and owns the verdict.
 
 ### 6. Consequence (gate)
-- **advisory** - report the findings, continue. Nothing halts.
-- **blocking** - PASS if no `blocker`/`high` finding survives, else FAIL. On
-  FAIL, halt and surface the findings; resume only after they are fixed (re-run
-  fire) or the user explicitly overrides. A reviewer that could not run does not
-  silently PASS - report that the gate could not be evaluated and ask.
-- **adjudicated** - the survivors are already grounded, so what remains is the
-  USER's choice, not the model's. Present a NUMBERED list, one line per survivor:
-  severity, `file:line`, claim. Ask which to act on and END THE TURN on that
-  question - open-ended prose, not `AskUserQuestion` (a subset of N items is not
-  2-4 exclusive options). NONE is the first option and the default. Nothing is
-  applied, committed, published or re-planned against a survivor the user did not
-  name. When nothing survives, say the review RAN and adjudication killed
-  everything, not a bare "no findings". At `pre_ship` ONLY, under
-  `git.auto_close: true`, it does not prompt: triage is NONE by construction and
-  `land-cleanup.mjs gate`'s blocker/high halt the only consequence. No other
-  trigger reads that key - suppressing the ask elsewhere drops survivors with
-  nothing left to halt on them. It does not auto-halt like
-  `blocking`, and it is not the auto-replan convergence loop (cut in DESIGN §6) -
-  it grounds once and asks. Use for the deep, rare gates (plan, pre_ship).
-
-`cad-verify` routes fix requests through fire() (a review producing the fix
-list), not its own fixer loop. That fire names no wiring-table trigger and has
-no resolved gate: its list is always triaged through the `adjudicated`
-rule above, before any of it is proposed as a fix.
+`references/triage-gate.md` holds this step whole: all three arms
+(`advisory` / `blocking` / `adjudicated`), the multi-select triage the
+adjudicated arm asks, the `git.auto_close` carve-out scoped to `pre_ship`
+inside `/cad-land`, and the `cad-verify` fix-list rule. It is a separate file
+because three workflows re-read it at their triage sites without loading this
+one.
 
 ## Wiring (which skill fires what)
 
@@ -166,11 +183,11 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 
 | Trigger | Fired by | When | Payload artifact | Gate (solo/shipped/critical) |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | the plan | advisory / adjudicated / adjudicated |
-| `diff` | `cad-execute` | at plan completion | `git diff <pre-plan HEAD>..HEAD` | off / advisory / blocking |
-| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | the flagged diff | blocking / blocking / blocking |
-| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | `git diff <PHASE_START>..HEAD` | off / off / adjudicated |
-| `pre_ship` | `cad-land` | before executing the publish mechanism | full branch diff | advisory / adjudicated / adjudicated |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / adjudicated / adjudicated |
+| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / advisory / blocking |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path the checkpoint returned, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
+| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / off / adjudicated |
+| `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |
 
 `risk_surface` is `blocking` at every level on purpose: it fires only on a
 detection match, and there is no level at which a matched risk surface is worth

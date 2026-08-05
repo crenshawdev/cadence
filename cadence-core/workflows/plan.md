@@ -51,9 +51,9 @@ recall in spawn_planner and inline_plan below.
 </step>
 
 <step name="load_phase">
-Once N is known, steps 1-3 are independent reads/globs - fire them in one
-message and evaluate the stop/ask gates after they return (conventions.md
-Parallel work).
+Once N is known, steps 1-3 are independent reads/globs - fire them
+in one message and evaluate the stop/ask gates after they return. Only a call
+that consumes a prior call's output is serialized.
 
 1. Read this phase's entry in .planning/ROADMAP.md: name, goal, requirement
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
@@ -88,8 +88,8 @@ do not issue the call). The gate precedes the call on purpose (D-03): recall's
 own backend-off return is a backstop for a direct caller, not this workflow's
 gate, so `none` means no recall runs and no block is appended. When recall does
 run, batch it with the `route.mjs resolve` above in one message - both only feed
-the single dispatch and neither depends on the other (conventions.md Parallel
-work).
+the single dispatch and neither depends on the other, which is the only thing
+that would serialize them.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
@@ -228,8 +228,8 @@ survivors, then apply ONLY the ones the user picked to the plan file(s) and
 leave the rest recorded in this step's report. The survivors are a numbered
 list the user triages, NONE is the default, and only what the user names is
 acted on - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
-§ 6 Consequence before presenting, since this workflow does not preload it. Do
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+before presenting, since this workflow does not preload it. Do
 not re-enter the checker loop afterward - this trigger is the second opinion,
 not another iteration.
 </step>
@@ -262,7 +262,7 @@ not another iteration.
    ```
 
 3. If planning.commit_docs is true: apply the protected-branch guard
-   (references/git.md rail 1), then commit the plan file(s), STATE.md, and
+   (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
 </step>

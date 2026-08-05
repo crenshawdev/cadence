@@ -1,6 +1,6 @@
 ---
 name: cad-executor
-description: Executes a Cadence PLAN.md task-by-task with one atomic conventional commit per task, records deviations, and returns a structured report. Spawned by cad-execute or cad-task. Never writes STATE.md.
+description: The `high` rung of `cad-executor` (plan task execution); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Edit, Bash, Grep, Glob
 color: yellow
 effort: high

@@ -75,17 +75,48 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Every shipped rung-ladder claim true or corrected; `route.mjs` `warnings[]` rides every result shape including `ok:false` (DOC-01) — v2.2.0
 - ✓ Per-role effort configurable from the config layer and update-surviving; a rung the role lacks fails self-verify by key (RNG-02) — v2.2.0
 - ✓ The documented install path proven live against the Forgejo remote from a fully cold state, transcripts committed in the phase record (HST-02) — v2.2.0
+- ✓ Executor reports leave the orchestrator context: `cad-executor` writes `reports/plan-<k>.md` and returns a five-field digest, and the partial/timeout continuations read the FILE so a re-run cannot repeat a finished task (RES-01) — v2.3.0
+- ✓ Verifier findings leave the orchestrator context, with a narrow `Write` grant (one file under `.planning/phases/<N>/`, `Edit`/`MultiEdit` still denied on all four rungs) and `uat merge` piped straight from it (RES-02) — v2.3.0
+- ✓ Reviewers receive a reference, never artifact bytes: refs valid in their own tree, or `--payload <file>` with `assertUnderCap` measuring the file's contents and refusing a non-string payload first (RES-03) — v2.3.0
+- ✓ `references/seams.md` states when a file round-trip is worth its extra turn, extended to cover any deferred read rather than a subagent round-trip alone (RES-04) — v2.3.0
+- ✓ `references/git.md` split into `git-guard.md` (rails 1, 2, 4) and `git-publish.md` (rail 3), every citation moved with it including the ones citing rails by number (LOD-01) — v2.3.0
+- ✓ The triage gate lives in its own 3.0 KB reference and its adjudicated arm is a tapped multi-select — `ceil(N/3)` questions batched four per call, NONE first and default — replacing the open-ended-prose mandate (LOD-02) — v2.3.0
+- ✓ `conventions.md` stops being half-referenced: all 17 bare parentheticals in workflows inlined at their use sites, leaving it `@`-included nowhere in the plugin (LOD-03) — v2.3.0
+- ✓ `/cad-config`'s catalog decided on a measured menu-vs-non-menu run count and recorded as deliberately transcribed rather than derived (LOD-04) — v2.3.0
+- ✓ Every eager `@`-include judged per skill against the break-even test, with all 26 keep-or-move calls stated with their reasons (LOD-05) — v2.3.0
+- ✓ The 29 skill and 19 rung-agent descriptions riding every session's system prompt cut to one routing line each — 8,550 B to 5,397 — with zero trigger words dropped and nine gained (BUD-01) — v2.3.0
+- ✓ `references/**` and `templates/**` under the weight budget as 23 exact-byte entries, and both walkers fixed so one unreadable descendant hides only its own children (BUD-02) — v2.3.0
 
 ### Active
 
-**No active milestone.** `v2.2.0 — the rest of the residue` closed 2026-08-04
-with all six requirements delivered (CFG-02, TOK-02, REL-03, DOC-01, RNG-02,
-HST-02 — rows above), the audit gate green, and the manifest at `2.2.0`. The
-next milestone was deliberately left unopened at the close; `/cad-phase add`
-opens its first phase, and REQUIREMENTS `## Active` gets reseeded from that
-cycle's intent. Candidate scope when it opens: the open CAPTURE todos (the
-digit-prefix requirement-id regression filed at HIGH among them), the open
-Forgejo issues, and the deferred follow-ups tracked in project memory.
+**`v2.4.0 — what Cadence says about itself`**, opened 2026-08-05. The
+predecessor `v2.3.0 — where the bytes live` closed 2026-08-05 with all eleven
+requirements delivered (RES-01..04, LOD-01..05, BUD-01..02 — rows above), both
+audit arms green (11/11 traced, 20/20 criteria covered), and the manifest at
+`2.3.0`.
+
+This cycle turns on the queue rather than on a measurement. `.planning/CAPTURE.md`
+holds 182 open items accumulated across nine milestones. Some were closed by
+work that shipped and were never struck; some describe code that no longer
+exists; some are real and have been carried unread for months because the file
+is too long to triage in passing. A queue nobody can read is the same failure as
+no queue, and it is currently the input to `/cad-plan`'s recall.
+
+The cycle is therefore **reconciliation, not construction**: triage the queue
+against the live tree, close what shipped, delete what is moot, and keep what
+survives with its reason restated. Then the same pass outward — reconcile what
+Cadence claims about itself, in `README.md`, `METHOD.md`, `INTERNALS.md`,
+`CONTRIBUTING.md` and the workflow prose, against what the code now does. The
+v2.3.0 close found two live examples inside one release section: a phase-2
+CHANGELOG bullet asserting `references/` is unbudgeted while a phase-3 bullet
+budgets it, and `MEASUREMENTS.md` narrative counts contradicting their own
+table. `/cad-docs-verify` exists for exactly this and has never been run across
+the whole surface.
+
+Guardrail for the cycle, learned from v2.3.0: an item is closed only against
+evidence from the tree, never because it reads as done. The close-out of a
+capture item names the commit that closed it, the same way a UAT item names its
+evidence.
 
 ### Out of Scope
 

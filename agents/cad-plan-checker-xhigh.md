@@ -1,6 +1,6 @@
 ---
 name: cad-plan-checker-xhigh
-description: The `xhigh` rung of `cad-plan-checker`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
+description: The `xhigh` rung of `cad-plan-checker`; `bin/route.mjs` picks it, not the user.
 tools: Read, Bash, Glob, Grep
 disallowedTools: Write, Edit, MultiEdit
 color: green

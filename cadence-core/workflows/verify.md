@@ -63,8 +63,8 @@ acceptance criteria, in this source order:
 Also read `SUMMARY.md` if present for user-observable deliverables the
 criteria miss - each becomes an item too. Read the applicable source docs in
 ONE batch - CONTEXT.md + SUMMARY.md, or the PLAN.md + ROADMAP.md + SUMMARY.md
-fallback - not both branches; they are known independent paths (conventions.md
-Parallel work).
+fallback - not both branches; they are known independent paths, and only a read
+whose path a prior call computed would be serialized.
 
 Item rules (the model's judgment, before the seam call):
 - One item per observable behavior: name + expected (what the user should
@@ -180,23 +180,33 @@ For each item with `status: fail` and no recorded cause:
 
 1. **Diagnose inline** - read the relevant code, find the root cause, and
    record it: `uat record ... --result fail --cause "<root cause>"` (a
-   re-record of the same result adds the field; first_pass is safe). If a
+   re-record of the same result adds the field; first_pass is safe). When the
+   item was recorded by the deep pass, open
+   `.planning/phases/<N>/verifier-findings.json` AT THIS POINT - the only
+   place this workflow opens it - and read the gap's `missing` (or the human
+   check's `why_human`) before diagnosing: that is the diagnosis the verifier
+   already did, and it is why those fields ride the file. If a
    diagnosis deserves a second opinion, use the review-trigger interface
-   (references/review-triggers.md) - never an embedded reviewer loop. That
+   (references/review-triggers.md) - never an embedded reviewer loop. Its
+   artifact is the failed item's cited file PATHS - shape (c) - plus the
+   recorded `reported` and `cause` text, never file contents. That
    fire names no wiring-table trigger, so it has no resolved gate and its fix
    list is ALWAYS triaged before any of it becomes a proposed fix: the
    survivors are a numbered list the user triages, NONE is the default, and
    only what the user names goes on to step 2, so an unpicked finding never
    reaches step 3's "Apply now". RE-READ
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
-   § 6 Consequence before presenting, since this workflow does not preload it.
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+   before presenting, since this workflow does not preload it.
 2. **Propose the fix**, then ask the user (ask-user seam):
    1. Apply the fix now
    2. Re-plan it through /cad-plan (phase-sized gap)
    3. Leave it open
 3. **Apply now** -> make the change as an atomic conventional commit per
-   references/git.md (protected-branch guard, specific files, risk-surface
-   trigger at commit time). Then set the item back to pending for retest:
+   references/git-guard.md (protected-branch guard, specific files, risk-surface
+   trigger at commit time - the fix is staged in THIS tree, so that fire
+   carries the staged-diff scope, shape (b): the reviewer runs
+   `git diff --cached` in the cwd it inherits). Then set the item back to
+   pending for retest:
    `uat record --item <k> --result pending --fix "{hash}, retest"` and offer
    to re-walk it immediately (first_pass keeps the original fail).
 4. **Re-plan** -> `--fix "routed to /cad-plan"`, leave it failed, and tell
@@ -232,7 +242,8 @@ one commit:
 On a **partial** session, do neither - the phase is not done.
 
 If `planning.commit_docs` is true (`config.mjs get planning.commit_docs`),
-commit UAT.md, `phases/<N>/FINDINGS.json` if a deep pass wrote one, plus
+commit UAT.md, `phases/<N>/FINDINGS.json` and
+`phases/<N>/verifier-findings.json` if a deep pass wrote them, plus
 whichever of STATE.md, ROADMAP.md, and REQUIREMENTS.md changed:
 `docs: phase <N> UAT - {passed} passed, {failed} failed`.
 

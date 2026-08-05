@@ -33,7 +33,8 @@ Attempts: <count of applied fixes that did not resolve it>
 - `list` -> pull the symptom + status from every session in one pass
   (`grep -H '^# debug:\|^Status:' .planning/debug/*.md`), filter to those whose
   `Status:` is not resolved in the coordinator, and print one line each (slug +
-  symptom) - not a Read per file (conventions.md Parallel work).
+  symptom) - one pass, not a Read per file. Independent read-only calls go out
+  in one message; only a call that consumes a prior call's output is serialized.
 - `status <slug>` -> print that state file verbatim. Stop.
 - `continue <slug>` -> load that state file and resume at the method loop below,
   trusting the recorded hypothesis/observation state.
@@ -102,7 +103,10 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    (no fix applied).
 3. Else propose the minimal fix and apply it ONLY with user approval (ask-user
    seam). A fix that touches a risk surface fires the `risk_surface` review
-   trigger (references/review-triggers.md) before it is trusted.
+   trigger (references/review-triggers.md) before it is trusted. The fix is
+   staged in THIS tree, so the artifact is the staged-diff scope - shape (b):
+   the reviewer runs `git diff --cached` in the cwd it inherits, never the
+   diff text.
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix
