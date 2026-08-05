@@ -187,7 +187,9 @@ For each item with `status: fail` and no recorded cause:
    check's `why_human`) before diagnosing: that is the diagnosis the verifier
    already did, and it is why those fields ride the file. If a
    diagnosis deserves a second opinion, use the review-trigger interface
-   (references/review-triggers.md) - never an embedded reviewer loop. That
+   (references/review-triggers.md) - never an embedded reviewer loop. Its
+   artifact is the failed item's cited file PATHS - shape (c) - plus the
+   recorded `reported` and `cause` text, never file contents. That
    fire names no wiring-table trigger, so it has no resolved gate and its fix
    list is ALWAYS triaged before any of it becomes a proposed fix: the
    survivors are a numbered list the user triages, NONE is the default, and
@@ -201,7 +203,10 @@ For each item with `status: fail` and no recorded cause:
    3. Leave it open
 3. **Apply now** -> make the change as an atomic conventional commit per
    references/git.md (protected-branch guard, specific files, risk-surface
-   trigger at commit time). Then set the item back to pending for retest:
+   trigger at commit time - the fix is staged in THIS tree, so that fire
+   carries the staged-diff scope, shape (b): the reviewer runs
+   `git diff --cached` in the cwd it inherits). Then set the item back to
+   pending for retest:
    `uat record --item <k> --result pending --fix "{hash}, retest"` and offer
    to re-walk it immediately (first_pass keeps the original fail).
 4. **Re-plan** -> `--fix "routed to /cad-plan"`, leave it failed, and tell

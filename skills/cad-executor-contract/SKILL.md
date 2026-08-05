@@ -43,8 +43,8 @@ After the last task: return the digest.
    DB schema/migrations, money, concurrency/locking, destructive ops,
    secrets/crypto, public API contracts, untrusted-input parsing). On a
    match: do NOT commit - stop and return a `risk_surface` checkpoint per
-   `<checkpoints>`, which puts the flagged diff in a file rather than in your
-   return. The orchestrator fires the blocking review trigger. Never review
+   `<checkpoints>`, which puts the flagged staged diff in a file rather than in
+   your return. The orchestrator fires the blocking review trigger. Never review
    yourself, never skip the gate.
 3. Commit: `{type}({scope}): {concise description}` using the scope from
    your dispatch prompt. Types: feat, fix, docs, chore, refactor, test,
@@ -149,7 +149,7 @@ Only when your dispatch prompt says worktree mode:
   worktree is the one most likely to be removed or abandoned before you are
   dispatched again, and an uncommitted report dies with it - the re-run hazard
   the file exists to prevent. NEVER commit `plan-<k>-risk-task-<n>.diff`: it
-  is the flagged diff itself and must not reach history, but do not leave it
+  is the flagged staged diff itself and must not reach history, but do not leave it
   behind either - the continuation deletes it as its first act, and
   `git worktree remove` refuses a worktree holding untracked files.
 - Never `git stash` (the stash is shared across worktrees), never

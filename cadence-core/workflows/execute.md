@@ -158,8 +158,10 @@ Handle the executor's return:
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
 After each plan completes, fire the `diff` review trigger
-(references/review-triggers.md) with `git diff {pre-plan HEAD}..HEAD` as the
-payload. Default is advisory: report findings, continue. When
+(references/review-triggers.md) with the refs
+`{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
+reviewer runs the diff itself. Default is advisory: report findings, continue.
+When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the
 survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
@@ -181,9 +183,11 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   offer_consult per references/consult.md with the deviation as the
   situation.
 - **risk_surface** (staged diff matches a risk surface) -> fire the
-  `risk_surface` review trigger with the flagged diff. Blocking: on FAIL,
-  findings are fixed or the user explicitly overrides - never silently
-  proceed.
+  `risk_surface` review trigger with the flagged-diff FILE path the checkpoint
+  returned - shape (c). It is a path and not refs because the diff is staged
+  and uncommitted, and in worktree mode it is not in this tree at all.
+  Blocking: on FAIL, findings are fixed or the user explicitly overrides -
+  never silently proceed.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
@@ -214,15 +218,20 @@ fork-point default.)
    is also what carries that executor's own report commit into phase history.
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
-   `diff` trigger for every plan CONCURRENTLY in one message (payload: each
-   plan's commits as a diff) - the diffs are static and independent, so the
-   per-plan reviews need not serialize (seams.md concurrent dispatch). The
+   `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
+   (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
+   HEAD after that plan's merge}`) - the ranges are static and independent, so
+   the per-plan reviews need not serialize (seams.md concurrent dispatch). This
+   step runs AFTER step 3 merged every branch, so a per-plan `diff` review never
+   fires before the merge and its refs always resolve in THIS tree, which is the
+   tree a dispatched subagent inherits. The
    `diff` gate reports and continues as today at `advisory`; at `adjudicated`
    each plan's survivors go through the triage gate -
    references/review-triggers.md § 6 Consequence, NONE the default - before
    any of them is acted on.
-6. Fire the `phase_diff` trigger (references/review-triggers.md) with
-   `git diff {PHASE_START}..HEAD` as the payload. Off by default (opt-in) -
+6. Fire the `phase_diff` trigger (references/review-triggers.md) with the refs
+   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). Off by default
+   (opt-in) -
    it exists because the per-plan reviews above each see one plan's diff in
    isolation, so a bug in the INTERACTION of two merged plans is invisible
    to them until pre_ship at land time. Parallel path only: on the

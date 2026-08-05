@@ -41,8 +41,9 @@ rather than a schema default no layer wrote.
    (git.md) applies to any commit here.
 
 3. **Fire `pre_ship`.** Run the `pre_ship` review trigger
-   (references/review-triggers.md) with the full branch diff
-   `git diff <base>..HEAD` as the artifact, honoring `review.triggers.pre_ship`
+   (references/review-triggers.md) with the refs
+   `{base_ref: <base>, head_ref: HEAD}` as the artifact - shape (a), so the
+   branch diff is never inlined here - honoring `review.triggers.pre_ship`
    (default adjudicated). Report the outcome; a blocking FAIL halts the land
    until fixed or the user overrides.
 
@@ -50,7 +51,8 @@ rather than a schema default no layer wrote.
    triage gate exactly as review-triggers.md § 6 Consequence defines it - that
    file is preloaded above, so read it there rather than restating it here. Act
    ONLY on the survivors the user names, each as an atomic conventional commit
-   (references/git.md), then re-fire `pre_ship` ONCE so the publish decision is
+   (references/git.md), then re-fire `pre_ship` ONCE - same `base`, the NEW
+   HEAD - so the publish decision is
    made against the tree that actually ships: at most one re-fire per `/cad-land`
    run, and report that re-fire's survivors rather than triaging them again -
    iterating review->revise->review is the convergence loop review-triggers.md

@@ -72,7 +72,9 @@ No PLAN.md, no SUMMARY.md, no state writes.
 
 <step name="risk_check">
 If any commit's diff touched a risk surface, fire the `risk_surface` review
-trigger per references/review-triggers.md before reporting done.
+trigger per references/review-triggers.md before reporting done. The commits
+already exist, so the artifact is refs - shape (a):
+`{base_ref: parent of the task's first commit, head_ref: HEAD}`.
 </step>
 
 <step name="done">
