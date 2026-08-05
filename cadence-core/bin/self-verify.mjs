@@ -102,7 +102,7 @@ const CONTRACTS = {
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
       '--severity', '--cause', '--fix', '--evidence', '--source', '--origin',
       '--criterion'],
-    'uat merge': ['--phase'],
+    'uat merge': ['--phase', '--payload'],
     'uat status': ['--phase'],
     audit: [],
     'criteria-coverage': [],

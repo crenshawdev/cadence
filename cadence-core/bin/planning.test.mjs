@@ -1228,6 +1228,176 @@ test('uat merge: a newline in verifier text cannot inject a status line (#35)', 
   assert.equal(rec.counts.fail, 2); // item 1 + the appended gap
 });
 
+// --- uat merge --payload <file>: the envelope refusals (D-07) -----------------
+//
+// One test() per row (the convention and its reason are at
+// retired-keys.test.mjs:4-6). Every failing row asserts ok:false, the exact
+// reason, exit 1, and a byte-identical UAT.md - a refusal that still rewrote
+// the checklist would be worse than the hole it closes.
+
+/** Write `text` to a scratch payload file inside the fixture and return it. */
+function payloadFile(dir, text) {
+  const p = join(dir, 'payload.json');
+  writeFileSync(p, text);
+  return p;
+}
+
+/** Run a merge expected to refuse, asserting UAT.md never moved. */
+function refusedMerge(dir, args) {
+  const file = join(dir, 'phases', '1', 'UAT.md');
+  const before = readFileSync(file);
+  const r = run(['uat', 'merge', '--phase', '1', ...args], dir);
+  assert.deepEqual(readFileSync(file), before, 'UAT.md must be byte-identical');
+  return r;
+}
+
+test('uat merge: a --payload path that does not exist is no-payload', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', join(dir, 'nope.json')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-payload');
+  assert.equal(r._exit, 1);
+});
+
+test('uat merge: an empty --payload file is no-payload', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', payloadFile(dir, '')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-payload');
+  assert.equal(r._exit, 1);
+});
+
+test('uat merge: a whitespace-only --payload file is no-payload', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', payloadFile(dir, '  \n\t\n')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-payload');
+  assert.equal(r._exit, 1);
+});
+
+// The sentinel collision, from the outside: this exact input used to exit 0
+// printing NOTHING at all, which `run()` cannot even parse.
+test('uat merge: a --payload file holding null is bad-payload, not silence', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', payloadFile(dir, 'null')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-payload');
+  assert.equal(r._exit, 1);
+});
+
+test('uat merge: a --payload file holding a bare string is bad-payload', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', payloadFile(dir, '"hello"')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-payload');
+  assert.equal(r._exit, 1);
+});
+
+// The all-zero ok:true hole: a truncated findings file reporting a clean pass.
+test('uat merge: a --payload file holding {} is bad-payload, not an all-zero success', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', payloadFile(dir, '{}')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-payload');
+  assert.equal(r._exit, 1);
+});
+
+test('uat merge: a --payload file holding a JSON array is bad-payload', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload', payloadFile(dir, '[{"k":1}]')]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-payload');
+  assert.equal(r._exit, 1);
+});
+
+test('uat merge: --payload with no path is no-payload, never a read of fd 1', () => {
+  const dir = uatTree();
+  const r = refusedMerge(dir, ['--payload']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-payload');
+  assert.equal(r._exit, 1);
+});
+
+// The positive row: the flag is a TRANSPORT change and nothing else.
+test('uat merge: --payload <file> and stdin merge identically', () => {
+  const findings = JSON.stringify({
+    passes: [{ k: 1, evidence: 'cli run' }],
+    gaps: [{ name: 'New gap', reason: 'unwired', severity: 'major' }],
+    human_checks: [{ name: 'looks right', expected: 'green' }],
+  });
+  const viaStdin = uatTree();
+  const a = run(['uat', 'merge', '--phase', '1'], viaStdin, findings);
+  const viaFile = uatTree();
+  const b = run(['uat', 'merge', '--phase', '1',
+    '--payload', payloadFile(viaFile, findings)], viaFile);
+
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  for (const key of ['auto_passed', 'gaps', 'added', 'skipped', 'rejected']) {
+    assert.equal(b[key], a[key], key);
+  }
+  assert.equal(readFileSync(join(viaFile, 'phases', '1', 'UAT.md'), 'utf8'),
+    readFileSync(join(viaStdin, 'phases', '1', 'UAT.md'), 'utf8'));
+});
+
+// The envelope rule is a DISJUNCTION - ANY ONE of the three arrays is a
+// legitimate payload - and nothing above pins that. Every refusal row carries
+// no array at all and the transport row carries all three, so mutating the
+// `&&` chain in planning.mjs to `||` passes the entire suite while wrongly
+// refusing the ordinary findings file of a verifier that found only passes,
+// only gaps, or only human checks. One row per array closes that.
+
+test('uat merge: a payload carrying ONLY passes merges', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1', '--payload',
+    payloadFile(dir, JSON.stringify({ passes: [{ k: 1, evidence: 'cli run' }] }))], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.auto_passed, 1);
+  assert.equal(r.added, 0);
+  assert.match(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), /cli run/);
+});
+
+test('uat merge: a payload carrying ONLY gaps merges', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1', '--payload',
+    payloadFile(dir, JSON.stringify({
+      gaps: [{ name: 'New gap', reason: 'unwired', severity: 'major' }],
+    }))], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.gaps, 1);
+  assert.equal(r.added, 1);
+  assert.equal(r.auto_passed, 0);
+});
+
+test('uat merge: a payload carrying ONLY human_checks merges', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1', '--payload',
+    payloadFile(dir, JSON.stringify({
+      human_checks: [{ name: 'looks right', expected: 'green' }],
+    }))], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.added, 1);
+  assert.equal(r.gaps, 0);
+});
+
+// init/refresh share the reader, so the sentinel fix must not have left them
+// exiting 0 in silence on the same input.
+test('uat init: a literal null on stdin is bad-payload, not silence', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Only' }], phases: { 1: { plan: true } } });
+  const r = run(['uat', 'init', '--phase', '1'], dir, 'null');
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-payload');
+  assert.equal(r._exit, 1);
+});
+
+test('uat refresh: a literal null on stdin is bad-payload, not silence', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'refresh', '--phase', '1'], dir, 'null');
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-payload');
+  assert.equal(r._exit, 1);
+});
+
 test('uat: a hand-added ### section mints no item and survives rewrites (#46.1)', () => {
   const dir = uatTree();
   const file = join(dir, 'phases', '1', 'UAT.md');
