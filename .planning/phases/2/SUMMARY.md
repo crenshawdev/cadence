@@ -78,7 +78,7 @@ covers a deferred read rather than only a subagent round-trip.
 ## Open items
 
 - ~~**The `/cad-land` publish-rails Read is under the wrong arm.**~~ CLOSED by
-  `2995dfb`. It sat inside arm (b) `git.auto_close: true` under a lead scoped
+  `19e6eba`. It sat inside arm (b) `git.auto_close: true` under a lead scoped
   "On GitHub", with three consequences: arm (a) - the DEFAULT manual path with
   four publishing options - never read `references/git-publish.md` at all; the
   GitLab sub-arm of (b) reached `glab mr create`, which publishes the source
@@ -116,9 +116,13 @@ cadence-core/bin/*.test.mjs` reports 1151 pass / 0 fail, `node
 cadence-core/bin/self-verify.mjs` prints `"problems":[]` across all sixteen
 checks, `npx tsc -p tsconfig.ci.json` exits 0, and the budget-equality one-liner
 prints `budgets exact` tree-wide - so no commit left a surface unbudgeted and no
-`@`-include or backticked repo path resolves to a deleted file. The one gap is
-AC2, and it is a placement error rather than a missing edit: the deferred publish
-read landed inside the `git.auto_close` arm instead of ahead of the (a)/(b)
-branch, so the default manual publish path and the GitLab auto-close path both
-still publish without loading rail 3. That is the first open item above and the
-thing verification should press on.
+`@`-include or backticked repo path resolves to a deleted file. AC2 was the one
+gap the `diff` review caught and it was a placement error rather than a missing
+edit - the deferred publish read landed inside the `git.auto_close` arm, so the
+default manual publish path and the GitLab auto-close path both still published
+without loading rail 3. `19e6eba` closed it by placing the read at each arm's own
+publishing moment, which is what AC2's "at the step that acts on them" asks for
+and what keeps the break-even rule intact; `skills/cad-land/SKILL.md:84-92` now
+carries the (a) read and `:105-116` the (b) one, with self-verify, the 1151 tests
+and the tree-wide budget equality all still green afterward. All five acceptance
+criteria are delivered.
