@@ -81,6 +81,16 @@ rather than a schema default no layer wrote.
      whether to push it.
    - **Leave local** - do nothing further.
 
+   **Read the publish rails before a publishing answer.** When the answer is
+   direct push, open MR/PR, or a tag the user chose to push, Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` first: rail 3
+   and the `git.auto_close` policy govern all three, and this skill no longer
+   preloads them. The 4a ask ended the turn, so this is the first call of the
+   turn that starts with the user's answer - one extra tool call, not an extra
+   turn. Leave-local and a tag left unpushed never reach it, and that is what
+   makes deferring it pay rather than eager (`references/seams.md`, File
+   round-trip).
+
    Then **execute exactly that, raw.** Run only the chosen action. Never push
    unless push (or push-tag) was chosen. No PR-body templating beyond a
    title/summary the user confirms. Report precisely what was done (branch
@@ -91,18 +101,19 @@ rather than a schema default no layer wrote.
    opt-in that lets the close run unattended; it never installs a default into
    the 4a ask). The integration branch is local-only
    (references/git-publish.md rail 3 never
-   auto-pushes). On GitHub, `gh pr create --head <branch>` will NOT push a
-   remoteless branch non-interactively, so publish it first through the
-   git-publish seam:
+   auto-pushes).
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` before the
-     seam call: rail 3 and the `git.auto_close` policy apply from here on, and
-     this skill no longer preloads them. That costs one extra tool call, not an
-     extra turn - step 4a ends the turn on the publish-mechanism ask, so the
-     Read is the first call of the turn that starts with the user's answer, and
-     only the arms that publish reach it at all. The trade: ~4.5 KB off turn one
-     of every `/cad-land` run for one round-trip on the publish path.
-   - **Publish the branch (GitHub arm).** Run the seam on its own physical line:
+     first bullet below that publishes anything - the GitHub seam call and
+     GitLab's `glab mr create`, which publishes the source branch itself, both
+     count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
+     `git.auto_close` policy govern from here on and this skill no longer
+     preloads them. This arm skips the 4a ask, so the read does not fold into a
+     turn an ask already ended - it is the unattended chain's own first call,
+     one extra tool call and no extra turn, on a path that always publishes.
+   - **Publish the branch (GitHub arm).** On GitHub, `gh pr create --head
+     <branch>` will NOT push a remoteless branch non-interactively, so publish
+     it first through the git-publish seam. Run it on its own physical line:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
      It does ONE sanctioned `git push` of the current non-protected branch as a
      subprocess (execFileSync argv) that git-guard's Bash push hook never sees,

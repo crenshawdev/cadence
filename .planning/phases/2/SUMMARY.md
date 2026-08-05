@@ -77,18 +77,22 @@ covers a deferred read rather than only a subagent round-trip.
 
 ## Open items
 
-- **The `/cad-land` publish-rails Read is under the wrong arm.**
-  `skills/cad-land/SKILL.md:97-104` places it inside arm (b) `git.auto_close: true`,
-  under a lead sentence scoped "On GitHub". Three consequences: arm (a) - the
-  DEFAULT manual path with four publishing options - never reads
-  `references/git-publish.md` at all; the GitLab sub-arm of (b) reaches
-  `glab mr create`, which publishes the source branch, without loading rail 3
-  either; and the bullet's own rationale ("step 4a ends the turn on the
-  publish-mechanism ask") is false where it sits, since arm (b) explicitly skips
-  the 4a ask. Phase AC2 ("`/cad-land` reaches the publish rails at the step that
-  acts on them") is therefore only partly delivered. Found by the `diff` review
-  trigger, advisory, so recorded rather than fixed in-phase. Fix is a placement
-  move: hoist the Read to the top of step 4, before the (a)/(b) branch.
+- ~~**The `/cad-land` publish-rails Read is under the wrong arm.**~~ CLOSED by
+  `2995dfb`. It sat inside arm (b) `git.auto_close: true` under a lead scoped
+  "On GitHub", with three consequences: arm (a) - the DEFAULT manual path with
+  four publishing options - never read `references/git-publish.md` at all; the
+  GitLab sub-arm of (b) reached `glab mr create`, which publishes the source
+  branch, without loading rail 3 either; and the bullet's own rationale ("step
+  4a ends the turn on the publish-mechanism ask") was false where it sat, since
+  arm (b) explicitly skips the 4a ask. Found by the `diff` review trigger.
+  Fixed per-arm rather than by hoisting to the top of step 4: a top-of-step read
+  would also be reached by leave-local and by a tag left unpushed, and under this
+  phase's own break-even rule a reference reached on every branch belongs eager -
+  so hoisting would have argued the include back. (a) now reads it only when the
+  answer is direct push, open MR/PR or a pushed tag; (b) reads it ahead of its
+  first publishing bullet, explicitly covering GitLab as well as GitHub, and
+  states that this arm's read does not fold into an ask-ended turn. Each arm
+  carries the rationale that is true for it. AC2 is delivered.
 - CONTEXT AC2 names `land.md` as the file that should read `git-publish.md`. No
   `cadence-core/workflows/land.md` exists; `/cad-land`'s process lives entirely in
   `skills/cad-land/SKILL.md`, which is where the read went. Flagged so verification
