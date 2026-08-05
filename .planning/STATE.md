@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 3 (References load where they are used)
-Status: phase complete
-Next: /cad-context 3
+Phase: 3 of 3 (The surfaces that are always on, and the ratchet that watches them)
+Status: context gathered
+Next: /cad-plan 3
 Updated: 2026-08-05
