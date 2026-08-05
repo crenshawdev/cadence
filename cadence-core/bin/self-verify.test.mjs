@@ -496,6 +496,46 @@ test('#49.1: an unreadable INTERNALS.md is reported exactly once, not twice', {
   }
 });
 
+test('#49.1: an unreadable CHILD directory is named, and its readable siblings are still linted', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0
+    ? 'root bypasses mode bits' : false,
+}, () => {
+  const root = fullFixture();
+  mkdirSync(join(root, 'skills', 'good'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'good', 'SKILL.md'),
+    '---\nname: good\n---\nReads `git.bogus_key` at land time.\n');
+  const priv = join(root, 'skills', 'private');
+  mkdirSync(priv);
+  writeFileSync(join(priv, 'SKILL.md'), '---\nname: private\n---\nbody\n');
+  chmodSync(priv, 0o000);
+  try {
+    const r = run(['--root', root]);
+    assert.equal(r.reason, undefined);
+    // The path that is ACTUALLY unreadable, with ITS errno - not the branch
+    // root above it with the errno of a readFileSync that never applied.
+    assert.equal(r.problems.filter((p) => p.kind === 'unreadable-surface'
+      && p.file === 'skills/private' && p.detail === 'EACCES').length, 1);
+    assert.ok(!r.problems.some((p) => p.file === 'skills'));
+    // The under-linting half: the readable sibling is still linted.
+    assert.ok(r.problems.some((p) => p.kind === 'unknown-config-key'
+      && p.file === 'skills/good/SKILL.md'));
+  } finally {
+    chmodSync(priv, 0o755);
+  }
+});
+
+test('a symlinked directory is not descended, so a cycle lints each file once', () => {
+  const root = fullFixture();
+  mkdirSync(join(root, 'skills', 'a'), { recursive: true });
+  writeFileSync(join(root, 'skills', 'a', 'SKILL.md'),
+    '---\nname: a\n---\nReads `git.bogus_key` at land time.\n');
+  symlinkSync('..', join(root, 'skills', 'a', 'loop'));
+  const r = run(['--root', root]);
+  assert.equal(r.reason, undefined);
+  assert.equal(r.problems.filter((p) => p.kind === 'unknown-config-key'
+    && p.file === 'skills/a/SKILL.md').length, 1);
+});
+
 test('INTERNALS.md: a backticked repo path that does not exist is flagged; a real one and a glob are not', () => {
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',

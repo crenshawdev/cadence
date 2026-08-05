@@ -166,6 +166,24 @@ const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
 
 // --- helpers -----------------------------------------------------------------
 
+/**
+ * Yield every `.md` surface this linter reads, as `{ file }`, plus a
+ * `{ file, unreadable }` marker for each directory whose own listing threw.
+ *
+ * The walk is per ENTRY, one directory's own children at a time: a single
+ * `recursive: true` read wrapped in one try returns nothing for a WHOLE
+ * subtree the moment one descendant throws, and the old fallback then yielded
+ * the BRANCH root as the unreadable surface - so a mode-000 `skills/private`
+ * was reported as `skills` with the errno of a failed readFileSync (EISDIR),
+ * never naming the directory that is actually unreadable, while every readable
+ * sibling under `skills` went unlinted (#49.1, D-06). Descending only on
+ * `isDirectory()` also stops this walker at symlinked DIRECTORIES, matching
+ * lib/surface-weight.mjs so the reporting and enforcing halves traverse the
+ * same set. A named branch root is still descended - the dirent test only ever
+ * sees descendants.
+ * @param {string} root
+ * @returns {Generator<{ file: string, unreadable?: string }>}
+ */
 function* mdFiles(root) {
   const dirs = [
     join(root, 'cadence-core', 'workflows'),
@@ -174,21 +192,24 @@ function* mdFiles(root) {
     join(root, 'skills'),
     join(root, 'agents'),
   ];
-  for (const d of dirs) {
-    if (!existsSync(d)) continue;
-    // The walker never drops an entry it cannot inspect - it yields the
-    // path so run()'s read-guard can report it as an unreadable surface,
-    // rather than the whole run collapsing to one opaque internal error
-    // (#49.1). An unreadable directory is itself the unreadable surface.
+  /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
+  function* walk(dir) {
     let list;
     try {
-      list = readdirSync(d, { recursive: true, encoding: 'utf8' });
-    } catch {
-      yield d;
-      continue;
+      list = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      // This directory alone is the unreadable surface, named by its own
+      // path and with its OWN errno - and the walk descends no further
+      // into it, while its siblings stay linted.
+      yield { file: dir, unreadable: e.code || e.message };
+      return;
     }
-    for (const e of list) {
-      const f = join(d, String(e));
+    for (const d of list) {
+      const f = join(dir, d.name);
+      if (d.isDirectory()) {
+        yield* walk(f);
+        continue;
+      }
       if (!f.endsWith('.md')) continue;
       // Deliberately optimistic on the throw: a symlink that fails the
       // stat (dangling, cycle) still reaches the reporter as a file,
@@ -199,15 +220,19 @@ function* mdFiles(root) {
       } catch {
         isFile = true;
       }
-      if (isFile) yield f;
+      if (isFile) yield { file: f };
     }
+  }
+  for (const d of dirs) {
+    if (!existsSync(d)) continue;
+    yield* walk(d);
   }
   // README, INTERNALS and METHOD name user-facing switches and live file paths -
   // they are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay
   // out: they legitimately name keys that were later cut, while explaining the cut.
   for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
     const p = join(root, doc);
-    if (existsSync(p)) yield p;
+    if (existsSync(p)) yield { file: p };
   }
 }
 
@@ -303,8 +328,14 @@ function run(root) {
     }
   }
 
-  for (const file of mdFiles(root)) {
+  for (const { file, unreadable } of mdFiles(root)) {
     const rel = relative(root, file);
+    // A directory the walker could not list: report THAT path with the errno
+    // its own readdirSync threw, before any read is attempted on it.
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
     let text;
     try {
       text = readFileSync(file, 'utf8');
