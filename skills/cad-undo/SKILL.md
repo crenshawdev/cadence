@@ -1,6 +1,6 @@
 ---
 name: cad-undo
-description: "Safely roll back a phase's commits - discover the hashes from the phase SUMMARY manifest, guard against a dirty tree, revert (or --no-commit squash to re-do), and reset the phase's status. Reports later work factually instead of guessing dependencies"
+description: "Safely undo a phase - roll back its commits from the SUMMARY manifest, revert (or --no-commit to re-do), and reset the phase status"
 argument-hint: "<phase N> [--no-commit]"
 allowed-tools:
   - Read

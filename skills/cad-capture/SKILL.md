@@ -1,6 +1,6 @@
 ---
 name: cad-capture
-description: "Capture without losing your place - an actionable phase-linked todo (the queue mem-* lacks), a seed idea for a future milestone, or a note. One file: .planning/CAPTURE.md, which the builtin memory backend makes recallable at planning time"
+description: "Capture a phase-linked todo, a seed idea for a future milestone, or a note, without losing your place - one file, .planning/CAPTURE.md"
 argument-hint: "[todo | seed | note] <text> [--phase N]"
 allowed-tools:
   - Read

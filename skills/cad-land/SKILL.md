@@ -1,6 +1,6 @@
 ---
 name: cad-land
-description: "Publish finished work - report git state, fire the pre_ship review, then ask the publish mechanism with NO preselected default (push / MR or PR / tag / leave local) and do exactly that. Never decides how you publish"
+description: "Land finished work - report git state, fire the pre_ship review, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read

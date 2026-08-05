@@ -1,6 +1,6 @@
 ---
 name: cad-verify
-description: "Conversational UAT for a completed phase - persistent checklist that survives /clear, --sweep for a cross-phase audit, --deep for a goal-backward codebase pass"
+description: "Verify a completed phase by conversational UAT - a persistent checklist that survives /clear, plus cross-phase and goal-backward passes"
 argument-hint: "[phase] [--sweep] [--deep]"
 allowed-tools:
   - Read

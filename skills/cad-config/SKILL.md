@@ -1,6 +1,6 @@
 ---
 name: cad-config
-description: "Configure Cadence's config.json - workflow toggles, routing stakes, and interactive cross-model review-provider setup (live model detection + per-tier assignment)"
+description: "Configure Cadence's config.json - workflow toggles, routing stakes, and interactive cross-model review provider setup"
 argument-hint: "[--review [redetect] | <key>=<value> ...]"
 allowed-tools:
   - Read

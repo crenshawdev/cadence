@@ -1,6 +1,6 @@
 ---
 name: cad-decision-review
-description: "On-demand adversarial refute-then-adjudicate pass over one load-bearing decision - a CONTEXT.md D-NN line or a PROJECT.md Key Decisions row - grounded against Context7 and the codebase. Per-objection survives/partial/refuted ruling plus an amendment list; never auto-fires"
+description: "Adversarial refute-then-adjudicate pass over one load-bearing decision - a CONTEXT D-NN line or a PROJECT Key Decisions row - with per-objection rulings"
 argument-hint: "[path/to/decision doc]"
 allowed-tools:
   - Read

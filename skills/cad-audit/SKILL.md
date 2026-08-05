@@ -1,6 +1,6 @@
 ---
 name: cad-audit
-description: "Pre-ship requirement-traceability audit - every requirement traced to a phase, a plan, and a verification; orphan detection both directions; a FAIL gate that catches silently-dropped requirements before a milestone ships"
+description: "Pre-ship traceability audit - every requirement traced to a phase, plan and verification, orphan detection both directions, a FAIL gate before shipping"
 argument-hint: "[milestone | defaults to all active requirements]"
 allowed-tools:
   - Read

@@ -1,6 +1,6 @@
 ---
 name: cad-spike
-description: "Time-boxed experiment to resolve a specific unknown before betting on it - falsifiable Given/When/Then criteria tested risk-first (fail fast), a clear validated | invalidated | inconclusive verdict, throwaway code. One slim SPIKE.md, not a five-artifact wrap-up"
+description: "Spike - a time-boxed experiment resolving one unknown before you bet on it, risk-first, with a validated | invalidated | inconclusive verdict"
 argument-hint: "<the question or hypothesis to resolve>"
 allowed-tools:
   - Read

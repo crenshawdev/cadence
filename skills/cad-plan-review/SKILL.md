@@ -1,6 +1,6 @@
 ---
 name: cad-plan-review
-description: "On-demand adversarial review of a phase PLAN before code, through the review subsystem's plan trigger. For a hand-written, imported, or just-edited plan - /cad-plan already fires this automatically when it writes one"
+description: "On-demand adversarial plan review of a phase PLAN.md before code - for a hand-written, imported or just-edited plan (/cad-plan fires this itself)"
 argument-hint: "[phase number | path/to/PLAN.md]"
 allowed-tools:
   - Read

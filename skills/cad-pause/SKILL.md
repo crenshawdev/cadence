@@ -1,6 +1,6 @@
 ---
 name: cad-pause
-description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line 'where I was' as the resume pointer. Resume is /cad-progress, which auto-detects it. No Stop hook"
+description: "Pause work cleanly - a WIP commit of in-flight changes plus a STATE cursor set to paused with a one-line resume pointer (/cad-progress resumes it)"
 argument-hint: "[one-line note about where you are]"
 allowed-tools:
   - Read
