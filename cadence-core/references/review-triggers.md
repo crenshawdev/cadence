@@ -110,10 +110,14 @@ set never does. Per backend:
   EXISTING `--payload <file>` flag - no new subcommand or flag:
   ```
   git diff <base_ref>..<head_ref> > "${TMPDIR:-/tmp}/cad-artifact.txt"
-  node -e 'const f=require("fs"),d=process.env.TMPDIR||"/tmp";f.writeFileSync(d+"/cad-payload.json",JSON.stringify({instruction:process.argv[1],artifact:f.readFileSync(d+"/cad-artifact.txt","utf8")}))' "<instruction>"
+  node -e 'const f=require("fs"),d=process.env.TMPDIR||"/tmp";f.writeFileSync(d+"/cad-payload.json",JSON.stringify({instruction:process.argv[1],artifact:f.readFileSync(process.argv[2],"utf8")}))' "<instruction>" "${TMPDIR:-/tmp}/cad-artifact.txt"
   ```
-  Shape (b) redirects `git diff --cached`; shape (c) drops the first step and
-  reads the path. NEVER hand-assemble that JSON with `echo` or a heredoc - one
+  The second step takes the artifact path as an ARGUMENT, which is what lets
+  all three shapes share it: shape (b) redirects `git diff --cached` into the
+  same scratch path, shape (c) drops the first step and passes its OWN absolute
+  path instead. Hardcode the scratch name and shape (c) has no command at all -
+  it silently ships the previous review's file. NEVER hand-assemble that JSON
+  with `echo` or a heredoc - one
   unescaped quote or backslash anywhere in a diff makes the payload
   unparseable, which comes back as `bad-payload` after the shell already did
   the work. Both temp files are the model's scratch, never a phase artifact.
