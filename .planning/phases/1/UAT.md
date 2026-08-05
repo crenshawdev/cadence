@@ -19,14 +19,14 @@ evidence: skills/cad-executor-contract/SKILL.md:201-215 - the `<report>` block i
 ### 2. A PLAN PARTIAL continuation re-runs no completed task
 expected: A live cad-executor dispatch returns PLAN PARTIAL; the continuation prompt carries the report PATH (not a task table), and `git log` after the re-run shows no second commit for a task the report already lists complete. (human-verify: needs a live cad-executor dispatch)
 criterion: AC2
-status: blocked
-reason: Prose half verified live: execute.md:151 (partial arm) and :195 (handle_checkpoint) both carry the report PATH, and the only 'completed-task table' match is :175, the prohibition itself. Behavioral half needs a live cad-executor dispatch under an installed v2.3.0 - this session's dispatches ran the installed v2.2.0 agent, so they are not evidence.
+status: skipped
+reason: Behavioral half unobservable until v2.3.0 is the installed plugin - this phase wrote the contract the test needs, and the running plugin is v2.2.0, so no dispatch here exercises it. Prose half verified live at cadence-core/workflows/execute.md:151 (partial arm carries the report PATH) and :195 (handle_checkpoint likewise), with the only 'completed-task table' match at :175 being the prohibition itself. Retest after installing v2.3.0.
 
 ### 3. A checkpoint return carries no task table and its flagged diff is readable
 expected: A live risk_surface or structural checkpoint returns no task table; the report file exists carrying a `CHECKPOINT` status line, and the flagged diff is readable at the absolute path the checkpoint names. (human-verify: needs a live cad-executor dispatch)
 criterion: AC3
-status: blocked
-reason: Contract half verified live: cad-executor-contract SKILL.md:94 (report written with a CHECKPOINT: <type> status line), :105 (no Completed: table on the checkpoint branch), :110 (flagged-diff path made ABSOLUTE via git rev-parse --show-toplevel). Behavioral half needs a live cad-executor dispatch under an installed v2.3.0, on both the sequential and worktree paths.
+status: skipped
+reason: Behavioral half unobservable until v2.3.0 is the installed plugin, same cause as item 2. Contract half verified live at skills/cad-executor-contract/SKILL.md:94 (report written with a CHECKPOINT: <type> status line), :105 (no Completed: table on that branch) and :110 (flagged-diff path made ABSOLUTE via git rev-parse --show-toplevel). Retest after installing v2.3.0, on both the sequential and worktree paths.
 
 ### 4. Verifier writes one findings file behind an asserted narrow Write grant
 expected: The verifier contract names exactly one file under `.planning/phases/<N>/` that is NOT `FINDINGS.json`; all four rungs carry `Write` in `tools:` with `Edit`/`MultiEdit` in `disallowedTools:`; self-verify prints `ok:false` with a `verifier-write-grant` problem when either is removed and `ok:true` when restored; and no hand-transcription step survives in verify-deep.md.
@@ -114,6 +114,6 @@ total: 11
 passed: 9
 failed: 0
 pending: 0
-skipped: 0
-blocked: 2
+skipped: 2
+blocked: 0
 reworked: 4

@@ -29,7 +29,7 @@ Git history and each release tag are their archive.
 
 ## Phases
 
-- [ ] **Phase 1: The orchestrator stops holding what its children returned** - executor reports, verifier findings and review artifacts move to files or references; the seam states the break-even rule that justifies it
+- [x] **Phase 1: The orchestrator stops holding what its children returned** - executor reports, verifier findings and review artifacts move to files or references; the seam states the break-even rule that justifies it
 - [ ] **Phase 2: References load where they are used** - split `git.md`, extract the triage gate and restate it as a multi-select, resolve the `conventions.md` phantoms, and judge every remaining eager include per skill
 - [ ] **Phase 3: The surfaces that are always on, and the ratchet that watches them** - trim the descriptions riding every session everywhere, then put `references/` and `templates/` under the weight budget
 

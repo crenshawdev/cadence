@@ -130,10 +130,10 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RES-01 | Phase 1 | Pending |
-| RES-02 | Phase 1 | Pending |
-| RES-03 | Phase 1 | Pending |
-| RES-04 | Phase 1 | Pending |
+| RES-01 | Phase 1 | Complete |
+| RES-02 | Phase 1 | Complete |
+| RES-03 | Phase 1 | Complete |
+| RES-04 | Phase 1 | Complete |
 
 Empty between milestones. `v2.2.0`'s six rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
