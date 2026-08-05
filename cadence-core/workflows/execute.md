@@ -127,21 +127,35 @@ report format) - `cad-executor.md` already carries them as its stable, cached
 definition. Repeating them in the volatile dispatch tail pays for cached
 content twice.
 
+**The report file (both paths).** An executor writes its task table to
+`<plandir>/reports/plan-<k>.md` - `<plandir>` is the plan file's own directory -
+and returns a five-field digest. Derive that path from the plan file you
+dispatched; the digest deliberately does not carry it. Open a report file at
+two kinds of moment only: the `summary` step, once per plan, and a continuation
+branch, where you read ONLY the task numbers and commit hashes for the `git log`
+confirmation that branch already performs. Nowhere else, and never back into a
+dispatch prompt - re-inlining the table returns the bytes the file exists to
+move out, on the most expensive path there is. Before a worktree branch is
+merged its report lives in the worktree, not here: `git worktree list
+--porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`.
+
 Handle the executor's return:
-- **complete** (`PLAN COMPLETE`) -> collect its report (tasks, hashes,
-  deviations, open items).
+- **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
+  path `<plandir>/reports/plan-<k>.md`. Do not open the file here; `summary`
+  reads it.
 - **checkpoint** -> handle_checkpoint, then dispatch a fresh continuation.
-- **partial** (`PLAN PARTIAL`, a report but no checkpoint) -> the report's
-  completed-task table is authoritative; confirm its hashes against
-  `git log {pre-plan HEAD}..HEAD`, then ask the user (ask-user seam):
-  dispatch a fresh continuation executor for the remaining tasks (prompt
-  extended with the completed-task table and "continue from task <k>", as
-  in handle_checkpoint) or stop here - the incomplete tasks become SUMMARY
-  open items. Never silently re-run completed tasks.
-- **timeout or no report** -> inspect `git log {pre-plan HEAD}..HEAD` to see
-  what actually landed, report the state, and ask the user (ask-user seam)
-  whether to re-dispatch the remainder or stop. Never silently re-run a plan
-  on top of partial commits.
+- **partial** (`PLAN PARTIAL`, a digest but no checkpoint) -> the report FILE
+  is authoritative: open `<plandir>/reports/plan-<k>.md` for the task numbers
+  and hashes, confirm them against `git log {pre-plan HEAD}..HEAD`, then ask
+  the user (ask-user seam): dispatch a fresh continuation executor for the
+  remaining tasks (prompt carrying the report PATH and "continue from task
+  <k>", as in handle_checkpoint) or stop here - the incomplete tasks become
+  SUMMARY open items. Never silently re-run completed tasks.
+- **timeout or no report** -> the executor rewrites its report after every task
+  commit, so a file exists even when nothing was returned: read it, confirm it
+  against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
+  the state, and ask the user (ask-user seam) whether to re-dispatch the
+  remainder or stop. Never silently re-run a plan on top of partial commits.
 
 After each plan completes, fire the `diff` review trigger
 (references/review-triggers.md) with `git diff {pre-plan HEAD}..HEAD` as the
@@ -156,8 +170,10 @@ halts, and triage is not an override for it.
 </step>
 
 <step name="handle_checkpoint">
-A checkpoint return carries: completed tasks with commit hashes, the current
-task, and what the executor needs. Route by type:
+A checkpoint return carries no completed-task table - only the digest, the
+checkpoint type, the current task, and what the executor needs. The completed
+tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
+`CHECKPOINT` status line before returning. Route by type:
 
 - **structural** (architectural change needed, plan wrong at its core) ->
   present to the user via the ask-user seam: approve the proposed change /
@@ -171,9 +187,10 @@ task, and what the executor needs. Route by type:
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
-Then dispatch a FRESH cad-executor for the same plan, its prompt extended
-with the completed-task table (hashes included), the checkpoint outcome, and
-"continue from task <k>". Fresh context each time - never resume.
+Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
+report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
+"continue from task <k>". Fresh context each time - never resume, and never
+re-inline the table.
 </step>
 
 <step name="execute_parallel">
@@ -191,8 +208,10 @@ fork-point default.)
    concurrent dispatch). Same prompt as sequential except the mode line:
    "Worktree executor on branch {branch} - worktree rules apply."
 2. Wait for every executor in the batch (same timeout).
-3. Merge each worktree branch back sequentially: `git merge {branch}`; on
-   conflict, stop and ask the user - never force, never auto-resolve.
+3. Merge each worktree branch back sequentially: record each branch's pre-merge
+   HEAD first (step 5 needs that ref pair), then `git merge {branch}`; on
+   conflict, stop and ask the user - never force, never auto-resolve. The merge
+   is also what carries that executor's own report commit into phase history.
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (payload: each
@@ -222,8 +241,9 @@ Light, inline, no subagent. Read the phase goal and
 `git log --oneline {PHASE_START}..HEAD`, then write one honest paragraph:
 does the sum of these commits plausibly deliver the phase goal? Name
 anything that looks missing. Every concrete claim in the paragraph carries
-its evidence inline - a file:line or a command output, drawn from the
-executor reports or a direct look - never an unevidenced "X now works":
+its evidence inline - a file:line or a command output, drawn from
+`git log --oneline`, the returned digests, or a direct look (the report files
+open at `summary`, not here) - never an unevidenced "X now works":
 cad-verifier later treats SUMMARY claims as assertions to falsify, so an
 evidenced claim closes that loop and an unevidenced one is just a guess
 wearing a verdict. This is an assessment, not a gate - gaps become
@@ -232,8 +252,9 @@ SUMMARY open items, not a fix loop.
 
 <step name="summary">
 Write `.planning/phases/<N>/SUMMARY.md` from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/SUMMARY.md`, aggregating the executor
-reports: what shipped, commits per task with hashes, deviations, open items,
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/SUMMARY.md`, aggregating the
+executor reports - read each plan's `<plandir>/reports/plan-<k>.md` once, at
+this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
 
@@ -253,10 +274,15 @@ Update the cursor through the seam:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N> --status executed --next "/cad-verify <N>"
 ```
 
-If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, and
-`.planning/CAPTURE.md` if the summary step appended open items to it -
-`docs(<N>): phase <N> summary` - staging exactly those files. The cursor
-is never left uncommitted.
+If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
+`<plandir>/reports/plan-<k>.md`, and `.planning/CAPTURE.md` if the summary step
+appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
+those files. Never stage a `plan-<k>-risk-task-<n>.diff`: it is the transient
+flagged diff and the continuation deletes it. With the key false the reports
+stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
+that key is the user's standing answer for all of them - the worktree path
+commits regardless not as a docs decision but because the commit is the only
+transport across the merge. The cursor is never left uncommitted.
 </step>
 
 <step name="done">

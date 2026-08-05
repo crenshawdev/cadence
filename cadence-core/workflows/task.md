@@ -63,9 +63,11 @@ No PLAN.md, no SUMMARY.md, no state writes.
    from a fresh context, dispatch cad-executor with the plan via the
    spawn-agent seam instead, and wait for its result.
 3. Append a 3-5 line "Outcome" section to the PLAN.md (what shipped, commit
-   hashes, deviations). No separate SUMMARY.md for tasks.
-4. If `planning.commit_docs` is true and the plan file exists, commit it
-   (`docs: task plan {slug}`).
+   hashes, deviations). When step 2's cad-executor exception was taken, write
+   it from `.planning/tasks/{slug}/reports/plan-1.md` - the executor returns a
+   digest, not a table - read once here. No separate SUMMARY.md for tasks.
+4. If `planning.commit_docs` is true and the plan file exists, commit it, plus
+   that report file when one was written (`docs: task plan {slug}`).
 </step>
 
 <step name="risk_check">
