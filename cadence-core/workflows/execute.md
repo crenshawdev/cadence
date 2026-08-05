@@ -213,14 +213,19 @@ fork-point default.)
    "Worktree executor on branch {branch} - worktree rules apply."
 2. Wait for every executor in the batch (same timeout).
 3. Merge each worktree branch back sequentially: record each branch's pre-merge
-   HEAD first (step 5 needs that ref pair), then `git merge {branch}`; on
+   HEAD first, then `git merge {branch}`, then record the HEAD it produced; on
    conflict, stop and ask the user - never force, never auto-resolve. The merge
    is also what carries that executor's own report commit into phase history.
+   BOTH ends are recorded here because step 5 runs after every branch has
+   merged, when the tree holds only the final HEAD: a plan's post-merge HEAD is
+   not recoverable then, and pairing its pre-merge HEAD with the current HEAD
+   would hand that plan's reviewer every later plan's work as well.
 4. Remove each merged worktree and delete its branch.
 5. After all batches: run `workflow.test_command` once if set; then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
    (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
-   HEAD after that plan's merge}`) - the ranges are static and independent, so
+   that plan's post-merge HEAD from step 3}`) - the ranges are static and
+   independent, so
    the per-plan reviews need not serialize (seams.md concurrent dispatch). This
    step runs AFTER step 3 merged every branch, so a per-plan `diff` review never
    fires before the merge and its refs always resolve in THIS tree, which is the
