@@ -204,6 +204,20 @@ file whole itself, pass the pointer (the path), not the bytes - reading it in th
 orchestrator just to hand it down doubles the read and bloats the main context
 with a file the agent is about to open anyway.
 
+**File round-trip (when the extra turn pays).** Routing an artifact through a
+file costs one extra turn - the parent's read-back - so it pays only when BOTH
+hold: the read-back folds into a turn the parent was taking anyway (writing
+SUMMARY, making the docs commit, merging a worktree), and the artifact lands
+LATE enough in the run that its bytes would otherwise ride every remaining turn.
+A small return the parent acts on immediately is pure overhead and stays inline.
+Which side extracts: whichever side has the SMALLER resident context, which is
+why the child (holding one plan) writes the file and the parent (holding the
+whole phase) reads a digest. Corollary: a parent must never read a file only to
+hand it down - see Handoff read discipline above. Shipped applications: the
+executor report read back at `workflows/execute.md`'s `summary`, the verifier
+findings file consumed by `workflows/verify-deep.md`, and the cross-model
+`--payload <file>`.
+
 ## Seam: call-review-provider
 
 How the review subsystem reaches a cross-model reviewer. A cross-model review
