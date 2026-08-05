@@ -31,7 +31,7 @@ are consequential either/ors the tool must not steer: present them plainly, no
 recommended option, no reordering toward one -
 - the publish mechanism in /cad-land (push / MR or PR / tag / leave local), and
 - the protected-branch guard when work would land on a protected branch
-  (references/git.md rail 1).
+  (references/git-guard.md rail 1).
 These stay undefaulted by design; a nudge there is a bug, not a convenience.
 
 ## Seam: spawn-agent

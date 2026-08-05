@@ -143,8 +143,13 @@ function reap(dir, branch) {
   // Same execve discipline as publish: the program is the literal 'git', the
   // args are a JS array, no command string is ever built, and the only variable
   // tokens are `dir` (right after -C) and the SAFE_BRANCH-validated name behind
-  // a `--` end-of-options separator. Running it here rather than as Bash prose
-  // is what keeps rail 5 from prompting on Cadence's own close.
+  // a `--` end-of-options separator. The rail this comment used to cite was the
+  // destructive-op guard v2.2.0 deleted, so a Bash `git branch -D` now prompts
+  // nowhere at all (see the header): running the reap here rather than as Bash
+  // prose is what keeps the branch name from ever becoming shell, and the one
+  // prompt this seam still exists to keep out of the unattended close is the
+  // push guard's unconditional ask on the publish half
+  // (references/git-publish.md rail 3).
   try {
     execFileSync('git', ['-C', dir, ...decision.argv],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

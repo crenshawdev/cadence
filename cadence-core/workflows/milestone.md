@@ -121,7 +121,7 @@ appends a phase line to an existing roadmap - `/cad-plan` stops with "Phase
 third bullet leaves that phase's line in place, so the list is still live and
 its entries do not include phase 1 - the seam finds nothing to derive from and
 returns `cannot-derive`.)
-Commit the doc changes (`docs:`), cursor included, per references/git.md -
+Commit the doc changes (`docs:`), cursor included, per references/git-guard.md -
 never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)

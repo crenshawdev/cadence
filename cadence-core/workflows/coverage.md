@@ -70,5 +70,5 @@ Run `workflow.test_command` (or the detected runner) over the new tests.
 
 ## 7. Commit
 Commit the generated tests atomically, `test(phase-<N>): cover <requirements>`,
-honoring the protected-branch guard (references/git.md) - if HEAD is protected,
+honoring the protected-branch guard (references/git-guard.md) - if HEAD is protected,
 ask before committing. Never auto-push.

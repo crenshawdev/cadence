@@ -202,7 +202,7 @@ For each item with `status: fail` and no recorded cause:
    2. Re-plan it through /cad-plan (phase-sized gap)
    3. Leave it open
 3. **Apply now** -> make the change as an atomic conventional commit per
-   references/git.md (protected-branch guard, specific files, risk-surface
+   references/git-guard.md (protected-branch guard, specific files, risk-surface
    trigger at commit time - the fix is staged in THIS tree, so that fire
    carries the staged-diff scope, shape (b): the reviewer runs
    `git diff --cached` in the cwd it inherits). Then set the item back to

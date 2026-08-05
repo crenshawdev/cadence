@@ -262,7 +262,7 @@ not another iteration.
    ```
 
 3. If planning.commit_docs is true: apply the protected-branch guard
-   (references/git.md rail 1), then commit the plan file(s), STATE.md, and
+   (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
 </step>

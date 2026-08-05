@@ -4,7 +4,7 @@
 // deleted, and it is deliberately the smaller thing.
 //
 // WHY IT IS THIS SMALL. The guard is a PreToolUse hook whose adversary is the
-// model issuing the command, not an attacker, and references/git.md has always
+// model issuing the command, not an attacker, and references/git-publish.md has always
 // conceded the rail is "a detection widener, not a security boundary": being
 // wrong here costs a prompt, never a bypass, and the sanctioned publish never
 // reaches this hook at all (it runs through the git-publish seam as a
@@ -19,7 +19,7 @@
 // So this reads one thing and declines to guess at the rest: a segment counts
 // ONLY when its command word is `git`. Everything else is silent BY
 // CONSTRUCTION rather than by a rule somebody has to keep correct - and the
-// shapes that consequently go silent are written down in references/git.md
+// shapes that consequently go silent are written down in references/git-publish.md
 // rail 3 and in the CHANGELOG entry that removed the parser, as the accepted
 // cost rather than as an oversight.
 'use strict';
@@ -58,7 +58,7 @@ const SEPARATOR = /&&|\|\||[;|&\n]/;
  * The cost, stated rather than hidden: an invocation reached through a wrapper,
  * a substitution or a transparent prefix (`bash -c "git push"`, `$(git push)`,
  * `sudo git push`, `xargs git push`, `env -S "git push"`) is NOT seen.
- * references/git.md rail 3 carries the list.
+ * references/git-publish.md rail 3 carries the list.
  *
  * @param {unknown} text the raw command string from the hook payload
  * @returns {string[]} the verbs, in the order they appear

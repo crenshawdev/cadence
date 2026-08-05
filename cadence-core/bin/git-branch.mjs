@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 // git-branch.mjs - the workflow-facing seam over lib/branch-decision.mjs. It
-// advises rail 1 (references/git.md) whether to create/switch to the
+// advises rail 1 (references/git-guard.md) whether to create/switch to the
 // per-milestone integration branch, stay, or ask - it NEVER runs `checkout -b`
 // itself (that is rail 1's job), exactly as git-guard.mjs only advises. One
 // JSON line on stdout, exit 0 (seam convention, lib/seam-io.mjs). The tested

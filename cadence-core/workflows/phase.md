@@ -63,5 +63,5 @@ plain markdown edit - no renumbering, no dir change.
   before committing anything.
 - Sanity: spot-check `planning.mjs status` runs clean.
 - Commit atomically (`chore: <op> phase N`) honoring the protected-branch
-  guard (references/git.md). Cursor committed with it; never leave the tree
+  guard (references/git-guard.md). Cursor committed with it; never leave the tree
   dirty.

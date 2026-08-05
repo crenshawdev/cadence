@@ -13,7 +13,7 @@
 //   cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>]
 //     Decide the return-to-base + pull + reap for a land. --dir is the planning
 //     root (default cwd). Base resolves from --base, else git.base_branch, else
-//     the first git.protected_branches entry (cad-land / git.md order). The reap
+//     the first git.protected_branches entry (cad-land / references/git-guard.md order). The reap
 //     target is resolveReapBranch(derived, `git branch --merged <base>`), where
 //     derived = --branch when given, else integrationBranchName(PROJECT/ROADMAP)
 //     - so an already-evolved ### Active or a null-derived name still reaps the

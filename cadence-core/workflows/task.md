@@ -1,6 +1,6 @@
 <purpose>
 Execute a small, off-roadmap task with Cadence's two guarantees - atomic
-conventional commits and the git.md rail-1 guard (the protected-branch check
+conventional commits and the references/git-guard.md rail-1 guard (the protected-branch check
 plus base-integrity and the integration-branch decision, not a bare branch
 check) - and no planning apparatus beyond that: inline by default (no subagents,
 no plan files). `--plan` opts into a written PLAN.md for genuinely multi-step
@@ -20,7 +20,7 @@ Store as $TASK.
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` before any work.
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` before any work.
 </step>
 
 <step name="scope">
@@ -45,7 +45,7 @@ When unsure between inline and planned, pick planned.
 2. Make the change.
 3. Verify: run `workflow.test_command` from config if set and relevant,
    otherwise do a direct sanity check of the changed behavior.
-4. Commit per references/git.md rail 2 (specific files, conventional message).
+4. Commit per references/git-guard.md rail 2 (specific files, conventional message).
 
 No PLAN.md, no SUMMARY.md, no state writes.
 </step>

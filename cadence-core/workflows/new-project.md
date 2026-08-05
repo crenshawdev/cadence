@@ -131,7 +131,7 @@ all of it.
 
 **First-commit guard.** If `planning.commit_docs` is false, skip this commit
 and every later commit in this workflow. Otherwise apply the
-protected-branch guard from references/git.md now, before the first commit.
+protected-branch guard from references/git-guard.md now, before the first commit.
 Exception: a repo with no commits yet (`git rev-parse HEAD` fails) has
 nothing to branch from - skip the guard and let the initial docs commit
 create the root commit on the current branch.
@@ -334,7 +334,7 @@ transcript need not be carried forward.
 - [ ] Every `## Active` id appears in a ROADMAP phase (100% coverage);
       Traceability table left as bare headers for `/cad-plan` to seed
 - [ ] STATE.md is a 4-line cursor pointing at phase 1
-- [ ] Commits follow references/git.md (guard before first commit, docs:
+- [ ] Commits follow references/git-guard.md (guard before first commit, docs:
       prefix, specific files, no push) and respect planning.commit_docs
 - [ ] At most one research agent spawned, only when enabled
 </success_criteria>

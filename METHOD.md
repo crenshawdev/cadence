@@ -505,7 +505,7 @@ judgment moment where past experience should shape the candidate set.
 
 ## Git is guarded by the harness, not by intentions
 
-`cadence-core/references/git.md`
+`cadence-core/references/git-guard.md`
 
 The protected-branch guard is a PreToolUse hook, enforced by the harness rather
 than by a paragraph of instructions the model can rationalize away. Before the
@@ -520,7 +520,7 @@ commit`) is invisible to it. That is a stated limit, not a gap - v2.2.0 deleted
 the 2,251-line reader that tried to close it, because the escape surface behind
 a shell is unbounded and the parser could be switched off by its own input.
 The guard is a rail against drift, not a boundary against an adversary, and
-`cadence-core/references/git.md` rail 3 lists exactly what it misses.
+`cadence-core/references/git-publish.md` rail 3 lists exactly what it misses.
 
 Two decisions are marked in `cadence-core/references/seams.md` as deliberately
 undefaulted, meaning they are presented with no recommended option and no
@@ -605,6 +605,6 @@ codebase; omissions still need a human.
 | Coverage definition | `cadence-core/workflows/coverage.md` |
 | Traceability and orphan detection | `cadence-core/workflows/audit.md` |
 | Scientific-method debugging | `cadence-core/workflows/debug.md` |
-| Branch guard and publish seam | `cadence-core/references/git.md` |
+| Branch guard and publish seam | `cadence-core/references/git-guard.md` and `cadence-core/references/git-publish.md` |
 | State, config, reporting conventions | `cadence-core/references/conventions.md` |
 | Prose-against-code lint and byte budgets | `cadence-core/bin/self-verify.mjs` |

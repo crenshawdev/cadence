@@ -76,8 +76,7 @@
 // without saying "in one message" at all, and scoping ITS claim to the block
 // instead of the sentence false-positives on descriptive prose that merely
 // shares a block with the parallel path ("Cadence issues no `git worktree add`
-// ... so it pins no fork point per dispatch", references/git.md and
-// references/seams.md).
+// ... so it pins no fork point per dispatch", references/seams.md).
 //
 // Why the domain is the CONCURRENCY CLAIM rather than every dispatch
 // instruction: prose that DESCRIBES dispatch without issuing it ("parallel

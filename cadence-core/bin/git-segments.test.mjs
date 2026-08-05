@@ -4,7 +4,7 @@
 //
 // The table below is the reader's whole stated behavior. Rows marked SILENT are
 // the accepted cost of deleting the parser, not oversights: each one is a shape
-// the old tokenizer saw and this one declines to guess at. references/git.md
+// the old tokenizer saw and this one declines to guess at. references/git-publish.md
 // rail 3 carries the same list in prose.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

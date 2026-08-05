@@ -47,7 +47,7 @@ would fire at the default while the seam reported the level's.
 
 <step name="git_guard">
 Apply the protected-branch guard from
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git.md` in the cwd (planning) repo
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md` in the cwd (planning) repo
 BEFORE dispatching the first executor - this covers both the executors' commits
 and the docs commit. Executors commit; the guard question belongs here, once,
 never inside a subagent.
