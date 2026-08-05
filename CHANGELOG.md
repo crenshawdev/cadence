@@ -69,6 +69,43 @@ All notable changes to Cadence are recorded here. The format follows
   the same `review.max_prompt_tokens` - a behaviour change inside a
   transport-only cycle.
 
+- **Every eager `@`-include in `skills/` carries a stated keep-or-move
+  reason.** The break-even rule in `cadence-core/references/seams.md` now covers
+  any deferred read rather than a subagent round-trip alone, so each call below
+  cites it exactly instead of by analogy: deferring pays when the read folds
+  into a turn the command was taking anyway AND only some branches reach it, and
+  an extra tool call inside a turn already being taken counts as folded while a
+  read that forces a new turn does not.
+
+  The tree carries 26 include lines across 21 skills. The 17 workflow includes
+  all stay eager - a skill's own workflow is its entire body, consulted on every
+  path - and so do `cad-help`'s `COMMANDS.md` and `cad-verify`'s
+  `templates/UAT.md`, for the same reason. `cad-plan-review` and `cad-land` keep
+  `references/review-triggers.md` eager as an explicit KEEP rather than an
+  oversight: `cad-plan-review`'s whole body is one `fire('plan')`, and every
+  `/cad-land` run fires `pre_ship`. What moved: the four guard-only skills
+  (`/cad-phase`, `/cad-pause`, `/cad-undo`, `/cad-milestone`) and `/cad-land`
+  swapped `references/git.md` for `references/git-guard.md`, with the publish
+  half deferred to the `/cad-land` step that acts on it, and `cad-pause`'s
+  `references/conventions.md` include is gone, leaving `conventions.md` eager
+  nowhere in the plugin.
+
+  Measured turn-one totals the calls were made against (SKILL.md plus every
+  `@`-included file, before this cycle's edits): `cad-land` 36,235 ·
+  `cad-milestone` 20,855 · `cad-verify` 19,834 · `cad-config` 19,601 ·
+  `cad-pause` 18,523 · `cad-execute` 18,452 · `cad-plan-review` 18,182 ·
+  `cad-context` 17,233 · `cad-phase` 15,941 · `cad-undo` 15,633 · `cad-plan`
+  15,584 · `cad-new-project` 15,349.
+
+  Two things a reader should keep an eye on. The `/cad-land` guard include
+  stays eager only while every run reaches rails 1-2 through its steps 1, 2 and
+  triage commits; a `/cad-land` path that commits nothing would make that
+  include a candidate in its own right. And the two new reference files
+  deliberately get no `weight-budgets.json` entry, since
+  `cadence-core/bin/lib/surface-weight.mjs` walks only `agents/*.md`,
+  `skills/**/SKILL.md` and `cadence-core/workflows/*.md`; `references/` comes
+  under budget separately.
+
 - **`/cad-config`'s catalog stays transcribed rather than derived, and
   `config.md` now says so.** The candidate change was to generate the catalog
   table from `config.mjs keys` instead of maintaining the copy by hand. Two

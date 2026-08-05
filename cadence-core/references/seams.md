@@ -222,7 +222,14 @@ A small return the parent acts on immediately is pure overhead and stays inline.
 Which side extracts: whichever side has the SMALLER resident context, which is
 why the child (holding one plan) writes the file and the parent (holding the
 whole phase) reads a digest. Corollary: a parent must never read a file only to
-hand it down - see Handoff read discipline above. Shipped applications: the
+hand it down - see Handoff read discipline above. The same two-clause test
+covers any deferred read, not only a subagent round-trip: deferring a reference
+pays when the read folds into a turn the command was taking anyway AND only some
+branches reach it, so an eager `@`-include whose file is consulted on EVERY path
+is already at break-even and stays eager. "Folds into" admits an extra tool
+round-trip inside a turn the command was already taking; it does not admit a
+read that forces a turn the command would not otherwise have taken. Shipped
+applications: the
 executor report read back at `workflows/execute.md`'s `summary`, the verifier
 findings file consumed by `workflows/verify-deep.md`, and the cross-model
 `--payload <file>`.
