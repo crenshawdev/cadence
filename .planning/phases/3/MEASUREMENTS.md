@@ -101,9 +101,9 @@ against D-19's stated baseline. Cause column reads the per-file deltas between
 | `/cad-new-project` | 15,349 | 15,598 | +249 | SKILL.md +1; workflows/new-project.md +248 |
 | **12 commands** | **231,422** | **199,687** | **-31,735** | |
 
-Read honestly: **seven of twelve fell, one is flat, and four rose.**
+Read honestly: **six of twelve fell, one is flat, and five rose.**
 
-- The seven falls are phases 1 and 2 removing eager reference includes -
+- The six falls are phases 1 and 2 removing eager reference includes -
   `references/git.md` (11,330 B) left five commands' turn one, replaced on four
   of them by the smaller `references/git-guard.md` (6,166 B), and
   `references/conventions.md` (5,115 B) left `/cad-pause` outright. `/cad-land`
@@ -111,7 +111,7 @@ Read honestly: **seven of twelve fell, one is flat, and four rose.**
   1,296 B absorbing the publish rails it stopped including.
 - `/cad-verify` is flat to the byte by coincidence, not design: its SKILL.md lost
   24 B this phase and `workflows/verify.md` gained exactly 24 B in phase 2.
-- The four rises are all the same shape and none is this phase's doing: the
+- The five rises are all the same shape and none is this phase's doing: the
   command's WORKFLOW file grew in phase 2 (`config.md` +276, `new-project.md`
   +248, `context.md` +224, `execute.md` +198, `plan.md` +37) because phase 2
   inlined guidance where it removed an include, while this phase's SKILL.md cut

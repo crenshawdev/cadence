@@ -62,10 +62,16 @@ descendant hide an entire subtree.
   and two budget entries for nothing. Both remain in the MEASUREMENTS table with
   identical before/after text.
 - [deviation] The plan states four commands grew between D-19 and `35ba9eb`;
-  measured, FIVE did - `config` +276, `new-project` +248, `context` +224,
-  `execute` +198, `plan` +37, with `plan` the extra. In every case the cause is
-  the command's workflow file growing in phase 2, not this phase. Reported as-is
-  in MEASUREMENTS.md section 2 rather than netted away.
+  measured, SIX did - `config` +276, `new-project` +248, `context` +224,
+  `execute` +198, `plan` +37, and `/cad-verify` +24 (from `workflows/verify.md`
+  13,432 -> 13,456). `/cad-verify` reads as flat in the closing table only
+  because this phase's own SKILL.md cut took exactly 24 B back off it, which
+  MEASUREMENTS.md:112 discloses. In every case the cause is the command's
+  workflow file growing in phase 2, not this phase. Reported as-is in
+  MEASUREMENTS.md section 2 rather than netted away. (The executor's report and
+  the first draft of this line said FIVE; corrected at verification, where the
+  same pass also caught three narrative miscounts in MEASUREMENTS.md - no number
+  in any table changed.)
 - [deviation] The trigger-word audit came out better than the criterion: 0
   dropped, 9 GAINED. Nine words the plan required were absent from the before
   lines (`land`, `verify`, `progress`, `undo`, `help`, `symptom`,
