@@ -165,8 +165,8 @@ When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the
 survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
-§ 6 Consequence before presenting, since this workflow does not preload it. The
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+before presenting, since this workflow does not preload it. The
 `risk_surface` arm is untouched by any of that: a matched risk surface still
 halts, and triage is not an override for it.
 </step>
@@ -231,9 +231,10 @@ fork-point default.)
    fires before the merge and its refs always resolve in THIS tree, which is the
    tree a dispatched subagent inherits. The
    `diff` gate reports and continues as today at `advisory`; at `adjudicated`
-   each plan's survivors go through the triage gate -
-   references/review-triggers.md § 6 Consequence, NONE the default - before
-   any of them is acted on.
+   each plan's survivors go through the triage gate, NONE the default: RE-READ
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
+   presenting, since this workflow does not preload it, and act only on what
+   the user names.
 6. Fire the `phase_diff` trigger (references/review-triggers.md) with the refs
    `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). Off by default
    (opt-in) -
@@ -242,9 +243,10 @@ fork-point default.)
    to them until pre_ship at land time. Parallel path only: on the
    sequential path each diff review already sees a tree containing all
    prior plans' work. It is `adjudicated` wherever it is on at all (critical
-   only), so its survivors go through the same triage gate -
-   references/review-triggers.md § 6 Consequence, NONE the default - before
-   any of them is acted on.
+   only), so its survivors go through the same triage gate, NONE the default:
+   RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+   before presenting, since this workflow does not preload it, and act only on
+   what the user names.
 
 Checkpoints on this path route exactly as in handle_checkpoint; the
 continuation executor is dispatched back into the same worktree.

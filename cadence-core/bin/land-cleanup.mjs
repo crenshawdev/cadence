@@ -97,8 +97,9 @@ function gate(dir) {
   // project. This gate asks "is anybody WATCHING", and that answer has to match
   // whatever the prose branched on - skills/cad-land/SKILL.md:27 reads the merged
   // value through `config.mjs get` and suppresses the pre_ship triage ask under it
-  // (references/review-triggers.md:146: "triage is NONE by construction and
-  // land-cleanup.mjs gate's blocker/high halt the only consequence").
+  // (references/triage-gate.md:34, the carve-out scoped to pre_ship inside
+  // /cad-land: "triage is NONE by construction and land-cleanup.mjs gate's
+  // blocker/high halt is the only consequence").
   //
   // So `proceed` on false is not this gate waving a blocker through; it is the
   // gate saying a human is looking at that blocker in the triage prompt. The halt

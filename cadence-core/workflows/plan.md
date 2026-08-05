@@ -228,8 +228,8 @@ survivors, then apply ONLY the ones the user picked to the plan file(s) and
 leave the rest recorded in this step's report. The survivors are a numbered
 list the user triages, NONE is the default, and only what the user names is
 acted on - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
-§ 6 Consequence before presenting, since this workflow does not preload it. Do
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+before presenting, since this workflow does not preload it. Do
 not re-enter the checker loop afterward - this trigger is the second opinion,
 not another iteration.
 </step>

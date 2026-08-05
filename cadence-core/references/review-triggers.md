@@ -170,30 +170,12 @@ the stronger signal). Adjudication is the same discipline the panel-review skill
 uses: reviewers critique, the main model grounds and owns the verdict.
 
 ### 6. Consequence (gate)
-- **advisory** - report the findings, continue. Nothing halts.
-- **blocking** - PASS if no `blocker`/`high` finding survives, else FAIL. On
-  FAIL, halt and surface the findings; resume only after they are fixed (re-run
-  fire) or the user explicitly overrides. A reviewer that could not run does not
-  silently PASS - report that the gate could not be evaluated and ask.
-- **adjudicated** - the survivors are already grounded, so what remains is the
-  USER's choice, not the model's. Present a NUMBERED list, one line per survivor:
-  severity, `file:line`, claim. Ask which to act on and END THE TURN on that
-  question - open-ended prose, not `AskUserQuestion` (a subset of N items is not
-  2-4 exclusive options). NONE is the first option and the default. Nothing is
-  applied, committed, published or re-planned against a survivor the user did not
-  name. When nothing survives, say the review RAN and adjudication killed
-  everything, not a bare "no findings". At `pre_ship` ONLY, under
-  `git.auto_close: true`, it does not prompt: triage is NONE by construction and
-  `land-cleanup.mjs gate`'s blocker/high halt the only consequence. No other
-  trigger reads that key - suppressing the ask elsewhere drops survivors with
-  nothing left to halt on them. It does not auto-halt like
-  `blocking`, and it is not the auto-replan convergence loop (cut in DESIGN §6) -
-  it grounds once and asks. Use for the deep, rare gates (plan, pre_ship).
-
-`cad-verify` routes fix requests through fire() (a review producing the fix
-list), not its own fixer loop. That fire names no wiring-table trigger and has
-no resolved gate: its list is always triaged through the `adjudicated`
-rule above, before any of it is proposed as a fix.
+`references/triage-gate.md` holds this step whole: all three arms
+(`advisory` / `blocking` / `adjudicated`), the multi-select triage the
+adjudicated arm asks, the `git.auto_close` carve-out scoped to `pre_ship`
+inside `/cad-land`, and the `cad-verify` fix-list rule. It is a separate file
+because three workflows re-read it at their triage sites without loading this
+one.
 
 ## Wiring (which skill fires what)
 

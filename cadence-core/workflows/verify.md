@@ -195,8 +195,8 @@ For each item with `status: fail` and no recorded cause:
    survivors are a numbered list the user triages, NONE is the default, and
    only what the user names goes on to step 2, so an unpicked finding never
    reaches step 3's "Apply now". RE-READ
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md`
-   § 6 Consequence before presenting, since this workflow does not preload it.
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+   before presenting, since this workflow does not preload it.
 2. **Propose the fix**, then ask the user (ask-user seam):
    1. Apply the fix now
    2. Re-plan it through /cad-plan (phase-sized gap)

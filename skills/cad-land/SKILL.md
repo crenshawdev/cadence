@@ -48,8 +48,9 @@ rather than a schema default no layer wrote.
    until fixed or the user overrides.
 
    **Triage, then publish.** When the resolved gate is `adjudicated`, run the
-   triage gate exactly as review-triggers.md § 6 Consequence defines it - that
-   file is preloaded above, so read it there rather than restating it here. Act
+   triage gate exactly as
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` defines it -
+   Read it at this step rather than restating it here. Act
    ONLY on the survivors the user names, each as an atomic conventional commit
    (references/git-guard.md), then re-fire `pre_ship` ONCE - same `base`, the NEW
    HEAD - so the publish decision is
