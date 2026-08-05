@@ -72,6 +72,10 @@ base as `--worktree`. Claim holds for Claude Code >= 2.1.208 (before that a
   unpushed commits. Inside a worktree, `head` resolves to THAT worktree's
   `HEAD`, not the main checkout's.
 
+`git.base_branch` stays the landing and guard base, distinct from the
+integration branch: the integration branch is what work merges back down to,
+not a claimed worktree fork point.
+
 It is a settings value, not a per-dispatch parameter, and a plugin must never
 silently write a user's settings. So Cadence reads it and refuses: the
 parallel path runs only under `head` (`workflows/execute.md`'s `choose_path`
