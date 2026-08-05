@@ -245,6 +245,13 @@ independently executable, sharing one review surface.
       `skills/cad-pause/SKILL.md` includes no `conventions.md`; `/cad-land`
       includes `git-guard.md` but not `git-publish.md`, and `land.md` reads
       `git-publish.md` at the step that acts on the publish rails.
+      CORRECTION (2026-08-05, at verification): there is no
+      `cadence-core/workflows/land.md` and there never was - `/cad-land`'s
+      process body IS `skills/cad-land/SKILL.md`, which is the only site this
+      criterion could mean. Read it that way. Both publishing arms must reach
+      the rails, not just one: 4a's direct-push / MR-PR / pushed-tag answers
+      and 4b's GitHub seam call AND GitLab `glab mr create`, which publishes
+      the source branch itself. Verified met at `SKILL.md:84-92` and `:105-113`.
 - [ ] AC3: The triage gate is its own file under `cadence-core/references/`;
       all five citation sites - `execute.md:167`, `execute.md:235`,
       `execute.md:246`, `plan.md:230`, `verify.md:197` - name that file and
@@ -256,6 +263,14 @@ independently executable, sharing one review surface.
       mutually exclusive options; and the `git.auto_close` carve-out reads as
       scoped to `pre_ship`/`cad-land`, with `land-cleanup.mjs` and
       `land-cleanup.test.mjs` naming the file and line that now hold it.
+      CORRECTION (2026-08-05, at verification): the `ceil(N/4)` in this
+      criterion is WRONG and the shipped `ceil(N/3)` is right. It was borrowed
+      from `conventions.md:47`, where N counts QUESTIONS and four is the
+      questions-per-call cap. Here the survivors are OPTIONS inside one
+      question and NONE is mandatory and first, so it consumes one of the four
+      option slots and only three survivors fit - `ceil(N/3)` questions, which
+      then batch four per call. Applying this criterion literally overflows
+      every full question by one option. Read AC4 as `ceil(N/3)`.
 - [ ] AC5: `grep -n "conventions.md" cadence-core/workflows/*.md` returns
       nothing, and each of the three cited rules reads in full at every one of
       its 17 former citation sites.
