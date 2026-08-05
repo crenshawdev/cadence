@@ -16,9 +16,20 @@ Tasks: 10 of 10
 | 10: close the stale claims and prove the cycle green | 8ccb5b3 | D-10 VERIFIED not re-implemented (no second guard landed); D-18 verified absent from config with a clean `route.mjs resolve`; D-11 recorded in the CHANGELOG. One `### Changed` block under `## [Unreleased]`. `.planning/CAPTURE.md:179` flipped to `- [x]` with the closure text - on disk only, see deviation. D-17 ratchet audited commit-by-commit and HELD: no `fix(budget):` repair commit was needed. `node --test cadence-core/bin/*.test.mjs` 1146/1146, `self-verify` `ok:true` with zero problems, `tsc -p tsconfig.ci.json` exit 0. |
 
 Task 9 completeness accounting (the plan requires every file the sweep names
-to be classed; the command returned 13, matching the plan's own count):
-- CONVERTED by this task (5): `workflows/execute.md`, `skills/cad-land/SKILL.md`,
-  `workflows/debug.md`, `workflows/task.md`, `workflows/verify.md`.
+to be classed; the command returned 13, matching the plan's own count). The
+13 returned files split 4 + 3 + 6 below, with `workflows/verify.md` a
+fourteenth that was converted without being returned:
+- CONVERTED by this task and returned by the command (4):
+  `workflows/execute.md`, `skills/cad-land/SKILL.md`, `workflows/debug.md`,
+  `workflows/task.md`.
+- CONVERTED by this task but NOT returned by the command (1):
+  `workflows/verify.md`. Corrected at /cad-verify 1 - the original accounting
+  filed this under the returned set, which it never was. The pattern greps the
+  literal tokens `risk_surface` and `review trigger`, and this file writes
+  `risk-surface` and `review-trigger interface` hyphenated, so the one file
+  task 9 converted at `route_failures` is invisible to the check meant to prove
+  the conversion complete. The conversion itself is real
+  (`workflows/verify.md:191-194`); it is the CHECK that has the blind spot.
 - ALREADY reference-shaped, no edit needed (3): `workflows/plan.md:223`
   ("payload = the PLAN file(s)") and `skills/cad-plan-review/SKILL.md:41-42`
   ("with the resolved PLAN file(s) as the artifact") both hand a file
@@ -26,7 +37,7 @@ to be classed; the command returned 13, matching the plan's own count):
   `skills/cad-executor-contract/SKILL.md` does not hand an artifact to a
   reviewer at all - it WRITES the flagged staged diff to a file and returns
   the path, which is the source of shape (c) rather than a consumer of it.
-- NOT a fire site (5), with the reason: `workflows/config.md` (a config
+- NOT a fire site (6), with the reason: `workflows/config.md` (a config
   catalog listing trigger keys as enum values), `workflows/config-review.md`
   (names `fire()` while discussing `review.reviewers` as a config value),
   `workflows/context.md:365` (states that NO review trigger fires there),
