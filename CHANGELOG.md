@@ -69,6 +69,31 @@ All notable changes to Cadence are recorded here. The format follows
   the same `review.max_prompt_tokens` - a behaviour change inside a
   transport-only cycle.
 
+- **`/cad-config`'s catalog stays transcribed rather than derived, and
+  `config.md` now says so.** The candidate change was to generate the catalog
+  table from `config.mjs keys` instead of maintaining the copy by hand. Two
+  independent grounds refuse it.
+
+  The measurement: parsing every slash-command invocation across the local
+  transcript corpus yields 5 `/cad-config` runs in total, none carrying
+  `--review` or a `<key>=<value>` token, so by `config.md`'s Route rule all
+  five reached the interactive menu. Non-menu runs are not a minority here,
+  they are zero of five - for scale, `cad-verify` 46, `cad-plan` 44,
+  `cad-execute` 39.
+
+  The arithmetic: `node cadence-core/bin/config.mjs keys` emits 20,769 B on one
+  JSON line against a 6,827 B catalog table, and the schema's field union
+  (`type`, `values`, `default`, `src`, `purpose`, `min`, `max`) carries no
+  per-value explanation field, while the walk requires each option to carry its
+  Explanation as the option `description`. Deriving would cost three times the
+  bytes AND drop required copy, or force re-authoring that copy into the schema
+  - a schema change, not a transport change.
+
+  The stated limit: n=5 is thin enough that the smallness is itself the
+  finding, which is why the decision rests primarily on the arithmetic. That
+  half is independent of run mix, so a wider window showing non-menu runs
+  dominating still refuses the derivation.
+
 ## [2.2.0] - 2026-08-04
 
 The six requirements v2.1.0 opened with and never picked up, carried forward
