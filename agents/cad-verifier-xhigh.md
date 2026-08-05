@@ -1,10 +1,10 @@
 ---
 name: cad-verifier-xhigh
 description: The `xhigh` rung of `cad-verifier`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
-tools: Read, Bash, Grep, Glob
+tools: Read, Write, Bash, Grep, Glob
 color: green
 effort: xhigh
-disallowedTools: Write, Edit, MultiEdit
+disallowedTools: Edit, MultiEdit
 skills:
   - cad-verifier-contract
 ---

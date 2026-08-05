@@ -674,6 +674,53 @@ function run(root) {
         }
       }
 
+      // 7c. the verifier's narrow `Write` grant, asserted in both directions on
+      // EVERY cad-verifier rung. Claude Code agent frontmatter exposes no
+      // path-scoped tool permission - `tools:` and `disallowedTools:` are name
+      // lists - so "one file under .planning/phases/<N>/" cannot be
+      // host-enforced, and this check is the only mechanical backstop keeping
+      // the milestone's one deliberate exception from widening silently in a
+      // later edit. Write must be GRANTED (the verifier writes its findings
+      // JSON); Edit and MultiEdit must stay DENIED and must never appear in
+      // tools:. Keyed on `name:` because that is the identity the host
+      // dispatches by; the rung map in lib/rung-agent.mjs resolves the same
+      // agent by FILENAME, so the two must not be allowed to diverge - a rung
+      // file the map still routes must not slip out of this check.
+      if (fm) {
+        const nameLine = fm[1].match(/^name:[ \t]*(\S+)[ \t]*$/m);
+        // YAML permits a quoted scalar, so the raw token can arrive as
+        // `"cad-verifier"`. Strip one matched surrounding quote pair before
+        // comparing: without it a quoted name matches neither arm below, the
+        // whole grant check skips SILENTLY, and the rung map keeps routing that
+        // file because it resolves by filename. A silent skip in the only
+        // mechanical backstop is the exact failure this check exists to prevent.
+        const agentName = nameLine ? nameLine[1].replace(/^(['"])([\s\S]*)\1$/, '$2') : '';
+        if (agentName === 'cad-verifier' || agentName.startsWith('cad-verifier-')) {
+          const denied = new Set();
+          const denyLine = fm[1].match(/^disallowedTools:\s*(.+)$/m);
+          if (denyLine) {
+            for (const t of denyLine[1].split(',')) {
+              const name = t.trim();
+              if (name) denied.add(name);
+            }
+          }
+          if (!declared.has('Write')) {
+            problems.push({ kind: 'verifier-write-grant', file: rel,
+              detail: 'Write not in tools: - the verifier cannot write its findings file' });
+          }
+          for (const tool of ['Edit', 'MultiEdit']) {
+            if (!denied.has(tool)) {
+              problems.push({ kind: 'verifier-write-grant', file: rel,
+                detail: `${tool} not in disallowedTools:` });
+            }
+            if (declared.has(tool)) {
+              problems.push({ kind: 'verifier-write-grant', file: rel,
+                detail: `${tool} in tools: - the grant is Write only` });
+            }
+          }
+        }
+      }
+
       const referenced = new Set();
       for (const prose of [body, ...preloaded]) {
         for (const m of prose.matchAll(backtickRe)) referenced.add(m[1]);
@@ -849,7 +896,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
