@@ -73,8 +73,8 @@ scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
 wastes the whole pass and forces a mid-analysis interruption.
 
 Recall prior-project memory before dispatching. Read the config this step needs
-in ONE call - the recall gate and the dispatch timeout together (conventions.md
-Parallel work):
+in ONE call - the recall gate and the dispatch timeout together, independent of
+each other, so nothing in this step is serialized behind a prior result:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend workflow.subagent_timeout

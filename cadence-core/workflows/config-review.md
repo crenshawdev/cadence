@@ -18,9 +18,9 @@ provider over the gathered results.
 ### 1. Detect all providers (one concurrent batch)
 
 Fire `detect-models` for every provider under `review.providers` (openai,
-gemini, deepseek) in ONE message (conventions.md Parallel work; seams.md
-concurrent dispatch) - not one provider at a time, or three full timeouts run
-back to back. This is the only place a provider call happens:
+gemini, deepseek) in ONE message (seams.md concurrent dispatch) - not one
+provider at a time, or three full timeouts run back to back. No provider's call
+consumes another's result, which is the only thing that would serialize them. This is the only place a provider call happens:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" detect-models \

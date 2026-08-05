@@ -33,7 +33,8 @@ Attempts: <count of applied fixes that did not resolve it>
 - `list` -> pull the symptom + status from every session in one pass
   (`grep -H '^# debug:\|^Status:' .planning/debug/*.md`), filter to those whose
   `Status:` is not resolved in the coordinator, and print one line each (slug +
-  symptom) - not a Read per file (conventions.md Parallel work).
+  symptom) - one pass, not a Read per file. Independent read-only calls go out
+  in one message; only a call that consumes a prior call's output is serialized.
 - `status <slug>` -> print that state file verbatim. Stop.
 - `continue <slug>` -> load that state file and resume at the method loop below,
   trusting the recorded hypothesis/observation state.

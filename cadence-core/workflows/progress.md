@@ -42,7 +42,8 @@ On `--stats`, branch straight to the stats step now - it derives its own commit
 timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
 and `--stats` must write nothing. Otherwise (the normal path) batch a
 `git log --oneline -8` for the report's Recent line in the SAME message as
-`status` - independent (conventions.md Parallel work).
+`status` - independent, so they share one message; only a call that consumes a
+prior call's output is serialized.
 </step>
 
 <step name="reconcile">

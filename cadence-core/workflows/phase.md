@@ -46,7 +46,8 @@ plain markdown edit - no renumbering, no dir change.
 1. If `.planning/phases/<N>/` has real work (PLAN/SUMMARY), warn that removal
    is destructive to that phase's planning docs (git still holds them). (This
    dir inspection and the step-2 `--dry-run` are independent read-only probes -
-   batch them in one message; conventions.md Parallel work.)
+   batch them in one message; only a call that consumes a prior call's output
+   is serialized.)
 2. Dry-run (`renumber remove --n <N> --dry-run`), show `ops`, the
    `orphaned_reqs` (requirements that pointed at the removed phase), any
    `in_text_refs` and `warn`. Require an explicit yes.

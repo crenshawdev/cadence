@@ -21,7 +21,7 @@ unplanned or planned, say so and stop - there is nothing to cover yet.
 ## 2. Gather the phase's requirements and artifacts
 Batch the independent reads in one message - REQUIREMENTS.md, the PLAN
 frontmatter, CONTEXT.md, SUMMARY.md, and the test-file glob are all known-path
-and independent (conventions.md Parallel work); only the `git diff
+and independent; only the `git diff
 <phase-start>..<phase-end>` waits, since it needs the commit range from
 SUMMARY.md.
 

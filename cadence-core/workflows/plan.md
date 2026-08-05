@@ -51,9 +51,9 @@ recall in spawn_planner and inline_plan below.
 </step>
 
 <step name="load_phase">
-Once N is known, steps 1-3 are independent reads/globs - fire them in one
-message and evaluate the stop/ask gates after they return (conventions.md
-Parallel work).
+Once N is known, steps 1-3 are independent reads/globs - fire them
+in one message and evaluate the stop/ask gates after they return. Only a call
+that consumes a prior call's output is serialized.
 
 1. Read this phase's entry in .planning/ROADMAP.md: name, goal, requirement
    IDs. No entry -> stop: "Phase {N} is not in ROADMAP.md."
@@ -88,8 +88,8 @@ do not issue the call). The gate precedes the call on purpose (D-03): recall's
 own backend-off return is a backstop for a direct caller, not this workflow's
 gate, so `none` means no recall runs and no block is appended. When recall does
 run, batch it with the `route.mjs resolve` above in one message - both only feed
-the single dispatch and neither depends on the other (conventions.md Parallel
-work).
+the single dispatch and neither depends on the other, which is the only thing
+that would serialize them.
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"

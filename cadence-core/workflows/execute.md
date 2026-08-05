@@ -27,7 +27,8 @@ Resolve the phase:
   Run /cad-plan first."
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
-it) and the config in one message - independent (conventions.md Parallel work).
+it) and the config in one message - independent, so only a call that consumes a
+prior call's output is serialized.
 Config through the seam - one call:
 
 ```

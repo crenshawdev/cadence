@@ -4,9 +4,10 @@ Close a finished milestone and set up the next one. A thin close-out: audit,
 tag (release projects only), prune, evolve, refresh. Git is the archive -
 pruning removes completed work from the LIVE planning docs, not from history.
 
-Read the config keys this close needs in ONE `config.mjs get` up front
-(conventions.md Parallel work) - `git.create_tag git.auto_close` - and reuse them
-at steps 2 and 7 rather than re-reading.
+Read the config keys this close needs in ONE `config.mjs get` up front -
+`git.create_tag git.auto_close` - and reuse them at steps 2 and 7 rather than
+re-reading. Independent probes here share one message; only a call that consumes
+a prior call's output is serialized.
 
 ## 1. Scope + audit gate
 Identify the milestone being closed (from PROJECT.md's current version/
