@@ -32,7 +32,7 @@ test('shape: ok true, non-empty surfaces with typed fields', () => {
   }
 });
 
-test('surface set is agents/skills/workflows plus references/** and templates/** (D-01)', () => {
+test('surface set is agents, skills, workflows plus references/** and templates/** (D-01)', () => {
   const paths = run(REPO).surfaces.map((s) => s.surface);
   assert.ok(paths.includes('agents/cad-planner.md'));
   assert.ok(paths.some((p) => /^skills\/.+\/SKILL\.md$/.test(p)));

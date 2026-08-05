@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // @ts-check
-// weight.mjs - the context-weight seam. Measures the plugin's OWN prose
-// surfaces (agents/skills/workflows) and reports each one's byte + estimated-
-// token weight as one JSON line. Contrast planning.mjs, which is scoped to the
+// weight.mjs - the context-weight seam. Measures the plugin's OWN surfaces -
+// `agents/*.md`, `skills/**/SKILL.md`, `cadence-core/workflows/*.md`, and
+// every file under `cadence-core/references/` and `cadence-core/templates/` -
+// and reports each one's byte + estimated-token weight as one JSON line.
+// Contrast planning.mjs, which is scoped to the
 // .planning state files; this script measures the shipped plugin prose itself.
 // The measurement lib it imports is the same one self-verify.mjs enforces the
 // budget with, so reported and enforced weight cannot diverge.

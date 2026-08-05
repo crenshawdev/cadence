@@ -18,7 +18,7 @@ node cadence-core/bin/self-verify.mjs     # the prose<->code drift linter
 npx tsc -p tsconfig.ci.json               # honor the @ts-check pragmas
 ```
 
-The self-verify step is the one that catches most drift. It lints the prose against the code: every config key, script invocation, and file path named in the workflows has to actually exist, or the build fails. It also weighs every agent, skill, and workflow surface and fails when one outgrows its byte budget, or when an agent's prose reaches for a tool its frontmatter never declared. If you touch a command or a config key, run it before you push, because the build will run it for you either way.
+The self-verify step is the one that catches most drift. It lints the prose against the code: every config key, script invocation, and file path named in the workflows has to actually exist, or the build fails. It also weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`, and fails when one outgrows its byte budget, or when an agent's prose reaches for a tool its frontmatter never declared. If you touch a command or a config key, run it before you push, because the build will run it for you either way.
 
 ## What a good bug report has
 

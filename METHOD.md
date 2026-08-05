@@ -578,8 +578,10 @@ without saying "in one message". A sentence that explains the rule, forbids the
 serial shape, or describes dispatch already arranged carries the same words in a
 different mood, and is left alone.
 
-It also weighs every agent, skill and workflow surface against a byte budget in
-`cadence-core/bin/weight-budgets.json` and fails when one outgrows it. That
+It also weighs five surface sets against a byte budget in
+`cadence-core/bin/weight-budgets.json` - every agent file, every SKILL.md,
+every workflow, and every file under `cadence-core/references/` and
+`cadence-core/templates/` - and fails when one outgrows its entry. That
 ratchet makes prose growth a conscious act rather than a drift: the budget is
 regenerated only when the growth is intentional and accepted, which is a
 deliberate step someone has to take rather than a number that quietly rises.

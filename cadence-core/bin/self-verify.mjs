@@ -457,9 +457,8 @@ function run(root) {
     // masking, its imperative gate and its false-positive cost live in
     // lib/dispatch-phrasing.mjs; this side only decides WHERE it applies.
     // Scoped to these two directories because they are where dispatch
-    // instructions are AUTHORED, and because references/ is outside
-    // lib/surface-weight.mjs's weighed walk, so no other check reaches it at
-    // all. Not because the other surfaces are dispatch-free - skills/ carries
+    // instructions are AUTHORED. Not because the other surfaces are
+    // dispatch-free - skills/ carries
     // at least one concurrent-dispatch instruction of its own - but because
     // widening the scope to skills/ is a separate decision this check does not
     // make; self-verify.test.mjs pins the skills case as out of scope on
