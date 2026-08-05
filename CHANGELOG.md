@@ -6,6 +6,69 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A subagent's full output no longer stays resident in the context that
+  dispatched it.** The content is identical; only where the bytes live and when
+  they load changed.
+
+  `cad-executor` now writes its report to `<plandir>/reports/plan-<k>.md` after
+  every task commit and returns a five-field digest - status, task count, commit
+  range, deviation count, open-item count. No task table, no deviation text and
+  no open-item text rides any return, checkpoints included. The path is derived
+  from the plan file's own directory, so `/cad-execute` writes under
+  `.planning/phases/<N>/` and `/cad-task` beside its own plan. A `PLAN PARTIAL`,
+  timeout or checkpoint continuation is built from that file, so a re-run cannot
+  re-execute a task the file already lists complete. In worktree mode the
+  executor commits the report itself, by pathspec, which is what carries it
+  across the merge without sweeping in a `risk_surface` checkpoint's
+  deliberately-uncommitted staged files.
+
+  `cad-verifier` writes exactly one file, `.planning/phases/<N>/verifier-findings.json`,
+  in the `uat merge` payload shape, and returns a digest plus that path. It is
+  deliberately NOT named `FINDINGS.json`: the seam owns that name and overwrites
+  it on every successful merge, so a verifier writing it would destroy its own
+  input. `/cad-verify --deep` pipes the file straight in, and the
+  hand-transcription step between the two is gone.
+
+  Reviewers receive a reference, never artifact bytes: a `{base_ref, head_ref}`
+  pair, a staged-diff scope to re-run in the cwd it inherits, or a path. Every
+  fire site - `diff`, `risk_surface`, `phase_diff`, `pre_ship`, `plan` - names
+  the shape it uses. Cross-model reviewers, which can run nothing themselves,
+  get a composed `--payload <file>`.
+
+  `cadence-core/references/seams.md` now states the break-even rule the pattern
+  rests on, so the judgment is written down rather than re-derived per site: a
+  file round-trip costs one extra turn and pays only when the read-back folds
+  into a turn the parent was taking anyway AND the artifact lands late enough
+  that the bytes would otherwise ride every remaining turn.
+
+- **`cad-verifier` gains `Write`, narrowly, and self-verify asserts the
+  boundary.** `Write` is on all four rungs; `Edit` and `MultiEdit` stay in
+  `disallowedTools`. Agent frontmatter exposes no path-scoped tool permission,
+  so a blocking self-verify check (`verifier-write-grant`) asserts the grant and
+  both denials on every rung, in both directions. Without it the milestone's one
+  deliberate exception could widen silently in a later edit.
+
+- **`planning.mjs uat merge` takes `--payload <file>` and refuses a bad
+  envelope.** Two live holes are closed. A literal `null` payload used to exit 0
+  printing nothing at all, from a seam whose entire contract is one JSON line;
+  and any parseable non-payload JSON, `"hello"` or `{}` included, used to merge
+  as an all-zero `ok:true` success, so a truncated findings file reported a
+  clean deep pass instead of falling through to the human walk. Both now refuse
+  with a named reason (`no-payload` / `bad-payload`) and exit 1, before
+  `loadUat` and before any write, leaving UAT.md and FINDINGS.json
+  byte-identical. `uat init` and `uat refresh` share the reader and gain the
+  same refusal. Stdin still works unchanged when the flag is absent.
+
+  `assertUnderCap` is deliberately UNCHANGED. It still measures the parsed
+  string fields, which under `--payload <file>` already ARE the file's
+  contents, so a payload's contents are bounded exactly as before. Measuring
+  raw bytes instead would count JSON escaping and the `{instruction, artifact}`
+  envelope, and a payload that passes today would newly refuse `over-cap` at
+  the same `review.max_prompt_tokens` - a behaviour change inside a
+  transport-only cycle.
+
 ## [2.2.0] - 2026-08-04
 
 The six requirements v2.1.0 opened with and never picked up, carried forward
