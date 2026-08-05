@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 3 (The surfaces that are always on, and the ratchet that watches them)
-Status: phase complete
-Next: /cad-milestone
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-05
