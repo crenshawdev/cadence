@@ -192,8 +192,8 @@ scope boundaries.
 - options: the category's features, plus "None for v1"
 
 Batch the category questions ceil(N/4) per AskUserQuestion call (up to 4
-categories at once), not one blocking turn per category (conventions.md
-batch-asks).
+categories at once), not one blocking turn per category; only a question whose
+wording depends on an earlier answer stays sequential.
 
 Track the outcome: selected features are v1; unselected table stakes go to
 v2; unselected differentiators go to Out of Scope.
@@ -275,8 +275,11 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
   --phase 1 --status "ready to plan" --next "/cad-context 1"
 ```
 
-Do NOT create `.planning/phases/` directories - the first skill that needs
-one creates it lazily (cad-context or cad-plan; conventions.md).
+Do NOT create `.planning/phases/` directories. A phase directory is
+`.planning/phases/<N>/`, where `<N>` is the bare phase integer from ROADMAP.md
+(no zero-padding, no slug suffix), created lazily by the first skill that needs
+it (cad-context or cad-plan) and matched to an existing directory's name if one
+is already present.
 
 Commit: `docs: create roadmap ([N] phases)` with `.planning/ROADMAP.md`,
 `.planning/STATE.md`, `.planning/REQUIREMENTS.md`.
