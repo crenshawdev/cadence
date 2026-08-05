@@ -32,14 +32,18 @@ test('shape: ok true, non-empty surfaces with typed fields', () => {
   }
 });
 
-test('surface set is exactly agents/skills/workflows (D-02 narrowing)', () => {
+test('surface set is agents/skills/workflows plus references/** and templates/** (D-01)', () => {
   const paths = run(REPO).surfaces.map((s) => s.surface);
   assert.ok(paths.includes('agents/cad-planner.md'));
   assert.ok(paths.some((p) => /^skills\/.+\/SKILL\.md$/.test(p)));
   assert.ok(paths.some((p) => /^cadence-core\/workflows\/.+\.md$/.test(p)));
-  // Excluded: self-verify's wider surface (references/templates/README).
-  assert.ok(!paths.some((p) => p.startsWith('cadence-core/references/')));
-  assert.ok(!paths.some((p) => p.startsWith('cadence-core/templates/')));
+  // Widened by D-01: both directories are walked whole, so a reference that
+  // grows fails the budget the same way a workflow does.
+  assert.ok(paths.some((p) => p.startsWith('cadence-core/references/')));
+  assert.ok(paths.some((p) => p.startsWith('cadence-core/templates/')));
+  // And by EVERY file, not just `.md` - a JSON reference is budgeted too.
+  assert.ok(paths.includes('cadence-core/references/model-hints.json'));
+  // Still excluded: README is on self-verify's lint walk, not the weighed one.
   assert.ok(!paths.includes('README.md'));
 });
 
