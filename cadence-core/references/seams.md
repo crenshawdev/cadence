@@ -10,7 +10,12 @@ A future runtime port edits this file, not the workflows.
 How a workflow asks the human a question and blocks on the answer.
 
 **Claude Code binding:**
-- Structured choice (2-4 mutually exclusive options): the `AskUserQuestion` tool.
+- Structured choice: the `AskUserQuestion` tool, at most four options per
+  question, and `multiSelect: true` when more than one option may be picked. A
+  set larger than the option cap splits across questions - minus any
+  always-present option such as NONE, which consumes a slot - and the questions
+  batch at most four per call. Two caps, not one: options per question, and
+  questions per call.
 - Open-ended question: end the turn with the question in plain prose.
 - Never fabricate or default an answer the seam was supposed to collect.
 
