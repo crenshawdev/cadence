@@ -100,14 +100,13 @@ believe:
   `cad-executor-contract` 6954 -> 10891 (+57%), `review-triggers.md` 13224 ->
   15436. Phase 2 owns load order, phase 3 the budget.
 - **`.planning/CAPTURE.md`'s over-cap closure will not survive a fresh clone.**
-- **From the advisory `diff` review, two highs left unfixed** (advisory gate, so
-  reported not blocked): (1) `self-verify.mjs:690` keys check 7c on `name:`
-  while routing resolves by FILENAME, so renaming `name:` in a routed rung file
-  evades the grant check entirely - the quote-strip fixed one evasion shape and
-  left this one; (2) `review-triggers.md:112-113` gives only ONE cross-model
-  payload command and it hardcodes `git diff` into `cad-artifact.txt`, so
-  shape (c) (a path - what a worktree `risk_surface` checkpoint returns) has no
-  command and following the shown one sends a stale or absent scratch file.
+- ~~Two highs from the advisory `diff` review~~ - **both FIXED after the phase
+  closed**, in `189ac2a` and `abe0a00`: check 7c keyed on `name:` while routing
+  resolves by FILENAME (now keyed on the union of both identities, with a test
+  row that fails if the union is reverted), and the single cross-model payload
+  command hardcoded the scratch file so shape (c) had no command at all (now
+  takes the artifact path as `argv[2]`, verified live with quotes and
+  backslashes round-tripping byte-identically).
 - **Three mediums from the same review**: the envelope validates only that ONE
   of the three lists is an array, so a sibling non-array iterates as characters
   and inflates `rejected` (no phantom items - the `usableName` guard catches
