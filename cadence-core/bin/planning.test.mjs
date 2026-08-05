@@ -1310,6 +1310,34 @@ test('uat merge: a --payload file holding a JSON array is bad-payload', () => {
   assert.equal(r._exit, 1);
 });
 
+// A sibling list that is present but not an array. The disjunction proves only
+// that ONE of the three is an array, so before this each of these merged
+// ok:true while the string was iterated per character.
+for (const [key, body] of [
+  ['gaps', '{"passes":[],"gaps":"oops","human_checks":[]}'],
+  ['passes', '{"passes":"oops","gaps":[]}'],
+  ['human_checks', '{"gaps":[],"human_checks":42}'],
+]) {
+  test(`uat merge: ${key} present but not an array is bad-payload`, () => {
+    // refusedMerge asserts UAT.md is byte-identical across the call.
+    const dir = uatTree();
+    const r = refusedMerge(dir, ['--payload', payloadFile(dir, body)]);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-payload');
+    assert.equal(r.detail, `${key} is present but not an array`);
+    assert.equal(r._exit, 1);
+  });
+}
+
+test('uat merge: an omitted list is not a malformed one', () => {
+  // Presence, not truthiness - `{"gaps":[...]}` alone stays legal.
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1', '--payload',
+    payloadFile(dir, '{"gaps":[{"name":"only gaps","reason":"r","evidence":"e"}]}')], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.added, 1);
+});
+
 test('uat merge: --payload with no path is no-payload, never a read of fd 1', () => {
   const dir = uatTree();
   const r = refusedMerge(dir, ['--payload']);

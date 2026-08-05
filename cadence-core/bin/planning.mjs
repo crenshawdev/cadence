@@ -609,6 +609,19 @@ function cmdUat(dir, sub, opts) {
       return fail('bad-payload',
         'payload carries none of passes, gaps, human_checks as an array');
     }
+    // ...and every list that IS present must be an array. The disjunction above
+    // only proves ONE of them is, so a sibling holding a string used to reach
+    // the `for..of` below and be iterated per CHARACTER: `{"passes":[],
+    // "gaps":"oops"}` merged ok:true with rejected:4. No phantom item was
+    // written - the usableName guard drops each character - but the deep pass
+    // reported a merge instead of falling through, which is the one outcome it
+    // must never be able to fake. Check presence, not truthiness: a payload may
+    // legitimately omit a list, and `undefined` is not a malformed one.
+    for (const key of ['passes', 'gaps', 'human_checks']) {
+      if (f[key] !== undefined && !Array.isArray(f[key])) {
+        return fail('bad-payload', `${key} is present but not an array`);
+      }
+    }
     const uat = loadUat(dir, n);
     if (!uat) return;
     // Guard the shape the CONSUMER accepts - a name that renders a heading -
