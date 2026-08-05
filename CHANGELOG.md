@@ -131,6 +131,49 @@ All notable changes to Cadence are recorded here. The format follows
   half is independent of run mix, so a wider window showing non-menu runs
   dominating still refuses the derivation.
 
+- **Every skill and agent description is one routing line.** The 29
+  `skills/cad-*/SKILL.md` descriptions, which ride the system prompt of every
+  session in every project, fall from 5,078 B to 3,759 B, and the 19
+  `agents/*.md` descriptions from 3,472 B to 1,638 B - each agent line now
+  states its rung and that `bin/route.mjs` picks it rather than the user. What
+  came out is positioning, design rationale, implementation detail nobody routes
+  on, and flag lists `argument-hint:` already carries verbatim. What stayed is
+  every trigger word a user would type, plus the three negative clauses that
+  disambiguate confusable commands at selection time (`/cad-health` is not
+  `/cad-audit`, `/cad-docs-verify` reports rather than rewrites, `/cad-land`
+  never decides how you publish). The six `cad-*-contract` descriptions and all
+  `effort:`, `tools:`, `disallowedTools:` and `skills:` frontmatter are
+  byte-identical. Per-skill before/after text with the trigger-word check is in
+  `.planning/phases/3/MEASUREMENTS.md`.
+
+- **`cadence-core/references/**` and `cadence-core/templates/**` come under the
+  weight budget.** 23 files and 162,186 B that five workflows name and no ceiling
+  watched are now weighed surfaces with exact per-file budgets, so a reference
+  that grows fails CI the same way a workflow does. The walk covers every file,
+  not just `.md`, so `references/model-hints.json` and `templates/config.json`
+  are budgeted too - which means editing either now requires regenerating the
+  manifest.
+
+  The measurement was fixed first, because it was not honest. Both walkers -
+  `lib/surface-weight.mjs` and self-verify's `mdFiles` - wrapped one
+  `recursive: true` `readdirSync` per branch, so a single unreadable descendant
+  returned nothing for the WHOLE subtree: with `skills/private/` at mode 000,
+  `weight.mjs` reported zero surfaces and self-verify reported
+  `{"kind":"unreadable-surface","file":"skills","detail":"EISDIR"}` - naming a
+  directory that reads fine, with the errno of a failed `readFileSync` rather
+  than the EACCES that occurred, while every readable sibling went unlinted.
+  Both now recurse per entry: one unreadable directory hides only its own
+  children, is named by its own path with its own errno, and its siblings are
+  still weighed and still linted.
+
+  Deliberate behavior change in the same fix: descent is decided on the dirent,
+  so a symlinked DIRECTORY met during a walk is no longer descended. A
+  `skills/a/loop -> ..` cycle measured 41 surfaces of one file before and
+  measures 1 now, which makes `surface-weight.mjs`'s long-standing "a symlink
+  cycle is silently skipped" claim true for directory links for the first time.
+  An explicitly named branch root that is itself a symlink IS still descended -
+  the dirent test only ever sees descendants - and a test row pins each half.
+
 ## [2.2.0] - 2026-08-04
 
 The six requirements v2.1.0 opened with and never picked up, carried forward
