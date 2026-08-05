@@ -1,6 +1,6 @@
 ---
 name: cad-plan-checker
-description: Goal-backward pre-execution gate - verifies a phase plan WILL achieve the phase goal. Spawned by /cad-plan when workflow.plan_check is true.
+description: The `low` rung of `cad-plan-checker` (goal-backward plan gate); `bin/route.mjs` picks it, not the user.
 tools: Read, Bash, Glob, Grep
 disallowedTools: Write, Edit, MultiEdit
 color: green

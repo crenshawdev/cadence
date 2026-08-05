@@ -1,6 +1,6 @@
 ---
 name: cad-assumptions-analyzer-high
-description: The `high` rung of `cad-assumptions-analyzer`. Dispatched by the routing seam (`bin/route.mjs`) when the effort ladder resolves this rung; identical contract, different reasoning depth.
+description: The `high` rung of `cad-assumptions-analyzer`; `bin/route.mjs` picks it, not the user.
 tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: cyan

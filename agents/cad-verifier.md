@@ -1,6 +1,6 @@
 ---
 name: cad-verifier
-description: Goal-backward phase verification. Confirms the codebase actually delivered the phase's goal, not merely that its tasks ran. Writes one findings file for cad-verify to merge into UAT.md; returns a digest and its path.
+description: The `high` rung of `cad-verifier` (goal-backward phase verification); `bin/route.mjs` picks it, not the user.
 tools: Read, Write, Bash, Grep, Glob
 color: green
 effort: high
