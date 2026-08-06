@@ -1,4 +1,4 @@
-# Cadence — the loop
+# Cadence: the loop
 
 **One phase, four commands, and every place it can stop you.**
 
@@ -35,20 +35,20 @@ pick the convenient branch.
 
 | Where | The decision | What each branch does |
 |---|---|---|
-| `/cad-context` | How big is this phase? | Asked once, as one structured question. **Right-sized** — one plan. **Big** — `/cad-plan` splits it into PLAN-1, PLAN-2 in the same phase. **Too big** — the split is captured in the same exchange and the deferred slice is recorded under `Deferred`, for you to add later with `/cad-phase`. |
-| `/cad-context` | Did the analyzer come back? | A failed or timed-out assumptions analyzer falls back to a plain conversational pass — and says so out loud. There is no silent degradation. |
-| `/cad-plan` | What did the planner return? | `PLANNING COMPLETE` — on to the check. `PHASE TOO BIG` — a consult is offered, then you pick: restructure the roadmap with `/cad-phase` and re-plan, or plan the full scope anyway with one more dispatch. Nothing returned — plans on disk win, otherwise it stops. |
-| `/cad-plan` | Does the plan survive `plan_check`? | On by default (`workflow.plan_check`; `--skip-check` bypasses). **Passed** — continue. **Warnings only** — fold the worthwhile ones in and continue; warnings never buy a re-check. **Any blocker** — exactly one revision: a *fresh* planner at `--attempt 2`, then one re-check. Still blocked, and it goes to you. There is no third round. |
-| `/cad-plan` | The `plan` review trigger | Fires once the plan is written. **advisory** — report and carry on. **blocking** — a FAIL halts. **adjudicated** — a numbered survivor list where **NONE is the default**. It never re-enters the checker loop; this is the second opinion, not another iteration. |
-| `/cad-execute` | Parallel or sequential? | Parallel only when *all* of these hold: parallelization enabled, enough plans, no plan consuming another's output, declared `files:` lists that provably do not overlap, worktrees on, and a worktree base that reports itself parallel-safe. Any overlap, any undeclared file, any seam returning not-ok — sequential. Unproven never parallelizes. |
-| `/cad-execute` | What did the executor return? | `PLAN COMPLETE` — collect the report. **Checkpoint** — route it, then dispatch a fresh continuation. `PLAN PARTIAL` — hashes confirmed against the git log, then you choose: continue from task *k*, or stop and let the rest become open items. **Silence** — inspect the log and ask. A plan is never re-run on top of its own partial commits. |
-| `/cad-execute` | What kind of checkpoint? | **Structural** — a consult is offered, then you approve, adjust, or stop the phase. **Risk surface** — the `risk_surface` trigger fires on the flagged diff, blocking; a FAIL needs a fix or your explicit override. **Human-verify, decision, blocked** — relayed to you verbatim. Every continuation is a new executor. |
+| `/cad-context` | How big is this phase? | Asked once, as one structured question. **Right-sized**, one plan. **Big**, `/cad-plan` splits it into PLAN-1, PLAN-2 in the same phase. **Too big**, the split is captured in the same exchange and the deferred slice is recorded under `Deferred`, for you to add later with `/cad-phase`. |
+| `/cad-context` | Did the analyzer come back? | A failed or timed-out assumptions analyzer falls back to a plain conversational pass, and says so out loud. There is no silent degradation. |
+| `/cad-plan` | What did the planner return? | `PLANNING COMPLETE`, on to the check. `PHASE TOO BIG`, a consult is offered, then you pick: restructure the roadmap with `/cad-phase` and re-plan, or plan the full scope anyway with one more dispatch. Nothing returned, plans on disk win, otherwise it stops. |
+| `/cad-plan` | Does the plan survive `plan_check`? | On by default (`workflow.plan_check`; `--skip-check` bypasses). **Passed**, continue. **Warnings only**, fold the worthwhile ones in and continue; warnings never buy a re-check. **Any blocker**, exactly one revision: a *fresh* planner at `--attempt 2`, then one re-check. Still blocked, and it goes to you. There is no third round. |
+| `/cad-plan` | The `plan` review trigger | Fires once the plan is written. **advisory**, report and carry on. **blocking**, a FAIL halts. **adjudicated**, a numbered survivor list where **NONE is the default**. It never re-enters the checker loop; this is the second opinion, not another iteration. |
+| `/cad-execute` | Parallel or sequential? | Parallel only when *all* of these hold: parallelization enabled, enough plans, no plan consuming another's output, declared `files:` lists that provably do not overlap, worktrees on, and a worktree base that reports itself parallel-safe. Any overlap, any undeclared file, any seam returning not-ok: sequential. Unproven never parallelizes. |
+| `/cad-execute` | What did the executor return? | `PLAN COMPLETE`, collect the report. **Checkpoint**, route it, then dispatch a fresh continuation. `PLAN PARTIAL`, hashes confirmed against the git log, then you choose: continue from task *k*, or stop and let the rest become open items. **Silence**, inspect the log and ask. A plan is never re-run on top of its own partial commits. |
+| `/cad-execute` | What kind of checkpoint? | **Structural**, a consult is offered, then you approve, adjust, or stop the phase. **Risk surface**, the `risk_surface` trigger fires on the flagged diff, blocking; a FAIL needs a fix or your explicit override. **Human-verify, decision, blocked**: relayed to you verbatim. Every continuation is a new executor. |
 | `/cad-execute` | The goal check | Deliberately *not* a gate. It runs inline, every claim carrying a `file:line` or command output, and any gap it finds becomes an open item in the phase SUMMARY rather than a fix loop. |
 | `/cad-verify` | Run the deep pass? | Yes on `--deep`, or on the first UAT session for the phase when routing says `verify: on`. `workflow.verifier: false` is the off switch, and an off state is stated in one line rather than skipped quietly. A failed deep pass never blocks the human walk; it is an accelerator, not a gate. |
-| `/cad-verify` | Did this item pass? | Inferred from your own words — pass, skipped, blocked or fail, with severity inferred too (crash reads as blocker, "wrong" as major, "a bit slow" as minor). You are never shown pass/fail buttons and never asked to rate severity. |
-| `/cad-verify` | What to do with a failure | Diagnosed inline, fix proposed, then your call. **Apply now** — one atomic commit, guard and `risk_surface` fire at commit time, item back to pending for a retest. **Re-plan** — the item stays failed and you take it to `/cad-plan` yourself; it is never auto-run. **Leave open** — recorded, move on. No silent batch-fixing, no fix-retest-fix without you between rounds. |
+| `/cad-verify` | Did this item pass? | Inferred from your own words: pass, skipped, blocked or fail, with severity inferred too (crash reads as blocker, "wrong" as major, "a bit slow" as minor). You are never shown pass/fail buttons and never asked to rate severity. |
+| `/cad-verify` | What to do with a failure | Diagnosed inline, fix proposed, then your call. **Apply now**, one atomic commit, guard and `risk_surface` fire at commit time, item back to pending for a retest. **Re-plan**, the item stays failed and you take it to `/cad-plan` yourself; it is never auto-run. **Leave open**, recorded, move on. No silent batch-fixing, no fix-retest-fix without you between rounds. |
 | `/cad-audit` | PASS or FAIL | **PASS** only with zero broken traces and zero coverage breaks. **FAIL** on any requirement untraced, unplanned, unverified, dropped or drifted, or on any coverage break at all. Frontmatter noise and scope-creep orphans are reported but do not move the verdict. There is no PASS-with-warnings. |
-| `/cad-milestone` | The audit gate | Runs `/cad-audit` first. FAIL stops the milestone unless you explicitly override. The version bump has its own halts — a downgrade or a non-upgrade stops before any tag is cut. |
+| `/cad-milestone` | The audit gate | Runs `/cad-audit` first. FAIL stops the milestone unless you explicitly override. The version bump has its own halts, a downgrade or a non-upgrade stops before any tag is cut. |
 | `/cad-land` | `pre_ship`, then how to publish | A blocking FAIL halts the land; an adjudicated result gives you a survivor list with NONE as the default, and `pre_ship` re-fires *at most once* after your fixes. Then the publish question, with **no option preselected**: push, open an MR or PR, tag, or leave it local. With `git.auto_close: true` the ask is skipped and a surviving blocker or high severity is a hard halt instead. |
 
 > **The loop that was deliberately not built**
@@ -127,7 +127,7 @@ list and checks it against eight named risk surfaces.
 *The floor only ever raises. A configured start rung is held* at *the floor
 rather than allowed under it, and the holding surfaces are named out loud. The
 single way back under a floor is `risk.override.<surface>: true`, per surface,
-in the repo config — a waiver written in the user-global config is ignored and
+in the repo config, a waiver written in the user-global config is ignored and
 reported. Planning roles are exempt, because they run before the phase has a
 plan to read.*
 
@@ -153,8 +153,8 @@ defined in one place, and every review in the system is a call to it.
 
 ![The fire(trigger) pipeline: resolve the gate, build the payload, resolve the reviewer set, run every reviewer in one message, combine the findings, then apply the gate's consequence.](figures/review-pipeline.svg)
 
-*Every reviewer — the local fresh-context subagent and each cross-model provider
-— returns the same finding shape. The adjudicator merges them without knowing
+*Every reviewer, the local fresh-context subagent and each cross-model
+provider, returns the same finding shape. The adjudicator merges them without knowing
 which voice produced which finding; that identical schema is the bias control,
 not a convenience.*
 
@@ -171,7 +171,7 @@ not a convenience.*
 > **Two risk detectors, and neither replaces the other**
 >
 > **At dispatch time**, the phase's declared paths are matched against the eight
-> surfaces and the result raises the stakes floor for the whole phase — coarse,
+> surfaces and the result raises the stakes floor for the whole phase. Coarse,
 > with no diff in hand. **At commit time**, the model reads the actual diff and
 > fires `risk_surface` on what it sees. A phase can be floored without the
 > trigger ever firing, and the trigger can fire on a phase the floor never

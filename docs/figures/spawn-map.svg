@@ -100,6 +100,6 @@ ers.">
         <text class="lbl-mut" x="412" y="412" text-anchor="middle">one subagent plus every cross-model</text>
         <text class="lbl-mut" x="412" y="426" text-anchor="middle">voice, all in one message</text>
 
-        <text class="lbl-mut" x="40" y="482" text-anchor="start">fire(trigger) is called by /cad-plan, /cad-execute, /cad-verify, /cad-land and /cad-task — it is a seam, not a command</text>
+        <text class="lbl-mut" x="40" y="482" text-anchor="start">fire(trigger) is called by /cad-plan, /cad-execute, /cad-verify, /cad-land and /cad-task. It is a seam, not a command</text>
         <text class="lbl-mut" x="40" y="500" text-anchor="start">No agent spawns another agent. An executor never calls its own reviewer; second opinions arrive only through a trigger.</text>
 </svg>

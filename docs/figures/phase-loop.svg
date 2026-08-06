@@ -129,15 +129,15 @@ one.">
 
         <line class="edge-alt" x1="615" y1="284" x2="615" y2="314" marker-end="url(#ah-alt)" />
         <text class="lbl-alt" x="615" y="334" text-anchor="middle">checkpoint or PARTIAL</text>
-        <text class="lbl-mut" x="615" y="349" text-anchor="middle">a fresh executor carries on</text>
-        <text class="lbl-mut" x="615" y="363" text-anchor="middle">— never a resume</text>
+        <text class="lbl-mut" x="615" y="349" text-anchor="middle">a fresh executor carries on,</text>
+        <text class="lbl-mut" x="615" y="363" text-anchor="middle">never a resume</text>
 
         <line class="edge-alt" x1="865" y1="284" x2="865" y2="314" marker-end="url(#ah-alt)" />
         <text class="lbl-alt" x="865" y="334" text-anchor="middle">an item fails</text>
-        <text class="lbl-mut" x="865" y="349" text-anchor="middle">fix now, re-plan, or leave open</text>
-        <text class="lbl-mut" x="865" y="363" text-anchor="middle">— you choose, every round</text>
+        <text class="lbl-mut" x="865" y="349" text-anchor="middle">fix now, re-plan, or leave open,</text>
+        <text class="lbl-mut" x="865" y="363" text-anchor="middle">you choose, every round</text>
 
         <!-- the loop back -->
         <polyline class="edge-loop" points="795,250 760,250 760,410 20,410 20,148 34,148" marker-end="url(#ah-loop)" />
-        <text class="lbl-acc" x="400" y="402" text-anchor="middle">more phases in this milestone — clear, then /cad-context again</text>
+        <text class="lbl-acc" x="400" y="402" text-anchor="middle">more phases in this milestone: clear, then /cad-context again</text>
 </svg>

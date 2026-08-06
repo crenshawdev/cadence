@@ -88,7 +88,7 @@ nce.">
         <line class="edge" x1="924" y1="98" x2="946" y2="98" marker-end="url(#ah)" />
 
         <line class="edge-alt" x1="100" y1="126" x2="100" y2="142" marker-end="url(#ah-alt)" />
-        <text class="lbl-mut" x="100" y="160" text-anchor="middle">off — nothing runs</text>
+        <text class="lbl-mut" x="100" y="160" text-anchor="middle">off, nothing runs</text>
 
         <text class="lbl-mut" x="472" y="150" text-anchor="middle">an empty set falls back to</text>
         <text class="lbl-mut" x="472" y="164" text-anchor="middle">the local subagent, never to nothing</text>

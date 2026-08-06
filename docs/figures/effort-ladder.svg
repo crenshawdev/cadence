@@ -57,7 +57,7 @@
   <rect class="bg" x="0" y="0" width="1060" height="300" />
 igh.">
 
-        <text class="lbl-mut" x="110" y="18" text-anchor="start">rung_order — the effort ladder</text>
+        <text class="lbl-mut" x="110" y="18" text-anchor="start">rung_order, the effort ladder</text>
 
         <rect class="box-soft" x="110" y="30"  width="170" height="34" rx="4" />
         <text class="lbl-sm" x="195" y="52" text-anchor="middle">max</text>
@@ -88,5 +88,5 @@ igh.">
         <text class="lbl-acc" x="820" y="156" text-anchor="start">FAIL, so --attempt 2</text>
         <text class="lbl-mut" x="820" y="172" text-anchor="start">resolves the retry rung</text>
 
-        <text class="lbl-mut" x="40" y="272" text-anchor="start">target = max(cell.retry, the rung this attempt actually ran at) — a retry never thinks less than the attempt that just failed</text>
+        <text class="lbl-mut" x="40" y="272" text-anchor="start">target = max(cell.retry, the rung this attempt actually ran at). A retry never thinks less than the attempt that just failed</text>
 </svg>
