@@ -71,7 +71,9 @@ Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadenc
 
 `/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
 
-[`docs/WORKFLOW.md`](./docs/WORKFLOW.md) draws it: the phase loop with every gate on it, the milestone and land exit, the effort ladder and how a retry climbs it, the risk floor, the command-to-agent map, and the review pipeline. It also carries the tables the figures cannot hold, all fifteen decision points with what each branch does, the eighteen-cell stakes grid, and which review trigger fires at which stakes level.
+[![The Cadence phase loop: new-project feeds context, plan, execute and verify in sequence; a decision gate sits under each command, and verify loops back to context for the next phase or exits to milestone.](./docs/figures/phase-loop.svg)](./docs/WORKFLOW.md)
+
+Under each command is a gate, and every gate has a way through and a way out. That is one of six figures. [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) carries the rest, the milestone and land exit, the effort ladder and how a retry climbs it, the risk floor, the command-to-agent map, and the review pipeline, plus the tables the pictures cannot hold: all fifteen decision points with what each branch does, the eighteen-cell stakes grid, and which review trigger fires at which stakes level.
 
 ## A worked example
 
