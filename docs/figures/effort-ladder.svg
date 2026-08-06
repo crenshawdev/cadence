@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 300" width="1060" height="300" role="img" aria-label="Escalation: a plan check on a shipped project starts at the medium rung, which dispatches the cad-plan-checker-medium file; on failure attempt two climbs to the high rung, which is a different file, cad-plan-checker-high.">
+
+  <style>
+    svg        { color: #15181E; background: #FFFFFF;
+                 font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+    .bg        { fill: #FFFFFF; }
+    .box       { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.4; }
+    .box-danger{ stroke: #A3331F; }
+    .box-cmd   { fill: #FFFFFF; stroke: #2B43B2; stroke-width: 1.6; }
+    .box-soft  { fill: #E8ECF2; stroke: #D3D9E1; stroke-width: 1; }
+    .box-seam  { fill: none; stroke: #8B5A03; stroke-width: 1.4; stroke-dasharray: 5 3; }
+    .gate      { fill: none; stroke: #8B5A03; stroke-width: 1.6; }
+    .edge      { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .edge-alt  { fill: none; stroke: #A3331F; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .edge-loop { fill: none; stroke: #2B43B2; stroke-width: 1.7; }
+    .edge-thin { fill: none; stroke: #5A6170; stroke-width: 1; stroke-dasharray: 2 4; }
+    .lbl       { font-size: 13px; fill: currentColor; }
+    .lbl-sm    { font-size: 11px; fill: currentColor; }
+    .lbl-mut   { font-size: 10.5px; fill: #5A6170; }
+    .lbl-alt   { font-size: 10.5px; fill: #A3331F; }
+    .lbl-gate  { font-size: 11.5px; fill: #8B5A03; }
+    .lbl-acc   { font-size: 11px; fill: #2B43B2; }
+    .head      { fill: currentColor; }
+    .head-alt  { fill: #A3331F; }
+    .head-loop { fill: #2B43B2; }
+    @media (prefers-color-scheme: dark) {
+      svg        { color: #E2E6EC; background: #151920; }
+      .bg        { fill: #151920; }
+      .box       { fill: #151920; }
+      .box-danger{ stroke: #e2705c; }
+      .box-cmd   { fill: #151920; stroke: #8698F6; }
+      .box-soft  { fill: #1B2029; stroke: #292F39; }
+      .box-seam  { stroke: #e2a64d; }
+      .gate      { stroke: #e2a64d; }
+      .edge-alt  { stroke: #e2705c; }
+      .edge-loop { stroke: #8698F6; }
+      .edge-thin { stroke: #929BAA; }
+      .lbl-mut   { fill: #929BAA; }
+      .lbl-alt   { fill: #e2705c; }
+      .lbl-gate  { fill: #e2a64d; }
+      .lbl-acc   { fill: #8698F6; }
+      .head-alt  { fill: #e2705c; }
+      .head-loop { fill: #8698F6; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-alt" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-alt" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-loop" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-loop" points="0,0 10,4 0,8" />
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1060" height="300" />
+igh.">
+
+        <text class="lbl-mut" x="110" y="18" text-anchor="start">rung_order, the effort ladder</text>
+
+        <rect class="box-soft" x="110" y="30"  width="170" height="34" rx="4" />
+        <text class="lbl-sm" x="195" y="52" text-anchor="middle">max</text>
+        <rect class="box-soft" x="110" y="76"  width="170" height="34" rx="4" />
+        <text class="lbl-sm" x="195" y="98" text-anchor="middle">xhigh</text>
+        <rect class="box" x="110" y="122" width="170" height="34" rx="4" />
+        <text class="lbl-sm" x="195" y="144" text-anchor="middle">high</text>
+        <rect class="box" x="110" y="168" width="170" height="34" rx="4" />
+        <text class="lbl-sm" x="195" y="190" text-anchor="middle">medium</text>
+        <rect class="box-soft" x="110" y="214" width="170" height="34" rx="4" />
+        <text class="lbl-sm" x="195" y="236" text-anchor="middle">low</text>
+
+        <text class="lbl-mut" x="40" y="174" text-anchor="start">attempt 1</text>
+        <line class="edge" x1="40" y1="185" x2="104" y2="185" marker-end="url(#ah)" />
+
+        <line class="edge-thin" x1="280" y1="185" x2="464" y2="185" />
+        <line class="edge-thin" x1="280" y1="139" x2="464" y2="139" />
+
+        <text class="lbl-mut" x="470" y="90" text-anchor="start">example: cad-plan-checker on a shipped project</text>
+        <text class="lbl-mut" x="470" y="112" text-anchor="start">a different rung is a different agent file</text>
+
+        <rect class="box" x="470" y="122" width="300" height="34" rx="4" />
+        <text class="lbl-sm" x="486" y="144" text-anchor="start">cad-plan-checker-high</text>
+        <rect class="box" x="470" y="168" width="300" height="34" rx="4" />
+        <text class="lbl-sm" x="486" y="190" text-anchor="start">cad-plan-checker-medium</text>
+
+        <polyline class="edge-loop" points="770,185 810,185 810,139 776,139" marker-end="url(#ah-loop)" />
+        <text class="lbl-acc" x="820" y="156" text-anchor="start">FAIL, so --attempt 2</text>
+        <text class="lbl-mut" x="820" y="172" text-anchor="start">resolves the retry rung</text>
+
+        <text class="lbl-mut" x="40" y="272" text-anchor="start">target = max(cell.retry, the rung this attempt actually ran at). A retry never thinks less than the attempt that just failed</text>
+</svg>
