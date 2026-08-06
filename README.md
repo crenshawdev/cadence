@@ -24,7 +24,7 @@ That rule is about one direction of reading. Reading a command to decide whether
 
 Every gate hands the work to a reviewer whose job is to break it, not to bless it. The default is a fresh-context Claude subagent and needs no API key at all. Give it an OpenAI, Gemini, or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema, which lets you put up to four independent voices on one plan and have your main session adjudicate, opening the cited code and killing the false positives. Every backend returns the same shape, and that part is deliberate. The adjudicator cannot tell which finding came from the free local reviewer and which came from the one you are paying for, and it cannot discount a finding for being cheap. The single signal treated as strong is convergence. Two reviewers landing on the same defect independently is the whole reason to pay for a second voice. What survives adjudication comes back as a numbered list you triage, not a queue the model starts working through, and the default is none of it. That triage is a multi-select prompt you tap. It used to be a paragraph asking you to answer in prose, which meant every review ended in a wall of findings to read and a sentence to compose, and the gate that exists to keep you in control was the most tiring part of using the thing.
 
-[`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier, and reviewers actually do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing (one question about what a break costs, four knobs out - model, effort rung, review gates, deep verify), the publish seam, live provider detection, and why the decision cores are pure functions.
+[`METHOD.md`](./METHOD.md) is the full account of what the planner, executor, verifier, and reviewers actually do and where each rule is enforced. [`INTERNALS.md`](./INTERNALS.md) is the mechanism underneath: routing (one question about what a break costs, four knobs out - model, effort rung, review gates, deep verify), the publish seam, live provider detection, and why the decision cores are pure functions. [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) is the same material as a diagram: six figures and the three tables behind them.
 
 ## What a break costs
 
@@ -70,6 +70,8 @@ Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadenc
 5. **`/cad-verify <phase>`** — confirm the phase delivered what it promised.
 
 `/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
+
+[`docs/WORKFLOW.md`](./docs/WORKFLOW.md) draws it: the phase loop with every gate on it, the milestone and land exit, the effort ladder and how a retry climbs it, the risk floor, the command-to-agent map, and the review pipeline. It also carries the tables the figures cannot hold, all fifteen decision points with what each branch does, the eighteen-cell stakes grid, and which review trigger fires at which stakes level.
 
 ## A worked example
 

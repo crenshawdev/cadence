@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 440" width="1160" height="440" role="img" aria-label="The Cadence phase loop: new-project feeds context, plan, execute and verify in sequence; a decision gate sits under each command, and verify loops back to context for the next phase or exits to milestone.">
+
+  <style>
+    svg        { color: #15181E; background: #FFFFFF;
+                 font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+    .bg        { fill: #FFFFFF; }
+    .box       { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.4; }
+    .box-danger{ stroke: #A3331F; }
+    .box-cmd   { fill: #FFFFFF; stroke: #2B43B2; stroke-width: 1.6; }
+    .box-soft  { fill: #E8ECF2; stroke: #D3D9E1; stroke-width: 1; }
+    .box-seam  { fill: none; stroke: #8B5A03; stroke-width: 1.4; stroke-dasharray: 5 3; }
+    .gate      { fill: none; stroke: #8B5A03; stroke-width: 1.6; }
+    .edge      { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .edge-alt  { fill: none; stroke: #A3331F; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .edge-loop { fill: none; stroke: #2B43B2; stroke-width: 1.7; }
+    .edge-thin { fill: none; stroke: #5A6170; stroke-width: 1; stroke-dasharray: 2 4; }
+    .lbl       { font-size: 13px; fill: currentColor; }
+    .lbl-sm    { font-size: 11px; fill: currentColor; }
+    .lbl-mut   { font-size: 10.5px; fill: #5A6170; }
+    .lbl-alt   { font-size: 10.5px; fill: #A3331F; }
+    .lbl-gate  { font-size: 11.5px; fill: #8B5A03; }
+    .lbl-acc   { font-size: 11px; fill: #2B43B2; }
+    .head      { fill: currentColor; }
+    .head-alt  { fill: #A3331F; }
+    .head-loop { fill: #2B43B2; }
+    @media (prefers-color-scheme: dark) {
+      svg        { color: #E2E6EC; background: #151920; }
+      .bg        { fill: #151920; }
+      .box       { fill: #151920; }
+      .box-danger{ stroke: #e2705c; }
+      .box-cmd   { fill: #151920; stroke: #8698F6; }
+      .box-soft  { fill: #1B2029; stroke: #292F39; }
+      .box-seam  { stroke: #e2a64d; }
+      .gate      { stroke: #e2a64d; }
+      .edge-alt  { stroke: #e2705c; }
+      .edge-loop { stroke: #8698F6; }
+      .edge-thin { stroke: #929BAA; }
+      .lbl-mut   { fill: #929BAA; }
+      .lbl-alt   { fill: #e2705c; }
+      .lbl-gate  { fill: #e2a64d; }
+      .lbl-acc   { fill: #8698F6; }
+      .head-alt  { fill: #e2705c; }
+      .head-loop { fill: #8698F6; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-alt" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-alt" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-loop" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-loop" points="0,0 10,4 0,8" />
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1160" height="440" />
+one.">
+
+        <!-- entry -->
+        <rect class="box-soft" x="40" y="28" width="150" height="36" rx="5" />
+        <text class="lbl-sm" x="115" y="51" text-anchor="middle">/cad-new-project</text>
+        <text class="lbl-mut" x="200" y="51" text-anchor="start">once per project</text>
+        <line class="edge" x1="115" y1="64" x2="115" y2="112" marker-end="url(#ah)" />
+
+        <!-- commands -->
+        <rect class="box-cmd" x="40"  y="120" width="150" height="56" rx="6" />
+        <text class="lbl" x="115" y="146" text-anchor="middle">/cad-context</text>
+        <text class="lbl-mut" x="115" y="163" text-anchor="middle">CONTEXT.md</text>
+
+        <rect class="box-cmd" x="290" y="120" width="150" height="56" rx="6" />
+        <text class="lbl" x="365" y="146" text-anchor="middle">/cad-plan</text>
+        <text class="lbl-mut" x="365" y="163" text-anchor="middle">PLAN.md</text>
+
+        <rect class="box-cmd" x="540" y="120" width="150" height="56" rx="6" />
+        <text class="lbl" x="615" y="146" text-anchor="middle">/cad-execute</text>
+        <text class="lbl-mut" x="615" y="163" text-anchor="middle">commits + SUMMARY</text>
+
+        <rect class="box-cmd" x="790" y="120" width="150" height="56" rx="6" />
+        <text class="lbl" x="865" y="146" text-anchor="middle">/cad-verify</text>
+        <text class="lbl-mut" x="865" y="163" text-anchor="middle">UAT.md</text>
+
+        <rect class="box-soft" x="1000" y="120" width="150" height="56" rx="6" />
+        <text class="lbl-sm" x="1075" y="153" text-anchor="middle">/cad-milestone</text>
+
+        <!-- box to gate -->
+        <line class="edge" x1="115" y1="176" x2="115" y2="210" marker-end="url(#ah)" />
+        <line class="edge" x1="365" y1="176" x2="365" y2="210" marker-end="url(#ah)" />
+        <line class="edge" x1="615" y1="176" x2="615" y2="210" marker-end="url(#ah)" />
+        <line class="edge" x1="865" y1="176" x2="865" y2="210" marker-end="url(#ah)" />
+
+        <!-- gates -->
+        <polygon class="gate" points="45,250 115,216 185,250 115,284" />
+        <text class="lbl-gate" x="115" y="254" text-anchor="middle">how big?</text>
+
+        <polygon class="gate" points="295,250 365,216 435,250 365,284" />
+        <text class="lbl-gate" x="365" y="254" text-anchor="middle">plan_check</text>
+
+        <polygon class="gate" points="545,250 615,216 685,250 615,284" />
+        <text class="lbl-gate" x="615" y="254" text-anchor="middle">what came</text>
+        <text class="lbl-gate" x="615" y="268" text-anchor="middle">back?</text>
+
+        <polygon class="gate" points="795,250 865,216 935,250 865,284" />
+        <text class="lbl-gate" x="865" y="254" text-anchor="middle">the walk</text>
+
+        <!-- continue paths, over the top -->
+        <polyline class="edge" points="185,250 235,250 235,96 365,96 365,112" marker-end="url(#ah)" />
+        <text class="lbl-sm" x="300" y="88" text-anchor="middle">right-sized or big</text>
+
+        <polyline class="edge" points="435,250 485,250 485,96 615,96 615,112" marker-end="url(#ah)" />
+        <text class="lbl-sm" x="550" y="88" text-anchor="middle">passed, or warnings only</text>
+
+        <polyline class="edge" points="685,250 735,250 735,96 865,96 865,112" marker-end="url(#ah)" />
+        <text class="lbl-sm" x="800" y="88" text-anchor="middle">PLAN COMPLETE</text>
+
+        <polyline class="edge" points="935,250 975,250 975,96 1075,96 1075,112" marker-end="url(#ah)" />
+        <text class="lbl-sm" x="1025" y="88" text-anchor="middle">last phase</text>
+
+        <!-- branch stubs -->
+        <line class="edge-alt" x1="115" y1="284" x2="115" y2="314" marker-end="url(#ah-alt)" />
+        <text class="lbl-alt" x="115" y="334" text-anchor="middle">too big</text>
+        <text class="lbl-mut" x="115" y="349" text-anchor="middle">defer the slice; /cad-phase</text>
+        <text class="lbl-mut" x="115" y="363" text-anchor="middle">adds it back later</text>
+
+        <line class="edge-alt" x1="365" y1="284" x2="365" y2="314" marker-end="url(#ah-alt)" />
+        <text class="lbl-alt" x="365" y="334" text-anchor="middle">any BLOCKER</text>
+        <text class="lbl-mut" x="365" y="349" text-anchor="middle">one fresh planner and one</text>
+        <text class="lbl-mut" x="365" y="363" text-anchor="middle">re-check, then you decide</text>
+
+        <line class="edge-alt" x1="615" y1="284" x2="615" y2="314" marker-end="url(#ah-alt)" />
+        <text class="lbl-alt" x="615" y="334" text-anchor="middle">checkpoint or PARTIAL</text>
+        <text class="lbl-mut" x="615" y="349" text-anchor="middle">a fresh executor carries on</text>
+        <text class="lbl-mut" x="615" y="363" text-anchor="middle">— never a resume</text>
+
+        <line class="edge-alt" x1="865" y1="284" x2="865" y2="314" marker-end="url(#ah-alt)" />
+        <text class="lbl-alt" x="865" y="334" text-anchor="middle">an item fails</text>
+        <text class="lbl-mut" x="865" y="349" text-anchor="middle">fix now, re-plan, or leave open</text>
+        <text class="lbl-mut" x="865" y="363" text-anchor="middle">— you choose, every round</text>
+
+        <!-- the loop back -->
+        <polyline class="edge-loop" points="795,250 760,250 760,410 20,410 20,148 34,148" marker-end="url(#ah-loop)" />
+        <text class="lbl-acc" x="400" y="402" text-anchor="middle">more phases in this milestone — clear, then /cad-context again</text>
+</svg>

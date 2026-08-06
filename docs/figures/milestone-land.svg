@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 215" width="1160" height="215" role="img" aria-label="The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land fires the pre-ship review, which halts on a blocking FAIL; publishing then forks into four options with no default preselected.">
+
+  <style>
+    svg        { color: #15181E; background: #FFFFFF;
+                 font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+    .bg        { fill: #FFFFFF; }
+    .box       { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.4; }
+    .box-danger{ stroke: #A3331F; }
+    .box-cmd   { fill: #FFFFFF; stroke: #2B43B2; stroke-width: 1.6; }
+    .box-soft  { fill: #E8ECF2; stroke: #D3D9E1; stroke-width: 1; }
+    .box-seam  { fill: none; stroke: #8B5A03; stroke-width: 1.4; stroke-dasharray: 5 3; }
+    .gate      { fill: none; stroke: #8B5A03; stroke-width: 1.6; }
+    .edge      { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .edge-alt  { fill: none; stroke: #A3331F; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .edge-loop { fill: none; stroke: #2B43B2; stroke-width: 1.7; }
+    .edge-thin { fill: none; stroke: #5A6170; stroke-width: 1; stroke-dasharray: 2 4; }
+    .lbl       { font-size: 13px; fill: currentColor; }
+    .lbl-sm    { font-size: 11px; fill: currentColor; }
+    .lbl-mut   { font-size: 10.5px; fill: #5A6170; }
+    .lbl-alt   { font-size: 10.5px; fill: #A3331F; }
+    .lbl-gate  { font-size: 11.5px; fill: #8B5A03; }
+    .lbl-acc   { font-size: 11px; fill: #2B43B2; }
+    .head      { fill: currentColor; }
+    .head-alt  { fill: #A3331F; }
+    .head-loop { fill: #2B43B2; }
+    @media (prefers-color-scheme: dark) {
+      svg        { color: #E2E6EC; background: #151920; }
+      .bg        { fill: #151920; }
+      .box       { fill: #151920; }
+      .box-danger{ stroke: #e2705c; }
+      .box-cmd   { fill: #151920; stroke: #8698F6; }
+      .box-soft  { fill: #1B2029; stroke: #292F39; }
+      .box-seam  { stroke: #e2a64d; }
+      .gate      { stroke: #e2a64d; }
+      .edge-alt  { stroke: #e2705c; }
+      .edge-loop { stroke: #8698F6; }
+      .edge-thin { stroke: #929BAA; }
+      .lbl-mut   { fill: #929BAA; }
+      .lbl-alt   { fill: #e2705c; }
+      .lbl-gate  { fill: #e2a64d; }
+      .lbl-acc   { fill: #8698F6; }
+      .head-alt  { fill: #e2705c; }
+      .head-loop { fill: #8698F6; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-alt" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-alt" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-loop" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-loop" points="0,0 10,4 0,8" />
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1160" height="215" />
+ted.">
+
+        <rect class="box-cmd" x="40" y="40" width="180" height="56" rx="6" />
+        <text class="lbl" x="130" y="66" text-anchor="middle">/cad-milestone</text>
+        <text class="lbl-mut" x="130" y="83" text-anchor="middle">tag · prune · evolve</text>
+
+        <line class="edge" x1="220" y1="68" x2="244" y2="68" marker-end="url(#ah)" />
+
+        <polygon class="gate" points="248,68 330,26 412,68 330,110" />
+        <text class="lbl-gate" x="330" y="65" text-anchor="middle">/cad-audit</text>
+        <text class="lbl-gate" x="330" y="79" text-anchor="middle">traceability</text>
+
+        <line class="edge" x1="412" y1="68" x2="454" y2="68" marker-end="url(#ah)" />
+        <text class="lbl-sm" x="433" y="56" text-anchor="middle">PASS</text>
+
+        <rect class="box-cmd" x="460" y="40" width="180" height="56" rx="6" />
+        <text class="lbl" x="550" y="66" text-anchor="middle">/cad-land</text>
+        <text class="lbl-mut" x="550" y="83" text-anchor="middle">git state, then publish</text>
+
+        <line class="edge" x1="640" y1="68" x2="664" y2="68" marker-end="url(#ah)" />
+
+        <polygon class="gate" points="668,68 750,26 832,68 750,110" />
+        <text class="lbl-gate" x="750" y="65" text-anchor="middle">pre_ship</text>
+        <text class="lbl-gate" x="750" y="79" text-anchor="middle">review</text>
+
+        <line class="edge" x1="832" y1="68" x2="870" y2="68" />
+        <line class="edge" x1="870" y1="25" x2="870" y2="151" />
+
+        <line class="edge" x1="870" y1="25"  x2="884" y2="25"  marker-end="url(#ah)" />
+        <line class="edge" x1="870" y1="67"  x2="884" y2="67"  marker-end="url(#ah)" />
+        <line class="edge" x1="870" y1="109" x2="884" y2="109" marker-end="url(#ah)" />
+        <line class="edge" x1="870" y1="151" x2="884" y2="151" marker-end="url(#ah)" />
+
+        <rect class="box-soft" x="890" y="8"   width="250" height="34" rx="4" />
+        <text class="lbl-sm" x="906" y="30" text-anchor="start">Direct push</text>
+        <rect class="box-soft" x="890" y="50"  width="250" height="34" rx="4" />
+        <text class="lbl-sm" x="906" y="72" text-anchor="start">Open an MR or PR</text>
+        <rect class="box-soft" x="890" y="92"  width="250" height="34" rx="4" />
+        <text class="lbl-sm" x="906" y="114" text-anchor="start">Tag a release</text>
+        <rect class="box-soft" x="890" y="134" width="250" height="34" rx="4" />
+        <text class="lbl-sm" x="906" y="156" text-anchor="start">Leave it local</text>
+
+        <text class="lbl-mut" x="890" y="186" text-anchor="start">nothing is preselected</text>
+        <text class="lbl-mut" x="890" y="200" text-anchor="start">git.auto_close: true merges instead</text>
+
+        <line class="edge-alt" x1="330" y1="110" x2="330" y2="144" marker-end="url(#ah-alt)" />
+        <text class="lbl-alt" x="330" y="164" text-anchor="middle">FAIL</text>
+        <text class="lbl-mut" x="330" y="179" text-anchor="middle">a dropped requirement stops</text>
+        <text class="lbl-mut" x="330" y="193" text-anchor="middle">the milestone. No override by default.</text>
+
+        <line class="edge-alt" x1="750" y1="110" x2="750" y2="144" marker-end="url(#ah-alt)" />
+        <text class="lbl-alt" x="750" y="164" text-anchor="middle">FAIL or survivors</text>
+        <text class="lbl-mut" x="750" y="179" text-anchor="middle">blocking halts the land;</text>
+        <text class="lbl-mut" x="750" y="193" text-anchor="middle">adjudicated hands you the list</text>
+</svg>

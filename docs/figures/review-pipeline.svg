@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 215" width="1160" height="215" role="img" aria-label="The fire(trigger) pipeline: resolve the gate, build the payload, resolve the reviewer set, run every reviewer in one message, combine the findings, then apply the gate's consequence.">
+
+  <style>
+    svg        { color: #15181E; background: #FFFFFF;
+                 font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, Consolas, monospace; }
+    .bg        { fill: #FFFFFF; }
+    .box       { fill: #FFFFFF; stroke: currentColor; stroke-width: 1.4; }
+    .box-danger{ stroke: #A3331F; }
+    .box-cmd   { fill: #FFFFFF; stroke: #2B43B2; stroke-width: 1.6; }
+    .box-soft  { fill: #E8ECF2; stroke: #D3D9E1; stroke-width: 1; }
+    .box-seam  { fill: none; stroke: #8B5A03; stroke-width: 1.4; stroke-dasharray: 5 3; }
+    .gate      { fill: none; stroke: #8B5A03; stroke-width: 1.6; }
+    .edge      { fill: none; stroke: currentColor; stroke-width: 1.5; }
+    .edge-alt  { fill: none; stroke: #A3331F; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .edge-loop { fill: none; stroke: #2B43B2; stroke-width: 1.7; }
+    .edge-thin { fill: none; stroke: #5A6170; stroke-width: 1; stroke-dasharray: 2 4; }
+    .lbl       { font-size: 13px; fill: currentColor; }
+    .lbl-sm    { font-size: 11px; fill: currentColor; }
+    .lbl-mut   { font-size: 10.5px; fill: #5A6170; }
+    .lbl-alt   { font-size: 10.5px; fill: #A3331F; }
+    .lbl-gate  { font-size: 11.5px; fill: #8B5A03; }
+    .lbl-acc   { font-size: 11px; fill: #2B43B2; }
+    .head      { fill: currentColor; }
+    .head-alt  { fill: #A3331F; }
+    .head-loop { fill: #2B43B2; }
+    @media (prefers-color-scheme: dark) {
+      svg        { color: #E2E6EC; background: #151920; }
+      .bg        { fill: #151920; }
+      .box       { fill: #151920; }
+      .box-danger{ stroke: #e2705c; }
+      .box-cmd   { fill: #151920; stroke: #8698F6; }
+      .box-soft  { fill: #1B2029; stroke: #292F39; }
+      .box-seam  { stroke: #e2a64d; }
+      .gate      { stroke: #e2a64d; }
+      .edge-alt  { stroke: #e2705c; }
+      .edge-loop { stroke: #8698F6; }
+      .edge-thin { stroke: #929BAA; }
+      .lbl-mut   { fill: #929BAA; }
+      .lbl-alt   { fill: #e2705c; }
+      .lbl-gate  { fill: #e2a64d; }
+      .lbl-acc   { fill: #8698F6; }
+      .head-alt  { fill: #e2705c; }
+      .head-loop { fill: #8698F6; }
+    }
+  </style>
+  <defs>
+    <marker id="ah" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-alt" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-alt" points="0,0 10,4 0,8" />
+    </marker>
+    <marker id="ah-loop" viewBox="0 0 10 8" refX="9" refY="4" markerWidth="8" markerHeight="7" orient="auto-start-reverse">
+      <polygon class="head-loop" points="0,0 10,4 0,8" />
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1160" height="215" />
+nce.">
+
+        <rect class="box" x="20" y="70" width="160" height="56" rx="6" />
+        <text class="lbl-sm" x="100" y="94" text-anchor="middle">1 · the gate</text>
+        <text class="lbl-mut" x="100" y="111" text-anchor="middle">route.mjs resolve</text>
+
+        <rect class="box" x="206" y="70" width="160" height="56" rx="6" />
+        <text class="lbl-sm" x="286" y="94" text-anchor="middle">2 · the payload</text>
+        <text class="lbl-mut" x="286" y="111" text-anchor="middle">instruction + artifact</text>
+
+        <rect class="box" x="392" y="70" width="160" height="56" rx="6" />
+        <text class="lbl-sm" x="472" y="94" text-anchor="middle">3 · the voices</text>
+        <text class="lbl-mut" x="472" y="111" text-anchor="middle">who can actually run</text>
+
+        <rect class="box" x="578" y="70" width="160" height="56" rx="6" />
+        <text class="lbl-sm" x="658" y="94" text-anchor="middle">4 · run</text>
+        <text class="lbl-mut" x="658" y="111" text-anchor="middle">all in one message</text>
+
+        <rect class="box" x="764" y="70" width="160" height="56" rx="6" />
+        <text class="lbl-sm" x="844" y="94" text-anchor="middle">5 · combine</text>
+        <text class="lbl-mut" x="844" y="111" text-anchor="middle">one shared schema</text>
+
+        <rect class="box" x="950" y="70" width="160" height="56" rx="6" />
+        <text class="lbl-sm" x="1030" y="94" text-anchor="middle">6 · consequence</text>
+        <text class="lbl-mut" x="1030" y="111" text-anchor="middle">the gate decides</text>
+
+        <line class="edge" x1="180" y1="98" x2="202" y2="98" marker-end="url(#ah)" />
+        <line class="edge" x1="366" y1="98" x2="388" y2="98" marker-end="url(#ah)" />
+        <line class="edge" x1="552" y1="98" x2="574" y2="98" marker-end="url(#ah)" />
+        <line class="edge" x1="738" y1="98" x2="760" y2="98" marker-end="url(#ah)" />
+        <line class="edge" x1="924" y1="98" x2="946" y2="98" marker-end="url(#ah)" />
+
+        <line class="edge-alt" x1="100" y1="126" x2="100" y2="142" marker-end="url(#ah-alt)" />
+        <text class="lbl-mut" x="100" y="160" text-anchor="middle">off — nothing runs</text>
+
+        <text class="lbl-mut" x="472" y="150" text-anchor="middle">an empty set falls back to</text>
+        <text class="lbl-mut" x="472" y="164" text-anchor="middle">the local subagent, never to nothing</text>
+
+        <text class="lbl-mut" x="844" y="40" text-anchor="middle">single · panel · adjudicated</text>
+        <text class="lbl-mut" x="844" y="54" text-anchor="middle">(an adjudicated gate outranks the mode)</text>
+
+        <line class="edge" x1="1030" y1="126" x2="1030" y2="140" marker-end="url(#ah)" />
+        <text class="lbl-mut" x="1150" y="160" text-anchor="end">advisory · report and continue</text>
+        <text class="lbl-mut" x="1150" y="176" text-anchor="end">blocking · a surviving blocker or high FAILs</text>
+        <text class="lbl-mut" x="1150" y="192" text-anchor="end">adjudicated · you pick, default NONE</text>
+</svg>
