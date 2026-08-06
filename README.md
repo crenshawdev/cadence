@@ -2,6 +2,17 @@
 
 The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
 
+## Install
+
+Cadence is a Claude Code plugin. Add the marketplace, then install:
+
+```
+/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git
+/plugin install cadence@cadence
+```
+
+Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node` and `git` on your PATH. The scripts inside are zero-dependency: there is no npm install, ever.
+
 ## What it costs you
 
 Cadence is slower than not using Cadence. It makes you gather context before you plan and plan before you build, it stops you at gates you did not ask for, and it says no to things you did ask for. Most of it is not configurable, because most of it is not a preference.
@@ -47,17 +58,6 @@ Reviews resolve off the same level. Each trigger gets a gate, `off`, `advisory`,
 Which is also the floor. Cadence reads the paths a phase's plan declares, and a match on one of those surfaces raises that phase's level by itself, you do not have to remember to do it. You can waive one surface at a time with `risk.override.<surface>`, and only in the repo's own config, because a single line in a global config should not be able to disable the floor in every project on the machine. A waiver sitting in the global layer is ignored and says so in the warnings.
 
 Deep verification follows the level too, off at `solo` and on at `shipped` and `critical`.
-
-## Install
-
-Cadence is a Claude Code plugin. Add the marketplace, then install:
-
-```
-/plugin marketplace add https://git.jcrenshaw.dev/crenshawdev/cadence.git
-/plugin install cadence@cadence
-```
-
-Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node` and `git` on your PATH. The scripts inside are zero-dependency: there is no npm install, ever.
 
 ## The loop
 
