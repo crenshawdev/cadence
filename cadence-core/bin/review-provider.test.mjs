@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,7 @@ import {
   readModelHints, detectEnvelope, resolveTimeoutMs,
   resolveMaxPromptTokens, estimatePromptTokens,
 } from './review-provider.mjs';
+import { renderCursor } from './lib/planning-files.mjs';
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-provider-'));
@@ -491,4 +492,57 @@ test('cli: key-file paths expand ~ and default to XDG_CONFIG_HOME', () => {
   assert.equal(xdg.reason, 'no-key');
   assert.match(xdg.detail, new RegExp(join(xdgDir, 'cadence', 'providers.env')
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+// --- the provider family of the joined run record (QW-02) --------------------
+// The event's CONTENT is asserted against the loopback stub in the fault-
+// injection section (every failure mode names its reason). What is asserted
+// here is the property that must hold whether or not a stub is in play: the
+// record brackets a REQUEST, and a trace it cannot write moves no envelope.
+
+/** A cwd holding a `.planning` the seam will look for, optionally unwritable. */
+function providerCwd(name, breakTrace) {
+  const cwd = mkdtempSync(join(tmpdir(), `cad-provider-${name}-`));
+  const planning = join(cwd, '.planning');
+  mkdirSync(planning);
+  writeFileSync(join(planning, 'config.json'), '{}');
+  writeFileSync(join(planning, 'STATE.md'), renderCursor({
+    phase: 3, total: 5, name: 'Fixture', status: 'planned',
+    next: '/cad-execute 3', updated: '2026-01-01',
+  }));
+  // A DIRECTORY at trace.jsonl fails EISDIR for any uid - deterministic where
+  // a chmod is a no-op under a root test runner.
+  if (breakTrace) mkdirSync(join(planning, 'trace.jsonl'));
+  return cwd;
+}
+
+/** Raw stdout bytes from the seam, run inside `cwd`, with no provider keys. */
+function runRawIn(cwd, args, stdin) {
+  const env = { ...process.env };
+  delete env.OPENAI_API_KEY;
+  delete env.GEMINI_API_KEY;
+  delete env.DEEPSEEK_API_KEY;
+  try {
+    return execFileSync('node', [SCRIPT, ...args],
+      { encoding: 'utf8', cwd, env, ...(stdin !== undefined ? { input: stdin } : {}) });
+  } catch (e) {
+    return e.stdout;
+  }
+}
+
+test('provider trace: a command that issues no request records nothing', () => {
+  // `no-key` degrades before the transport is ever reached, so there is no
+  // request to bracket - the record must not invent one.
+  const cwd = providerCwd('nokey', false);
+  const out = runRawIn(cwd, ['review', '--provider', 'openai', '--model', 'gpt-5',
+    '--key-file', join(cwd, 'absent.env')], '{}');
+  assert.equal(JSON.parse(out).reason, 'no-key');
+  assert.equal(existsSync(join(cwd, '.planning', 'trace.jsonl')), false);
+});
+
+test('provider trace: an unwritable trace changes the envelope by not one byte', () => {
+  const good = providerCwd('trace-good', false);
+  const bad = providerCwd('trace-bad', true);
+  const args = ['review', '--provider', 'openai', '--model', 'gpt-5',
+    '--key-file', '/nonexistent/providers.env'];
+  assert.equal(runRawIn(bad, args, '{}'), runRawIn(good, args, '{}'));
 });

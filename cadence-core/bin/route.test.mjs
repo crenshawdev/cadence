@@ -1304,3 +1304,101 @@ test('a usage refusal names no config layer, because none was read', () => {
   assert.equal(r.reason, 'usage');
   assert.equal('warnings' in r, false);
 });
+
+// --- the routing family of the joined run record (QW-02) ---------------------
+
+/** A planning root of its own, so the trace file written here is this test's. */
+function traceRoot(name, breakTrace) {
+  const planning = join(mkdtempSync(join(tmpdir(), `cad-route-${name}-`)), '.planning');
+  mkdirSync(planning, { recursive: true });
+  writeFileSync(join(planning, 'config.json'), JSON.stringify({ stakes: 'solo' }));
+  // trace.jsonl as a DIRECTORY is the unwritable case: appendFileSync fails
+  // EISDIR for ANY uid, where a chmod is silently a no-op under a root test
+  // runner and would make this pass without proving anything.
+  if (breakTrace) mkdirSync(join(planning, 'trace.jsonl'));
+  return planning;
+}
+
+/** The raw stdout bytes, for the comparison that has to be byte-for-byte. */
+function resolveRaw(file, extra = []) {
+  const args = ['resolve', '--role', 'cad-executor', '--file', file, ...extra];
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  try {
+    return execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env });
+  } catch (e) {
+    return e.stdout;
+  }
+}
+
+const traceLines = (planning) => readFileSync(join(planning, 'trace.jsonl'), 'utf8')
+  .split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('a resolve records ONE routing event carrying the decision, not the text', () => {
+  const planning = traceRoot('trace-write', false);
+  const r = resolve('cad-executor', join(planning, 'config.json'), ['--phase', '4']);
+  assert.equal(r.ok, true);
+  const events = traceLines(planning);
+  assert.equal(events.length, 1);
+  const e = events[0];
+  assert.equal(e.family, 'routing');
+  assert.equal(e.event, 'resolve');
+  assert.equal(e.corr, '4');            // no phase_start anchor: the phase alone
+  assert.equal(e.phase, 4);
+  assert.equal(e.role, 'cad-executor');
+  assert.equal(e.stakes, r.stakes);
+  assert.equal(e.agent, r.agent);
+  assert.equal(e.model, r.model);
+  assert.equal(e.effort, r.effort);
+  assert.equal(e.escalated, false);
+  assert.equal(e.pinned, false);
+  assert.equal(e.attempt, 1);
+  assert.deepEqual(e.floor_surfaces, []);
+  // The COUNT, never the strings: the envelope carries the text and a second
+  // copy of it in the record would drift from the one the caller relays.
+  assert.equal(e.warning_count, 0);
+  assert.equal('warnings' in e, false);
+});
+
+test('an unwritable trace changes the resolve envelope by not one byte', () => {
+  const good = traceRoot('trace-good', false);
+  const bad = traceRoot('trace-bad', true);
+  const goodOut = resolveRaw(join(good, 'config.json'), ['--phase', '4']);
+  const badOut = resolveRaw(join(bad, 'config.json'), ['--phase', '4']);
+  assert.equal(badOut, goodOut);
+  assert.equal(JSON.parse(badOut).ok, true);
+  // ...and the writable one really did record, so the comparison is not two
+  // runs that both wrote nothing.
+  assert.equal(traceLines(good).length, 1);
+});
+
+test('a planning root that is not a directory resolves clean and records nothing', () => {
+  // The other unwritable shape: `.planning` is a REGULAR FILE, so every fs call
+  // under it fails ENOTDIR. The config layer is unreadable there too, which is
+  // its own (already-shipped) warning - the point here is that the trace adds
+  // no field, no second warning and no crash on top of it.
+  const base = mkdtempSync(join(tmpdir(), 'cad-route-notdir-'));
+  const planning = join(base, '.planning');
+  writeFileSync(planning, 'not a directory');
+  const r = resolve('cad-executor', join(planning, 'config.json'), ['--phase', '4']);
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /failed to parse and was skipped/);
+});
+
+test('no phase and no cursor records nothing rather than an unjoinable line', () => {
+  const planning = traceRoot('trace-nophase', false);
+  const r = resolve('cad-executor', join(planning, 'config.json'));
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+});
+
+test('the cursor supplies the phase when --phase is absent', () => {
+  const planning = traceRoot('trace-cursor', false);
+  writeFileSync(join(planning, 'STATE.md'), renderCursor({
+    phase: 2, total: 5, name: 'Fixture', status: 'planned',
+    next: '/cad-execute 2', updated: '2026-01-01',
+  }));
+  assert.equal(resolve('cad-executor', join(planning, 'config.json')).ok, true);
+  assert.equal(traceLines(planning)[0].phase, 2);
+});

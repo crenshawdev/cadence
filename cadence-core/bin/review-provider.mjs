@@ -60,6 +60,8 @@ import { fileURLToPath } from 'node:url';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
+import { appendEvent } from './lib/trace.mjs';
+import { cursorPhase } from './lib/phase-plans.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -266,6 +268,99 @@ function assertUnderCap(...parts) {
   if (est > cap) {
     fail('over-cap', `payload is ~${est} estimated tokens, over review.max_prompt_tokens (${cap})`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// The provider family of the joined run record (.planning/trace.jsonl). A
+// reviewer that drops out of a fired trigger is supposed to be NAMED to the
+// user, and references/review-triggers.md already mandates that visible line -
+// that mandate is the thing that failed, twice. So the seam records the
+// degradation itself: the panel's actual composition is in the record whether or
+// not the orchestrator relays the line.
+// ---------------------------------------------------------------------------
+
+// The repo+global config, read once per process and bound with its `warnings`.
+//
+// mergeLayers warnings[]: a torn config layer is why a tier reverse lookup can
+// come back null and why the timeout and the prompt cap fall back to their
+// defaults, so the warnings ride the provider trace event (`config_warnings`)
+// rather than being dropped at the read. Deliberately its OWN read: the two
+// reads above are memoized SCALAR helpers that cache a number and discard the
+// config object, so there is nothing there to take a config off.
+let reviewConfigCache = null;
+function reviewConfig() {
+  if (reviewConfigCache === null) {
+    try {
+      const { config, warnings } = mergeLayers('.planning/config.json');
+      reviewConfigCache = {
+        config: config && typeof config === 'object' ? config : {},
+        warnings: Array.isArray(warnings) ? warnings : [],
+      };
+    } catch {
+      reviewConfigCache = { config: {}, warnings: [] };
+    }
+  }
+  return reviewConfigCache;
+}
+
+/**
+ * The trigger TIER this model id was resolved from, by REVERSE LOOKUP over
+ * `review.providers.<name>.tiers`. The seam is never told the tier: the caller
+ * resolves `tiers[trigger.tier]` and passes only `--model`
+ * (references/review-triggers.md), so the mapping is inverted here rather than
+ * added as a `--tier` flag, which would change the CLI contract at every prose
+ * callsite. `null` when the map has no such value - a hand-passed model, or
+ * `detect-models`, which carries no model at all. Never a guess.
+ * @param {any} provider @param {any} model @returns {string|null}
+ */
+function tierOf(provider, model) {
+  if (typeof provider !== 'string' || typeof model !== 'string' || !model) return null;
+  const { config } = reviewConfig();
+  const review = config.review;
+  const providers = review && typeof review === 'object' ? review.providers : null;
+  const spec = providers && typeof providers === 'object' ? providers[provider] : null;
+  const tiers = spec && typeof spec === 'object' ? spec.tiers : null;
+  if (!tiers || typeof tiers !== 'object' || Array.isArray(tiers)) return null;
+  for (const [tier, id] of Object.entries(tiers)) if (id === model) return tier;
+  return null;
+}
+
+/**
+ * Record one `provider`/`request` event. `detail` is what makes it a DEGRADATION:
+ * present means this reviewer dropped out and the panel is smaller than the
+ * trigger asked for. An empty findings set is NOT one - it is `ok` with no
+ * detail, because a reviewer that legitimately found nothing must not be
+ * recorded as a drop-out (D-22).
+ *
+ * Never throws, never writes to a stream, never touches the caller's envelope.
+ * @param {{command: string, provider: any, model: any, effort: any, started: number}} meta
+ * @param {string} outcome the fail() reason, or 'ok'
+ * @param {string} [detail]
+ */
+function traceProvider(meta, outcome, detail) {
+  try {
+    const root = '.planning';
+    const phase = cursorPhase(root);
+    // No cursor: an event keyed to no phase joins nothing and the id it would
+    // derive is the empty string, so nothing is recorded rather than a line
+    // that cannot be read back.
+    if (phase === null) return;
+    const { warnings } = reviewConfig();
+    appendEvent(root, {
+      phase,
+      family: 'provider',
+      event: 'request',
+      command: meta.command,
+      provider: typeof meta.provider === 'string' ? meta.provider : null,
+      model: typeof meta.model === 'string' ? meta.model : null,
+      effort: typeof meta.effort === 'string' ? meta.effort : null,
+      tier: tierOf(meta.provider, meta.model),
+      duration_ms: Date.now() - meta.started,
+      outcome,
+      ...(detail ? { degraded: true, detail: String(detail).slice(0, 200) } : {}),
+      ...(warnings.length ? { config_warnings: warnings.length } : {}),
+    });
+  } catch { /* a record of a call may never change the call */ }
 }
 
 function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
@@ -554,20 +649,36 @@ function resolveProvider(opts, cmdName) {
 // Run a structured-output request through the transport, extract, and parse.
 // Returns the parsed JSON object or degrades via fail(). Schema validation is
 // the caller's job (review and consult assert different shapes).
-async function callStructured(adapter, key, reqSpec) {
+//
+// `meta` is the provider trace event's subject, stamped with `started` by the
+// caller so ONE event covers the whole call. Each degrading exit records itself
+// here, immediately BEFORE the fail() that unwinds the command; the success path
+// records nothing, leaving the final outcome (ok, or a bad-shape the caller
+// detects) to the caller. Exactly one event per call, either way.
+async function callStructured(adapter, key, reqSpec, meta) {
   const { path: p, method, body } = reqSpec;
   let res;
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key), body });
   } catch (e) {
+    traceProvider(meta, 'transport', e.message);
     fail('transport', e.message);
   }
   if (res.status < 200 || res.status >= 300) {
+    traceProvider(meta, 'http', `HTTP ${res.status}`);
     fail('http', { status: res.status, body: res.json || res.raw });
   }
   const text = adapter.extractText(res.json);
-  if (typeof text !== 'string') fail('no-output', 'no text in provider response');
-  try { return JSON.parse(text); } catch (e) { fail('bad-json', e.message); }
+  if (typeof text !== 'string') {
+    traceProvider(meta, 'no-output', 'no text in provider response');
+    fail('no-output', 'no text in provider response');
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    traceProvider(meta, 'bad-json', e.message);
+    fail('bad-json', e.message);
+  }
 }
 
 async function cmdReview(opts) {
@@ -577,13 +688,21 @@ async function cmdReview(opts) {
     fail('bad-payload', 'payload needs {instruction, artifact}, both strings');
   }
   assertUnderCap(payload.instruction, payload.artifact);
+  const meta = { command: 'review', provider, model: opts.model, effort: opts.effort,
+    started: Date.now() };
   const parsed = await callStructured(adapter, key, adapter.structuredRequest({
     model: opts.model, effort: opts.effort,
     system: payload.instruction, user: payload.artifact,
     schema: FINDING_SCHEMA, schemaName: 'cadence_review',
-  }));
+  }), meta);
   const bad = validateFindings(parsed);
-  if (bad) fail('bad-shape', bad);
+  if (bad) {
+    traceProvider(meta, 'bad-shape', bad);
+    fail('bad-shape', bad);
+  }
+  // An EMPTY findings set is `ok` and carries no `degraded` flag (D-22):
+  // a reviewer that legitimately found nothing is not a drop-out.
+  traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, findings: parsed.findings });
 }
 
@@ -594,6 +713,8 @@ async function cmdConsult(opts) {
     fail('bad-payload', 'payload needs {situation}, a string');
   }
   assertUnderCap(payload.situation);
+  const meta = { command: 'consult', provider, model: opts.model, effort: opts.effort,
+    started: Date.now() };
   const system =
     'You are a second-opinion consultant to an engineer stuck at a dead-end. ' +
     'Return angles to investigate - concrete things to try or check, each with ' +
@@ -604,9 +725,13 @@ async function cmdConsult(opts) {
     model: opts.model, effort: opts.effort,
     system, user: payload.situation,
     schema: CONSULT_SCHEMA, schemaName: 'cadence_consult',
-  }));
+  }), meta);
   const bad = validateConsult(parsed);
-  if (bad) fail('bad-shape', bad);
+  if (bad) {
+    traceProvider(meta, 'bad-shape', bad);
+    fail('bad-shape', bad);
+  }
+  traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, angles: parsed.angles });
 }
 
@@ -619,16 +744,23 @@ async function cmdDetect(opts) {
   if (!key) fail('no-key', `set ${where}`);
 
   const { path: p, method } = adapter.detectRequest();
+  // `detect-models` carries no model at all, so its `tier` is null by
+  // construction rather than by a failed lookup.
+  const meta = { command: 'detect-models', provider, model: null, effort: null,
+    started: Date.now() };
   let res;
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key) });
   } catch (e) {
+    traceProvider(meta, 'transport', e.message);
     fail('transport', e.message);
   }
   if (res.status < 200 || res.status >= 300) {
+    traceProvider(meta, 'http', `HTTP ${res.status}`);
     fail('http', { status: res.status, body: res.json || res.raw });
   }
   const ids = adapter.extractModels(res.json);
+  traceProvider(meta, 'ok');
   ok(detectEnvelope(provider, ids));
 }
 
