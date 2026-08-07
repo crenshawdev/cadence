@@ -34,6 +34,9 @@
 //                                   Bare words after `recall` are joined into
 //                                   one query, so an unquoted multi-word call
 //                                   searches all of it, not just the first word
+//   detect-commands [--root <path>]  the project's own lint/typecheck commands,
+//                                   read from its manifests (NOT --dir: --root
+//                                   is the PROJECT root, one level deep only)
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
 //               [--detail "<text>"]  one line onto .planning/trace.jsonl
 //   trace render [--phase N]        the four families, the derived id, and
@@ -1369,6 +1372,111 @@ function cmdRecall(dir, query, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// detect-commands - the static-analysis path for a repo that configured
+// NOTHING. A seam and not executor judgment (D-04): the criterion asserts
+// behaviour "in a repo that configured nothing", and nothing in CI can prove a
+// judgment fired, where a seam is testable on fixture trees and carries a
+// CONTRACTS row.
+//
+// `--root` is the PROJECT root, deliberately NOT `--dir`, which this script
+// defines as the planning directory. The root is read ONE DIRECTORY DEEP: no
+// recursive walk, no monorepo inference - a command guessed from a nested
+// package is a command run in the wrong tree.
+//
+// Detecting nothing is ok:true with both null - a successful check with a
+// negative answer, like plan-overlap. An unreadable or malformed manifest
+// contributes nothing and is NAMED in warnings[] rather than throwing.
+// ---------------------------------------------------------------------------
+
+// The flat-config spellings, in the order they are probed. A legacy `.eslintrc*`
+// of any extension is matched after them, by prefix.
+const ESLINT_CONFIGS = ['eslint.config.js', 'eslint.config.mjs',
+  'eslint.config.cjs', 'eslint.config.ts'];
+
+function cmdDetectCommands(root) {
+  /** @type {string[]} */
+  const warnings = [];
+  /** @type {string[]} */
+  let entries;
+  try {
+    entries = readdirSync(root, { encoding: 'utf8' });
+  } catch (e) {
+    return fail('no-root', `${root} cannot be listed (${e.code || e.message})`);
+  }
+  const has = (/** @type {string} */ name) => entries.includes(name);
+
+  // package.json, parsed ONCE for both slots: two parses could disagree about
+  // one file, and the warning would then be filed twice for one fault.
+  let scripts = {};
+  if (has('package.json')) {
+    const text = read(join(root, 'package.json'));
+    if (text === null) {
+      warnings.push('package.json could not be read; no command was taken from it');
+    } else {
+      try {
+        const pkg = JSON.parse(text);
+        const s = pkg && typeof pkg === 'object' && !Array.isArray(pkg) ? pkg.scripts : null;
+        if (s && typeof s === 'object' && !Array.isArray(s)) scripts = s;
+      } catch (e) {
+        warnings.push(`package.json failed to parse and was skipped: ${e.message}`);
+      }
+    }
+  }
+  /** A script NAME when the manifest carries a usable one, else null. */
+  const script = (/** @type {string} */ name) =>
+    (typeof scripts[name] === 'string' && scripts[name].trim() ? name : null);
+
+  let pyproject = null;
+  if (has('pyproject.toml')) {
+    pyproject = read(join(root, 'pyproject.toml'));
+    if (pyproject === null) {
+      warnings.push('pyproject.toml could not be read; no command was taken from it');
+    }
+  }
+  const pyTable = (/** @type {string} */ t) => pyproject !== null && pyproject.includes(t);
+
+  // First match wins per slot, in the declared order. A project's OWN script
+  // beats a tool config in the same tree: the script is what its maintainers
+  // run, and the tool config is only what a default would run.
+  let lint = null;
+  let lintSource = null;
+  if (script('lint')) { lint = 'npm run lint'; lintSource = 'package.json'; }
+  else if (has('Cargo.toml')) { lint = 'cargo clippy --all-targets -- -D warnings'; lintSource = 'Cargo.toml'; }
+  else if (pyTable('[tool.ruff')) { lint = 'ruff check .'; lintSource = 'pyproject.toml'; }
+  else if (has('go.mod')) { lint = 'go vet ./...'; lintSource = 'go.mod'; }
+  else {
+    const cfg = ESLINT_CONFIGS.find((f) => has(f))
+      || entries.find((e) => e.startsWith('.eslintrc'));
+    if (cfg) { lint = 'npx eslint .'; lintSource = cfg; }
+  }
+
+  let typecheck = null;
+  let typecheckSource = null;
+  const tsScript = script('typecheck') || script('type-check');
+  if (tsScript) { typecheck = `npm run ${tsScript}`; typecheckSource = 'package.json'; }
+  // `tsconfig.json` and that name ONLY. A non-default `tsconfig*.json` is
+  // deliberately not matched: `npx tsc --noEmit` ignores a config it is not
+  // pointed at, and guessing `-p` across several candidates would name a
+  // CI-only or editor-only project file as the project's typecheck. This repo
+  // is exactly that case - its only TS config is tsconfig.ci.json.
+  else if (has('tsconfig.json')) { typecheck = 'npx tsc --noEmit'; typecheckSource = 'tsconfig.json'; }
+  else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
+  else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
+  else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
+
+  ok({
+    root,
+    lint,
+    typecheck,
+    // ALWAYS present, both slots, even when both are null - the same
+    // always-report convention seed-reqs's counts follow. A caller has to be
+    // able to tell "found nothing" from "did not look".
+    source: { lint: lintSource, typecheck: typecheckSource },
+    ...(warnings.length ? { warnings } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // trace - the joined run record (.planning/trace.jsonl). This subcommand family
 // is how PROSE writes the lifecycle and outcome families: two of the four have
 // no script of their own to hang a direct write on (lifecycle lives in
@@ -1733,6 +1841,12 @@ const COMMANDS = {
   // failure. tokenize() splits on non-alphanumerics, so the separator is
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
   recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
+  // --root, never --dir: this one names the PROJECT root. A `--root` with
+  // nothing usable after it is refused rather than silently answered about the
+  // cwd, which would report a different tree than the caller named (#42/#45).
+  'detect-commands': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
+    ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
+    : cmdDetectCommands(opts.root || process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };

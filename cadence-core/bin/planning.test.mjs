@@ -3700,3 +3700,150 @@ test('recall: memory.backend none reports off with empty results, exit 0', () =>
   assert.deepEqual(r.json.results, []);
   assert.equal(r._exit, 0);
 });
+
+// --- detect-commands: the unconfigured static-analysis path (QW-01) ----------
+
+/** A project root holding exactly the named files, one directory deep. */
+function projectTree(files) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-detect-'));
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(root, name), typeof body === 'string' ? body : JSON.stringify(body));
+  }
+  return root;
+}
+
+/** detect-commands takes --root (the PROJECT root), never --dir. */
+function detect(root, extra = []) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root', root, ...extra],
+      { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+test('detect-commands: a package.json lint script is the command', () => {
+  const r = detect(projectTree({ 'package.json': { scripts: { lint: 'eslint .' } } }));
+  assert.equal(r.ok, true);
+  assert.equal(r.lint, 'npm run lint');
+  assert.equal(r.typecheck, null);
+  assert.equal(r.source.lint, 'package.json');
+  assert.equal(r.source.typecheck, null);
+});
+
+test('detect-commands: both package.json typecheck spellings', () => {
+  assert.equal(detect(projectTree({ 'package.json': { scripts: { typecheck: 'tsc' } } })).typecheck,
+    'npm run typecheck');
+  assert.equal(detect(projectTree({ 'package.json': { scripts: { 'type-check': 'tsc' } } })).typecheck,
+    'npm run type-check');
+});
+
+test('detect-commands: Cargo.toml answers both slots', () => {
+  const r = detect(projectTree({ 'Cargo.toml': '[package]\nname = "x"\n' }));
+  assert.equal(r.lint, 'cargo clippy --all-targets -- -D warnings');
+  assert.equal(r.typecheck, 'cargo check --all-targets');
+  assert.equal(r.source.lint, 'Cargo.toml');
+});
+
+test('detect-commands: pyproject.toml answers per TABLE, not per file', () => {
+  const ruff = detect(projectTree({ 'pyproject.toml': '[tool.ruff]\nline-length = 100\n' }));
+  assert.equal(ruff.lint, 'ruff check .');
+  assert.equal(ruff.typecheck, null);          // no [tool.mypy table
+  const mypy = detect(projectTree({ 'pyproject.toml': '[tool.mypy]\nstrict = true\n' }));
+  assert.equal(mypy.lint, null);
+  assert.equal(mypy.typecheck, 'mypy .');
+  // A pyproject with neither table names neither command.
+  const bare = detect(projectTree({ 'pyproject.toml': '[project]\nname = "x"\n' }));
+  assert.equal(bare.lint, null);
+  assert.equal(bare.typecheck, null);
+});
+
+test('detect-commands: go.mod answers both slots', () => {
+  const r = detect(projectTree({ 'go.mod': 'module example.com/x\n' }));
+  assert.equal(r.lint, 'go vet ./...');
+  assert.equal(r.typecheck, 'go build ./...');
+});
+
+test('detect-commands: an eslint config, flat or legacy, is the last lint arm', () => {
+  assert.equal(detect(projectTree({ 'eslint.config.mjs': 'export default [];\n' })).lint,
+    'npx eslint .');
+  const legacy = detect(projectTree({ '.eslintrc.json': '{}' }));
+  assert.equal(legacy.lint, 'npx eslint .');
+  assert.equal(legacy.source.lint, '.eslintrc.json');
+});
+
+test('detect-commands: the project\'s own script beats a tool config in the same tree', () => {
+  const r = detect(projectTree({
+    'package.json': { scripts: { lint: 'biome check .', typecheck: 'tsc -p .' } },
+    'eslint.config.js': 'module.exports = [];\n',
+    'tsconfig.json': '{}',
+  }));
+  assert.equal(r.lint, 'npm run lint');
+  assert.equal(r.typecheck, 'npm run typecheck');
+  assert.equal(r.source.lint, 'package.json');
+  assert.equal(r.source.typecheck, 'package.json');
+});
+
+test('detect-commands: tsconfig.json matches that NAME only', () => {
+  assert.equal(detect(projectTree({ 'tsconfig.json': '{}' })).typecheck, 'npx tsc --noEmit');
+  // `npx tsc --noEmit` ignores a config it is not pointed at, so naming a
+  // CI-only project file as the project's typecheck would run the wrong check.
+  const ci = detect(projectTree({ 'tsconfig.ci.json': '{}' }));
+  assert.equal(ci.typecheck, null);
+  assert.equal(ci.source.typecheck, null);
+});
+
+test('detect-commands: nothing detected is ok:true with both null', () => {
+  const r = detect(projectTree({ 'README.md': '# x\n' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+  assert.deepEqual(r.source, { lint: null, typecheck: null });
+  assert.equal('warnings' in r, false);
+});
+
+test('detect-commands: a malformed package.json warns and contributes nothing', () => {
+  const r = detect(projectTree({ 'package.json': '{ "scripts": ' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /package\.json failed to parse/);
+});
+
+test('detect-commands: a malformed package.json does not block a later arm', () => {
+  const r = detect(projectTree({ 'package.json': 'not json', 'go.mod': 'module x\n' }));
+  assert.equal(r.lint, 'go vet ./...');
+  assert.equal(r.warnings.length, 1);
+});
+
+test('detect-commands: a scripts block that is not an object is not read as one', () => {
+  const r = detect(projectTree({ 'package.json': { scripts: ['lint'] } }));
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+});
+
+test('detect-commands: the root is read one directory deep, never recursively', () => {
+  const root = projectTree({ 'README.md': '# x\n' });
+  mkdirSync(join(root, 'sub'));
+  writeFileSync(join(root, 'sub', 'package.json'), JSON.stringify({ scripts: { lint: 'x' } }));
+  const r = detect(root);
+  assert.equal(r.lint, null);
+});
+
+test('detect-commands: an unlistable root is ok:false, never a silent nothing', () => {
+  const r = detect(join(tmpdir(), 'cad-detect-does-not-exist'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-root');
+});
+
+test('detect-commands: --root with nothing after it is refused, not answered about cwd', () => {
+  const r = (() => {
+    try {
+      return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root'],
+        { encoding: 'utf8' }));
+    } catch (e) { return JSON.parse(e.stdout); }
+  })();
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+});
