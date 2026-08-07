@@ -49,18 +49,23 @@ export const MAX_TRACE_BYTES = 1048576;
 /** The four event families. A family outside this list is refused by the seam. */
 export const FAMILIES = ['routing', 'provider', 'lifecycle', 'outcome'];
 
+// The three lifecycle names below are EXPORTED so the producer census in
+// trace.test.mjs reads the renderer's real vocabulary rather than a copy of it:
+// a test holding its own list would go green on the day a prose surface and the
+// renderer stopped agreeing, which is the whole failure it exists to catch.
+
 /** The lifecycle event that OPENS a worker bracket. */
-const DISPATCH = 'dispatch';
+export const DISPATCH = 'dispatch';
 
 /**
  * The lifecycle events that CLOSE one. All three are terminal for a worker:
  * a renderer pairing only `return` and `checkpoint` would strand every
  * escalated worker in `unpaired[]`.
  */
-const TERMINAL = ['return', 'checkpoint', 'escalation'];
+export const TERMINAL = ['return', 'checkpoint', 'escalation'];
 
 /** The lifecycle event that ANCHORS a phase's correlation id. */
-const ANCHOR = 'phase_start';
+export const ANCHOR = 'phase_start';
 
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {

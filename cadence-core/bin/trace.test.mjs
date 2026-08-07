@@ -8,15 +8,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync } from 'node:fs';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
+  ANCHOR, DISPATCH, TERMINAL,
 } from './lib/trace.mjs';
 
-const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PLANNING = join(HERE, 'planning.mjs');
+const REPO = join(HERE, '..', '..');
 
 /** A fresh, empty planning root. */
 function root() {
@@ -275,4 +280,117 @@ test('seam: render on an absent trace file is ok:true with empty events', () => 
   assert.equal(r.ok, true);
   assert.deepEqual(r.events, []);
   assert.deepEqual(r.unpaired, []);
+});
+
+// --- the producer census ------------------------------------------------------
+//
+// THIS IS A REGRESSION GUARD, NOT A CLOSURE. It closes no UAT item and fixes no
+// defect that exists today: the tree already satisfies every assertion below, so
+// a green run here is evidence that nothing REGRESSED, never evidence that
+// something was repaired. Do not read it as proof that a trace was produced -
+// it proves only that the producers are still WRITTEN DOWN and still speak the
+// renderer's vocabulary. Whether a model obeys that prose is a UAT question and
+// this test cannot reach it.
+//
+// What it does catch, which nothing else did: two of the four families
+// (`lifecycle`, `outcome`) are written ONLY from prose surfaces, so a prose edit
+// could delete their writers or rename a lifecycle event the renderer pairs on,
+// and every one of the 1279 tests would stay green while `counts.lifecycle`
+// silently became 0 forever. That is the D-09 shape - "a check is what makes the
+// instruction's ABSENCE visible" (lib/route-relay.mjs:14-19) - applied to the
+// trace's producers. The names come from lib/trace.mjs's own exports, never a
+// copy, so a rename there fails here instead of drifting.
+
+/** Every shipped prose surface a `trace append` invocation may live in. */
+function proseSurfaces() {
+  /** @param {string[]} parts @param {(n: string) => boolean} keep */
+  const filesIn = (parts, keep) => {
+    const dir = join(REPO, ...parts);
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+    return entries.filter((d) => d.isFile() && keep(d.name)).map((d) => join(dir, d.name));
+  };
+  const md = (n) => n.endsWith('.md');
+  const skillDirs = (() => {
+    try {
+      return readdirSync(join(REPO, 'skills'), { withFileTypes: true })
+        .filter((d) => d.isDirectory()).map((d) => join(REPO, 'skills', d.name, 'SKILL.md'));
+    } catch { return []; }
+  })();
+  return [
+    ...filesIn(['cadence-core', 'workflows'], md),
+    ...filesIn(['cadence-core', 'references'], md),
+    ...filesIn(['agents'], md),
+    ...skillDirs,
+  ].filter((f) => { try { readFileSync(f, 'utf8'); return true; } catch { return false; } });
+}
+
+/**
+ * Every `trace append` invocation in one text, as `{family, event}`. Shell line
+ * continuations are joined first so a wrapped invocation is read whole rather
+ * than read as a flagless fragment.
+ * @param {string} text
+ */
+function traceAppends(text) {
+  const joined = text.replace(/\\\r?\n\s*/g, ' ');
+  const out = [];
+  for (const line of joined.split('\n')) {
+    if (!/\btrace\s+append\b/.test(line)) continue;
+    const family = /--family\s+(\S+)/.exec(line);
+    const event = /--event\s+(\S+)/.exec(line);
+    out.push({ family: family ? family[1] : null, event: event ? event[1] : null });
+  }
+  return out;
+}
+
+test('census: every trace family has a producer, and every producer speaks the renderer\'s vocabulary', () => {
+  /** @type {Map<string, string[]>} family -> the producers that write it */
+  const producers = new Map(FAMILIES.map((f) => [f, []]));
+  /** @type {{family: string|null, event: string|null, where: string}[]} */
+  const prose = [];
+
+  for (const file of proseSurfaces()) {
+    const where = relative(REPO, file);
+    for (const a of traceAppends(readFileSync(file, 'utf8'))) {
+      prose.push({ ...a, where });
+      assert.ok(a.family, `${where}: a \`trace append\` with no --family`);
+      assert.ok(a.event, `${where}: a \`trace append\` with no --event`);
+      assert.ok(FAMILIES.includes(String(a.family)),
+        `${where}: --family ${a.family} is not one of ${FAMILIES.join(', ')}`);
+      producers.get(String(a.family)).push(where);
+    }
+  }
+
+  // The two seam producers write their family in code, not through the CLI.
+  for (const seam of ['route.mjs', 'review-provider.mjs']) {
+    const text = readFileSync(join(REPO, 'cadence-core', 'bin', seam), 'utf8');
+    for (const m of text.matchAll(/family:\s*'([a-z_]+)'/g)) {
+      assert.ok(FAMILIES.includes(m[1]),
+        `cadence-core/bin/${seam}: family: '${m[1]}' is not one of ${FAMILIES.join(', ')}`);
+      producers.get(m[1]).push(`cadence-core/bin/${seam}`);
+    }
+  }
+
+  for (const family of FAMILIES) {
+    assert.ok(producers.get(family).length > 0,
+      `family \`${family}\` lost its writer - no producer left in the shipped surfaces. `
+      + `Found: ${[...producers].map(([f, w]) => `${f}=[${w.join(' ')}]`).join(' ')}`);
+  }
+
+  // A lifecycle event the renderer does not know is a bracket that never pairs.
+  const known = [ANCHOR, DISPATCH, ...TERMINAL];
+  const lifecycle = prose.filter((p) => p.family === 'lifecycle');
+  for (const p of lifecycle) {
+    assert.ok(known.includes(String(p.event)),
+      `${p.where}: lifecycle --event ${p.event} is not one of ${known.join(', ')}`);
+  }
+  // ...and a record missing any one of the three ROLES can never show a paired
+  // bracket at all, so each must be written down somewhere in the prose.
+  const events = lifecycle.map((p) => String(p.event));
+  const found = () => `lifecycle events written down: ${events.join(', ') || '(none)'}`;
+  assert.ok(events.includes(ANCHOR), `no prose producer writes the anchor \`${ANCHOR}\`. ${found()}`);
+  assert.ok(events.includes(DISPATCH),
+    `no prose producer writes \`${DISPATCH}\`, so no bracket ever opens. ${found()}`);
+  assert.ok(events.some((e) => TERMINAL.includes(e)),
+    `no prose producer writes any of ${TERMINAL.join(', ')}, so no bracket ever closes. ${found()}`);
 });
