@@ -50,6 +50,11 @@ integration branch. Ask the seam - it only advises, it never checks out:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" decide
 ```
 
+Relay the envelope's `warnings[]` to the user before acting on the advice: the
+mode, the `auto_branch` policy and the protected list all come off one config
+merge, so a layer that did not parse means this decision was computed from
+DEFAULTS rather than from the user's settings.
+
 Act on its `action`:
 
 - `create` -> `git checkout -b <branch>` and continue on it. `<branch>` is the

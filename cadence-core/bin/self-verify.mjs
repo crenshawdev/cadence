@@ -57,6 +57,14 @@
 //                    negation and a catalog row carry the same vocabulary in
 //                    another mood and issue nothing. Without this check the
 //                    prose repair is UAT-walk-only.
+//  12. merge         every `mergeLayers(` callsite under cadence-core/bin must
+//      warnings      either bind the `warnings[]` it gets back or sit in a file
+//                    whose header says why its envelope is the surfacing. The
+//                    one diagnostic that says a config layer was TORN was
+//                    dropped on the floor at eight of ten callsites, so branch
+//                    rails, cleanup rails and recall decided from defaults in
+//                    silence. The rule is lib/merge-warnings.mjs; this is the
+//                    only check that walks .mjs SOURCE rather than prose.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -75,6 +83,7 @@ import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
+import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -242,6 +251,49 @@ function* mdFiles(root) {
     const p = join(root, doc);
     if (existsSync(p)) yield { file: p };
   }
+}
+
+/**
+ * Every `.mjs` SOURCE file under cadence-core/bin, for check 12. `mdFiles`
+ * traverses `.md` surfaces only and cannot be reused - this is the one check
+ * whose subject is code rather than prose.
+ *
+ * Two exclusions, both deliberate. `*.test.mjs`: a test file calls the seams it
+ * tests and a fixture string may contain any shape at all, so linting them
+ * would report the tests written to PIN this very rule. `lib/config-merge.mjs`:
+ * it DEFINES `mergeLayers` and returns the warnings itself - there is nothing
+ * upstream of it to surface them to.
+ *
+ * Guarded per ENTRY like `mdFiles`, for the #49.1 reason: one unreadable
+ * descendant must hide only its own children, not silently unlint every
+ * sibling.
+ * @param {string} root
+ * @returns {Generator<{ file: string, unreadable?: string }>}
+ */
+function* binFiles(root) {
+  const binDir = join(root, 'cadence-core', 'bin');
+  const skip = join(binDir, 'lib', 'config-merge.mjs');
+  /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
+  function* walk(dir) {
+    let list;
+    try {
+      list = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      yield { file: dir, unreadable: e.code || e.message };
+      return;
+    }
+    for (const d of list) {
+      const f = join(dir, d.name);
+      if (d.isDirectory()) {
+        yield* walk(f);
+        continue;
+      }
+      if (!f.endsWith('.mjs') || f.endsWith('.test.mjs') || f === skip) continue;
+      yield { file: f };
+    }
+  }
+  if (!existsSync(binDir)) return;
+  yield* walk(binDir);
 }
 
 /**
@@ -927,6 +979,32 @@ function run(root) {
       detail: 'always-expected input absent' });
   }
 
+  // 12. mergeLayers callsites: bind the warnings[] or say in the file header
+  // why the envelope is the surfacing (lib/merge-warnings.mjs holds the rule
+  // and its accepted costs). This side decides only WHERE it applies - every
+  // .mjs the bin walk yields. The read is guarded like every other walk read
+  // (#49.1): an unreadable source file is one problem naming that file, never
+  // an unwound run() that discards every problem found so far. Unlike the prose
+  // walks there is no second reporter to defer to, so this one files it.
+  for (const { file, unreadable } of binFiles(root)) {
+    const rel = relative(root, file);
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    let src = null;
+    try {
+      src = readFileSync(file, 'utf8');
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: rel,
+        detail: e && e.code ? e.code : String(e) });
+      continue;
+    }
+    for (const { code, detail } of mergeWarningIssues(src)) {
+      problems.push({ kind: code, file: rel, detail });
+    }
+  }
+
   return problems;
 }
 
@@ -937,7 +1015,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

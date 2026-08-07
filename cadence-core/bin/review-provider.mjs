@@ -50,6 +50,18 @@
 // The review payload (JSON, from --payload file or stdin) is:
 //   { "instruction": "<what to critique and how>",
 //     "artifact": "<the plan / diff / files to review>" }
+//
+// mergeLayers warnings[]: the ONE surfacing for this file is `reviewConfig()`
+// (:290), which binds the warnings of the same `.planning/config.json` layer and
+// puts them on every provider trace event as `config_warnings`. The two OTHER
+// reads here - `requestTimeoutMs()` and `maxPromptTokens()` - are memoized
+// SCALAR helpers that cache a number and discard the config object, so there is
+// nothing at those two callsites to surface: the value they lose to a torn layer
+// is a request timeout and a prompt cap, each degrading to a stated default, and
+// the fact that the layer was torn is already in the trace beside the request
+// those bounds applied to. What the CALLER sees is the seam's own envelope -
+// `{ok:false, reason}` with the fail reason - and no config warning can change
+// which reason that is.
 'use strict';
 
 import fs from 'node:fs';

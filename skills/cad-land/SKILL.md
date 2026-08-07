@@ -120,7 +120,11 @@ rather than a schema default no layer wrote.
      and refuses with `ok:false` unless repo `git.auto_close` is true and HEAD is
      a non-protected branch. On `ok:true` proceed to open the PR; on `ok:false`
      stop and surface the reason - do NOT fall back to a raw `git push`, which
-     would hit the guard's unconditional ask.
+     would hit the guard's unconditional ask. Relay the envelope's `warnings[]`
+     to the user rather than dropping them: `reason:"config-parse-failed"` means
+     a config layer that could carry `protected_branches` did not parse, so the
+     branch was checked against the DEFAULT list - fix the file, never retry
+     past it.
    - **Open (or reuse) the PR/MR.** Reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` finds it, else create:
      GitHub `gh pr create --base <base> --head <branch> --fill`, GitLab
@@ -148,12 +152,16 @@ rather than a schema default no layer wrote.
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup`.
    In the auto_close path append `--merged true` (step 4b confirmed the PR/MR
    MERGED) so the reap never hinges on local-base freshness; a manual land
-   omits it and the seam falls back to `git branch --merged <base>`. When the
+   omits it and the seam falls back to `git branch --merged <base>`. Relay its
+   `warnings[]`: a layer that did not parse means `on_land_cleanup` and `base`
+   came from DEFAULTS, so `base` may name a branch this repo does not have. When the
    seam returns `reap:true`, reap through the git-publish seam - never a Bash
    git call, never a remote-tracking delete (that trips the push guard):
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" reap --dir <root> --branch <decision.branch>`.
    It deletes by subprocess argv and refuses an unsafe, protected or
-   checked-out branch. When either seam returns `action:"skip"` - the branch
+   checked-out branch. Relay its `warnings[]` too, and treat
+   `reason:"config-parse-failed"` as a stop and not a retry: the seam refuses to
+   delete anything while the protected list is unprovable. When either seam returns `action:"skip"` - the branch
    was already removed, or `git.on_land_cleanup` is off - leave HEAD and the
    branch in place. Report the final state: HEAD on `<base>`, pulled, branch
    reaped (or left).

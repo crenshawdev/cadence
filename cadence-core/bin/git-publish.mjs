@@ -73,15 +73,48 @@ function repoAutoClose(dir) {
 
 /** The protected-branch list for the repo at `dir`, with the same string
  * tolerance git-guard applies (#38): a lone-string hand-edit names the branch
- * the user means to protect; do not silently swap the list. */
+ * the user means to protect; do not silently swap the list.
+ *
+ * Returns the merge's `warnings` alongside the list rather than dropping them:
+ * this list is what stops the ONE mutating seam from pushing off a protected
+ * branch, so a torn layer means that refusal is running on the default
+ * `["main","master"]` and not on the user's. Both callers put it on their
+ * envelope AND refuse to mutate on it - see `tornLayerDetail`. */
 function readProtectedBranches(dir) {
-  const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
-  return Array.isArray(git.protected_branches)
+  const branches = Array.isArray(git.protected_branches)
     ? git.protected_branches
     : typeof git.protected_branches === 'string'
       ? [git.protected_branches]
       : ['main', 'master'];
+  return { branches, warnings };
+}
+
+/** The mutation gate: the refusal detail when a config layer that could have
+ * carried `protected_branches` failed to parse, or null when every layer read
+ * cleanly.
+ *
+ * `readProtectedBranches` falls back to `["main","master"]` for a layer that
+ * did not parse, so a torn layer means the protected-branch gate inside
+ * decidePublish/decideReap ran on the DEFAULT list and not on the user's - a
+ * global layer holding `protected_branches: ["release"]` reaps `release`
+ * successfully where the same command with an intact layer returns
+ * `{"ok":false,"reason":"protected-branch"}`. git-guard.mjs already acts on the
+ * same warning BEFORE the act it guards; this is the one seam where the act
+ * deletes a branch or pushes a ref, so an unprovable protected list refuses.
+ *
+ * Sited at each MUTATION rather than right after the destructure, deliberately:
+ * every non-mutating arm keeps the answer it has today, so `reap`'s
+ * already-absent SKIP stays `ok:true` (cad-land's close is idempotent and a
+ * torn layer must not break a re-run that deletes nothing) and a refusal
+ * decidePublish/decideReap already reached keeps its own named reason instead
+ * of being masked by this one. Nothing between the destructure and here does
+ * I/O beyond reading git facts.
+ * @param {string[]} warnings
+ * @returns {string|null} */
+function tornLayerDetail(warnings) {
+  return Array.isArray(warnings) && warnings.length ? String(warnings[0]) : null;
 }
 
 /** Does `refs/heads/<branch>` exist in the repo at `dir`? The probe argument is
@@ -101,11 +134,19 @@ function publish(dir, remote) {
   const currentBranch = readCurrentBranch(dir);
   const configuredRemotes = readRemotes(dir);
   const autoClose = repoAutoClose(dir);
-  const protectedBranches = readProtectedBranches(dir);
+  const { branches: protectedBranches, warnings } = readProtectedBranches(dir);
 
   const decision = decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes });
   if (decision.action !== 'publish') {
-    emit({ ok: false, reason: decision.reason, branch: decision.branch, remote: decision.remote });
+    emit({ ok: false, reason: decision.reason, branch: decision.branch, remote: decision.remote, warnings });
+    return;
+  }
+
+  // No push while the protected list is unprovable (see tornLayerDetail).
+  const tornPublish = tornLayerDetail(warnings);
+  if (tornPublish) {
+    emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
+      remote: decision.remote, detail: tornPublish, warnings });
     return;
   }
 
@@ -116,27 +157,37 @@ function publish(dir, remote) {
   try {
     execFileSync('git', ['-C', dir, ...decision.argv],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    emit({ ok: true, action: 'published', branch: decision.branch, remote: decision.remote });
+    emit({ ok: true, action: 'published', branch: decision.branch, remote: decision.remote, warnings });
   } catch (e) {
-    emit({ ok: false, reason: 'push-failed', detail: e && e.message ? e.message : String(e) });
+    emit({ ok: false, reason: 'push-failed', detail: e && e.message ? e.message : String(e), warnings });
   }
 }
 
 function reap(dir, branch) {
+  const { branches: protectedBranches, warnings } = readProtectedBranches(dir);
   const decision = decideReap({
     branch,
     currentBranch: readCurrentBranch(dir),
-    protectedBranches: readProtectedBranches(dir),
+    protectedBranches,
     exists: branchExists(dir, branch),
   });
   if (decision.action === 'skip') {
     // Idempotent close: the platform's own --delete-branch may already have
     // taken it. Nothing to do is a success, not a failure.
-    emit({ ok: true, action: 'already-absent', branch: decision.branch });
+    emit({ ok: true, action: 'already-absent', branch: decision.branch, warnings });
     return;
   }
   if (decision.action !== 'reap') {
-    emit({ ok: false, reason: decision.reason, branch: decision.branch });
+    emit({ ok: false, reason: decision.reason, branch: decision.branch, warnings });
+    return;
+  }
+
+  // No branch deletion while the protected list is unprovable (see
+  // tornLayerDetail) - this is the arm the reproduction hit.
+  const tornReap = tornLayerDetail(warnings);
+  if (tornReap) {
+    emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
+      detail: tornReap, warnings });
     return;
   }
 
@@ -153,9 +204,9 @@ function reap(dir, branch) {
   try {
     execFileSync('git', ['-C', dir, ...decision.argv],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    emit({ ok: true, action: 'reaped', branch: decision.branch });
+    emit({ ok: true, action: 'reaped', branch: decision.branch, warnings });
   } catch (e) {
-    emit({ ok: false, reason: 'reap-failed', branch: decision.branch, detail: e && e.message ? e.message : String(e) });
+    emit({ ok: false, reason: 'reap-failed', branch: decision.branch, detail: e && e.message ? e.message : String(e), warnings });
   }
 }
 

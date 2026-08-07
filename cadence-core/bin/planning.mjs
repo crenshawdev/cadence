@@ -1318,8 +1318,16 @@ function cmdRecall(dir, query, opts) {
   // memory.backend, effective across the config layers (repo > global);
   // schema default is builtin, so an unset key recalls. `none` is the off
   // switch - a successful check with a negative answer, like plan-overlap.
-  const backend = mergeLayers(join(dir, 'config.json')).config?.memory?.backend ?? 'builtin';
-  if (backend === 'none') return ok({ backend: 'none', results: [] });
+  //
+  // warnings[] rides the envelope, present only when non-empty so the ordinary
+  // byte-stable output is unchanged: a torn layer reads memory.backend as
+  // absent, which defaults to `builtin`, so a project that deliberately set
+  // `none` would silently start recalling again - and the reverse reading, an
+  // empty result set, is indistinguishable from a corpus with no hits.
+  const { config: recallConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+  const warn = warnings.length ? { warnings } : {};
+  const backend = recallConfig?.memory?.backend ?? 'builtin';
+  if (backend === 'none') return ok({ backend: 'none', results: [], ...warn });
 
   // Corpus assembly in a fixed order: phases ascending (decimal-aware), each
   // phase's SUMMARY then UAT then CONTEXT, then the top-level CAPTURE. The
@@ -1356,7 +1364,7 @@ function cmdRecall(dir, query, opts) {
       ...(item.phase !== undefined ? { phase: item.phase } : {}) });
   }
 
-  if (!corpus.length) return ok({ results: [] });
+  if (!corpus.length) return ok({ results: [], ...warn });
 
   // search() returns [{i, score}] in (score desc, corpus position asc) order -
   // already total because the corpus is in sorted traversal order, so do NOT
@@ -1371,7 +1379,7 @@ function cmdRecall(dir, query, opts) {
       snippet: c.text,
     };
   });
-  ok({ results });
+  ok({ results, ...warn });
 }
 
 // ---------------------------------------------------------------------------

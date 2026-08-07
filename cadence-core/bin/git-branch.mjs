@@ -38,7 +38,12 @@ function readCurrentBranch(dir) {
 }
 
 function decide(dir, branchOverride) {
-  const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
+  // warnings[] rides the envelope: every value below - the mode, the auto_branch
+  // policy and the protected list - comes off this merge, so a torn layer means
+  // this advice was computed from DEFAULTS and the caller has to be able to see
+  // that. Present on every result shape, empty array included, the way
+  // route.mjs's does (DOC-01).
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const mode = git.integration_branch || 'milestone';
   const autoBranch = git.auto_branch || 'ask';
@@ -50,7 +55,7 @@ function decide(dir, branchOverride) {
     readText(join(dir, '.planning', 'ROADMAP.md')),
   );
   const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName });
-  emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason });
+  emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
 }
 
 // --- dispatch ----------------------------------------------------------------

@@ -74,3 +74,21 @@ test('defaults (no git block set): milestone + ask on a protected base -> ask', 
   assert.equal(r.action, 'ask');
   assert.equal(r.branch, 'cadence/v1.1.0-rc.2');
 });
+
+test('warnings[] rides the envelope, and a torn layer puts the parse failure on it', () => {
+  // Pins the EMISSION, not just the binding: every value this seam decides with
+  // - mode, auto_branch, protected_branches - comes off that one merge, so a
+  // torn layer means the advice was computed from DEFAULTS. Stripping
+  // `, warnings })` off the emit fails here and nowhere else.
+  const clean = decide(fixture({ integration_branch: 'milestone', auto_branch: 'auto' }), 'main');
+  assert.deepEqual(clean.warnings, [], 'present as an empty array, not omitted');
+
+  const dir = fixture({ integration_branch: 'milestone', auto_branch: 'auto' });
+  const torn = join(mkdtempSync(join(tmpdir(), 'cad-gb-torn-')), 'g.json');
+  writeFileSync(torn, '{"git":{"auto_branch":"off"');
+  const r = JSON.parse(execFileSync('node', [SEAM, 'decide', '--dir', dir, '--branch', 'main'],
+    { encoding: 'utf8', env: { ...process.env, CADENCE_GLOBAL_CONFIG: torn } }));
+  assert.equal(r.ok, true, 'advisory seam: a torn layer never blocks the advice');
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /failed to parse/);
+});

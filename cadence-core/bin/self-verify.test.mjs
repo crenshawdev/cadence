@@ -3,12 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
+import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -1438,4 +1439,112 @@ test('check 11: the walk reaches skills/, not just check 10\'s two directories',
   const p = run(['--root', root]).problems.filter((x) => x.kind === 'unrelayed-route-resolve');
   assert.equal(p.length, 1, JSON.stringify(p));
   assert.equal(p[0].file, join('skills', 'a', 'SKILL.md'));
+});
+
+// --- 12. mergeLayers callsites surface their warnings[] (D-09) ---------------
+
+/** A fixture repo whose cadence-core/bin holds the given {name: source} files. */
+function binFixture(files) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-bin-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  for (const [name, text] of Object.entries(files)) {
+    writeFileSync(join(root, 'cadence-core', 'bin', name), text);
+  }
+  return root;
+}
+
+const MERGE_KIND = 'undocumented-merge-warnings';
+/** Problems of check 12's kind from a --root run. */
+const mergeProblems = (root) =>
+  run(['--root', root]).problems.filter((p) => p.kind === MERGE_KIND);
+
+const BARE_CALL = "// @ts-check\n// seam.mjs - a seam.\n'use strict';\n"
+  + "import { mergeLayers } from './lib/config-merge.mjs';\n"
+  + "const { config } = mergeLayers('.planning/config.json');\n"
+  + 'emit({ ok: true, x: config.x });\n';
+
+test('check 12: a callsite that drops warnings[] is named by line', () => {
+  const p = mergeProblems(binFixture({ 'seam.mjs': BARE_CALL }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'bin', 'seam.mjs'));
+  assert.match(p[0].detail, /line 5\b/);
+});
+
+test('check 12: the destructured form (arm a) is clean', () => {
+  const src = BARE_CALL.replace('{ config }', '{ config, warnings }');
+  assert.deepEqual(mergeProblems(binFixture({ 'seam.mjs': src })), []);
+});
+
+test('check 12: a header marker with prose (arm b) is clean', () => {
+  const src = BARE_CALL.replace("// seam.mjs - a seam.\n",
+    '// seam.mjs - a seam.\n// mergeLayers warnings[]: the envelope carries the\n'
+    + '// same layer\'s warnings from the read below.\n');
+  assert.deepEqual(mergeProblems(binFixture({ 'seam.mjs': src })), []);
+});
+
+test('check 12: the same marker in the BODY does not satisfy arm b', () => {
+  // The header is where a reader looking for the file's contract looks; a
+  // sentence dropped beside one callsite says nothing about the file.
+  const src = BARE_CALL.replace("const { config } =",
+    "// mergeLayers warnings[]: stated here, in the body, too late.\nconst { config } =");
+  const p = mergeProblems(binFixture({ 'seam.mjs': src }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+});
+
+test('check 12: a bare marker with no prose after it does not satisfy arm b', () => {
+  const src = BARE_CALL.replace("// seam.mjs - a seam.\n",
+    '// seam.mjs - a seam.\n// mergeLayers warnings[]:\n');
+  assert.equal(mergeProblems(binFixture({ 'seam.mjs': src })).length, 1);
+});
+
+test('check 12: *.test.mjs is off the walk - a test may write any shape', () => {
+  assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
+});
+
+test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an arm', () => {
+  // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
+  // miscount in either direction fails rather than passing quietly, and a
+  // twelfth callsite cannot be added without choosing an arm.
+  const binDir = join(REPO, 'cadence-core', 'bin');
+  const skip = join(binDir, 'lib', 'config-merge.mjs');
+  /** @param {string} dir @returns {string[]} */
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+    const f = join(dir, d.name);
+    if (d.isDirectory()) return walk(f);
+    return (f.endsWith('.mjs') && !f.endsWith('.test.mjs') && f !== skip) ? [f] : [];
+  });
+
+  let total = 0;
+  const files = [];
+  const armB = [];
+  for (const f of walk(binDir).sort()) {
+    const text = readFileSync(f, 'utf8');
+    const rel = relative(REPO, f);
+    const sites = text.split('\n')
+      .map((line, i) => ({ line, n: i + 1 }))
+      .filter(({ line }) => /\bmergeLayers\s*\(/.test(line) && !/^\s*(?:\/\/|\*)/.test(line));
+    if (!sites.length) continue;
+    total += sites.length;
+    files.push(rel);
+    // "none in neither": the rule files nothing against this file.
+    assert.deepEqual(mergeWarningIssues(text), [], rel);
+    const header = text.split("'use strict';")[0];
+    if (header.includes('mergeLayers warnings[]:')) armB.push(rel);
+    else {
+      for (const { line, n } of sites) {
+        assert.match(line, /const\s*\{[^}]*\bwarnings\b[^}]*\}\s*=\s*mergeLayers\(/,
+          `${rel}:${n} is in neither arm`);
+      }
+    }
+  }
+  assert.equal(total, 11, `callsites: ${files.join(', ')}`);
+  assert.equal(files.length, 8, files.join(', '));
+  // Arm (b) is the exception, not the habit: exactly one file states the reason
+  // in its header, and it is the one whose two other reads are memoized scalars.
+  assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);
 });
