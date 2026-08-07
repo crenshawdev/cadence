@@ -163,8 +163,12 @@ const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace']);
 // The canonical Claude Code tool vocabulary the agents-only tools lint checks
 // against - a FIXED set, not derived from the tree, so a single-agent fixture
 // still has a full vocabulary to test with.
+// `LSP` is here as well as on the two cad-executor rungs' `tools:` lines, and
+// BOTH halves are required (D-14): this lint is one-directional - it flags
+// referenced-but-undeclared only - so a token outside this vocabulary is scanned
+// by nothing at all, and "the tools lint passes with it" would be vacuously true.
 const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
-  'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite'];
+  'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite', 'LSP'];
 
 // --- helpers -----------------------------------------------------------------
 

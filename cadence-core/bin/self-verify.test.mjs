@@ -343,6 +343,27 @@ test('a tool referenced and declared yields no undeclared-tool', () => {
   assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
 });
 
+test('LSP is in the vocabulary, so an undeclared LSP reference is flagged', () => {
+  // The vocabulary addition has to have TEETH, not merely be present: this lint
+  // is one-directional, so a token outside KNOWN_TOOLS is scanned by nothing and
+  // "self-verify passes with LSP in tools:" would be true of any string at all.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nPrefer `LSP` diagnostics.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'undeclared-tool'
+    && x.file === 'agents/a.md' && /LSP/.test(x.detail)), JSON.stringify(p));
+});
+
+test('LSP declared in tools: clears that reference', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read, LSP\n---\nPrefer `LSP` diagnostics.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
 test('bare-word tool names (D-06 collisions) are not false positives', () => {
   const root = fixtureWith({
     agents: { 'a.md': '---\nname: t\ntools: Read\n---\n'

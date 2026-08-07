@@ -3,8 +3,8 @@
   "budgets": {
     "agents/cad-assumptions-analyzer-high.md": 475,
     "agents/cad-assumptions-analyzer.md": 505,
-    "agents/cad-executor-xhigh.md": 406,
-    "agents/cad-executor.md": 419,
+    "agents/cad-executor-xhigh.md": 411,
+    "agents/cad-executor.md": 424,
     "agents/cad-plan-checker-high.md": 444,
     "agents/cad-plan-checker-medium.md": 452,
     "agents/cad-plan-checker-xhigh.md": 448,
