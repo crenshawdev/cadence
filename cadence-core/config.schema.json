@@ -40,7 +40,7 @@
     "workflow.inline_plan_threshold":       { "type": "int", "min": 0, "default": 3, "purpose": "Task count at/below which a plan runs inline vs its own doc" },
     "workflow.test_command":                { "type": "string_or_null", "default": null, "purpose": "Command Cadence runs to test (null = none)" },
 
-    "parallelization.enabled":              { "type": "bool", "default": false, "purpose": "Run independent plans concurrently" },
+    "parallelization.enabled":              { "type": "bool", "default": true, "purpose": "Run independent plans concurrently. On by default; false is the intentional opt-out. Engages only when the plans are provably independent AND the host's worktree.baseRef is \"head\" - choose_path falls back to sequential otherwise, so the default is safe on a host that cannot honour it" },
     "parallelization.max_concurrent_agents":{ "type": "int", "min": 1, "default": 3, "purpose": "Cap on simultaneous agents" },
     "parallelization.min_plans_for_parallel":{ "type": "int", "min": 1, "default": 2, "purpose": "Min plans before going parallel" },
     "parallelization.use_worktrees":        { "type": "bool", "default": true, "purpose": "Isolate parallel writes in git worktrees" },
