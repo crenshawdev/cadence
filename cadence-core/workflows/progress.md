@@ -10,7 +10,7 @@ paused phases and stats (`--stats`).
 <process>
 
 <step name="derive">
-Parse `$ARGUMENTS` for `--stats`.
+Parse `$ARGUMENTS` for `--stats` and `--trace`.
 
 Run the planning seam:
 
@@ -40,7 +40,9 @@ project here. /cad-new-project starts one.") and stop.
 
 On `--stats`, branch straight to the stats step now - it derives its own commit
 timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
-and `--stats` must write nothing. Otherwise (the normal path) batch a
+and `--stats` must write nothing. On `--trace`, branch straight to the trace
+step under the identical rule: it reads one seam and prints, and must not walk
+reconcile either. Otherwise (the normal path) batch a
 `git log --oneline -8` for the report's Recent line in the SAME message as
 `status` - independent, so they share one message; only a call that consumes a
 prior call's output is serialized.
@@ -79,6 +81,23 @@ nothing stored:
 - Commits: total on this branch; per-phase counts where the commit message
   scope or touched paths identify a phase (approximate by design)
 - Timeline: first commit date, latest commit date, days elapsed
+</step>
+
+<step name="trace">
+(`--trace` only.) Print what the current phase's run actually did, then stop -
+one read, nothing stored:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <current>
+```
+
+Print the four family counts (`routing`, `provider`, `lifecycle`, `outcome`)
+under the record's one `corr`; then every `unpaired` entry, which names a worker
+that was handed work and never came back with a return, checkpoint or
+escalation; then the `capped` flag when it is true, which means the record hit
+its size bound and what follows is missing rather than absent. An absent trace
+file returns `ok:true` with empty counts - a phase can simply not have run yet,
+and that is an answer, not an error.
 </step>
 
 <step name="report">
@@ -139,7 +158,9 @@ workflow. cad-progress never does the work itself.
 - The cursor is written only through `cursor set` - no manual STATE.md edits.
 - ROADMAP/REQUIREMENTS drift is reported and routed to /cad-verify, never
   edited here.
-- No stored analytics or progress artifacts; --stats derives on demand.
+- No stored analytics or progress artifacts; `--stats` and `--trace` both derive
+  on demand and write nothing. The trace file itself is written by the seams and
+  by the execute and verify workflows - never by progress.
 - Never invoke a spine skill without the user accepting the offer.
 </guardrails>
 
@@ -151,5 +172,6 @@ workflow. cad-progress never does the work itself.
 - [ ] Cursor rewritten via `cursor set` whenever the seam reported cursor
       drift; other drift routed to /cad-verify untouched
 - [ ] Exactly one suggestion made; work handed off only on user acceptance
-- [ ] --stats printed a derived summary and wrote nothing
+- [ ] --stats printed a derived summary, and --trace printed the phase's run
+      record; both wrote nothing
 </success_criteria>
