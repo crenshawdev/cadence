@@ -375,12 +375,69 @@ function traceProvider(meta, outcome, detail) {
   } catch { /* a record of a call may never change the call */ }
 }
 
+// ---------------------------------------------------------------------------
+// The transport reference, and the ONE test seam that moves it (QW-05).
+//
+// Every failure mode this seam degrades on - timeout, HTTP status, truncated
+// body, no output - lives PAST the call below, so exercising them needs a way to
+// stand in for the wire. That way is a module-private reference a test replaces
+// by IMPORTING this module, reachable only from inside the running process.
+//
+// There is deliberately NO environment variable, no flag and no config key that
+// redirects it. The request this transport carries holds a resolved provider key
+// in an `authorization` header, so an out-of-process switch on the destination
+// would be a credential-read primitive: one attacker-settable variable (a
+// `.envrc` in a cloned repo, a devcontainer env block, a compromised npm script)
+// would make an ordinary run read the user's real on-disk key and hand it to a
+// listener of the attacker's choosing. Loopback is not a privilege boundary -
+// any unprivileged local process that binds the port first receives the
+// credential - so the fence is that the surface does not exist. This overturns
+// CONTEXT D-11, which picked an env override on `CADENCE_*` precedent; that
+// precedent does not hold for a variable that redirects a CREDENTIALED request.
+//
+// The default is `node:https` and nothing else can be reached in production:
+// with the seam untouched, `transport` is `HTTPS_TRANSPORT` for the life of the
+// process, and the three adapter bases stay hardcoded `https:` URLs.
+// ---------------------------------------------------------------------------
+
+// The signature is the `https.request(url, options, cb)` shape and is typed at
+// the WIRE types, not at `any`: `req` below is a real `ClientRequest`, so a
+// misspelled listener (`req.onnn('error', ...)`) stays a tsc error exactly as it
+// was when this line read `https.request(...)` directly. A loose return here
+// would silently un-check all six `req.*` uses in `request()`.
+/**
+ * @typedef {(
+ *   url: URL,
+ *   options: import('node:https').RequestOptions,
+ *   cb: (res: import('node:http').IncomingMessage) => void
+ * ) => import('node:http').ClientRequest} Transport
+ */
+
+/** @type {Transport} */
+const HTTPS_TRANSPORT = (url, options, cb) => https.request(url, options, cb);
+
+/** @type {Transport} */
+let transport = HTTPS_TRANSPORT;
+
+/**
+ * TEST-ONLY. Replace the transport for the CURRENT PROCESS. Nothing in the
+ * plugin calls this; the only caller is `review-provider.test.mjs`, which
+ * imports this module to drive the six failure modes with no socket at all.
+ * Pass `null` (or call the returned restore) to put `node:https` back.
+ * @param {Transport|null} fn
+ * @returns {() => void} restore
+ */
+export function __setTransportForTests(fn) {
+  transport = typeof fn === 'function' ? fn : HTTPS_TRANSPORT;
+  return () => { transport = HTTPS_TRANSPORT; };
+}
+
 function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const payload = body == null ? null : JSON.stringify(body);
     const timeoutMs = requestTimeoutMs();
-    const req = https.request(url, {
+    const req = transport(url, {
       method,
       timeout: timeoutMs,
       headers: {
@@ -830,12 +887,35 @@ export function detectEnvelope(provider, ids, hintsFile) {
 // ---------------------------------------------------------------------------
 // Entry.
 // ---------------------------------------------------------------------------
-async function main() {
-  const { cmd, opts } = parseArgs(process.argv.slice(2));
+/** @param {string[]} [argv] */
+async function main(argv) {
+  const { cmd, opts } = parseArgs(argv || process.argv.slice(2));
   if (cmd === 'review') await cmdReview(opts);
   else if (cmd === 'consult') await cmdConsult(opts);
   else if (cmd === 'detect-models') await cmdDetect(opts);
   else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
+}
+
+/**
+ * The entry unwind: DONE is the normal ok()/fail() path, anything else is an
+ * unforeseen bug and becomes a structured `internal` line rather than a stack.
+ * @param {any} e
+ */
+function unwind(e) {
+  if (e === DONE) return; // normal ok()/fail() unwind
+  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+}
+
+/**
+ * TEST-ONLY. Run one command IN THIS PROCESS through the same entry unwind the
+ * CLI uses, so a test that replaced the transport (`__setTransportForTests`)
+ * asserts on the one JSON line and the exit code a caller actually sees. Nothing
+ * in the plugin calls this - the shipped entry is the `isRunAsScript()` arm below.
+ * @param {string[]} argv
+ * @returns {Promise<void>}
+ */
+export function __runCommandForTests(argv) {
+  return main(argv).catch(unwind);
 }
 // Run only when executed as a script - importing the module (tests) exports
 // the pure helpers without side effects. Compares realpaths (not just
@@ -855,8 +935,5 @@ function isRunAsScript() {
   return canonicalize(process.argv[1]) === canonicalize(fileURLToPath(import.meta.url));
 }
 if (isRunAsScript()) {
-  main().catch((e) => {
-    if (e === DONE) return; // normal ok()/fail() unwind
-    emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
-  });
+  main().catch(unwind);
 }

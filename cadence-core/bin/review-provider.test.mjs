@@ -1,13 +1,24 @@
 // Zero-dep tests for review-provider.mjs. Run: node --test 'cadence-core/bin/*.test.mjs'
-// Two layers: unit tests import the pure helpers (no network, no side
+// Three layers: unit tests import the pure helpers (no network, no side
 // effects - main() is guarded); CLI tests exercise the argument/key/payload
-// paths that fail BEFORE any provider call. The wire paths themselves are
-// pinned in references/provider-api.md and deliberately untested here - no
-// network in the suite.
+// paths that fail BEFORE any provider call; and fault-injection tests exercise
+// the WIRE paths - every failure mode this seam degrades on - through a fake
+// transport.
+//
+// POLICY REVERSED, dated 2026-08-07 (phase 1, QW-05, CONTEXT D-10). This header
+// used to state that "the wire paths themselves are pinned in
+// references/provider-api.md and deliberately untested here - no network in the
+// suite". The first half no longer holds: the six failure modes below are
+// exercised and asserted on what the CALLER sees. The second half holds harder
+// than it did - the fake transport is a function replacing a module-private
+// reference (`__setTransportForTests`), so these tests open no socket, resolve
+// no hostname and speak no TLS. Nothing in this file reaches the network, and
+// `references/provider-api.md` remains the pin for the wire FORMAT.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, symlinkSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +27,7 @@ import {
   validateFindings, validateConsult, classify, ADAPTERS,
   readModelHints, detectEnvelope, resolveTimeoutMs,
   resolveMaxPromptTokens, estimatePromptTokens,
+  __setTransportForTests, __runCommandForTests,
 } from './review-provider.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
 
@@ -545,4 +557,297 @@ test('provider trace: an unwritable trace changes the envelope by not one byte',
   const args = ['review', '--provider', 'openai', '--model', 'gpt-5',
     '--key-file', '/nonexistent/providers.env'];
   assert.equal(runRawIn(bad, args, '{}'), runRawIn(good, args, '{}'));
+});
+
+// --- fault injection: the six failure modes past the request (QW-05, AC7) -----
+//
+// Every one of these lives past the transport call, so reaching them needs a
+// stand-in for the wire. The stand-in is a FUNCTION replacing a module-private
+// reference (`__setTransportForTests`), reachable only from inside this process:
+// there is no environment variable, no flag and no config key that moves it,
+// because the request it carries holds a resolved provider key in an
+// `authorization` header and an out-of-process switch on its destination would
+// be a way to make an ordinary run hand that key to a listener the user never
+// chose. See the transport comment in review-provider.mjs.
+//
+// The fake opens no socket, so all six modes are deterministic and the suite
+// still makes no network call of any kind - not even to 127.0.0.1. The commands
+// run IN PROCESS through the same entry unwind the CLI uses, so every assertion
+// below is on the one JSON line and the exit code a caller actually sees.
+
+const faultCwd = mkdtempSync(join(tmpdir(), 'cad-provider-fault-'));
+mkdirSync(join(faultCwd, '.planning'));
+// A small configured timeout, so the timeout mode can prove the CONFIGURED
+// value reached the transport rather than a default nobody set.
+writeFileSync(join(faultCwd, '.planning', 'config.json'),
+  JSON.stringify({ review: { request_timeout_ms: 25 } }));
+writeFileSync(join(faultCwd, '.planning', 'STATE.md'), renderCursor({
+  phase: 7, total: 9, name: 'Fault fixture', status: 'executing',
+  next: '/cad-execute 7', updated: '2026-01-01',
+}));
+const FAULT_TRACE = join(faultCwd, '.planning', 'trace.jsonl');
+const FAULT_PAYLOAD = join(faultCwd, 'payload.json');
+writeFileSync(FAULT_PAYLOAD, JSON.stringify({
+  instruction: 'refute this', artifact: 'the artifact under review',
+}));
+// Always a --payload FILE, never stdin: in process, `readPayload`'s stdin arm
+// would read the test runner's own fd 0 and block.
+const FAULT_PAYLOAD_CONSULT = join(faultCwd, 'consult.json');
+writeFileSync(FAULT_PAYLOAD_CONSULT, JSON.stringify({ situation: 'stuck at a dead end' }));
+const REVIEW_ARGS = ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+  '--payload', FAULT_PAYLOAD];
+
+/** Every `provider` event recorded in the fixture so far, oldest first. */
+function providerEvents() {
+  if (!existsSync(FAULT_TRACE)) return [];
+  return readFileSync(FAULT_TRACE, 'utf8').split('\n').filter(Boolean)
+    .map((l) => JSON.parse(l)).filter((e) => e.family === 'provider');
+}
+
+/**
+ * The wire, faked. `wire` is `{timeout:true}` or `{status, body}`; `seen`
+ * collects what the seam handed the transport, so a test can assert the
+ * destination and the options as well as the outcome.
+ */
+function fakeTransport(wire, seen) {
+  return (/** @type {URL} */ url, /** @type {any} */ options, /** @type {any} */ cb) => {
+    seen.push({ url: String(url), options });
+    const req = Object.assign(new EventEmitter(), {
+      write: () => true,
+      destroy: (/** @type {any} */ err) => {
+        req.emit('error', err || new Error('socket destroyed'));
+      },
+      end: () => {
+        // Deferred one microtask so the seam's own 'error'/'timeout' listeners
+        // are attached first, exactly as they are against a real socket.
+        queueMicrotask(() => {
+          if (wire.timeout) { req.emit('timeout'); return; }
+          const res = Object.assign(new EventEmitter(), { statusCode: wire.status });
+          cb(res);
+          if (wire.body !== undefined) res.emit('data', wire.body);
+          res.emit('end');
+        });
+      },
+    });
+    return req;
+  };
+}
+
+/**
+ * Drive one command in process against a faked wire and return exactly what the
+ * caller sees: the one JSON line, its parse, the exit code, and the requests the
+ * transport was handed.
+ * @param {string[]} argv @param {any} wire @param {Record<string,string>} [env]
+ */
+async function runFaked(argv, wire, env = {}) {
+  /** @type {{url: string, options: any}[]} */
+  const seen = [];
+  const restore = __setTransportForTests(fakeTransport(wire, seen));
+  const prevCwd = process.cwd();
+  const prevExit = process.exitCode;
+  const prevEnv = /** @type {Record<string, string|undefined>} */ ({});
+  const realWrite = process.stdout.write;
+  let out = '';
+  for (const [k, v] of Object.entries({ OPENAI_API_KEY: 'test-not-a-real-key', ...env })) {
+    prevEnv[k] = process.env[k];
+    process.env[k] = v;
+  }
+  process.chdir(faultCwd);
+  process.exitCode = 0;
+  process.stdout.write = (/** @type {any} */ chunk) => { out += chunk; return true; };
+  try {
+    await __runCommandForTests(argv);
+  } finally {
+    process.stdout.write = realWrite;
+    process.chdir(prevCwd);
+    restore();
+    for (const [k, v] of Object.entries(prevEnv)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+  const code = process.exitCode;
+  process.exitCode = prevExit;
+  return { line: out, envelope: JSON.parse(out), code, seen };
+}
+
+test('fault: the destination is the adapter base, and no environment variable moves it', async () => {
+  // The reason the transport seam is a module-private reference and not an env
+  // override: this request carries `authorization: Bearer <the user's real key>`,
+  // so a variable that redirects it is a credential-read primitive - a `.envrc`
+  // in a cloned repo is enough to deliver it, and loopback is not a privilege
+  // boundary. Both halves are asserted: the names below are set to a listener an
+  // attacker would control and change nothing, and the module reads no
+  // destination from the environment AT ALL.
+  const hostile = {
+    OPENAI_BASE_URL: 'http://127.0.0.1:9/steal',
+    OPENAI_API_BASE: 'http://127.0.0.1:9/steal',
+    CADENCE_REVIEW_BASE: 'http://127.0.0.1:9/steal',
+  };
+  const r = await runFaked(REVIEW_ARGS, { status: 401, body: '{}' }, hostile);
+  assert.equal(r.seen.length, 1);
+  assert.match(r.seen[0].url, /^https:\/\/api\.openai\.com\/v1\/responses$/);
+  assert.equal(ADAPTERS.openai.base, 'https://api.openai.com');
+  assert.equal(ADAPTERS.gemini.base, 'https://generativelanguage.googleapis.com');
+  assert.equal(ADAPTERS.deepseek.base, 'https://api.deepseek.com');
+  // The structural half, which a name list alone cannot give. What is asserted:
+  // the source mentions the BARE token `process.env` exactly three times, and
+  // erasing the two known reads - `process.env.XDG_CONFIG_HOME` (where the key
+  // file lives) and the `process.env[name]` key lookup driven by ENV_VAR -
+  // leaves none behind.
+  //
+  // The bare token is the subject deliberately. An earlier form of this test
+  // extracted NAMES from `process.env.NAME` and `process.env[NAME]` and compared
+  // the sets, which let the exact primitive this file exists to keep out walk
+  // straight through it: `const { CADENCE_PROVIDER_BASE } = process.env;` and
+  // `const E = process.env; E.CADENCE_PROVIDER_BASE` both matched nothing and
+  // both passed. Erase-then-require-nothing-left has no such shape hole -
+  // destructured, aliased, computed or merely mentioned in a comment, a new
+  // `process.env` fails here. If a legitimate read trips it: a DESTINATION read
+  // from the environment is what this guard exists to stop (see the test name and
+  // the module header); anything else updates the count and the erase list
+  // together, in the same commit, on purpose.
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs'), 'utf8');
+  const count = (s) => (s.match(/process\.env\b/g) || []).length;
+  assert.equal(count(src), 3);
+  const residue = src
+    .replace(/process\.env\.XDG_CONFIG_HOME\b/g, '')
+    .replace(/process\.env\[name\]/g, '');
+  assert.equal(count(residue), 0);
+});
+
+test('fault mode 1/6 - request timeout: the caller sees transport, and the trace names it', async () => {
+  const before = providerEvents().length;
+  const r = await runFaked(REVIEW_ARGS, { timeout: true });
+  assert.equal(r.envelope.ok, false);
+  assert.equal(r.envelope.reason, 'transport');
+  // The configured 25ms from the fixture config reached the transport AND the
+  // message, so this is the seam's own timeout wiring, not a canned string.
+  assert.equal(r.seen[0].options.timeout, 25);
+  assert.match(r.envelope.detail, /timed out after 25ms/);
+  assert.equal(r.code, 1);
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].outcome, 'transport');
+  assert.equal(ev[0].degraded, true);
+  assert.match(ev[0].detail, /timed out/);
+  assert.equal(ev[0].command, 'review');
+  assert.equal(ev[0].provider, 'openai');
+});
+
+test('fault mode 2/6 - HTTP 4xx: the caller sees http with the status, and the trace names it', async () => {
+  const before = providerEvents().length;
+  const body = JSON.stringify({
+    error: { message: 'Incorrect API key provided', type: 'invalid_request_error', code: 'invalid_api_key' },
+  });
+  const r = await runFaked(REVIEW_ARGS, { status: 401, body });
+  assert.equal(r.envelope.ok, false);
+  assert.equal(r.envelope.reason, 'http');
+  assert.equal(r.envelope.detail.status, 401);
+  assert.equal(r.envelope.detail.body.error.code, 'invalid_api_key');
+  assert.equal(r.code, 1);
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].outcome, 'http');
+  assert.equal(ev[0].degraded, true);
+  assert.match(ev[0].detail, /HTTP 401/);
+});
+
+test('fault mode 3/6 - HTTP 5xx: the caller sees http with the status, not a retry', async () => {
+  const before = providerEvents().length;
+  const body = JSON.stringify({ error: { message: 'The service is temporarily unavailable' } });
+  const r = await runFaked(REVIEW_ARGS, { status: 503, body });
+  assert.equal(r.envelope.reason, 'http');
+  assert.equal(r.envelope.detail.status, 503);
+  assert.equal(r.code, 1);
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1);          // one call, one event: no hidden retry
+  assert.match(ev[0].detail, /HTTP 503/);
+});
+
+test('fault mode 4/6 - a dead or unknown model id: the provider 404 reaches the caller intact', async () => {
+  const before = providerEvents().length;
+  const body = JSON.stringify({
+    error: {
+      message: "The model 'gpt-fault-fixture' does not exist or you do not have access to it.",
+      type: 'invalid_request_error', code: 'model_not_found',
+    },
+  });
+  const r = await runFaked(REVIEW_ARGS, { status: 404, body });
+  assert.equal(r.envelope.reason, 'http');
+  assert.equal(r.envelope.detail.status, 404);
+  // The body is passed through, so the user reads WHICH model was refused
+  // rather than a bare 404.
+  assert.equal(r.envelope.detail.body.error.code, 'model_not_found');
+  assert.match(r.envelope.detail.body.error.message, /gpt-fault-fixture/);
+  const ev = providerEvents().slice(before);
+  assert.equal(ev[0].outcome, 'http');
+  assert.equal(ev[0].model, 'gpt-fault-fixture');
+});
+
+test('fault mode 5/6 - a malformed or truncated body: bad-json, and no text at all: no-output', async () => {
+  const before = providerEvents().length;
+  // A 200 whose extracted text is truncated JSON - the shape a stream cut short
+  // produces. The transport parsed fine; the MODEL output did not.
+  const truncated = await runFaked(REVIEW_ARGS, {
+    status: 200, body: JSON.stringify({ output_text: '{"findings":[{"file":"a.mjs","line":1,' }),
+  });
+  assert.equal(truncated.envelope.ok, false);
+  assert.equal(truncated.envelope.reason, 'bad-json');
+  assert.equal(truncated.code, 1);
+  // A 200 with no extractable text at all is the other half of D-22's mapping.
+  const empty = await runFaked(REVIEW_ARGS, { status: 200, body: JSON.stringify({}) });
+  assert.equal(empty.envelope.reason, 'no-output');
+  assert.equal(empty.code, 1);
+  const ev = providerEvents().slice(before);
+  assert.deepEqual(ev.map((e) => e.outcome), ['bad-json', 'no-output']);
+  assert.equal(ev[0].degraded, true);
+  assert.equal(ev[1].degraded, true);
+});
+
+test('fault mode 6/6 - an EMPTY findings set is ok:true and is NOT a drop-out (D-22)', async () => {
+  const before = providerEvents().length;
+  const r = await runFaked(REVIEW_ARGS, {
+    status: 200, body: JSON.stringify({ output_text: '{"findings":[]}' }),
+  });
+  assert.equal(r.envelope.ok, true);
+  assert.deepEqual(r.envelope.findings, []);
+  assert.equal(r.envelope.provider, 'openai');
+  assert.equal(r.code, 0);
+  // The half that matters: a reviewer that legitimately found nothing must not
+  // be recorded as a degradation, or every clean review disarms the gate it
+  // passed by looking like a dropped panel member.
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].outcome, 'ok');
+  assert.equal('degraded' in ev[0], false);
+  assert.equal('detail' in ev[0], false);
+});
+
+test('fault: consult and detect-models degrade through the same six-mode mapping', async () => {
+  // The modes are properties of the shared transport path, not of `review`:
+  // bounding one command would leave the identical defect one function away.
+  const consult = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT], { status: 500, body: '{}' });
+  assert.equal(consult.envelope.reason, 'http');
+  assert.equal(consult.envelope.detail.status, 500);
+  const dead = await runFaked(['detect-models', '--provider', 'openai'], { timeout: true });
+  assert.equal(dead.envelope.reason, 'transport');
+  // detect-models carries no model, so its tier is null by construction.
+  const ev = providerEvents().slice(-1)[0];
+  assert.equal(ev.command, 'detect-models');
+  assert.equal(ev.model, null);
+  assert.equal(ev.tier, null);
+});
+
+test('fault: a 200 the schema does not match is bad-shape, distinct from bad-json', async () => {
+  // The seventh outcome the mapping already had, kept adjacent so the six modes
+  // above cannot be read as the whole set: valid JSON, wrong shape.
+  const r = await runFaked(REVIEW_ARGS, {
+    status: 200, body: JSON.stringify({ output_text: '{"findings":[{"file":"a.mjs"}]}' }),
+  });
+  assert.equal(r.envelope.ok, false);
+  assert.equal(r.envelope.reason, 'bad-shape');
+  // `validateFindings` names the FIRST defect, which for a `{file}`-only
+  // finding is `claim` - the field order it checks, not the schema's order.
+  assert.match(r.envelope.detail, /finding\.claim must be a string/);
 });
