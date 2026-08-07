@@ -95,14 +95,28 @@ Sequential (default) unless ALL of these hold:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/worktree-base.mjs" resolve
   ```
 
-  `parallelSafe: false` -> SEQUENTIAL, and say why in one line: under
+  `parallelSafe: false` -> do NOT just fall back and move on. Under
   `baseRef: "fresh"` (the default, so an unset key counts) a worktree
   branches from the remote default branch, so this phase's CONTEXT and its
   PLAN files - unpushed commits on the integration branch - are not in it and
-  every executor would halt `blocked` on its own missing plan. Fix: run
-  `/cad-config`, which offers to set `worktree.baseRef` to `"head"` (Claude
-  Code >= 2.1.208), then re-run /cad-execute. `ok:false` -> sequential too
-  (the check could not run; never parallelize unproven).
+  every executor would halt `blocked` on its own missing plan.
+
+  OFFER THE FIX HERE, through the ask-user seam, and do not send the user to
+  another command to get it: this is the only moment they are demonstrably
+  affected, and the /cad-config step that would otherwise set it is gated on
+  `parallelization.enabled` already being true - so a user who turned
+  parallelization on by editing the config directly never reaches it and their
+  runs degrade to sequential forever with one line of explanation per run.
+  Quote the exact JSON (`"worktree": { "baseRef": "head" }`), name the file
+  each option writes (the project's `.claude/settings.json`, recommended, or
+  `~/.claude/settings.json`), and follow workflows/config.md's write rules:
+  READ the target first, show the current `worktree` block or that there is
+  none, merge the one key, preserve every other byte, never touch a
+  managed-policy file. Declining is valid and means sequential for this run.
+
+  On accept, re-run `worktree-base.mjs resolve`; `parallelSafe: true` now, so
+  continue on the PARALLEL path. `ok:false` -> sequential (the check could not
+  run; never parallelize unproven).
 </step>
 
 <step name="execute_sequential">

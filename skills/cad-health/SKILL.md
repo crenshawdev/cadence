@@ -51,6 +51,24 @@ Check, then report - do not fix without asking.
    phase closed clean; whether the requirement was actually *delivered* is
    /cad-audit's job, not this one.
 
+6. **Inert config.** A setting that is ON and cannot take effect is worse than
+   one that is off: the user believes they have the behaviour and never sees it
+   missing. Check the known cases and report each as an issue naming the fix.
+   - `parallelization.enabled` true while
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/worktree-base.mjs" resolve`
+     returns `parallelSafe: false` -> every /cad-execute run has been sequential
+     and always will be. Report the resolver's own `reason` and the fix it names
+     (`worktree.baseRef` set to `"head"`; /cad-config offers it).
+   - `parallelization.enabled` true with `use_worktrees` false -> parallel
+     dispatch without isolation is unsupported and falls back to sequential.
+   - `review.reviewers` naming a provider with no resolvable credential -> the
+     cross-model panel silently degrades to the in-process reviewer. Check
+     presence only, NEVER read or print a key's value.
+   - `parallelization` present but not an object (e.g. `"parallelization": true`)
+     -> the whole block is malformed, every key inside it reads as its schema
+     default, and nothing warned. Same for any config block the schema declares
+     as an object.
+
 Report: **healthy** with a one-line all-clear, or a short list of issues, each
 with the file and what is wrong. For a trivial, unambiguous fix (cursor `of M`
 count off, a stale `Updated`), offer to correct it via the ask-user seam - never

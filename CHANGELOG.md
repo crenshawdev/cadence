@@ -8,6 +8,61 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **`parallelization.enabled` now defaults to true.** Off becomes the
+  intentional switch. The template ships it on, and the schema records that it
+  engages only when the plans are provably independent AND the host's
+  `worktree.baseRef` is `"head"` - `choose_path` already falls back to
+  sequential otherwise, so the new default is safe on a host that cannot honour
+  it.
+
+- **The plan-checker re-check after a revision is now narrow.** It takes the
+  revision's own diff plus the blocker list it is confirming, and asks whether
+  each blocker closed and whether the fix introduced anything new - instead of a
+  second full cold pass over ROADMAP, REQUIREMENTS, CONTEXT and the sources it
+  had already read. Measured, that full second pass was ten minutes to convert
+  two blockers into one. What it gives up is stated where it is specified: a fix
+  that is locally right and wrong against CONTEXT can survive a narrow pass, and
+  the `plan` review trigger remains the full-artifact second opinion.
+
+### Fixed
+
+- **Parallel execution could never be switched on by hand, and said nothing.**
+  The `worktree.baseRef` step in `/cad-config` - the only thing in Cadence that
+  sets the host precondition the parallel `/cad-execute` path depends on - was
+  gated on `parallelization.enabled` already being true, and `enabled` defaulted
+  to false. So a fresh project skipped the step silently, and a user who then
+  turned parallelization on by editing `config.json` directly never reached the
+  step that would make it work. `choose_path` correctly resolved
+  `parallelSafe: false` and fell back to sequential, once per run, forever. Two
+  projects here carried `enabled: true` and had never once run a plan in
+  parallel.
+
+  Three changes close the loop. The `/cad-config` step now runs whenever
+  `use_worktrees` is true, without also requiring `enabled` - the circular half.
+  `choose_path` now OFFERS the one-key fix inline through the ask-user seam at
+  the moment the user is demonstrably affected, and continues on the parallel
+  path when they accept, instead of naming another command to go run. And
+  `/cad-health` reports the dead combination up front.
+
+- **`/cad-health` now reports config that is ON but inert.** A setting the user
+  believes they have, which cannot take effect, is worse than one they know is
+  off - they never see the behaviour missing.
+
+  The case that prompted this: `parallelization.enabled` true while
+  `worktree-base.mjs resolve` returns `parallelSafe: false`. `baseRef` is unset
+  by default, unset resolves to `"fresh"`, and `fresh` means a worktree forks
+  from the remote default branch without the phase's unpushed CONTEXT and PLAN
+  files - so every executor would halt `blocked` and `choose_path` correctly
+  falls back to sequential. Correct, and silent unless you happened to be
+  reading closely mid-run. Two projects here carried `enabled: true` and had never
+  once run a plan in parallel.
+
+  Health now also flags `enabled` true with `use_worktrees` false, a
+  `review.reviewers` provider with no resolvable credential (presence only, a
+  key's value is never read or printed), and a config block the schema declares
+  as an object that is not one - `"parallelization": true` silently reads every
+  key inside it as its default, which two configs here were doing.
+
 - **An advisory `diff` review no longer blocks the next plan's executor.** On
   `/cad-execute`'s sequential path the per-plan `diff` trigger now fires in the
   same message as the next plan's dispatch instead of being waited on first.
