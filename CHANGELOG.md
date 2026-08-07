@@ -6,6 +6,8 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-07
+
 ### Changed
 
 - **`parallelization.enabled` now defaults to true.** Off becomes the
@@ -1483,6 +1485,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.4.0
 [2.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.3.0
 [2.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.2.0
 [2.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/commit/e457e47
