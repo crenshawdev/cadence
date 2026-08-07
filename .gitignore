@@ -21,3 +21,6 @@ scratch/
 
 # Raw planning queue — local recall only, keeps candid working notes out of the public repo
 /.planning/CAPTURE.md
+
+# Joined run record — local diagnostics only, one machine's routing/provider/worker events
+/.planning/trace.jsonl

@@ -1,0 +1,263 @@
+// @ts-check
+// trace.mjs - the ONE writer and the ONE reader of `.planning/trace.jsonl`,
+// the joined record of what a run actually did: routing decisions, provider
+// calls, worker lifecycle brackets and gate outcomes, all under one per-phase
+// correlation id so the four families can be read as a single story.
+//
+// Not a pure lib (it does guarded I/O), the same split lib/phase-plans.mjs
+// carries: the callers own their envelopes, this file owns the file format and
+// never speaks on any stream of its own.
+//
+// Three contracts, each load-bearing:
+//
+//   DERIVED id (D-06). `correlationId` computes `<phase>-<sha>` from data
+//     already on disk - the phase number and the phase's PHASE_START sha,
+//     carried by the newest `lifecycle/phase_start` line for that phase - and
+//     NEVER mints-and-stores one. Every producer (route.mjs, review-provider.mjs,
+//     a `trace append` from prose) is a fresh one-shot process with no shared
+//     state, so a minted id would differ between two concurrent producers in the
+//     same phase and the trace would join nothing on exactly the parallel path
+//     it exists to explain. With no anchor the id is `<phase>` alone, which
+//     still joins within a phase but not across re-runs.
+//
+//   APPEND, not atomic write (D-07). Writes go through `appendFileSync`, never
+//     lib/planning-files.mjs's `atomicWrite` - that one is write-tmp-plus-rename
+//     with no append mode, so a read-modify-write would lose events under
+//     batched parallel dispatch. The size bound is enforced at WRITE time (stat
+//     first, append nothing at or over the cap) for the same reason: there is no
+//     whole-file rewrite to trim from.
+//
+//   NEVER throws, never speaks. `appendEvent` puts every fs call in its own try
+//     and returns `{written:false, reason}` on any failure. Its callers'
+//     envelopes must not move by a byte because a trace could not be written -
+//     a record of a decision may not be able to change the decision.
+'use strict';
+
+import { appendFileSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
+/** The trace file's name inside a planning root. */
+export const TRACE_FILE = 'trace.jsonl';
+
+/**
+ * The write-time size bound. At or over it nothing more is appended and
+ * `renderTrace` reports `capped`, so an incomplete record is never read as a
+ * complete one.
+ */
+export const MAX_TRACE_BYTES = 1048576;
+
+/** The four event families. A family outside this list is refused by the seam. */
+export const FAMILIES = ['routing', 'provider', 'lifecycle', 'outcome'];
+
+/** The lifecycle event that OPENS a worker bracket. */
+const DISPATCH = 'dispatch';
+
+/**
+ * The lifecycle events that CLOSE one. All three are terminal for a worker:
+ * a renderer pairing only `return` and `checkpoint` would strand every
+ * escalated worker in `unpaired[]`.
+ */
+const TERMINAL = ['return', 'checkpoint', 'escalation'];
+
+/** The lifecycle event that ANCHORS a phase's correlation id. */
+const ANCHOR = 'phase_start';
+
+/** @param {string} planningRoot */
+export function tracePath(planningRoot) {
+  return join(planningRoot, TRACE_FILE);
+}
+
+/**
+ * A phase or worker key as a string, so `1` and `"1"` are the same worker and a
+ * role-named worker (`cad-verifier`) keys the same way a plan number does.
+ * @param {any} v
+ */
+function key(v) {
+  return v === undefined || v === null ? '' : String(v);
+}
+
+/**
+ * Every line of the trace file, or null when it cannot be read (absent,
+ * unreadable, a planning root that is not a directory). Absence is data here.
+ * @param {string} planningRoot
+ * @returns {string[]|null}
+ */
+function readLines(planningRoot) {
+  try {
+    return readFileSync(tracePath(planningRoot), 'utf8').split('\n');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The per-phase correlation id, DERIVED and never stored.
+ *
+ * `ownSha` is how the ANCHOR event derives its own id: the first
+ * `lifecycle/phase_start` line of a phase has no prior anchor to scan, so
+ * without this it would take the phase-only form while every event after it took
+ * the derived form - splitting the lifecycle family across two ids and making
+ * "all four families under one correlation id" unreachable by construction. It
+ * is the same derivation from the same datum (the PHASE_START sha), applied one
+ * line earlier, so it mints nothing.
+ * @param {string} planningRoot
+ * @param {any} phase
+ * @param {string} [ownSha] the sha of the anchor event being written right now
+ * @returns {string}
+ */
+export function correlationId(planningRoot, phase, ownSha) {
+  const p = key(phase);
+  if (typeof ownSha === 'string' && ownSha) return `${p}-${ownSha}`;
+  const lines = readLines(planningRoot);
+  if (lines === null) return p;
+  // From the END: the NEWEST anchor for this phase wins, so a re-run of a phase
+  // starts a new id rather than joining the previous run's events.
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) continue;
+    if (e.family !== 'lifecycle' || e.event !== ANCHOR) continue;
+    if (key(e.phase) !== p) continue;
+    return typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p;
+  }
+  return p;
+}
+
+/**
+ * One event, in the fixed key order `{corr, phase, ts, family, event, ...}`.
+ * @param {string} planningRoot
+ * @param {any} event
+ * @returns {Record<string, any>}
+ */
+function renderEvent(planningRoot, event) {
+  const { phase, family, event: name, corr, ts, ...rest } = event;
+  const isAnchor = family === 'lifecycle' && name === ANCHOR;
+  return {
+    corr: typeof corr === 'string' && corr
+      ? corr
+      : correlationId(planningRoot, phase, isAnchor ? rest.sha : undefined),
+    phase,
+    ts: typeof ts === 'string' && ts ? ts : new Date().toISOString(),
+    family,
+    event: name,
+    ...rest,
+  };
+}
+
+/**
+ * Append one event. NEVER throws, never writes to stdout or stderr: a trace that
+ * cannot be written must leave its caller's envelope byte-identical.
+ * @param {string} planningRoot
+ * @param {any} event `{phase, family, event, ...fields}`
+ * @returns {{written: boolean, reason?: string, corr?: string}}
+ */
+export function appendEvent(planningRoot, event) {
+  if (!event || typeof event !== 'object' || Array.isArray(event)) {
+    return { written: false, reason: 'bad-event' };
+  }
+  const file = tracePath(planningRoot);
+
+  // The bound, enforced BEFORE the write (D-07): there is no whole-file rewrite
+  // to trim from, so the only place to stop is in front of the append. An
+  // absent file is the ordinary first write; any other stat failure is the
+  // reason this append did not happen.
+  try {
+    if (statSync(file).size >= MAX_TRACE_BYTES) return { written: false, reason: 'size-cap' };
+  } catch (e) {
+    const code = e && e.code;
+    if (code !== 'ENOENT') return { written: false, reason: code || 'stat-failed' };
+  }
+
+  let line;
+  let corr;
+  try {
+    const rendered = renderEvent(planningRoot, event);
+    corr = rendered.corr;
+    line = `${JSON.stringify(rendered)}\n`;
+  } catch (e) {
+    return { written: false, reason: (e && e.code) || 'unrenderable-event' };
+  }
+
+  try {
+    appendFileSync(file, line);
+  } catch (e) {
+    return { written: false, reason: (e && e.code) || 'append-failed' };
+  }
+  return { written: true, corr };
+}
+
+/**
+ * @typedef {object} TraceRender
+ * @property {string} file the trace file's path
+ * @property {string|null} corr the phase's derived id, or null with no `--phase`
+ * @property {boolean} capped true when the file is at or over MAX_TRACE_BYTES
+ * @property {{routing: number, provider: number, lifecycle: number, outcome: number}} counts
+ * @property {number} malformed lines that did not parse as JSON
+ * @property {Record<string, any>[]} events
+ * @property {{phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
+ */
+
+/**
+ * Read the trace in line order, group by family, and pair every worker bracket.
+ *
+ * Pairing: a `lifecycle/dispatch` with a given `(phase, plan)` is closed by a
+ * LATER `return`, `checkpoint` or `escalation` with the same `(phase, plan)`,
+ * oldest dispatch first. `plan` is the WORKER key - a plan number on either
+ * execute path, a role name for a role-dispatched worker - so one rule covers
+ * every bracketed worker rather than leaving role dispatches keyed on
+ * `undefined` and pairing with each other.
+ *
+ * An absent file is an empty render, never an error: the same
+ * never-blocks-the-spine contract `recall` follows.
+ * @param {string} planningRoot
+ * @param {any} [phase] restrict to one phase
+ * @returns {TraceRender}
+ */
+export function renderTrace(planningRoot, phase) {
+  const file = tracePath(planningRoot);
+  const wanted = phase === undefined || phase === null ? null : key(phase);
+  /** @type {TraceRender} */
+  const out = {
+    file,
+    corr: wanted === null ? null : correlationId(planningRoot, phase),
+    capped: false,
+    counts: { routing: 0, provider: 0, lifecycle: 0, outcome: 0 },
+    malformed: 0,
+    events: [],
+    unpaired: [],
+  };
+
+  try {
+    out.capped = statSync(file).size >= MAX_TRACE_BYTES;
+  } catch { /* absent or unreadable - handled by the read below */ }
+
+  const lines = readLines(planningRoot);
+  if (lines === null) return out;
+
+  /** @type {Map<string, {phase: any, plan: any, ts: any}[]>} */
+  const open = new Map();
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    let e;
+    try { e = JSON.parse(line); } catch { out.malformed++; continue; }
+    if (!e || typeof e !== 'object' || Array.isArray(e)) { out.malformed++; continue; }
+    if (wanted !== null && key(e.phase) !== wanted) continue;
+    out.events.push(e);
+    if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
+    if (e.family !== 'lifecycle') continue;
+    const worker = `${key(e.phase)} ${key(e.plan)}`;
+    if (e.event === DISPATCH) {
+      const pending = open.get(worker) || [];
+      pending.push({ phase: e.phase, plan: e.plan, ts: e.ts });
+      open.set(worker, pending);
+    } else if (TERMINAL.includes(e.event)) {
+      const pending = open.get(worker);
+      if (pending && pending.length) pending.shift();
+    }
+  }
+  for (const pending of open.values()) out.unpaired.push(...pending);
+  return out;
+}

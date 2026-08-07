@@ -34,6 +34,11 @@
 //                                   Bare words after `recall` are joined into
 //                                   one query, so an unquoted multi-word call
 //                                   searches all of it, not just the first word
+//   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
+//               [--detail "<text>"]  one line onto .planning/trace.jsonl
+//   trace render [--phase N]        the four families, the derived id, and
+//                                   every worker dispatch paired to its
+//                                   return/checkpoint/escalation
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
@@ -52,6 +57,7 @@ import {
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_FIELDS_VERSION,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber } from './lib/require-int.mjs';
@@ -1363,6 +1369,67 @@ function cmdRecall(dir, query, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// trace - the joined run record (.planning/trace.jsonl). This subcommand family
+// is how PROSE writes the lifecycle and outcome families: two of the four have
+// no script of their own to hang a direct write on (lifecycle lives in
+// workflows/execute.md, outcomes in references/review-triggers.md and
+// workflows/verify.md), so the seam is the writer everything shares. The seam
+// scripts that DO have code (route.mjs, review-provider.mjs) call lib/trace.mjs
+// directly rather than shelling out to this.
+//
+// `append` is BEST EFFORT and says so in its envelope: a write that did not
+// happen - the file is at its size cap, the planning root is unwritable -
+// returns ok:true with `written:false` and the reason, the same
+// successful-check-with-a-negative-answer shape plan-overlap uses. Only a
+// malformed CALL is ok:false. The trace records what a run did; it may never be
+// able to change what a run does.
+// ---------------------------------------------------------------------------
+function cmdTrace(dir, sub, opts) {
+  if (sub === 'append') {
+    const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+    if (!parsedPhase.ok) return fail('bad-args', 'trace append needs --phase <N>');
+    const family = typeof opts.family === 'string' ? opts.family : '';
+    if (!FAMILIES.includes(family)) {
+      return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+    }
+    const event = typeof opts.event === 'string' && opts.event ? opts.event : '';
+    if (!event) return fail('bad-args', 'trace append needs --event <name>');
+    const res = appendEvent(dir, {
+      phase: parsedPhase.value,
+      family,
+      event,
+      ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
+      ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
+      ...(typeof opts.detail === 'string' && opts.detail ? { detail: opts.detail } : {}),
+    });
+    return ok({
+      written: res.written,
+      ...(res.corr ? { corr: res.corr } : {}),
+      ...(res.reason ? { reason: res.reason } : {}),
+    });
+  }
+  if (sub === 'render') {
+    let phase;
+    if (opts.phase !== undefined) {
+      const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+      if (!parsedPhase.ok) return fail('bad-args', 'trace render --phase must be a phase number');
+      phase = parsedPhase.value;
+    }
+    const r = renderTrace(dir, phase);
+    return ok({
+      file: r.file,
+      corr: r.corr,
+      capped: r.capped,
+      counts: r.counts,
+      ...(r.malformed ? { malformed: r.malformed } : {}),
+      events: r.events,
+      unpaired: r.unpaired,
+    });
+  }
+  return fail('usage', 'trace <append|render>');
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -1666,6 +1733,7 @@ const COMMANDS = {
   // failure. tokenize() splits on non-alphanumerics, so the separator is
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
   recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
+  trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 

@@ -109,6 +109,8 @@ const CONTRACTS = {
     'plan-overlap': ['--phase'],
     'seed-reqs': ['--phase'],
     recall: [],
+    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
+    'trace render': ['--phase'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },
@@ -156,7 +158,7 @@ const CONTRACTS = {
 };
 
 // Subcommands whose first word takes a second word (sub-subcommand).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber']);
+const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace']);
 
 // The canonical Claude Code tool vocabulary the agents-only tools lint checks
 // against - a FIXED set, not derived from the tree, so a single-agent fixture
