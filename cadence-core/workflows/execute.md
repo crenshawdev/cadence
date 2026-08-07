@@ -162,8 +162,15 @@ After each plan completes, fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
 reviewer runs the diff itself. Default is advisory: report findings, continue.
-When
-`review.triggers.diff.gate` resolves it to `adjudicated` instead, the
+
+At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
+than waiting: the artifact is two immutable refs, so the reviewer reads nothing
+that executor writes, and nothing downstream waits on the answer. Collect each
+review as it lands and fold it into `summary`. The last plan has no next
+dispatch, so it fires and waits. When
+`review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
+BLOCKS before the next dispatch - triage can change what ships, and answering
+about plan 1 while plan 2 commits is answering about a tree that is gone. The
 survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
@@ -329,7 +336,8 @@ verification runs in a fresh subagent.
 - [ ] Guard applied before the first executor dispatch
 - [ ] One cad-executor per plan; sequential unless every parallel condition held
 - [ ] Each task is one conventional commit of specific files
-- [ ] `diff` trigger fired per plan; `risk_surface` honored at commit time
+- [ ] `diff` trigger per plan - overlapped at `advisory`, blocking at
+      `adjudicated`; `risk_surface` honored at commit time
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
 - [ ] STATE.md is exactly the 4-line cursor, overwritten
 </success_criteria>

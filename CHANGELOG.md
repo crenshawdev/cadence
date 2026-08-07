@@ -6,6 +6,27 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **An advisory `diff` review no longer blocks the next plan's executor.** On
+  `/cad-execute`'s sequential path the per-plan `diff` trigger now fires in the
+  same message as the next plan's dispatch instead of being waited on first.
+
+  The artifact is already a pair of refs, so the reviewer diffs two immutable
+  commits and reads nothing the next executor writes, and `advisory` continues
+  whatever the review returns - so nothing downstream was ever waiting on the
+  answer. Serializing them bought no safety and cost the review's full wall time
+  once per plan. Measured on a three-plan phase: 15.7 minutes of execution
+  carried 16.4 minutes of advisory review behind it, which is to say the reviews
+  cost more than the work they reviewed, and about half of that was recoverable.
+
+  The overlap is `advisory`-only and deliberately so. At `adjudicated` the fire
+  still blocks before the next dispatch, because triage can change what ships and
+  a user answering about plan 1 while plan 2 is already committing is answering
+  about a tree that no longer exists. The `risk_surface` arm is untouched: a
+  matched surface still halts at commit time. The last plan in a phase has no
+  next dispatch to ride along with, so it fires and waits as before.
+
 ## [2.3.0] - 2026-08-05
 
 ### Changed
