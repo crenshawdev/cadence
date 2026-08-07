@@ -34,6 +34,9 @@
 //                                   Bare words after `recall` are joined into
 //                                   one query, so an unquoted multi-word call
 //                                   searches all of it, not just the first word
+//   lease-check --phase N --plan k  every staged path against that plan's own
+//                                   declared files: list (the executor's
+//                                   commit-step gate)
 //   detect-commands [--root <path>]  the project's own lint/typecheck commands,
 //                                   read from its manifests (NOT --dir: --root
 //                                   is the PROJECT root, one level deep only)
@@ -45,7 +48,7 @@
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
@@ -63,7 +66,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { requireCursorNumber } from './lib/require-int.mjs';
+import { requireCursorNumber, requireInt } from './lib/require-int.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -1372,6 +1375,103 @@ function cmdRecall(dir, query, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// lease-check - the file lease Cadence already DECLARES, enforced. A plan's
+// `files:` list is what the parallel-safety gate proves independence from, and
+// until now nothing stopped an executor staging a path its own plan never
+// named - which silently invalidates that proof for every OTHER plan in the
+// phase.
+//
+// A seam and NOT a PreToolUse hook on Write/Edit (D-01): the hook fires on
+// every write in every project the plugin is installed in, and it cannot
+// reliably resolve WHICH plan is writing - the branch name is the only signal
+// and it is absent on the sequential path and on orchestrator writes. A rail
+// that fires wrong gets deleted, not tuned. The seam form covers the sequential
+// path too, which the criterion does not require but gets free.
+//
+// The reader is `parsePlanFiles`, the SAME one cmdPlanOverlap uses, so a path
+// the pre-flight overlap gate admitted cannot be refused here and vice versa.
+// `declaredPhaseFiles` is the wrong reader: it unions across the PHASE, which
+// would let plan 2 stage a file only plan 1 declared.
+//
+// An unprovable lease is never a pass: a missing plan and an unreadable staged
+// set are both ok:false.
+// ---------------------------------------------------------------------------
+
+/** A path made repo-relative and separator-normalized, for comparison with git. */
+function repoRel(top, p) {
+  return relative(top, resolvePath(p)).split(sep).join('/');
+}
+
+function cmdLeaseCheck(dir, opts) {
+  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  if (!parsedPhase.ok) return fail('bad-args', 'lease-check needs --phase <N>');
+  const parsedPlan = requireInt(opts.plan);
+  if (!parsedPlan.ok) return fail('bad-args', 'lease-check needs --plan <k>');
+  const n = parsedPhase.value;
+  const k = parsedPlan.value;
+
+  // `k` is the number in PLAN-<k>.md, and 1 for a bare PLAN.md - the same
+  // convention the executor's report path follows.
+  const pdir = join(dir, 'phases', String(n));
+  let planFile = join(pdir, `PLAN-${k}.md`);
+  let text = read(planFile);
+  if (text === null && k === 1) {
+    planFile = join(pdir, 'PLAN.md');
+    text = read(planFile);
+  }
+  if (text === null) {
+    return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${n}`);
+  }
+  const { files: declared, issues } = parsePlanFiles(text);
+
+  let top;
+  let stagedOut;
+  try {
+    top = execFileSync('git', ['rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    stagedOut = execFileSync('git', ['-C', top, 'diff', '--cached', '--name-only'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    return fail('no-staged-set',
+      `could not read the staged set: ${e && e.message ? e.message : String(e)}`);
+  }
+  const staged = stagedOut.split('\n').map((s) => s.trim()).filter(Boolean);
+
+  // Exactly ONE exemption, and nothing else: the plan's own report file, which
+  // the contract requires the executor to write and which no plan declares.
+  const reportFile = repoRel(top, join(pdir, 'reports', `plan-${k}.md`));
+
+  // A declared path ending in `/` is a directory lease and matches by prefix;
+  // everything else matches exactly. Substring matching would let `src/auth`
+  // license `src/authority.rs`.
+  const exact = new Set(declared.filter((f) => !f.endsWith('/')));
+  const prefixes = declared.filter((f) => f.endsWith('/'));
+  const undeclared = staged.filter((p) => p !== reportFile
+    && !exact.has(p) && !prefixes.some((d) => p.startsWith(d)));
+
+  const common = {
+    phase: n,
+    plan: k,
+    plan_file: repoRel(top, planFile),
+    staged: staged.length,
+    declared: declared.length,
+    ...(issues.length ? { frontmatter_issues: issues } : {}),
+  };
+  if (undeclared.length) {
+    // Emitted directly: fail()'s reason/detail/hint shape has no channel for
+    // the offending list, and the list is the whole point of the refusal.
+    return emit({
+      ok: false,
+      reason: 'undeclared-files',
+      ...common,
+      undeclared,
+      hint: `add these paths to ${common.plan_file}'s files: list, or unstage them`,
+    });
+  }
+  ok(common);
+}
+
+// ---------------------------------------------------------------------------
 // detect-commands - the static-analysis path for a repo that configured
 // NOTHING. A seam and not executor judgment (D-04): the criterion asserts
 // behaviour "in a repo that configured nothing", and nothing in CI can prove a
@@ -1841,6 +1941,7 @@ const COMMANDS = {
   // failure. tokenize() splits on non-alphanumerics, so the separator is
   // immaterial; `[].join(' ')` is '', which still trips the bad-args guard.
   recall: (dir, _sub, opts, rest) => cmdRecall(dir, rest.join(' '), opts),
+  'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45).

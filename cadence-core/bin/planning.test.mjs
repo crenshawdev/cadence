@@ -3847,3 +3847,138 @@ test('detect-commands: --root with nothing after it is refused, not answered abo
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-args');
 });
+
+// --- lease-check: the declared file lease, enforced (QW-03) ------------------
+
+/**
+ * A scratch GIT repo whose `.planning/phases/<n>/` holds one plan declaring
+ * `files`. Returns {repo, dir} - the seam is run with cwd inside the repo,
+ * because it resolves the staged set from `git rev-parse --show-toplevel`.
+ */
+function leaseRepo({ phase = 1, plan = 'PLAN.md', files = ['a.txt'], body = '' } = {}) {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-lease-'));
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: repo });
+  execFileSync('git', ['config', 'user.name', 'T'], { cwd: repo });
+  const dir = join(repo, '.planning');
+  const pdir = join(dir, 'phases', String(phase));
+  mkdirSync(pdir, { recursive: true });
+  const fm = files === null ? '' : `---\nphase: ${phase}\nfiles:\n${files.map((f) => `  - ${f}\n`).join('')}---\n`;
+  writeFileSync(join(pdir, plan), `${fm}# Plan\n${body}`);
+  return { repo, dir, pdir };
+}
+
+/** Run the seam inside a repo; parse its one JSON line and its exit code. */
+function leaseCheck(repo, dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'lease-check', ...args],
+      { encoding: 'utf8', cwd: repo });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+const stage = (repo, name, body = 'x') => {
+  const file = join(repo, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  execFileSync('git', ['add', '--', name], { cwd: repo });
+};
+
+test('lease-check: a clean lease is ok:true', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt', 'src/b.js'] });
+  stage(repo, 'a.txt');
+  stage(repo, 'src/b.js');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.staged, 2);
+  assert.equal(r.declared, 2);
+  assert.equal(r._exit, 0);
+});
+
+test('lease-check: an undeclared staged path is refused and NAMED', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  stage(repo, 'b.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['b.txt']);
+  assert.match(r.hint, /files: list/);
+  assert.equal(r._exit, 1);
+});
+
+test('lease-check: the plan\'s OWN report file is the one exemption', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, '.planning/phases/1/reports/plan-1.md');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']).ok, true);
+  // ...and nothing else under reports/ is: another plan's report is undeclared.
+  stage(repo, '.planning/phases/1/reports/plan-2.md');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.undeclared, ['.planning/phases/1/reports/plan-2.md']);
+});
+
+test('lease-check: a declared directory ends in / and matches by PREFIX', () => {
+  const { repo, dir } = leaseRepo({ files: ['src/auth/'] });
+  stage(repo, 'src/auth/session.js');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']).ok, true);
+  // A non-slashed declaration never licenses a sibling by substring.
+  const b = leaseRepo({ files: ['src/auth'] });
+  stage(b.repo, 'src/authority.js');
+  assert.equal(leaseCheck(b.repo, b.dir, ['--phase', '1', '--plan', '1']).ok, false);
+});
+
+test('lease-check: PLAN-<k>.md is selected by --plan', () => {
+  const { repo, dir, pdir } = leaseRepo({ plan: 'PLAN-1.md', files: ['a.txt'] });
+  writeFileSync(join(pdir, 'PLAN-2.md'), '---\nphase: 1\nfiles:\n  - b.txt\n---\n# Plan 2\n');
+  stage(repo, 'b.txt');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', '2']).ok, true);
+  const one = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(one.ok, false);
+  assert.deepEqual(one.undeclared, ['b.txt']);
+});
+
+test('lease-check: a missing plan is ok:false, never an empty-lease pass', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '9', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-plan');
+  assert.equal(r._exit, 1);
+});
+
+test('lease-check: an unreadable staged set is ok:false, never a pass', () => {
+  // Outside any git repo `rev-parse --show-toplevel` fails, and an unprovable
+  // lease must refuse rather than report a clean one.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-lease-nogit-'));
+  const dir = join(outside, '.planning');
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'), '---\nphase: 1\nfiles:\n  - a.txt\n---\n');
+  const r = leaseCheck(outside, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-staged-set');
+});
+
+test('lease-check: nothing staged is a clean lease, not a refusal', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true);
+  assert.equal(r.staged, 0);
+});
+
+test('lease-check: a plan declaring nothing licenses nothing', () => {
+  const { repo, dir } = leaseRepo({ files: [] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.undeclared, ['a.txt']);
+});
+
+test('lease-check: bad flags are refused before any read', () => {
+  const { repo, dir } = leaseRepo({});
+  assert.equal(leaseCheck(repo, dir, ['--plan', '1']).reason, 'bad-args');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1']).reason, 'bad-args');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', 'x']).reason, 'bad-args');
+});

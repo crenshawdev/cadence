@@ -62,11 +62,23 @@ After the last task: return the digest.
    `<checkpoints>`, which puts the flagged staged diff in a file rather than in
    your return. The orchestrator fires the blocking review trigger. Never review
    yourself, never skip the gate.
-3. Commit: `{type}({scope}): {concise description}` using the scope from
+3. Lease gate: your plan's declared `files:` list is a lease, and a file it
+   never named may not ride your commit - that declaration is what the parallel
+   gate proved every OTHER plan independent of.
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" lease-check --phase <N> --plan <k>
+   ```
+
+   `ok:false` -> do NOT commit: stop and return a `blocked` checkpoint naming
+   each undeclared path, exactly as the risk-surface gate returns its own. Skip
+   this step when `<plandir>` is not `.planning/phases/<N>/`: `/cad-task`
+   dispatches from `.planning/tasks/<slug>/`, where there is no phase lease.
+4. Commit: `{type}({scope}): {concise description}` using the scope from
    your dispatch prompt. Types: feat, fix, docs, chore, refactor, test,
    perf, style.
-4. Record the short hash for your report.
-5. Post-commit glance: no unexpected file deletions in the commit
+5. Record the short hash for your report.
+6. Post-commit glance: no unexpected file deletions in the commit
    (`git diff --diff-filter=D --name-only HEAD~1 HEAD`); no generated files
    left untracked - commit them if intentional, `.gitignore` them if output.
    `<plandir>/reports/**` is EXEMPT from that glance: a report awaiting the

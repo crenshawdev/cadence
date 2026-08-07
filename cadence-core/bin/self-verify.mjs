@@ -108,6 +108,7 @@ const CONTRACTS = {
     'criteria-coverage': [],
     'plan-overlap': ['--phase'],
     'seed-reqs': ['--phase'],
+    'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],
     recall: [],
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
