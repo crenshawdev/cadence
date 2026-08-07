@@ -1403,11 +1403,137 @@ function cmdRecall(dir, query, opts) {
 //
 // An unprovable lease is never a pass: a missing plan and an unreadable staged
 // set are both ok:false.
+//
+// The staged set is read with `--name-status -z -M`, and each of those three is
+// load-bearing:
+//   -z          git emits paths VERBATIM and unquoted. Without it, at git's
+//               default `core.quotePath` a declared `src/café.js` comes back as
+//               `"src/caf\303\251.js"` and the lease refuses a path it was
+//               itself handed. No `core.quotePath` override is needed, and none
+//               should be added.
+//   --name-status  a rename carries BOTH sides. `--name-only` reports only the
+//               destination, so `git mv src/other.js a.txt` reads as a clean
+//               lease while destroying a file some OTHER plan declared.
+//   -M          explicit, because `diff.renames` is user-settable config and a
+//               gate whose coverage depends on the caller's git config is not a
+//               gate.
+//
+// That stream is read as BYTES and split on 0x00 at the byte level, because
+// `execFileSync(..., {encoding:'utf8'})` maps every invalid UTF-8 byte to
+// U+FFFD and undoes `-z` one layer below it: `git mv src/caf<0xE9>.js
+// src/caf<0xFF>.js` is emitted correctly and paired correctly, then both sides
+// decode to the SAME `src/caf<U+FFFD>.js`, collapse in the dedup, and the
+// rename source - another plan's file, being destroyed - is licensed by the
+// destination's declaration.
+//
+// So every path must ROUND-TRIP (`Buffer.from(s,'utf8').equals(raw)`), and a
+// staged path that does not is a REFUSAL of its own naming that path, not a
+// guess. The declared side is read from a utf8 plan file and cannot represent
+// such a path either, so neither side of the comparison can be honest about it;
+// admitting it on the U+FFFD spelling would silently license every sibling
+// differing only in its invalid bytes. Making the DECLARED side byte-aware was
+// rejected: the frontmatter reader is shared with the overlap gate, and a lease
+// that reads what a plan file cannot write is a wider change than this gate.
 // ---------------------------------------------------------------------------
 
 /** A path made repo-relative and separator-normalized, for comparison with git. */
 function repoRel(top, p) {
   return relative(top, resolvePath(p)).split(sep).join('/');
+}
+
+/**
+ * Split a NUL-separated stream into its raw field buffers, byte-exactly.
+ *
+ * @param {Buffer} buf
+ * @returns {Buffer[]}
+ */
+function splitNul(buf) {
+  /** @type {Buffer[]} */
+  const fields = [];
+  for (let start = 0; ;) {
+    const i = buf.indexOf(0, start);
+    if (i === -1) { fields.push(buf.subarray(start)); break; }
+    fields.push(buf.subarray(start, i));
+    start = i + 1;
+  }
+  return fields;
+}
+
+/**
+ * The one honest way to NAME a path whose bytes no JSON string can carry:
+ * C-style double quotes with every byte outside printable ASCII written as a
+ * three-digit octal escape, the same spelling git's own `core.quotePath` uses
+ * for high bytes - so `src/caf<0xE9>.js` reads back as `"src/caf\351.js"`.
+ *
+ * @param {Buffer} raw
+ * @returns {string}
+ */
+function quoteRawPath(raw) {
+  let s = '';
+  for (const b of raw) {
+    if (b === 0x22 || b === 0x5c) s += `\\${String.fromCharCode(b)}`;
+    else if (b >= 0x20 && b < 0x7f) s += String.fromCharCode(b);
+    else s += `\\${b.toString(8).padStart(3, '0')}`;
+  }
+  return `"${s}"`;
+}
+
+/**
+ * Parse a `git diff --cached --name-status -z -M` stream into staged entries.
+ *
+ * Records are NUL-separated fields, not NUL-separated LINES: a status token
+ * starting with `R` (rename) or `C` (copy) consumes TWO following paths, source
+ * then destination; every other status consumes one.
+ *
+ * The input is a BUFFER and the split is on the 0x00 BYTE: decoding first would
+ * fold every invalid UTF-8 byte onto U+FFFD and make two different paths read
+ * as one. Each path is decoded and checked to round-trip back to the same
+ * bytes; the ones that do not are returned under `unrepresentable`, already in
+ * their `quoteRawPath` spelling, for the caller to refuse by name.
+ *
+ * Returns null on a truncated or otherwise unparseable stream, which the caller
+ * turns into `no-staged-set` - an unprovable lease is never a pass.
+ *
+ * @param {Buffer} out
+ * @returns {{
+ *   entries: {path: string, status: string, source: string|null}[],
+ *   unrepresentable: string[],
+ * } | null}
+ */
+function parseStagedNameStatus(out) {
+  const fields = splitNul(out);
+  // A -z stream terminates every field with a NUL, so the tail split is empty.
+  if (fields.length && fields[fields.length - 1].length === 0) fields.pop();
+  /** @type {{path: string, status: string, source: string|null}[]} */
+  const entries = [];
+  /** @type {string[]} */
+  const unrepresentable = [];
+  /** A path decoded, or null when its bytes are not valid UTF-8. */
+  const decodePath = (/** @type {Buffer} */ raw) => {
+    const s = raw.toString('utf8');
+    if (!Buffer.from(s, 'utf8').equals(raw)) {
+      unrepresentable.push(quoteRawPath(raw));
+      return null;
+    }
+    return s;
+  };
+  for (let i = 0; i < fields.length;) {
+    const status = fields[i++].toString('utf8');
+    if (!status) return null;
+    const paired = status[0] === 'R' || status[0] === 'C';
+    if (i + (paired ? 2 : 1) > fields.length) return null;
+    const rawSource = paired ? fields[i++] : null;
+    const rawPath = fields[i++];
+    if (rawPath.length === 0 || (rawSource !== null && rawSource.length === 0)) return null;
+    const source = rawSource === null ? null : decodePath(rawSource);
+    const path = decodePath(rawPath);
+    // A path that did not round-trip is already recorded under
+    // `unrepresentable`; keeping a U+FFFD spelling in `entries` beside it is
+    // exactly the guess this refuses to make.
+    if (path === null || (rawSource !== null && source === null)) continue;
+    entries.push({ path, status, source });
+  }
+  return { entries, unrepresentable };
 }
 
 function cmdLeaseCheck(dir, opts) {
@@ -1433,17 +1559,45 @@ function cmdLeaseCheck(dir, opts) {
   const { files: declared, issues } = parsePlanFiles(text);
 
   let top;
+  /** @type {Buffer} */
   let stagedOut;
   try {
     top = execFileSync('git', ['rev-parse', '--show-toplevel'],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    stagedOut = execFileSync('git', ['-C', top, 'diff', '--cached', '--name-only'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    // NO `encoding` on THIS call, deliberately: paths are bytes, and decoding
+    // them here is what would undo `-z` (see the block comment above).
+    stagedOut = execFileSync('git',
+      ['-C', top, 'diff', '--cached', '--name-status', '-z', '-M'],
+      { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     return fail('no-staged-set',
       `could not read the staged set: ${e && e.message ? e.message : String(e)}`);
   }
-  const staged = stagedOut.split('\n').map((s) => s.trim()).filter(Boolean);
+  const parsed = parseStagedNameStatus(stagedOut);
+  if (parsed === null) {
+    return fail('no-staged-set',
+      'the staged set could not be parsed: git --name-status -z returned a truncated record');
+  }
+  if (parsed.unrepresentable.length) {
+    // Fail CLOSED, and name the path rather than guess at it: neither the
+    // staged side nor the declared side can spell these bytes, so the gate says
+    // so instead of matching two replacement characters.
+    return emit({
+      ok: false,
+      reason: 'unrepresentable-paths',
+      phase: n,
+      plan: k,
+      plan_file: repoRel(top, planFile),
+      unrepresentable: parsed.unrepresentable,
+      hint: 'these staged paths are not valid UTF-8 and no plan file can name them'
+        + ' - rename or unstage them, then re-run',
+    });
+  }
+  // BOTH sides of a rename are checked: only the destination is the executor's
+  // new file, and the SOURCE is the one another plan may have declared.
+  // `staged` counts the distinct paths involved, so a rename counts as two.
+  const staged = [...new Set(parsed.entries.flatMap(
+    (e) => (e.source === null ? [e.path] : [e.source, e.path])))];
 
   // Exactly ONE exemption, and nothing else: the plan's own report file, which
   // the contract requires the executor to write and which no plan declares.

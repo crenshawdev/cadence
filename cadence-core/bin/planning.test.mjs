@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -3981,4 +3981,104 @@ test('lease-check: bad flags are refused before any read', () => {
   assert.equal(leaseCheck(repo, dir, ['--plan', '1']).reason, 'bad-args');
   assert.equal(leaseCheck(repo, dir, ['--phase', '1']).reason, 'bad-args');
   assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', 'x']).reason, 'bad-args');
+});
+
+/**
+ * A git call inside a scratch lease repo with the user's own global/system
+ * config neutralized - `commit.gpgsign` in a developer's global config would
+ * otherwise make the seed commit prompt for a passphrase in CI.
+ */
+const leaseGit = (repo, args) => execFileSync('git', args, {
+  cwd: repo,
+  stdio: 'pipe',
+  env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+});
+
+test('lease-check: a rename is checked on BOTH sides, so another plan\'s file is not renamed away', () => {
+  // src/other.js belongs to some OTHER plan: committed, and NOT declared here.
+  // Renaming it onto this plan's declared `a.txt` destroys it, and a
+  // destination-only read reports a clean lease.
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  const src = join(repo, 'src', 'other.js');
+  mkdirSync(dirname(src), { recursive: true });
+  writeFileSync(src, 'module.exports = 1;\n');
+  leaseGit(repo, ['add', '--', 'src/other.js']);
+  leaseGit(repo, ['commit', '-qm', 'seed']);
+  leaseGit(repo, ['mv', 'src/other.js', 'a.txt']);
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.ok(r.undeclared.includes('src/other.js'),
+    `the rename SOURCE must be named: ${JSON.stringify(r)}`);
+});
+
+test('lease-check: a declared non-ASCII path is admitted, not refused for its bytes', () => {
+  // At default `core.quotePath` git returns `"src/caf\303\251.js"` - quoted and
+  // octal-escaped - and the lease refuses a path it was itself handed.
+  const { repo, dir } = leaseRepo({ files: ['src/café.js'] });
+  stage(repo, 'src/café.js');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.staged, 1);
+});
+
+/**
+ * An absolute path under `repo` whose basename carries ONE byte that is not
+ * valid UTF-8 (`src/caf<byte>.js`). Two different such bytes produce two
+ * DIFFERENT paths that a utf8 decode renders identically as `src/caf<U+FFFD>.js`
+ * - which is the whole point of the two cases below.
+ */
+const rawLeasePath = (repo, byte) => Buffer.concat([
+  Buffer.from(`${repo}/src/caf`), Buffer.from([byte]), Buffer.from('.js'),
+]);
+
+/** A plan file written BYTE-EXACTLY, so `files:` can name a non-UTF-8 path. */
+const rawPlan = (pdir, byte) => writeFileSync(join(pdir, 'PLAN.md'), Buffer.concat([
+  Buffer.from('---\nphase: 1\nfiles:\n  - src/caf'), Buffer.from([byte]),
+  Buffer.from('.js\n---\n# Plan\n'),
+]));
+
+test('lease-check: a rename between two un-decodable paths is never a clean lease', () => {
+  // `git mv src/caf<0xE9>.js src/caf<0xFF>.js` with only the DESTINATION
+  // declared destroys another plan's file. git reports it correctly
+  // (`R100\0src/caf\351.js\0src/caf\377.js\0`), but reading that stream as a
+  // utf8 STRING maps both invalid bytes to U+FFFD, the two paths collapse to
+  // one, and the source is licensed by the destination's declaration.
+  const { repo, dir, pdir } = leaseRepo({ files: [] });
+  rawPlan(pdir, 0xFF);
+  const src = rawLeasePath(repo, 0xE9);
+  const dst = rawLeasePath(repo, 0xFF);
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(src, 'module.exports = 1;\n');
+  leaseGit(repo, ['add', '-A']);
+  leaseGit(repo, ['commit', '-qm', 'seed']);
+  renameSync(src, dst);
+  leaseGit(repo, ['add', '-A']);
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.notEqual(r.ok, true,
+    `a rename destroying an undeclared file must not pass: ${JSON.stringify(r)}`);
+  assert.equal(r.reason, 'unrepresentable-paths', JSON.stringify(r));
+  assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"', '"src/caf\\377.js"']);
+});
+
+test('lease-check: a staged path that is not valid UTF-8 is refused BY NAME, never guessed at', () => {
+  // The declared side is read from a utf8 plan file, so it cannot represent
+  // this path either. Neither side of the comparison can be honest about it and
+  // the gate says so, rather than matching two replacement characters and
+  // licensing every sibling that differs only in its invalid bytes.
+  const { repo, dir, pdir } = leaseRepo({ files: [] });
+  rawPlan(pdir, 0xE9);
+  leaseGit(repo, ['add', '-A']);
+  leaseGit(repo, ['commit', '-qm', 'seed']);
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(rawLeasePath(repo, 0xE9), 'x');
+  leaseGit(repo, ['add', '-A']);
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unrepresentable-paths');
+  assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"']);
+  assert.equal(r._exit, 1);
 });
