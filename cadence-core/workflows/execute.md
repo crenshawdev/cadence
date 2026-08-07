@@ -63,7 +63,18 @@ review, and the goal check below run in the planning repo and will NOT reflect
 commits made in the code repo, so treat them as advisory and check the code
 repo by hand. Prefer keeping `.planning/` in the code repo.
 
-Record `git rev-parse --short HEAD` as PHASE_START for later diffs.
+Record `git rev-parse --short HEAD` as PHASE_START for later diffs, then anchor
+this phase's joined run record with the same sha:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>
+```
+
+That sha is what the phase's correlation id is DERIVED from, so every routing,
+provider, lifecycle and outcome event this phase writes joins on it. The whole
+trace is BEST EFFORT: an append that comes back `written:false` (the record hit
+its size cap, the planning root is unwritable) changes nothing about the execute
+path and is never a reason to pause or stop.
 </step>
 
 <step name="choose_path">
@@ -154,6 +165,30 @@ move out, on the most expensive path there is. Before a worktree branch is
 merged its report lives in the worktree, not here: `git worktree list
 --porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`.
 
+**The lifecycle bracket (both paths).** Every worker this workflow hands work to
+is bracketed in the joined run record, so a phase's trace attributes what
+happened to the worker that caused it. Immediately before a plan goes to an
+executor, and again once that executor comes back, append one event each:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --detail "<one line>"
+```
+
+The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
+`checkpoint` for any checkpoint return, and `escalation` when a plan is moved to
+another path or rung. All three close a bracket; a worker with none of them is
+what `trace render` reports as unpaired. `--plan <k>` is the WORKER key - the
+plan number here, the role name for a role-dispatched worker.
+
+A worktree executor emits NO trace events of its own, and inner tool-level
+detail is deliberately not captured. `.planning/trace.jsonl` is gitignored, so
+nothing a worktree wrote could ride the merge back, and the executor's return is
+a frozen five-field digest with no room for one. The orchestrator's brackets are
+what make every worker attributable; what happened INSIDE a worker is its report
+file's job.
+
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
   path `<plandir>/reports/plan-<k>.md`. Do not open the file here; `summary`
@@ -213,6 +248,24 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
+A `blocked` halt naming a MISSING PLAN file is the one arm that also has a named
+orchestrator-side remedy, because its cause is known: the worktree forked from a
+base that does not carry this phase's plans. Reconcile that worktree from the
+main tree YOURSELF, in your own serialized turn - bring the branch up to the
+main tree's commit, or copy `.planning/phases/<N>/` in - and then re-dispatch
+that plan once. The executor contract is not touched by this and must not be:
+`<worktree_mode>` forbids `git merge`, `rebase`, `fetch` and `stash` outright,
+and reconciliation is the orchestrator's serialized decision precisely because N
+executors each reconciling their own tree have no conflict policy at all.
+Cadence still issues no `git worktree add` of its own - the host creates the
+worktree and the fork point is the user's `worktree.baseRef` setting.
+
+After that remedy has failed twice, the plan falls back to the SEQUENTIAL path in
+the main tree, and an `escalation` lifecycle event records the worker that
+changed paths. A fallback and not a bounded re-dispatch loop: every failure arm
+in choose_path already resolves to sequential, and a loop here would put the
+unbounded re-arm filed against the review triggers onto the execute path too.
+
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
 "continue from task <k>". Fresh context each time - never resume, and never
@@ -269,6 +322,11 @@ fork-point default.)
    RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it, and act only on
    what the user names.
+
+The lifecycle bracket above applies here too, per worker: one `dispatch` event
+before a batch member gets its plan and one `return`, `checkpoint` or
+`escalation` after it comes back, each carrying that plan's own `--plan <k>`.
+The worktree executor writes none of them itself.
 
 Checkpoints on this path route exactly as in handle_checkpoint; the
 continuation executor is dispatched back into the same worktree.
