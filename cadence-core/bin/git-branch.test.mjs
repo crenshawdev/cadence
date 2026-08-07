@@ -15,13 +15,35 @@ const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'git-branch.mjs');
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-gb-')), 'no-global.json');
 
 /** A .planning fixture with the given git config block. */
-function fixture(gitConfig) {
+function fixture(gitConfig, version = 'v1.1.0-rc.2') {
   const dir = mkdtempSync(join(tmpdir(), 'cad-gb-repo-'));
   mkdirSync(join(dir, '.planning'), { recursive: true });
   writeFileSync(join(dir, '.planning', 'config.json'), JSON.stringify({ git: gitConfig }));
   writeFileSync(join(dir, '.planning', 'PROJECT.md'),
-    '## Requirements\n### Active\n\n`v1.1.0-rc.2` - the round\n\n### Out of Scope\n');
-  writeFileSync(join(dir, '.planning', 'ROADMAP.md'), '# Roadmap: Cadence v1.1.0-rc.2\n');
+    `## Requirements\n### Active\n\n\`${version}\` - the round\n\n### Out of Scope\n`);
+  writeFileSync(join(dir, '.planning', 'ROADMAP.md'), `# Roadmap: Cadence ${version}\n`);
+  return dir;
+}
+
+/**
+ * The same fixture, made a REAL git repo carrying `tags`. The published-version
+ * guard reads `git tag --list`, so this one clause cannot be proved on the
+ * live-git-free fixtures above. Identity and signing are forced off in the env
+ * so the empty commit works on any machine, including one with commit.gpgsign
+ * set globally.
+ */
+function taggedFixture(gitConfig, version, tags) {
+  const dir = fixture(gitConfig, version);
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  };
+  const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  for (const t of tags) git('tag', t);
   return dir;
 }
 
@@ -73,6 +95,38 @@ test('defaults (no git block set): milestone + ask on a protected base -> ask', 
   assert.equal(r.mode, 'milestone');
   assert.equal(r.action, 'ask');
   assert.equal(r.branch, 'cadence/v1.1.0-rc.2');
+});
+
+test('published: a milestone the repo has ALREADY TAGGED asks, naming both numbers (AC8)', () => {
+  // The #87 collision at the seam: `### Active` still names v0.1.0 while the
+  // repo carries v0.1.0 and v0.2.0, so `create cadence/v0.1.0` would name a
+  // branch after a shipped release. The tag list is what answers - no manifest.
+  const dir = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
+    'v0.1.0', ['v0.1.0', 'v0.2.0']);
+  const r = decide(dir, 'main');
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'ask');
+  assert.equal(r.branch, null);
+  assert.match(r.reason, /0\.1\.0/);
+  assert.match(r.reason, /0\.2\.0/, 'both numbers, not just the one that was asked for');
+});
+
+test('published: a milestone above every tag still creates - the guard refuses no new cycle', () => {
+  const dir = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
+    'v0.3.0', ['v0.1.0', 'v0.2.0']);
+  const r = decide(dir, 'main');
+  assert.equal(r.action, 'create');
+  assert.equal(r.branch, 'cadence/v0.3.0');
+});
+
+test('published: a non-semver tag is skipped, not guessed at', () => {
+  // `nightly` sorts against nothing; the highest PARSEABLE tag is what counts.
+  const dir = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
+    'v0.2.0', ['nightly', '2024-06-release', 'v0.2.0']);
+  assert.equal(decide(dir, 'main').action, 'ask');
+  const clean = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
+    'v0.2.0', ['nightly', '2024-06-release']);
+  assert.equal(decide(clean, 'main').action, 'create', 'no parseable tag: nothing to compare against');
 });
 
 test('warnings[] rides the envelope, and a torn layer puts the parse failure on it', () => {
