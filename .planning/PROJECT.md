@@ -89,11 +89,21 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v2.4.0 — what Cadence says about itself`**, opened 2026-08-05. The
-predecessor `v2.3.0 — where the bytes live` closed 2026-08-05 with all eleven
-requirements delivered (RES-01..04, LOD-01..05, BUD-01..02 — rows above), both
-audit arms green (11/11 traced, 20/20 criteria covered), and the manifest at
-`2.3.0`.
+**`v2.5.0 — what Cadence says about itself`**, opened 2026-08-05 as `v2.4.0`,
+renumbered 2026-08-07. The predecessor `v2.3.0 — where the bytes live` closed
+2026-08-05 with all eleven requirements delivered (RES-01..04, LOD-01..05,
+BUD-01..02 — rows above), both audit arms green (11/11 traced, 20/20 criteria
+covered), and the manifest at `2.3.0`.
+
+The renumber is itself an instance of what this cycle is for. On 2026-08-07 a
+`v2.4.0` release shipped outside the cycle — "parallel that actually engages",
+14 commits, manifest and tag both at `2.4.0` — while this section still
+described `v2.4.0` as the open, unstarted milestone. Nothing detected the
+collision: `/cad-health` does not read the manifest, `/cad-audit` traces
+requirements rather than versions, and `git-branch.mjs decide` answered
+`create cadence/v2.4.0` for a branch named after a tag that already existed.
+That is issue #87's failure mode, and `QW-04` closes the reporting half of it
+this cycle.
 
 This cycle turns on the queue rather than on a measurement. `.planning/CAPTURE.md`
 holds 187 open items accumulated across nine milestones. Some were closed by
