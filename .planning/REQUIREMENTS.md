@@ -6,7 +6,7 @@
 ## Active
 
 `v2.4.0 — what Cadence says about itself`. A reconciliation cycle, not a
-construction one. `.planning/CAPTURE.md` holds 182 open items accumulated over
+construction one. `.planning/CAPTURE.md` holds 187 open items accumulated over
 nine milestones; some were closed by work that shipped and never struck, some
 describe code that no longer exists, and the real ones have gone unread because
 the file is too long to triage in passing. That same file is the input to
@@ -28,7 +28,7 @@ re-confirmed against the live tree before being written down here — the
 v2.2.0 and is deliberately absent.
 
 - **REC-01**: Every open `CAPTURE.md` item is triaged against the live tree and lands in exactly one of three states — closed with the commit that closed it named, deleted as moot with the reason stated, or kept with its claim re-verified and its file:line citations corrected. No item survives on its original wording alone
-- **REC-02**: The capture file stops being an append-only log: closed and moot items move out of the live queue to an archive section or file, so what `/cad-plan`'s recall reads is the set of things still true. The recall path is measured before and after, since a shorter corpus changes what BM25 ranks
+- **REC-02**: The capture file stops being an append-only log: moot items move out of the live queue to a `## Archive` section, so what `/cad-plan`'s recall reads is the set of things still true. Closed items stay, carrying their `[closed]` marker — `planning-files.mjs:602-609` keeps them in the corpus on purpose as the prior evidence recall exists to surface, and they are only 16.8% of it. The recall path is measured before and after against a snapshot holding CAPTURE.md alone, since a shorter corpus changes what BM25 ranks (corrected at phase-1 context, 2026-08-07)
 - **FRI-01**: `/cad-verify` states the human-check bar — an item is human-verify only when the model cannot execute it (irreversible against real data, or outside its reach: credentials, GUI, hardware, another machine) — and its walk runs and cites everything else as a results table, reserving the one-at-a-time turn-ending walk for the items that survive the bar. `cad-verifier`'s `why_human` field already encodes this; the walk does not apply it
 - **FRI-02**: A blocking review trigger cannot re-arm without bound on the commit that fixes the findings it just raised: the cap is stated, the loop terminates, and exceeding it surfaces a named reason. Every dispatched agent carries an explicit runaway-loop bound (issue #72 — `maxTurns` is the only guard the host offers and Cadence sets it nowhere)
 - **FRI-03**: Routing floors and branch naming describe the actual work — a dependency lockfile no longer matches the `concurrency` surface and so no longer floors a phase to `critical`; `git-branch.mjs decide` with no active milestone downgrades to `ask` instead of naming the milestone that already shipped; and a planning-doc version that disagrees with the shipped manifest is visible to `/cad-health`, `/cad-audit` and self-verify (issue #87)

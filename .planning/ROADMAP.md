@@ -3,13 +3,16 @@
 ## Overview
 
 `v2.4.0 — what Cadence says about itself`. A reconciliation cycle: triage the
-182-item capture queue against the live tree, fix what triage proves still
+187-item capture queue against the live tree, fix what triage proves still
 live, then check what Cadence claims about itself against what it does. The
 order is load-bearing. Triage runs first because the queue is the input to
-every later phase and roughly a third of it describes code that no longer
-exists — the O(K x N) git-guard blocker, for one, was closed by `TOK-02` when
-v2.2.0 deleted the tokenizer, and it is still filed as open. Fixing before
-triaging would spend a phase on ghosts. The three fix phases are the surviving
+every later phase and an unknown share of it is already closed — the O(K x N)
+git-guard blocker, for one, was closed by `TOK-02` when v2.2.0 deleted the
+tokenizer, and it is still filed as open. What triage will NOT find is mass
+deletion: measured at phase-1 context, only 2 of 62 distinct cited paths no
+longer resolve, so the cost is re-verifying line numbers and claims against
+files that all still exist. Fixing before triaging would spend a phase on
+ghosts. The three fix phases are the surviving
 clusters, ordered by how often they bite: friction the user hits every session,
 then the parser under the planning data everything else reads, then the bytes
 every dispatch pays for. The doc sweep lands last because the phases before it
@@ -42,11 +45,14 @@ set of things still true, with every item's verdict backed by the tree rather
 than by its own wording.
 **Depends on:** Nothing (first phase)
 **Requirements:** REC-01, REC-02
-**Success Criteria:**
-1. Every one of the 182 open items carries exactly one of three resolutions: closed with the commit sha that closed it named, deleted as moot with the reason stated, or kept with its claim re-verified and its `file:line` citations corrected against the current tree. Zero items survive with their original wording and no verdict.
-2. Closed and moot items live outside the live queue (an archive section or a separate file), so the corpus `/cad-plan`'s recall reads contains only open items.
-3. `planning.mjs recall` is measured against the same query set before and after the move, and the two result sets are recorded side by side in the phase SUMMARY - a shorter corpus changes what BM25 ranks, and that change is stated rather than assumed benign.
-4. Every item the triage keeps and assigns to phases 2, 3 or 4 is named in that phase's CONTEXT, so no surviving item is orphaned by the cycle that triaged it.
+**Success Criteria:** (superseded by `phases/1/CONTEXT.md`'s AC1-AC7, which
+carry the locked decisions; criterion 2 below changed at context time - D-04 of
+the capture reader stands, so closed items stay in the live queue and only moot
+items are archived)
+1. Every one of the 187 open items carries exactly one of three resolutions: closed with the commit sha or tree evidence that closed it named, deleted as moot with the reason stated, or kept with its claim re-verified and its `file:line` citations corrected against the current tree. Zero items survive with their original wording and no verdict.
+2. Moot items live outside the live queue in a `## Archive` section; closed items stay in place carrying their `[closed]` marker, because the capture reader keeps them in the corpus on purpose as the prior evidence recall exists to surface.
+3. `planning.mjs recall` is measured against the same query set before and after the move, against a corpus snapshot holding CAPTURE.md alone so no phase artifact enters either side, and both raw result sets are recorded in `phases/1/MEASUREMENTS.md`.
+4. Every item the triage keeps and assigns to phases 2, 3 or 4 is named in phase 1's own SUMMARY assignment list, so no surviving item is orphaned by the cycle that triaged it.
 
 ### Phase 2: Live friction
 **Goal:** The five session-level defects the user hits by hand stop firing:

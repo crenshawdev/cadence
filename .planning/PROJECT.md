@@ -96,9 +96,9 @@ audit arms green (11/11 traced, 20/20 criteria covered), and the manifest at
 `2.3.0`.
 
 This cycle turns on the queue rather than on a measurement. `.planning/CAPTURE.md`
-holds 182 open items accumulated across nine milestones. Some were closed by
-work that shipped and were never struck; some describe code that no longer
-exists; some are real and have been carried unread for months because the file
+holds 187 open items accumulated across nine milestones. Some were closed by
+work that shipped and were never struck; some are real and have been carried
+unread for months because the file
 is too long to triage in passing. A queue nobody can read is the same failure as
 no queue, and it is currently the input to `/cad-plan`'s recall.
 
