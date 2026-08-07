@@ -144,6 +144,62 @@ test('a files value that is not an array yields no matches', () => {
   }
 });
 
+// --- matchSurfaces: the dependency-lockfile exclusion (D-05) ------------------
+
+/** A hand-written concurrency row, same patterns route-table.json declares for
+ *  the tokens this exclusion is about. Nothing is read from that file. */
+function conc() {
+  return { concurrency: { patterns: ['lock', 'locks', 'locking', 'mutex'], floor: 'critical' } };
+}
+
+for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.lock',
+  'Gemfile.lock', 'composer.lock']) {
+  test(`a lockfile basename matches nothing: ${lockfile}`, () => {
+    assert.deepEqual(matchSurfaces([lockfile], conc()), []);
+  });
+}
+
+test('the exclusion is by BASENAME, so a nested lockfile is excluded too', () => {
+  assert.deepEqual(matchSurfaces(['frontend/app/package-lock.json'], conc()), []);
+  assert.deepEqual(matchSurfaces(['crates/core/Cargo.lock'], conc()), []);
+});
+
+test('the exclusion is case-insensitive on the suffix', () => {
+  assert.deepEqual(matchSurfaces(['Gemfile.LOCK'], conc()), []);
+});
+
+for (const path of ['src/lock.rs', 'internal/lock/manager.go', 'db/locks.sql', 'src/locking.rs']) {
+  test(`a real concurrency path still floors: ${path}`, () => {
+    const m = matchSurfaces([path], conc());
+    assert.equal(m.length, 1, path);
+    assert.equal(m[0].surface, 'concurrency');
+    assert.equal(m[0].path, path);
+  });
+}
+
+test('a lockfile beside a real concurrency path does not hide it', () => {
+  // The exclusion drops the PATH, never the surface: the plan still floors, and
+  // the match names the file that earned it rather than the generated one.
+  const m = matchSurfaces(['package-lock.json', 'src/lock.rs'], conc());
+  assert.equal(m.length, 1);
+  assert.equal(m[0].path, 'src/lock.rs');
+});
+
+test('a lockfile is excluded from EVERY surface, not from concurrency alone', () => {
+  // `sessions.lock` tokenizes to [sessions, lock] and would otherwise floor on
+  // the auth surface's `session`... it is a generated manifest either way.
+  const t = { ...conc(), auth: { patterns: ['auth', 'session', 'sessions'], floor: 'critical' } };
+  assert.deepEqual(matchSurfaces(['sessions.lock'], t), []);
+});
+
+test('a name that merely CONTAINS lock is not a lockfile', () => {
+  // `.lock` / `-lock.json` are suffixes of the BASENAME, not substrings of the
+  // path: `unlock.rs` and `locked.json` are ordinary source files.
+  const t = { ...conc(), misc: { patterns: ['unlock', 'locked'], floor: 'critical' } };
+  assert.equal(matchSurfaces(['src/unlock.rs'], t).length, 1);
+  assert.equal(matchSurfaces(['src/locked.json'], t).length, 1);
+});
+
 // --- raiseTo ------------------------------------------------------------------
 
 test('raiseTo raises a lower baseline to the floor', () => {

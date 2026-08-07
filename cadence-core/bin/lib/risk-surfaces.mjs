@@ -43,6 +43,33 @@ export function pathTokens(path) {
     .filter(Boolean);
 }
 
+// A dependency LOCKFILE, by basename, excluded before the token match (D-05).
+// `pathTokens` splits on every non-alphanumeric run, so `package-lock.json`
+// yields a `lock` token, which equals the concurrency surface's `lock` pattern
+// and floored a whole phase to `critical` for a generated file no human wrote.
+//
+// Removing the `lock` and `locks` patterns was the simpler, data-only edit and
+// is rejected: it trades a real detection away to close a false one, so
+// `src/lock.rs`, `internal/lock/manager.go` and `db/locks.sql` would stop
+// flooring with no test naming the loss. Excluding by basename names the
+// lockfile CLASS at the point it is excluded, beside the `pathTokens` that
+// produced the token in the first place.
+//
+// Two shapes, exactly as D-05 declares them: a basename ending `.lock`
+// (`Cargo.lock`, `yarn.lock`, `poetry.lock`, `Gemfile.lock`, `composer.lock`)
+// and one ending `-lock.json` (`package-lock.json`). The exclusion applies to
+// EVERY surface rather than to `concurrency` alone - a generated dependency
+// manifest is not the evidence any of the eight is looking for, and a rule that
+// held for one surface would still floor on the next pattern list that gains a
+// word a package name happens to contain.
+const LOCKFILE_RE = /(?:\.lock|-lock\.json)$/i;
+
+/** @param {string} p a declared path, already known to be a non-empty string */
+function isLockfile(p) {
+  const base = p.split(/[\\/]/).pop() || '';
+  return LOCKFILE_RE.test(base);
+}
+
 /**
  * @typedef {object} SurfaceMatch
  * @property {string} surface the surface name the row is keyed by
@@ -68,7 +95,12 @@ export function matchSurfaces(files, surfaces) {
   /** @type {SurfaceMatch[]} */
   const out = [];
   if (!isObj(surfaces)) return out;
-  const paths = Array.isArray(files) ? files.filter((f) => typeof f === 'string' && f) : [];
+  // Non-strings are filtered here and must stay filtered - the function is
+  // TOTAL and runs on whatever a PLAN's frontmatter holds - and the lockfile
+  // exclusion sits in the same pass, BEFORE any token is computed.
+  const paths = Array.isArray(files)
+    ? files.filter((f) => typeof f === 'string' && f && !isLockfile(f))
+    : [];
   if (!paths.length) return out;
   /** @type {Map<string, string[]>} */
   const tokensOf = new Map();

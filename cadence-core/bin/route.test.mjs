@@ -655,6 +655,42 @@ test('a solo phase whose PLAN declares an auth path resolves at the critical cel
   assert.match(floor[0], /solo -> critical/); // the baseline is still visible
 });
 
+// One fixture plan PER lockfile, never one plan declaring all of them (D-21):
+// matchSurfaces returns at most ONE match per surface - the first path that hits
+// - so a combined plan would prove only the first name in the list.
+for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.lock',
+  'Gemfile.lock']) {
+  test(`a solo phase declaring ${lockfile} resolves SOLO, no floor entry`, () => {
+    const r = resolve('cad-executor', planningRoot(['README.md', lockfile]), ['--phase', '9']);
+    assert.equal(r.ok, true);
+    assert.equal(r.stakes, 'solo');
+    assert.deepEqual(floorEntries(r), [], JSON.stringify(r.reason));
+  });
+}
+
+test('a solo phase declaring src/lock.rs STILL floors to critical on concurrency', () => {
+  // The other half of D-05: the `lock` and `locks` patterns are kept, so a real
+  // concurrency path is still detected. Removing them to close the lockfile
+  // false positive would have deleted this row with no test naming the loss.
+  const r = resolve('cad-executor', planningRoot(['README.md', 'src/lock.rs']), ['--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');
+  const floor = floorEntries(r);
+  assert.equal(floor.length, 1, JSON.stringify(r.reason));
+  assert.match(floor[0], /concurrency/);
+  assert.match(floor[0], /lock\.rs/);
+  assert.match(floor[0], /pattern "lock"/);
+});
+
+test('a lockfile declared BESIDE a real concurrency path still floors, naming that path', () => {
+  const r = resolve('cad-executor',
+    planningRoot(['package-lock.json', 'db/locks.sql']), ['--phase', '9']);
+  assert.equal(r.stakes, 'critical');
+  const floor = floorEntries(r);
+  assert.equal(floor.length, 1, JSON.stringify(r.reason));
+  assert.match(floor[0], /locks\.sql/);
+});
+
 test('the cursor fallback returns a bundle deep-equal to the --phase one (AC1)', () => {
   const files = ['README.md', 'src/auth/session.rs'];
   const explicit = resolve('cad-executor', planningRoot(files), ['--phase', '9']);
