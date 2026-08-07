@@ -130,6 +130,7 @@ purpose test runs against the reach the author just replaced.
 | `workflow.subagent_timeout` | universal | `references/seams.md` spawn-agent - ms before a subagent is killed |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.test_command` | universal | `workflows/task.md`, `workflows/coverage.md` and the executor contract |
+| `workflow.lint_command` | universal | the executor contract's static-analysis step - the LINT command only; unset there means `bin/planning.mjs detect-commands` supplies both lint and typecheck from the project's own manifests |
 | `parallelization.enabled` | universal | `workflows/execute.md` - the parallel-path gate |
 | `parallelization.max_concurrent_agents` | universal | `workflows/execute.md` - dispatch batch size |
 | `parallelization.min_plans_for_parallel` | universal | `workflows/execute.md` - the parallel-path gate |

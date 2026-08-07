@@ -91,6 +91,7 @@ selectable option and its `description`.
 | `workflow.subagent_timeout` | int | ms before a subagent is killed | e.g. `300000` (5 min) | 300000 |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
 | `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
+| `workflow.lint_command` | str\|null | Command an executor runs for static analysis before it commits - LINT only, there is no typecheck key | shell string, or `null` (none set; the executor detects instead) | null |
 | **Parallelization** |||||
 | `parallelization.enabled` | bool | Run independent plans concurrently | `true`→parallel · `false`→sequential | false |
 | `parallelization.max_concurrent_agents` | int | Cap on simultaneous agents | e.g. `3` | 3 |

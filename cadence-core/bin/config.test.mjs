@@ -956,3 +956,61 @@ test('every model.effort enum is exactly that role\'s rung set from RUNG_FILES',
   assert.equal(Object.keys(schema).filter((k) => k.startsWith('model.effort.')).length,
     Object.keys(RUNG_FILES).length);
 });
+
+// --- workflow.lint_command (QW-01) -------------------------------------------
+
+test('workflow.lint_command: get returns the schema default null', () => {
+  const gpath = join(dir, 'lint-get-global.json');
+  const r = run(['get', 'workflow.lint_command', '--file', join(dir, 'lint-absent.json')], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['workflow.lint_command'], null);
+});
+
+test('workflow.lint_command: set writes a shell string and get reads it back', () => {
+  const file = join(dir, 'lint-set.json');
+  writeFileSync(file, '{}');
+  const gpath = join(dir, 'lint-set-global.json');
+  const w = run(['set', '--file', file, 'workflow.lint_command=npm run lint'], gpath);
+  assert.equal(w.ok, true);
+  assert.deepEqual(w.changed, [{ key: 'workflow.lint_command', value: 'npm run lint' }]);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).workflow.lint_command, 'npm run lint');
+  const r = run(['get', 'workflow.lint_command', '--file', file], gpath);
+  assert.equal(r.values['workflow.lint_command'], 'npm run lint');
+});
+
+test('workflow.lint_command: `=null` clears it; a bare `=` writes the empty string', () => {
+  // The token is parsed as JSON where it parses and taken verbatim otherwise
+  // (parseToken), so `=null` is the clearing idiom and `=` writes "". Both
+  // validate, and both read as "nothing to run" at the one prose reader - this
+  // row pins which is which rather than assuming the friendlier one.
+  const file = join(dir, 'lint-clear.json');
+  const gpath = join(dir, 'lint-clear-global.json');
+  writeFileSync(file, JSON.stringify({ workflow: { lint_command: 'npm run lint' } }));
+  assert.equal(run(['set', '--file', file, 'workflow.lint_command=null'], gpath).ok, true);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).workflow.lint_command, null);
+  assert.equal(run(['set', '--file', file, 'workflow.lint_command='], gpath).ok, true);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).workflow.lint_command, '');
+});
+
+test('workflow.lint_command: validate accepts null and a string, refuses a number', () => {
+  const gpath = join(dir, 'lint-val-global.json');
+  const good = join(dir, 'lint-valid.json');
+  writeFileSync(good, JSON.stringify({ workflow: { lint_command: 'cargo clippy' } }));
+  assert.equal(run(['validate', '--file', good], gpath).ok, true);
+  const nulled = join(dir, 'lint-null.json');
+  writeFileSync(nulled, JSON.stringify({ workflow: { lint_command: null } }));
+  assert.equal(run(['validate', '--file', nulled], gpath).ok, true);
+  const bad = join(dir, 'lint-bad.json');
+  writeFileSync(bad, JSON.stringify({ workflow: { lint_command: 7 } }));
+  const r = run(['validate', '--file', bad], gpath);
+  assert.equal(r.ok, false);
+  assert.equal(r.errors[0].key, 'workflow.lint_command');
+  assert.match(r.errors[0].error, /string or null/);
+});
+
+test('workflow.lint_command: the shipped template carries the key at null', () => {
+  const tpl = JSON.parse(readFileSync(
+    join(dirname(CONFIG), '..', 'templates', 'config.json'), 'utf8'));
+  assert.equal('lint_command' in tpl.workflow, true);
+  assert.equal(tpl.workflow.lint_command, null);
+});
