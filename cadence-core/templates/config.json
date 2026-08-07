@@ -32,13 +32,6 @@
       "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
       "deepseek": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
     },
-    "triggers": {
-      "plan":         { "gate": "adjudicated" },
-      "diff":         { "gate": "advisory" },
-      "risk_surface": { "gate": "blocking" },
-      "phase_diff":   { "gate": "off" },
-      "pre_ship":     { "gate": "adjudicated" }
-    },
     "consult": { "enabled": false, "tier": "flagship", "effort": "high", "attempt_threshold": 3 },
     "decision_review": { "tier": "flagship", "effort": "high" }
   }

@@ -187,7 +187,7 @@ test('each level resolves its whole review map and its verify value, literally',
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
     plan: 'adjudicated', diff: 'advisory', risk_surface: 'blocking',
-    phase_diff: 'off', pre_ship: 'adjudicated',
+    phase_diff: 'advisory', pre_ship: 'adjudicated',
   });
   assert.equal(shipped.verify, 'on');
 
@@ -876,6 +876,49 @@ test('a VALID disagreeing gate still wins - the check runs in front of D-04, not
   assert.equal(r.review.risk_surface, 'off'); // the user's key still decides
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /wins over the critical level gate/);
+});
+
+// --- phase_diff resolves the same through all three surfaces -----------------
+
+test('with NO triggers block the level decides phase_diff, and nothing disagrees', () => {
+  // The three surfaces that decide this gate - the route table, the schema
+  // default and the scaffolded template - agreed on nothing before this. A
+  // config that writes no gate is the state a fresh scaffold is now in.
+  const shipped = rawCfg({ stakes: 'shipped' }, 'pd-shipped.json');
+  const rs = resolve('cad-executor', shipped);
+  assert.equal(rs.review.phase_diff, 'advisory');
+  // route omits `warnings` entirely when empty, so an absent key IS the
+  // no-disagreement answer - `?? []` states that rather than crashing on it.
+  assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
+
+  const critical = rawCfg({ stakes: 'critical' }, 'pd-critical.json');
+  const rc = resolve('cad-executor', critical);
+  assert.equal(rc.review.phase_diff, 'adjudicated');
+  assert.deepEqual(rc.warnings ?? [], [], String(rc.warnings));
+
+  const solo = rawCfg({ stakes: 'solo' }, 'pd-solo.json');
+  assert.equal(resolve('cad-executor', solo).review.phase_diff, 'off');
+});
+
+test('the SCAFFOLDED template carries no triggers block, so nothing overrides the level', () => {
+  // The template is the fixture, not a hand-written stand-in: a pre-written
+  // gate WINS over the level's and warns, so a scaffolded repo later switched
+  // to `stakes: critical` would have kept `advisory` beating `adjudicated` -
+  // which is the whole point of dropping the block rather than retuning it.
+  const template = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'config.json'), 'utf8'));
+  assert.equal(template.review.triggers, undefined, 'the template must write no gate at all');
+
+  const asShipped = rawCfg(template, 'pd-template-shipped.json');
+  const rs = resolve('cad-executor', asShipped);
+  assert.equal(rs.stakes, 'shipped', 'the template ships at shipped');
+  assert.equal(rs.review.phase_diff, 'advisory');
+  assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
+
+  const asCritical = rawCfg({ ...template, stakes: 'critical' }, 'pd-template-critical.json');
+  const rc = resolve('cad-executor', asCritical);
+  assert.equal(rc.review.phase_diff, 'adjudicated', 'the level decides after the switch');
+  assert.deepEqual(rc.warnings ?? [], [], String(rc.warnings));
 });
 
 test('a VALID agreeing gate still emits no warning', () => {
