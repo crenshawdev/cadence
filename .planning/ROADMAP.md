@@ -17,6 +17,22 @@ efficiency. Phase 1 is the externally-prioritized response, and it supersedes qu
 triage as the opening phase. Phase 2 follows because context reduction *is* the
 efficiency category, at the heaviest weight in that evaluation.
 
+Phase 1 is scoped from the evaluation's per-category rationales rather than its
+scores, which is why it looks the way it does. Three of those rationales named
+something specific and cheap: a static-analysis layer and an IDE index (QW-01),
+mechanically enforced file leases across parallel paths (QW-03), and one joined
+trace covering provider requests, worker lifecycle and accepted outcomes (QW-02).
+The trace is the highest-leverage item in the phase because two separate
+categories ask for it - observability wants the joined view, and total efficiency
+wants matched-task attribution for every worker, retry and verification branch,
+which is the same artifact read differently. Four other rationales named things
+deliberately NOT in scope: a cross-runtime execution kernel, a universal
+peer-messaging fabric, a universal OS sandbox per worker, and external deployment
+history. The extensibility rationale asked for a versioned SDK, arbitrary tool
+registration and broad MCP lifecycle - a general extension platform - which is why
+the Stop hook and MCP server considered for this phase were cut rather than built:
+neither would have moved what was actually being measured.
+
 Triage therefore runs third rather than first. That order costs something real and
 the cost is stated: the queue is the input to phases 4, 5 and 6, and an unknown
 share of it is already closed. The three fix phases behind it were scoped from
@@ -41,7 +57,7 @@ each release tag are their archive.
 
 ## Phases
 
-- [ ] **Phase 1: Benchmark quick wins** - lint and diagnostics reach the executor, no config warning is dropped in silence, route decisions become inspectable, a blocked worktree gets a remedy, and the named tracker and backlog reliability fixes land
+- [ ] **Phase 1: Benchmark quick wins** - a static-analysis layer reaches the executor, one joined trace explains a run, file leases become enforced rather than checked, provider failure paths get exercised, and the named tracker and backlog reliability fixes land
 - [ ] **Phase 2: Context reduction** - budget `references/`, cut the two heaviest commands, and stop paying for prose that rides every session
 - [ ] **Phase 3: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 4: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
@@ -52,23 +68,26 @@ each release tag are their archive.
 
 ### Phase 1: Benchmark quick wins
 **Goal:** The capability gaps an outside evaluation found are closed where closing
-them is real capability rather than scoreboard motion. Cadence gains a lint and
-diagnostics path into execution, stops dropping configuration diagnostics on the
-floor, can show what it dispatched and why, and has a stated remedy for the one
-parallel-execution halt that currently dead-ends.
+them is real capability rather than scoreboard motion. Cadence gains a
+static-analysis path into execution that works without configuration, one joined
+trace that explains what a run actually did, enforcement of the file leases it
+already declares, and exercised evidence for the provider failure paths it
+currently assumes.
 **Depends on:** Nothing (first phase)
-**Requirements:** QW-01, QW-02, QW-03, QW-04
+**Requirements:** QW-01, QW-02, QW-03, QW-04, QW-05
 **Success Criteria:**
-1. `workflow.lint_command` exists across all five config surfaces (schema, template, `/cad-config` catalog, config-reach, and a prose reader) and the executor contract runs it after a task's edits and before its commit, treating a failure as a blocker with the same three bounded attempts as any other. An executor facing a failing lint does not reach the commit step.
+1. `workflow.lint_command` exists across all five config surfaces (schema, template, `/cad-config` catalog, config-reach, and a prose reader), and when it is unset the executor detects the project's own lint and typecheck commands from the tree instead of skipping the step. Either way the contract runs it after a task's edits and before its commit and treats a failure as a blocker with the same three bounded attempts as any other. An executor facing a failing lint does not reach the commit step, in a repo that configured nothing.
 2. Both `cad-executor` rungs carry the `LSP` tool grant, self-verify's tool lint passes with it, and the contract states when to prefer diagnostics over a lint subprocess. The grant is proved harmless when no code-intelligence plugin is installed.
-3. No `mergeLayers` caller drops `warnings[]` in silence: each of the nine callsites across eight files either surfaces the warning in its envelope or its file header states that the envelope is the surfacing. A torn `.planning/config.json` produces a named diagnostic on the git-guard path rather than a quiet revert to default `protected_branches`.
-4. Route decisions persist to `.planning/route-log.jsonl` - gitignored, bounded and rotated, gated by `planning.route_log` (default true). `planning.mjs routes` renders them with per-phase dispatch counts, `/cad-progress --routes` displays them on demand, and a log-write failure provably does not change a resolve envelope.
-5. A `blocked` worktree halt naming a missing PLAN file has a stated orchestrator-side remedy in `execute.md`, including the fallback when the remedy fails twice. Cadence still issues no `git worktree add`.
-6. `phase_diff` resolves to `advisory` at `shipped` through all three surfaces that decide it - the route table row, the schema default, and the shipped template line - so a scaffolded repo config no longer overrides `critical`'s `adjudicated` with `off`.
-7. A dependency lockfile no longer matches the `concurrency` risk surface: `package-lock.json`, `Cargo.lock`, `yarn.lock`, `poetry.lock` and `Gemfile.lock` at `stakes: solo` each resolve `solo`, proved by a route resolve before and after, while `src/locking.rs` still floors to `critical`.
-8. Issues #14 and #19 land: the verifier's level-3 `Wired` requires one real value traced end to end across each seam on the goal path, and `/cad-debug` consults a frequency-ordered bug-patterns checklist before forming its first hypothesis.
-9. A planning-doc version that disagrees with the shipped manifest is reported by `/cad-health` with both numbers named, and `git-branch.mjs decide` no longer returns a `create` for an integration branch named after a version the manifest has already published. Measured on this repo at phase-1 open: with `### Active` naming `v2.4.0` and the manifest already at `2.4.0`, `decide` returned `{"action":"create","branch":"cadence/v2.4.0"}` - the seam reads the active milestone correctly and checks it against nothing, which is wider than the filed "no active milestone" case. #87(a) is recorded as already shipped, citing `lib/release-decision.mjs`' downgrade and not-an-upgrade arms.
-10. Every CAPTURE item this phase closes is closed with tree evidence - the commit or the code path that closed it - never because it reads as done. `CAPTURE.md:227` and `:214` are closed on that basis.
+3. One gitignored, bounded `.planning/trace.jsonl` carries four event families against a single correlation id per phase - routing decisions, provider requests (reviewer, tier, outcome, duration), worker lifecycle (dispatch, return, checkpoint, escalation), and accepted outcomes (adjudications, UAT verdicts). Every worker, retry and verification branch in a completed phase is attributable to the task that caused it, proved by tracing one real phase end to end. `planning.mjs trace` renders it, `/cad-progress --trace` displays it on demand, and a trace-write failure provably does not change any seam's envelope.
+4. No `mergeLayers` caller drops `warnings[]` in silence: each of the nine callsites across eight files either surfaces the warning in its envelope or its file header states that the envelope is the surfacing. A torn `.planning/config.json` produces a named diagnostic on the git-guard path rather than a quiet revert to default `protected_branches`.
+5. An executor's writes are held to the `files:` list its plan declared, on every parallel path - not only compared once by `plan-overlap` before dispatch. A write outside the declared list is caught by a mechanism rather than by review, proved by a plan that attempts one.
+6. A `blocked` worktree halt naming a missing PLAN file has a stated orchestrator-side remedy in `execute.md`, including the fallback when the remedy fails twice. Cadence still issues no `git worktree add`.
+7. `phase_diff` resolves to `advisory` at `shipped` through all three surfaces that decide it - the route table row, the schema default, and the shipped template line - so a scaffolded repo config no longer overrides `critical`'s `adjudicated` with `off`.
+8. A dependency lockfile no longer matches the `concurrency` risk surface: `package-lock.json`, `Cargo.lock`, `yarn.lock`, `poetry.lock` and `Gemfile.lock` at `stakes: solo` each resolve `solo`, proved by a route resolve before and after, while `src/locking.rs` still floors to `critical`.
+9. `review-provider.mjs` has a test per real failure mode - request timeout, HTTP 4xx, HTTP 5xx, a dead or unknown model id, a malformed or truncated body, and an empty findings set - each proving what the caller sees. A reviewer that drops out of a fired trigger is named in the trace and to the user; a panel silently reduced to one voice while the gate reports clean fails this criterion.
+10. Issues #14 and #19 land: the verifier's level-3 `Wired` requires one real value traced end to end across each seam on the goal path, and `/cad-debug` consults a frequency-ordered bug-patterns checklist before forming its first hypothesis.
+11. A planning-doc version that disagrees with the shipped manifest is reported by `/cad-health` with both numbers named, and `git-branch.mjs decide` no longer returns a `create` for an integration branch named after a version the manifest has already published. Measured on this repo at phase-1 open: with `### Active` naming `v2.4.0` and the manifest already at `2.4.0`, `decide` returned `{"action":"create","branch":"cadence/v2.4.0"}` - the seam reads the active milestone correctly and checks it against nothing, which is wider than the filed "no active milestone" case. #87(a) is recorded as already shipped, citing `lib/release-decision.mjs`' downgrade and not-an-upgrade arms.
+12. Every CAPTURE item this phase closes is closed with tree evidence - the commit or the code path that closed it - never because it reads as done. `CAPTURE.md:227` and `:214` are closed on that basis.
 
 ### Phase 2: Context reduction
 **Goal:** The bytes the main thread carries per command are budgeted and cut where
