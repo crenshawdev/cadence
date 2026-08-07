@@ -183,6 +183,23 @@ test('renderTrace: a role-keyed worker pairs on its own key, not with a plan num
   assert.deepEqual(renderTrace(dir, 1).unpaired.map((u) => u.plan), ['1']);
 });
 
+test('renderTrace: a re-run never pairs across runs, and unpaired names the run', () => {
+  // Phase 1 runs TWICE at different shas. Run 1 strands plan 1; run 2 brackets
+  // plan 1 cleanly. The header promises a re-run starts a NEW id, so run 2's
+  // `return` may not reach back and close run 1's dispatch.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'aaa' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'bbb' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: '1' });
+  const r = renderTrace(dir, 1);
+  assert.equal(r.unpaired.length, 1);
+  assert.equal(r.unpaired[0].corr, '1-aaa');
+  assert.equal(r.unpaired[0].plan, '1');
+  assert.deepEqual(r.unpaired.map((u) => u.corr).filter((c) => c === '1-bbb'), []);
+});
+
 test('renderTrace: a malformed line is skipped and counted, the rest still read', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });

@@ -196,18 +196,26 @@ export function appendEvent(planningRoot, event) {
  * @property {{routing: number, provider: number, lifecycle: number, outcome: number}} counts
  * @property {number} malformed lines that did not parse as JSON
  * @property {Record<string, any>[]} events
- * @property {{phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
+ * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
  */
 
 /**
  * Read the trace in line order, group by family, and pair every worker bracket.
  *
- * Pairing: a `lifecycle/dispatch` with a given `(phase, plan)` is closed by a
- * LATER `return`, `checkpoint` or `escalation` with the same `(phase, plan)`,
- * oldest dispatch first. `plan` is the WORKER key - a plan number on either
- * execute path, a role name for a role-dispatched worker - so one rule covers
- * every bracketed worker rather than leaving role dispatches keyed on
- * `undefined` and pairing with each other.
+ * Pairing: a `lifecycle/dispatch` with a given `(corr, phase, plan)` is closed
+ * by a LATER `return`, `checkpoint` or `escalation` with the same
+ * `(corr, phase, plan)`, oldest dispatch first. `plan` is the WORKER key - a
+ * plan number on either execute path, a role name for a role-dispatched worker -
+ * so one rule covers every bracketed worker rather than leaving role dispatches
+ * keyed on `undefined` and pairing with each other.
+ *
+ * `corr` is part of the key because a RE-RUN of a phase starts a new id (the
+ * header's first contract), and without it the second run's terminal event
+ * closes the first run's stranded dispatch: the record would report a clean
+ * bracket for a worker that never came back, and strand the healthy one in its
+ * place. Each pending entry therefore carries its own `corr`, so an `unpaired`
+ * line says WHICH run stranded the worker. An event with no `corr` keys on the
+ * empty string, exactly as `plan` already does.
  *
  * An absent file is an empty render, never an error: the same
  * never-blocks-the-spine contract `recall` follows.
@@ -236,7 +244,7 @@ export function renderTrace(planningRoot, phase) {
   const lines = readLines(planningRoot);
   if (lines === null) return out;
 
-  /** @type {Map<string, {phase: any, plan: any, ts: any}[]>} */
+  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any}[]>} */
   const open = new Map();
   for (const raw of lines) {
     const line = raw.trim();
@@ -248,10 +256,10 @@ export function renderTrace(planningRoot, phase) {
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
     if (e.family !== 'lifecycle') continue;
-    const worker = `${key(e.phase)} ${key(e.plan)}`;
+    const worker = `${key(e.corr)} ${key(e.phase)} ${key(e.plan)}`;
     if (e.event === DISPATCH) {
       const pending = open.get(worker) || [];
-      pending.push({ phase: e.phase, plan: e.plan, ts: e.ts });
+      pending.push({ corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts });
       open.set(worker, pending);
     } else if (TERMINAL.includes(e.event)) {
       const pending = open.get(worker);
