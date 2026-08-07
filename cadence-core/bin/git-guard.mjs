@@ -86,8 +86,29 @@ function currentBranch(cwd) {
  * @returns {{decision: string, reason: string} | null}
  */
 function commitDecision(root, cwd) {
-  const { config } = mergeLayers(join(root, '.planning', 'config.json'));
+  const repoLayer = join(root, '.planning', 'config.json');
+  // mergeLayers warnings[]: taken off the call and ACTED ON below, not dropped.
+  // A layer that failed to parse is exactly the layer whose protected_branches
+  // and on_protected this function was about to decide with.
+  const { config, warnings } = mergeLayers(repoLayer);
   const git = config.git || {};
+
+  // Keyed on the repo layer having failed to parse (D-17) and NOT on a
+  // protected-branch hit: keying it to the hit would fire only when the user
+  // happens to be on `main`, and never in the case actually worth catching -
+  // where their own custom protected_branches list is the thing that was lost.
+  //
+  // ANCHORED on both ends, never a bare `includes(repoLayer)`. A mergeLayers
+  // warning is a FLAT STRING with no layer field, shaped `config layer <path>
+  // failed to parse...` or `config layer <path> top-level is not an object...`
+  // (lib/config-merge.mjs:55, :162), so a bare containment reads a GLOBAL-layer
+  // warning as a torn repo layer whenever the global path has the repo path as
+  // a prefix (`CADENCE_GLOBAL_CONFIG=<root>/.planning/config.json.global`) or as
+  // a suffix (`<elsewhere>/<root>/.planning/config.json`) - an `ask` on a
+  // non-protected branch whose repo layer parsed fine. The path must be followed
+  // by the space that delimits it from the diagnosis.
+  const tornPrefix = `config layer ${repoLayer} `;
+  const torn = (warnings || []).filter((w) => typeof w === 'string' && w.startsWith(tornPrefix));
   // A lone string is an easy hand-edit; honor it rather than silently
   // reverting to the default list and unprotecting the branch the user
   // named (#38). Other non-array shapes still fall to the default.
@@ -102,20 +123,39 @@ function commitDecision(root, cwd) {
   // instead of silently degrading the intended hard block to a soft ask (#38).
   const raw = git.on_protected === 'deny' ? 'refuse' : git.on_protected;
   const onProtected = raw || 'ask';
-  if (onProtected === 'allow') return null;
-
   const branch = currentBranch(cwd);
-  if (!branch) return null; // not a repo / no commits - nothing to guard
-  if (!protectedBranches.includes(branch)) return null;
 
-  const refuse = onProtected === 'refuse';
-  return {
-    decision: refuse ? 'deny' : 'ask',
-    reason: `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
-      (refuse
-        ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
-        : 'Create a task branch first, or approve to commit here deliberately.'),
-  };
+  // The ordinary protected-branch decision, computed BEFORE the torn-layer arm
+  // below rather than after it. The torn arm returns `ask`, so returning it
+  // first would turn a configured `deny` into an `ask` whenever the repo layer
+  // was the torn one and the GLOBAL layer carried on_protected=refuse - a torn
+  // file silently weakening a hard block, which is worse than the silence this
+  // diagnostic replaces.
+  const branchDecision = (() => {
+    if (onProtected === 'allow') return null;
+    if (!branch) return null; // not a repo / no commits - nothing to guard
+    if (!protectedBranches.includes(branch)) return null;
+    const refuse = onProtected === 'refuse';
+    return {
+      decision: refuse ? 'deny' : 'ask',
+      reason: `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
+        (refuse
+          ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
+          : 'Create a task branch first, or approve to commit here deliberately.'),
+    };
+  })();
+
+  if (torn.length) {
+    const note = `Cadence rail: ${torn[0]} - the branch rails are deciding with `
+      + 'DEFAULTS, not your settings.';
+    // A parse warning never PRODUCES a deny, and never CANCELS one either: an
+    // existing hard block keeps its decision and gains the reason.
+    if (branchDecision && branchDecision.decision === 'deny') {
+      return { decision: 'deny', reason: `${note} ${branchDecision.reason}` };
+    }
+    return { decision: 'ask', reason: `${note} Fix the file, or approve to commit under the defaults.` };
+  }
+  return branchDecision;
 }
 
 // No process.exit() anywhere below: the decision JSON is written to stdout,
