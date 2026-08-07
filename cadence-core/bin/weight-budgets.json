@@ -22,6 +22,7 @@
     "agents/cad-verifier.md": 458,
     "cadence-core/references/COMMANDS.md": 4027,
     "cadence-core/references/acceptance-criteria.md": 22506,
+    "cadence-core/references/bug-patterns.md": 4247,
     "cadence-core/references/config-reach.md": 18412,
     "cadence-core/references/consult.md": 4348,
     "cadence-core/references/conventions.md": 5115,
@@ -48,7 +49,7 @@
     "cadence-core/workflows/config.md": 18969,
     "cadence-core/workflows/context.md": 16615,
     "cadence-core/workflows/coverage.md": 4034,
-    "cadence-core/workflows/debug.md": 6510,
+    "cadence-core/workflows/debug.md": 6785,
     "cadence-core/workflows/decision-review.md": 9730,
     "cadence-core/workflows/docs-verify.md": 2796,
     "cadence-core/workflows/execute.md": 22957,
@@ -75,7 +76,7 @@
     "skills/cad-docs-verify/SKILL.md": 1164,
     "skills/cad-execute/SKILL.md": 742,
     "skills/cad-executor-contract/SKILL.md": 12625,
-    "skills/cad-health/SKILL.md": 4101,
+    "skills/cad-health/SKILL.md": 4756,
     "skills/cad-help/SKILL.md": 862,
     "skills/cad-land/SKILL.md": 11096,
     "skills/cad-milestone/SKILL.md": 1406,
@@ -91,7 +92,7 @@
     "skills/cad-spike/SKILL.md": 1178,
     "skills/cad-task/SKILL.md": 737,
     "skills/cad-undo/SKILL.md": 1093,
-    "skills/cad-verifier-contract/SKILL.md": 9206,
+    "skills/cad-verifier-contract/SKILL.md": 9644,
     "skills/cad-verify/SKILL.md": 1102
   }
 }

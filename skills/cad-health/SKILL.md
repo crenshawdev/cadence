@@ -69,6 +69,16 @@ Check, then report - do not fix without asking.
      default, and nothing warned. Same for any config block the schema declares
      as an object.
 
+7. **Version drift.** The `PROJECT.md ### Active` milestone version must sort
+   ABOVE everything the project has already shipped. One that does not is an
+   issue - report it naming BOTH numbers and which comparand answered. The
+   comparands are the newest release tag (`git tag --list`) and, when the project
+   ships a manifest that names a version, that too. Neither present, or a version
+   that parses as neither semver, is clean: an unprovable comparison is not
+   drift. This is the failure that let a `v2.4.0` ship while this same section
+   still described `v2.4.0` as the open, unstarted milestone - nothing read the
+   two numbers together.
+
 Report: **healthy** with a one-line all-clear, or a short list of issues, each
 with the file and what is wrong. For a trivial, unambiguous fix (cursor `of M`
 count off, a stale `Updated`), offer to correct it via the ask-user seam - never
