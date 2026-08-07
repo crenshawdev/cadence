@@ -283,6 +283,11 @@ test('a torn config asks on a NON-protected branch, naming the parse failure', (
   assert.equal(d.permissionDecision, 'ask');
   assert.match(d.permissionDecisionReason, /failed to parse/);
   assert.match(d.permissionDecisionReason, /config\.json/);
+  // ...and it names the REPO layer specifically, now that a torn GLOBAL layer
+  // asks with the same decision word.
+  assert.ok(d.permissionDecisionReason
+    .includes(`config layer ${join(dir, '.planning', 'config.json')} failed to parse`),
+  `reason must name the repo layer: ${d.permissionDecisionReason}`);
 });
 
 test('a torn config asks ONCE on a protected branch, not twice', () => {
@@ -321,22 +326,66 @@ test('the push rail is unchanged by a torn layer', () => {
   assert.match(d.permissionDecisionReason, /publishing is/);
 });
 
-test('a torn GLOBAL layer whose path merely PREFIXES the repo layer stays silent', () => {
-  // The anchoring case. mergeLayers warnings are flat strings with no layer
-  // field, so a bare `includes(repoLayer)` reads THIS global-layer warning as a
-  // torn REPO layer and asks on a branch whose repo config parsed fine - here,
-  // is absent entirely.
+/** Feed the hook a commit payload with a chosen user-global config layer. */
+function guardWithGlobal(command, cwd, gpath) {
+  const stdout = execFileSync('node', [GUARD], {
+    encoding: 'utf8',
+    input: JSON.stringify({ tool_input: { command }, cwd }),
+    env: { ...process.env, CADENCE_GLOBAL_CONFIG: gpath },
+  }).trim();
+  return stdout ? JSON.parse(stdout).hookSpecificOutput : null;
+}
+
+test('a torn USER-GLOBAL layer asks too, naming that layer - it carries the same keys', () => {
+  // The live defect: the arm matched the REPO layer's path only, so a torn
+  // ~/.claude/cadence/config.json - the layer that most often carries
+  // protected_branches and on_protected - decided from DEFAULTS in silence.
+  // The path here shares nothing with the repo layer, which is the only shape
+  // that separates the two implementations: a conflating
+  // `includes(repoLayer)` matches nothing and stays silent.
+  const dir = project('feature/x', { git: { protected_branches: ['main'] } });
+  const repoLayer = join(dir, '.planning', 'config.json');
+  const gpath = join(mkdtempSync(join(tmpdir(), 'cad-guard-elsewhere-')), 'global.json');
+  assert.ok(!gpath.includes(repoLayer) && !repoLayer.includes(gpath)); // premise, stated
+  writeFileSync(gpath, '{ "git": { "protected_branches": ');
+  const d = guardWithGlobal('git commit -m x', dir, gpath);
+  assert.equal(d.permissionDecision, 'ask');
+  assert.match(d.permissionDecisionReason, /failed to parse/);
+  assert.ok(d.permissionDecisionReason.includes(gpath),
+    `reason must name the torn GLOBAL layer: ${d.permissionDecisionReason}`);
+});
+
+test('a torn global layer asks on `release` too - the list that would have named it is gone', () => {
+  // No repo layer at all, so `release` is non-protected under the DEFAULTS -
+  // and the file that could have protected it is the unreadable one. Silence
+  // here is the commit landing unguarded.
+  const dir = project('release');
+  const gpath = join(mkdtempSync(join(tmpdir(), 'cad-guard-elsewhere2-')), 'global.json');
+  writeFileSync(gpath, '{');
+  const d = guardWithGlobal('git commit -m x', dir, gpath);
+  assert.equal(d.permissionDecision, 'ask');
+  assert.ok(d.permissionDecisionReason.includes(gpath),
+    `reason must name the torn GLOBAL layer: ${d.permissionDecisionReason}`);
+});
+
+test('a torn GLOBAL layer whose path merely PREFIXES the repo layer asks as itself', () => {
+  // The ANTI-CONFLATION case, kept from when this arm was repo-only. mergeLayers
+  // warnings are flat strings with no layer field, so a bare
+  // `includes(repoLayer)` reads THIS global-layer warning as a torn REPO layer.
+  // Both layers now ask, so the decision no longer separates them - the REASON
+  // does: it must name `config.json.global`, the file that actually tore, and
+  // must not diagnose the repo layer, which is absent and parsed nothing.
   const dir = project('feature/x');
   const repoLayer = join(dir, '.planning', 'config.json');
   const gpath = `${repoLayer}.global`;
   assert.ok(gpath.startsWith(repoLayer)); // the premise, stated not assumed
   writeFileSync(gpath, '{');
-  const stdout = execFileSync('node', [GUARD], {
-    encoding: 'utf8',
-    input: JSON.stringify({ tool_input: { command: 'git commit -m x' }, cwd: dir }),
-    env: { ...process.env, CADENCE_GLOBAL_CONFIG: gpath },
-  }).trim();
-  assert.equal(stdout, '');
+  const d = guardWithGlobal('git commit -m x', dir, gpath);
+  assert.equal(d.permissionDecision, 'ask');
+  assert.ok(d.permissionDecisionReason.includes(`config layer ${gpath} failed to parse`),
+    `reason must diagnose the .global file: ${d.permissionDecisionReason}`);
+  assert.ok(!d.permissionDecisionReason.includes(`config layer ${repoLayer} failed to parse`),
+    `reason must not claim the repo layer tore: ${d.permissionDecisionReason}`);
 });
 
 test('a torn repo layer never CANCELS a deny the global layer configured', () => {
