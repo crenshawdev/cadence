@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 0 (no active cycle)
-Status: ready to plan
-Next: /cad-phase add
-Updated: 2026-08-05
+Phase: 1 of 5 (Queue triage)
+Status: context gathered
+Next: /cad-plan 1
+Updated: 2026-08-07

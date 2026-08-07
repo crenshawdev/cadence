@@ -199,10 +199,12 @@ refuses to parallelize there (`references/seams.md`, Worktree isolation;
 Claude Code >= 2.1.208). Inside a worktree, `"head"` means that worktree's own
 `HEAD`.
 
-Run this step when `parallelization.enabled` and `parallelization.use_worktrees`
-are both true in the config as it now stands (so a value just flipped in the
-walk counts); otherwise skip it silently - the setting is inert for a
-sequential project.
+Run this step whenever `parallelization.use_worktrees` is true in the config as
+it now stands, WITHOUT also requiring `parallelization.enabled`. Gating it on
+`enabled` was circular: the step is what makes `enabled` do anything, so a user
+who turned parallelization on by editing config.json directly never reached it
+and every run degraded to sequential in silence. Skip the step only when
+`use_worktrees` is false, where worktrees genuinely cannot be used.
 
 1. Read the effective value:
 

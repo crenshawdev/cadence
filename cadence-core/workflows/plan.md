@@ -210,9 +210,20 @@ Handle the return:
        routing seam climbs the re-dispatch to the retry rung this level's
        cad-planner cell names, and dispatches that rung's file. Plans were
        written inline: apply the fixes in the main context.
-    2. Re-dispatch the checker once on the revised plans, with `--attempt 2`
-       (the seam climbs it to the retry rung its own cell names, and returns
-       the file for it - never a rung name this prose hardcodes).
+    2. Re-dispatch the checker once, NARROWED: its artifact is the revision's
+       own diff (`git diff -- .planning/phases/{N}/PLAN*.md`, or the before/after
+       text when the plans are uncommitted), plus the blocker list it is
+       confirming, NOT the whole plan set again. Ask one question: is each
+       blocker actually closed, and did the fix introduce anything new? A
+       full re-read costs a second cold pass over ROADMAP, REQUIREMENTS,
+       CONTEXT and the sources for a plan the checker has already read once;
+       measured, that was ten minutes to convert two blockers into one. Pass
+       `--attempt 2` (the seam climbs it to the retry rung its own cell names,
+       and returns the file for it - never a rung name this prose hardcodes).
+       Note what a narrow pass gives up: it re-reads nothing, so a fix that is
+       locally right and wrong against CONTEXT can survive it. The `plan`
+       review trigger below is the full-artifact second opinion, and it fires
+       after this on the revised plans.
     3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
        blockers and ask (ask-user seam): proceed to execution anyway, or stop
        and revise by hand. Never loop again.
