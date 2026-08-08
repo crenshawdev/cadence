@@ -12,13 +12,13 @@ updated: 2026-08-08
 expected: In a scratch repo with a lint script but NO .planning/config.json, `planning.mjs detect-commands --root <repo>` names that lint command, and an executor given a task whose edit fails it makes three bounded attempts, returns a `blocked` checkpoint, and leaves NO commit for that task.
 criterion: AC1
 status: blocked
-reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
+reason: Seam half PROVEN here: in a scratch repo with scripts.lint and no .planning/config.json, detect-commands --root returns {"lint":"npm run lint","source":{"lint":"package.json"}}. Dispatch half (three bounded attempts, blocked checkpoint, no commit) still gated: dispatched agents load the installed 2.4.0, which has zero occurrences of detect-commands. Verifiable only after v2.5.0 ships and is installed.
 
 ### 2. The LSP grant is live and inert without a plugin
 expected: Both `agents/cad-executor.md` and `agents/cad-executor-xhigh.md` list `LSP` in `tools:`, `self-verify` returns ok:true with `LSP` in KNOWN_TOOLS, and dispatching a cad-executor on this machine (no code-intelligence plugin installed) completes normally rather than erroring on the unrecognized entry.
 criterion: AC2
 status: blocked
-reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
+reason: Static half PROVEN here: agents/cad-executor.md:4 and agents/cad-executor-xhigh.md:4 both list LSP in tools:, self-verify.mjs:195 carries LSP in KNOWN_TOOLS, and self-verify returns ok:true problems:[]. Inert-on-dispatch half still gated: the installed 2.4.0 agents carry no LSP entry, so dispatching here exercises nothing. Verifiable only after v2.5.0 ships and is installed.
 
 ### 3. The trace carries four families under one correlation id
 expected: A completed phase leaves `.planning/trace.jsonl` holding routing, provider, lifecycle and outcome events all sharing ONE `corr`, with every worker dispatch paired to a later return, checkpoint or escalation and `unpaired` empty. A re-run of the same phase must NOT pair across runs.

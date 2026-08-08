@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 6 (Context reduction)
+Phase: 1 of 6 (Benchmark quick wins)
 Status: executed
-Next: /cad-verify 2
+Next: /cad-verify 1
 Updated: 2026-08-08
