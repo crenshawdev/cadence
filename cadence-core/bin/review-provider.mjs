@@ -52,8 +52,12 @@
 //     "artifact": "<the plan / diff / files to review>" }
 //
 // mergeLayers warnings[]: the ONE surfacing for this file is `reviewConfig()`
-// (:290), which binds the warnings of the same `.planning/config.json` layer and
-// puts them on every provider trace event as `config_warnings`. The two OTHER
+// (:360), which binds the warnings of the same `.planning/config.json` layer and
+// puts their COUNT on the provider trace event as `config_warnings` - a count,
+// not the warning text, and only when there is at least one, and only on an
+// event that was written at all (a run with no `.planning` cursor writes none).
+// So this is a signal that the layer was torn beside the call it bounded, not a
+// carrier of the warnings themselves. The two OTHER
 // reads here - `requestTimeoutMs()` and `maxPromptTokens()` - are memoized
 // SCALAR helpers that cache a number and discard the config object, so there is
 // nothing at those two callsites to surface: the value they lose to a torn layer
@@ -84,7 +88,52 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // write) lives in lib/seam-io.mjs.
 // ---------------------------------------------------------------------------
 function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
-function fail(reason, detail) { emit({ ok: false, reason, detail: detail || null }); throw DONE; }
+
+// The subject of the provider trace event for the call currently running, set
+// as each command's FIRST act (`beginProviderCall`) and read by `fail()` below.
+// It is module-level because `fail()` is reached from sites that never see the
+// command's own locals: `resolveProvider` (`bad-provider`, `bad-args`,
+// `no-key`), `readPayload` and the two shape checks (`bad-payload`) and
+// `assertUnderCap` (`over-cap`) all unwind BEFORE a request is built, and those
+// five are the drop-outs that fire most in practice - a reviewer whose key is
+// missing on this machine drops out of a fired trigger exactly as hard as one
+// the wire refused. `null` means no command has begun, so `fail('bad-command')`
+// from `main()` records nothing by construction rather than by a check.
+/** @type {{command: string, provider: any, model: any, effort: any, started: number}|null} */
+let activeMeta = null;
+
+// Exactly one event per call, whichever site records first. The explicit
+// `traceProvider` calls in `callStructured` and at the two `bad-shape` sites run
+// first and carry better detail than `fail()`'s would (`HTTP 404`, the named
+// schema defect), so they set this and `fail()` then adds nothing.
+let traceRecorded = false;
+
+/**
+ * Open the trace bracket for one command, before anything can refuse. Returns
+ * the meta so the command's own `traceProvider` calls keep taking it as an
+ * argument rather than reading module state.
+ * @param {string} command
+ * @param {{provider: any, model: any, effort: any}} subject
+ */
+function beginProviderCall(command, subject) {
+  activeMeta = { command, ...subject, started: Date.now() };
+  traceRecorded = false;
+  return activeMeta;
+}
+
+function fail(reason, detail) {
+  // The degradation is recorded before the envelope is emitted, and never
+  // instead of it: `traceProvider` never throws and never speaks, so this line
+  // cannot change what the caller reads or when.
+  if (activeMeta && !traceRecorded) {
+    // `detail` is a string at every fail() site except `http`, whose object
+    // detail would render `[object Object]` - and that site records itself
+    // first, so this renders a real string or falls back to the reason.
+    traceProvider(activeMeta, reason, typeof detail === 'string' && detail ? detail : reason);
+  }
+  emit({ ok: false, reason, detail: detail || null });
+  throw DONE;
+}
 
 // ok()/fail() throw the DONE sentinel to unwind the current command; the
 // entry point swallows it. Any OTHER throw is an unforeseen bug - the
@@ -289,14 +338,23 @@ function assertUnderCap(...parts) {
 // that mandate is the thing that failed, twice. So the seam records the
 // degradation itself: the panel's actual composition is in the record whether or
 // not the orchestrator relays the line.
+//
+// The record brackets a CALL, not a REQUEST (corrected 2026-08-08, phase 1
+// QW-05). The first form recorded only what happened past `request()`, which
+// left the five drop-outs that need no network at all - `no-key`,
+// `bad-provider`, `bad-args`, `bad-payload`, `over-cap` - writing nothing, and
+// they are the ones that actually fire: a panel that silently shrank because a
+// key was missing read as a panel that was always that size. `fail()` above is
+// where that is closed, and `activeMeta` is why it can be.
 // ---------------------------------------------------------------------------
 
 // The repo+global config, read once per process and bound with its `warnings`.
 //
 // mergeLayers warnings[]: a torn config layer is why a tier reverse lookup can
 // come back null and why the timeout and the prompt cap fall back to their
-// defaults, so the warnings ride the provider trace event (`config_warnings`)
-// rather than being dropped at the read. Deliberately its OWN read: the two
+// defaults, so how MANY warnings there were rides the provider trace event
+// (`config_warnings`, a count and only when non-zero) rather than the read
+// dropping the fact entirely. Deliberately its OWN read: the two
 // reads above are memoized SCALAR helpers that cache a number and discard the
 // config object, so there is nothing there to take a config off.
 let reviewConfigCache = null;
@@ -350,6 +408,10 @@ function tierOf(provider, model) {
  * @param {string} [detail]
  */
 function traceProvider(meta, outcome, detail) {
+  // Marked before the attempt, not after it: the contract is one event per
+  // call, so a write this seam could not complete must not license a second
+  // attempt from `fail()` with a poorer detail string.
+  traceRecorded = true;
   try {
     const root = '.planning';
     const phase = cursorPhase(root);
@@ -751,14 +813,18 @@ async function callStructured(adapter, key, reqSpec, meta) {
 }
 
 async function cmdReview(opts) {
+  // FIRST act, before anything can refuse: `resolveProvider` and the payload
+  // checks below both unwind through fail(), which needs the subject to name.
+  // The provider is `opts.provider` and not the resolved one for the same
+  // reason - on the `bad-provider` path there is no resolved one.
+  const meta = beginProviderCall('review',
+    { provider: opts.provider, model: opts.model, effort: opts.effort });
   const { provider, adapter, key } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {
     fail('bad-payload', 'payload needs {instruction, artifact}, both strings');
   }
   assertUnderCap(payload.instruction, payload.artifact);
-  const meta = { command: 'review', provider, model: opts.model, effort: opts.effort,
-    started: Date.now() };
   const parsed = await callStructured(adapter, key, adapter.structuredRequest({
     model: opts.model, effort: opts.effort,
     system: payload.instruction, user: payload.artifact,
@@ -776,14 +842,14 @@ async function cmdReview(opts) {
 }
 
 async function cmdConsult(opts) {
+  const meta = beginProviderCall('consult',
+    { provider: opts.provider, model: opts.model, effort: opts.effort });
   const { provider, adapter, key } = resolveProvider(opts, 'consult');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.situation !== 'string') {
     fail('bad-payload', 'payload needs {situation}, a string');
   }
   assertUnderCap(payload.situation);
-  const meta = { command: 'consult', provider, model: opts.model, effort: opts.effort,
-    started: Date.now() };
   const system =
     'You are a second-opinion consultant to an engineer stuck at a dead-end. ' +
     'Return angles to investigate - concrete things to try or check, each with ' +
@@ -806,6 +872,11 @@ async function cmdConsult(opts) {
 
 async function cmdDetect(opts) {
   const provider = opts.provider;
+  // `detect-models` carries no model and no effort at all, so its `tier` is
+  // null by construction rather than by a failed lookup - the two fields stay
+  // pinned to null here rather than reading `opts`, which would start recording
+  // a `--model` this command never sends.
+  const meta = beginProviderCall('detect-models', { provider, model: null, effort: null });
   const adapter = ADAPTERS[provider];
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`);
 
@@ -813,10 +884,6 @@ async function cmdDetect(opts) {
   if (!key) fail('no-key', `set ${where}`);
 
   const { path: p, method } = adapter.detectRequest();
-  // `detect-models` carries no model at all, so its `tier` is null by
-  // construction rather than by a failed lookup.
-  const meta = { command: 'detect-models', provider, model: null, effort: null,
-    started: Date.now() };
   let res;
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key) });
@@ -889,6 +956,12 @@ export function detectEnvelope(provider, ids, hintsFile) {
 // ---------------------------------------------------------------------------
 /** @param {string[]} [argv] */
 async function main(argv) {
+  // Cleared per invocation. Production runs one command per process, but the
+  // in-process test harness runs several, and a bracket left over from the
+  // previous one would let `fail('bad-command')` record an event against a
+  // subject this call never had.
+  activeMeta = null;
+  traceRecorded = false;
   const { cmd, opts } = parseArgs(argv || process.argv.slice(2));
   if (cmd === 'review') await cmdReview(opts);
   else if (cmd === 'consult') await cmdConsult(opts);

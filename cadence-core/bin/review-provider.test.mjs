@@ -506,17 +506,30 @@ test('cli: key-file paths expand ~ and default to XDG_CONFIG_HOME', () => {
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 // --- the provider family of the joined run record (QW-02) --------------------
-// The event's CONTENT is asserted against the loopback stub in the fault-
-// injection section (every failure mode names its reason). What is asserted
-// here is the property that must hold whether or not a stub is in play: the
-// record brackets a REQUEST, and a trace it cannot write moves no envelope.
+// The event's CONTENT is asserted against the faked wire in the fault-injection
+// section (every failure mode names its reason). What is asserted here is the
+// property that must hold whether or not a stub is in play: the record brackets
+// a CALL, and a trace it cannot write moves no envelope.
+//
+// A CALL, not a REQUEST - corrected here, dated 2026-08-08 (phase 1, QW-05).
+// This section used to assert that a command issuing no request records
+// nothing, which left the five drop-outs that fire MOST in practice - `no-key`,
+// `bad-provider`, `bad-args`, `bad-payload`, `over-cap` - writing no record at
+// all, since every one of them degrades before the transport is reached. The
+// criterion the record exists for is that a reviewer dropping out of a fired
+// trigger is NAMED, and a reviewer with no key drops out exactly as hard as one
+// the wire refused.
 
-/** A cwd holding a `.planning` the seam will look for, optionally unwritable. */
-function providerCwd(name, breakTrace) {
+/**
+ * A cwd holding a `.planning` the seam will look for, optionally unwritable.
+ * `config` is the repo config layer, so a fixture can lower a bound (the prompt
+ * cap) that is memoized per process and cannot be moved in the shared one.
+ */
+function providerCwd(name, breakTrace, config = {}) {
   const cwd = mkdtempSync(join(tmpdir(), `cad-provider-${name}-`));
   const planning = join(cwd, '.planning');
   mkdirSync(planning);
-  writeFileSync(join(planning, 'config.json'), '{}');
+  writeFileSync(join(planning, 'config.json'), JSON.stringify(config));
   writeFileSync(join(planning, 'STATE.md'), renderCursor({
     phase: 3, total: 5, name: 'Fixture', status: 'planned',
     next: '/cad-execute 3', updated: '2026-01-01',
@@ -525,6 +538,13 @@ function providerCwd(name, breakTrace) {
   // a chmod is a no-op under a root test runner.
   if (breakTrace) mkdirSync(join(planning, 'trace.jsonl'));
   return cwd;
+}
+
+/** Every `provider` event in one trace file, oldest first. */
+function providerEventsIn(traceFile) {
+  if (!existsSync(traceFile)) return [];
+  return readFileSync(traceFile, 'utf8').split('\n').filter(Boolean)
+    .map((l) => JSON.parse(l)).filter((e) => e.family === 'provider');
 }
 
 /** Raw stdout bytes from the seam, run inside `cwd`, with no provider keys. */
@@ -541,14 +561,50 @@ function runRawIn(cwd, args, stdin) {
   }
 }
 
-test('provider trace: a command that issues no request records nothing', () => {
-  // `no-key` degrades before the transport is ever reached, so there is no
-  // request to bracket - the record must not invent one.
+test('provider trace: a command that issues no request is STILL recorded, naming its reason', () => {
+  // The reversal stated in this section's header: `no-key` degrades before the
+  // transport is ever reached, and it is the drop-out a real panel hits most -
+  // a configured reviewer whose key is missing on this machine. The record
+  // brackets the CALL, so the panel's actual composition is readable whether or
+  // not a request was issued.
   const cwd = providerCwd('nokey', false);
   const out = runRawIn(cwd, ['review', '--provider', 'openai', '--model', 'gpt-5',
     '--key-file', join(cwd, 'absent.env')], '{}');
   assert.equal(JSON.parse(out).reason, 'no-key');
-  assert.equal(existsSync(join(cwd, '.planning', 'trace.jsonl')), false);
+  const ev = providerEventsIn(join(cwd, '.planning', 'trace.jsonl'));
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].outcome, 'no-key');
+  assert.equal(ev[0].degraded, true);
+  assert.equal(ev[0].command, 'review');
+  assert.equal(ev[0].provider, 'openai');
+  assert.equal(ev[0].model, 'gpt-5');
+  // No request reached the wire. This is a SUBPROCESS run, where the in-process
+  // transport observer (`seen[]`) does not exist, so the assertion is the
+  // observable proxy: the event carries no HTTP status, in the detail or as a
+  // field. The in-process census below asserts `seen.length === 0` outright,
+  // on this same `no-key` drop-out among the others.
+  assert.equal('status' in ev[0], false);
+  assert.doesNotMatch(String(ev[0].detail), /HTTP/);
+});
+
+test('provider trace: an over-cap refusal records itself, from its own process', () => {
+  // A SUBPROCESS with its own cwd, because `maxPromptTokens()` memoizes per
+  // process: lowering the cap in the shared in-process fault fixture would push
+  // every other case there over it. `over-cap` is the one drop-out that fires
+  // AFTER the payload is read and still before any request.
+  const cwd = providerCwd('overcap', false, { review: { max_prompt_tokens: 1 } });
+  const keyFile = join(cwd, 'providers.env');
+  writeFileSync(keyFile, 'OPENAI_API_KEY="test-not-a-real-key"\n');
+  const out = runRawIn(cwd, ['review', '--provider', 'openai', '--model', 'gpt-5',
+    '--key-file', keyFile],
+  JSON.stringify({ instruction: 'refute this', artifact: 'x'.repeat(400) }));
+  assert.equal(JSON.parse(out).reason, 'over-cap');
+  const ev = providerEventsIn(join(cwd, '.planning', 'trace.jsonl'));
+  assert.equal(ev.length, 1);
+  assert.equal(ev[0].outcome, 'over-cap');
+  assert.equal(ev[0].degraded, true);
+  assert.match(ev[0].detail, /review\.max_prompt_tokens/);
+  assert.equal(ev[0].command, 'review');
 });
 
 test('provider trace: an unwritable trace changes the envelope by not one byte', () => {
@@ -597,11 +653,9 @@ writeFileSync(FAULT_PAYLOAD_CONSULT, JSON.stringify({ situation: 'stuck at a dea
 const REVIEW_ARGS = ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
   '--payload', FAULT_PAYLOAD];
 
-/** Every `provider` event recorded in the fixture so far, oldest first. */
+/** Every `provider` event recorded in the fault fixture so far, oldest first. */
 function providerEvents() {
-  if (!existsSync(FAULT_TRACE)) return [];
-  return readFileSync(FAULT_TRACE, 'utf8').split('\n').filter(Boolean)
-    .map((l) => JSON.parse(l)).filter((e) => e.family === 'provider');
+  return providerEventsIn(FAULT_TRACE);
 }
 
 /**
@@ -837,6 +891,85 @@ test('fault: consult and detect-models degrade through the same six-mode mapping
   assert.equal(ev.command, 'detect-models');
   assert.equal(ev.model, null);
   assert.equal(ev.tier, null);
+});
+
+// --- the drop-outs BEFORE the wire (QW-05, AC7) -------------------------------
+//
+// Everything above this line degrades past the transport. These degrade before
+// it - and they are the ones that fire in practice, since a missing key, a
+// misconfigured provider name and a malformed payload need no network to
+// happen. Each must leave exactly one `provider` event naming its reason, or a
+// panel that silently shrank to one reviewer reads as a panel of one.
+
+const ABSENT_KEY_FILE = join(faultCwd, 'absent-providers.env');
+const BAD_PAYLOAD_FILE = join(faultCwd, 'bad-payload.json');
+writeFileSync(BAD_PAYLOAD_FILE, 'not json {');
+
+test('drop-out: every refusal before the wire writes ONE provider event naming its reason', async () => {
+  // `OPENAI_API_KEY: ''` is falsy for resolveKey, so the no-key rows fall
+  // through to the key FILE - and that file is named absent rather than left to
+  // the XDG default, so the run can never read a real key off this machine.
+  const nokeyEnv = { OPENAI_API_KEY: '' };
+  /** @type {[string, string[], Record<string,string>, string][]} */
+  const cases = [
+    ['review/bad-provider',
+      ['review', '--provider', 'skynet', '--model', 'm', '--payload', FAULT_PAYLOAD], {}, 'bad-provider'],
+    ['review/bad-args',
+      ['review', '--provider', 'openai', '--payload', FAULT_PAYLOAD], {}, 'bad-args'],
+    ['review/no-key',
+      ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+        '--key-file', ABSENT_KEY_FILE, '--payload', FAULT_PAYLOAD], nokeyEnv, 'no-key'],
+    ['review/bad-payload',
+      ['review', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+        '--payload', BAD_PAYLOAD_FILE], {}, 'bad-payload'],
+    ['consult/bad-provider',
+      ['consult', '--provider', 'skynet', '--model', 'm', '--payload', FAULT_PAYLOAD_CONSULT], {}, 'bad-provider'],
+    ['consult/bad-args',
+      ['consult', '--provider', 'openai', '--payload', FAULT_PAYLOAD_CONSULT], {}, 'bad-args'],
+    ['consult/no-key',
+      ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+        '--key-file', ABSENT_KEY_FILE, '--payload', FAULT_PAYLOAD_CONSULT], nokeyEnv, 'no-key'],
+    ['consult/bad-payload',
+      // A payload that parses but carries {instruction, artifact} instead of
+      // {situation} - the wrong-shape half, which the review rows cover with a
+      // file that does not parse at all.
+      ['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+        '--payload', FAULT_PAYLOAD], {}, 'bad-payload'],
+    ['detect-models/bad-provider',
+      ['detect-models', '--provider', 'skynet'], {}, 'bad-provider'],
+    ['detect-models/no-key',
+      ['detect-models', '--provider', 'openai', '--key-file', ABSENT_KEY_FILE], nokeyEnv, 'no-key'],
+  ];
+  for (const [name, argv, env, outcome] of cases) {
+    const before = providerEvents().length;
+    // A wire that would answer 200 if it were reached, so a case that fails to
+    // stop early fails LOUDLY here (`seen.length === 0`) rather than passing on
+    // an outcome the transport happened to produce.
+    const r = await runFaked(argv, { status: 200, body: JSON.stringify({ output_text: '{"findings":[]}' }) }, env);
+    assert.equal(r.envelope.ok, false, name);
+    assert.equal(r.envelope.reason, outcome, name);
+    assert.equal(r.code, 1, name);
+    assert.equal(r.seen.length, 0, `${name}: nothing may reach the wire`);
+    const ev = providerEvents().slice(before);
+    assert.equal(ev.length, 1, `${name}: exactly one event, got ${JSON.stringify(ev)}`);
+    assert.equal(ev[0].outcome, outcome, name);
+    assert.equal(ev[0].degraded, true, name);
+    assert.equal(ev[0].command, argv[0], name);
+    assert.equal(ev[0].provider, argv[2], name);
+    assert.ok(typeof ev[0].detail === 'string' && ev[0].detail.length > 0, `${name}: detail is a string`);
+  }
+});
+
+test('drop-out: `bad-command` records nothing - no command ever began', async () => {
+  // The one refusal with no call to bracket. It is reached from main() before
+  // any command runs, so there is no provider, no model and no subject; an
+  // event here would be an invented one. In process, so this also pins that the
+  // bracket does not survive from the previous command in the same process.
+  const before = providerEvents().length;
+  const r = await runFaked(['nonsense', '--provider', 'openai'], { status: 200, body: '{}' });
+  assert.equal(r.envelope.reason, 'bad-command');
+  assert.equal(r.seen.length, 0);
+  assert.deepEqual(providerEvents().slice(before), []);
 });
 
 test('fault: a 200 the schema does not match is bad-shape, distinct from bad-json', async () => {
