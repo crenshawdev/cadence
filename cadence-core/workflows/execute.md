@@ -63,6 +63,29 @@ review, and the goal check below run in the planning repo and will NOT reflect
 commits made in the code repo, so treat them as advisory and check the code
 repo by hand. Prefer keeping `.planning/` in the code repo.
 
+**Clean starting index (before the first executor, once per run).** Run
+`git diff --cached --quiet`. A non-zero exit means the index already holds work
+at phase start, and none of it is any executor's. Name exactly what
+(`git diff --cached --name-status`), show that list, and ask (ask-user seam), no
+preselected default:
+1. Stash it (`git stash push --staged`, git 2.35+) and continue
+2. Commit it now as the user's own commit, message theirs, then continue
+3. Abort
+
+Never stash, unstage or commit the user's staged work without asking - the seam
+asks, the user chooses. Run the same check in a cross-repo phase's code repo,
+beside its protected-branch guard.
+
+This check lives HERE rather than in the executor's lease gate because the
+orchestrator is the only actor that can see a CLEAN starting index: it runs once,
+before anything stages anything. `lease-check` reads the whole staged index and
+has no provenance signal - it cannot tell a path the user staged before the run
+from a path this executor staged and did not declare - so a gate placed there can
+only refuse the user's work (halting the phase on files no plan touched) or
+excuse an unknown path (which is no gate). Start the index clean and both
+readings collapse into one: every later `undeclared-files` refusal is provably
+the executor's own doing.
+
 Record `git rev-parse --short HEAD` as PHASE_START for later diffs, then anchor
 this phase's joined run record with the same sha:
 
