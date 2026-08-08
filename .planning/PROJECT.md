@@ -5,12 +5,16 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v2.2.0` is the current release: the config read face merges a
-layer once whatever its spelling, the git guard's parser is deleted in favor
-of one small anchored reader, the release seam can no longer ship a number or
-notes it never got from the close, every shipped rung-ladder claim is true or
-gone, and the documented Forgejo install path is proven live rather than
-inferred. Earlier cycles: `v2.1.0` coverage and triage gates, `v2.0.0` the
+subsystem. `v2.5.0` is the current release: a static-analysis path reaches
+execution and works unconfigured, one joined trace per phase explains what a run
+actually did, declared file leases are enforced at the commit step rather than
+compared once before dispatch, every provider failure path has a test proving
+what the caller sees, the two heaviest commands stop eagerly preloading
+references they read at one step, and the plan gates finally ask whether a plan
+is proportionate rather than only whether it reaches the goal. Earlier cycles:
+`v2.4.0` the parallel path that could never engage, `v2.3.0` where the bytes
+live, `v2.2.0` the config read face and the deleted git-guard parser, `v2.1.0`
+coverage and triage gates, `v2.0.0` the
 stakes routing axis, `v1.5.0` self-description corrections, `v1.4.x` stated
 grammars, `v1.3.x` flow and tech-debt passes, `v1.2.x` cross-model review
 repairs, `v1.1.0` file-based memory and BM25 recall, on the `v1.0.0` planning
@@ -87,46 +91,60 @@ context-gathering, and debugging — without any external memory system.
 - ✓ The 29 skill and 19 rung-agent descriptions riding every session's system prompt cut to one routing line each — 8,550 B to 5,397 — with zero trigger words dropped and nine gained (BUD-01) — v2.3.0
 - ✓ `references/**` and `templates/**` under the weight budget as 23 exact-byte entries, and both walkers fixed so one unreadable descendant hides only its own children (BUD-02) — v2.3.0
 
+- ✓ A static-analysis path reaches execution and works unconfigured — `workflow.lint_command` across five surfaces, `detect-commands` reading the project's own manifests when it is unset, plus the `LSP` grant on both executor rungs (QW-01) — v2.5.0
+- ✓ One joined `.planning/trace.jsonl` per phase carrying routing, provider, lifecycle and outcome events under a single correlation id, provably unable to change a seam envelope; every `mergeLayers` callsite surfaces its warnings or says why (QW-02) — v2.5.0
+- ✓ File leases enforced at the commit step by `lease-check` rather than compared once pre-flight; `phase_diff` resolves the same through all three surfaces; lockfiles stop matching the `concurrency` risk surface (QW-03) — v2.5.0
+- ✓ A version the repo already published is never presented as current — `/cad-health` names both numbers and `git-branch.mjs decide` refuses by tag membership rather than sort order (QW-04) — v2.5.0
+- ✓ Every `review-provider.mjs` failure path fault-injected with a test proving what the caller sees, and drop-outs recorded before the wire rather than only past it (QW-05) — v2.5.0
+- ✓ `weight.mjs resident` composes eager, reachable and dispatch bytes; `cad-land` and `cad-plan-review` stop eagerly preloading references they read at one step, with a self-verify check that a de-preloaded reference keeps a Read at the arm that needs it (CTX-01) — v2.5.0
+
 ### Active
 
-**`v2.5.0 — what Cadence says about itself`**, opened 2026-08-05 as `v2.4.0`,
-renumbered 2026-08-07. The predecessor `v2.3.0 — where the bytes live` closed
-2026-08-05 with all eleven requirements delivered (RES-01..04, LOD-01..05,
-BUD-01..02 — rows above), both audit arms green (11/11 traced, 20/20 criteria
-covered), and the manifest at `2.3.0`.
+**`v2.6.0 — the reconciliation cycle`**, opened 2026-08-08. The predecessor
+`v2.5.0 — what Cadence says about itself` closed the same day with six of its
+fifteen requirements delivered (QW-01..05, CTX-01 — rows above), the audit green
+on those six (6/6 traced, 0 broken), and the manifest at `2.5.0`.
 
-The renumber is itself an instance of what this cycle is for. On 2026-08-07 a
-`v2.4.0` release shipped outside the cycle — "parallel that actually engages",
-14 commits, manifest and tag both at `2.4.0` — while this section still
-described `v2.4.0` as the open, unstarted milestone. Nothing detected the
-collision: `/cad-health` does not read the manifest, `/cad-audit` traces
-requirements rather than versions, and `git-branch.mjs decide` answered
-`create cadence/v2.4.0` for a branch named after a tag that already existed.
-That is issue #87's failure mode, and `QW-04` closes the reporting half of it
-this cycle.
+**v2.5.0 closed early, on purpose.** Its nine remaining requirements — REC, FRI,
+PRS and DOC, roadmap phases 3 through 6 — were not cut, dropped or re-scoped.
+They roll into this cycle whole, with `phases/3/CONTEXT.md` and
+`phases/3/PLAN.md` intact, so this cycle resumes from a planned phase.
 
-This cycle turns on the queue rather than on a measurement. `.planning/CAPTURE.md`
-holds 213 open items (as of 2026-08-08) accumulated across nine milestones. Some were closed by
-work that shipped and were never struck; some are real and have been carried
-unread for months because the file
-is too long to triage in passing. A queue nobody can read is the same failure as
-no queue, and it is currently the input to `/cad-plan`'s recall.
+The reason is worth keeping, because it is a rule rather than an incident.
+v2.5.0 ended up containing a fix to Cadence's own planning gates: nothing
+bounded plan size, so `cad-plan-checker` asked only whether a plan achieved the
+goal — a question a bigger plan answers better — and `cad-planner` had a
+`## PHASE TOO BIG` marker reachable only by its own judgement, against a
+contract forbidding it to reduce scope. Phase 3 was planned at 10 tasks, cut,
+replanned at 15, and passed every gate both times. The fix (`max_plan_tasks`
+plus a proportionality dimension asked independently of the goal) cannot bound
+anything until it ships and installs. Planning four more phases before the
+release would have run all four through the gates that made the fix necessary.
+**When a cycle produces a tool that changes how the next work is done, ship it
+before doing the next work.**
 
-The cycle is therefore **reconciliation, not construction**: triage the queue
-against the live tree, close what shipped, delete what is moot, and keep what
-survives with its reason restated. Then the same pass outward — reconcile what
-Cadence claims about itself, in `README.md`, `METHOD.md`, `INTERNALS.md`,
-`CONTRIBUTING.md` and the workflow prose, against what the code now does. The
-v2.3.0 close found two live examples inside one release section: a phase-2
-CHANGELOG bullet asserting `references/` is unbudgeted while a phase-3 bullet
-budgets it, and `MEASUREMENTS.md` narrative counts contradicting their own
-table. `/cad-docs-verify` exists for exactly this and has never been run across
-the whole surface.
+This cycle turns on the queue. `.planning/CAPTURE.md` holds 213 open items (as
+of 2026-08-08) accumulated across nine milestones. Some were closed by work that
+shipped and were never struck; some are real and have been carried unread for
+months because the file is too long to triage in passing. A queue nobody can
+read is the same failure as no queue, and it is the input to `/cad-plan`'s
+recall.
 
-Guardrail for the cycle, learned from v2.3.0: an item is closed only against
-evidence from the tree, never because it reads as done. The close-out of a
-capture item names the commit that closed it, the same way a UAT item names its
-evidence.
+The cycle is therefore **reconciliation, not construction**. The triage itself
+was re-scoped on 2026-08-08 before any of it ran: rather than a tree-backed
+verdict for each of 213 items, non-current-cycle items are archived as a block
+under one dated reason and only the current-cycle items are read individually.
+An item carried unread across nine milestones is presumptively dead, and proving
+that one item at a time costs more than it returns. Then the same pass outward —
+reconcile what Cadence claims about itself, in `README.md`, `METHOD.md`,
+`INTERNALS.md`, `CONTRIBUTING.md` and the workflow prose, against what the code
+now does. `/cad-docs-verify` exists for exactly this and has never been run
+across the whole surface.
+
+Guardrail for the cycle, learned from v2.3.0 and unchanged: an item is closed
+only against evidence from the tree, never because it reads as done. A close-out
+names the commit or the `file:line` that closed it, the same way a UAT item
+names its evidence.
 
 ### Out of Scope
 
