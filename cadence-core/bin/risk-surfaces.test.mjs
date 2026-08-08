@@ -152,23 +152,61 @@ function conc() {
   return { concurrency: { patterns: ['lock', 'locks', 'locking', 'mutex'], floor: 'critical' } };
 }
 
-for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.lock',
-  'Gemfile.lock', 'composer.lock']) {
-  test(`a lockfile basename matches nothing: ${lockfile}`, () => {
-    assert.deepEqual(matchSurfaces([lockfile], conc()), []);
+// The exclusion is an ALLOWLIST of package-manager lockfile BASENAMES, and the
+// two loops below pin its two directions: every allowlisted name loses its
+// floor, and every lock-named file a HUMAN wrote keeps one. The list here is
+// hand-written rather than imported from the module on purpose (the file header
+// rule): a fixture that reads its expectations off its subject cannot fail, and
+// deleting an entry from the module has to break a row here.
+//
+// The shape rule this replaced - `[.-]lock\.(?:json|ya?ml|toml)$` beside a
+// `.lockb?` suffix - released `deploy/redis-lock.yaml`, `k8s/leader-lock.yaml`
+// and `db/replica.lock.json` too, which are lock RESOURCES under the same
+// spelling. Those three are in the still-floors loop below.
+const ALLOWLISTED = [
+  'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock',
+  'bun.lockb', 'bun.lock', 'deno.lock', 'Cargo.lock', 'poetry.lock', 'uv.lock',
+  'Pipfile.lock', 'pdm.lock', 'Gemfile.lock', 'composer.lock', 'packages.lock.json',
+  'conda-lock.yml', 'conda-lock.yaml', 'mix.lock', 'pubspec.lock', 'go.sum',
+  'flake.lock', 'Podfile.lock', 'gradle.lockfile',
+];
+
+for (const lockfile of ALLOWLISTED) {
+  test(`the allowlist releases ${lockfile}, and only by exact basename`, () => {
+    // The row's patterns are the file's OWN tokens, so an empty result can come
+    // from nothing but the exclusion. A `conc()` row would make half these
+    // fixtures vacuous - `pathTokens('bun.lockb')` is [bun, lockb] and
+    // `pathTokens('go.sum')` is [go, sum], neither of which equals a
+    // concurrency pattern, so those files never floored to begin with.
+    const row = { concurrency: { patterns: pathTokens(lockfile), floor: 'critical' } };
+    assert.deepEqual(matchSurfaces([lockfile], row), [], lockfile);
+    // By BASENAME: a nested copy is the same generated file.
+    assert.deepEqual(matchSurfaces([`frontend/app/${lockfile}`], row), [], lockfile);
+    // Non-vacuity and precision in one assertion: a near-miss basename carrying
+    // the SAME tokens still floors under that same row. The deleted shape rule
+    // released most of these too, which is what made it too wide.
+    assert.equal(matchSurfaces([`vendor/copy-of-${lockfile}`], row).length, 1, lockfile);
   });
 }
 
-test('the exclusion is by BASENAME, so a nested lockfile is excluded too', () => {
-  assert.deepEqual(matchSurfaces(['frontend/app/package-lock.json'], conc()), []);
-  assert.deepEqual(matchSurfaces(['crates/core/Cargo.lock'], conc()), []);
+test('the allowlist is matched EXACTLY, so a case variant keeps its floor', () => {
+  // `Cargo.lock` and `Gemfile.lock` are the spellings their own ecosystems
+  // generate; `cargo.lock` and `Gemfile.LOCK` are not, and an unrecognized
+  // basename keeps its floor - the allowlist's conservative direction, and a
+  // deliberate reversal of the case-INSENSITIVE shape rule that preceded it.
+  assert.deepEqual(matchSurfaces(['Gemfile.lock'], conc()), []);
+  assert.equal(matchSurfaces(['Gemfile.LOCK'], conc()).length, 1);
+  assert.equal(matchSurfaces(['cargo.lock'], conc()).length, 1);
 });
 
-test('the exclusion is case-insensitive on the suffix', () => {
-  assert.deepEqual(matchSurfaces(['Gemfile.LOCK'], conc()), []);
-});
-
-for (const path of ['src/lock.rs', 'internal/lock/manager.go', 'db/locks.sql', 'src/locking.rs']) {
+// The detections the allowlist exists to PROTECT: every one of them a lock
+// resource or a lock implementation a human WROTE. The last five are the rows
+// the deleted shape rule released - a redis lock manifest, a k8s leader-election
+// manifest, a terraform state lock and a runtime `*.lock.json` are all files
+// whose concurrency floor is the point.
+for (const path of ['src/lock.rs', 'src/locking.rs', 'internal/lock/manager.go', 'db/locks.sql',
+  'src/redis-lock.go', 'deploy/redis-lock.yaml', 'k8s/leader-lock.yaml',
+  'terraform/state-lock.toml', 'db/replica.lock.json', 'migrations/add-lock.sql']) {
   test(`a real concurrency path still floors: ${path}`, () => {
     const m = matchSurfaces([path], conc());
     assert.equal(m.length, 1, path);
@@ -186,10 +224,13 @@ test('a lockfile beside a real concurrency path does not hide it', () => {
 });
 
 test('a lockfile is excluded from EVERY surface, not from concurrency alone', () => {
-  // `sessions.lock` tokenizes to [sessions, lock] and would otherwise floor on
-  // the auth surface's `session`... it is a generated manifest either way.
-  const t = { ...conc(), auth: { patterns: ['auth', 'session', 'sessions'], floor: 'critical' } };
-  assert.deepEqual(matchSurfaces(['sessions.lock'], t), []);
+  // The exclusion runs before ANY surface's patterns are consulted, so a table
+  // whose auth row happens to hold a word a package manager's own filename
+  // contains still sees nothing. `Pipfile.lock` tokenizes to [pipfile, lock].
+  const t = { ...conc(), auth: { patterns: ['auth', 'session', 'pipfile'], floor: 'critical' } };
+  assert.deepEqual(matchSurfaces(['Pipfile.lock'], t), []);
+  // Control: the row really can see that word, so the row above is not vacuous.
+  assert.equal(matchSurfaces(['src/pipfile-parser.py'], t).length, 1);
 });
 
 test('a name that merely CONTAINS lock is not a lockfile', () => {

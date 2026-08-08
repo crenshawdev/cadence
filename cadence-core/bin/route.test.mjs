@@ -659,7 +659,7 @@ test('a solo phase whose PLAN declares an auth path resolves at the critical cel
 // matchSurfaces returns at most ONE match per surface - the first path that hits
 // - so a combined plan would prove only the first name in the list.
 for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.lock',
-  'Gemfile.lock']) {
+  'Gemfile.lock', 'pnpm-lock.yaml', 'packages.lock.json']) {
   test(`a solo phase declaring ${lockfile} resolves SOLO, no floor entry`, () => {
     const r = resolve('cad-executor', planningRoot(['README.md', lockfile]), ['--phase', '9']);
     assert.equal(r.ok, true);
@@ -668,19 +668,34 @@ for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.
   });
 }
 
-test('a solo phase declaring src/lock.rs STILL floors to critical on concurrency', () => {
-  // The other half of D-05: the `lock` and `locks` patterns are kept, so a real
-  // concurrency path is still detected. Removing them to close the lockfile
-  // false positive would have deleted this row with no test naming the loss.
-  const r = resolve('cad-executor', planningRoot(['README.md', 'src/lock.rs']), ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');
-  const floor = floorEntries(r);
-  assert.equal(floor.length, 1, JSON.stringify(r.reason));
-  assert.match(floor[0], /concurrency/);
-  assert.match(floor[0], /lock\.rs/);
-  assert.match(floor[0], /pattern "lock"/);
-});
+// The other half of D-05: the `lock` and `locks` patterns are kept, so a real
+// concurrency path is still detected end to end. Removing them to close the
+// lockfile false positive would have deleted these rows with no test naming the
+// loss - and the exclusion's own header comment cites `internal/lock/manager.go`
+// and `db/locks.sql` as the detections it protects, so they are pinned here
+// rather than asserted in prose. The last two are the near misses that decided
+// the exclusion's shape: a lock RESOURCE a human wrote, spelled exactly the way
+// `pnpm-lock.yaml` and `packages.lock.json` are, and released by any rule that
+// reads the spelling instead of the name.
+for (const [path, pattern] of [
+  ['src/lock.rs', 'lock'],
+  ['src/redis-lock.go', 'lock'],
+  ['internal/lock/manager.go', 'lock'],
+  ['db/locks.sql', 'locks'],
+  ['deploy/redis-lock.yaml', 'lock'],
+  ['db/replica.lock.json', 'lock'],
+]) {
+  test(`a solo phase declaring ${path} STILL floors to critical on concurrency`, () => {
+    const r = resolve('cad-executor', planningRoot(['README.md', path]), ['--phase', '9']);
+    assert.equal(r.ok, true);
+    assert.equal(r.stakes, 'critical');
+    const floor = floorEntries(r);
+    assert.equal(floor.length, 1, JSON.stringify(r.reason));
+    assert.match(floor[0], /concurrency/);
+    assert.ok(floor[0].includes(path), floor[0]);
+    assert.ok(floor[0].includes(`pattern "${pattern}"`), floor[0]);
+  });
+}
 
 test('a lockfile declared BESIDE a real concurrency path still floors, naming that path', () => {
   const r = resolve('cad-executor',
