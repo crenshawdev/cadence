@@ -27,6 +27,9 @@
           "cheap": "deepseek-v4-flash"
         }
       }
-    }
+    },
+    "reviewers": [
+      "openai"
+    ]
   }
 }
