@@ -309,3 +309,58 @@ test('chars/4: estTokens and bytes match the measurement proxy', () => {
   assert.equal(s[0].estTokens, Math.ceil(body.length / 4));
   assert.equal(s[0].bytes, Buffer.byteLength(body, 'utf8'));
 });
+
+// --- flag values: absent is not the same as present-with-no-value -----------
+// The regression these pin: a caller passing an unset `$TREE` produced
+// `--root` with nothing after it, which read as ABSENT and fell back to the
+// plugin's own tree, so the envelope came back ok:true carrying the Cadence
+// repo's numbers for a tree the caller never named. A wrong number that looks
+// right is worse than an error, so the valueless form fails loudly.
+
+/** Run weight.mjs with raw argv, returning the JSON envelope even on exit 1. */
+function rawArgs(...args) {
+  try {
+    return JSON.parse(execFileSync('node', [WEIGHT, ...args], { encoding: 'utf8' }));
+  } catch (e) {
+    if (typeof e.stdout === 'string' && e.stdout) return JSON.parse(e.stdout);
+    throw e;
+  }
+}
+
+test('flags: a valueless --root fails rather than measuring the plugin tree', () => {
+  const j = rawArgs('--root');
+  assert.equal(j.ok, false);
+  assert.equal(j.reason, 'missing-flag-value');
+  assert.equal(j.detail, '--root');
+});
+
+test('flags: an empty --root fails rather than measuring the plugin tree', () => {
+  const j = rawArgs('--root', '');
+  assert.equal(j.ok, false);
+  assert.equal(j.reason, 'missing-flag-value');
+});
+
+test('flags: --root swallowing the NEXT flag fails rather than measuring it', () => {
+  // `--root --command x` is the same bug wearing a value: without the
+  // startsWith('--') test, `--command` becomes the root path.
+  const j = rawArgs('resident', '--root', '--command', 'cad-land');
+  assert.equal(j.ok, false);
+  assert.equal(j.reason, 'missing-flag-value');
+  assert.equal(j.detail, '--root');
+});
+
+test('flags: a valueless --command fails rather than silently meaning ALL', () => {
+  const j = rawArgs('resident', '--root', REPO, '--command');
+  assert.equal(j.ok, false);
+  assert.equal(j.reason, 'missing-flag-value');
+  assert.equal(j.detail, '--command');
+});
+
+test('flags: an ABSENT --root still defaults to the plugin tree', () => {
+  // The other half of the distinction: only the PRESENT-with-no-value form
+  // errors. Omitting the flag entirely keeps the documented default.
+  const j = rawArgs();
+  assert.equal(j.ok, true);
+  assert.equal(j.checked, 'surface-weight');
+  assert.ok(j.surfaces.length > 0);
+});

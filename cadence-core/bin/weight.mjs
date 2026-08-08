@@ -18,6 +18,8 @@
 // traversal + fixed key order make two runs on the same tree byte-identical.
 // Usage: weight.mjs [--root <repo root>]
 //        weight.mjs resident [--root <repo root>] [--command <name>] [--role <name>]
+// A flag PRESENT with no value is `ok:false`/`missing-flag-value`, never a
+// silent default - see flagValue below.
 'use strict';
 
 import { dirname, join } from 'node:path';
@@ -28,10 +30,27 @@ import { residentWeight } from './lib/resident-weight.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** @param {string[]} argv @param {string} flag @returns {string|undefined} */
+/**
+ * Read a flag's value, distinguishing ABSENT from PRESENT-WITH-NO-VALUE.
+ *
+ * The two must not collapse. `--root` with nothing after it - the shape a
+ * caller produces by passing an unset or empty `$TREE` - used to read as
+ * `undefined` and fall through to the plugin's own tree, so the caller got
+ * ok:true and the Cadence repo's numbers for a tree it never named. That is
+ * the quiet-wrong-number class, and it is worse here than a hard error
+ * because the envelope looks correct. A missing value now throws
+ * `missing-flag-value`; a genuinely absent flag still returns undefined so
+ * the caller's own default applies.
+ * @param {string[]} argv @param {string} flag @returns {string|undefined}
+ */
 function flagValue(argv, flag) {
   const i = argv.indexOf(flag);
-  return i >= 0 ? argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v === '' || v.startsWith('--')) {
+    throw { seam: 'missing-flag-value', detail: flag };
+  }
+  return v;
 }
 
 try {
