@@ -58,7 +58,7 @@ each release tag are their archive.
 ## Phases
 
 - [ ] **Phase 1: Benchmark quick wins** - a static-analysis layer reaches the executor, one joined trace explains a run, file leases become enforced rather than checked, provider failure paths get exercised, and the named tracker and backlog reliability fixes land
-- [ ] **Phase 2: Context reduction** - budget `references/`, cut the two heaviest commands, and stop paying for prose that rides every session
+- [ ] **Phase 2: Context reduction** - measure what a command and a dispatch actually carry, then defer the eager includes that dominate the two heaviest
 - [ ] **Phase 3: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 4: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
 - [ ] **Phase 5: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
@@ -96,13 +96,19 @@ the ones nobody measures.
 **Depends on:** Nothing (its scope was re-confirmed against the live tree at
 v2.4.0 planning; it runs second because total efficiency is the heaviest-weighted
 capability gap)
-**Requirements:** CTX-01, CTX-02
-**Success Criteria:**
-1. `cadence-core/references/**` is enforced by `weight-budgets.json` with a per-file ceiling, and self-verify fails a tree whose reference exceeds it - proved by an over-budget fixture. (Today `acceptance-criteria.md` sits at 22,506 B, larger than any budgeted workflow, entirely unbudgeted.)
-2. `panel-review` and `cad-land` carry measurably less than 2.4x the workhorse commands' context, with before and after byte counts committed.
-3. A stated writing contract (one action per sentence, constraint before the action it limits - issue #69) is preloaded once and asserted by self-verify to resolve for every agent, rather than restated per agent file.
-4. The review subsystem gains a minimalism lens (issue #29): a delete-list pass separate from the correctness pass, firing where it is configured and reporting what could be removed rather than what is wrong.
-5. Total resident bytes for a `/cad-plan` and a `/cad-execute` dispatch are measured before and after the phase and both numbers are recorded - a phase that cuts nothing measurable fails this criterion.
+**Requirements:** CTX-01
+**Success Criteria:** (re-scoped at context time - see `phases/2/CONTEXT.md`.
+Three of the five criteria this phase opened with rested on premises the tree
+contradicts: the references budget already shipped as BUD-02 in v2.3.0 (D-01),
+`panel-review` is retired Codex-era prior art this codebase never contained
+(D-02), the 2.4x figure is runtime billed-equiv that `PROJECT.md ### Out of
+Scope` excludes and that no static measure reproduces (D-03), and the CTX-02
+pair both ADD resident bytes in the phase that exists to cut them (D-06).)
+1. A `weight.mjs` subcommand reports what a surface actually carries: eager bytes (`SKILL.md` plus its `@`-includes) and reachable bytes (eager plus every reference the prose reads mid-run) for a named command, and dispatch bytes (agent file plus its preloaded contract skills) for a named role. Both definitions are reported because the ranking inverts between them. It carries the first CONTRACTS entry `weight.mjs` has ever had, plus sibling tests.
+2. `cad-land`'s eager resident bytes fall below the mean of `cad-execute`, `cad-plan` and `cad-verify`, and `cad-plan-review`'s drop by at least the 15,134 B `references/review-triggers.md` include - by deferring eagerly preloaded references to the step that reads them, the pattern `cad-land/SKILL.md:84-92` already demonstrates, not by rewriting prose.
+3. Every reference removed from an `@`-include is Read at the step that needs it, proved by a check rather than by inspection, with self-verify still `ok:true`.
+4. Before and after eager and reachable bytes for all five commands, plus dispatch bytes per role, are committed in `phases/2/MEASUREMENTS.md`, with the 26,095 B of budgeted-but-never-loaded references marked so no saving is recorded that nobody pays. Re-running the recorded command reproduces the "after" bytes exactly.
+5. This phase's own scope corrections land in the docs: the `CTX-01` row reads the re-scoped scope, `CTX-02` sits outside `### Active` with its deferral reason, and `/cad-audit` reports zero unserved Active requirements.
 
 ### Phase 3: Queue triage
 **Goal:** `.planning/CAPTURE.md` stops being an append-only log and becomes the
