@@ -120,9 +120,10 @@ than by its own wording.
 carry the locked decisions; criterion 2 below changed at context time - D-04 of
 the capture reader stands, so closed items stay in the live queue and only moot
 items are archived)
-1. Every one of the remaining open items carries exactly one of three resolutions: closed with the commit sha or tree evidence that closed it named, deleted as moot with the reason stated, or kept with its claim re-verified and its `file:line` citations corrected against the current tree. Zero items survive with their original wording and no verdict.
-2. Moot items live outside the live queue in a `## Archive` section; closed items stay in place carrying their `[closed]` marker, because the capture reader keeps them in the corpus on purpose as the prior evidence recall exists to surface.
-3. `planning.mjs recall` is measured against the same query set before and after the move, against a corpus snapshot holding CAPTURE.md alone so no phase artifact enters either side, and both raw result sets are recorded in `phases/3/MEASUREMENTS.md`.
+SCOPE CUT 2026-08-08 - criteria 1 and 3 below are REPLACED, not merely superseded. The live set is `phases/3/CONTEXT.md`'s AC1, AC2, AC3, AC6, AC7 (old AC4 and AC5 dropped).
+1. Every non-current-cycle open item is archived as a BLOCK under one dated reason stating the presumptive-death premise; only the current-cycle (v2.5.0) items carry an individual verdict - closed with the commit sha or tree evidence named, moot with the reason stated, or kept with its claim re-verified. The original form of this criterion, a tree-backed verdict for each of 213 items plus citation normalization, was planned twice and failed review twice at up to 15 tasks; it cost days of executor time for a queue nobody had read in nine milestones.
+2. Archived items live outside the live queue in a `## Archive` section; closed items stay in place carrying their `[closed]` marker, because the capture reader keeps them in the corpus on purpose as the prior evidence recall exists to surface.
+3. Archive invisibility is proved directly, not measured: a token occurring only in archived text returns zero results from `planning.mjs recall`, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet. The before/after BM25 measurement and `phases/3/MEASUREMENTS.md` are dropped with the cut.
 4. Every item the triage keeps and assigns to phases 4, 5 or 6 is named in phase 3's own SUMMARY assignment list, so no surviving item is orphaned by the cycle that triaged it. Items phase 1 already closed are recorded as closed by phase 1, not re-triaged.
 
 ### Phase 4: Live friction
