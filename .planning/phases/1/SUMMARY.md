@@ -91,11 +91,67 @@ recall` cannot see.
   yields no phase field and cannot collide with this cycle - but it was not
   requalified to `(vX.Y.Z phase N)` either. The functional half of AC6 is
   satisfied; the cosmetic half is not, for two items.
-- 23 of the 24 KEPT rows are `unassigned`. That is a result, not an omission:
+- 22 of the 24 KEPT rows are `unassigned`. That is a result, not an omission:
   these are v2.5.0's own residue, while phases 2 and 3 were scoped from the
   older material now archived, so the overlap is genuinely small. Assigning a
   row because it is plausible would grow those phases past the requirements they
   were sized against.
+
+## Kept-item assignment list
+
+Per AC7 and D-12. Targets are `phase 2`, `phase 3` or `unassigned` only, so
+phases 2 and 3 consume this without re-reading the queue. `phase 4` is a real
+phase of this cycle but is not an admissible target here, so rows whose natural
+home is the doc sweep say so in the restatement and stay `unassigned`.
+
+Almost every row is `unassigned`, and that is a result rather than an omission:
+these 24 are v2.5.0's OWN residue, while phases 2 and 3 were scoped from the
+older material that is now archived, so the overlap is genuinely small.
+Assigning a row because it is plausible would grow those phases past the
+requirements they were sized against, which is the exact failure that split this
+cycle.
+
+| # | Item | Re-verified citation | Target |
+|---|---|---|---|
+| 1 | The cross-model reviewer set resolves to `openai` alone: `deepseek` was removed from both layers and the surviving voice reports HTTP 401, so `plan`, `diff` and the blocking `risk_surface` all fall back to one `claude-subagent` | `.planning/config.json` declares no `review.reviewers`; `config.mjs get` resolves `["openai"]` | unassigned |
+| 2 | `weight.mjs resident`'s envelope assertions derive both sides from one `surfaceSet()` Map, so a `readSurface` off-by-one leaves them all green; the only disk pin is a synthetic fixture | `cadence-core/bin/weight.test.mjs:165`, `:198-199`, `:211`, `:239`, `:293` | unassigned |
+| 3 | Two skills hardcode a `15,134 B` reference size that `seams.md` makes mandatory for every future deferral, and nothing checks either figure against the file it describes. Natural home: the doc sweep | `skills/cad-land/SKILL.md:44`, `skills/cad-plan-review/SKILL.md:39`, `cadence-core/references/seams.md:240-242` | unassigned |
+| 4 | `detect-commands` names a tool binary from the presence of its config table without testing PATH, and its eslint arm emits `npx eslint .`, which fetches and runs an unpinned package from the public registry. Natural home: phase 2's theme, though outside FRI-01..03 as written | `cadence-core/bin/planning.mjs:1712` | unassigned |
+| 5 | `git-publish`'s `tornLayerDetail` refuses on ANY `mergeLayers` warning, so one torn user-global file halts reaping and publishing in every repo on the machine | `cadence-core/bin/git-publish.mjs:116-118`, `:146`, `:187` | unassigned |
+| 6 | `planning.mjs --root ""` falls through `opts.root \|\| process.cwd()` and silently answers about the cwd; the prose callsite `detect-commands --root <project root>` is the realistic trigger | `cadence-core/bin/planning.mjs:2112` | unassigned |
+| 7 | `lease-check` and `cmdTrace` normalize a two-digit decimal phase away: `--phase 1.10` reads `phases/1.1` and hints at a different phase. Natural home: phase 3's theme, though outside PRS-01/02 as written | `cadence-core/bin/planning.mjs:1540`, `:1759` | unassigned |
+| 8 | `merge-warnings` classifies a whole line as a comment on a leading `*`, `//` or `/*` without tracking whether a block comment closes before code on that line | `cadence-core/bin/lib/merge-warnings.mjs:66`, `:146` | unassigned |
+| 9 | `land-cleanup`'s protected-branch coercion lacks the lone-string tolerance both sibling rails apply, so `protected_branches: "release"` emits `base: "main"` | `cadence-core/bin/land-cleanup.mjs:78-79` | unassigned |
+| 10 | Three seams emit `"warnings":[]` on every ordinary run while `route.mjs` omits the key when empty, and the rationale comment cites `route.mjs` as precedent for the opposite of what it does | `cadence-core/bin/git-branch.mjs:62-64`, `:82` | unassigned |
+| 11 | `design-notes/improvement-roadmap.md` still states the untested-wire-paths policy D-10 reversed; the file is untracked, so it survives no clone. Natural home: the doc sweep | `design-notes/improvement-roadmap.md:5-6` | unassigned |
+| 12 | `workflows/config.md` promises an empty `workflow.test_command` maps to `null`; the write face stores `""`. The same wording rides other `str\|null` rows. Natural home: the doc sweep | `cadence-core/workflows/config.md:94` | unassigned |
+| 13 | `correlationId` is `${phase}-${sha}`, so a phase re-run at an unchanged HEAD mints the same id and the FIFO pairing can still close a stranded dispatch with the retry's return | `cadence-core/bin/lib/trace.mjs:145-163`, `:303` | unassigned |
+| 14 | Six lockfile names outside the 23-name allowlist still floor a phase to `critical` through `concurrency(lock)`: `Gopkg.lock`, `glide.lock`, `paket.lock`, `shard.lock`, `Berksfile.lock`, `Puppetfile.lock` | `cadence-core/bin/lib/risk-surfaces.mjs:92-107` | unassigned |
+| 15 | The published-version guard now refuses only on exact tag membership, so an untagged version that merely sorts below the newest tag no longer refuses - a deliberate loosening phase 2 must not re-tighten by accident | `cadence-core/bin/lib/branch-decision.mjs:99-105`, `:186-189` | phase 2 |
+| 16 | `decideBranch` accepts only `publishedVersions`; a caller outside the tree still passing the retired scalar key gets no comparand and therefore no guard at all | `cadence-core/bin/lib/branch-decision.mjs:103-104`, `:149` | phase 2 |
+| 17 | `fail('bad-payload', e.message)` copies a `JSON.parse` message - which quotes up to 200 chars of the review payload - into `.planning/trace.jsonl` | `cadence-core/bin/review-provider.mjs:765` | unassigned |
+| 18 | `traceProvider` marks the call recorded before attempting the write, so a failed explicit write is never retried with `fail()`'s poorer detail | `cadence-core/bin/review-provider.mjs:410-415` | unassigned |
+| 19 | `parseArgs` treats any `--`-prefixed token as a flag consuming the next word, so a bare `--` separator binds the following positional as an option value | `cadence-core/bin/planning.mjs:2074-2079` | unassigned |
+| 20 | `no-staged-set` and `unrepresentable-paths` are computed over the WHOLE index rather than the plan's paths, so a user-staged non-UTF-8 filename refuses every plan | `cadence-core/bin/planning.mjs:1570`, `:1578-1579`, `:1581-1591` | unassigned |
+| 21 | A pathspec-scoped commit gate is blind to a path staged as a DELETION whose file exists untracked in the worktree; recorded against the next pathspec-commit proposal, since the cut design is absent from the tree | `skills/cad-executor-contract/SKILL.md:82` | unassigned |
+| 22 | `parseStagedNameStatus` consumes a final record with no trailing NUL and yields a truncated path rather than `null`, contrary to its own docblock and its caller's message | `cadence-core/bin/planning.mjs:1504-1506`, `:1520-1535` | unassigned |
+| 23 | The `C` (copy) branch adds the copy SOURCE to the leased set; defensive only, since `:1570` invokes git with `-M` and never `-C` | `cadence-core/bin/planning.mjs:1523-1525`, `:1597` | unassigned |
+| 24 | The repo-layer naming assertion added to the existing torn-config test is satisfied by the unfixed implementation too; the case that distinguishes the fix is a separate test | `cadence-core/bin/git-guard.test.mjs:286-290`, `:371` | unassigned |
+
+### Notes-section carry-over
+
+Not a `- [ ]` bullet, so no verdict clause reached it, and it would otherwise be
+orphaned by the cycle that read it. Its citation was re-read live rather than
+copied, and it has moved again.
+
+| # | Item | Re-verified citation | Target |
+|---|---|---|---|
+| 25 | `planning.mjs recall` cannot distinguish an ABSENT corpus from "nothing matched" - both return `{"ok":true,"results":[]}` - and its `dir` default resolves relative to cwd, so any caller whose cwd is not the project root silently gets a memory-less result that the workflows interpolate as "this project has no history" | `cadence-core/bin/planning.mjs:2120` (`const dir = opts.dir \|\| '.planning';`) | unassigned |
+
+Both recorded line numbers for that last item are stale: the queue's `## Notes`
+entry says `planning.mjs:793` and this phase's CONTEXT flagged assumption says
+`:1675`. The line is `:2120` today, and `:1675` now sits inside
+`detect-commands`' `package.json` reader, so citing it would edit the wrong code.
 
 ## Goal check
 
