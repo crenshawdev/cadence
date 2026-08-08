@@ -226,7 +226,25 @@ hand it down - see Handoff read discipline above. The same two-clause test
 covers any deferred read, not only a subagent round-trip: deferring a reference
 pays when the read folds into a turn the command was taking anyway AND only some
 branches reach it, so an eager `@`-include whose file is consulted on EVERY path
-is already at break-even and stays eager. "Folds into" admits an extra tool
+is already at break-even and stays eager. That test omits a SIZE term, and this
+is it: an eager `@`-include costs its bytes times every remaining turn of the
+run, while a deferred read costs one tool call inside a turn the command was
+already taking, so an every-path reference whose residency outweighs that single
+call is past break-even and defers anyway - and
+`weight.mjs resident` is what decides which side a given include falls on. One
+case stays eager whatever its size: a reference consulted at more than one
+distinct STEP, since no single deferred read covers them all - mutually
+exclusive arms of ONE step count as one site, which is exactly why `cad-land`
+can defer `references/git-publish.md` (step 4a or step 4b, never both) while
+`references/git-guard.md` stays eager at steps 1, 2 and 3 and in its guardrails
+block. Any deferral made from this point forward states, inline at the Read
+itself, the reference's measured bytes and its consult-site count, so it ships
+as a shown measurement rather than an assertion - the deferrals already in
+`cad-land` predate this sentence and are not held to it. That count is distinct
+consult STEPS, found by grepping the reference name and then reading which step
+each hit sits under, with mutually exclusive arms counted once: a raw grep total
+is NOT the number and will disagree, since both deferring skills return two
+prose hits against a stated count of one. "Folds into" admits an extra tool
 round-trip inside a turn the command was already taking; it does not admit a
 read that forces a turn the command would not otherwise have taken. Shipped
 applications: the
