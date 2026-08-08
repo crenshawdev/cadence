@@ -107,8 +107,25 @@ test('published: a milestone the repo has ALREADY TAGGED asks, naming both numbe
   assert.equal(r.ok, true);
   assert.equal(r.action, 'ask');
   assert.equal(r.branch, null);
+  // Both numbers are the milestone version and the TAG SPELLING that carries
+  // it, which under membership is the tag it collided with. v0.2.0 is merely
+  // the highest tag in the repo, has nothing to do with this refusal, and
+  // naming it was the sort-order guard talking about the wrong release.
   assert.match(r.reason, /0\.1\.0/);
-  assert.match(r.reason, /0\.2\.0/, 'both numbers, not just the one that was asked for');
+  assert.match(r.reason, /v0\.1\.0/, 'the tag spelling, so the user can go look at it');
+  assert.doesNotMatch(r.reason, /0\.2\.0/, 'not the highest tag: it did not cause this');
+});
+
+test('published: an untagged maintenance milestone below a higher tag still creates (AC8)', () => {
+  // The live-git half of the sort-order defect: v1.9.1 is published nowhere,
+  // and the repo's newest tag is v2.0.0. Sorting refused it as "already
+  // published"; membership creates it.
+  const dir = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
+    'v1.9.1', ['v1.9.0', 'v2.0.0']);
+  const r = decide(dir, 'main');
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'create');
+  assert.equal(r.branch, 'cadence/v1.9.1');
 });
 
 test('published: a milestone above every tag still creates - the guard refuses no new cycle', () => {
@@ -120,13 +137,15 @@ test('published: a milestone above every tag still creates - the guard refuses n
 });
 
 test('published: a non-semver tag is skipped, not guessed at', () => {
-  // `nightly` sorts against nothing; the highest PARSEABLE tag is what counts.
+  // `nightly` parses as no version, so it can carry no milestone: membership is
+  // what counts, and an out-of-grammar tag matches nothing rather than being
+  // ranked or guessed at.
   const dir = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
     'v0.2.0', ['nightly', '2024-06-release', 'v0.2.0']);
   assert.equal(decide(dir, 'main').action, 'ask');
   const clean = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
     'v0.2.0', ['nightly', '2024-06-release']);
-  assert.equal(decide(clean, 'main').action, 'create', 'no parseable tag: nothing to compare against');
+  assert.equal(decide(clean, 'main').action, 'create', 'no tag carries it: nothing to refuse');
 });
 
 test('warnings[] rides the envelope, and a torn layer puts the parse failure on it', () => {
