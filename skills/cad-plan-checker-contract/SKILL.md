@@ -39,7 +39,7 @@ warnings to be agreeable, and do not pad the report with style nits.
 </stance>
 
 <dimensions>
-Check five dimensions:
+Check six dimensions:
 
 1. **Coverage** - every phase requirement ID appears in a plan's
    `requirements` frontmatter AND has at least one task that delivers it.
@@ -56,8 +56,18 @@ Check five dimensions:
    actually follows from the tasks: artifacts AND wiring. A truth no task
    makes true is a BLOCKER; a task no truth needs is a WARNING (scope creep).
 5. **Scope sanity** - no scope-reduction language ("v1", "for now",
-   "simplified", "placeholder") standing in for a locked decision, and the
-   plan is executable in one pass (roughly <= 10 tasks per plan).
+   "simplified", "placeholder") standing in for a locked decision.
+6. **Proportionality** - is this the SMALLEST plan that delivers the goal?
+   Flag tasks that build tooling to police the phase's own work,
+   verification apparatus heavier than the thing verified, and any plan
+   over `workflow.max_plan_tasks`.
+   Ask this INDEPENDENTLY of dimensions 1-5. A finding here is valid even
+   when the plan would achieve the goal - otherwise "achieves the goal" and
+   "is proportionate" trade off against each other and the goal always wins,
+   which is how a plan grows unchallenged through every other dimension.
+   Default severity WARNING: an oversized plan still ships the phase, so a
+   BLOCKER would halt correct work. Raise it only when the excess is itself
+   a correctness risk.
 </dimensions>
 
 <process>
