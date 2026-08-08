@@ -251,7 +251,10 @@ rather than re-editing them. Verified on the tree at `a3f6e1c`:
   the Traceability row already existed, so nothing needed writing.
 - `node cadence-core/bin/planning.mjs audit` returns `ok:true`, with `CTX-01` at
   `"phase":2`, `"plan":"phases/2/PLAN.md"` and `"break":"not-verified"` - no
-  `unpicked` - and `orphans` null, so `phases/2/PLAN.md` is not an orphan. The
+  `unpicked` - and NO `orphans` key at all, so `phases/2/PLAN.md` is not an
+  orphan. Absence is the signal, not a null: `planning.mjs:934` spreads
+  `orphans` into the envelope only when the list is non-empty, so a clean audit
+  omits the key rather than emitting it null. The
   nine ids owned by phases 3-6 (`REC-01`, `REC-02`, `FRI-01`, `FRI-02`, `FRI-03`,
   `PRS-01`, `PRS-02`, `DOC-02`, `DOC-03`) stay `unpicked`, which means "no
   Traceability row yet" and not "unserved": ROADMAP already assigns every one to
