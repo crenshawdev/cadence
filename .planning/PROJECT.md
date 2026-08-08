@@ -106,16 +106,18 @@ fifteen requirements delivered (QW-01..05, CTX-01 — rows above), the audit gre
 on those six (6/6 traced, 0 broken), and the manifest at `2.5.0`.
 
 **v2.5.0 closed early, on purpose.** Its nine remaining requirements — REC, FRI,
-PRS and DOC, roadmap phases 3 through 6 — were not cut, dropped or re-scoped.
-They roll into this cycle whole, with `phases/3/CONTEXT.md` and
-`phases/3/PLAN.md` intact, so this cycle resumes from a planned phase.
+PRS and DOC, its roadmap phases 3 through 6 — were not cut, dropped or
+re-scoped. They roll into this cycle whole, renumbered 1 through 4 at the open
+so a new cycle starts at 1, with queue triage's gathered context and written
+plan intact at `phases/1/CONTEXT.md` and `phases/1/PLAN.md`, so this cycle
+resumes from a planned phase.
 
 The reason is worth keeping, because it is a rule rather than an incident.
 v2.5.0 ended up containing a fix to Cadence's own planning gates: nothing
 bounded plan size, so `cad-plan-checker` asked only whether a plan achieved the
 goal — a question a bigger plan answers better — and `cad-planner` had a
 `## PHASE TOO BIG` marker reachable only by its own judgement, against a
-contract forbidding it to reduce scope. Phase 3 was planned at 10 tasks, cut,
+contract forbidding it to reduce scope. Queue triage was planned at 10 tasks, cut,
 replanned at 15, and passed every gate both times. The fix (`max_plan_tasks`
 plus a proportionality dimension asked independently of the goal) cannot bound
 anything until it ships and installs. Planning four more phases before the
@@ -208,4 +210,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | The rung ladder is one contract materialized N times, not N variants | The host freezes `effort` per agent file on the Agent/Task dispatch path, so rungs need files; the contract lives in exactly one skill and a rung file that ever carries behaviour fails self-verify. Without that check this is the GSD namespace-variant sin the MANIFESTO names | Adopted for v2.0.0 (RNG-01), on the v1.5.0 contract skills |
 
 ---
-*Last updated: 2026-07-29 HST-01 added at phase 6 (7 requirements, 6 phases)*
+*Last updated: 2026-08-08 v2.6.0 opened from v2.5.0's carried-over half; its four phases renumbered 3-6 -> 1-4 (9 requirements, 4 phases)*

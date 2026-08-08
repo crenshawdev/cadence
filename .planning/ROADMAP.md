@@ -2,12 +2,24 @@
 
 ## Overview
 
-**Scope narrowed 2026-08-08, at the close.** `v2.5.0` ships phases 1 and 2 only.
-Phases 3-6 and their nine requirements moved to `v2.6.0` intact, including
-`phases/3/CONTEXT.md` and `phases/3/PLAN.md`, so the next cycle resumes from a
-planned phase. The trigger was this cycle's own plan-size fix: it cannot bound a
-plan until it ships and installs, and phase 3 had already burned two full plan
-rounds against the unbounded gates.
+**Scope narrowed 2026-08-08, at the close.** `v2.5.0` ships its phases 1 and 2
+only. Its phases 3-6 and their nine requirements moved to `v2.6.0` intact,
+including the gathered context and the written plan for queue triage, so the
+next cycle resumes from a planned phase. The trigger was this cycle's own
+plan-size fix: it cannot bound a plan until it ships and installs, and queue
+triage had already burned two full plan rounds against the unbounded gates.
+
+**Renumbered 2026-08-08, at the open.** The four carried-over phases were
+renumbered `1-4` rather than left starting at 3, and `phases/3/` became
+`phases/1/`. Below this paragraph a bare `phase N` means a `v2.6.0` phase; the
+v2.5.0 narrative that follows keeps its own numbering and says so. Old -> new:
+3 -> 1 (Queue triage), 4 -> 2 (Live friction), 5 -> 3 (Parser defects),
+6 -> 4 (Doc sweep).
+
+**The rest of this Overview is the `v2.5.0` record and every phase number in it
+is a v2.5.0 number.** It is kept because the scoping arguments still bind the
+four phases below; read `phase 1`/`phase 2` there as the two that shipped, and
+`phases 3-6` as this cycle's `1-4`.
 
 `v2.5.0 — what Cadence says about itself`. Two things changed this cycle's shape
 after it was opened. First, the cycle was renumbered: it opened as `v2.4.0` on
@@ -64,61 +76,61 @@ each release tag are their archive.
 
 ## Phases
 
-- [ ] **Phase 3: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
-- [ ] **Phase 4: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
-- [ ] **Phase 5: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
-- [ ] **Phase 6: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
+- [ ] **Phase 1: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
+- [ ] **Phase 2: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
+- [ ] **Phase 3: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
+- [ ] **Phase 4: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
 
-### Phase 3: Queue triage
+### Phase 1: Queue triage
 **Goal:** `.planning/CAPTURE.md` stops being an append-only log and becomes the
 set of things still true, with every item's verdict backed by the tree rather
 than by its own wording.
 **Depends on:** Nothing
 **Requirements:** REC-01, REC-02
-**Success Criteria:** (superseded by `phases/3/CONTEXT.md`'s AC1-AC7, which
+**Success Criteria:** (superseded by `phases/1/CONTEXT.md`'s AC1-AC7, which
 carry the locked decisions; criterion 2 below changed at context time - D-04 of
 the capture reader stands, so closed items stay in the live queue and only moot
 items are archived)
-SCOPE CUT 2026-08-08 - criteria 1 and 3 below are REPLACED, not merely superseded. The live set is `phases/3/CONTEXT.md`'s AC1, AC2, AC3, AC6, AC7 (old AC4 and AC5 dropped).
+SCOPE CUT 2026-08-08 - criteria 1 and 3 below are REPLACED, not merely superseded. The live set is `phases/1/CONTEXT.md`'s AC1, AC2, AC3, AC6, AC7 (old AC4 and AC5 dropped).
 1. Every non-current-cycle open item is archived as a BLOCK under one dated reason stating the presumptive-death premise; only the current-cycle (v2.5.0) items carry an individual verdict - closed with the commit sha or tree evidence named, moot with the reason stated, or kept with its claim re-verified. The original form of this criterion, a tree-backed verdict for each of 213 items plus citation normalization, was planned twice and failed review twice at up to 15 tasks; it cost days of executor time for a queue nobody had read in nine milestones.
 2. Archived items live outside the live queue in a `## Archive` section; closed items stay in place carrying their `[closed]` marker, because the capture reader keeps them in the corpus on purpose as the prior evidence recall exists to surface.
-3. Archive invisibility is proved directly, not measured: a token occurring only in archived text returns zero results from `planning.mjs recall`, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet. The before/after BM25 measurement and `phases/3/MEASUREMENTS.md` are dropped with the cut.
-4. Every item the triage keeps and assigns to phases 4, 5 or 6 is named in phase 3's own SUMMARY assignment list, so no surviving item is orphaned by the cycle that triaged it. Items phase 1 already closed are recorded as closed by phase 1, not re-triaged.
+3. Archive invisibility is proved directly, not measured: a token occurring only in archived text returns zero results from `planning.mjs recall`, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet. The before/after BM25 measurement and `phases/1/MEASUREMENTS.md` are dropped with the cut.
+4. Every item the triage keeps and assigns to phases 2, 3 or 4 is named in phase 1's own SUMMARY assignment list, so no surviving item is orphaned by the cycle that triaged it. Items v2.5.0 phase 1 already closed are recorded as closed by v2.5.0 phase 1, not re-triaged.
 
-### Phase 4: Live friction
+### Phase 2: Live friction
 **Goal:** The session-level defects the user hits by hand stop firing: UAT stops
 interrogating the user with commands the model can run, a blocking review stops
 re-arming on its own fix, and a planning-doc version drift becomes mechanically
 visible to the gates.
-**Depends on:** Phase 3
+**Depends on:** Phase 1
 **Requirements:** FRI-01, FRI-02, FRI-03
 **Success Criteria:**
 1. `cadence-core/workflows/verify.md` states the human-check bar explicitly - an item is human-verify only when the model cannot execute it (irreversible against real data, or outside its reach: credentials, GUI, hardware, another machine) - and its walk step runs and cites everything else as a results table. The one-at-a-time turn-ending walk is reserved for the items that survive that bar.
 2. Re-running a walk whose items are 9 read-only commands and 1 destructive command ends the turn asking about exactly 1 item, not 10, with the other 9 shown as executed-and-cited rows.
 3. A `risk_surface` firing on the commit that fixes findings `risk_surface` just raised is bounded: a stated cap exists, the re-arm terminates, and exceeding the cap surfaces a named reason rather than another round.
 4. Every dispatched agent carries an explicit runaway-loop bound (issue #72). The `maxTurns` frontmatter field is supported but its behaviour at the cap is undocumented, so a spike establishes what a capped run returns - partial work or a failed dispatch - before any value ships.
-5. A planning-doc version that disagrees with the shipped manifest is detected mechanically by `/cad-audit` and self-verify, not only reported by `/cad-health`'s prose rule from phase 1, proved by a fixture whose docs claim a version the manifest does not (issue #87).
+5. A planning-doc version that disagrees with the shipped manifest is detected mechanically by `/cad-audit` and self-verify, not only reported by `/cad-health`'s prose rule from v2.5.0 phase 1, proved by a fixture whose docs claim a version the manifest does not (issue #87).
 
-### Phase 5: Parser defects
+### Phase 3: Parser defects
 **Goal:** `cadence-core/bin/lib/planning-files.mjs` stops silently dropping,
 fabricating or truncating the planning data every other seam reads. An
 out-of-grammar input produces a named diagnostic, never a plausible wrong
 answer.
-**Depends on:** Phase 3
+**Depends on:** Phase 1
 **Requirements:** PRS-01, PRS-02
 **Success Criteria:**
 1. A frontmatter block item with no active `currentKey` produces an `unknown-line` issue instead of vanishing, and `unwrap` never returns a value with retained quotes when text follows the closing quote - `parsePlanFiles`' `add()` cannot mint a fabricated value.
 2. `readFrontmatterList` reads a comment that is the whole remainder of a key line, and reads a CRLF-checked-out PLAN.md end to end.
 3. `promoteUnreleased`'s section bounding is fence-aware: a `## ` line inside a fenced code block in the Unreleased body does not truncate the section.
-4. `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the phase-5 regression, and `unseeded` fires on a Traceability table that has rows but is missing the milestone's ids - not only on a zero-row table.
+4. `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the v1.4.0 phase-5 regression, and `unseeded` fires on a Traceability table that has rows but is missing the milestone's ids - not only on a zero-row table.
 5. Each of the above lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
 
-### Phase 6: Doc sweep
+### Phase 4: Doc sweep
 **Goal:** What Cadence claims about itself matches what it does, and the next
 cycle starts from a diff rather than a fresh sweep.
-**Depends on:** Phases 1, 2, 4, 5
+**Depends on:** Phases 2, 3 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
 **Requirements:** DOC-02, DOC-03
 **Success Criteria:**
 1. `/cad-docs-verify` runs across `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md`, and its output is committed in the phase record.

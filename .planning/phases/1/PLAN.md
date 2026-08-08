@@ -1,5 +1,5 @@
 ---
-phase: 3
+phase: 1
 plan: 1
 requirements: [REC-01, REC-02]
 files:
@@ -7,7 +7,7 @@ files:
   - .planning/CAPTURE.md
 ---
 
-# Phase 3: Queue triage - Plan
+# Phase 1: Queue triage - Plan
 
 ## Goal
 
@@ -28,14 +28,14 @@ its own wording.
   tokenizer` still returns the "Six pre-existing `git-guard` rail-3 holes" item.
 - No bullet the reader can still see carries a bare `(phase N)` tag naming a
   pre-v2.5.0 milestone.
-- Phases 4 and 5 take their inputs from the kept-item assignment list, which
+- Phases 2 and 3 take their inputs from the kept-item assignment list, which
   reaches `SUMMARY.md` through the executor report.
 
 ## Context
 
 This plan is written against the 2026-08-08 SCOPE CUT recorded in
-`.planning/phases/3/CONTEXT.md`, `.planning/REQUIREMENTS.md` REC-01/REC-02 and
-`.planning/ROADMAP.md` phase 3. The prior two plans (10 tasks, then 15) tried to
+`.planning/phases/1/CONTEXT.md`, `.planning/REQUIREMENTS.md` REC-01/REC-02 and
+`.planning/ROADMAP.md` phase 1. The prior two plans (10 tasks, then 15) tried to
 give each of 213 open items a tree-backed verdict; both failed review. The
 premise now: an open item carried unread across nine milestones is presumptively
 dead, and proving that one at a time costs more than it returns.
@@ -47,7 +47,8 @@ in `## Todos` and stay in the corpus; they are never archived), D-03 (the archiv
 is a `## Archive` section inside the same file - a sibling would be tracked by
 default), D-04 (a closure names a sha OR `verified live <date> against
 <repo-rooted file:line>`), D-05 (historical tags requalify to `(vX.Y.Z phase N)`),
-D-12 (targets are phase 4, phase 5 or `unassigned` - never phase 2).
+D-12 (targets are phase 2, phase 3 or `unassigned` - never context reduction,
+which shipped as v2.5.0 phase 2).
 D-06 and D-07 are SUPERSEDED - no citation normalization, no before/after
 measurement.
 
@@ -82,7 +83,7 @@ ignores `/.planning/CAPTURE.md` exactly.
   baseline. Do NOT hardcode the numbers above: the queue grows between planning
   and execution (this plan's own capture seed moved lines after `:304`), so
   measure and carry what you measure.
-  Create `.planning/phases/3/triage-work/` holding `baseline/CAPTURE.md`, a
+  Create `.planning/phases/1/triage-work/` holding `baseline/CAPTURE.md`, a
   byte-identical copy of the live queue. Add `/.planning/phases/*/triage-work/`
   to `.gitignore` with a comment giving the reason: the directory holds copies of
   the queue, which is the same candid text `.gitignore:23` withholds, so tracking
@@ -96,10 +97,10 @@ ignores `/.planning/CAPTURE.md` exactly.
   milestone. Write the derived list of current-cycle bullet line numbers to
   `triage-work/current-cycle.txt` and state in the report how the boundary was
   drawn, so a reviewer can check the split rather than take it on faith.
-- **Verify:** `sha256sum .planning/CAPTURE.md .planning/phases/3/triage-work/baseline/CAPTURE.md`
-  prints the same digest twice. `git status --porcelain .planning/phases/3/`
-  lists no `triage-work` path. `git check-ignore -q .planning/phases/3/triage-work/baseline/CAPTURE.md`
-  exits 0. `wc -l < .planning/phases/3/triage-work/current-cycle.txt` prints the
+- **Verify:** `sha256sum .planning/CAPTURE.md .planning/phases/1/triage-work/baseline/CAPTURE.md`
+  prints the same digest twice. `git status --porcelain .planning/phases/1/`
+  lists no `triage-work` path. `git check-ignore -q .planning/phases/1/triage-work/baseline/CAPTURE.md`
+  exits 0. `wc -l < .planning/phases/1/triage-work/current-cycle.txt` prints the
   current-cycle count stated in the report.
 
 ### Task 2: Archive every historical open item as one block
@@ -156,8 +157,8 @@ ignores `/.planning/CAPTURE.md` exactly.
   verdict clause in one of the four D-04 shapes: `CLOSED <date> by <sha>`,
   `CLOSED <date> verified live against <repo-rooted file:line>`,
   `MOOT <date>, <reason>`, or `KEPT <date>, re-verified against <repo-rooted
-  file:line>`. A KEPT item also takes its phase-4 / phase-5 / `unassigned` target
-  (D-12 - never phase 2).
+  file:line>`. A KEPT item also takes its phase-2 / phase-3 / `unassigned` target
+  (D-12 - never context reduction, which shipped as v2.5.0 phase 2).
   Set the verdict from what the tree says, not from what the item says. Where the
   item's own citation has moved, cite the line you actually read.
   Requalify the bare `(phase N)` tag on every historical `- [x]` bullet still in
@@ -173,7 +174,7 @@ ignores `/.planning/CAPTURE.md` exactly.
 - **Verify:** Every `- [ ]` bullet above `## Archive` that is also present in
   `triage-work/baseline/CAPTURE.md` carries one of the four verdict shapes; zero
   carry none. The check compares against the baseline copy on purpose: /cad-execute's
-  own summary step appends fresh `- [ ] (phase 3)` bullets after this task and
+  own summary step appends fresh `- [ ] (phase 1)` bullets after this task and
   before /cad-verify (`cadence-core/workflows/execute.md:299-301`), so an
   unscoped grep would fail on correct work.
   No bullet visible to the reader carries a bare `(phase N)` naming a pre-v2.5.0
@@ -184,10 +185,10 @@ ignores `/.planning/CAPTURE.md` exactly.
 ### Task 5: Route the assignment list to SUMMARY
 
 - **Files:** `.planning/CAPTURE.md`
-- **Action:** Close `.planning/phases/3/reports/plan-1.md` with the heading
+- **Action:** Close `.planning/phases/1/reports/plan-1.md` with the heading
   `## For SUMMARY.md - kept-item assignment list (paste verbatim, do not paraphrase)`
   followed by a table of one row per KEPT item: a short technical restatement, its
-  re-verified citation, and its target (phase 4, phase 5, or `unassigned`).
+  re-verified citation, and its target (phase 2, phase 3, or `unassigned`).
   The report is the route because `cadence-core/workflows/execute.md:375` is the
   only input the summary step is told to read, and `cadence-core/templates/SUMMARY.md`
   has no assignment section to fill. The report needs no `files:` entry - it is
@@ -201,8 +202,9 @@ ignores `/.planning/CAPTURE.md` exactly.
   its citation live rather than copying one - the line has moved twice already.
 - **Verify:** The heading exists in `reports/plan-1.md` and the row count beneath
   it equals the KEPT count from task 4, plus the one carry-over row. Every target
-  is `phase 4`, `phase 5` or `unassigned` - a grep for `phase 2` in the target
-  column returns zero (D-12). `git check-ignore -q .planning/phases/3/reports/plan-1.md`
+  is `phase 2`, `phase 3` or `unassigned` - a grep for any other value in the
+  target column returns zero (D-12: context reduction shipped as v2.5.0 phase 2
+  and takes no assignments, and no other phase exists in this cycle). `git check-ignore -q .planning/phases/1/reports/plan-1.md`
   exits non-zero, confirming the list is actually tracked and will survive.
 
 ## Notes

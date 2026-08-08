@@ -13,7 +13,7 @@ except where noted on `REC-01`/`REC-02` below.
 Why it split. `v2.5.0` ended up containing a fix to Cadence's own planning
 gates - `workflow.max_plan_tasks` plus a proportionality dimension on
 `cad-plan-checker` - and that fix does nothing until it ships and installs.
-Phase 3 had by then been planned at 10 tasks, cut, replanned at 15, and passed
+Queue triage had by then been planned at 10 tasks, cut, replanned at 15, and passed
 every gate both times, which is precisely the failure the new ceiling exists to
 catch. Planning four more phases before the release would have run all four
 through the same unbounded gates. So the cycle closed on what was verifiably
@@ -35,16 +35,19 @@ whose claims were re-confirmed against the live tree before being written down �
 the [blocker] O(K x N) git-guard item, by contrast, was closed by `TOK-02` in
 v2.2.0 and is deliberately absent.
 
-Roadmap phases 3-6 carry over with their numbers intact, and
-`phases/3/CONTEXT.md` and `phases/3/PLAN.md` survive the close, so this cycle
-resumes from a planned phase rather than a blank one. `/cad-plan` seeds each
-id's Traceability row as its phase is planned.
+v2.5.0's roadmap phases 3-6 carry over, renumbered 1-4 on 2026-08-08 at the open
+so this cycle starts where a cycle starts. Queue triage keeps its gathered
+context and its written plan, now at `phases/1/CONTEXT.md` and
+`phases/1/PLAN.md`, so the cycle resumes from a planned phase rather than a blank
+one. A bare `phase N` in this section means a `v2.6.0` phase; a shipped
+predecessor is written `v2.5.0 phase N`. `/cad-plan` seeds each id's Traceability
+row as its phase is planned.
 
 - **REC-01**: The capture queue stops carrying items nobody has read. Every non-current-cycle open `CAPTURE.md` item is archived as a block under one dated reason — an item carried unread across nine milestones is presumptively dead, and proving that one item at a time costs more than it returns. Every current-cycle (v2.5.0) item IS triaged individually against the live tree and lands in exactly one of three states: closed with the commit or tree evidence that closed it named, moot with the reason stated, or kept with its claim re-verified. No current-cycle item survives on its original wording alone (rescoped 2026-08-08; the original per-item rule over all 213 open items was planned twice, failed review twice, and cost days of executor time for a queue nobody reads)
-- **REC-02**: The capture file stops being an append-only log: moot items move out of the live queue to a `## Archive` section, so what `/cad-plan`'s recall reads is the set of things still true. Closed items stay, carrying their `[closed]` marker — `planning-files.mjs:602-609` keeps them in the corpus on purpose as the prior evidence recall exists to surface, and they are 18.9% of it. Archive invisibility is proved directly rather than by measurement: a token occurring only in archived text returns zero from recall, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet (the before/after BM25 measurement was dropped 2026-08-08 with the scope cut — it measured work this phase no longer does; the isolation method is preserved verbatim at phase 3 CONTEXT D-07 for any later phase that needs it)
+- **REC-02**: The capture file stops being an append-only log: moot items move out of the live queue to a `## Archive` section, so what `/cad-plan`'s recall reads is the set of things still true. Closed items stay, carrying their `[closed]` marker — `planning-files.mjs:602-609` keeps them in the corpus on purpose as the prior evidence recall exists to surface, and they are 18.9% of it. Archive invisibility is proved directly rather than by measurement: a token occurring only in archived text returns zero from recall, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet (the before/after BM25 measurement was dropped 2026-08-08 with the scope cut — it measured work this phase no longer does; the isolation method is preserved verbatim at phase 1 CONTEXT D-07 for any later phase that needs it)
 - **FRI-01**: `/cad-verify` states the human-check bar — an item is human-verify only when the model cannot execute it (irreversible against real data, or outside its reach: credentials, GUI, hardware, another machine) — and its walk runs and cites everything else as a results table, reserving the one-at-a-time turn-ending walk for the items that survive the bar. `cad-verifier`'s `why_human` field already encodes this; the walk does not apply it
 - **FRI-02**: A blocking review trigger cannot re-arm without bound on the commit that fixes the findings it just raised: the cap is stated, the loop terminates, and exceeding it surfaces a named reason. Every dispatched agent carries an explicit runaway-loop bound (issue #72 — `maxTurns` is the only guard the host offers and Cadence sets it nowhere)
-- **FRI-03**: A planning-doc version that disagrees with the shipped manifest is detected mechanically, by `/cad-audit` and self-verify, rather than only reported by the `/cad-health` prose rule `QW-04` ships (issue #87). The routing-floor and branch-naming halves of this requirement moved to `QW-03` and `QW-04`, which close them in phase 1
+- **FRI-03**: A planning-doc version that disagrees with the shipped manifest is detected mechanically, by `/cad-audit` and self-verify, rather than only reported by the `/cad-health` prose rule `QW-04` ships (issue #87). The routing-floor and branch-naming halves of this requirement moved to `QW-03` and `QW-04`, which closed them in v2.5.0 phase 1
 - **PRS-01**: `planning-files.mjs`' frontmatter reads stop dropping and fabricating: a block item with no active `currentKey` yields an `unknown-line` issue rather than vanishing, `unwrap` cannot mint a value from a quote followed by text, and `readFrontmatterList` handles a comment that is the whole remainder of a key line as well as a CRLF-checked-out file
 - **PRS-02**: `planning-files.mjs`' section and id reads stop truncating and mis-rejecting: `promoteUnreleased`'s bounding is fence-aware, `REQ_ID_EXACT` accepts a category not starting with `[A-Z]`, and `unseeded` fires on a populated Traceability table missing the milestone's ids rather than only on a zero-row one. Every fix ships with a regression test proved failing-capable against the unpatched code
 - **DOC-02**: `/cad-docs-verify` runs across the whole doc surface — `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md` — and every claim it reports stale is either corrected or recorded as a known divergence with its reason. The run is repeatable and its output is committed, so the next cycle starts from a diff rather than a fresh sweep
@@ -148,13 +151,14 @@ Tracked, not in the current roadmap.
 
 Deferred out of `v2.5.0` on 2026-08-08 as a block, to release the plan-size
 fix early rather than hold it behind four more phases. Nothing about these
-nine changed - they carry forward to `v2.6.0` together with roadmap phases
-3-6 and with `phases/3/CONTEXT.md` and `phases/3/PLAN.md` intact, so the
-next cycle resumes from a planned phase rather than a blank one. The reason
-for the split is that `workflow.max_plan_tasks` and the plan-checker's
-proportionality dimension do nothing until they ship and install; every
-phase planned before that release is planned by the unbounded gates that
-cost this cycle two failed plan rounds on phase 3 alone.
+nine changed - they carry forward to `v2.6.0` together with v2.5.0's roadmap
+phases 3-6 (renumbered 1-4 at the open) and with queue triage's context and
+plan intact at `phases/1/`, so the next cycle resumes from a planned phase
+rather than a blank one. The reason for the split is that
+`workflow.max_plan_tasks` and the plan-checker's proportionality dimension do
+nothing until they ship and install; every phase planned before that release is
+planned by the unbounded gates that cost this cycle two failed plan rounds on
+queue triage alone.
 
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
 - **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/2/CONTEXT.md` D-06
@@ -188,4 +192,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-07 cycle renumbered v2.4.0 -> v2.5.0 after a v2.4.0 release shipped outside it; QW-01..04 added and opened as phase 1, CTX-* pulled to phase 2, and FRI-03 narrowed to the mechanical half of issue #87*
+*Last updated: 2026-08-08 v2.6.0's four carried-over phases renumbered 3-6 -> 1-4, so the cycle starts at phase 1; queue triage's context and plan moved to `phases/1/`*
