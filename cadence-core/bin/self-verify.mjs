@@ -65,6 +65,13 @@
 //                    rails, cleanup rails and recall decided from defaults in
 //                    silence. The rule is lib/merge-warnings.mjs; this is the
 //                    only check that walks .mjs SOURCE rather than prose.
+//  13. deferred      a reference a command skill deliberately stopped
+//      reads         `@`-including must still be Read by name at the step that
+//                    needs it. De-preloading is the cheapest context cut there
+//                    is and the easiest to break: delete one sentence and the
+//                    reference is unreachable, with nothing failing. The
+//                    register of removals and the sentence-level rule live in
+//                    lib/deferred-reads.mjs; this side only calls it.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -85,6 +92,7 @@ import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
+import { deferredReadIssues } from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -978,6 +986,12 @@ function run(root) {
     }
   }
 
+  // 13. deferred reads: every reference the register records as de-preloaded is
+  // still Read by name at the step that needs it. The rule, its register and
+  // the reason the unit is the SENTENCE live in lib/deferred-reads.mjs; this
+  // side only decides that it applies to the whole root.
+  for (const issue of deferredReadIssues(root)) problems.push(issue);
+
   return problems;
 }
 
@@ -988,7 +1002,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
+import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -1561,4 +1562,128 @@ test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an a
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
   assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);
+});
+
+// --- check 13: deferred reads -------------------------------------------------
+
+/** One Read sentence for a register row's reference, in the shape the rule wants. */
+const readSentence = (ref) =>
+  `Read \`\${CLAUDE_PLUGIN_ROOT}/cadence-core/${ref}\` at this step, not preloaded.`;
+
+/** The eager include line for a reference, which the rule reports as still-eager. */
+const includeLine = (ref) => `@\${CLAUDE_PLUGIN_ROOT}/cadence-core/${ref}`;
+
+/**
+ * A root holding only the named skills. A value of `null` creates the skill
+ * DIRECTORY with no SKILL.md in it; an entry omitted entirely is a skill this
+ * root simply does not have.
+ * @param {Record<string, string|null>} skills
+ */
+function deferredFixture(skills) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-deferred-'));
+  mkdirSync(join(root, 'skills'), { recursive: true });
+  for (const [name, body] of Object.entries(skills)) {
+    mkdirSync(join(root, 'skills', name), { recursive: true });
+    if (body !== null) writeFileSync(join(root, 'skills', name, 'SKILL.md'), body);
+  }
+  return root;
+}
+
+/** A cad-land body satisfying every one of its three register rows. */
+const CLEAN_LAND = [
+  '3. Fire pre_ship.', readSentence('references/review-triggers.md'),
+  'Then run the triage gate exactly as', readSentence('references/triage-gate.md'),
+  '4a. Ask the mechanism.', readSentence('references/git-publish.md'),
+  '4b. Autonomous close.', readSentence('references/git-publish.md'),
+].join('\n');
+const CLEAN_PLAN_REVIEW = readSentence('references/review-triggers.md');
+
+test('check 13: the live tree satisfies every register row', () => {
+  assert.deepEqual(deferredReadIssues(REPO), []);
+  // And the register is the stated table it claims to be, not something
+  // derived: git-publish.md is TWO read paragraphs against ONE consult site.
+  const gp = DEFERRED_READS.find((r) => r.reference === 'references/git-publish.md');
+  assert.equal(gp.read_paragraphs, 2);
+  assert.equal(DEFERRED_READS.length, 4);
+  assert.throws(() => DEFERRED_READS.push({}));
+});
+
+test('check 13: a clean pair passes', () => {
+  const root = deferredFixture({ 'cad-land': CLEAN_LAND, 'cad-plan-review': CLEAN_PLAN_REVIEW });
+  assert.deepEqual(deferredReadIssues(root), []);
+});
+
+test('check 13: deferred-read-unread when a Read sentence is missing', () => {
+  const root = deferredFixture({
+    'cad-land': CLEAN_LAND.replace(readSentence('references/review-triggers.md'), ''),
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  const issues = deferredReadIssues(root);
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.equal(issues[0].file, 'skills/cad-land/SKILL.md');
+  assert.match(issues[0].detail, /references\/review-triggers\.md/);
+});
+
+test('check 13: the unit is the SENTENCE - one arm of a two-paragraph row is not enough', () => {
+  // The whole point of read_paragraphs: 2. A block-level rule passes here,
+  // because the other arm's Read and the path both survive elsewhere in the
+  // file - and step 4b's arm has silently lost its rails.
+  const root = deferredFixture({
+    'cad-land': CLEAN_LAND.replace(
+      `4b. Autonomous close.\n${readSentence('references/git-publish.md')}`, '4b. Autonomous close.'),
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  const issues = deferredReadIssues(root);
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /1 of 2/);
+});
+
+test('check 13: restating a reference inline instead of Reading it is caught', () => {
+  // The failure mode this exists for: someone "simplifies" the step by
+  // summarising the reference in place, the Read sentence goes, and nothing
+  // else in the tree notices that the de-preloaded file is now unreachable.
+  // Accepted cost, stated: a sentence spelling `do NOT Read <path>` carries
+  // both tokens and would satisfy the row. Deleting the real one still fails.
+  const root = deferredFixture({
+    'cad-land': CLEAN_LAND.replace(readSentence('references/triage-gate.md'),
+      'The triage gate is restated inline here.'),
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  assert.deepEqual(deferredReadIssues(root).map((i) => i.kind), ['deferred-read-unread']);
+});
+
+test('check 13: deferred-read-still-eager when the include comes back', () => {
+  const root = deferredFixture({
+    'cad-land': `${includeLine('references/review-triggers.md')}\n${CLEAN_LAND}`,
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  const issues = deferredReadIssues(root);
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-still-eager']);
+  assert.equal(issues[0].file, 'skills/cad-land/SKILL.md');
+});
+
+test('check 13: deferred-read-missing-skill when the SKILL.md is gone', () => {
+  // The skill DIRECTORY exists and its SKILL.md does not - a real break, as
+  // distinct from a fixture that simply has no cad-land at all.
+  const root = deferredFixture({ 'cad-land': null, 'cad-plan-review': CLEAN_PLAN_REVIEW });
+  const issues = deferredReadIssues(root);
+  assert.equal(issues.length, 3, JSON.stringify(issues));
+  assert.ok(issues.every((i) => i.kind === 'deferred-read-missing-skill'));
+});
+
+test('check 13: a root with no skills/ contributes nothing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-noskills-'));
+  assert.deepEqual(deferredReadIssues(root), []);
+  // And a root whose skills/ simply lacks these skills is a partial fixture,
+  // not a break - otherwise every fixture in this file would report the whole
+  // register.
+  assert.deepEqual(deferredReadIssues(deferredFixture({})), []);
+});
+
+test('check 13: self-verify files the issue and names the check in `checked`', () => {
+  const root = fixtureWith({ skills: { 'cad-land': 'nothing reads anything here\n' } });
+  const j = run(['--root', root]);
+  assert.match(j.checked, /deferred-reads/);
+  const kinds = j.problems.map((p) => p.kind);
+  assert.equal(kinds.filter((k) => k === 'deferred-read-unread').length, 3);
 });
