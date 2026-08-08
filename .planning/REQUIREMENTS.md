@@ -12,6 +12,18 @@ shipped outside it ("parallel that actually engages", manifest and tag both at
 unstarted. That is issue #87's failure mode caught live on this repo, and it is
 why `QW-04` carries the drift rule that would have surfaced it.
 
+**Scope narrowed 2026-08-08, at the close.** `v2.5.0` ships the benchmark quick
+wins (`QW-*`) and context reduction (`CTX-01`) only. The reconciliation half -
+queue triage, live friction, parser defects and the doc sweep, nine requirements
+across roadmap phases 3-6 - moved to `## Deferred` and carries forward to
+`v2.6.0` whole. The reason is in the Deferred note: the plan-size ceiling this
+cycle added does nothing until it ships and installs, so planning four more
+phases first would have run every one of them through the unbounded gates that
+already cost two failed plan rounds on phase 3.
+
+The paragraphs below describe the cycle as originally scoped and are kept as the
+record of what was intended; read them as `v2.6.0`'s brief, not this release's.
+
 A reconciliation cycle, not a construction one. `.planning/CAPTURE.md` holds 213
 open items (as of 2026-08-08) accumulated over nine milestones; some were closed by work that
 shipped and never struck, some describe code that no longer exists, and the real
@@ -48,16 +60,7 @@ absent.
 - **QW-03**: The parallel path's dead ends and false floors close, and its file leases are enforced rather than merely checked. An executor's writes stay inside the `files:` list its plan declared: today `plan-overlap` compares those lists once as a pre-flight gate and nothing holds a worker to its own declaration afterward, so a write outside it is caught by no mechanism on any parallel path. A `blocked` worktree halt naming a missing PLAN file has a stated orchestrator-side remedy including its fallback, with Cadence still issuing no `git worktree add`; `phase_diff` resolves to `advisory` at `shipped` through all three surfaces that decide it, so a scaffolded repo config no longer overrides `critical`'s `adjudicated` with `off`; and a dependency lockfile no longer matches the `concurrency` risk surface, so it stops silently pinning every Rust, Node, Python and Ruby phase to `critical` while `src/locking.rs` still floors
 - **QW-04**: A version that already shipped is never presented as current. `/cad-health` reports a `PROJECT.md ### Active` milestone version that does not sort above the shipped manifest, naming both numbers, and `git-branch.mjs decide` does not return a `create` for an integration branch named after a version the manifest has already published — the hole this cycle's own renumber exposed, which is wider than the filed "no active milestone" case. #87(a) is recorded as already shipped, citing `lib/release-decision.mjs`' downgrade and not-an-upgrade arms. Issues #14 and #19 land alongside: the verifier's level-3 `Wired` requires one real value traced end to end across each seam on the goal path, and `/cad-debug` consults a frequency-ordered bug-patterns checklist before forming its first hypothesis
 - **QW-05**: Every provider failure path is exercised rather than assumed. `review-provider.mjs` is fault-injected across its real failure modes — request timeout, HTTP 4xx and 5xx, a dead or unknown model id, a malformed or truncated response body, and an empty findings set — and each one has a test proving what the caller sees. The gate a fault degrades must degrade loudly: a reviewer that drops out of a fired trigger is named in the trace and to the user, never silently reducing a panel to one voice while the gate still reports clean
-- **REC-01**: The capture queue stops carrying items nobody has read. Every non-current-cycle open `CAPTURE.md` item is archived as a block under one dated reason — an item carried unread across nine milestones is presumptively dead, and proving that one item at a time costs more than it returns. Every current-cycle (v2.5.0) item IS triaged individually against the live tree and lands in exactly one of three states: closed with the commit or tree evidence that closed it named, moot with the reason stated, or kept with its claim re-verified. No current-cycle item survives on its original wording alone (rescoped 2026-08-08; the original per-item rule over all 213 open items was planned twice, failed review twice, and cost days of executor time for a queue nobody reads)
-- **REC-02**: The capture file stops being an append-only log: moot items move out of the live queue to a `## Archive` section, so what `/cad-plan`'s recall reads is the set of things still true. Closed items stay, carrying their `[closed]` marker — `planning-files.mjs:602-609` keeps them in the corpus on purpose as the prior evidence recall exists to surface, and they are 18.9% of it. Archive invisibility is proved directly rather than by measurement: a token occurring only in archived text returns zero from recall, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet (the before/after BM25 measurement was dropped 2026-08-08 with the scope cut — it measured work this phase no longer does; the isolation method is preserved verbatim at phase 3 CONTEXT D-07 for any later phase that needs it)
-- **FRI-01**: `/cad-verify` states the human-check bar — an item is human-verify only when the model cannot execute it (irreversible against real data, or outside its reach: credentials, GUI, hardware, another machine) — and its walk runs and cites everything else as a results table, reserving the one-at-a-time turn-ending walk for the items that survive the bar. `cad-verifier`'s `why_human` field already encodes this; the walk does not apply it
-- **FRI-02**: A blocking review trigger cannot re-arm without bound on the commit that fixes the findings it just raised: the cap is stated, the loop terminates, and exceeding it surfaces a named reason. Every dispatched agent carries an explicit runaway-loop bound (issue #72 — `maxTurns` is the only guard the host offers and Cadence sets it nowhere)
-- **FRI-03**: A planning-doc version that disagrees with the shipped manifest is detected mechanically, by `/cad-audit` and self-verify, rather than only reported by the `/cad-health` prose rule `QW-04` ships (issue #87). The routing-floor and branch-naming halves of this requirement moved to `QW-03` and `QW-04`, which close them in phase 1
-- **PRS-01**: `planning-files.mjs`' frontmatter reads stop dropping and fabricating: a block item with no active `currentKey` yields an `unknown-line` issue rather than vanishing, `unwrap` cannot mint a value from a quote followed by text, and `readFrontmatterList` handles a comment that is the whole remainder of a key line as well as a CRLF-checked-out file
-- **PRS-02**: `planning-files.mjs`' section and id reads stop truncating and mis-rejecting: `promoteUnreleased`'s bounding is fence-aware, `REQ_ID_EXACT` accepts a category not starting with `[A-Z]`, and `unseeded` fires on a populated Traceability table missing the milestone's ids rather than only on a zero-row one. Every fix ships with a regression test proved failing-capable against the unpatched code
 - **CTX-01**: What a command carries is measurable, then measurably smaller. A `weight.mjs` subcommand composes what one flat per-file list cannot — eager bytes (`SKILL.md` plus its `@`-includes) and reachable bytes (eager plus every reference the prose reads mid-run) per command, dispatch bytes (agent file plus preloaded contract skills) per role — reported under both definitions because the ranking inverts between them, and carrying the first CONTRACTS entry `weight.mjs` has ever had. On that measurement, `cad-land` and `cad-plan-review` stop eagerly preloading references they read at one step, dropping `cad-land` below the workhorse mean, with before/after byte counts committed and the budgeted-but-never-loaded references marked so no unpaid saving is recorded. (Re-scoped 2026-08-08 at phase-2 context: the `references/**` budget clause shipped as `BUD-02` in v2.3.0 — 93 exact-byte entries, ceiling at `self-verify.mjs:605` — and `panel-review` is retired Codex-era prior art this codebase never contained, so both were struck rather than re-planned. The 2.4x figure is runtime billed-equiv from transcript analysis, which `## Out of Scope` excludes and which no static measure reproduces; the target is now static. See `phases/2/CONTEXT.md` D-01/D-02/D-03.)
-- **DOC-02**: `/cad-docs-verify` runs across the whole doc surface — `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md` — and every claim it reports stale is either corrected or recorded as a known divergence with its reason. The run is repeatable and its output is committed, so the next cycle starts from a diff rather than a fresh sweep
-- **DOC-03**: A claim that turns out to describe a real defect rather than stale prose is filed as its own requirement rather than silently reworded, so the cycle cannot quietly convert a bug into a documentation edit
 
 ## Shipped
 
@@ -149,8 +152,27 @@ parses only the Traceability table).
 
 Tracked, not in the current roadmap.
 
+Deferred out of `v2.5.0` on 2026-08-08 as a block, to release the plan-size
+fix early rather than hold it behind four more phases. Nothing about these
+nine changed - they carry forward to `v2.6.0` together with roadmap phases
+3-6 and with `phases/3/CONTEXT.md` and `phases/3/PLAN.md` intact, so the
+next cycle resumes from a planned phase rather than a blank one. The reason
+for the split is that `workflow.max_plan_tasks` and the plan-checker's
+proportionality dimension do nothing until they ship and install; every
+phase planned before that release is planned by the unbounded gates that
+cost this cycle two failed plan rounds on phase 3 alone.
+
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
 - **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/2/CONTEXT.md` D-06
+- **REC-01**: The capture queue stops carrying items nobody has read. Every non-current-cycle open `CAPTURE.md` item is archived as a block under one dated reason — an item carried unread across nine milestones is presumptively dead, and proving that one item at a time costs more than it returns. Every current-cycle (v2.5.0) item IS triaged individually against the live tree and lands in exactly one of three states: closed with the commit or tree evidence that closed it named, moot with the reason stated, or kept with its claim re-verified. No current-cycle item survives on its original wording alone (rescoped 2026-08-08; the original per-item rule over all 213 open items was planned twice, failed review twice, and cost days of executor time for a queue nobody reads)
+- **REC-02**: The capture file stops being an append-only log: moot items move out of the live queue to a `## Archive` section, so what `/cad-plan`'s recall reads is the set of things still true. Closed items stay, carrying their `[closed]` marker — `planning-files.mjs:602-609` keeps them in the corpus on purpose as the prior evidence recall exists to surface, and they are 18.9% of it. Archive invisibility is proved directly rather than by measurement: a token occurring only in archived text returns zero from recall, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet (the before/after BM25 measurement was dropped 2026-08-08 with the scope cut — it measured work this phase no longer does; the isolation method is preserved verbatim at phase 3 CONTEXT D-07 for any later phase that needs it)
+- **FRI-01**: `/cad-verify` states the human-check bar — an item is human-verify only when the model cannot execute it (irreversible against real data, or outside its reach: credentials, GUI, hardware, another machine) — and its walk runs and cites everything else as a results table, reserving the one-at-a-time turn-ending walk for the items that survive the bar. `cad-verifier`'s `why_human` field already encodes this; the walk does not apply it
+- **FRI-02**: A blocking review trigger cannot re-arm without bound on the commit that fixes the findings it just raised: the cap is stated, the loop terminates, and exceeding it surfaces a named reason. Every dispatched agent carries an explicit runaway-loop bound (issue #72 — `maxTurns` is the only guard the host offers and Cadence sets it nowhere)
+- **FRI-03**: A planning-doc version that disagrees with the shipped manifest is detected mechanically, by `/cad-audit` and self-verify, rather than only reported by the `/cad-health` prose rule `QW-04` ships (issue #87). The routing-floor and branch-naming halves of this requirement moved to `QW-03` and `QW-04`, which close them in phase 1
+- **PRS-01**: `planning-files.mjs`' frontmatter reads stop dropping and fabricating: a block item with no active `currentKey` yields an `unknown-line` issue rather than vanishing, `unwrap` cannot mint a value from a quote followed by text, and `readFrontmatterList` handles a comment that is the whole remainder of a key line as well as a CRLF-checked-out file
+- **PRS-02**: `planning-files.mjs`' section and id reads stop truncating and mis-rejecting: `promoteUnreleased`'s bounding is fence-aware, `REQ_ID_EXACT` accepts a category not starting with `[A-Z]`, and `unseeded` fires on a populated Traceability table missing the milestone's ids rather than only on a zero-row one. Every fix ships with a regression test proved failing-capable against the unpatched code
+- **DOC-02**: `/cad-docs-verify` runs across the whole doc surface — `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md` — and every claim it reports stale is either corrected or recorded as a known divergence with its reason. The run is repeatable and its output is committed, so the next cycle starts from a diff rather than a fresh sweep
+- **DOC-03**: A claim that turns out to describe a real defect rather than stale prose is filed as its own requirement rather than silently reworded, so the cycle cannot quietly convert a bug into a documentation edit
 
 ## Out of Scope
 
@@ -174,11 +196,11 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| QW-01 | Phase 1 | Pending |
-| QW-02 | Phase 1 | Pending |
-| QW-03 | Phase 1 | Pending |
-| QW-04 | Phase 1 | Pending |
-| QW-05 | Phase 1 | Pending |
+| QW-01 | Phase 1 | Complete |
+| QW-02 | Phase 1 | Complete |
+| QW-03 | Phase 1 | Complete |
+| QW-04 | Phase 1 | Complete |
+| QW-05 | Phase 1 | Complete |
 | CTX-01 | Phase 2 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its

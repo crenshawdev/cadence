@@ -2,6 +2,13 @@
 
 ## Overview
 
+**Scope narrowed 2026-08-08, at the close.** `v2.5.0` ships phases 1 and 2 only.
+Phases 3-6 and their nine requirements moved to `v2.6.0` intact, including
+`phases/3/CONTEXT.md` and `phases/3/PLAN.md`, so the next cycle resumes from a
+planned phase. The trigger was this cycle's own plan-size fix: it cannot bound a
+plan until it ships and installs, and phase 3 had already burned two full plan
+rounds against the unbounded gates.
+
 `v2.5.0 — what Cadence says about itself`. Two things changed this cycle's shape
 after it was opened. First, the cycle was renumbered: it opened as `v2.4.0` on
 2026-08-05, and on 2026-08-07 a `v2.4.0` release shipped outside it ("parallel
@@ -57,7 +64,7 @@ each release tag are their archive.
 
 ## Phases
 
-- [ ] **Phase 1: Benchmark quick wins** - a static-analysis layer reaches the executor, one joined trace explains a run, file leases become enforced rather than checked, provider failure paths get exercised, and the named tracker and backlog reliability fixes land
+- [x] **Phase 1: Benchmark quick wins** - a static-analysis layer reaches the executor, one joined trace explains a run, file leases become enforced rather than checked, provider failure paths get exercised, and the named tracker and backlog reliability fixes land
 - [x] **Phase 2: Context reduction** - measure what a command and a dispatch actually carry, then defer the eager includes that dominate the two heaviest
 - [ ] **Phase 3: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 4: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
