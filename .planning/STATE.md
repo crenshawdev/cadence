@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 4 (Queue triage)
-Status: executed
-Next: /cad-verify 1
+Phase: 2 of 4 (Live friction)
+Status: ready to plan
+Next: /cad-context 2
 Updated: 2026-08-08
