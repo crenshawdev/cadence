@@ -1589,23 +1589,42 @@ function deferredFixture(skills) {
   return root;
 }
 
-/** A cad-land body satisfying every one of its three register rows. */
+/**
+ * A cad-land body satisfying every one of its three register rows.
+ *
+ * The shape is structural, not decorative: the rule anchors each required Read
+ * to a REGION, and a region is a top-level `<n>. ` step inside `<process>`,
+ * narrowed by an indented `**(<x>)` arm. `<guardrails>` is deliberately present
+ * and deliberately regionless - it is where the relocation attack below puts
+ * the sentence it deleted from an arm.
+ */
 const CLEAN_LAND = [
+  '<process>',
   '3. Fire pre_ship.', readSentence('references/review-triggers.md'),
   'Then run the triage gate exactly as', readSentence('references/triage-gate.md'),
-  '4a. Ask the mechanism.', readSentence('references/git-publish.md'),
-  '4b. Autonomous close.', readSentence('references/git-publish.md'),
+  '4. Publish.',
+  '   **(a)** Ask the mechanism.', readSentence('references/git-publish.md'),
+  '   **(b)** Autonomous close.', readSentence('references/git-publish.md'),
+  '</process>',
+  '<guardrails>',
+  '- Land nothing the user did not choose.',
+  '</guardrails>',
 ].join('\n');
-const CLEAN_PLAN_REVIEW = readSentence('references/review-triggers.md');
+const CLEAN_PLAN_REVIEW = ['<process>', '2. Fire the plan trigger.',
+  readSentence('references/review-triggers.md'), '</process>'].join('\n');
 
 test('check 13: the live tree satisfies every register row', () => {
   assert.deepEqual(deferredReadIssues(REPO), []);
   // And the register is the stated table it claims to be, not something
-  // derived: git-publish.md is TWO read paragraphs against ONE consult site.
+  // derived: git-publish.md is TWO anchors against ONE consult site.
   const gp = DEFERRED_READS.find((r) => r.reference === 'references/git-publish.md');
-  assert.equal(gp.read_paragraphs, 2);
+  assert.deepEqual([...gp.anchors], ['4(a)', '4(b)']);
+  assert.equal(gp.read_paragraphs, gp.anchors.length);
+  // Every row's count agrees with its anchor list, so the two can never drift.
+  for (const r of DEFERRED_READS) assert.equal(r.read_paragraphs, r.anchors.length);
   assert.equal(DEFERRED_READS.length, 4);
   assert.throws(() => DEFERRED_READS.push({}));
+  assert.throws(() => gp.anchors.push('4(c)'));
 });
 
 test('check 13: a clean pair passes', () => {
@@ -1624,18 +1643,68 @@ test('check 13: deferred-read-unread when a Read sentence is missing', () => {
   assert.match(issues[0].detail, /references\/review-triggers\.md/);
 });
 
-test('check 13: the unit is the SENTENCE - one arm of a two-paragraph row is not enough', () => {
-  // The whole point of read_paragraphs: 2. A block-level rule passes here,
-  // because the other arm's Read and the path both survive elsewhere in the
-  // file - and step 4b's arm has silently lost its rails.
+test('check 13: the unit is the ARM - one arm of a two-anchor row is not enough', () => {
+  // The whole point of two anchors. A block-level rule passes here, because
+  // the other arm's Read and the path both survive elsewhere in the file - and
+  // step 4(b)'s arm has silently lost its rails.
   const root = deferredFixture({
     'cad-land': CLEAN_LAND.replace(
-      `4b. Autonomous close.\n${readSentence('references/git-publish.md')}`, '4b. Autonomous close.'),
+      `   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
+      '   **(b)** Autonomous close.'),
     'cad-plan-review': CLEAN_PLAN_REVIEW,
   });
   const issues = deferredReadIssues(root);
   assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
   assert.match(issues[0].detail, /1 of 2/);
+});
+
+test('check 13: an arm\'s Read relocated ELSEWHERE in the file does not answer for it', () => {
+  // The reproduced hole this rule was rewritten to close. The old check counted
+  // qualifying sentences FILE-WIDE, so deleting step 4(b)'s Read and moving an
+  // equivalent sentence into <guardrails> kept the count at 2 of 2 and left
+  // self-verify ok:true - with the auto_close arm reaching its publish bullets
+  // and the reference never loaded. The count is unchanged here; only WHERE the
+  // sentence sits has changed, and that is now the whole test.
+  const body = CLEAN_LAND
+    .replace(`   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
+      '   **(b)** Autonomous close.')
+    .replace('<guardrails>', `<guardrails>\n${readSentence('references/git-publish.md')}`);
+  // The file still holds exactly as many qualifying sentences as before.
+  const count = (t) => t.split(readSentence('references/git-publish.md')).length - 1;
+  assert.equal(count(body), count(CLEAN_LAND));
+  const issues = deferredReadIssues(deferredFixture({
+    'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
+  }));
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
+});
+
+test('check 13: a Read in the wrong STEP does not answer for the right one', () => {
+  // Same rule, the in-process spelling: step 3 is inside <process> and is a
+  // real region, so this is not about tag blocks - it is about the arm.
+  const body = CLEAN_LAND
+    .replace(`   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
+      '   **(b)** Autonomous close.')
+    .replace('3. Fire pre_ship.',
+      `3. Fire pre_ship.\n${readSentence('references/git-publish.md')}`);
+  const issues = deferredReadIssues(deferredFixture({
+    'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
+  }));
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
+});
+
+test('check 13: deleting the ARM itself is reported, not silently satisfied', () => {
+  // A missing region must fail closed. Dropping step 4(b) entirely leaves no
+  // lines carrying that label, and an anchor with no region is unsatisfied.
+  const body = CLEAN_LAND.replace(
+    `   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}\n`, '');
+  const issues = deferredReadIssues(deferredFixture({
+    'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
+  }));
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
 });
 
 test('check 13: restating a reference inline instead of Reading it is caught', () => {
