@@ -17,7 +17,6 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 </objective>
 
 <execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-guard.md
 </execution_context>
 
@@ -40,8 +39,14 @@ rather than a schema default no layer wrote.
    land, or stop. If HEAD is a protected branch, the protected-branch guard
    (references/git-guard.md) applies to any commit here.
 
-3. **Fire `pre_ship`.** Run the `pre_ship` review trigger
-   (references/review-triggers.md) with the refs
+3. **Fire `pre_ship`.** Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` at this
+   step first - this skill no longer preloads it. The reference is 15,134 B,
+   larger than this whole skill, and it is consulted at exactly ONE step (this
+   one), so preloading it puts those bytes on every remaining turn of the land
+   for a single use; the read folds into the turn that fires the trigger as one
+   extra tool call rather than an extra turn (`references/seams.md`, File
+   round-trip). Then run the `pre_ship` review trigger with the refs
    `{base_ref: <base>, head_ref: HEAD}` as the artifact - shape (a), so the
    branch diff is never inlined here - honoring `review.triggers.pre_ship`
    (default adjudicated). Report the outcome; a blocking FAIL halts the land
