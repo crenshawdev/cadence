@@ -38,6 +38,7 @@
     "workflow.skip_discuss":                { "type": "bool", "default": false, "purpose": "Select which command /cad-progress suggests for an unplanned phase - progress next-step suggestion only; it skips no step" },
     "workflow.subagent_timeout":            { "type": "int", "min": 1, "default": 300000, "purpose": "ms before a subagent is killed" },
     "workflow.inline_plan_threshold":       { "type": "int", "min": 0, "default": 3, "purpose": "Task count at/below which a plan runs inline vs its own doc" },
+    "workflow.max_plan_tasks":              { "type": "int", "min": 1, "default": 8, "purpose": "Task count above which a phase plan must return `## PHASE TOO BIG` instead of being written - the ceiling the planner is given up front, so an oversized phase is reported rather than silently built" },
     "workflow.test_command":                { "type": "string_or_null", "default": null, "purpose": "Command Cadence runs to test (null = none)" },
     "workflow.lint_command":                { "type": "string_or_null", "default": null, "purpose": "Command an executor runs for static analysis before it commits (null = none set, so planning.mjs detect-commands reads the project's own manifests instead). LINT ONLY - there is no companion typecheck key; the detected arm covers both" },
 
