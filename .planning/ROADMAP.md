@@ -58,7 +58,7 @@ each release tag are their archive.
 ## Phases
 
 - [ ] **Phase 1: Benchmark quick wins** - a static-analysis layer reaches the executor, one joined trace explains a run, file leases become enforced rather than checked, provider failure paths get exercised, and the named tracker and backlog reliability fixes land
-- [ ] **Phase 2: Context reduction** - measure what a command and a dispatch actually carry, then defer the eager includes that dominate the two heaviest
+- [x] **Phase 2: Context reduction** - measure what a command and a dispatch actually carry, then defer the eager includes that dominate the two heaviest
 - [ ] **Phase 3: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 4: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
 - [ ] **Phase 5: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
