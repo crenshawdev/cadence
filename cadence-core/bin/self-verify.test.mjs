@@ -1687,3 +1687,84 @@ test('check 13: self-verify files the issue and names the check in `checked`', (
   const kinds = j.problems.map((p) => p.kind);
   assert.equal(kinds.filter((k) => k === 'deferred-read-unread').length, 3);
 });
+
+// --- check 14: every shipped seam is contracted -----------------------------
+// AC2's second clause. Check 2 skips a script with no CONTRACTS row, which it
+// must - prose names third-party scripts too - so deleting a row used to be a
+// SILENT opt-out of the flag lint with self-verify still ok:true. That is what
+// this check closes, and the falsifier below is the point of it.
+
+test('check 14: the repo is clean - every top-level bin script has a contract', () => {
+  assert.deepEqual(run(['--root', REPO]).problems.filter(
+    (p) => p.kind === 'uncontracted-script'), []);
+});
+
+test('check 14: a bin script with no CONTRACTS row is reported, not silently unlinted', () => {
+  // The falsifier AC2 names. Copy the real bin directory into a fixture and
+  // add a script the table cannot know about: the table lives in
+  // self-verify.mjs itself, so a NEW script is the deletable-row case in the
+  // only direction a fixture can express it.
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-uncontracted-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  writeFileSync(join(root, 'cadence-core', 'bin', 'rogue.mjs'), '// no contract\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'uncontracted-script' && x.detail === 'rogue.mjs'),
+    JSON.stringify(p));
+});
+
+test('check 14: test files and lib/ modules need no contract', () => {
+  // Neither is invoked from prose, so a contract for them would describe
+  // nothing. The walk is top-level and skips *.test.mjs for that reason.
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-contract-scope-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin/lib', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  writeFileSync(join(root, 'cadence-core', 'bin', 'rogue.test.mjs'), '// a test\n');
+  writeFileSync(join(root, 'cadence-core', 'bin', 'lib', 'helper.mjs'), '// a module\n');
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (p) => p.kind === 'uncontracted-script'), []);
+});
+
+test('check 14: an ABSENT bin directory is a partial fixture, not a problem', () => {
+  // Every prose-only fixture in this file builds a root with no bin dir. If
+  // that reported, the check would fire on tests written to pin other rules.
+  const root = fixture('Nothing to see here.\n');
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (p) => p.kind === 'uncontracted-script' || p.kind === 'unreadable-surface'), []);
+});
+
+// --- check 2: the BARE form -------------------------------------------------
+
+test('check 2: `weight.mjs --root <path>` is contracted, not an unknown subcommand', () => {
+  // The regression: the first FLAG was read as the subcommand, so correct
+  // prose documenting the script's primary form turned self-verify red.
+  const root = fixture('Run `node cadence-core/bin/weight.mjs --root .` to measure a tree.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unknown-subcommand'), JSON.stringify(p));
+  assert.ok(!p.some((x) => x.kind === 'unknown-flag'), JSON.stringify(p));
+});
+
+test('check 2: the bare form still lints its flags', () => {
+  // The bare form must not become an escape hatch that accepts anything.
+  const root = fixture('node cadence-core/bin/weight.mjs --nope x\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && /weight\.mjs\s+--nope/.test(x.detail)),
+    JSON.stringify(p));
+});
+
+test('check 2: a script with no bare form still reports one', () => {
+  // planning.mjs declares no '' key, so a flag-first invocation of it is a
+  // real error and must stay reported.
+  const root = fixture('node cadence-core/bin/planning.mjs --dir .\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-subcommand' && /bare form/.test(x.detail)),
+    JSON.stringify(p));
+});

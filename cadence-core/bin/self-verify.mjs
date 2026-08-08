@@ -72,6 +72,13 @@
 //                    reference is unreachable, with nothing failing. The
 //                    register of removals and the sentence-level rule live in
 //                    lib/deferred-reads.mjs; this side only calls it.
+//  14. script        every top-level script under cadence-core/bin must have a
+//      contracts     row in the CONTRACTS table below. Check 2 SKIPS a script
+//                    it finds no row for - it has to, since prose names
+//                    third-party scripts too - so deleting a row was a silent
+//                    opt-out of the flag lint rather than a problem, and the
+//                    table's completeness could not be checked from the prose
+//                    side at all. It is checked from the tree side here.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -108,6 +115,17 @@ const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
 // --- the contract table: script -> subcommand -> allowed flags --------------
 // Global flags allowed everywhere on that script are listed under '*'.
+//
+// The '' key is the BARE form - the script invoked with flags and no
+// subcommand, e.g. `weight.mjs --root <path>`. Without it check 2 reads the
+// first flag AS the subcommand and reports `unknown-subcommand` on correct
+// prose, so every script with a no-subcommand form must declare one.
+//
+// Every top-level script under cadence-core/bin must appear here: check 14
+// enforces it, because check 2 skips a script it finds no row for. A missing
+// row is therefore a silent opt-out of the flag lint, not a script that
+// happens to be unlinted - which is exactly how `weight.mjs`'s own row could
+// be deleted with self-verify still returning ok:true.
 const CONTRACTS = {
   'planning.mjs': {
     '*': ['--dir'],
@@ -177,7 +195,21 @@ const CONTRACTS = {
   },
   'weight.mjs': {
     '*': ['--root'],
+    '': [],
     resident: ['--command', '--role'],
+  },
+  // Two scripts with no subcommand at all. They carry rows because check 14
+  // requires one, and the rows have teeth: the bare form's flag list is what
+  // check 2 lints `self-verify.mjs --root <path>` against.
+  'self-verify.mjs': {
+    '*': ['--root'],
+    '': [],
+  },
+  // git-guard.mjs is the commit hook - it reads its input on stdin and takes
+  // no flags, so the bare form allows none.
+  'git-guard.mjs': {
+    '*': [],
+    '': [],
   },
 };
 
@@ -467,14 +499,28 @@ function run(root) {
     for (const m of joined.matchAll(/([a-z-]+\.mjs)"?\s+([a-z-]+)(?:\s+([a-z-]+))?([^\n]*)/g)) {
       const [, script, w1, w2, restRaw] = m;
       const contract = CONTRACTS[script];
-      if (!contract) continue; // not one of ours
-      const sub = TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1;
+      // Not one of ours - prose may name a third-party script and this lint has
+      // nothing to say about it. That `continue` is why check 14 exists: a
+      // Cadence script whose row is DELETED becomes indistinguishable from a
+      // foreign one here, so the miss has to be caught by enumerating the bin
+      // directory, never by this arm.
+      if (!contract) continue;
+      // A first word starting with `-` is a FLAG, not a subcommand: this is the
+      // bare form. Reading it as a subcommand reported `unknown-subcommand` on
+      // correct prose like `weight.mjs --root <path>`.
+      const bare = w1.startsWith('-');
+      const sub = bare ? '' : (TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1);
       if (!contract[sub]) {
-        problems.push({ kind: 'unknown-subcommand', file: rel, detail: `${script} ${sub}` });
+        problems.push({ kind: 'unknown-subcommand', file: rel,
+          detail: `${script} ${bare ? '(bare form)' : sub}` });
         continue;
       }
       const allowed = new Set([...contract[sub], ...contract['*']]);
-      const rest = (TWO_WORD.has(w1) && w2 ? '' : ` ${w2 || ''}`) + restRaw;
+      // The bare form's own first word IS a flag, so it must be scanned; the
+      // subcommand forms consume w1 as the name and scan from w2 on.
+      const rest = bare
+        ? ` ${w1} ${w2 || ''}${restRaw}`
+        : (TWO_WORD.has(w1) && w2 ? '' : ` ${w2 || ''}`) + restRaw;
       for (const f of rest.matchAll(/--[a-z-]+/g)) {
         if (!allowed.has(f[0])) {
           problems.push({ kind: 'unknown-flag', file: rel, detail: `${script} ${sub} ${f[0]}` });
@@ -992,6 +1038,41 @@ function run(root) {
   // side only decides that it applies to the whole root.
   for (const issue of deferredReadIssues(root)) problems.push(issue);
 
+  // 14. every shipped seam is contracted. Check 2 skips any script with no
+  // CONTRACTS row (`if (!contract) continue`), which it must - prose names
+  // third-party scripts too. The cost is that DELETING a row silently opts
+  // that script out of the flag lint while self-verify stays ok:true, so the
+  // table's own completeness cannot be checked from the prose side. It is
+  // checked from the tree side instead: enumerate the top-level scripts and
+  // require a row for each.
+  //
+  // TOP-LEVEL only, deliberately non-recursive: `lib/*.mjs` are modules that
+  // prose never invokes, so a contract for them would describe nothing. This
+  // is the same subject as check 12 but a different set, which is why it does
+  // not reuse binFiles - that walker descends into lib/.
+  const binDir = join(root, 'cadence-core', 'bin');
+  let binList = null;
+  try {
+    binList = readdirSync(binDir, { withFileTypes: true });
+  } catch (e) {
+    // An ABSENT bin directory is a partial fixture, not a fault - the same
+    // call this check makes on a synthetic root that only carries prose. A
+    // directory that exists and cannot be READ is a fault, and reporting it
+    // is what stops an unreadable bin from vacuously satisfying the check.
+    if (e && e.code !== 'ENOENT') {
+      problems.push({ kind: 'unreadable-surface', file: relative(root, binDir),
+        detail: e.code || String(e) });
+    }
+  }
+  for (const d of binList || []) {
+    if (d.isDirectory()) continue;
+    if (!d.name.endsWith('.mjs') || d.name.endsWith('.test.mjs')) continue;
+    if (!CONTRACTS[d.name]) {
+      problems.push({ kind: 'uncontracted-script',
+        file: relative(root, join(binDir, d.name)), detail: d.name });
+    }
+  }
+
   return problems;
 }
 
@@ -1002,7 +1083,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

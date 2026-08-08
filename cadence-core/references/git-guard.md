@@ -75,7 +75,7 @@ Act on its `action`:
 branch: the integration branch is what parallel worktree branches merge back
 into; where they fork FROM is the host's `worktree.baseRef`. It keeps
 merge churn off `main`. `trunk` creates nothing - commits land on the base,
-still governed by `git.on_protected` (git-guard.mjs unchanged). `git.auto_branch`
+still governed by `git.on_protected` (`git-guard.mjs` unchanged). `git.auto_branch`
 picks how it is created at cycle start: `ask` prompts once, `auto` creates and
 switches silently, `off` stays put. Creation is lazy and once per cycle - the
 seam infers it from HEAD sitting on a protected base, so later phases already
