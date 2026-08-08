@@ -190,6 +190,7 @@ Dispatch cad-plan-checker via the spawn-agent seam. Prompt:
 Phase: {N} - {name}
 Goal: {goal from ROADMAP.md}
 Requirements: {phase requirement IDs}
+Task ceiling: {workflow.max_plan_tasks} - the resolved value, for dimension 6.
 
 Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)

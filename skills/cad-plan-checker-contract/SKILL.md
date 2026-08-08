@@ -60,7 +60,10 @@ Check six dimensions:
 6. **Proportionality** - is this the SMALLEST plan that delivers the goal?
    Flag tasks that build tooling to police the phase's own work,
    verification apparatus heavier than the thing verified, and any plan
-   over `workflow.max_plan_tasks`.
+   over the `Task ceiling` your dispatch names. Use that number, never a
+   remembered default - the ceiling is `workflow.max_plan_tasks` and the
+   project may have set its own. If the dispatch names none, say so in the
+   finding rather than assuming one.
    Ask this INDEPENDENTLY of dimensions 1-5. A finding here is valid even
    when the plan would achieve the goal - otherwise "achieves the goal" and
    "is proportionate" trade off against each other and the goal always wins,
