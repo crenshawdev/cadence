@@ -70,12 +70,18 @@ Check, then report - do not fix without asking.
      as an object.
 
 7. **Version drift.** The `PROJECT.md ### Active` milestone version must not be
-   one the project has ALREADY SHIPPED. Membership, not sort order: an issue is
-   an Active version that equals an existing release tag, or equals the version
-   a shipped manifest names. Report it naming BOTH numbers and which comparand
-   answered. The comparands are `git tag --list` and, when the project ships a
-   manifest that names a version, that too. Neither present, or a version that
-   parses as neither semver, is clean: an unprovable comparison is not drift.
+   one the project has ALREADY SHIPPED. Membership, not sort order: the issue is
+   an Active version that equals an existing release TAG (`git tag --list`).
+   Report it naming both numbers. No tags, or a version that parses as neither
+   semver, is clean: an unprovable comparison is not drift.
+
+   Tags are the publication evidence; a manifest in the checkout is NOT. The
+   manifest bumps during the close, before the merge and before the tag, so
+   between those points the manifest legitimately names the version still being
+   shipped. Reading it as proof would fire on every close in progress. When the
+   manifest equals the Active version and no tag does, report it as a
+   distinct, lower note - "the manifest already names the active milestone;
+   expected mid-close, stale otherwise" - never as drift.
    This is the failure that let a `v2.4.0` ship while this same section still
    described `v2.4.0` as the open, unstarted milestone - nothing read the two
    numbers together.
