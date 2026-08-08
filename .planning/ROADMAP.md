@@ -79,7 +79,8 @@ each release tag are their archive.
 - [x] **Phase 1: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 2: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
 - [ ] **Phase 3: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
-- [ ] **Phase 4: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
+- [ ] **Phase 4: Runtime evidence** - what Cadence does at runtime becomes a committed, reproducible artifact instead of a claim about the source
+- [ ] **Phase 5: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
 
@@ -127,10 +128,24 @@ answer.
 4. `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the v1.4.0 phase-5 regression, and `unseeded` fires on a Traceability table that has rows but is missing the milestone's ids - not only on a zero-row table.
 5. Each of the above lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
 
-### Phase 4: Doc sweep
+### Phase 4: Runtime evidence
+**Goal:** What Cadence does when it runs stops being a claim about the source and
+becomes an artifact a stranger can regenerate: one real phase's joined trace and
+its measured byte figures, committed, with the command that reproduces them and
+a stated redaction rule that makes publishing a run record safe.
+**Depends on:** Phase 2
+**Requirements:** EVD-01, EVD-02
+**Success Criteria:**
+1. `planning.mjs trace export` emits a publishable form of a phase's joined run record from `.planning/trace.jsonl`, and its redaction rule is stated: what is dropped, what is preserved, and why the raw file stays gitignored. A field the rule does not name is dropped rather than emitted, so a future event family cannot leak by default.
+2. Running the export against a trace containing an absolute path, a machine hostname and a provider identifier produces output carrying none of the three, proved by a test that fails against the unredacted record.
+3. One real phase of this cycle is committed as a runtime-evidence artifact: the exported trace, the `weight.mjs` resident and turn-one byte figures, the phase's own commit range, and the environment the run happened in (plugin version, Node version, host).
+4. The artifact carries the exact command that regenerates it, and running that command on a fresh clone reproduces the byte figures. The trace half is not reproducible by design - it records a run that happened - and the artifact says so rather than implying otherwise.
+5. `/cad-docs-verify` in phase 5 finds no claim in the artifact that the tree contradicts, and the artifact is linked from `README.md` so the evidence is reachable without reading `.planning/`.
+
+### Phase 5: Doc sweep
 **Goal:** What Cadence claims about itself matches what it does, and the next
 cycle starts from a diff rather than a fresh sweep.
-**Depends on:** Phases 2, 3 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
+**Depends on:** Phases 2, 3, 4 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
 **Requirements:** DOC-02, DOC-03
 **Success Criteria:**
 1. `/cad-docs-verify` runs across `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md`, and its output is committed in the phase record.
