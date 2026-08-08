@@ -64,58 +64,12 @@ each release tag are their archive.
 
 ## Phases
 
-- [x] **Phase 1: Benchmark quick wins** - a static-analysis layer reaches the executor, one joined trace explains a run, file leases become enforced rather than checked, provider failure paths get exercised, and the named tracker and backlog reliability fixes land
-- [x] **Phase 2: Context reduction** - measure what a command and a dispatch actually carry, then defer the eager includes that dominate the two heaviest
 - [ ] **Phase 3: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 4: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
 - [ ] **Phase 5: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
 - [ ] **Phase 6: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
-
-### Phase 1: Benchmark quick wins
-**Goal:** The capability gaps an outside evaluation found are closed where closing
-them is real capability rather than scoreboard motion. Cadence gains a
-static-analysis path into execution that works without configuration, one joined
-trace that explains what a run actually did, enforcement of the file leases it
-already declares, and exercised evidence for the provider failure paths it
-currently assumes.
-**Depends on:** Nothing (first phase)
-**Requirements:** QW-01, QW-02, QW-03, QW-04, QW-05
-**Success Criteria:**
-1. `workflow.lint_command` exists across all five config surfaces (schema, template, `/cad-config` catalog, config-reach, and a prose reader), and when it is unset the executor detects the project's own lint and typecheck commands from the tree instead of skipping the step. Either way the contract runs it after a task's edits and before its commit and treats a failure as a blocker with the same three bounded attempts as any other. An executor facing a failing lint does not reach the commit step, in a repo that configured nothing.
-2. Both `cad-executor` rungs carry the `LSP` tool grant, self-verify's tool lint passes with it, and the contract states when to prefer diagnostics over a lint subprocess. The grant is proved harmless when no code-intelligence plugin is installed.
-3. One gitignored, bounded `.planning/trace.jsonl` carries four event families against a single correlation id per phase - routing decisions, provider requests (reviewer, tier, outcome, duration), worker lifecycle (dispatch, return, checkpoint, escalation), and accepted outcomes (adjudications, UAT verdicts). Every worker, retry and verification branch in a completed phase is attributable to the task that caused it, proved by tracing one real phase end to end. `planning.mjs trace` renders it, `/cad-progress --trace` displays it on demand, and a trace-write failure provably does not change any seam's envelope.
-4. No `mergeLayers` caller drops `warnings[]` in silence: each of the ten callsites across eight files (`review-provider.mjs` and `land-cleanup.mjs` carry two each) either surfaces the warning in its envelope or its file header states that the envelope is the surfacing, and a check over `cadence-core/bin/**.mjs` makes an omission visible rather than trusting ten hand-written sentences. A torn `.planning/config.json` produces a named diagnostic on the git-guard path rather than a quiet revert to default `protected_branches`.
-5. An executor's writes are held to the `files:` list its plan declared, on every parallel path - not only compared once by `plan-overlap` before dispatch. A write outside the declared list is caught by a mechanism rather than by review, proved by a plan that attempts one.
-6. A `blocked` worktree halt naming a missing PLAN file has a stated orchestrator-side remedy in `execute.md`, including the fallback when the remedy fails twice. Cadence still issues no `git worktree add`.
-7. `phase_diff` resolves to `advisory` at `shipped` through all three surfaces that decide it - the route table row, the schema default, and the shipped template line - so a scaffolded repo config no longer overrides `critical`'s `adjudicated` with `off`.
-8. A dependency lockfile no longer matches the `concurrency` risk surface: `package-lock.json`, `Cargo.lock`, `yarn.lock`, `poetry.lock` and `Gemfile.lock` at `stakes: solo` each resolve `solo`, proved by a route resolve before and after, while `src/locking.rs` still floors to `critical`.
-9. `review-provider.mjs` has a test per real failure mode - request timeout, HTTP 4xx, HTTP 5xx, a dead or unknown model id, a malformed or truncated body, and an empty findings set - each proving what the caller sees. A reviewer that drops out of a fired trigger is named in the trace and to the user; a panel silently reduced to one voice while the gate reports clean fails this criterion.
-10. Issues #14 and #19 land: the verifier's level-3 `Wired` requires one real value traced end to end across each seam on the goal path, and `/cad-debug` consults a frequency-ordered bug-patterns checklist before forming its first hypothesis.
-11. A planning-doc version that disagrees with the shipped manifest is reported by `/cad-health` with both numbers named, and `git-branch.mjs decide` no longer returns a `create` for an integration branch named after a version the manifest has already published. Measured on this repo at phase-1 open: with `### Active` naming `v2.4.0` and the manifest already at `2.4.0`, `decide` returned `{"action":"create","branch":"cadence/v2.4.0"}` - the seam reads the active milestone correctly and checks it against nothing, which is wider than the filed "no active milestone" case. #87(a) is recorded as already shipped, citing `lib/release-decision.mjs`' downgrade and not-an-upgrade arms.
-12. Every CAPTURE item this phase closes is closed with tree evidence - the commit or the code path that closed it - never because it reads as done. `CAPTURE.md:227` and `:214` are closed on that basis.
-
-### Phase 2: Context reduction
-**Goal:** The bytes the main thread carries per command are budgeted and cut where
-the measurement says they are worst, and the always-resident surfaces stop being
-the ones nobody measures.
-**Depends on:** Nothing (its scope was re-confirmed against the live tree at
-v2.4.0 planning; it runs second because total efficiency is the heaviest-weighted
-capability gap)
-**Requirements:** CTX-01
-**Success Criteria:** (re-scoped at context time - see `phases/2/CONTEXT.md`.
-Three of the five criteria this phase opened with rested on premises the tree
-contradicts: the references budget already shipped as BUD-02 in v2.3.0 (D-01),
-`panel-review` is retired Codex-era prior art this codebase never contained
-(D-02), the 2.4x figure is runtime billed-equiv that `PROJECT.md ### Out of
-Scope` excludes and that no static measure reproduces (D-03), and the CTX-02
-pair both ADD resident bytes in the phase that exists to cut them (D-06).)
-1. A `weight.mjs` subcommand reports what a surface actually carries: eager bytes (`SKILL.md` plus its `@`-includes) and reachable bytes (eager plus every reference the prose reads mid-run) for a named command, and dispatch bytes (agent file plus its preloaded contract skills) for a named role. Both definitions are reported because the ranking inverts between them. It carries the first CONTRACTS entry `weight.mjs` has ever had, plus sibling tests.
-2. `cad-land`'s eager resident bytes fall below the mean of `cad-execute`, `cad-plan` and `cad-verify`, and `cad-plan-review`'s drop by at least the 15,134 B `references/review-triggers.md` include - by deferring eagerly preloaded references to the step that reads them, the pattern `cad-land/SKILL.md:84-92` already demonstrates, not by rewriting prose.
-3. Every reference removed from an `@`-include is Read at the step that needs it, proved by a check rather than by inspection, with self-verify still `ok:true`.
-4. Before and after eager and reachable bytes for all five commands, plus dispatch bytes per role, are committed in `phases/2/MEASUREMENTS.md`, with the 26,095 B of budgeted-but-never-loaded references marked so no saving is recorded that nobody pays. Re-running the recorded command reproduces the "after" bytes exactly.
-5. This phase's own scope corrections land in the docs: the `CTX-01` row reads the re-scoped scope, `CTX-02` sits outside `### Active` with its deferral reason, and `/cad-audit` reports zero unserved Active requirements.
 
 ### Phase 3: Queue triage
 **Goal:** `.planning/CAPTURE.md` stops being an append-only log and becomes the
