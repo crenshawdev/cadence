@@ -256,6 +256,20 @@ test('#50: an EVEN backslash run does NOT continue the line - the next line is a
   assert.ok(!p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
 });
 
+test('the weight.mjs contract entry has teeth: a phantom flag on `resident` is flagged', () => {
+  // The entry is inert on its own - check 2 only fires on prose that INVOKES
+  // the script - so its presence proves nothing by itself. This is what proves
+  // the entry is enforcing rather than decorative.
+  const root = fixture('node cadence-core/bin/weight.mjs resident --nope\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && /weight\.mjs resident --nope/.test(x.detail)),
+    JSON.stringify(p));
+  // And the flags the subcommand really takes are accepted.
+  const clean = fixture('node cadence-core/bin/weight.mjs resident --root . --command cad-land --role cad-executor\n');
+  assert.ok(!run(['--root', clean]).problems.some((x) => x.kind === 'unknown-flag'
+    || x.kind === 'unknown-subcommand'));
+});
+
 test('an unknown subcommand and a missing path are flagged', () => {
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" frobnicate\n' +

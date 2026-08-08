@@ -167,6 +167,10 @@ const CONTRACTS = {
     consult: ['--provider', '--model', '--effort', '--payload'],
     'detect-models': ['--provider'],
   },
+  'weight.mjs': {
+    '*': ['--root'],
+    resident: ['--command', '--role'],
+  },
 };
 
 // Subcommands whose first word takes a second word (sub-subcommand).

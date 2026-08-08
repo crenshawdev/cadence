@@ -63,3 +63,19 @@ Every seam that makes a decision splits in two. The decision is a pure function 
 That split is why the invariants hold. The judgment that is easy to get wrong is the part that never touches the disk and is tested to death, and the part that touches the disk is too small to hide a bug in. Prose keeps the judgment, the scripts keep the invariants, and the scripts are boring on purpose.
 
 Read the code: the `*-decision.mjs` cores under `cadence-core/bin/lib` and their tests (`cadence-core/bin/close-decision.test.mjs`, `cadence-core/bin/publish-decision.test.mjs`, `cadence-core/bin/branch-decision.test.mjs`, `cadence-core/bin/release-decision.test.mjs`).
+
+## What a command carries
+
+A per-file byte budget tells you no command's weight. It tells you what one file costs, and a command is a bundle, so the question that actually decides whether a command is expensive, which files ride together into one context, went unanswered by the very check built to watch prose bloat.
+
+There are two answers and the plugin reports both. Eager bytes are what the host injects before the command's first turn: the skill file plus everything it preloads with an `@`-include. Those bytes ride every remaining turn of the run, so they are the ones you pay for repeatedly. Reachable bytes are eager plus every reference the prose can pull in mid-run, one hop out, the ceiling on what the command could end up holding if it took every branch.
+
+The two rank the commands differently, and that is the point rather than a wart. Before I cut it, the /cad-land command was the heaviest in the plugin by eager bytes and the second lightest of the five I measured by reachable, because most of what it can consult it consults conditionally. Publishing one number alone would have let me claim or lose the result by choosing which spreadsheet to show. So both go in the record, and a drop in reachable is never quoted as a saving on its own: one hop is measured from the eager set, so de-preloading a file moves that file's own citations out of the count while the model still reads them at the step.
+
+Dispatch weight is the third number and it never sums with the other two. An agent file plus the contract skills it preloads lands in a fresh subagent context, not in the main thread's, so adding them together would produce a total that grows with plan count and reproduces from nothing.
+
+Ask it yourself, on any tree:
+
+`node cadence-core/bin/weight.mjs resident --root <repo root>`
+
+Read the code: `cadence-core/bin/lib/resident-weight.mjs` (the composition, and the reason reachable is one hop rather than a transitive closure), `cadence-core/bin/weight.test.mjs` (the shape, the determinism, and the fixtures that pin each definition).
