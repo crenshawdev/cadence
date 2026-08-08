@@ -12,8 +12,8 @@ shipped outside it ("parallel that actually engages", manifest and tag both at
 unstarted. That is issue #87's failure mode caught live on this repo, and it is
 why `QW-04` carries the drift rule that would have surfaced it.
 
-A reconciliation cycle, not a construction one. `.planning/CAPTURE.md` holds 187
-open items accumulated over nine milestones; some were closed by work that
+A reconciliation cycle, not a construction one. `.planning/CAPTURE.md` holds 213
+open items (as of 2026-08-08) accumulated over nine milestones; some were closed by work that
 shipped and never struck, some describe code that no longer exists, and the real
 ones have gone unread because the file is too long to triage in passing. That
 same file is the input to `/cad-plan`'s recall, so its noise is paid for at every

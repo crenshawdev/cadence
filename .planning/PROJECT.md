@@ -106,7 +106,7 @@ That is issue #87's failure mode, and `QW-04` closes the reporting half of it
 this cycle.
 
 This cycle turns on the queue rather than on a measurement. `.planning/CAPTURE.md`
-holds 187 open items accumulated across nine milestones. Some were closed by
+holds 213 open items (as of 2026-08-08) accumulated across nine milestones. Some were closed by
 work that shipped and were never struck; some are real and have been carried
 unread for months because the file
 is too long to triage in passing. A queue nobody can read is the same failure as
