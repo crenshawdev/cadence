@@ -126,7 +126,34 @@ test('appendEvent: a file at the bound accepts nothing more and renders capped',
   assert.equal(r.capped, true);
   assert.equal(r.counts.routing, 0);
   assert.equal(r.counts.lifecycle, before);
-  assert.equal(r.malformed, 1); // the padding line, skipped and counted
+  // The padding runs past the read ceiling, so the bounded read truncates it
+  // and drops the trailing partial line rather than parsing it: a line only
+  // partly read cannot honestly be called malformed. `capped` carries the
+  // signal instead, and it is asserted above.
+  assert.equal(r.malformed, 0);
+});
+
+test('renderTrace: an oversized file is read bounded, not whole', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  // Four times the cap of syntactically VALID events. Whole-file reads count
+  // them all; a bounded read cannot, because it never sees past the ceiling.
+  // The writer would refuse these - this is the corrupted / hand-edited /
+  // foreign-producer file the read side has to survive on its own.
+  const fat = JSON.stringify({ phase: 1, family: 'routing', event: 'resolve', corr: '1-abc1234' }) + '\n';
+  appendFileSync(tracePath(dir), fat.repeat(Math.ceil((MAX_TRACE_BYTES * 4) / fat.length)));
+  const onDisk = readFileSync(tracePath(dir), 'utf8').split('\n').length;
+  assert.ok(onDisk > (MAX_TRACE_BYTES * 3) / fat.length, 'fixture must exceed the cap severalfold');
+
+  const r = renderTrace(dir, 1);
+  assert.equal(r.capped, true, 'an over-cap file must report capped');
+  // The falsifier: unbounded, routing counts every line on disk. Bounded, it
+  // cannot exceed what fits under the ceiling.
+  assert.ok(r.counts.routing < onDisk - 1,
+    `bounded read must not count every line: got ${r.counts.routing} of ${onDisk}`);
+  assert.ok(r.counts.routing <= Math.ceil(MAX_TRACE_BYTES / fat.length),
+    'bounded read must not exceed the byte ceiling');
+  assert.equal(r.counts.lifecycle, 1, 'the head is kept, so the anchor survives');
 });
 
 test('appendEvent: an unwritable planning root returns written:false and throws nothing', () => {

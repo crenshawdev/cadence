@@ -33,7 +33,7 @@
 //     a record of a decision may not be able to change the decision.
 'use strict';
 
-import { appendFileSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** The trace file's name inside a planning root. */
@@ -84,12 +84,44 @@ function key(v) {
 /**
  * Every line of the trace file, or null when it cannot be read (absent,
  * unreadable, a planning root that is not a directory). Absence is data here.
+ *
+ * BOUNDED at `MAX_TRACE_BYTES`, the same ceiling the writer enforces. The write
+ * bound alone does not protect this side: `appendEvent` stats BEFORE it writes,
+ * so the last event admitted can carry the file past the cap, and a trace that
+ * was corrupted, hand-edited, or written by a producer outside this seam has no
+ * bound at all. Reading it whole is a synchronous `readFileSync` + `split` +
+ * `JSON.parse` per line inside the host process, so an oversized file turns
+ * `/cad-progress --trace` - a read-only status command - into a hang.
+ *
+ * Over the cap it reads the FIRST `MAX_TRACE_BYTES` and drops the trailing
+ * partial line. The head, not the tail: `correlationId` scans for a phase's
+ * anchor and the renderer pairs dispatch/terminal brackets, so a truncated head
+ * loses whole brackets while a truncated tail only leaves the newest ones
+ * unpaired - which `unpaired[]` already reports. `renderTrace` independently
+ * stats the file and reports `capped: true` here, so a partial read is never
+ * presented as a complete record.
  * @param {string} planningRoot
  * @returns {string[]|null}
  */
 function readLines(planningRoot) {
+  const file = tracePath(planningRoot);
   try {
-    return readFileSync(tracePath(planningRoot), 'utf8').split('\n');
+    if (statSync(file).size <= MAX_TRACE_BYTES) {
+      return readFileSync(file, 'utf8').split('\n');
+    }
+  } catch {
+    return null;
+  }
+  // Over the cap: read the head only, then drop the last element, which is
+  // either a partial line or (on an exact byte boundary) an empty string.
+  try {
+    const buf = Buffer.alloc(MAX_TRACE_BYTES);
+    const fd = openSync(file, 'r');
+    let read = 0;
+    try { read = readSync(fd, buf, 0, MAX_TRACE_BYTES, 0); } finally { closeSync(fd); }
+    const lines = buf.subarray(0, read).toString('utf8').split('\n');
+    lines.pop();
+    return lines;
   } catch {
     return null;
   }
