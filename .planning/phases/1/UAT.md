@@ -11,19 +11,19 @@ updated: 2026-08-08
 ### 1. Unconfigured static analysis blocks a failing commit
 expected: In a scratch repo with a lint script but NO .planning/config.json, `planning.mjs detect-commands --root <repo>` names that lint command, and an executor given a task whose edit fails it makes three bounded attempts, returns a `blocked` checkpoint, and leaves NO commit for that task.
 criterion: AC1
-status: blocked
+status: skipped
 reason: Seam half PROVEN here: in a scratch repo with scripts.lint and no .planning/config.json, detect-commands --root returns {"lint":"npm run lint","source":{"lint":"package.json"}}. Dispatch half (three bounded attempts, blocked checkpoint, no commit) still gated: dispatched agents load the installed 2.4.0, which has zero occurrences of detect-commands. Verifiable only after v2.5.0 ships and is installed.
 
 ### 2. The LSP grant is live and inert without a plugin
 expected: Both `agents/cad-executor.md` and `agents/cad-executor-xhigh.md` list `LSP` in `tools:`, `self-verify` returns ok:true with `LSP` in KNOWN_TOOLS, and dispatching a cad-executor on this machine (no code-intelligence plugin installed) completes normally rather than erroring on the unrecognized entry.
 criterion: AC2
-status: blocked
+status: skipped
 reason: Static half PROVEN here: agents/cad-executor.md:4 and agents/cad-executor-xhigh.md:4 both list LSP in tools:, self-verify.mjs:195 carries LSP in KNOWN_TOOLS, and self-verify returns ok:true problems:[]. Inert-on-dispatch half still gated: the installed 2.4.0 agents carry no LSP entry, so dispatching here exercises nothing. Verifiable only after v2.5.0 ships and is installed.
 
 ### 3. The trace carries four families under one correlation id
 expected: A completed phase leaves `.planning/trace.jsonl` holding routing, provider, lifecycle and outcome events all sharing ONE `corr`, with every worker dispatch paired to a later return, checkpoint or escalation and `unpaired` empty. A re-run of the same phase must NOT pair across runs.
 criterion: AC3
-status: blocked
+status: skipped
 first_pass: fail
 source: verifier
 evidence: cadence-core/bin/lib/trace.mjs:238 builds the worker key as `${key(e.phase)} ${key(e.plan)}` and :240-247 push/shift on it with no corr in the key, contradicting the header's claim at :108-110 that a re-run starts a new id; live `trace render --phase 1` counts {routing:2, provider:9, lifecycle:0, outcome:0}
@@ -156,7 +156,7 @@ fix: 45b4d6e, retest
 ### 16. /cad-health reports a planning-doc version drift
 expected: Running `/cad-health` against a tree whose `PROJECT.md ### Active` version does not sort above the shipped manifest reports the drift and names BOTH numbers.
 criterion: AC8
-status: blocked
+status: skipped
 reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
 
 ### 17. The verifier traces a value and debug consults the checklist
@@ -170,25 +170,25 @@ evidence: cad-verifier-contract/SKILL.md:75-82 (level 3, no fifth level); refere
 ### 18. In a scratch repo carrying a lint script and NO .planning/config.json, dispatch a cad-executor on a task whose edit fails that lint. 1. `cd` to a throwaway repo with `package.json` scripts.lint that fails on the edited file and no `.planning/config.json`. 2. Run `node /data/code/cadence/cadence-core/bin/planning.mjs detect-commands --root .` and confirm `"lint":"npm run lint"`. 3. Dispatch a cad-executor on a plan task whose edit fails that lint. 4. Run `git log --oneline -1` afterwards.
 expected: The executor makes three bounded attempts, returns a `blocked` checkpoint naming the lint failure, and step 4 shows NO commit for that task.
 origin: verifier
-status: blocked
+status: skipped
 reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
 
 ### 19. Dispatch a cad-executor on this machine, which has no code-intelligence plugin installed. 1. Run `node /data/code/cadence/cadence-core/bin/self-verify.mjs` and confirm `ok:true`. 2. Dispatch any cad-executor task (either rung). 3. Watch the dispatch's first turn for a tools-frontmatter error.
 expected: The dispatch completes normally; the unrecognized `LSP` entry is ignored rather than erroring the agent.
 origin: verifier
-status: blocked
+status: skipped
 reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
 
 ### 20. After the next `/cad-execute`, read the trace. 1. Run `node /data/code/cadence/cadence-core/bin/planning.mjs trace render --phase <that phase>`. 2. Read `counts` and `unpaired`. 3. Confirm every event shares one `corr`.
 expected: All four counts (routing, provider, lifecycle, outcome) are non-zero, every event carries the same `corr`, and `unpaired` is empty.
 origin: verifier
-status: blocked
+status: skipped
 reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
 
 ### 21. Run /cad-health against a tree whose PROJECT.md ### Active version does NOT sort above what it has shipped. 1. Copy a planning tree to scratch and set `### Active` to a version at or below the newest `git tag --list` entry. 2. Run `/cad-health` there. 3. Read the issue list.
 expected: Check 7 reports a version drift naming BOTH numbers and which comparand answered.
 origin: verifier
-status: blocked
+status: skipped
 reason: The code under test is not the code that runs. This phase's commits live in the working tree at /data/code/cadence; dispatched agents and /cad-* skills load the INSTALLED plugin at ~/.claude/plugins/cache/cadence/cadence/2.4.0, which carries tools: Read, Write, Edit, Bash, Grep, Glob (no LSP), no lib/trace.mjs, and zero occurrences of detect-commands or lease-check. Verifiable only after v2.5.0 ships and is installed.
 
 ## Summary
@@ -197,6 +197,6 @@ total: 21
 passed: 13
 failed: 0
 pending: 0
-skipped: 0
-blocked: 8
+skipped: 8
+blocked: 0
 reworked: 7
