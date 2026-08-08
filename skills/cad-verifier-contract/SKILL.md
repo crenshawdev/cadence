@@ -74,7 +74,13 @@ between them.
    real logic, no placeholder returns.
 3. **Wired** - reachable from an entry point: the command registers it,
    the module is imported AND called, the route is mounted, the UI
-   element invokes it. Orphaned code fails here.
+   element invokes it. Orphaned code fails here. Reachable is not the
+   same as connected, so ONE real value must also be traced end to end
+   across each seam on the goal path: name where it enters, name where
+   it lands, on the same evidence terms level 4 uses - a named test that
+   carries it, or a spot-check (step 5) that observes it. A seam called
+   with a value nothing downstream consumes is wired to nothing, and a
+   value that cannot be traced leaves the truth UNCERTAIN.
 4. **Behaves** - for truths that hinge on runtime behavior (state
    transitions, cleanup/cancellation/ordering invariants, error paths),
    presence + wiring is not proof: the code can be present and wired yet

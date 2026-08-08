@@ -24,10 +24,6 @@ There is no separate reviewer here and no convergence loop (cut in DESIGN §6):
 this delegates to `fire(plan)`, which grounds and adjudicates once.
 </objective>
 
-<execution_context>
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md
-</execution_context>
-
 <process>
 1. **Resolve the target plan** from `$ARGUMENTS`:
    - a number `N` -> `.planning/phases/<N>/PLAN*.md` (all slices of that phase).
@@ -38,8 +34,9 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
    (Resolve the plan path and, for the empty-args case, the cursor read as one
    batched step - independent; conventions.md Parallel work.)
 
-2. **Fire the `plan` trigger** per references/review-triggers.md with the
-   resolved PLAN file(s) as the artifact. Honor `review.triggers.plan.gate`
+2. **Fire the `plan` trigger** with the resolved PLAN file(s) as the artifact -
+   Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` here,
+   not preloaded (15,134 B, one site). Honor `review.triggers.plan.gate`
    (default adjudicated) always; its `tier` and `effort` reach cross-model
    reviewers only. This resolves the reviewer set
    (claude-subagent and/or a configured cross-model reviewer), runs them, and -

@@ -1,7 +1,7 @@
 ---
 name: cad-executor-xhigh
 description: The `xhigh` rung of `cad-executor`; `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: yellow
 effort: xhigh
 skills:

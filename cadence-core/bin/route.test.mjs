@@ -187,7 +187,7 @@ test('each level resolves its whole review map and its verify value, literally',
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
     plan: 'adjudicated', diff: 'advisory', risk_surface: 'blocking',
-    phase_diff: 'off', pre_ship: 'adjudicated',
+    phase_diff: 'advisory', pre_ship: 'adjudicated',
   });
   assert.equal(shipped.verify, 'on');
 
@@ -655,6 +655,57 @@ test('a solo phase whose PLAN declares an auth path resolves at the critical cel
   assert.match(floor[0], /solo -> critical/); // the baseline is still visible
 });
 
+// One fixture plan PER lockfile, never one plan declaring all of them (D-21):
+// matchSurfaces returns at most ONE match per surface - the first path that hits
+// - so a combined plan would prove only the first name in the list.
+for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.lock',
+  'Gemfile.lock', 'pnpm-lock.yaml', 'packages.lock.json']) {
+  test(`a solo phase declaring ${lockfile} resolves SOLO, no floor entry`, () => {
+    const r = resolve('cad-executor', planningRoot(['README.md', lockfile]), ['--phase', '9']);
+    assert.equal(r.ok, true);
+    assert.equal(r.stakes, 'solo');
+    assert.deepEqual(floorEntries(r), [], JSON.stringify(r.reason));
+  });
+}
+
+// The other half of D-05: the `lock` and `locks` patterns are kept, so a real
+// concurrency path is still detected end to end. Removing them to close the
+// lockfile false positive would have deleted these rows with no test naming the
+// loss - and the exclusion's own header comment cites `internal/lock/manager.go`
+// and `db/locks.sql` as the detections it protects, so they are pinned here
+// rather than asserted in prose. The last two are the near misses that decided
+// the exclusion's shape: a lock RESOURCE a human wrote, spelled exactly the way
+// `pnpm-lock.yaml` and `packages.lock.json` are, and released by any rule that
+// reads the spelling instead of the name.
+for (const [path, pattern] of [
+  ['src/lock.rs', 'lock'],
+  ['src/redis-lock.go', 'lock'],
+  ['internal/lock/manager.go', 'lock'],
+  ['db/locks.sql', 'locks'],
+  ['deploy/redis-lock.yaml', 'lock'],
+  ['db/replica.lock.json', 'lock'],
+]) {
+  test(`a solo phase declaring ${path} STILL floors to critical on concurrency`, () => {
+    const r = resolve('cad-executor', planningRoot(['README.md', path]), ['--phase', '9']);
+    assert.equal(r.ok, true);
+    assert.equal(r.stakes, 'critical');
+    const floor = floorEntries(r);
+    assert.equal(floor.length, 1, JSON.stringify(r.reason));
+    assert.match(floor[0], /concurrency/);
+    assert.ok(floor[0].includes(path), floor[0]);
+    assert.ok(floor[0].includes(`pattern "${pattern}"`), floor[0]);
+  });
+}
+
+test('a lockfile declared BESIDE a real concurrency path still floors, naming that path', () => {
+  const r = resolve('cad-executor',
+    planningRoot(['package-lock.json', 'db/locks.sql']), ['--phase', '9']);
+  assert.equal(r.stakes, 'critical');
+  const floor = floorEntries(r);
+  assert.equal(floor.length, 1, JSON.stringify(r.reason));
+  assert.match(floor[0], /locks\.sql/);
+});
+
 test('the cursor fallback returns a bundle deep-equal to the --phase one (AC1)', () => {
   const files = ['README.md', 'src/auth/session.rs'];
   const explicit = resolve('cad-executor', planningRoot(files), ['--phase', '9']);
@@ -876,6 +927,49 @@ test('a VALID disagreeing gate still wins - the check runs in front of D-04, not
   assert.equal(r.review.risk_surface, 'off'); // the user's key still decides
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /wins over the critical level gate/);
+});
+
+// --- phase_diff resolves the same through all three surfaces -----------------
+
+test('with NO triggers block the level decides phase_diff, and nothing disagrees', () => {
+  // The three surfaces that decide this gate - the route table, the schema
+  // default and the scaffolded template - agreed on nothing before this. A
+  // config that writes no gate is the state a fresh scaffold is now in.
+  const shipped = rawCfg({ stakes: 'shipped' }, 'pd-shipped.json');
+  const rs = resolve('cad-executor', shipped);
+  assert.equal(rs.review.phase_diff, 'advisory');
+  // route omits `warnings` entirely when empty, so an absent key IS the
+  // no-disagreement answer - `?? []` states that rather than crashing on it.
+  assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
+
+  const critical = rawCfg({ stakes: 'critical' }, 'pd-critical.json');
+  const rc = resolve('cad-executor', critical);
+  assert.equal(rc.review.phase_diff, 'adjudicated');
+  assert.deepEqual(rc.warnings ?? [], [], String(rc.warnings));
+
+  const solo = rawCfg({ stakes: 'solo' }, 'pd-solo.json');
+  assert.equal(resolve('cad-executor', solo).review.phase_diff, 'off');
+});
+
+test('the SCAFFOLDED template carries no triggers block, so nothing overrides the level', () => {
+  // The template is the fixture, not a hand-written stand-in: a pre-written
+  // gate WINS over the level's and warns, so a scaffolded repo later switched
+  // to `stakes: critical` would have kept `advisory` beating `adjudicated` -
+  // which is the whole point of dropping the block rather than retuning it.
+  const template = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'config.json'), 'utf8'));
+  assert.equal(template.review.triggers, undefined, 'the template must write no gate at all');
+
+  const asShipped = rawCfg(template, 'pd-template-shipped.json');
+  const rs = resolve('cad-executor', asShipped);
+  assert.equal(rs.stakes, 'shipped', 'the template ships at shipped');
+  assert.equal(rs.review.phase_diff, 'advisory');
+  assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
+
+  const asCritical = rawCfg({ ...template, stakes: 'critical' }, 'pd-template-critical.json');
+  const rc = resolve('cad-executor', asCritical);
+  assert.equal(rc.review.phase_diff, 'adjudicated', 'the level decides after the switch');
+  assert.deepEqual(rc.warnings ?? [], [], String(rc.warnings));
 });
 
 test('a VALID agreeing gate still emits no warning', () => {
@@ -1303,4 +1397,102 @@ test('a usage refusal names no config layer, because none was read', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
   assert.equal('warnings' in r, false);
+});
+
+// --- the routing family of the joined run record (QW-02) ---------------------
+
+/** A planning root of its own, so the trace file written here is this test's. */
+function traceRoot(name, breakTrace) {
+  const planning = join(mkdtempSync(join(tmpdir(), `cad-route-${name}-`)), '.planning');
+  mkdirSync(planning, { recursive: true });
+  writeFileSync(join(planning, 'config.json'), JSON.stringify({ stakes: 'solo' }));
+  // trace.jsonl as a DIRECTORY is the unwritable case: appendFileSync fails
+  // EISDIR for ANY uid, where a chmod is silently a no-op under a root test
+  // runner and would make this pass without proving anything.
+  if (breakTrace) mkdirSync(join(planning, 'trace.jsonl'));
+  return planning;
+}
+
+/** The raw stdout bytes, for the comparison that has to be byte-for-byte. */
+function resolveRaw(file, extra = []) {
+  const args = ['resolve', '--role', 'cad-executor', '--file', file, ...extra];
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  try {
+    return execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env });
+  } catch (e) {
+    return e.stdout;
+  }
+}
+
+const traceLines = (planning) => readFileSync(join(planning, 'trace.jsonl'), 'utf8')
+  .split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+test('a resolve records ONE routing event carrying the decision, not the text', () => {
+  const planning = traceRoot('trace-write', false);
+  const r = resolve('cad-executor', join(planning, 'config.json'), ['--phase', '4']);
+  assert.equal(r.ok, true);
+  const events = traceLines(planning);
+  assert.equal(events.length, 1);
+  const e = events[0];
+  assert.equal(e.family, 'routing');
+  assert.equal(e.event, 'resolve');
+  assert.equal(e.corr, '4');            // no phase_start anchor: the phase alone
+  assert.equal(e.phase, 4);
+  assert.equal(e.role, 'cad-executor');
+  assert.equal(e.stakes, r.stakes);
+  assert.equal(e.agent, r.agent);
+  assert.equal(e.model, r.model);
+  assert.equal(e.effort, r.effort);
+  assert.equal(e.escalated, false);
+  assert.equal(e.pinned, false);
+  assert.equal(e.attempt, 1);
+  assert.deepEqual(e.floor_surfaces, []);
+  // The COUNT, never the strings: the envelope carries the text and a second
+  // copy of it in the record would drift from the one the caller relays.
+  assert.equal(e.warning_count, 0);
+  assert.equal('warnings' in e, false);
+});
+
+test('an unwritable trace changes the resolve envelope by not one byte', () => {
+  const good = traceRoot('trace-good', false);
+  const bad = traceRoot('trace-bad', true);
+  const goodOut = resolveRaw(join(good, 'config.json'), ['--phase', '4']);
+  const badOut = resolveRaw(join(bad, 'config.json'), ['--phase', '4']);
+  assert.equal(badOut, goodOut);
+  assert.equal(JSON.parse(badOut).ok, true);
+  // ...and the writable one really did record, so the comparison is not two
+  // runs that both wrote nothing.
+  assert.equal(traceLines(good).length, 1);
+});
+
+test('a planning root that is not a directory resolves clean and records nothing', () => {
+  // The other unwritable shape: `.planning` is a REGULAR FILE, so every fs call
+  // under it fails ENOTDIR. The config layer is unreadable there too, which is
+  // its own (already-shipped) warning - the point here is that the trace adds
+  // no field, no second warning and no crash on top of it.
+  const base = mkdtempSync(join(tmpdir(), 'cad-route-notdir-'));
+  const planning = join(base, '.planning');
+  writeFileSync(planning, 'not a directory');
+  const r = resolve('cad-executor', join(planning, 'config.json'), ['--phase', '4']);
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /failed to parse and was skipped/);
+});
+
+test('no phase and no cursor records nothing rather than an unjoinable line', () => {
+  const planning = traceRoot('trace-nophase', false);
+  const r = resolve('cad-executor', join(planning, 'config.json'));
+  assert.equal(r.ok, true);
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+});
+
+test('the cursor supplies the phase when --phase is absent', () => {
+  const planning = traceRoot('trace-cursor', false);
+  writeFileSync(join(planning, 'STATE.md'), renderCursor({
+    phase: 2, total: 5, name: 'Fixture', status: 'planned',
+    next: '/cad-execute 2', updated: '2026-01-01',
+  }));
+  assert.equal(resolve('cad-executor', join(planning, 'config.json')).ok, true);
+  assert.equal(traceLines(planning)[0].phase, 2);
 });

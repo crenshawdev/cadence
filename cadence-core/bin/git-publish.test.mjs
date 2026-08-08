@@ -234,3 +234,63 @@ test('usage: the detail names both subcommands', () => {
   assert.match(d.detail, /publish/);
   assert.match(d.detail, /reap/);
 });
+
+// --- the torn-layer mutation gate -------------------------------------------
+
+/** A user-global layer file holding raw TEXT - so a truncated JSON body can be
+ * written verbatim and the merge reports the parse failure the gate keys on. */
+function globalText(text) {
+  const file = join(mkdtempSync(join(tmpdir(), 'cad-pub-glob-')), 'g.json');
+  writeFileSync(file, text);
+  return file;
+}
+
+// A global layer that WOULD have protected the branch, truncated mid-array.
+const TORN_GLOBAL = '{"git":{"protected_branches":["cadence/v1.1.0-rc.2","cadence/v2.2.0"]';
+
+test('publish refuse: a TORN layer that could carry protected_branches pushes NOTHING', () => {
+  // The list `decidePublish` refused with fell back to ["main","master"] because
+  // the layer holding the user's did not parse, so the protected-branch gate ran
+  // on the wrong list. No push while that is unprovable.
+  const { dir, bare } = repo();
+  const { d, status } = seamStatus(['publish', '--dir', dir], globalText(TORN_GLOBAL));
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'config-parse-failed');
+  assert.match(d.detail, /failed to parse/);
+  assert.equal(d.warnings.length, 1);
+  assert.equal(status, 1);
+  assert.equal(refExists(bare, INT_REF), false, 'the ref never reached the remote');
+});
+
+test('reap refuse: a TORN layer leaves the branch it would have protected in place', () => {
+  // The reproduction: with the layer intact this same command answers
+  // {"ok":false,"reason":"protected-branch"}; torn, it used to answer
+  // {"ok":true,"action":"reaped"} and the branch was already gone.
+  const { dir } = repo({ branch: 'main' });
+  git(['-C', dir, 'branch', 'cadence/v2.2.0']);
+  const { d, status } = seamStatus(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0'],
+    globalText(TORN_GLOBAL));
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'config-parse-failed');
+  assert.match(d.detail, /failed to parse/);
+  assert.equal(status, 1);
+  assert.equal(refExists(dir, REAP_REF), true, 'the branch survives the torn layer');
+});
+
+test('warnings[] rides the git-publish envelope on the acting AND the skip arms', () => {
+  // Pins the emission itself: stripping `, warnings })` off the emits leaves the
+  // gate above passing on its refusals but fails here.
+  const { dir } = repo({ branch: 'main' });
+  git(['-C', dir, 'branch', 'cadence/v2.2.0']);
+  const clean = seam(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0']);
+  assert.equal(clean.action, 'reaped');
+  assert.deepEqual(clean.warnings, [], 'present as an empty array, not omitted');
+  // The idempotent skip stays ok:true under a torn layer - it mutates nothing -
+  // and carries the diagnostic rather than swallowing it.
+  const skipped = seamStatus(['reap', '--dir', dir, '--branch', 'cadence/v2.2.0'],
+    globalText(TORN_GLOBAL));
+  assert.equal(skipped.d.ok, true);
+  assert.equal(skipped.d.action, 'already-absent');
+  assert.equal(skipped.status, 0);
+  assert.match(skipped.d.warnings[0], /failed to parse/);
+});

@@ -4,7 +4,8 @@
   "model": { "escalate_on_failure": true },
   "workflow": {
     "research": false, "plan_check": true, "verifier": true, "skip_discuss": false,
-    "subagent_timeout": 300000, "inline_plan_threshold": 3, "test_command": null
+    "subagent_timeout": 300000, "inline_plan_threshold": 3, "max_plan_tasks": 8,
+    "test_command": null, "lint_command": null
   },
   "parallelization": {
     "enabled": true, "max_concurrent_agents": 3, "min_plans_for_parallel": 2,
@@ -30,13 +31,6 @@
       "openai": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
       "gemini": { "tiers": { "flagship": null, "balanced": null, "cheap": null } },
       "deepseek": { "tiers": { "flagship": null, "balanced": null, "cheap": null } }
-    },
-    "triggers": {
-      "plan":         { "gate": "adjudicated" },
-      "diff":         { "gate": "advisory" },
-      "risk_surface": { "gate": "blocking" },
-      "phase_diff":   { "gate": "off" },
-      "pre_ship":     { "gate": "adjudicated" }
     },
     "consult": { "enabled": false, "tier": "flagship", "effort": "high", "attempt_threshold": 3 },
     "decision_review": { "tier": "flagship", "effort": "high" }

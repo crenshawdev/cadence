@@ -9,23 +9,81 @@
 // The measurement lib it imports is the same one self-verify.mjs enforces the
 // budget with, so reported and enforced weight cannot diverge.
 //
+// The `resident` subcommand answers the other question: not what one file
+// weighs, but what one COMMAND carries into the main thread and what one
+// DISPATCH carries into a fresh subagent context. Definitions, and the reason
+// reachable is one hop rather than a closure, live in lib/resident-weight.mjs.
+//
 // Seam convention: one JSON line on stdout, exit 0. Deterministic: sorted
 // traversal + fixed key order make two runs on the same tree byte-identical.
 // Usage: weight.mjs [--root <repo root>]
+//        weight.mjs resident [--root <repo root>] [--command <name>] [--role <name>]
+// A flag PRESENT with no value is `ok:false`/`missing-flag-value`, never a
+// silent default - see flagValue below.
 'use strict';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
+import { residentWeight } from './lib/resident-weight.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Read a flag's value, distinguishing ABSENT from PRESENT-WITH-NO-VALUE.
+ *
+ * The two must not collapse. `--root` with nothing after it - the shape a
+ * caller produces by passing an unset or empty `$TREE` - used to read as
+ * `undefined` and fall through to the plugin's own tree, so the caller got
+ * ok:true and the Cadence repo's numbers for a tree it never named. That is
+ * the quiet-wrong-number class, and it is worse here than a hard error
+ * because the envelope looks correct. A missing value now throws
+ * `missing-flag-value`; a genuinely absent flag still returns undefined so
+ * the caller's own default applies.
+ * @param {string[]} argv @param {string} flag @returns {string|undefined}
+ */
+function flagValue(argv, flag) {
+  const i = argv.indexOf(flag);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v === '' || v.startsWith('--')) {
+    throw { seam: 'missing-flag-value', detail: flag };
+  }
+  return v;
+}
+
 try {
   const argv = process.argv.slice(2);
-  const ri = argv.indexOf('--root');
-  const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
-  emit({ ok: true, checked: 'surface-weight', surfaces: weighAll(root) });
+  const root = flagValue(argv, '--root') || join(HERE, '..', '..');
+  if (argv[0] === 'resident') {
+    const r = residentWeight(root);
+    // Filters narrow the array they name and nothing else: `zeroResident` is
+    // derived from EVERY command's reachable set, so a filter must not be able
+    // to change it.
+    const command = flagValue(argv, '--command');
+    const role = flagValue(argv, '--role');
+    let { commands, roles } = r;
+    if (command !== undefined) {
+      commands = commands.filter((c) => c.command === command);
+      if (!commands.length) throw { seam: 'unknown-command', detail: command };
+    }
+    if (role !== undefined) {
+      roles = roles.filter((x) => x.role === role);
+      if (!roles.length) throw { seam: 'unknown-role', detail: role };
+    }
+    emit({
+      ok: true,
+      checked: 'resident-weight',
+      commands,
+      roles,
+      zeroResident: r.zeroResident,
+      zeroResidentBytes: r.zeroResidentBytes,
+    });
+  } else {
+    emit({ ok: true, checked: 'surface-weight', surfaces: weighAll(root) });
+  }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

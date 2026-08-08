@@ -1,0 +1,117 @@
+{
+  "status": "gaps",
+  "score": "7/10",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "`weight.mjs resident` composes per-command eager/reachable bytes and per-role dispatch bytes, and the numbers equal a hand `wc -c` sum over the same file lists the envelope names",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`node cadence-core/bin/weight.mjs resident --command cad-land` -> eagerBytes 17934 / reachableBytes 59304; hand sum: SKILL.md 11488 + git-guard.md 6446 = 17934 exact, and 11488+6446+4611(git-publish)+15134(review-triggers)+18575(seams)+3050(triage-gate) = 59304 exact. `--role cad-executor` -> agents/cad-executor.md 424 + skills/cad-executor-contract/SKILL.md 12625 = 13049, xhigh 411+12625 = 13036, both exact against `wc -c`. cadence-core/bin/lib/resident-weight.mjs + lib/frontmatter.mjs exist and are wired through cadence-core/bin/weight.mjs; `node --test cadence-core/bin/weight.test.mjs` = 20/20 pass. Noted, not a criterion failure: `--command` filters only the commands array (all 19 role rows still print) and `--role` filters only roles (all 23 command rows still print); the test at weight.test.mjs:217 pins that filters narrow only their own array."
+    },
+    {
+      "n": 2,
+      "truth": "`weight.mjs` has a CONTRACTS entry, self-verify returns ok:true, AND removing the entry makes self-verify report it rather than passing",
+      "status": "FAILED",
+      "uat_item": 2,
+      "evidence": "Entry present at cadence-core/bin/self-verify.mjs:178-181 (`'weight.mjs': { '*': ['--root'], resident: ['--command','--role'] }`), INTERNALS.md:79 invokes `weight.mjs resident --root <repo root>`, live self-verify = ok:true over 18 checks, 0 problems. Negative half refuted on a disposable `git archive HEAD` copy: deleting the whole `'weight.mjs'` block still returns ok:true with zero problems, because check 2 does `const contract = CONTRACTS[script]; if (!contract) continue;` at self-verify.mjs:469-470 - an unlisted script is silently skipped. Positive control on the same copy (entry restored, INTERNALS.md flag changed to `--bogus`) does fire `unknown-flag`, so the entry has teeth for flags only, never for its own absence."
+    },
+    {
+      "n": 3,
+      "truth": "`cad-land`'s eager bytes are strictly below the mean of cad-execute/cad-plan/cad-verify, with before and after both committed",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "After: cad-land eager 17934 (live run, hand-summed above). Mean: (25017 cad-execute + 16438 cad-plan + 20136 cad-verify)/3 = 61591/3 = 20530.333, each term hand-checked (execute.md 24275 + SKILL 742; plan.md 15590 + 848; verify.md 13758 + UAT.md 5276 + 1102). 17934 < 20530.33. Before: reproduced by running `weight.mjs resident` from a `git archive 01d220a` copy - cad-land eager 32676 (11096 + 6446 + 15134 at that sha, confirmed by `git show 01d220a:skills/cad-land/SKILL.md | wc -c` = 11096). Both figures committed in .planning/phases/2/MEASUREMENTS.md:44 and :131."
+    },
+    {
+      "n": 4,
+      "truth": "`cad-plan-review`'s eager bytes drop by at least the 15,134 B review-triggers.md include",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Live: cad-plan-review eagerBytes 2353, no `@`-include lines remain in skills/cad-plan-review/SKILL.md (grep of `@${CLAUDE_PLUGIN_ROOT}` returns only the Read at :38). Before at 01d220a: 2377 (`git show`) + 15134 = 17511, matching MEASUREMENTS.md:48. Drop = 15158 >= 15134. `wc -c cadence-core/references/review-triggers.md` = 15134 exactly, so the criterion's constant is the real file size."
+    },
+    {
+      "n": 5,
+      "truth": "self-verify check 13 reports zero missing Reads today and does fire `deferred-read-unread` when a registered row's Read sentence loses its Read verb",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "Live self-verify ok:true, `deferred-reads` in the checked list, problems []. On a disposable copy, changing `3. **Fire `pre_ship`.** Read` to `Consult` in skills/cad-land/SKILL.md yields `{'kind':'deferred-read-unread', 'file':'skills/cad-land/SKILL.md', 'detail':'... only 0 of 1 sentence(s) ...'}`. Register is frozen at cadence-core/bin/lib/deferred-reads.mjs:68-92 (4 rows) and wired from self-verify.mjs as check 13."
+    },
+    {
+      "n": 6,
+      "truth": "MEASUREMENTS.md records before AND after, eager AND reachable, for the five commands plus dispatch bytes per role with zero-resident marked, and the recorded command reproduces the after bytes exactly",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Programmatic diff of both tables against live runs: all 23 command rows and all 19 agent rows in `## After` match `node cadence-core/bin/weight.mjs resident` at HEAD with zero mismatches; all 23 + 19 rows in `## Before` match the same command run from a `git archive 01d220a` copy with zero mismatches. Zero-resident block (config-reach.md 18412, model-hints.json 2635, provider-api.md 5048, total 26095) matches the live `zeroResident`/`zeroResidentBytes`. Deltas table arithmetic checks (32676-17934 = -14742; 17511-2353 = -15158). One recorded evidence string is wrong but does not move a number: MEASUREMENTS.md:254 cites `orphans` null from `planning.mjs audit`, and the live envelope has no `orphans` key at all - confirming the SUMMARY's own LOW finding."
+    },
+    {
+      "n": 7,
+      "truth": "ROADMAP phase 2 and REQUIREMENTS CTX-01 read the re-scoped scope, CTX-02 sits outside `### Active` with its reason, and /cad-audit reports zero unserved Active requirements",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": ".planning/ROADMAP.md:99-111 carries the re-scoped preamble naming D-01/D-02/D-03/D-06 and five re-scoped criteria; .planning/REQUIREMENTS.md:58 CTX-01 carries the 'Re-scoped 2026-08-08 at phase-2 context' note; CTX-02 sits at :153 under `## Deferred` (:148) with its stated reason, not under `## Active`. `node cadence-core/bin/planning.mjs audit` -> ok:true with CTX-01 at phase 2, plan phases/2/PLAN.md, no `unpicked`. The nine remaining `unpicked` ids (REC-01/02, FRI-01/02/03, PRS-01/02, DOC-02/03) are each assigned a phase in ROADMAP (:118, :134, :148, :160), so no Active requirement is unserved."
+    },
+    {
+      "n": 8,
+      "truth": "seams.md's deferral rule states a size term, names `weight.mjs resident` as the decider, names references/git-guard.md as the multi-step case that stays eager, and scopes the inline bytes-and-count requirement forward from that sentence",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "cadence-core/references/seams.md:229-243: 'That test omits a SIZE term, and this is it: an eager @-include costs its bytes times every remaining turn ... `weight.mjs resident` is what decides which side a given include falls on', then 'references/git-guard.md stays eager at steps 1, 2 and 3', then 'Any deferral made from this point forward states, inline at the Read itself, the reference's measured bytes and its consult-site count ... the deferrals already in cad-land predate this sentence and are not held to it'. The two in-tree deferrals do carry the figure inline (skills/cad-land/SKILL.md:44, skills/cad-plan-review/SKILL.md:39)."
+    },
+    {
+      "n": 9,
+      "truth": "Check 13 protects the Read at the STEP/ARM that needs the reference, as AC5 words it and as lib/deferred-reads.mjs:24-33 claims",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Reproduced on a disposable copy: deleting the step-4b instruction at skills/cad-land/SKILL.md:109-111 ('**Read the publish rails first.** Read `${CLAUDE_PLUGIN_ROOT}/.../git-publish.md` before the first bullet below that publishes anything') and adding one equivalent decoy sentence inside `<objective>` leaves check 13 silent (self-verify's only remaining problem is an unrelated `budget-overrun` from my byte-size edit). deferred-reads.mjs:145-146 counts qualifying sentences FILE-WIDE (`sentences(text).filter(...)`), with no notion of which step or arm the sentence sits under, while the module header at :23-29 asserts the sentence unit is 'protecting each arm's own sentence'. Confirms the SUMMARY's MEDIUM open item."
+    },
+    {
+      "n": 10,
+      "truth": "`weight.mjs` fails loudly rather than silently measuring the wrong tree when `--root` carries no value",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "`node cadence-core/bin/weight.mjs resident --command cad-land --root` (no value) returns ok:true with the Cadence repo's own numbers (eagerBytes 17934), because weight.mjs:39 does `flagValue(argv,'--root') || join(HERE,'..','..')`. A real but nonexistent root fails correctly (`--root /nonexistent-xyz` -> ok:false unknown-command), so only the valueless/empty case is silent. Confirms the SUMMARY's MEDIUM open item; it does not move any figure recorded in MEASUREMENTS.md, which was produced without `--root`."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "weight.mjs resident composes command and role bytes (AC1)", "evidence": "cad-land eager 17934 = 11488+6446 and reachable 59304 = the six listed files, hand-summed with wc -c; cad-executor 13049 = 424+12625 and 13036 = 411+12625. 20/20 in cadence-core/bin/weight.test.mjs pass." },
+    { "k": 3, "name": "cad-land eager bytes fall below the workhorse mean (AC3)", "evidence": "17934 < 20530.33; mean recomputed from hand-summed 25017/16438/20136. Before 32676 reproduced by running the seam from a git archive of 01d220a; both numbers committed at MEASUREMENTS.md:44 and :131." },
+    { "k": 4, "name": "cad-plan-review eager bytes drop by the full include (AC4)", "evidence": "17511 (2377 at 01d220a + 15134) -> 2353 live = -15158, at or above the 15134 B review-triggers.md include (wc -c confirms 15134). No @-include line remains in the skill." },
+    { "k": 5, "name": "A de-preloaded reference cannot lose its Read (AC5)", "evidence": "self-verify ok:true with deferred-reads among 18 checks, zero problems; on a throwaway copy, replacing cad-land step 3's 'Read' with 'Consult' fires deferred-read-unread '0 of 1'. See gap on step-scoping for the limit of this guarantee." },
+    { "k": 6, "name": "MEASUREMENTS.md records before and after and reproduces (AC6)", "evidence": "All 23 command rows and 19 agent rows of both the Before and After tables diffed programmatically against live runs (After at HEAD, Before from a git archive of 01d220a): zero mismatches. Zero-resident 26095 B over three files matches the seam's own zeroResident output." },
+    { "k": 7, "name": "Roadmap and requirements read the re-scoped scope (AC7)", "evidence": "ROADMAP.md:99-111 re-scoped with D-01/02/03/06 cited; REQUIREMENTS.md:58 CTX-01 re-scoped; CTX-02 at :153 under ## Deferred with its reason; planning.mjs audit ok:true, CTX-01 served by phases/2/PLAN.md, and each of the nine unpicked ids has a ROADMAP phase." },
+    { "k": 8, "name": "The break-even rule states its size term (no criterion)", "evidence": "seams.md:229-243 carries all four required clauses: the size term, weight.mjs resident as the decider, git-guard.md as the multi-step stays-eager case, and the inline bytes-and-count requirement scoped to deferrals made from that sentence forward." }
+  ],
+  "gaps": [
+    {
+      "k": 2,
+      "name": "weight.mjs is contracted in self-verify (AC2)",
+      "reason": "behavior wrong - the criterion's second clause does not hold: deleting the CONTRACTS entry does NOT make self-verify report it. self-verify.mjs:469-470 skips any script absent from CONTRACTS (`if (!contract) continue`), so removing the entry returns ok:true with zero problems.",
+      "evidence": "cadence-core/bin/self-verify.mjs:178-181 holds the entry and INTERNALS.md:79 invokes `weight.mjs resident --root <repo root>`, so the passing half is real. On a `git archive HEAD` copy: entry deleted -> ok:true, problems []. Same copy with the entry restored and INTERNALS.md's flag changed to `--bogus` -> ok:false `unknown-flag weight.mjs resident --bogus`, proving the check is live and the silence is the missing-entry path. Also confirmed on that copy: rewriting INTERNALS.md:79 to the script's PRIMARY form `weight.mjs --root <repo root>` turns self-verify red with `unknown-subcommand weight.mjs --root`, because the entry enumerates only `resident` - the SUMMARY's LOW finding, reproduced.",
+      "severity": "major",
+      "missing": "A check that every script under cadence-core/bin (or a stated allowlist) has a CONTRACTS row, so dropping a row is itself a problem instead of a silent opt-out of check 2; plus a no-subcommand form in the weight.mjs entry so `weight.mjs --root <path>` is contracted rather than reported as unknown-subcommand."
+    },
+    {
+      "name": "Check 13 counts Read sentences file-wide, so a step's own Read can be deleted while the check stays green",
+      "reason": "behavior wrong - AC5 requires the Read to be present 'at the step that needs' the reference, and lib/deferred-reads.mjs:24-33 claims the sentence unit protects 'each arm's own sentence', but the counting at :145-146 is over the whole file with no step or arm scoping.",
+      "evidence": "Reproduced on a disposable copy of HEAD: removed the step-4b publish-rails Read at skills/cad-land/SKILL.md:109-111 and inserted one equivalent sentence inside `<objective>`; check 13 reported nothing (the run's only problem was an unrelated budget-overrun caused by my edit's byte delta). The `git.auto_close` arm then reaches its publish bullets with references/git-publish.md never Read.",
+      "severity": "major",
+      "missing": "Scope the sentence count to the region that owns the deferral - a per-row anchor (step heading, list item, or a named block) so each registered read paragraph is counted only inside the arm it protects, and update the module header to match whatever rule ships."
+    },
+    {
+      "name": "weight.mjs falls back to its own tree on a valueless --root",
+      "reason": "behavior wrong - a caller passing an unset variable gets the Cadence repo's numbers with ok:true instead of an error.",
+      "evidence": "`node cadence-core/bin/weight.mjs resident --command cad-land --root` returns ok:true / eagerBytes 17934 (this repo's own figure). weight.mjs:39 `flagValue(argv,'--root') || join(HERE,'..','..')`. A nonexistent-but-present value fails correctly (`--root /nonexistent-xyz` -> ok:false unknown-command), so only the empty case is silent. No figure in MEASUREMENTS.md is affected: those runs pass no --root.",
+      "severity": "minor",
+      "missing": "Distinguish 'flag absent' from 'flag present with no value' in flagValue/weight.mjs and return ok:false with an `internal`-class reason for the latter, as the pre-292b599 behaviour did."
+    },
+    {
+      "name": "MEASUREMENTS.md cites evidence that does not reproduce (`orphans` null)",
+      "reason": "behavior wrong (documentation) - the recorded audit evidence names a key the envelope never emits.",
+      "evidence": ".planning/phases/2/MEASUREMENTS.md:252-255 records `orphans` null from `node cadence-core/bin/planning.mjs audit`; the live envelope has no `orphans` key at all (planning.mjs spreads it only when non-empty). Every other claim in that bullet reproduces: ok:true, CTX-01 at phase 2 with plan phases/2/PLAN.md and break not-verified, no unpicked for CTX-01.",
+      "severity": "cosmetic",
+      "missing": "Restate the evidence as 'no `orphans` key in the envelope' (absence, not null), or leave it and accept the drift."
+    }
+  ],
+  "human_checks": []
+}

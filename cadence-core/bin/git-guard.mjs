@@ -28,7 +28,7 @@ import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { mergeLayers } from './lib/config-merge.mjs';
+import { mergeLayers, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { gitVerbs } from './lib/git-segments.mjs';
 
 function decide(decision, reason) {
@@ -86,8 +86,56 @@ function currentBranch(cwd) {
  * @returns {{decision: string, reason: string} | null}
  */
 function commitDecision(root, cwd) {
-  const { config } = mergeLayers(join(root, '.planning', 'config.json'));
+  const repoLayer = join(root, '.planning', 'config.json');
+  // mergeLayers warnings[]: taken off the call and ACTED ON below, not dropped.
+  // A layer that failed to parse is exactly the layer whose protected_branches
+  // and on_protected this function was about to decide with.
+  const { config, warnings } = mergeLayers(repoLayer);
   const git = config.git || {};
+
+  // Keyed on a config layer having failed to parse (D-17) and NOT on a
+  // protected-branch hit: keying it to the hit would fire only when the user
+  // happens to be on `main`, and never in the case actually worth catching -
+  // where their own custom protected_branches list is the thing that was lost.
+  //
+  // EITHER LAYER, not the repo layer alone. `protected_branches` and
+  // `on_protected` are read from the merged config, so the user-global layer
+  // decides this rail exactly as often as the repo layer does - and it is the
+  // likelier place for a machine-wide list to live. Matching only the repo path
+  // meant a torn ~/.claude/cadence/config.json reverted the rails to DEFAULTS in
+  // silence, which is the silence this whole arm exists to end. The sibling rail
+  // already refuses on ANY layer's warning (references/git-publish.md, rail 3;
+  // git-publish.mjs:116-118), so before this the two rails disagreed about one
+  // diagnostic.
+  //
+  // THE TRADE, stated because it is a real cost and not a one-line patch: while
+  // a user's global config is torn, EVERY `git commit` in EVERY Cadence project
+  // on that machine returns `ask`. Accepted, on four grounds - the torn layer is
+  // the one carrying the settings this rail decides with; the alternative is the
+  // silent revert to defaults; the prompt names the ONE file to fix, so the cost
+  // is self-limiting rather than open-ended; and a warning still never produces a
+  // `deny` (the fail-open contract above stands). REJECTED alternative: gating
+  // the global arm on "would the global layer have decided anything here" - that
+  // is unprovable by construction, since the layer could not be read.
+  //
+  // ANCHORED on both ends, never a bare `includes(<path>)`. A mergeLayers
+  // warning is a FLAT STRING with no layer field, shaped `config layer <path>
+  // failed to parse...` or `config layer <path> top-level is not an object...`
+  // (lib/config-merge.mjs:55, :162), so a bare containment reads a GLOBAL-layer
+  // warning as a torn repo layer whenever the global path has the repo path as
+  // a prefix (`CADENCE_GLOBAL_CONFIG=<root>/.planning/config.json.global`) or as
+  // a suffix (`<elsewhere>/<root>/.planning/config.json`). Both layers ask now,
+  // so that conflation no longer changes the decision - but it would still put
+  // the WRONG path in the prompt, sending the user to fix a file that parsed
+  // fine. The path must be followed by the space that delimits it from the
+  // diagnosis. An empty GLOBAL_CONFIG contributes no prefix at all: `homedir()`
+  // throws where the uid has no passwd entry and config-merge degrades it to
+  // `''` (lib/config-merge.mjs:22-26), and `config layer  ` must never match a
+  // real path.
+  const tornPrefixes = [`config layer ${repoLayer} `];
+  if (GLOBAL_CONFIG) tornPrefixes.push(`config layer ${GLOBAL_CONFIG} `);
+  const torn = (warnings || []).filter(
+    (w) => typeof w === 'string' && tornPrefixes.some((p) => w.startsWith(p)));
   // A lone string is an easy hand-edit; honor it rather than silently
   // reverting to the default list and unprotecting the branch the user
   // named (#38). Other non-array shapes still fall to the default.
@@ -102,20 +150,39 @@ function commitDecision(root, cwd) {
   // instead of silently degrading the intended hard block to a soft ask (#38).
   const raw = git.on_protected === 'deny' ? 'refuse' : git.on_protected;
   const onProtected = raw || 'ask';
-  if (onProtected === 'allow') return null;
-
   const branch = currentBranch(cwd);
-  if (!branch) return null; // not a repo / no commits - nothing to guard
-  if (!protectedBranches.includes(branch)) return null;
 
-  const refuse = onProtected === 'refuse';
-  return {
-    decision: refuse ? 'deny' : 'ask',
-    reason: `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
-      (refuse
-        ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
-        : 'Create a task branch first, or approve to commit here deliberately.'),
-  };
+  // The ordinary protected-branch decision, computed BEFORE the torn-layer arm
+  // below rather than after it. The torn arm returns `ask`, so returning it
+  // first would turn a configured `deny` into an `ask` whenever the repo layer
+  // was the torn one and the GLOBAL layer carried on_protected=refuse - a torn
+  // file silently weakening a hard block, which is worse than the silence this
+  // diagnostic replaces.
+  const branchDecision = (() => {
+    if (onProtected === 'allow') return null;
+    if (!branch) return null; // not a repo / no commits - nothing to guard
+    if (!protectedBranches.includes(branch)) return null;
+    const refuse = onProtected === 'refuse';
+    return {
+      decision: refuse ? 'deny' : 'ask',
+      reason: `Cadence rail: "${branch}" is a protected branch (git.protected_branches). ` +
+        (refuse
+          ? 'Config git.on_protected=refuse blocks this commit - create a task branch first.'
+          : 'Create a task branch first, or approve to commit here deliberately.'),
+    };
+  })();
+
+  if (torn.length) {
+    const note = `Cadence rail: ${torn[0]} - the branch rails are deciding with `
+      + 'DEFAULTS, not your settings.';
+    // A parse warning never PRODUCES a deny, and never CANCELS one either: an
+    // existing hard block keeps its decision and gains the reason.
+    if (branchDecision && branchDecision.decision === 'deny') {
+      return { decision: 'deny', reason: `${note} ${branchDecision.reason}` };
+    }
+    return { decision: 'ask', reason: `${note} Fix the file, or approve to commit under the defaults.` };
+  }
+  return branchDecision;
 }
 
 // No process.exit() anywhere below: the decision JSON is written to stdout,

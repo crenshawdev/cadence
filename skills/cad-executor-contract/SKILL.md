@@ -28,8 +28,24 @@ For each task in the plan, in order:
    as `[deviation] expected X, observed Y` and only then act on it. Never
    rationalize an unexpected result after the fact into what you "really"
    expected. "It should work" is not verification.
-3. Commit per the commit protocol below.
-4. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
+3. Static analysis, before the commit. Run `workflow.lint_command` when it is
+   set; when it is not, ask the project once per dispatch and run what comes
+   back:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" detect-commands --root <project root>
+   ```
+
+   Run its `lint` and its `typecheck`; either may be `null`, and both null means
+   no static-analysis command Cadence can find - say so once and skip, an answer
+   rather than a failure. Prefer `LSP` diagnostics to the subprocess only when
+   the change is confined to files the language server has already indexed AND
+   they cover the same defect class, since that is state the host already holds;
+   otherwise spawn it. A failure gets the same three bounded fix attempts as any
+   blocker, and surviving the third is a `blocked` checkpoint, never the move-on
+   arm: reaching the commit step with a failing lint is what this step prevents.
+4. Commit per the commit protocol below.
+5. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
    row so far.
 
 After the last task: return the digest.
@@ -46,11 +62,23 @@ After the last task: return the digest.
    `<checkpoints>`, which puts the flagged staged diff in a file rather than in
    your return. The orchestrator fires the blocking review trigger. Never review
    yourself, never skip the gate.
-3. Commit: `{type}({scope}): {concise description}` using the scope from
+3. Lease gate: your plan's declared `files:` list is a lease, and a file it
+   never named may not ride your commit - that declaration is what the parallel
+   gate proved every OTHER plan independent of.
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" lease-check --phase <N> --plan <k>
+   ```
+
+   `ok:false` -> do NOT commit: stop and return a `blocked` checkpoint naming
+   each undeclared path, exactly as the risk-surface gate returns its own. Skip
+   this step when `<plandir>` is not `.planning/phases/<N>/`: `/cad-task`
+   dispatches from `.planning/tasks/<slug>/`, where there is no phase lease.
+4. Commit: `{type}({scope}): {concise description}` using the scope from
    your dispatch prompt. Types: feat, fix, docs, chore, refactor, test,
    perf, style.
-4. Record the short hash for your report.
-5. Post-commit glance: no unexpected file deletions in the commit
+5. Record the short hash for your report.
+6. Post-commit glance: no unexpected file deletions in the commit
    (`git diff --diff-filter=D --name-only HEAD~1 HEAD`); no generated files
    left untracked - commit them if intentional, `.gitignore` them if output.
    `<plandir>/reports/**` is EXEMPT from that glance: a report awaiting the
@@ -70,7 +98,9 @@ Boundaries:
 - Scope: only what the current task's changes caused or directly need.
   Pre-existing problems elsewhere are open items, not your job.
 - Three fix attempts per task, then record it as an open item and move on -
-  or checkpoint if it blocks the task.
+  or checkpoint if it blocks the task. ONE carve-out: a static-analysis
+  failure surviving the third attempt is always a `blocked` checkpoint, never
+  the move-on arm, because moving on there means committing the failure.
 - Package installs are never auto-fixable. If an install fails, do not
   retry with a similar name and do not substitute an alternative - a failed
   install can mean a hallucinated or squatted package. Return a `blocked`

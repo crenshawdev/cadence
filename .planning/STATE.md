@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 5 (Queue triage)
-Status: context gathered
-Next: /cad-plan 1
-Updated: 2026-08-07
+Phase: 3 of 4 (Queue triage)
+Status: planned
+Next: /cad-execute 3
+Updated: 2026-08-08

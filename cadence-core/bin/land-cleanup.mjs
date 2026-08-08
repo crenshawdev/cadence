@@ -69,7 +69,10 @@ function readFindings() {
 }
 
 function cleanup(dir, branchArg, baseArg, mergedArg) {
-  const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
+  // warnings[] rides the envelope: on_land_cleanup, the protected list and the
+  // base branch all come off this merge, so a torn layer means this advice is
+  // the DEFAULT cleanup rather than the user's.
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const onLandCleanup = git.on_land_cleanup !== false; // default true
   const protectedBranches = Array.isArray(git.protected_branches)
@@ -86,7 +89,7 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
     ? mergedArg === 'true'
     : (branch !== null && mergedList.includes(branch));
   const decision = decideCleanup({ onLandCleanup, mergedIntoBase, branch });
-  emit({ ok: true, ...decision, base });
+  emit({ ok: true, ...decision, base, warnings });
 }
 
 function gate(dir) {
@@ -111,11 +114,17 @@ function gate(dir) {
   // believed no chain was running. On GitHub the chain then died at the publish
   // seam; on GitLab nothing gates it at all (`glab mr create` publishes the source
   // branch itself), so a surviving blocker merged with no triage and no halt.
-  const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
+  //
+  // warnings[] rides the envelope here for a sharper reason than elsewhere: a
+  // torn layer reads auto_close as absent, which is `false`, which is the arm
+  // that DOES NOT halt on a surviving blocker - the unattended close's one
+  // remaining stop. The caller must be able to tell "no chain is running" from
+  // "the file that says so did not parse".
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const autoClose = git.auto_close === true;
   const decision = decideGateHalt({ autoClose, findings: readFindings() });
-  emit({ ok: true, ...decision });
+  emit({ ok: true, ...decision, warnings });
 }
 
 // --- dispatch ----------------------------------------------------------------

@@ -1,7 +1,7 @@
 ---
 name: cad-progress
 description: "Project progress - count-based status from files and git, auto-resume of incomplete work, --stats for a quick summary"
-argument-hint: "[--stats]"
+argument-hint: "[--stats|--trace]"
 allowed-tools:
   - Read
   - Write
@@ -20,7 +20,9 @@ a source. Detects incomplete or paused work and offers to resume at the right
 step, routing to the spine skill that does it (/cad-context, /cad-plan,
 /cad-execute, /cad-verify, /cad-milestone, /cad-phase add between milestones) -
 never does the work itself.
-`--stats` prints a summary derived on demand.
+`--stats` prints a summary derived on demand; `--trace` prints the current
+phase's joined run record - routing, provider, worker-lifecycle and outcome
+events - and writes nothing.
 </objective>
 
 <execution_context>

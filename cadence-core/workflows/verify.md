@@ -225,7 +225,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat status --phase <N
 ```
 
 `result: complete` means every item passed or was skipped with a reason;
-anything else is `partial`.
+anything else is `partial`. Record that verdict either way - it is the phase's
+own outcome event, and a partial session is exactly the one worth having in the
+record:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event uat_verdict --detail "<complete or partial>"
+```
 
 On **complete**, this skill is the only writer of a persisted phase status
 TRANSITION - row creation at `Pending` belongs to `/cad-plan`'s seeding step;

@@ -57,6 +57,28 @@
 //                    negation and a catalog row carry the same vocabulary in
 //                    another mood and issue nothing. Without this check the
 //                    prose repair is UAT-walk-only.
+//  12. merge         every `mergeLayers(` callsite under cadence-core/bin must
+//      warnings      either bind the `warnings[]` it gets back or sit in a file
+//                    whose header says why its envelope is the surfacing. The
+//                    one diagnostic that says a config layer was TORN was
+//                    dropped on the floor at eight of ten callsites, so branch
+//                    rails, cleanup rails and recall decided from defaults in
+//                    silence. The rule is lib/merge-warnings.mjs; this is the
+//                    only check that walks .mjs SOURCE rather than prose.
+//  13. deferred      a reference a command skill deliberately stopped
+//      reads         `@`-including must still be Read by name at the step that
+//                    needs it. De-preloading is the cheapest context cut there
+//                    is and the easiest to break: delete one sentence and the
+//                    reference is unreachable, with nothing failing. The
+//                    register of removals and the sentence-level rule live in
+//                    lib/deferred-reads.mjs; this side only calls it.
+//  14. script        every top-level script under cadence-core/bin must have a
+//      contracts     row in the CONTRACTS table below. Check 2 SKIPS a script
+//                    it finds no row for - it has to, since prose names
+//                    third-party scripts too - so deleting a row was a silent
+//                    opt-out of the flag lint rather than a problem, and the
+//                    table's completeness could not be checked from the prose
+//                    side at all. It is checked from the tree side here.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -75,6 +97,9 @@ import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
+import { mergeWarningIssues } from './lib/merge-warnings.mjs';
+import { parseSkillsField } from './lib/frontmatter.mjs';
+import { deferredReadIssues } from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -90,6 +115,17 @@ const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
 // --- the contract table: script -> subcommand -> allowed flags --------------
 // Global flags allowed everywhere on that script are listed under '*'.
+//
+// The '' key is the BARE form - the script invoked with flags and no
+// subcommand, e.g. `weight.mjs --root <path>`. Without it check 2 reads the
+// first flag AS the subcommand and reports `unknown-subcommand` on correct
+// prose, so every script with a no-subcommand form must declare one.
+//
+// Every top-level script under cadence-core/bin must appear here: check 14
+// enforces it, because check 2 skips a script it finds no row for. A missing
+// row is therefore a silent opt-out of the flag lint, not a script that
+// happens to be unlinted - which is exactly how `weight.mjs`'s own row could
+// be deleted with self-verify still returning ok:true.
 const CONTRACTS = {
   'planning.mjs': {
     '*': ['--dir'],
@@ -108,7 +144,11 @@ const CONTRACTS = {
     'criteria-coverage': [],
     'plan-overlap': ['--phase'],
     'seed-reqs': ['--phase'],
+    'lease-check': ['--phase', '--plan'],
+    'detect-commands': ['--root'],
     recall: [],
+    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
+    'trace render': ['--phase'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },
@@ -153,16 +193,38 @@ const CONTRACTS = {
     consult: ['--provider', '--model', '--effort', '--payload'],
     'detect-models': ['--provider'],
   },
+  'weight.mjs': {
+    '*': ['--root'],
+    '': [],
+    resident: ['--command', '--role'],
+  },
+  // Two scripts with no subcommand at all. They carry rows because check 14
+  // requires one, and the rows have teeth: the bare form's flag list is what
+  // check 2 lints `self-verify.mjs --root <path>` against.
+  'self-verify.mjs': {
+    '*': ['--root'],
+    '': [],
+  },
+  // git-guard.mjs is the commit hook - it reads its input on stdin and takes
+  // no flags, so the bare form allows none.
+  'git-guard.mjs': {
+    '*': [],
+    '': [],
+  },
 };
 
 // Subcommands whose first word takes a second word (sub-subcommand).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber']);
+const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace']);
 
 // The canonical Claude Code tool vocabulary the agents-only tools lint checks
 // against - a FIXED set, not derived from the tree, so a single-agent fixture
 // still has a full vocabulary to test with.
+// `LSP` is here as well as on the two cad-executor rungs' `tools:` lines, and
+// BOTH halves are required (D-14): this lint is one-directional - it flags
+// referenced-but-undeclared only - so a token outside this vocabulary is scanned
+// by nothing at all, and "the tools lint passes with it" would be vacuously true.
 const KNOWN_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'Bash', 'Grep',
-  'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite'];
+  'Glob', 'Task', 'WebFetch', 'WebSearch', 'NotebookEdit', 'TodoWrite', 'LSP'];
 
 // --- helpers -----------------------------------------------------------------
 
@@ -237,6 +299,49 @@ function* mdFiles(root) {
 }
 
 /**
+ * Every `.mjs` SOURCE file under cadence-core/bin, for check 12. `mdFiles`
+ * traverses `.md` surfaces only and cannot be reused - this is the one check
+ * whose subject is code rather than prose.
+ *
+ * Two exclusions, both deliberate. `*.test.mjs`: a test file calls the seams it
+ * tests and a fixture string may contain any shape at all, so linting them
+ * would report the tests written to PIN this very rule. `lib/config-merge.mjs`:
+ * it DEFINES `mergeLayers` and returns the warnings itself - there is nothing
+ * upstream of it to surface them to.
+ *
+ * Guarded per ENTRY like `mdFiles`, for the #49.1 reason: one unreadable
+ * descendant must hide only its own children, not silently unlint every
+ * sibling.
+ * @param {string} root
+ * @returns {Generator<{ file: string, unreadable?: string }>}
+ */
+function* binFiles(root) {
+  const binDir = join(root, 'cadence-core', 'bin');
+  const skip = join(binDir, 'lib', 'config-merge.mjs');
+  /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
+  function* walk(dir) {
+    let list;
+    try {
+      list = readdirSync(dir, { withFileTypes: true });
+    } catch (e) {
+      yield { file: dir, unreadable: e.code || e.message };
+      return;
+    }
+    for (const d of list) {
+      const f = join(dir, d.name);
+      if (d.isDirectory()) {
+        yield* walk(f);
+        continue;
+      }
+      if (!f.endsWith('.mjs') || f.endsWith('.test.mjs') || f === skip) continue;
+      yield { file: f };
+    }
+  }
+  if (!existsSync(binDir)) return;
+  yield* walk(binDir);
+}
+
+/**
  * Expand <t>/<trigger>/<name>-style placeholders into every concrete key
  * they stand for (cartesian across placeholders). A single representative
  * would under-cover the reverse check: prose that says
@@ -251,38 +356,6 @@ function expand(token, triggers, providers, surfaces = []) {
   out = subst(out, /<t(?:rigger)?>?/g, triggers);
   out = subst(out, /<(?:name|provider)>?/g, providers);
   out = subst(out, /<surface>?/g, surfaces);
-  return out;
-}
-
-/**
- * Parse an agent frontmatter block's `skills:` value into skill names. Accepts
- * the three spellings a hand-written agent file realistically uses: the block
- * list (`skills:\n  - name`), the inline array (`skills: [a, b]`), and a bare
- * scalar (`skills: name`). Anything else yields no names, which the caller
- * treats as "this agent preloads nothing" - the same as an absent key.
- * @param {string} fmText the text BETWEEN the frontmatter fences
- * @returns {string[]}
- */
-export function parseSkillsField(fmText) {
-  const m = fmText.match(/^skills:[ \t]*(.*)$/m);
-  if (!m || m.index === undefined) return [];
-  const unquote = (/** @type {string} */ s) => s.trim().replace(/^['"]|['"]$/g, '').trim();
-  const inline = m[1].trim();
-  if (inline) {
-    return inline.replace(/^\[/, '').replace(/\]$/, '')
-      .split(',').map(unquote).filter(Boolean);
-  }
-  const out = [];
-  for (const line of fmText.slice(m.index + m[0].length).split('\n')) {
-    const item = line.match(/^[ \t]+-[ \t]*(.+)$/);
-    if (item) {
-      const name = unquote(item[1]);
-      if (name) out.push(name);
-      continue;
-    }
-    if (line.trim() === '') continue;
-    break; // the next frontmatter key ends the list
-  }
   return out;
 }
 
@@ -426,14 +499,28 @@ function run(root) {
     for (const m of joined.matchAll(/([a-z-]+\.mjs)"?\s+([a-z-]+)(?:\s+([a-z-]+))?([^\n]*)/g)) {
       const [, script, w1, w2, restRaw] = m;
       const contract = CONTRACTS[script];
-      if (!contract) continue; // not one of ours
-      const sub = TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1;
+      // Not one of ours - prose may name a third-party script and this lint has
+      // nothing to say about it. That `continue` is why check 14 exists: a
+      // Cadence script whose row is DELETED becomes indistinguishable from a
+      // foreign one here, so the miss has to be caught by enumerating the bin
+      // directory, never by this arm.
+      if (!contract) continue;
+      // A first word starting with `-` is a FLAG, not a subcommand: this is the
+      // bare form. Reading it as a subcommand reported `unknown-subcommand` on
+      // correct prose like `weight.mjs --root <path>`.
+      const bare = w1.startsWith('-');
+      const sub = bare ? '' : (TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1);
       if (!contract[sub]) {
-        problems.push({ kind: 'unknown-subcommand', file: rel, detail: `${script} ${sub}` });
+        problems.push({ kind: 'unknown-subcommand', file: rel,
+          detail: `${script} ${bare ? '(bare form)' : sub}` });
         continue;
       }
       const allowed = new Set([...contract[sub], ...contract['*']]);
-      const rest = (TWO_WORD.has(w1) && w2 ? '' : ` ${w2 || ''}`) + restRaw;
+      // The bare form's own first word IS a flag, so it must be scanned; the
+      // subcommand forms consume w1 as the name and scan from w2 on.
+      const rest = bare
+        ? ` ${w1} ${w2 || ''}${restRaw}`
+        : (TWO_WORD.has(w1) && w2 ? '' : ` ${w2 || ''}`) + restRaw;
       for (const f of rest.matchAll(/--[a-z-]+/g)) {
         if (!allowed.has(f[0])) {
           problems.push({ kind: 'unknown-flag', file: rel, detail: `${script} ${sub} ${f[0]}` });
@@ -919,6 +1006,73 @@ function run(root) {
       detail: 'always-expected input absent' });
   }
 
+  // 12. mergeLayers callsites: bind the warnings[] or say in the file header
+  // why the envelope is the surfacing (lib/merge-warnings.mjs holds the rule
+  // and its accepted costs). This side decides only WHERE it applies - every
+  // .mjs the bin walk yields. The read is guarded like every other walk read
+  // (#49.1): an unreadable source file is one problem naming that file, never
+  // an unwound run() that discards every problem found so far. Unlike the prose
+  // walks there is no second reporter to defer to, so this one files it.
+  for (const { file, unreadable } of binFiles(root)) {
+    const rel = relative(root, file);
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    let src = null;
+    try {
+      src = readFileSync(file, 'utf8');
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: rel,
+        detail: e && e.code ? e.code : String(e) });
+      continue;
+    }
+    for (const { code, detail } of mergeWarningIssues(src)) {
+      problems.push({ kind: code, file: rel, detail });
+    }
+  }
+
+  // 13. deferred reads: every reference the register records as de-preloaded is
+  // still Read by name at the step that needs it. The rule, its register and
+  // the reason the unit is the SENTENCE live in lib/deferred-reads.mjs; this
+  // side only decides that it applies to the whole root.
+  for (const issue of deferredReadIssues(root)) problems.push(issue);
+
+  // 14. every shipped seam is contracted. Check 2 skips any script with no
+  // CONTRACTS row (`if (!contract) continue`), which it must - prose names
+  // third-party scripts too. The cost is that DELETING a row silently opts
+  // that script out of the flag lint while self-verify stays ok:true, so the
+  // table's own completeness cannot be checked from the prose side. It is
+  // checked from the tree side instead: enumerate the top-level scripts and
+  // require a row for each.
+  //
+  // TOP-LEVEL only, deliberately non-recursive: `lib/*.mjs` are modules that
+  // prose never invokes, so a contract for them would describe nothing. This
+  // is the same subject as check 12 but a different set, which is why it does
+  // not reuse binFiles - that walker descends into lib/.
+  const binDir = join(root, 'cadence-core', 'bin');
+  let binList = null;
+  try {
+    binList = readdirSync(binDir, { withFileTypes: true });
+  } catch (e) {
+    // An ABSENT bin directory is a partial fixture, not a fault - the same
+    // call this check makes on a synthetic root that only carries prose. A
+    // directory that exists and cannot be READ is a fault, and reporting it
+    // is what stops an unreadable bin from vacuously satisfying the check.
+    if (e && e.code !== 'ENOENT') {
+      problems.push({ kind: 'unreadable-surface', file: relative(root, binDir),
+        detail: e.code || String(e) });
+    }
+  }
+  for (const d of binList || []) {
+    if (d.isDirectory()) continue;
+    if (!d.name.endsWith('.mjs') || d.name.endsWith('.test.mjs')) continue;
+    if (!CONTRACTS[d.name]) {
+      problems.push({ kind: 'uncontracted-script',
+        file: relative(root, join(binDir, d.name)), detail: d.name });
+    }
+  }
+
   return problems;
 }
 
@@ -929,7 +1083,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

@@ -50,6 +50,22 @@
 // The review payload (JSON, from --payload file or stdin) is:
 //   { "instruction": "<what to critique and how>",
 //     "artifact": "<the plan / diff / files to review>" }
+//
+// mergeLayers warnings[]: the ONE surfacing for this file is `reviewConfig()`
+// (:360), which binds the warnings of the same `.planning/config.json` layer and
+// puts their COUNT on the provider trace event as `config_warnings` - a count,
+// not the warning text, and only when there is at least one, and only on an
+// event that was written at all (a run with no `.planning` cursor writes none).
+// So this is a signal that the layer was torn beside the call it bounded, not a
+// carrier of the warnings themselves. The two OTHER
+// reads here - `requestTimeoutMs()` and `maxPromptTokens()` - are memoized
+// SCALAR helpers that cache a number and discard the config object, so there is
+// nothing at those two callsites to surface: the value they lose to a torn layer
+// is a request timeout and a prompt cap, each degrading to a stated default, and
+// the fact that the layer was torn is already in the trace beside the request
+// those bounds applied to. What the CALLER sees is the seam's own envelope -
+// `{ok:false, reason}` with the fail reason - and no config warning can change
+// which reason that is.
 'use strict';
 
 import fs from 'node:fs';
@@ -60,6 +76,8 @@ import { fileURLToPath } from 'node:url';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
+import { appendEvent } from './lib/trace.mjs';
+import { cursorPhase } from './lib/phase-plans.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -70,7 +88,52 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // write) lives in lib/seam-io.mjs.
 // ---------------------------------------------------------------------------
 function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
-function fail(reason, detail) { emit({ ok: false, reason, detail: detail || null }); throw DONE; }
+
+// The subject of the provider trace event for the call currently running, set
+// as each command's FIRST act (`beginProviderCall`) and read by `fail()` below.
+// It is module-level because `fail()` is reached from sites that never see the
+// command's own locals: `resolveProvider` (`bad-provider`, `bad-args`,
+// `no-key`), `readPayload` and the two shape checks (`bad-payload`) and
+// `assertUnderCap` (`over-cap`) all unwind BEFORE a request is built, and those
+// five are the drop-outs that fire most in practice - a reviewer whose key is
+// missing on this machine drops out of a fired trigger exactly as hard as one
+// the wire refused. `null` means no command has begun, so `fail('bad-command')`
+// from `main()` records nothing by construction rather than by a check.
+/** @type {{command: string, provider: any, model: any, effort: any, started: number}|null} */
+let activeMeta = null;
+
+// Exactly one event per call, whichever site records first. The explicit
+// `traceProvider` calls in `callStructured` and at the two `bad-shape` sites run
+// first and carry better detail than `fail()`'s would (`HTTP 404`, the named
+// schema defect), so they set this and `fail()` then adds nothing.
+let traceRecorded = false;
+
+/**
+ * Open the trace bracket for one command, before anything can refuse. Returns
+ * the meta so the command's own `traceProvider` calls keep taking it as an
+ * argument rather than reading module state.
+ * @param {string} command
+ * @param {{provider: any, model: any, effort: any}} subject
+ */
+function beginProviderCall(command, subject) {
+  activeMeta = { command, ...subject, started: Date.now() };
+  traceRecorded = false;
+  return activeMeta;
+}
+
+function fail(reason, detail) {
+  // The degradation is recorded before the envelope is emitted, and never
+  // instead of it: `traceProvider` never throws and never speaks, so this line
+  // cannot change what the caller reads or when.
+  if (activeMeta && !traceRecorded) {
+    // `detail` is a string at every fail() site except `http`, whose object
+    // detail would render `[object Object]` - and that site records itself
+    // first, so this renders a real string or falls back to the reason.
+    traceProvider(activeMeta, reason, typeof detail === 'string' && detail ? detail : reason);
+  }
+  emit({ ok: false, reason, detail: detail || null });
+  throw DONE;
+}
 
 // ok()/fail() throw the DONE sentinel to unwind the current command; the
 // entry point swallows it. Any OTHER throw is an unforeseen bug - the
@@ -268,12 +331,175 @@ function assertUnderCap(...parts) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The provider family of the joined run record (.planning/trace.jsonl). A
+// reviewer that drops out of a fired trigger is supposed to be NAMED to the
+// user, and references/review-triggers.md already mandates that visible line -
+// that mandate is the thing that failed, twice. So the seam records the
+// degradation itself: the panel's actual composition is in the record whether or
+// not the orchestrator relays the line.
+//
+// The record brackets a CALL, not a REQUEST (corrected 2026-08-08, phase 1
+// QW-05). The first form recorded only what happened past `request()`, which
+// left the five drop-outs that need no network at all - `no-key`,
+// `bad-provider`, `bad-args`, `bad-payload`, `over-cap` - writing nothing, and
+// they are the ones that actually fire: a panel that silently shrank because a
+// key was missing read as a panel that was always that size. `fail()` above is
+// where that is closed, and `activeMeta` is why it can be.
+// ---------------------------------------------------------------------------
+
+// The repo+global config, read once per process and bound with its `warnings`.
+//
+// mergeLayers warnings[]: a torn config layer is why a tier reverse lookup can
+// come back null and why the timeout and the prompt cap fall back to their
+// defaults, so how MANY warnings there were rides the provider trace event
+// (`config_warnings`, a count and only when non-zero) rather than the read
+// dropping the fact entirely. Deliberately its OWN read: the two
+// reads above are memoized SCALAR helpers that cache a number and discard the
+// config object, so there is nothing there to take a config off.
+let reviewConfigCache = null;
+function reviewConfig() {
+  if (reviewConfigCache === null) {
+    try {
+      const { config, warnings } = mergeLayers('.planning/config.json');
+      reviewConfigCache = {
+        config: config && typeof config === 'object' ? config : {},
+        warnings: Array.isArray(warnings) ? warnings : [],
+      };
+    } catch {
+      reviewConfigCache = { config: {}, warnings: [] };
+    }
+  }
+  return reviewConfigCache;
+}
+
+/**
+ * The trigger TIER this model id was resolved from, by REVERSE LOOKUP over
+ * `review.providers.<name>.tiers`. The seam is never told the tier: the caller
+ * resolves `tiers[trigger.tier]` and passes only `--model`
+ * (references/review-triggers.md), so the mapping is inverted here rather than
+ * added as a `--tier` flag, which would change the CLI contract at every prose
+ * callsite. `null` when the map has no such value - a hand-passed model, or
+ * `detect-models`, which carries no model at all. Never a guess.
+ * @param {any} provider @param {any} model @returns {string|null}
+ */
+function tierOf(provider, model) {
+  if (typeof provider !== 'string' || typeof model !== 'string' || !model) return null;
+  const { config } = reviewConfig();
+  const review = config.review;
+  const providers = review && typeof review === 'object' ? review.providers : null;
+  const spec = providers && typeof providers === 'object' ? providers[provider] : null;
+  const tiers = spec && typeof spec === 'object' ? spec.tiers : null;
+  if (!tiers || typeof tiers !== 'object' || Array.isArray(tiers)) return null;
+  for (const [tier, id] of Object.entries(tiers)) if (id === model) return tier;
+  return null;
+}
+
+/**
+ * Record one `provider`/`request` event. `detail` is what makes it a DEGRADATION:
+ * present means this reviewer dropped out and the panel is smaller than the
+ * trigger asked for. An empty findings set is NOT one - it is `ok` with no
+ * detail, because a reviewer that legitimately found nothing must not be
+ * recorded as a drop-out (D-22).
+ *
+ * Never throws, never writes to a stream, never touches the caller's envelope.
+ * @param {{command: string, provider: any, model: any, effort: any, started: number}} meta
+ * @param {string} outcome the fail() reason, or 'ok'
+ * @param {string} [detail]
+ */
+function traceProvider(meta, outcome, detail) {
+  // Marked before the attempt, not after it: the contract is one event per
+  // call, so a write this seam could not complete must not license a second
+  // attempt from `fail()` with a poorer detail string.
+  traceRecorded = true;
+  try {
+    const root = '.planning';
+    const phase = cursorPhase(root);
+    // No cursor: an event keyed to no phase joins nothing and the id it would
+    // derive is the empty string, so nothing is recorded rather than a line
+    // that cannot be read back.
+    if (phase === null) return;
+    const { warnings } = reviewConfig();
+    appendEvent(root, {
+      phase,
+      family: 'provider',
+      event: 'request',
+      command: meta.command,
+      provider: typeof meta.provider === 'string' ? meta.provider : null,
+      model: typeof meta.model === 'string' ? meta.model : null,
+      effort: typeof meta.effort === 'string' ? meta.effort : null,
+      tier: tierOf(meta.provider, meta.model),
+      duration_ms: Date.now() - meta.started,
+      outcome,
+      ...(detail ? { degraded: true, detail: String(detail).slice(0, 200) } : {}),
+      ...(warnings.length ? { config_warnings: warnings.length } : {}),
+    });
+  } catch { /* a record of a call may never change the call */ }
+}
+
+// ---------------------------------------------------------------------------
+// The transport reference, and the ONE test seam that moves it (QW-05).
+//
+// Every failure mode this seam degrades on - timeout, HTTP status, truncated
+// body, no output - lives PAST the call below, so exercising them needs a way to
+// stand in for the wire. That way is a module-private reference a test replaces
+// by IMPORTING this module, reachable only from inside the running process.
+//
+// There is deliberately NO environment variable, no flag and no config key that
+// redirects it. The request this transport carries holds a resolved provider key
+// in an `authorization` header, so an out-of-process switch on the destination
+// would be a credential-read primitive: one attacker-settable variable (a
+// `.envrc` in a cloned repo, a devcontainer env block, a compromised npm script)
+// would make an ordinary run read the user's real on-disk key and hand it to a
+// listener of the attacker's choosing. Loopback is not a privilege boundary -
+// any unprivileged local process that binds the port first receives the
+// credential - so the fence is that the surface does not exist. This overturns
+// CONTEXT D-11, which picked an env override on `CADENCE_*` precedent; that
+// precedent does not hold for a variable that redirects a CREDENTIALED request.
+//
+// The default is `node:https` and nothing else can be reached in production:
+// with the seam untouched, `transport` is `HTTPS_TRANSPORT` for the life of the
+// process, and the three adapter bases stay hardcoded `https:` URLs.
+// ---------------------------------------------------------------------------
+
+// The signature is the `https.request(url, options, cb)` shape and is typed at
+// the WIRE types, not at `any`: `req` below is a real `ClientRequest`, so a
+// misspelled listener (`req.onnn('error', ...)`) stays a tsc error exactly as it
+// was when this line read `https.request(...)` directly. A loose return here
+// would silently un-check all six `req.*` uses in `request()`.
+/**
+ * @typedef {(
+ *   url: URL,
+ *   options: import('node:https').RequestOptions,
+ *   cb: (res: import('node:http').IncomingMessage) => void
+ * ) => import('node:http').ClientRequest} Transport
+ */
+
+/** @type {Transport} */
+const HTTPS_TRANSPORT = (url, options, cb) => https.request(url, options, cb);
+
+/** @type {Transport} */
+let transport = HTTPS_TRANSPORT;
+
+/**
+ * TEST-ONLY. Replace the transport for the CURRENT PROCESS. Nothing in the
+ * plugin calls this; the only caller is `review-provider.test.mjs`, which
+ * imports this module to drive the six failure modes with no socket at all.
+ * Pass `null` (or call the returned restore) to put `node:https` back.
+ * @param {Transport|null} fn
+ * @returns {() => void} restore
+ */
+export function __setTransportForTests(fn) {
+  transport = typeof fn === 'function' ? fn : HTTPS_TRANSPORT;
+  return () => { transport = HTTPS_TRANSPORT; };
+}
+
 function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const payload = body == null ? null : JSON.stringify(body);
     const timeoutMs = requestTimeoutMs();
-    const req = https.request(url, {
+    const req = transport(url, {
       method,
       timeout: timeoutMs,
       headers: {
@@ -554,23 +780,45 @@ function resolveProvider(opts, cmdName) {
 // Run a structured-output request through the transport, extract, and parse.
 // Returns the parsed JSON object or degrades via fail(). Schema validation is
 // the caller's job (review and consult assert different shapes).
-async function callStructured(adapter, key, reqSpec) {
+//
+// `meta` is the provider trace event's subject, stamped with `started` by the
+// caller so ONE event covers the whole call. Each degrading exit records itself
+// here, immediately BEFORE the fail() that unwinds the command; the success path
+// records nothing, leaving the final outcome (ok, or a bad-shape the caller
+// detects) to the caller. Exactly one event per call, either way.
+async function callStructured(adapter, key, reqSpec, meta) {
   const { path: p, method, body } = reqSpec;
   let res;
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key), body });
   } catch (e) {
+    traceProvider(meta, 'transport', e.message);
     fail('transport', e.message);
   }
   if (res.status < 200 || res.status >= 300) {
+    traceProvider(meta, 'http', `HTTP ${res.status}`);
     fail('http', { status: res.status, body: res.json || res.raw });
   }
   const text = adapter.extractText(res.json);
-  if (typeof text !== 'string') fail('no-output', 'no text in provider response');
-  try { return JSON.parse(text); } catch (e) { fail('bad-json', e.message); }
+  if (typeof text !== 'string') {
+    traceProvider(meta, 'no-output', 'no text in provider response');
+    fail('no-output', 'no text in provider response');
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    traceProvider(meta, 'bad-json', e.message);
+    fail('bad-json', e.message);
+  }
 }
 
 async function cmdReview(opts) {
+  // FIRST act, before anything can refuse: `resolveProvider` and the payload
+  // checks below both unwind through fail(), which needs the subject to name.
+  // The provider is `opts.provider` and not the resolved one for the same
+  // reason - on the `bad-provider` path there is no resolved one.
+  const meta = beginProviderCall('review',
+    { provider: opts.provider, model: opts.model, effort: opts.effort });
   const { provider, adapter, key } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {
@@ -581,13 +829,21 @@ async function cmdReview(opts) {
     model: opts.model, effort: opts.effort,
     system: payload.instruction, user: payload.artifact,
     schema: FINDING_SCHEMA, schemaName: 'cadence_review',
-  }));
+  }), meta);
   const bad = validateFindings(parsed);
-  if (bad) fail('bad-shape', bad);
+  if (bad) {
+    traceProvider(meta, 'bad-shape', bad);
+    fail('bad-shape', bad);
+  }
+  // An EMPTY findings set is `ok` and carries no `degraded` flag (D-22):
+  // a reviewer that legitimately found nothing is not a drop-out.
+  traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, findings: parsed.findings });
 }
 
 async function cmdConsult(opts) {
+  const meta = beginProviderCall('consult',
+    { provider: opts.provider, model: opts.model, effort: opts.effort });
   const { provider, adapter, key } = resolveProvider(opts, 'consult');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.situation !== 'string') {
@@ -604,14 +860,23 @@ async function cmdConsult(opts) {
     model: opts.model, effort: opts.effort,
     system, user: payload.situation,
     schema: CONSULT_SCHEMA, schemaName: 'cadence_consult',
-  }));
+  }), meta);
   const bad = validateConsult(parsed);
-  if (bad) fail('bad-shape', bad);
+  if (bad) {
+    traceProvider(meta, 'bad-shape', bad);
+    fail('bad-shape', bad);
+  }
+  traceProvider(meta, 'ok');
   ok({ provider, model: opts.model, angles: parsed.angles });
 }
 
 async function cmdDetect(opts) {
   const provider = opts.provider;
+  // `detect-models` carries no model and no effort at all, so its `tier` is
+  // null by construction rather than by a failed lookup - the two fields stay
+  // pinned to null here rather than reading `opts`, which would start recording
+  // a `--model` this command never sends.
+  const meta = beginProviderCall('detect-models', { provider, model: null, effort: null });
   const adapter = ADAPTERS[provider];
   if (!adapter) fail('bad-provider', `unknown provider: ${provider}`);
 
@@ -623,12 +888,15 @@ async function cmdDetect(opts) {
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key) });
   } catch (e) {
+    traceProvider(meta, 'transport', e.message);
     fail('transport', e.message);
   }
   if (res.status < 200 || res.status >= 300) {
+    traceProvider(meta, 'http', `HTTP ${res.status}`);
     fail('http', { status: res.status, body: res.json || res.raw });
   }
   const ids = adapter.extractModels(res.json);
+  traceProvider(meta, 'ok');
   ok(detectEnvelope(provider, ids));
 }
 
@@ -686,12 +954,41 @@ export function detectEnvelope(provider, ids, hintsFile) {
 // ---------------------------------------------------------------------------
 // Entry.
 // ---------------------------------------------------------------------------
-async function main() {
-  const { cmd, opts } = parseArgs(process.argv.slice(2));
+/** @param {string[]} [argv] */
+async function main(argv) {
+  // Cleared per invocation. Production runs one command per process, but the
+  // in-process test harness runs several, and a bracket left over from the
+  // previous one would let `fail('bad-command')` record an event against a
+  // subject this call never had.
+  activeMeta = null;
+  traceRecorded = false;
+  const { cmd, opts } = parseArgs(argv || process.argv.slice(2));
   if (cmd === 'review') await cmdReview(opts);
   else if (cmd === 'consult') await cmdConsult(opts);
   else if (cmd === 'detect-models') await cmdDetect(opts);
   else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
+}
+
+/**
+ * The entry unwind: DONE is the normal ok()/fail() path, anything else is an
+ * unforeseen bug and becomes a structured `internal` line rather than a stack.
+ * @param {any} e
+ */
+function unwind(e) {
+  if (e === DONE) return; // normal ok()/fail() unwind
+  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+}
+
+/**
+ * TEST-ONLY. Run one command IN THIS PROCESS through the same entry unwind the
+ * CLI uses, so a test that replaced the transport (`__setTransportForTests`)
+ * asserts on the one JSON line and the exit code a caller actually sees. Nothing
+ * in the plugin calls this - the shipped entry is the `isRunAsScript()` arm below.
+ * @param {string[]} argv
+ * @returns {Promise<void>}
+ */
+export function __runCommandForTests(argv) {
+  return main(argv).catch(unwind);
 }
 // Run only when executed as a script - importing the module (tests) exports
 // the pure helpers without side effects. Compares realpaths (not just
@@ -711,8 +1008,5 @@ function isRunAsScript() {
   return canonicalize(process.argv[1]) === canonicalize(fileURLToPath(import.meta.url));
 }
 if (isRunAsScript()) {
-  main().catch((e) => {
-    if (e === DONE) return; // normal ok()/fail() unwind
-    emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
-  });
+  main().catch(unwind);
 }

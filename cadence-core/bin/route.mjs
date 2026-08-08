@@ -57,6 +57,7 @@ import {
   matchSurfaces, raiseTo, riskOverridesIn, overrideShapeWarning, GLOBAL_LAYER,
 } from './lib/risk-surfaces.mjs';
 import { cursorPhase, declaredPhaseFiles } from './lib/phase-plans.mjs';
+import { appendEvent } from './lib/trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // TABLE is loaded lazily, inside the dispatch try block below, so a missing
@@ -571,6 +572,42 @@ function resolve(opts) {
       reason.push('override ignored (unknown alias)');
     }
   }
+
+  // The routing family of the joined run record, one line per resolve. It
+  // carries the DECISION and never the diagnostic TEXT: `warning_count` is a
+  // count because the envelope below is what carries the strings, and a second
+  // copy of them would drift from it.
+  //
+  // Best effort in every direction. `appendEvent` never throws and never writes
+  // to a stream, and this whole block sits in its own try, so a trace that
+  // cannot be written leaves the envelope below byte-identical - a record of a
+  // decision may never be able to change the decision.
+  try {
+    const planningRoot = dirname(opts.file);
+    // The same phase the floor used: `--phase` when it parses, the cursor
+    // otherwise. With NEITHER in hand nothing is recorded - an event keyed to no
+    // phase joins nothing, and the id it would derive is the empty string.
+    const tracePhase = opts.phase !== undefined && PHASE_RE.test(String(opts.phase))
+      ? Number(opts.phase)
+      : cursorPhase(planningRoot);
+    if (tracePhase !== null) {
+      appendEvent(planningRoot, {
+        phase: tracePhase,
+        family: 'routing',
+        event: 'resolve',
+        role: opts.role,
+        stakes,
+        agent,
+        model,
+        effort,
+        escalated,
+        pinned,
+        attempt: opts.attempt || 1,
+        floor_surfaces: floorSurfaces,
+        warning_count: warnings.length,
+      });
+    }
+  } catch { /* a record of a decision may never change the decision */ }
 
   // The bundle: four knobs, not a bare model. `review` is the whole
   // trigger->gate map for this level (no --trigger flag: the map rides on one

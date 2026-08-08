@@ -34,7 +34,8 @@ Read config through the seam - one call for every key this workflow uses:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  workflow.plan_check workflow.inline_plan_threshold planning.commit_docs \
+  workflow.plan_check workflow.inline_plan_threshold workflow.max_plan_tasks \
+  planning.commit_docs \
   git.protected_branches git.on_protected \
   git.base_branch memory.backend
 ```
@@ -114,6 +115,7 @@ Mode: {standard | gaps | revision}
 Goal: {goal line from ROADMAP.md}
 Requirements: {phase requirement IDs - every ID must appear in a plan}
 Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
+Task ceiling: {workflow.max_plan_tasks}. If delivering this phase needs MORE than that many tasks, return `## PHASE TOO BIG` instead of writing the plan. Reporting the overrun is not reducing scope - it is the one path that does not.
 
 Read before planning:
 - .planning/ROADMAP.md (this phase's entry and its dependencies)
@@ -165,11 +167,14 @@ plan's truths and tasks, citing each recalled item's `source` file and `phase`
 <step name="handle_return">
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
 - `## PHASE TOO BIG` - present the planner's reason and proposed split, then
-  ask (ask-user seam): restructure the roadmap (stop; point at /cad-phase,
-  re-run /cad-plan after) or plan the full scope anyway (re-dispatch ONCE
-  with that instruction). This is a consult dead-end: before that ask, run
-  offer_consult per references/consult.md with the split problem as the
-  situation.
+  ask (ask-user seam): split into SMALL phases via `/cad-phase add` (stop;
+  re-run /cad-plan per phase after) or plan the full scope anyway (re-dispatch
+  ONCE with that instruction). Split into phases, not into more plans inside
+  this one: `plan-overlap` refuses two plans declaring the same path, so plans
+  sharing a file cannot run concurrently, while independent phases can (see
+  `parallelization.max_concurrent_agents`) and each verifies and lands on its
+  own. This is a consult dead-end: before that ask, run offer_consult per
+  references/consult.md with the split problem as the situation.
 - Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
   the files as authoritative and continue; otherwise report the failed
   spawn and stop.
@@ -185,6 +190,7 @@ Dispatch cad-plan-checker via the spawn-agent seam. Prompt:
 Phase: {N} - {name}
 Goal: {goal from ROADMAP.md}
 Requirements: {phase requirement IDs}
+Task ceiling: {workflow.max_plan_tasks} - the resolved value, for dimension 6.
 
 Read:
 - .planning/phases/{N}/PLAN*.md (the plans under review)

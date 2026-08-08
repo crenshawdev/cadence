@@ -1,0 +1,423 @@
+// Zero-dep tests for lib/trace.mjs and the `planning.mjs trace` seam.
+// Run: node --test 'cadence-core/bin/*.test.mjs'
+//
+// Two layers, matching the rest of the suite: the lib is exercised directly on
+// scratch planning roots (it does guarded I/O, so a fixture directory IS the
+// input), and the CLI is exercised through planning.mjs so the one JSON line
+// and the exit code a caller actually sees are what get asserted.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import {
+  mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
+  ANCHOR, DISPATCH, TERMINAL,
+} from './lib/trace.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PLANNING = join(HERE, 'planning.mjs');
+const REPO = join(HERE, '..', '..');
+
+/** A fresh, empty planning root. */
+function root() {
+  const dir = join(mkdtempSync(join(tmpdir(), 'cad-trace-')), '.planning');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Run the seam and parse its one JSON line, ok:false included. */
+function run(dir, args) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, '--dir', dir, ...args],
+      { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+const lines = (dir) => readFileSync(tracePath(dir), 'utf8')
+  .split('\n').filter(Boolean).map((l) => JSON.parse(l));
+
+// --- the derived correlation id (D-06) ---------------------------------------
+
+test('correlationId: two calls in the same phase with an anchor derive the same id', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  assert.equal(correlationId(dir, 1), '1-abc1234');
+  assert.equal(correlationId(dir, 1), correlationId(dir, 1));
+  // The string spelling a CLI producer might hold is the same worker key.
+  assert.equal(correlationId(dir, '1'), '1-abc1234');
+});
+
+test('correlationId: with NO anchor both calls fall back to the phase alone', () => {
+  const dir = root();
+  assert.equal(correlationId(dir, 2), '2');
+  appendEvent(dir, { phase: 2, family: 'routing', event: 'resolve' });
+  assert.equal(correlationId(dir, 2), '2');
+  assert.equal(correlationId(dir, 2), correlationId(dir, 2));
+});
+
+test('correlationId: the id changes when the anchor sha changes (a re-run)', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'aaa1111' });
+  const first = correlationId(dir, 1);
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'bbb2222' });
+  const second = correlationId(dir, 1);
+  assert.equal(first, '1-aaa1111');
+  assert.equal(second, '1-bbb2222');
+  assert.notEqual(first, second);
+});
+
+test('correlationId: another phase\'s anchor never answers for this phase', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  assert.equal(correlationId(dir, 2), '2');
+});
+
+test('the anchor event carries the id it anchors, not the phase-only fallback', () => {
+  // Otherwise the lifecycle family splits across two ids and "all four families
+  // under ONE correlation id" is unreachable by construction.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  const corrs = [...new Set(lines(dir).map((e) => e.corr))];
+  assert.deepEqual(corrs, ['1-abc1234']);
+});
+
+// --- the append contract (D-07) ----------------------------------------------
+
+test('appendEvent: keys land in the fixed order, one JSON object per line', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  const [e] = lines(dir);
+  assert.deepEqual(Object.keys(e), ['corr', 'phase', 'ts', 'family', 'event', 'plan']);
+  assert.match(e.ts, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('appendEvent: an interleaved write sequence keeps every event, in order', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  // Two "concurrent producers" writing between each other's appends: the append
+  // mode is what makes this lossless, where a read-modify-write would drop one.
+  for (let i = 0; i < 10; i++) {
+    appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', role: `a${i}` });
+    appendEvent(dir, { phase: 1, family: 'provider', event: 'request', role: `b${i}` });
+  }
+  const got = lines(dir);
+  assert.equal(got.length, 21);
+  assert.deepEqual(got.filter((e) => e.family === 'routing').map((e) => e.role),
+    Array.from({ length: 10 }, (_, i) => `a${i}`));
+  assert.equal(new Set(got.map((e) => e.corr)).size, 1);
+});
+
+test('appendEvent: a file at the bound accepts nothing more and renders capped', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  const before = lines(dir).length;
+  appendFileSync(tracePath(dir), 'x'.repeat(MAX_TRACE_BYTES));
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.deepEqual(res, { written: false, reason: 'size-cap' });
+  const r = renderTrace(dir, 1);
+  assert.equal(r.capped, true);
+  assert.equal(r.counts.routing, 0);
+  assert.equal(r.counts.lifecycle, before);
+  // The padding runs past the read ceiling, so the bounded read truncates it
+  // and drops the trailing partial line rather than parsing it: a line only
+  // partly read cannot honestly be called malformed. `capped` carries the
+  // signal instead, and it is asserted above.
+  assert.equal(r.malformed, 0);
+});
+
+test('renderTrace: an oversized file is read bounded, not whole', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  // Four times the cap of syntactically VALID events. Whole-file reads count
+  // them all; a bounded read cannot, because it never sees past the ceiling.
+  // The writer would refuse these - this is the corrupted / hand-edited /
+  // foreign-producer file the read side has to survive on its own.
+  const fat = JSON.stringify({ phase: 1, family: 'routing', event: 'resolve', corr: '1-abc1234' }) + '\n';
+  appendFileSync(tracePath(dir), fat.repeat(Math.ceil((MAX_TRACE_BYTES * 4) / fat.length)));
+  const onDisk = readFileSync(tracePath(dir), 'utf8').split('\n').length;
+  assert.ok(onDisk > (MAX_TRACE_BYTES * 3) / fat.length, 'fixture must exceed the cap severalfold');
+
+  const r = renderTrace(dir, 1);
+  assert.equal(r.capped, true, 'an over-cap file must report capped');
+  // The falsifier: unbounded, routing counts every line on disk. Bounded, it
+  // cannot exceed what fits under the ceiling.
+  assert.ok(r.counts.routing < onDisk - 1,
+    `bounded read must not count every line: got ${r.counts.routing} of ${onDisk}`);
+  assert.ok(r.counts.routing <= Math.ceil(MAX_TRACE_BYTES / fat.length),
+    'bounded read must not exceed the byte ceiling');
+  assert.equal(r.counts.lifecycle, 1, 'the head is kept, so the anchor survives');
+});
+
+test('appendEvent: an unwritable planning root returns written:false and throws nothing', () => {
+  // .planning is a REGULAR FILE, so every fs call under it fails ENOTDIR for
+  // any uid - deterministic where a chmod is not (a root test runner ignores it).
+  const base = mkdtempSync(join(tmpdir(), 'cad-trace-bad-'));
+  const dir = join(base, '.planning');
+  writeFileSync(dir, 'not a directory');
+  const res = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(res.written, false);
+  assert.equal(res.reason, 'ENOTDIR');
+  // ...and the reader is just as quiet about it.
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(r.events, []);
+  assert.deepEqual(r.counts, { routing: 0, provider: 0, lifecycle: 0, outcome: 0 });
+});
+
+test('appendEvent: a non-object event is refused rather than written', () => {
+  const dir = root();
+  assert.deepEqual(appendEvent(dir, null), { written: false, reason: 'bad-event' });
+  assert.deepEqual(appendEvent(dir, ['x']), { written: false, reason: 'bad-event' });
+});
+
+// --- the reader ---------------------------------------------------------------
+
+test('renderTrace: an absent trace file is an empty render, never an error', () => {
+  const dir = root();
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(r.counts, { routing: 0, provider: 0, lifecycle: 0, outcome: 0 });
+  assert.deepEqual(r.events, []);
+  assert.deepEqual(r.unpaired, []);
+  assert.equal(r.capped, false);
+  assert.equal(r.corr, '1');
+});
+
+test('renderTrace: an unpaired dispatch is reported, a paired one is not', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '2' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: '2' });
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(r.unpaired.map((u) => u.plan), ['1']);
+});
+
+test('renderTrace: checkpoint and escalation close a bracket too', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'checkpoint', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: 'cad-verifier' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'escalation', plan: 'cad-verifier' });
+  assert.deepEqual(renderTrace(dir, 1).unpaired, []);
+});
+
+test('renderTrace: a role-keyed worker pairs on its own key, not with a plan number', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: 'cad-verifier' });
+  assert.deepEqual(renderTrace(dir, 1).unpaired.map((u) => u.plan), ['1']);
+});
+
+test('renderTrace: a re-run never pairs across runs, and unpaired names the run', () => {
+  // Phase 1 runs TWICE at different shas. Run 1 strands plan 1; run 2 brackets
+  // plan 1 cleanly. The header promises a re-run starts a NEW id, so run 2's
+  // `return` may not reach back and close run 1's dispatch.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'aaa' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'bbb' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: '1' });
+  const r = renderTrace(dir, 1);
+  assert.equal(r.unpaired.length, 1);
+  assert.equal(r.unpaired[0].corr, '1-aaa');
+  assert.equal(r.unpaired[0].plan, '1');
+  assert.deepEqual(r.unpaired.map((u) => u.corr).filter((c) => c === '1-bbb'), []);
+});
+
+test('renderTrace: a malformed line is skipped and counted, the rest still read', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  appendFileSync(tracePath(dir), 'not json\n');
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'uat_verdict' });
+  const r = renderTrace(dir, 1);
+  assert.equal(r.malformed, 1);
+  assert.equal(r.counts.routing, 1);
+  assert.equal(r.counts.outcome, 1);
+});
+
+test('renderTrace: --phase restricts the record to that phase', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  appendEvent(dir, { phase: 2, family: 'routing', event: 'resolve' });
+  assert.equal(renderTrace(dir, 1).counts.routing, 1);
+  assert.equal(renderTrace(dir).counts.routing, 2);
+  assert.equal(renderTrace(dir).corr, null);
+});
+
+// --- the seam -----------------------------------------------------------------
+
+test('seam: append then render joins both events under the derived id', () => {
+  const dir = root();
+  const a = run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'abc1234']);
+  assert.equal(a.ok, true);
+  assert.equal(a.written, true);
+  assert.equal(a.corr, '1-abc1234');
+  const b = run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '1']);
+  assert.equal(b.corr, '1-abc1234');
+  const r = run(dir, ['trace', 'render', '--phase', '1']);
+  assert.equal(r.ok, true);
+  assert.equal(r.corr, '1-abc1234');
+  assert.equal(r.capped, false);
+  assert.equal(r.counts.lifecycle, 2);
+  assert.deepEqual(r.events.map((e) => e.corr), ['1-abc1234', '1-abc1234']);
+  assert.deepEqual(r.unpaired.map((u) => u.plan), ['1']);
+});
+
+test('seam: every family is accepted and nothing else is', () => {
+  const dir = root();
+  for (const family of FAMILIES) {
+    assert.equal(run(dir, ['trace', 'append', '--phase', '1',
+      '--family', family, '--event', 'e']).ok, true, family);
+  }
+  const bad = run(dir, ['trace', 'append', '--phase', '1', '--family', 'routign', '--event', 'e']);
+  assert.equal(bad.ok, false);
+  assert.equal(bad.reason, 'bad-args');
+});
+
+test('seam: a malformed call is ok:false, an unwritten append is ok:true', () => {
+  const dir = root();
+  assert.equal(run(dir, ['trace', 'append', '--family', 'routing', '--event', 'e']).reason,
+    'bad-args');
+  assert.equal(run(dir, ['trace', 'append', '--phase', '1', '--family', 'routing']).reason,
+    'bad-args');
+  assert.equal(run(dir, ['trace', 'nonsense']).reason, 'usage');
+
+  const base = mkdtempSync(join(tmpdir(), 'cad-trace-seam-'));
+  const bad = join(base, '.planning');
+  writeFileSync(bad, 'not a directory');
+  const r = run(bad, ['trace', 'append', '--phase', '1', '--family', 'routing', '--event', 'e']);
+  assert.equal(r.ok, true);      // best effort: the record may not block the run
+  assert.equal(r.written, false);
+  assert.equal(r.reason, 'ENOTDIR');
+});
+
+test('seam: render on an absent trace file is ok:true with empty events', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'render', '--phase', '1']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.events, []);
+  assert.deepEqual(r.unpaired, []);
+});
+
+// --- the producer census ------------------------------------------------------
+//
+// THIS IS A REGRESSION GUARD, NOT A CLOSURE. It closes no UAT item and fixes no
+// defect that exists today: the tree already satisfies every assertion below, so
+// a green run here is evidence that nothing REGRESSED, never evidence that
+// something was repaired. Do not read it as proof that a trace was produced -
+// it proves only that the producers are still WRITTEN DOWN and still speak the
+// renderer's vocabulary. Whether a model obeys that prose is a UAT question and
+// this test cannot reach it.
+//
+// What it does catch, which nothing else did: two of the four families
+// (`lifecycle`, `outcome`) are written ONLY from prose surfaces, so a prose edit
+// could delete their writers or rename a lifecycle event the renderer pairs on,
+// and every one of the 1279 tests would stay green while `counts.lifecycle`
+// silently became 0 forever. That is the D-09 shape - "a check is what makes the
+// instruction's ABSENCE visible" (lib/route-relay.mjs:14-19) - applied to the
+// trace's producers. The names come from lib/trace.mjs's own exports, never a
+// copy, so a rename there fails here instead of drifting.
+
+/** Every shipped prose surface a `trace append` invocation may live in. */
+function proseSurfaces() {
+  /** @param {string[]} parts @param {(n: string) => boolean} keep */
+  const filesIn = (parts, keep) => {
+    const dir = join(REPO, ...parts);
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+    return entries.filter((d) => d.isFile() && keep(d.name)).map((d) => join(dir, d.name));
+  };
+  const md = (n) => n.endsWith('.md');
+  const skillDirs = (() => {
+    try {
+      return readdirSync(join(REPO, 'skills'), { withFileTypes: true })
+        .filter((d) => d.isDirectory()).map((d) => join(REPO, 'skills', d.name, 'SKILL.md'));
+    } catch { return []; }
+  })();
+  return [
+    ...filesIn(['cadence-core', 'workflows'], md),
+    ...filesIn(['cadence-core', 'references'], md),
+    ...filesIn(['agents'], md),
+    ...skillDirs,
+  ].filter((f) => { try { readFileSync(f, 'utf8'); return true; } catch { return false; } });
+}
+
+/**
+ * Every `trace append` invocation in one text, as `{family, event}`. Shell line
+ * continuations are joined first so a wrapped invocation is read whole rather
+ * than read as a flagless fragment.
+ * @param {string} text
+ */
+function traceAppends(text) {
+  const joined = text.replace(/\\\r?\n\s*/g, ' ');
+  const out = [];
+  for (const line of joined.split('\n')) {
+    if (!/\btrace\s+append\b/.test(line)) continue;
+    const family = /--family\s+(\S+)/.exec(line);
+    const event = /--event\s+(\S+)/.exec(line);
+    out.push({ family: family ? family[1] : null, event: event ? event[1] : null });
+  }
+  return out;
+}
+
+test('census: every trace family has a producer, and every producer speaks the renderer\'s vocabulary', () => {
+  /** @type {Map<string, string[]>} family -> the producers that write it */
+  const producers = new Map(FAMILIES.map((f) => [f, []]));
+  /** @type {{family: string|null, event: string|null, where: string}[]} */
+  const prose = [];
+
+  for (const file of proseSurfaces()) {
+    const where = relative(REPO, file);
+    for (const a of traceAppends(readFileSync(file, 'utf8'))) {
+      prose.push({ ...a, where });
+      assert.ok(a.family, `${where}: a \`trace append\` with no --family`);
+      assert.ok(a.event, `${where}: a \`trace append\` with no --event`);
+      assert.ok(FAMILIES.includes(String(a.family)),
+        `${where}: --family ${a.family} is not one of ${FAMILIES.join(', ')}`);
+      producers.get(String(a.family)).push(where);
+    }
+  }
+
+  // The two seam producers write their family in code, not through the CLI.
+  for (const seam of ['route.mjs', 'review-provider.mjs']) {
+    const text = readFileSync(join(REPO, 'cadence-core', 'bin', seam), 'utf8');
+    for (const m of text.matchAll(/family:\s*'([a-z_]+)'/g)) {
+      assert.ok(FAMILIES.includes(m[1]),
+        `cadence-core/bin/${seam}: family: '${m[1]}' is not one of ${FAMILIES.join(', ')}`);
+      producers.get(m[1]).push(`cadence-core/bin/${seam}`);
+    }
+  }
+
+  for (const family of FAMILIES) {
+    assert.ok(producers.get(family).length > 0,
+      `family \`${family}\` lost its writer - no producer left in the shipped surfaces. `
+      + `Found: ${[...producers].map(([f, w]) => `${f}=[${w.join(' ')}]`).join(' ')}`);
+  }
+
+  // A lifecycle event the renderer does not know is a bracket that never pairs.
+  const known = [ANCHOR, DISPATCH, ...TERMINAL];
+  const lifecycle = prose.filter((p) => p.family === 'lifecycle');
+  for (const p of lifecycle) {
+    assert.ok(known.includes(String(p.event)),
+      `${p.where}: lifecycle --event ${p.event} is not one of ${known.join(', ')}`);
+  }
+  // ...and a record missing any one of the three ROLES can never show a paired
+  // bracket at all, so each must be written down somewhere in the prose.
+  const events = lifecycle.map((p) => String(p.event));
+  const found = () => `lifecycle events written down: ${events.join(', ') || '(none)'}`;
+  assert.ok(events.includes(ANCHOR), `no prose producer writes the anchor \`${ANCHOR}\`. ${found()}`);
+  assert.ok(events.includes(DISPATCH),
+    `no prose producer writes \`${DISPATCH}\`, so no bracket ever opens. ${found()}`);
+  assert.ok(events.some((e) => TERMINAL.includes(e)),
+    `no prose producer writes any of ${TERMINAL.join(', ')}, so no bracket ever closes. ${found()}`);
+});

@@ -66,7 +66,12 @@ gates fed on resume.
 
 Repeat until a root cause is confirmed or a dead-end is reached:
 
-1. **Hypothesize.** List 2-5 candidate causes ranked most-likely-first, but test
+1. **Hypothesize.** Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/bug-patterns.md` FIRST, before
+   any candidate is written - it is frequency-ordered, and a pattern whose
+   signature matches the symptom enters the list with its cheapest
+   discriminating check already named. Then list 2-5 candidate causes ranked
+   most-likely-first, but test
    risk-first when a cheap test can eliminate a whole class. Write them to
    Hypotheses. Never jump to a fix before a cause is confirmed by evidence.
    Recall runs here because Hypothesize is the judgment moment - the point where

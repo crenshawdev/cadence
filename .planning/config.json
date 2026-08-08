@@ -20,13 +20,6 @@
     "request_timeout_ms": 600000,
     "consult": {
       "enabled": true
-    },
-    "providers": {
-      "deepseek": {
-        "tiers": {
-          "cheap": "deepseek-v4-flash"
-        }
-      }
     }
   }
 }

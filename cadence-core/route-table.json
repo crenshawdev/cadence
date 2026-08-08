@@ -45,7 +45,7 @@
 
   "review": {
     "solo":     { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off",         "pre_ship": "advisory" },
-    "shipped":  { "plan": "adjudicated", "diff": "advisory", "risk_surface": "blocking", "phase_diff": "off",         "pre_ship": "adjudicated" },
+    "shipped":  { "plan": "adjudicated", "diff": "advisory", "risk_surface": "blocking", "phase_diff": "advisory",    "pre_ship": "adjudicated" },
     "critical": { "plan": "adjudicated", "diff": "blocking", "risk_surface": "blocking", "phase_diff": "adjudicated", "pre_ship": "adjudicated" }
   },
 

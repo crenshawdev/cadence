@@ -1,7 +1,7 @@
 ---
 name: cad-executor
 description: The `high` rung of `cad-executor` (plan task execution); `bin/route.mjs` picks it, not the user.
-tools: Read, Write, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: yellow
 effort: high
 skills:

@@ -43,6 +43,70 @@ export function pathTokens(path) {
     .filter(Boolean);
 }
 
+// A dependency LOCKFILE, by basename, excluded before the token match (D-05).
+// `pathTokens` splits on every non-alphanumeric run, so `package-lock.json`
+// yields a `lock` token, which equals the concurrency surface's `lock` pattern
+// and floored a whole phase to `critical` for a generated file no human wrote.
+//
+// Removing the `lock` and `locks` patterns was the simpler, data-only edit and
+// is rejected: it trades a real detection away to close a false one, so
+// `src/lock.rs`, `internal/lock/manager.go` and `db/locks.sql` would stop
+// flooring with no test naming the loss. Excluding by basename names the
+// lockfile CLASS at the point it is excluded, beside the `pathTokens` that
+// produced the token in the first place.
+//
+// The rule is an ALLOWLIST of package-manager lockfile BASENAMES, and it
+// SUPERSEDES D-05's two-shape enumeration (`.lock` plus `-lock.json`), which
+// could not reach pnpm (`pnpm-lock.yaml`), NuGet (`packages.lock.json`),
+// conda-lock (`conda-lock.yml`), bun (`bun.lockb`) or Go (`go.sum`).
+//
+// A SHAPE rule was written first and rejected under review. Widening to "a
+// basename ending `.lock`/`.lockb`, or `[.-]lock.<manifest extension>`" reaches
+// those spellings, but it also releases every lock RESOURCE a human wrote under
+// the same spelling - `deploy/redis-lock.yaml`, `k8s/leader-lock.yaml`,
+// `terraform/state-lock.toml`, and runtime state such as `db/replica.lock.json`
+// - silently removing the concurrency floor from exactly the files the floor
+// exists for. The set of package managers is finite and enumerable; the set of
+// names that merely LOOK like a lockfile is not. So the allowlist is strictly
+// more precise in both directions: it releases exactly the generated files
+// nobody wrote, and an unrecognized basename conservatively KEEPS its floor.
+//
+// MAINTENANCE COST, stated because it is the price of that precision: a new
+// package manager needs a line in this list (and a row in
+// risk-surfaces.test.mjs, which hand-writes the same list so a deletion here
+// fails there). Until it gets one, its lockfile floors a phase to `critical` -
+// an unnecessary review, which is the cheap direction of the trade. The
+// alternative is a shape rule that silently releases someone's leader-lock
+// manifest, which is the expensive one.
+//
+// Matched EXACTLY, case included: `Cargo.lock`, `Gemfile.lock` and
+// `Podfile.lock` are the spellings their own ecosystems generate, so a
+// `gemfile.lock` is not a name any of these tools writes and keeps its floor
+// like any other unrecognized basename. (The shape rule it replaced was
+// case-insensitive; the reversal is deliberate and pinned as a test.)
+//
+// The exclusion applies to EVERY surface rather than to `concurrency` alone - a
+// generated dependency manifest is not the evidence any of the eight is looking
+// for, and a rule that held for one surface would still floor on the next
+// pattern list that gains a word a package name happens to contain.
+const LOCKFILES = new Set([
+  // npm / pnpm / yarn / bun / deno
+  'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock',
+  'bun.lockb', 'bun.lock', 'deno.lock',
+  // rust, python, ruby, php, .NET
+  'Cargo.lock', 'poetry.lock', 'uv.lock', 'Pipfile.lock', 'pdm.lock',
+  'Gemfile.lock', 'composer.lock', 'packages.lock.json',
+  // conda, elixir, dart, go, nix, cocoapods, gradle
+  'conda-lock.yml', 'conda-lock.yaml', 'mix.lock', 'pubspec.lock', 'go.sum',
+  'flake.lock', 'Podfile.lock', 'gradle.lockfile',
+]);
+
+/** @param {string} p a declared path, already known to be a non-empty string */
+function isLockfile(p) {
+  const base = p.split(/[\\/]/).pop() || '';
+  return LOCKFILES.has(base);
+}
+
 /**
  * @typedef {object} SurfaceMatch
  * @property {string} surface the surface name the row is keyed by
@@ -68,7 +132,12 @@ export function matchSurfaces(files, surfaces) {
   /** @type {SurfaceMatch[]} */
   const out = [];
   if (!isObj(surfaces)) return out;
-  const paths = Array.isArray(files) ? files.filter((f) => typeof f === 'string' && f) : [];
+  // Non-strings are filtered here and must stay filtered - the function is
+  // TOTAL and runs on whatever a PLAN's frontmatter holds - and the lockfile
+  // exclusion sits in the same pass, BEFORE any token is computed.
+  const paths = Array.isArray(files)
+    ? files.filter((f) => typeof f === 'string' && f && !isLockfile(f))
+    : [];
   if (!paths.length) return out;
   /** @type {Map<string, string[]>} */
   const tokensOf = new Map();

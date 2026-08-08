@@ -10,7 +10,9 @@
 // Subcommand (prints one JSON line):
 //   decide [--dir <path>] [--branch <name>]
 //     --dir     planning root (default cwd); reads <dir>/.planning/config.json,
-//               PROJECT.md, ROADMAP.md.
+//               PROJECT.md, ROADMAP.md, and the repo's tag list (`git tag
+//               --list`) - the versions already published, none of which a new
+//               integration branch may be named after.
 //     --branch  override the current branch; when absent, read it via
 //               `git -C <dir> rev-parse --abbrev-ref HEAD`, degrading to "" on
 //               failure (no repo / no commits -> treated as not-on-a-base).
@@ -29,6 +31,23 @@ function readText(file) {
   catch { return ''; }
 }
 
+/**
+ * The versions this repo has already PUBLISHED, read as git TAGS and never from
+ * a manifest (D-03). A tag is language-agnostic and true in a project that is
+ * not Cadence; the only manifest reader in this tree reads Cadence's OWN
+ * .claude-plugin/plugin.json, which anywhere else would compare a user's
+ * milestone against Cadence's version. Degrades to [] on any failure - no repo,
+ * no tags, git absent - so a project with no tags decides exactly as before.
+ * @param {string} dir @returns {string[]}
+ */
+function readTags(dir) {
+  try {
+    return execFileSync('git', ['-C', dir, 'tag', '--list'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n').map((t) => t.trim()).filter(Boolean);
+  } catch { return []; }
+}
+
 /** The current branch of the repo at `dir`, or "" if it cannot be read. */
 function readCurrentBranch(dir) {
   try {
@@ -38,7 +57,12 @@ function readCurrentBranch(dir) {
 }
 
 function decide(dir, branchOverride) {
-  const { config } = mergeLayers(join(dir, '.planning', 'config.json'));
+  // warnings[] rides the envelope: every value below - the mode, the auto_branch
+  // policy and the protected list - comes off this merge, so a torn layer means
+  // this advice was computed from DEFAULTS and the caller has to be able to see
+  // that. Present on every result shape, empty array included, the way
+  // route.mjs's does (DOC-01).
+  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const mode = git.integration_branch || 'milestone';
   const autoBranch = git.auto_branch || 'ask';
@@ -49,8 +73,13 @@ function decide(dir, branchOverride) {
     readText(join(dir, '.planning', 'PROJECT.md')),
     readText(join(dir, '.planning', 'ROADMAP.md')),
   );
-  const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName });
-  emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason });
+  // The WHOLE tag list, unranked: `decideBranch` tests membership, so there is
+  // nothing to pick a highest from. The ranking helper that used to sit here was
+  // deleted with the sort-order comparison it fed - a dead ranking helper beside
+  // a membership test is what would invite the sort order back.
+  const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName,
+    publishedVersions: readTags(dir) });
+  emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
 }
 
 // --- dispatch ----------------------------------------------------------------

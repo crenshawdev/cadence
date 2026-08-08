@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -3699,4 +3699,386 @@ test('recall: memory.backend none reports off with empty results, exit 0', () =>
   assert.equal(r.json.backend, 'none');
   assert.deepEqual(r.json.results, []);
   assert.equal(r._exit, 0);
+});
+
+// --- detect-commands: the unconfigured static-analysis path (QW-01) ----------
+
+/** A project root holding exactly the named files, one directory deep. */
+function projectTree(files) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-detect-'));
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(root, name), typeof body === 'string' ? body : JSON.stringify(body));
+  }
+  return root;
+}
+
+/** detect-commands takes --root (the PROJECT root), never --dir. */
+function detect(root, extra = []) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root', root, ...extra],
+      { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+test('detect-commands: a package.json lint script is the command', () => {
+  const r = detect(projectTree({ 'package.json': { scripts: { lint: 'eslint .' } } }));
+  assert.equal(r.ok, true);
+  assert.equal(r.lint, 'npm run lint');
+  assert.equal(r.typecheck, null);
+  assert.equal(r.source.lint, 'package.json');
+  assert.equal(r.source.typecheck, null);
+});
+
+test('detect-commands: both package.json typecheck spellings', () => {
+  assert.equal(detect(projectTree({ 'package.json': { scripts: { typecheck: 'tsc' } } })).typecheck,
+    'npm run typecheck');
+  assert.equal(detect(projectTree({ 'package.json': { scripts: { 'type-check': 'tsc' } } })).typecheck,
+    'npm run type-check');
+});
+
+test('detect-commands: Cargo.toml answers both slots', () => {
+  const r = detect(projectTree({ 'Cargo.toml': '[package]\nname = "x"\n' }));
+  assert.equal(r.lint, 'cargo clippy --all-targets -- -D warnings');
+  assert.equal(r.typecheck, 'cargo check --all-targets');
+  assert.equal(r.source.lint, 'Cargo.toml');
+});
+
+test('detect-commands: pyproject.toml answers per TABLE, not per file', () => {
+  const ruff = detect(projectTree({ 'pyproject.toml': '[tool.ruff]\nline-length = 100\n' }));
+  assert.equal(ruff.lint, 'ruff check .');
+  assert.equal(ruff.typecheck, null);          // no [tool.mypy table
+  const mypy = detect(projectTree({ 'pyproject.toml': '[tool.mypy]\nstrict = true\n' }));
+  assert.equal(mypy.lint, null);
+  assert.equal(mypy.typecheck, 'mypy .');
+  // A pyproject with neither table names neither command.
+  const bare = detect(projectTree({ 'pyproject.toml': '[project]\nname = "x"\n' }));
+  assert.equal(bare.lint, null);
+  assert.equal(bare.typecheck, null);
+});
+
+test('detect-commands: go.mod answers both slots', () => {
+  const r = detect(projectTree({ 'go.mod': 'module example.com/x\n' }));
+  assert.equal(r.lint, 'go vet ./...');
+  assert.equal(r.typecheck, 'go build ./...');
+});
+
+test('detect-commands: an eslint config, flat or legacy, is the last lint arm', () => {
+  assert.equal(detect(projectTree({ 'eslint.config.mjs': 'export default [];\n' })).lint,
+    'npx eslint .');
+  const legacy = detect(projectTree({ '.eslintrc.json': '{}' }));
+  assert.equal(legacy.lint, 'npx eslint .');
+  assert.equal(legacy.source.lint, '.eslintrc.json');
+});
+
+test('detect-commands: the project\'s own script beats a tool config in the same tree', () => {
+  const r = detect(projectTree({
+    'package.json': { scripts: { lint: 'biome check .', typecheck: 'tsc -p .' } },
+    'eslint.config.js': 'module.exports = [];\n',
+    'tsconfig.json': '{}',
+  }));
+  assert.equal(r.lint, 'npm run lint');
+  assert.equal(r.typecheck, 'npm run typecheck');
+  assert.equal(r.source.lint, 'package.json');
+  assert.equal(r.source.typecheck, 'package.json');
+});
+
+test('detect-commands: tsconfig.json matches that NAME only', () => {
+  assert.equal(detect(projectTree({ 'tsconfig.json': '{}' })).typecheck, 'npx tsc --noEmit');
+  // `npx tsc --noEmit` ignores a config it is not pointed at, so naming a
+  // CI-only project file as the project's typecheck would run the wrong check.
+  const ci = detect(projectTree({ 'tsconfig.ci.json': '{}' }));
+  assert.equal(ci.typecheck, null);
+  assert.equal(ci.source.typecheck, null);
+});
+
+test('detect-commands: nothing detected is ok:true with both null', () => {
+  const r = detect(projectTree({ 'README.md': '# x\n' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+  assert.deepEqual(r.source, { lint: null, typecheck: null });
+  assert.equal('warnings' in r, false);
+});
+
+test('detect-commands: a malformed package.json warns and contributes nothing', () => {
+  const r = detect(projectTree({ 'package.json': '{ "scripts": ' }));
+  assert.equal(r.ok, true);
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings[0], /package\.json failed to parse/);
+});
+
+test('detect-commands: a malformed package.json does not block a later arm', () => {
+  const r = detect(projectTree({ 'package.json': 'not json', 'go.mod': 'module x\n' }));
+  assert.equal(r.lint, 'go vet ./...');
+  assert.equal(r.warnings.length, 1);
+});
+
+test('detect-commands: a scripts block that is not an object is not read as one', () => {
+  const r = detect(projectTree({ 'package.json': { scripts: ['lint'] } }));
+  assert.equal(r.lint, null);
+  assert.equal(r.typecheck, null);
+});
+
+test('detect-commands: the root is read one directory deep, never recursively', () => {
+  const root = projectTree({ 'README.md': '# x\n' });
+  mkdirSync(join(root, 'sub'));
+  writeFileSync(join(root, 'sub', 'package.json'), JSON.stringify({ scripts: { lint: 'x' } }));
+  const r = detect(root);
+  assert.equal(r.lint, null);
+});
+
+test('detect-commands: an unlistable root is ok:false, never a silent nothing', () => {
+  const r = detect(join(tmpdir(), 'cad-detect-does-not-exist'));
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-root');
+});
+
+test('detect-commands: --root with nothing after it is refused, not answered about cwd', () => {
+  const r = (() => {
+    try {
+      return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root'],
+        { encoding: 'utf8' }));
+    } catch (e) { return JSON.parse(e.stdout); }
+  })();
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+});
+
+// --- lease-check: the declared file lease, enforced (QW-03) ------------------
+
+/**
+ * A scratch GIT repo whose `.planning/phases/<n>/` holds one plan declaring
+ * `files`. Returns {repo, dir} - the seam is run with cwd inside the repo,
+ * because it resolves the staged set from `git rev-parse --show-toplevel`.
+ */
+function leaseRepo({ phase = 1, plan = 'PLAN.md', files = ['a.txt'], body = '' } = {}) {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-lease-'));
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: repo });
+  execFileSync('git', ['config', 'user.name', 'T'], { cwd: repo });
+  const dir = join(repo, '.planning');
+  const pdir = join(dir, 'phases', String(phase));
+  mkdirSync(pdir, { recursive: true });
+  const fm = files === null ? '' : `---\nphase: ${phase}\nfiles:\n${files.map((f) => `  - ${f}\n`).join('')}---\n`;
+  writeFileSync(join(pdir, plan), `${fm}# Plan\n${body}`);
+  return { repo, dir, pdir };
+}
+
+/** Run the seam inside a repo; parse its one JSON line and its exit code. */
+function leaseCheck(repo, dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'lease-check', ...args],
+      { encoding: 'utf8', cwd: repo });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+const stage = (repo, name, body = 'x') => {
+  const file = join(repo, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, body);
+  execFileSync('git', ['add', '--', name], { cwd: repo });
+};
+
+test('lease-check: a clean lease is ok:true', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt', 'src/b.js'] });
+  stage(repo, 'a.txt');
+  stage(repo, 'src/b.js');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.staged, 2);
+  assert.equal(r.declared, 2);
+  assert.equal(r._exit, 0);
+});
+
+test('lease-check: an undeclared staged path is refused and NAMED', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  stage(repo, 'b.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['b.txt']);
+  assert.match(r.hint, /files: list/);
+  assert.equal(r._exit, 1);
+});
+
+test('lease-check: the plan\'s OWN report file is the one exemption', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, '.planning/phases/1/reports/plan-1.md');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']).ok, true);
+  // ...and nothing else under reports/ is: another plan's report is undeclared.
+  stage(repo, '.planning/phases/1/reports/plan-2.md');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.undeclared, ['.planning/phases/1/reports/plan-2.md']);
+});
+
+test('lease-check: a declared directory ends in / and matches by PREFIX', () => {
+  const { repo, dir } = leaseRepo({ files: ['src/auth/'] });
+  stage(repo, 'src/auth/session.js');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']).ok, true);
+  // A non-slashed declaration never licenses a sibling by substring.
+  const b = leaseRepo({ files: ['src/auth'] });
+  stage(b.repo, 'src/authority.js');
+  assert.equal(leaseCheck(b.repo, b.dir, ['--phase', '1', '--plan', '1']).ok, false);
+});
+
+test('lease-check: PLAN-<k>.md is selected by --plan', () => {
+  const { repo, dir, pdir } = leaseRepo({ plan: 'PLAN-1.md', files: ['a.txt'] });
+  writeFileSync(join(pdir, 'PLAN-2.md'), '---\nphase: 1\nfiles:\n  - b.txt\n---\n# Plan 2\n');
+  stage(repo, 'b.txt');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', '2']).ok, true);
+  const one = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(one.ok, false);
+  assert.deepEqual(one.undeclared, ['b.txt']);
+});
+
+test('lease-check: a missing plan is ok:false, never an empty-lease pass', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '9', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-plan');
+  assert.equal(r._exit, 1);
+});
+
+test('lease-check: an unreadable staged set is ok:false, never a pass', () => {
+  // Outside any git repo `rev-parse --show-toplevel` fails, and an unprovable
+  // lease must refuse rather than report a clean one.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-lease-nogit-'));
+  const dir = join(outside, '.planning');
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'), '---\nphase: 1\nfiles:\n  - a.txt\n---\n');
+  const r = leaseCheck(outside, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-staged-set');
+});
+
+test('lease-check: nothing staged is a clean lease, not a refusal', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true);
+  assert.equal(r.staged, 0);
+});
+
+test('lease-check: a plan declaring nothing licenses nothing', () => {
+  const { repo, dir } = leaseRepo({ files: [] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.undeclared, ['a.txt']);
+});
+
+test('lease-check: bad flags are refused before any read', () => {
+  const { repo, dir } = leaseRepo({});
+  assert.equal(leaseCheck(repo, dir, ['--plan', '1']).reason, 'bad-args');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1']).reason, 'bad-args');
+  assert.equal(leaseCheck(repo, dir, ['--phase', '1', '--plan', 'x']).reason, 'bad-args');
+});
+
+/**
+ * A git call inside a scratch lease repo with the user's own global/system
+ * config neutralized - `commit.gpgsign` in a developer's global config would
+ * otherwise make the seed commit prompt for a passphrase in CI.
+ */
+const leaseGit = (repo, args) => execFileSync('git', args, {
+  cwd: repo,
+  stdio: 'pipe',
+  env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+});
+
+test('lease-check: a rename is checked on BOTH sides, so another plan\'s file is not renamed away', () => {
+  // src/other.js belongs to some OTHER plan: committed, and NOT declared here.
+  // Renaming it onto this plan's declared `a.txt` destroys it, and a
+  // destination-only read reports a clean lease.
+  const { repo, dir } = leaseRepo({ files: ['a.txt'] });
+  const src = join(repo, 'src', 'other.js');
+  mkdirSync(dirname(src), { recursive: true });
+  writeFileSync(src, 'module.exports = 1;\n');
+  leaseGit(repo, ['add', '--', 'src/other.js']);
+  leaseGit(repo, ['commit', '-qm', 'seed']);
+  leaseGit(repo, ['mv', 'src/other.js', 'a.txt']);
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.ok(r.undeclared.includes('src/other.js'),
+    `the rename SOURCE must be named: ${JSON.stringify(r)}`);
+});
+
+test('lease-check: a declared non-ASCII path is admitted, not refused for its bytes', () => {
+  // At default `core.quotePath` git returns `"src/caf\303\251.js"` - quoted and
+  // octal-escaped - and the lease refuses a path it was itself handed.
+  const { repo, dir } = leaseRepo({ files: ['src/café.js'] });
+  stage(repo, 'src/café.js');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.staged, 1);
+});
+
+/**
+ * An absolute path under `repo` whose basename carries ONE byte that is not
+ * valid UTF-8 (`src/caf<byte>.js`). Two different such bytes produce two
+ * DIFFERENT paths that a utf8 decode renders identically as `src/caf<U+FFFD>.js`
+ * - which is the whole point of the two cases below.
+ */
+const rawLeasePath = (repo, byte) => Buffer.concat([
+  Buffer.from(`${repo}/src/caf`), Buffer.from([byte]), Buffer.from('.js'),
+]);
+
+/** A plan file written BYTE-EXACTLY, so `files:` can name a non-UTF-8 path. */
+const rawPlan = (pdir, byte) => writeFileSync(join(pdir, 'PLAN.md'), Buffer.concat([
+  Buffer.from('---\nphase: 1\nfiles:\n  - src/caf'), Buffer.from([byte]),
+  Buffer.from('.js\n---\n# Plan\n'),
+]));
+
+test('lease-check: a rename between two un-decodable paths is never a clean lease', () => {
+  // `git mv src/caf<0xE9>.js src/caf<0xFF>.js` with only the DESTINATION
+  // declared destroys another plan's file. git reports it correctly
+  // (`R100\0src/caf\351.js\0src/caf\377.js\0`), but reading that stream as a
+  // utf8 STRING maps both invalid bytes to U+FFFD, the two paths collapse to
+  // one, and the source is licensed by the destination's declaration.
+  const { repo, dir, pdir } = leaseRepo({ files: [] });
+  rawPlan(pdir, 0xFF);
+  const src = rawLeasePath(repo, 0xE9);
+  const dst = rawLeasePath(repo, 0xFF);
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(src, 'module.exports = 1;\n');
+  leaseGit(repo, ['add', '-A']);
+  leaseGit(repo, ['commit', '-qm', 'seed']);
+  renameSync(src, dst);
+  leaseGit(repo, ['add', '-A']);
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.notEqual(r.ok, true,
+    `a rename destroying an undeclared file must not pass: ${JSON.stringify(r)}`);
+  assert.equal(r.reason, 'unrepresentable-paths', JSON.stringify(r));
+  assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"', '"src/caf\\377.js"']);
+});
+
+test('lease-check: a staged path that is not valid UTF-8 is refused BY NAME, never guessed at', () => {
+  // The declared side is read from a utf8 plan file, so it cannot represent
+  // this path either. Neither side of the comparison can be honest about it and
+  // the gate says so, rather than matching two replacement characters and
+  // licensing every sibling that differs only in its invalid bytes.
+  const { repo, dir, pdir } = leaseRepo({ files: [] });
+  rawPlan(pdir, 0xE9);
+  leaseGit(repo, ['add', '-A']);
+  leaseGit(repo, ['commit', '-qm', 'seed']);
+  mkdirSync(join(repo, 'src'), { recursive: true });
+  writeFileSync(rawLeasePath(repo, 0xE9), 'x');
+  leaseGit(repo, ['add', '-A']);
+
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unrepresentable-paths');
+  assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"']);
+  assert.equal(r._exit, 1);
 });

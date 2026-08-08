@@ -168,6 +168,37 @@ test('gate: global auto_close:true beaten by repo false -> proceed (repo wins)',
   assert.equal(r.action, 'proceed');
 });
 
+// --- the config warnings both subcommands carry -----------------------------
+
+/** A user-global layer holding raw TEXT, so a truncated body can be written
+ *  verbatim and the merge reports the parse failure. */
+function globalText(text) {
+  const file = join(mkdtempSync(join(tmpdir(), 'cad-lc-torn-')), 'g.json');
+  writeFileSync(file, text);
+  return file;
+}
+
+test('warnings[] rides BOTH land-cleanup envelopes, empty and torn', () => {
+  // Pins the emission itself: stripping `, warnings })` off either emit fails
+  // here. The gate arm is the sharper one - a torn layer reads auto_close as
+  // absent, which is `false`, which is the arm that does NOT halt on a surviving
+  // blocker, so the caller has to be able to tell "no chain is running" from
+  // "the file that says so did not parse".
+  const dir = fixture({ base_branch: 'main', auto_close: true });
+  const cleanCleanup = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.deepEqual(cleanCleanup.warnings, [], 'present as an empty array, not omitted');
+  const cleanGate = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}');
+  assert.deepEqual(cleanGate.warnings, []);
+
+  const torn = globalText('{"git":{"auto_close":true}');
+  const tornCleanup = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true'], '', torn);
+  assert.equal(tornCleanup.ok, true, 'advisory seam: a torn layer never blocks the advice');
+  assert.match(tornCleanup.warnings[0], /failed to parse/);
+  const tornGate = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}', torn);
+  assert.equal(tornGate.ok, true);
+  assert.match(tornGate.warnings[0], /failed to parse/);
+});
+
 test('unknown subcommand: usage, ok false', () => {
   const r = seam(['frobnicate']);
   assert.equal(r.ok, false);

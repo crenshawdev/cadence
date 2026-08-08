@@ -169,6 +169,20 @@ If `gate == "adjudicated"`, adjudicate regardless of `review.mode` (the gate is
 the stronger signal). Adjudication is the same discipline the panel-review skill
 uses: reviewers critique, the main model grounds and owns the verdict.
 
+Once the survivor list is settled, record the outcome:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --detail "<trigger>: <n> survivors; voices <the reviewers that actually ran>"
+```
+
+`<N>` is the phase in hand, or the STATE cursor's phase for a milestone-scoped
+trigger like `pre_ship`. The VOICE LIST is load-bearing, not decoration: a
+`claude-subagent` voice never passes through `review-provider.mjs`, so it has no
+provider event of its own, and the survivor count alone cannot show a panel
+silently reduced to one voice while the gate reports clean - the dropped
+cross-model reviewer is only half of it. Name the set that RAN, never the set
+the trigger asked for.
+
 ### 6. Consequence (gate)
 `references/triage-gate.md` holds this step whole: all three arms
 (`advisory` / `blocking` / `adjudicated`), the multi-select triage the

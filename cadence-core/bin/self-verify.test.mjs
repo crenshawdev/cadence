@@ -3,12 +3,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, cpSync, rmSync, renameSync, symlinkSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
+import { mergeWarningIssues } from './lib/merge-warnings.mjs';
+import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -255,6 +257,20 @@ test('#50: an EVEN backslash run does NOT continue the line - the next line is a
   assert.ok(!p.some((x) => x.kind === 'unknown-flag' && /--items/.test(x.detail)));
 });
 
+test('the weight.mjs contract entry has teeth: a phantom flag on `resident` is flagged', () => {
+  // The entry is inert on its own - check 2 only fires on prose that INVOKES
+  // the script - so its presence proves nothing by itself. This is what proves
+  // the entry is enforcing rather than decorative.
+  const root = fixture('node cadence-core/bin/weight.mjs resident --nope\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && /weight\.mjs resident --nope/.test(x.detail)),
+    JSON.stringify(p));
+  // And the flags the subcommand really takes are accepted.
+  const clean = fixture('node cadence-core/bin/weight.mjs resident --root . --command cad-land --role cad-executor\n');
+  assert.ok(!run(['--root', clean]).problems.some((x) => x.kind === 'unknown-flag'
+    || x.kind === 'unknown-subcommand'));
+});
+
 test('an unknown subcommand and a missing path are flagged', () => {
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" frobnicate\n' +
@@ -282,6 +298,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`model.overrides` `model.effort`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
+    '`workflow.lint_command` `workflow.max_plan_tasks`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
@@ -338,6 +355,27 @@ test('a backtick/the-X-tool reference absent from tools: is flagged', () => {
 test('a tool referenced and declared yields no undeclared-tool', () => {
   const root = fixtureWith({
     agents: { 'a.md': '---\nname: t\ntools: Read, Bash\n---\nUse `Bash` here.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
+});
+
+test('LSP is in the vocabulary, so an undeclared LSP reference is flagged', () => {
+  // The vocabulary addition has to have TEETH, not merely be present: this lint
+  // is one-directional, so a token outside KNOWN_TOOLS is scanned by nothing and
+  // "self-verify passes with LSP in tools:" would be true of any string at all.
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read\n---\nPrefer `LSP` diagnostics.\n' },
+    budgets: { 'agents/a.md': 10000 },
+  });
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'undeclared-tool'
+    && x.file === 'agents/a.md' && /LSP/.test(x.detail)), JSON.stringify(p));
+});
+
+test('LSP declared in tools: clears that reference', () => {
+  const root = fixtureWith({
+    agents: { 'a.md': '---\nname: t\ntools: Read, LSP\n---\nPrefer `LSP` diagnostics.\n' },
     budgets: { 'agents/a.md': 10000 },
   });
   assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'undeclared-tool'));
@@ -1416,4 +1454,386 @@ test('check 11: the walk reaches skills/, not just check 10\'s two directories',
   const p = run(['--root', root]).problems.filter((x) => x.kind === 'unrelayed-route-resolve');
   assert.equal(p.length, 1, JSON.stringify(p));
   assert.equal(p[0].file, join('skills', 'a', 'SKILL.md'));
+});
+
+// --- 12. mergeLayers callsites surface their warnings[] (D-09) ---------------
+
+/** A fixture repo whose cadence-core/bin holds the given {name: source} files. */
+function binFixture(files) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-bin-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  for (const [name, text] of Object.entries(files)) {
+    writeFileSync(join(root, 'cadence-core', 'bin', name), text);
+  }
+  return root;
+}
+
+const MERGE_KIND = 'undocumented-merge-warnings';
+/** Problems of check 12's kind from a --root run. */
+const mergeProblems = (root) =>
+  run(['--root', root]).problems.filter((p) => p.kind === MERGE_KIND);
+
+const BARE_CALL = "// @ts-check\n// seam.mjs - a seam.\n'use strict';\n"
+  + "import { mergeLayers } from './lib/config-merge.mjs';\n"
+  + "const { config } = mergeLayers('.planning/config.json');\n"
+  + 'emit({ ok: true, x: config.x });\n';
+
+test('check 12: a callsite that drops warnings[] is named by line', () => {
+  const p = mergeProblems(binFixture({ 'seam.mjs': BARE_CALL }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'bin', 'seam.mjs'));
+  assert.match(p[0].detail, /line 5\b/);
+});
+
+test('check 12: the destructured form (arm a) is clean', () => {
+  const src = BARE_CALL.replace('{ config }', '{ config, warnings }');
+  assert.deepEqual(mergeProblems(binFixture({ 'seam.mjs': src })), []);
+});
+
+test('check 12: a header marker with prose (arm b) is clean', () => {
+  const src = BARE_CALL.replace("// seam.mjs - a seam.\n",
+    '// seam.mjs - a seam.\n// mergeLayers warnings[]: the envelope carries the\n'
+    + '// same layer\'s warnings from the read below.\n');
+  assert.deepEqual(mergeProblems(binFixture({ 'seam.mjs': src })), []);
+});
+
+test('check 12: the same marker in the BODY does not satisfy arm b', () => {
+  // The header is where a reader looking for the file's contract looks; a
+  // sentence dropped beside one callsite says nothing about the file.
+  const src = BARE_CALL.replace("const { config } =",
+    "// mergeLayers warnings[]: stated here, in the body, too late.\nconst { config } =");
+  const p = mergeProblems(binFixture({ 'seam.mjs': src }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+});
+
+test('check 12: a bare marker with no prose after it does not satisfy arm b', () => {
+  const src = BARE_CALL.replace("// seam.mjs - a seam.\n",
+    '// seam.mjs - a seam.\n// mergeLayers warnings[]:\n');
+  assert.equal(mergeProblems(binFixture({ 'seam.mjs': src })).length, 1);
+});
+
+test('check 12: *.test.mjs is off the walk - a test may write any shape', () => {
+  assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
+});
+
+test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an arm', () => {
+  // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
+  // miscount in either direction fails rather than passing quietly, and a
+  // twelfth callsite cannot be added without choosing an arm.
+  const binDir = join(REPO, 'cadence-core', 'bin');
+  const skip = join(binDir, 'lib', 'config-merge.mjs');
+  /** @param {string} dir @returns {string[]} */
+  const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+    const f = join(dir, d.name);
+    if (d.isDirectory()) return walk(f);
+    return (f.endsWith('.mjs') && !f.endsWith('.test.mjs') && f !== skip) ? [f] : [];
+  });
+
+  let total = 0;
+  const files = [];
+  const armB = [];
+  for (const f of walk(binDir).sort()) {
+    const text = readFileSync(f, 'utf8');
+    const rel = relative(REPO, f);
+    const sites = text.split('\n')
+      .map((line, i) => ({ line, n: i + 1 }))
+      .filter(({ line }) => /\bmergeLayers\s*\(/.test(line) && !/^\s*(?:\/\/|\*)/.test(line));
+    if (!sites.length) continue;
+    total += sites.length;
+    files.push(rel);
+    // "none in neither": the rule files nothing against this file.
+    assert.deepEqual(mergeWarningIssues(text), [], rel);
+    const header = text.split("'use strict';")[0];
+    if (header.includes('mergeLayers warnings[]:')) armB.push(rel);
+    else {
+      for (const { line, n } of sites) {
+        assert.match(line, /const\s*\{[^}]*\bwarnings\b[^}]*\}\s*=\s*mergeLayers\(/,
+          `${rel}:${n} is in neither arm`);
+      }
+    }
+  }
+  assert.equal(total, 11, `callsites: ${files.join(', ')}`);
+  assert.equal(files.length, 8, files.join(', '));
+  // Arm (b) is the exception, not the habit: exactly one file states the reason
+  // in its header, and it is the one whose two other reads are memoized scalars.
+  assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);
+});
+
+// --- check 13: deferred reads -------------------------------------------------
+
+/** One Read sentence for a register row's reference, in the shape the rule wants. */
+const readSentence = (ref) =>
+  `Read \`\${CLAUDE_PLUGIN_ROOT}/cadence-core/${ref}\` at this step, not preloaded.`;
+
+/** The eager include line for a reference, which the rule reports as still-eager. */
+const includeLine = (ref) => `@\${CLAUDE_PLUGIN_ROOT}/cadence-core/${ref}`;
+
+/**
+ * A root holding only the named skills. A value of `null` creates the skill
+ * DIRECTORY with no SKILL.md in it; an entry omitted entirely is a skill this
+ * root simply does not have.
+ * @param {Record<string, string|null>} skills
+ */
+function deferredFixture(skills) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-deferred-'));
+  mkdirSync(join(root, 'skills'), { recursive: true });
+  for (const [name, body] of Object.entries(skills)) {
+    mkdirSync(join(root, 'skills', name), { recursive: true });
+    if (body !== null) writeFileSync(join(root, 'skills', name, 'SKILL.md'), body);
+  }
+  return root;
+}
+
+/**
+ * A cad-land body satisfying every one of its three register rows.
+ *
+ * The shape is structural, not decorative: the rule anchors each required Read
+ * to a REGION, and a region is a top-level `<n>. ` step inside `<process>`,
+ * narrowed by an indented `**(<x>)` arm. `<guardrails>` is deliberately present
+ * and deliberately regionless - it is where the relocation attack below puts
+ * the sentence it deleted from an arm.
+ */
+const CLEAN_LAND = [
+  '<process>',
+  '3. Fire pre_ship.', readSentence('references/review-triggers.md'),
+  'Then run the triage gate exactly as', readSentence('references/triage-gate.md'),
+  '4. Publish.',
+  '   **(a)** Ask the mechanism.', readSentence('references/git-publish.md'),
+  '   **(b)** Autonomous close.', readSentence('references/git-publish.md'),
+  '</process>',
+  '<guardrails>',
+  '- Land nothing the user did not choose.',
+  '</guardrails>',
+].join('\n');
+const CLEAN_PLAN_REVIEW = ['<process>', '2. Fire the plan trigger.',
+  readSentence('references/review-triggers.md'), '</process>'].join('\n');
+
+test('check 13: the live tree satisfies every register row', () => {
+  assert.deepEqual(deferredReadIssues(REPO), []);
+  // And the register is the stated table it claims to be, not something
+  // derived: git-publish.md is TWO anchors against ONE consult site.
+  const gp = DEFERRED_READS.find((r) => r.reference === 'references/git-publish.md');
+  assert.deepEqual([...gp.anchors], ['4(a)', '4(b)']);
+  assert.equal(gp.read_paragraphs, gp.anchors.length);
+  // Every row's count agrees with its anchor list, so the two can never drift.
+  for (const r of DEFERRED_READS) assert.equal(r.read_paragraphs, r.anchors.length);
+  assert.equal(DEFERRED_READS.length, 4);
+  assert.throws(() => DEFERRED_READS.push({}));
+  assert.throws(() => gp.anchors.push('4(c)'));
+});
+
+test('check 13: a clean pair passes', () => {
+  const root = deferredFixture({ 'cad-land': CLEAN_LAND, 'cad-plan-review': CLEAN_PLAN_REVIEW });
+  assert.deepEqual(deferredReadIssues(root), []);
+});
+
+test('check 13: deferred-read-unread when a Read sentence is missing', () => {
+  const root = deferredFixture({
+    'cad-land': CLEAN_LAND.replace(readSentence('references/review-triggers.md'), ''),
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  const issues = deferredReadIssues(root);
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.equal(issues[0].file, 'skills/cad-land/SKILL.md');
+  assert.match(issues[0].detail, /references\/review-triggers\.md/);
+});
+
+test('check 13: the unit is the ARM - one arm of a two-anchor row is not enough', () => {
+  // The whole point of two anchors. A block-level rule passes here, because
+  // the other arm's Read and the path both survive elsewhere in the file - and
+  // step 4(b)'s arm has silently lost its rails.
+  const root = deferredFixture({
+    'cad-land': CLEAN_LAND.replace(
+      `   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
+      '   **(b)** Autonomous close.'),
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  const issues = deferredReadIssues(root);
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
+  assert.match(issues[0].detail, /1 of 2/);
+});
+
+test('check 13: an arm\'s Read relocated ELSEWHERE in the file does not answer for it', () => {
+  // The reproduced hole this rule was rewritten to close. The old check counted
+  // qualifying sentences FILE-WIDE, so deleting step 4(b)'s Read and moving an
+  // equivalent sentence into <guardrails> kept the count at 2 of 2 and left
+  // self-verify ok:true - with the auto_close arm reaching its publish bullets
+  // and the reference never loaded. The count is unchanged here; only WHERE the
+  // sentence sits has changed, and that is now the whole test.
+  const body = CLEAN_LAND
+    .replace(`   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
+      '   **(b)** Autonomous close.')
+    .replace('<guardrails>', `<guardrails>\n${readSentence('references/git-publish.md')}`);
+  // The file still holds exactly as many qualifying sentences as before.
+  const count = (t) => t.split(readSentence('references/git-publish.md')).length - 1;
+  assert.equal(count(body), count(CLEAN_LAND));
+  const issues = deferredReadIssues(deferredFixture({
+    'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
+  }));
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
+});
+
+test('check 13: a Read in the wrong STEP does not answer for the right one', () => {
+  // Same rule, the in-process spelling: step 3 is inside <process> and is a
+  // real region, so this is not about tag blocks - it is about the arm.
+  const body = CLEAN_LAND
+    .replace(`   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
+      '   **(b)** Autonomous close.')
+    .replace('3. Fire pre_ship.',
+      `3. Fire pre_ship.\n${readSentence('references/git-publish.md')}`);
+  const issues = deferredReadIssues(deferredFixture({
+    'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
+  }));
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
+});
+
+test('check 13: deleting the ARM itself is reported, not silently satisfied', () => {
+  // A missing region must fail closed. Dropping step 4(b) entirely leaves no
+  // lines carrying that label, and an anchor with no region is unsatisfied.
+  const body = CLEAN_LAND.replace(
+    `   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}\n`, '');
+  const issues = deferredReadIssues(deferredFixture({
+    'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
+  }));
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
+  assert.match(issues[0].detail, /4\(b\)/);
+});
+
+test('check 13: restating a reference inline instead of Reading it is caught', () => {
+  // The failure mode this exists for: someone "simplifies" the step by
+  // summarising the reference in place, the Read sentence goes, and nothing
+  // else in the tree notices that the de-preloaded file is now unreachable.
+  // Accepted cost, stated: a sentence spelling `do NOT Read <path>` carries
+  // both tokens and would satisfy the row. Deleting the real one still fails.
+  const root = deferredFixture({
+    'cad-land': CLEAN_LAND.replace(readSentence('references/triage-gate.md'),
+      'The triage gate is restated inline here.'),
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  assert.deepEqual(deferredReadIssues(root).map((i) => i.kind), ['deferred-read-unread']);
+});
+
+test('check 13: deferred-read-still-eager when the include comes back', () => {
+  const root = deferredFixture({
+    'cad-land': `${includeLine('references/review-triggers.md')}\n${CLEAN_LAND}`,
+    'cad-plan-review': CLEAN_PLAN_REVIEW,
+  });
+  const issues = deferredReadIssues(root);
+  assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-still-eager']);
+  assert.equal(issues[0].file, 'skills/cad-land/SKILL.md');
+});
+
+test('check 13: deferred-read-missing-skill when the SKILL.md is gone', () => {
+  // The skill DIRECTORY exists and its SKILL.md does not - a real break, as
+  // distinct from a fixture that simply has no cad-land at all.
+  const root = deferredFixture({ 'cad-land': null, 'cad-plan-review': CLEAN_PLAN_REVIEW });
+  const issues = deferredReadIssues(root);
+  assert.equal(issues.length, 3, JSON.stringify(issues));
+  assert.ok(issues.every((i) => i.kind === 'deferred-read-missing-skill'));
+});
+
+test('check 13: a root with no skills/ contributes nothing', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-noskills-'));
+  assert.deepEqual(deferredReadIssues(root), []);
+  // And a root whose skills/ simply lacks these skills is a partial fixture,
+  // not a break - otherwise every fixture in this file would report the whole
+  // register.
+  assert.deepEqual(deferredReadIssues(deferredFixture({})), []);
+});
+
+test('check 13: self-verify files the issue and names the check in `checked`', () => {
+  const root = fixtureWith({ skills: { 'cad-land': 'nothing reads anything here\n' } });
+  const j = run(['--root', root]);
+  assert.match(j.checked, /deferred-reads/);
+  const kinds = j.problems.map((p) => p.kind);
+  assert.equal(kinds.filter((k) => k === 'deferred-read-unread').length, 3);
+});
+
+// --- check 14: every shipped seam is contracted -----------------------------
+// AC2's second clause. Check 2 skips a script with no CONTRACTS row, which it
+// must - prose names third-party scripts too - so deleting a row used to be a
+// SILENT opt-out of the flag lint with self-verify still ok:true. That is what
+// this check closes, and the falsifier below is the point of it.
+
+test('check 14: the repo is clean - every top-level bin script has a contract', () => {
+  assert.deepEqual(run(['--root', REPO]).problems.filter(
+    (p) => p.kind === 'uncontracted-script'), []);
+});
+
+test('check 14: a bin script with no CONTRACTS row is reported, not silently unlinted', () => {
+  // The falsifier AC2 names. Copy the real bin directory into a fixture and
+  // add a script the table cannot know about: the table lives in
+  // self-verify.mjs itself, so a NEW script is the deletable-row case in the
+  // only direction a fixture can express it.
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-uncontracted-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  writeFileSync(join(root, 'cadence-core', 'bin', 'rogue.mjs'), '// no contract\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'uncontracted-script' && x.detail === 'rogue.mjs'),
+    JSON.stringify(p));
+});
+
+test('check 14: test files and lib/ modules need no contract', () => {
+  // Neither is invoked from prose, so a contract for them would describe
+  // nothing. The walk is top-level and skips *.test.mjs for that reason.
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-contract-scope-'));
+  for (const d of ['cadence-core/workflows', 'cadence-core/references',
+    'cadence-core/templates', 'cadence-core/bin/lib', 'skills', 'agents']) {
+    mkdirSync(join(root, d), { recursive: true });
+  }
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  writeFileSync(join(root, 'cadence-core', 'bin', 'rogue.test.mjs'), '// a test\n');
+  writeFileSync(join(root, 'cadence-core', 'bin', 'lib', 'helper.mjs'), '// a module\n');
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (p) => p.kind === 'uncontracted-script'), []);
+});
+
+test('check 14: an ABSENT bin directory is a partial fixture, not a problem', () => {
+  // Every prose-only fixture in this file builds a root with no bin dir. If
+  // that reported, the check would fire on tests written to pin other rules.
+  const root = fixture('Nothing to see here.\n');
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (p) => p.kind === 'uncontracted-script' || p.kind === 'unreadable-surface'), []);
+});
+
+// --- check 2: the BARE form -------------------------------------------------
+
+test('check 2: `weight.mjs --root <path>` is contracted, not an unknown subcommand', () => {
+  // The regression: the first FLAG was read as the subcommand, so correct
+  // prose documenting the script's primary form turned self-verify red.
+  const root = fixture('Run `node cadence-core/bin/weight.mjs --root .` to measure a tree.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(!p.some((x) => x.kind === 'unknown-subcommand'), JSON.stringify(p));
+  assert.ok(!p.some((x) => x.kind === 'unknown-flag'), JSON.stringify(p));
+});
+
+test('check 2: the bare form still lints its flags', () => {
+  // The bare form must not become an escape hatch that accepts anything.
+  const root = fixture('node cadence-core/bin/weight.mjs --nope x\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && /weight\.mjs\s+--nope/.test(x.detail)),
+    JSON.stringify(p));
+});
+
+test('check 2: a script with no bare form still reports one', () => {
+  // planning.mjs declares no '' key, so a flag-first invocation of it is a
+  // real error and must stay reported.
+  const root = fixture('node cadence-core/bin/planning.mjs --dir .\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-subcommand' && /bare form/.test(x.detail)),
+    JSON.stringify(p));
 });
