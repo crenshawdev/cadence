@@ -76,6 +76,23 @@ Never stash, unstage or commit the user's staged work without asking - the seam
 asks, the user chooses. Run the same check in a cross-repo phase's code repo,
 beside its protected-branch guard.
 
+**What this does NOT prove.** The check reads the INDEX, so it establishes that
+no work was staged at phase start - not that the worktree was clean. Two gaps
+follow, and neither is closable by widening this check:
+
+- An UNSTAGED edit the user already made to a file a plan declares rides into
+  that task's commit, because staging a path stages its whole working-tree
+  content. The lease gate cannot separate them either: the path is declared, so
+  the write is legal, and provenance is not a property of a path.
+- An unstaged or untracked file OUTSIDE the lease that some later `git add`
+  sweeps in reads as an executor violating its lease, blocking the phase on work
+  the executor never did.
+
+So the guarantee is "no staged work at phase start", and the executor's commits
+are only as attributable as the worktree was clean. When it matters that a
+phase's commits contain nothing but the phase's own work, start it from a clean
+worktree (`git status --porcelain` empty), not merely a clean index.
+
 This check lives HERE rather than in the executor's lease gate because the
 orchestrator is the only actor that can see a CLEAN starting index: it runs once,
 before anything stages anything. `lease-check` reads the whole staged index and
