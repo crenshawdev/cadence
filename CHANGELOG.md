@@ -6,6 +6,105 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-08
+
+Scoped down at the close. This release ships the benchmark quick wins and the
+context-reduction pass; queue triage, live friction, parser defects and the doc
+sweep move to `2.6.0` whole. The reason is the last item below: a plan-size
+ceiling cannot bound anything until it ships, and four more phases planned
+without it would have been planned by the gates that made it necessary.
+
+### Added
+
+- **A static-analysis path that works unconfigured.** `workflow.lint_command`
+  exists across all five config surfaces, but when it is unset the executor now
+  detects the project's own lint and typecheck commands from its manifests
+  (`planning.mjs detect-commands`) instead of skipping the step. The contract
+  runs it after a task's edits and before its commit, and treats a failure as a
+  blocker with the same three bounded attempts as anything else. Both
+  `cad-executor` rungs also carry the `LSP` tool grant, inert rather than
+  erroring where no code-intelligence plugin is installed.
+
+- **One joined trace per phase.** A gitignored, bounded `.planning/trace.jsonl`
+  records routing decisions, provider requests, worker lifecycle and accepted
+  outcomes against a single correlation id, so a worker, a retry and a
+  verification branch each attribute to the task that caused them.
+  `planning.mjs trace` renders it and `/cad-progress --trace` displays it.
+  Writing to it cannot change a seam's envelope or block the spine - proved by
+  running the resolve path with `.planning/` unwritable and diffing the envelope
+  byte for byte.
+
+- **File leases are enforced, not just compared.** `plan-overlap` checked
+  declared `files:` lists once before dispatch and nothing held a worker to its
+  own declaration afterward. `planning.mjs lease-check` now refuses a staged
+  path outside the plan's list and names it, and the executor contract turns
+  that refusal into a blocked checkpoint rather than a commit.
+
+- **`weight.mjs resident`** composes what a flat per-file list could not: eager
+  bytes, reachable bytes per command, and dispatch bytes per role. The ranking
+  inverts between definitions, so it reports both.
+
+- **`workflow.max_plan_tasks`**, default 8. See Changed.
+
+### Changed
+
+- **The plan gates ask about size.** Nothing bounded plan size, and nothing
+  noticed: this cycle's own phase 3 was planned at 10 tasks, cut, replanned at
+  15, and passed every gate both times. Two causes, both fixed.
+  `cad-plan-checker`'s dimension 5 asked for scope fidelity and "roughly <= 10
+  tasks" in one sentence, and those pull opposite ways, so the size half lost
+  every time - it is now a separate dimension asked independently of whether the
+  plan achieves the goal, defaulting to WARNING because an oversized plan still
+  ships. And `cad-planner` now receives the ceiling in its dispatch and must
+  return `## PHASE TOO BIG` rather than exceed it, which resolves the standing
+  contradiction between that marker and the contract's prohibition on reducing
+  scope: reporting an overrun is not a cut. A `## PHASE TOO BIG` now routes to
+  `/cad-phase add` for small independent phases rather than more plans inside
+  one phase, because `plan-overlap` correctly refuses two plans sharing a path,
+  so plans cannot run concurrently where phases can.
+
+- **`cad-land` and `cad-plan-review` stop eagerly preloading references they
+  read at one step**, dropping `cad-land` below the workhorse mean. Self-verify
+  now fails when a de-preloaded reference has no `Read` anchored to the arm that
+  needs it, so the saving cannot silently become a missing read.
+
+### Fixed
+
+- **A version the repo already published no longer passes as current.**
+  `git-branch.mjs decide` refused by sort order against the highest tag, which
+  refused strictly more milestones than it should: an untagged maintenance
+  version that merely sorted low was rejected with a reason asserting a tag that
+  did not exist. It now tests tag membership. `/cad-health` reports a
+  `PROJECT.md ### Active` version that does not sort above the shipped manifest,
+  naming both numbers - the failure mode that renamed this very cycle from
+  `2.4.0` mid-flight.
+
+- **Worker brackets pair within a correlation id, never across runs.** Trace
+  pairing keyed on `(phase, plan)` and ignored `corr`, so a re-run closed the
+  previous run's dangling dispatch with the new run's terminal event and named
+  the wrong worker unpaired.
+
+- **A torn config layer is named, not silently defaulted.** The git-guard path
+  reverted to default `protected_branches` when a layer failed to parse; it now
+  asks, naming whichever layer tore, on any branch.
+
+- **Provider drop-outs are recorded before the wire, not only past it**, so a
+  reviewer that never reached the request is still named rather than quietly
+  reducing a panel to one voice while the gate reports clean.
+
+- **Dependency lockfiles stop matching the `concurrency` risk surface**, which
+  had been pinning every Rust, Node, Python and Ruby phase to `critical` on the
+  presence of a lockfile. Matching is by an allowlist of names now.
+  `phase_diff` also resolves the same through all three surfaces that decide it,
+  so a scaffolded repo config no longer overrides `critical`'s `adjudicated`
+  with `off`.
+
+- **Smaller seam corrections:** the staged set is read so renames and non-ASCII
+  paths are seen; the starting index is checked once upstream rather than per
+  named path; `weight.mjs` fails a valueless flag instead of silently measuring
+  the plugin tree; and a missing `CONTRACTS` row is a self-verify problem rather
+  than a silent opt-out of the flag lint.
+
 ## [2.4.0] - 2026-08-07
 
 ### Changed
@@ -1485,6 +1584,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.5.0
 [2.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.4.0
 [2.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.3.0
 [2.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.2.0
