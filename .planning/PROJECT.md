@@ -5,13 +5,15 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v2.5.0` is the current release: a static-analysis path reaches
-execution and works unconfigured, one joined trace per phase explains what a run
-actually did, declared file leases are enforced at the commit step rather than
-compared once before dispatch, every provider failure path has a test proving
-what the caller sees, the two heaviest commands stop eagerly preloading
-references they read at one step, and the plan gates finally ask whether a plan
-is proportionate rather than only whether it reaches the goal. Earlier cycles:
+subsystem. `v2.6.1` is the current release: the four defects the `v2.6.0` doc
+sweep filed are closed at their source, each with a check watched to fail against
+the unpatched code first, and a budgeted surface that SHRINKS below its recorded
+byte count now fails self-verify exactly like one that grows. `v2.6.0` before it
+was the reconciliation cycle: the capture queue triaged from 213 open items to
+28, per-role token accounting with every phase dispatch bracketed, a
+runaway-loop bound on all 19 rung agents, and the first end-to-end doc sweep at
+547 claims with a committed ledger. Earlier cycles: `v2.5.0` static analysis
+reaching execution and plan gates that ask whether a plan is proportionate,
 `v2.4.0` the parallel path that could never engage, `v2.3.0` where the bytes
 live, `v2.2.0` the config read face and the deleted git-guard parser, `v2.1.0`
 coverage and triage gates, `v2.0.0` the
@@ -98,89 +100,20 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Every `review-provider.mjs` failure path fault-injected with a test proving what the caller sees, and drop-outs recorded before the wire rather than only past it (QW-05) — v2.5.0
 - ✓ `weight.mjs resident` composes eager, reachable and dispatch bytes; `cad-land` and `cad-plan-review` stop eagerly preloading references they read at one step, with a self-verify check that a de-preloaded reference keeps a Read at the arm that needs it (CTX-01) — v2.5.0
 
+- ✓ `v2.6.0 — the reconciliation cycle`: the capture queue triaged from 213 open items to 28 with the rest archived out of the recall corpus (REC-01, REC-02); the verify walk, the unbounded re-arm and version drift (FRI-01..03); named phase dirs, an ignored run record, `REQ_ID_EXACT` and the debt-marker harvest (FLD-01, FLD-02, PRS-02, DBT-01); per-role token accounting with every phase dispatch bracketed (TOK-03, TOK-04); and the first end-to-end doc sweep, 547 claims with a committed ledger (DOC-02, DOC-03, EVD-02) — v2.6.0
+
 ### Active
 
-**`v2.6.0 — the reconciliation cycle`**, opened 2026-08-08. The predecessor
-`v2.5.0 — what Cadence says about itself` closed the same day with six of its
-fifteen requirements delivered (QW-01..05, CTX-01 — rows above), the audit green
-on those six (6/6 traced, 0 broken), and the manifest at `2.5.0`.
+None. `v2.6.1 — the defects the sweep found` shipped on 2026-08-09: four
+requirements, one phase, six commits, the audit green (4/4 traced, 0 broken;
+8/8 acceptance criteria covered), the manifest at `2.6.1`. Its four DFC rows sit
+in `.planning/REQUIREMENTS.md` under `## Shipped`, its phase record in
+`.planning/_archive-v2.6.1/`, and its narrative in `CHANGELOG.md`.
 
-**v2.5.0 closed early, on purpose.** Its nine remaining requirements — REC, FRI,
-PRS and DOC, roadmap phases 3 through 6 — were not cut, dropped or re-scoped.
-They roll into this cycle whole, with `phases/3/CONTEXT.md` and
-`phases/3/PLAN.md` intact, so this cycle resumes from a planned phase.
-
-The reason is worth keeping, because it is a rule rather than an incident.
-v2.5.0 ended up containing a fix to Cadence's own planning gates: nothing
-bounded plan size, so `cad-plan-checker` asked only whether a plan achieved the
-goal — a question a bigger plan answers better — and `cad-planner` had a
-`## PHASE TOO BIG` marker reachable only by its own judgement, against a
-contract forbidding it to reduce scope. Phase 3 was planned at 10 tasks, cut,
-replanned at 15, and passed every gate both times. The fix (`max_plan_tasks`
-plus a proportionality dimension asked independently of the goal) cannot bound
-anything until it ships and installs. Planning four more phases before the
-release would have run all four through the gates that made the fix necessary.
-**When a cycle produces a tool that changes how the next work is done, ship it
-before doing the next work.**
-
-This cycle turns on the queue. `.planning/CAPTURE.md` holds 213 open items (as
-of 2026-08-08) accumulated across nine milestones. Some were closed by work that
-shipped and were never struck; some are real and have been carried unread for
-months because the file is too long to triage in passing. A queue nobody can
-read is the same failure as no queue, and it is the input to `/cad-plan`'s
-recall.
-
-The cycle is therefore **reconciliation, not construction**. The triage itself
-was re-scoped on 2026-08-08 before any of it ran: rather than a tree-backed
-verdict for each of 213 items, non-current-cycle items are archived as a block
-under one dated reason and only the current-cycle items are read individually.
-An item carried unread across nine milestones is presumptively dead, and proving
-that one item at a time costs more than it returns. Then the same pass outward —
-reconcile what Cadence claims about itself, in `README.md`, `METHOD.md`,
-`INTERNALS.md`, `CONTRIBUTING.md` and the workflow prose, against what the code
-now does. `/cad-docs-verify` exists for exactly this and has never been run
-across the whole surface.
-
-Guardrail for the cycle, learned from v2.3.0 and unchanged: an item is closed
-only against evidence from the tree, never because it reads as done. A close-out
-names the commit or the `file:line` that closed it, the same way a UAT item
-names its evidence.
-
-### Out of Scope
-
-- Embeddings / vector search — BM25 is deterministic, zero-dep, and sufficient for a corpus of dozens of markdown files (Ratel's benchmark is the existence proof); embeddings add infra Cadence's philosophy forbids
-- External memory backends (mem-*, claude-mem, MCP) in this cycle — the `builtin` backend defines the recall contract first; external backends slot in behind the same seam later
-- Knowledge memory / cross-project recall — Cadence owns project-scoped working memory only; global memory belongs to the developer's own tools (LINEAGE cut, stands)
-- Runtime token telemetry of live sessions — Claude Code exposes no per-turn stats to a plugin script; measurement is static prose weight, not live usage
-- Second-model lanes (research/verify/build) — deferred to a later cycle, tracked separately
-
-## Context
-
-Brownfield: Cadence v1.0.0 shipped publicly today (2026-07-16, repo
-crenshawdev/cadence, tag v1.0.0). This cycle is v1.1.0, built by dogfooding
-Cadence on itself — the first project init on this repo.
-
-The gap being closed: deviations are recorded at execute time (cad-executor →
-SUMMARY.md), CAPTURE.md accumulates, UAT findings accumulate — but neither
-cad-plan nor cad-context reads any of it back. `memory.backend` is an empty
-socket (`enum: ["none"]`).
-
-Design provenance: inspired by ratel-ai/ratel — progressive disclosure via
-deterministic BM25 catalogs, no vector DB, no infra. Cadence applies the same
-bet to its own planning artifacts rather than to tool schemas.
-
-Established patterns this work must follow: zero-dep Node seam scripts in
-`cadence-core/bin` with one-line JSON stdout and exit codes; every new
-subcommand gets a CONTRACTS entry in self-verify.mjs plus tests in the
-sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
-
-## Constraints
-
-- **Dependencies**: zero runtime deps — BM25 and stats are hand-rolled JS in `cadence-core/bin` (lib/ helpers allowed)
-- **Compatibility**: existing `.planning/` layouts must work unchanged; recall on a project with no SUMMARYs degrades to empty results, never an error
-- **Determinism**: same corpus + same query → same results; no timestamps, no randomness in ranking
-- **Toolchain**: Node 22/24 (CI matrix), `node --test`, `tsc --checkJs` must stay green
-- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version. `v2.0.0` is major for one reason only: `model.profile`'s enum values change with no back-compat alias, so a config a user wrote stops validating.
+The next cycle is not scoped. That is a decision, not an oversight: the
+candidates are in `REQUIREMENTS.md`'s `## Deferred` and none has been promoted,
+and opening a milestone is its own call to make rather than something a close
+does on the way past. `/cad-phase add` opens the first phase when it is taken.
 
 ## Key Decisions
 
@@ -208,4 +141,4 @@ sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
 | The rung ladder is one contract materialized N times, not N variants | The host freezes `effort` per agent file on the Agent/Task dispatch path, so rungs need files; the contract lives in exactly one skill and a rung file that ever carries behaviour fails self-verify. Without that check this is the GSD namespace-variant sin the MANIFESTO names | Adopted for v2.0.0 (RNG-01), on the v1.5.0 contract skills |
 
 ---
-*Last updated: 2026-07-29 HST-01 added at phase 6 (7 requirements, 6 phases)*
+*Last updated: 2026-08-08 v2.6.0 opened from v2.5.0's carried-over half; its four phases renumbered 3-6 -> 1-4 (9 requirements, 4 phases)*

@@ -41,14 +41,31 @@
 //                                   read from its manifests (NOT --dir: --root
 //                                   is the PROJECT root, one level deep only)
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
-//               [--detail "<text>"]  one line onto .planning/trace.jsonl
-//   trace render [--phase N]        the four families, the derived id, and
-//                                   every worker dispatch paired to its
-//                                   return/checkpoint/escalation
+//               [--detail "<text>"] [--role <name>] [--tokens <n>]
+//               [--read "<a,b,c>"]  one line onto .planning/trace.jsonl.
+//                                   --role groups the per-role totals (--plan
+//                                   stays the pairing key), --tokens is what
+//                                   the dispatch cost as a non-negative
+//                                   integer, --read is ONE comma-separated
+//                                   read-set stored verbatim
+//   trace render [--phase N]        the four families, the derived id, every
+//                                   worker dispatch paired to its
+//                                   return/checkpoint/escalation, and the
+//                                   per-role dispatch/token totals
+//   debt-harvest [--root <path>]    every CADENCE-DEBT marker in the tracked
+//                                   tree, collected into .planning/CAPTURE.md's
+//                                   own `## Debt markers` section (NOT --dir:
+//                                   it scans source and writes into .planning)
+//   trace ignore [--root <path>] [--check]
+//                                   keep .planning/trace.jsonl out of git:
+//                                   append-if-absent at scaffold time, or
+//                                   REPORT ONLY under --check (NOT --dir:
+//                                   --root is the PROJECT root, where
+//                                   .gitignore lives)
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { join, dirname, relative, resolve as resolvePath, sep } from 'node:path';
+import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
@@ -60,13 +77,24 @@ import {
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
-  classifyAcceptanceCriteria, UAT_ORIGINS, UAT_FIELDS_VERSION,
+  classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
+  sectionBound, sectionSpan,
 } from './lib/planning-files.mjs';
+import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+// The audit's version_drift signal (FRI-03) reuses the readers that already
+// exist rather than growing second ones: the SAME prose version reader branch
+// naming uses (`### Active` -> ROADMAP title), the SAME membership test, and the
+// SAME tag reader the branch seam reads. `normalizeTargetVersion` is imported
+// for its `v`-stripping alone - the version compared here is REPORTED, never
+// derived into anything that ships (REL-03 stands).
+import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.mjs';
+import { normalizeTargetVersion } from './lib/release-decision.mjs';
+import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { requireCursorNumber, requireInt } from './lib/require-int.mjs';
+import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -119,6 +147,79 @@ function derivePhases(dir, roadmapPhases) {
     if (summary) status = (uat && uatComplete(uat)) ? 'complete' : 'executed';
     return { ...p, plans, status, uat };
   });
+}
+
+// THE phase-directory grammar (references/conventions.md): a bare phase integer
+// or an `N.M` sub-phase, no zero-padding and no slug suffix. Checked here and
+// resolved NOWHERE - D-01 is that Cadence states the grammar and reports what
+// violates it, rather than teaching the seams to resolve `08-meteogram-legend`.
+//
+// Deliberately STRICTER than the two `phases/` LISTING filters (`:189` and the
+// recall corpus walk), and it does not replace them: `/^\d+(\.\d+)?$/` there
+// keeps a zero-padded directory out of the corpus and out of the
+// surviving-dir report exactly as it does today (D-09). The leading `[1-9]` is
+// what makes `08` a violation rather than a synonym for `8`.
+const PHASE_DIR_NAME = /^[1-9]\d*(?:\.\d+)?$/;
+
+/**
+ * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per
+ * colliding group.
+ *
+ * ONE kind covers named, zero-padded and prefix-colliding entries (D-08). There
+ * is deliberately no second "shadowing" diagnostic: every writer builds its path
+ * as `join(dir, 'phases', <spelling>)`, which can never PRODUCE
+ * `14-data-depth-x`, so a shadowing rule would report a hazard no code path
+ * reaches. What is worth reporting instead is the collision the reader would
+ * otherwise have to notice for themselves - `08` beside a legal `8` - so
+ * entries sharing a leading numeric prefix are named together in one entry, and
+ * the legal directory of that prefix is named in the detail.
+ *
+ * An absent `phases/` is data, never a throw. A stray FILE is not a phase
+ * directory and is not reported: `.DS_Store` would only make the diagnostic
+ * noise. Entries that are entirely legal produce NOTHING, so `drift` stays
+ * absent on a clean tree and a legal name is never itself listed in `entries`.
+ * @param {string} dir @returns {Array<{kind: string, entries: string[], detail: string}>}
+ */
+function phaseDirGrammarDrift(dir) {
+  let listing = [];
+  try { listing = readdirSync(join(dir, 'phases'), { withFileTypes: true }); }
+  catch { return []; }
+  /** @type {Map<string, {n: number|null, bad: string[], legal: string[]}>} */
+  const groups = new Map();
+  for (const ent of listing) {
+    if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
+    const lead = ent.name.match(/^\d+/);
+    // The leading digit run READ AS A NUMBER, so `08`, `08-meteogram-legend` and
+    // `8-foo` all group with a legal `8`. A name with no leading digits at all
+    // collides with no phase and gets a group to itself.
+    const n = lead ? Number(lead[0]) : null;
+    const k = n === null ? `x:${ent.name}` : `n:${n}`;
+    const g = groups.get(k) || { n, bad: [], legal: [] };
+    (PHASE_DIR_NAME.test(ent.name) ? g.legal : g.bad).push(ent.name);
+    groups.set(k, g);
+  }
+  const ordered = [...groups.values()].sort((a, b) => {
+    if (a.n === null || b.n === null) return a.n === b.n ? 0 : (a.n === null ? 1 : -1);
+    return a.n - b.n;
+  });
+  const out = [];
+  for (const g of ordered) {
+    if (!g.bad.length) continue;
+    const entries = g.bad.slice().sort();
+    const legal = g.legal.slice().sort();
+    const verb = entries.length > 1 ? 'are not phase directory names' : 'is not a phase directory name';
+    let detail = `${entries.join(', ')} ${verb}`
+      + ' (bare integer or N.M, no zero-padding, no slug)';
+    if (entries.length > 1 && g.n !== null) detail += `; they share numeric prefix ${g.n}`;
+    if (legal.length) {
+      detail += `; ${legal.map((e) => `phases/${e}`).join(', ')} is the phase they collide with`;
+    }
+    // NO `phase` key, the same reason `unpicked` omits one: there is no phase
+    // number to report, and inventing one would make this indistinguishable from
+    // the drift kinds that legitimately have one.
+    out.push({ kind: 'phase-dir-grammar', entries, detail });
+  }
+  return out;
 }
 
 // Which cursor statuses are consistent with a derived phase status.
@@ -187,6 +288,11 @@ function cmdStatus(dir) {
       });
     }
   }
+
+  // The phase-directory grammar, checked in EVERY state and not only after a
+  // close: a directory Cadence cannot address is wrong while the cycle is open,
+  // which is when it can still be renamed cheaply.
+  drift.push(...phaseDirGrammarDrift(dir));
 
   // Requirements drift (optional file; Deferred rows and unmapped rows are
   // audit's concern, not drift).
@@ -276,7 +382,14 @@ function cmdCursorGet(dir) {
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
-  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  // The shared reader, for the refusal WORDING - and it keeps writing the
+  // numeric value on purpose. `parseCursor` returns a Number that `renumber`'s
+  // shift arithmetic, `cmdStatus`'s `parsed.phase === current` agreement test
+  // and `phase-plans.mjs`' `cursorPhase` all consume, so a raw-spelled cursor
+  // is a wider change than the `--phase` directory fix, and a half-raw cursor
+  // would be worse than a numeric one. Stated cost: a cursor set at
+  // `--phase 1.10` still renders `Phase: 1.1`.
+  const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
   }
@@ -470,8 +583,14 @@ function writeUat(dir, n, uat) {
 const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending'];
 
 function cmdUat(dir, sub, opts) {
-  const n = Number(opts.phase);
-  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'uat needs --phase <N>');
+  // The shared reader, replacing a bare `Number()` + NaN test: a malformed
+  // `--phase` is now refused in the same words on every seam, and `n` is the
+  // caller's own SPELLING - every use of it here is a path (`uatFile`, the
+  // FINDINGS.json path) or a label (`fm.phase`), never arithmetic, so
+  // `--phase 1.10` reads `phases/1.10` instead of phase 1.1's checklist.
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'uat needs --phase <N>');
+  const n = parsedPhase.raw;
 
   if (sub === 'init' || sub === 'refresh') {
     // stdin only - `--payload` is merge's flag. A literal `null` on stdin now
@@ -544,7 +663,19 @@ function cmdUat(dir, sub, opts) {
       return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`);
     }
     const source = opts.source || 'user';
+    // Validated BEFORE any write, same shape as the `--origin` guard below:
+    // `--source` used to accept any string and store nothing outside
+    // `verifier`, so a walk-executed pass recorded as a user answer and
+    // nothing reported the drop. An out-of-enum value must leave the file
+    // byte-unchanged rather than silently discard the provenance.
+    if (opts.source !== undefined && !UAT_SOURCES.includes(String(opts.source))) {
+      return fail('bad-args', `--source must be one of: ${UAT_SOURCES.join(' | ')}`);
+    }
     // Invariant: a verifier result only ever fills a pending item.
+    //
+    // Scoped to `verifier` ALONE, deliberately. A `model` result is a live
+    // answer at the item the walk is standing on, and widening the guard to it
+    // would refuse the retest re-record `route_failures` depends on.
     if (source === 'verifier' && item.status !== 'pending') {
       return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
     }
@@ -571,7 +702,10 @@ function cmdUat(dir, sub, opts) {
       return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
     }
     item.status = opts.result;
-    if (source === 'verifier') item.source = 'verifier';
+    // `user` stays IMPLICIT - never written onto the item - so every existing
+    // checklist stays byte-identical; `verifier` and `model` are the two values
+    // that render.
+    if (source !== 'user') item.source = source;
     // `criterion` is already registered in UAT_FIELDS, so an accepted value
     // renders directly after `expected` and survives every later rewrite.
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
@@ -737,8 +871,17 @@ function cmdUat(dir, sub, opts) {
       // This path wrote NO provenance of any kind before this phase - observable
       // at .planning/phases/1/UAT.md items 12 and 14, which carry neither
       // `source` nor an origin.
+      //
+      // `why_human` rides the append spread-guarded: the verifier's per-item
+      // reason inspection cannot settle it, carried so the walk can tell an
+      // item ALREADY judged human-only from one it must judge itself against
+      // the stated bar. An omitted value writes no line and no default is
+      // invented - a fabricated reason would be indistinguishable from a
+      // judged one at exactly the moment the walk is trusting it.
       uat.items.push({ k: ++k, name, expected: h.expected || '',
-        origin: 'verifier', status: 'pending' });
+        origin: 'verifier',
+        ...(h.why_human ? { why_human: h.why_human } : {}),
+        status: 'pending' });
       added++;
     }
     writeUat(dir, n, uat);
@@ -826,6 +969,10 @@ function listPlanFiles(pdir) {
 // break codes: no-phase | phase-missing | no-plan | not-verified | drift |
 // unpicked (an `## Active` id no phase picked up - it has no Traceability row
 // at all, so it carries no `phase` key; see the D-01/D-04 block below).
+//
+// Also emits `version_drift` - milestone-scoped, present-or-absent, no break
+// code and no count - when the planning docs name a version this repo has
+// already TAGGED while its cycle is still open. See the block at its site.
 // ---------------------------------------------------------------------------
 function cmdAudit(dir) {
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
@@ -929,6 +1076,62 @@ function cmdAudit(dir) {
   }
 
   const broken = requirements.filter((r) => r.break).length;
+
+  // `version_drift` (FRI-03): the planning docs name a version this repo has
+  // ALREADY PUBLISHED while the cycle under that number is still open - issue
+  // #87, where v2.4.0 was planned, branched and worked under a number already
+  // tagged. The predicate is deliberately NOT `docs != manifest`:
+  //
+  // - The comparand is git TAGS (D-03). `pluginVersion()` is NOT read here, and
+  //   this is the whole reason: MANIFEST_PATH resolves relative to the SCRIPT
+  //   and audit.md invokes the seam through ${CLAUDE_PLUGIN_ROOT}, so in any
+  //   project that is not Cadence a manifest predicate would judge the user's
+  //   milestone against CADENCE's release number. Tags are the publication
+  //   evidence - the rule skills/cad-health/SKILL.md already states.
+  // - The manifest could not even detect #87. At tag v2.4.0 this repo had docs
+  //   Active `v2.4.0`, tag `v2.4.0` AND manifest `2.4.0`: byte-identical, on the
+  //   manifest test, to an interrupted close. The cycle's own completeness is
+  //   what separates them, and only the phase artifacts carry that.
+  //
+  // Two different omissions, both correct. A doc version NO tag carries is the
+  // ordinary ahead-of-manifest mid-cycle state (this repo is in it now). A
+  // tagged doc version with EVERY phase complete is a close interrupted between
+  // milestone.md's step 2 (the tag) and step 4 (the PROJECT.md evolve) - D-01's
+  // exemption, and a state the user is already finishing. Membership, not sort
+  // order (D-04): a version that merely sorts below the newest tag was published
+  // by nothing, and `tagCarrying` gets the WHOLE list to test against.
+  //
+  // Present-or-absent, top level, outside `counts` and `requirements`: this
+  // signal is milestone-scoped rather than per-requirement, and `total = traced
+  // + broken + deferred` is an asserted invariant. The FAIL is audit.md §4's
+  // arithmetic over the key - cmdAudit computes no verdict.
+  const docVersion = activeVersion(read(join(dir, 'PROJECT.md')) || '')
+    || titleVersion(roadmapText);
+  // `activeVersion` returns the prose token WITH its `v` (`v9.9.0`), while
+  // `tagCarrying` takes a bare comparand and `compareVersions` returns null -
+  // not 0 - for a `v`-prefixed operand, so the raw token would match no tag.
+  const publishedAs = docVersion
+    ? tagCarrying(readTags(dir), normalizeTargetVersion(docVersion)) : null;
+  // Derived phase status, not the roadmap checkbox: "finish the close" means the
+  // artifacts say complete. Same test cmdStatus uses to find the current phase.
+  //
+  // "Complete" alone is too narrow a test for the exemption, because one phase
+  // shape can never reach it: `uatComplete` refuses a `blocked` item and
+  // verify.md makes `blocked` TERMINAL - nothing returns an item to the walk
+  // from it. A phase parked there would hold the cycle open forever and pin the
+  // gate at FAIL with one of audit.md's two exits permanently unreachable. So a
+  // phase also stops holding the cycle open when its checklist has nothing left
+  // that can be ANSWERED: every item pass, skipped-with-reason, or blocked.
+  // That is the close's own definition of finished work, minus the arm the walk
+  // cannot revisit. It does not weaken #87: a cycle being worked under a
+  // published number has pending or failed items, or no checklist at all.
+  const settled = (p) => p.status === 'complete'
+    || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
+      i.status === 'pass' || i.status === 'blocked'
+      || (i.status === 'skipped' && i.reason)));
+  const cycleOpen = publishedAs !== null
+    && derivePhases(dir, [...roadmap.values()]).some((p) => !settled(p));
+
   ok({
     requirements,
     ...(orphanPlans.length ? { orphans: { plan_ids: orphanPlans } } : {}),
@@ -944,6 +1147,9 @@ function cmdAudit(dir) {
     // bullet whose bold span is exactly the id.
     ...(active.issues.length ? { active_issues: active.issues } : {}),
     ...(unseeded ? { unseeded } : {}),
+    ...(cycleOpen ? { version_drift: {
+      doc_version: docVersion, published_as: publishedAs, cycle_state: 'open',
+    } } : {}),
     // total counts Traceability rows PLUS unpicked ids (D-02), which is what
     // keeps `requirements.length + deferred.length === rows.length +
     // unpicked.length` - i.e. total = traced + broken + deferred - true now that
@@ -1192,9 +1398,12 @@ function cmdCriteriaCoverage(dir) {
 // caller branches on overlaps.length, like drift in status.
 // ---------------------------------------------------------------------------
 function cmdPlanOverlap(dir, opts) {
-  const n = Number(opts.phase);
-  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'plan-overlap needs --phase <N>');
-  const pdir = join(dir, 'phases', String(n));
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'plan-overlap needs --phase <N>');
+  const n = parsedPhase.value;
+  // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
+  // the number (D-02).
+  const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles, nonconforming, missing } = listPlanFiles(pdir);
   if (missing) return fail('no-phase-dir', `${pdir} not found`);
 
@@ -1244,20 +1453,30 @@ function cmdPlanOverlap(dir, opts) {
 // never had (git log -S Traceability shows status-flip-only since c34ec8a).
 // ---------------------------------------------------------------------------
 function cmdSeedReqs(dir, opts) {
-  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
   const n = parsedPhase.value;
+  // The caller's own spelling, for the directory and for every diagnostic that
+  // names one (D-02). The Traceability rows and the echoed `phase` below stay
+  // NUMERIC, and that is a KNOWN identity collision rather than an oversight:
+  // `parseRequirements` and `audit` compare that cell against ROADMAP phase
+  // NUMBERS, so `seed-reqs --phase 1.10` reads `phases/1.10` and writes
+  // `| <id> | Phase 1.1 | Pending |`, merging the two sub-phases in the audit.
+  // Closing it means carrying the raw spelling through `parseCursor`,
+  // `renumber` and `audit` - wider than this fix - and it is queued in
+  // `.planning/CAPTURE.md` naming both surviving sites.
+  const pname = parsedPhase.raw;
 
   // #42/#45 rail: the flag is validated before any read.
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
   if (reqText === null) return fail('no-requirements', `${reqFile} not found`);
 
-  const pdir = join(dir, 'phases', String(n));
+  const pdir = join(dir, 'phases', pname);
   let planFiles = [];
   try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
   catch { return fail('no-phase-dir', `${pdir} not found`); }
-  if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${n}`);
+  if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${pname}`);
 
   // Ids in plan-file order, union first-occurrence-wins across the phase's
   // plan(s); frontmatter issues carried in the same {file, issues} shape
@@ -1269,7 +1488,7 @@ function cmdSeedReqs(dir, opts) {
   for (const f of planFiles) {
     const { ids: fileIds, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
     for (const id of fileIds) if (!seenIds.has(id)) { seenIds.add(id); ids.push(id); }
-    if (issues.length) frontmatterIssues.push({ file: `phases/${n}/${f}`, issues });
+    if (issues.length) frontmatterIssues.push({ file: `phases/${pname}/${f}`, issues });
   }
 
   // Bound by ## Active (D-06): an id with no bullet there is scope creep or
@@ -1537,7 +1756,7 @@ function parseStagedNameStatus(out) {
 }
 
 function cmdLeaseCheck(dir, opts) {
-  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'lease-check needs --phase <N>');
   const parsedPlan = requireInt(opts.plan);
   if (!parsedPlan.ok) return fail('bad-args', 'lease-check needs --plan <k>');
@@ -1546,7 +1765,11 @@ function cmdLeaseCheck(dir, opts) {
 
   // `k` is the number in PLAN-<k>.md, and 1 for a bare PLAN.md - the same
   // convention the executor's report path follows.
-  const pdir = join(dir, 'phases', String(n));
+  //
+  // The phase DIRECTORY is the caller's own spelling (D-02): `--phase 1.10`
+  // leased against `phases/1.1/PLAN.md` and passed a gate the wrong plan file
+  // declared. `common.phase` below stays the number.
+  const pdir = join(dir, 'phases', parsedPhase.raw);
   let planFile = join(pdir, `PLAN-${k}.md`);
   let text = read(planFile);
   if (text === null && k === 1) {
@@ -1554,7 +1777,7 @@ function cmdLeaseCheck(dir, opts) {
     text = read(planFile);
   }
   if (text === null) {
-    return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${n}`);
+    return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${parsedPhase.raw}`);
   }
   const { files: declared, issues } = parsePlanFiles(text);
 
@@ -1754,9 +1977,153 @@ function cmdDetectCommands(root) {
 // malformed CALL is ok:false. The trace records what a run did; it may never be
 // able to change what a run does.
 // ---------------------------------------------------------------------------
+// The ignore line a project needs so its run record stays out of git, and the
+// comment written above it so the next reader knows what it is.
+const TRACE_IGNORE_LINE = '.planning/trace.jsonl';
+const TRACE_IGNORE_COMMENT = "# Cadence's joined run record - local diagnostics"
+  + " only, one machine's routing/provider/worker events";
+
+/**
+ * Does a `check-ignore -v` match source TRAVEL with the repository?
+ *
+ * This is why `-v` is used instead of `-q`. `check-ignore` also consults
+ * `core.excludesFile` and `.git/info/exclude`, and NEITHER is cloned: a machine-
+ * local exclusion would answer `ignored:true` and leave the project with no
+ * ignore line of its own, so the collaborator who clones it commits the run
+ * record on the next `git add .planning` - exactly the failure this subcommand
+ * exists to close. Only a `.gitignore` file inside the root counts.
+ * @param {string|null} source the first field of `check-ignore -v` output
+ * @returns {boolean}
+ */
+function ignoreSourceTravels(source) {
+  if (!source) return false;
+  if (isAbsolute(source)) return false;            // core.excludesFile
+  const parts = source.split(/[/\\]/);
+  if (parts.includes('..') || parts.includes('.git')) return false; // outside, or info/exclude
+  return parts[parts.length - 1] === '.gitignore';
+}
+
+/**
+ * Git's own answer about the ignore line, with the matching SOURCE, or
+ * `method: 'file'` when git cannot answer at all (not installed, or the root is
+ * not a repository). Exit 1 from `check-ignore` is DATA - nothing matched - and
+ * only a harder failure falls back.
+ *
+ * `--no-index` is load-bearing, not a tidy-up. Without it `check-ignore` reports
+ * nothing for a path that is in the INDEX, because git's own contract is "would
+ * this path be ignored if it were untracked" and a tracked path is already past
+ * that question. The two states then become indistinguishable: a project whose
+ * `.gitignore` carries the line AND has the record force-added answered
+ * `ignored:false`, so `cmdTraceIgnore` appended the line again on every run and
+ * `/cad-health` reported a missing rule that was right there. `--no-index` asks
+ * the question this seam actually has - does a rule cover this path - and leaves
+ * TRACKED to `traceTracked`, which is the separate fact and the one that needs
+ * `git rm --cached`.
+ * @param {string} root
+ * @returns {{method: 'git'|'file', travels: boolean, source: string|null}}
+ */
+function gitIgnoreState(root) {
+  const noGit = { method: /** @type {'file'} */ ('file'), travels: false, source: null };
+  try {
+    execFileSync('git', ['-C', root, 'rev-parse', '--git-dir'], { stdio: 'pipe' });
+  } catch { return noGit; }
+  let out = '';
+  try {
+    out = execFileSync('git',
+      ['-C', root, 'check-ignore', '--no-index', '-v', '--', TRACE_IGNORE_LINE],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    if (e && e.status === 1) return { method: 'git', travels: false, source: null };
+    return noGit;
+  }
+  // `<source>:<line>:<pattern>\t<pathname>`. The source is everything before
+  // the LAST two colons of the left half, so a source path containing a colon
+  // is not silently truncated into a different file name.
+  const left = out.split('\n')[0].split('\t')[0];
+  const last = left.lastIndexOf(':');
+  const prev = last > 0 ? left.lastIndexOf(':', last - 1) : -1;
+  const source = prev >= 0 ? left.slice(0, prev) : null;
+  return { method: 'git', travels: ignoreSourceTravels(source), source };
+}
+
+/** Is the run record TRACKED? A non-repo tracks nothing, so it is false there. */
+function traceTracked(root) {
+  try {
+    execFileSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', TRACE_IGNORE_LINE],
+      { stdio: 'pipe' });
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * The literal fallback: the line as a project would write it, in `<root>/.gitignore`.
+ * Comments and blank lines are skipped. Used only when git could not answer -
+ * it cannot see a `.planning/` wholesale ignore, which is why the git arm is
+ * tried first and is not decoration.
+ * @param {string} root
+ */
+function gitignoreCarriesLine(root) {
+  const text = read(join(root, '.gitignore'));
+  if (text === null) return false;
+  return text.split('\n').some((raw) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) return false;
+    return line === TRACE_IGNORE_LINE || line === `/${TRACE_IGNORE_LINE}`;
+  });
+}
+
+/**
+ * `trace ignore` - the scaffold-time writer of the ignore line, and the
+ * read-only reporter `/cad-health` runs (D-03).
+ *
+ * `ignored` and `tracked` are the state AS FOUND, before any write; `written`
+ * says what this call changed. `--check` writes nothing at all: /cad-health
+ * reports on a project it did not create and may not edit its `.gitignore`.
+ * @param {string} root @param {any} opts
+ */
+function cmdTraceIgnore(root, opts) {
+  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  const file = join(root, '.gitignore');
+  const git = gitIgnoreState(root);
+  const ignored = git.method === 'git' ? git.travels : gitignoreCarriesLine(root);
+  const common = {
+    root,
+    file,
+    line: TRACE_IGNORE_LINE,
+    ignored,
+    tracked: traceTracked(root),
+    method: git.method,
+    ...(git.source ? { source: git.source } : {}),
+  };
+  if ('check' in opts) return ok({ ...common, written: false });
+  // Already covered by a line that travels: the no-op that makes a re-run safe.
+  if (ignored) return ok({ ...common, written: false, reason: 'already-ignored' });
+
+  // Every existing byte survives. The newline is added only when the current
+  // contents lack a trailing one, so a brownfield `.gitignore` keeps every line
+  // it had and the new line still lands on a line of its own.
+  const existing = read(file);
+  const next = existing === null || existing === ''
+    ? `${TRACE_IGNORE_COMMENT}\n${TRACE_IGNORE_LINE}\n`
+    : `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${TRACE_IGNORE_COMMENT}\n${TRACE_IGNORE_LINE}\n`;
+  atomicWrite(file, next);
+  return ok({ ...common, written: true });
+}
+
 function cmdTrace(dir, sub, opts) {
+  if (sub === 'ignore') {
+    // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
+    // there while the line it carries is `.planning/trace.jsonl`. A `--root`
+    // present with nothing usable after it is REFUSED rather than falling
+    // through to the cwd, which would edit a different tree than the caller
+    // named (the `#42/#45` rail).
+    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
+      return fail('bad-args', 'trace ignore --root needs a path after it: --root <project root>');
+    }
+    return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
+  }
   if (sub === 'append') {
-    const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+    const parsedPhase = requirePhaseArg(opts.phase);
     if (!parsedPhase.ok) return fail('bad-args', 'trace append needs --phase <N>');
     const family = typeof opts.family === 'string' ? opts.family : '';
     if (!FAMILIES.includes(family)) {
@@ -1764,13 +2131,83 @@ function cmdTrace(dir, sub, opts) {
     }
     const event = typeof opts.event === 'string' && opts.event ? opts.event : '';
     if (!event) return fail('bad-args', 'trace append needs --event <name>');
+
+    // --tokens: what the dispatch COST, read by the orchestrator off the
+    // worker's return metadata. A malformed value is a malformed CALL, not a
+    // best-effort append with the field dropped: a dropped field renders the
+    // role `unrecorded` while the caller believes a figure was recorded, which
+    // is exactly the zero/unrecorded/recorded conflation the per-role block
+    // exists to prevent. So nothing at all is appended here.
+    // One exception to "malformed value, nothing appended": a COMMA-GROUPED
+    // integer. This plugin prints token figures grouped (context.md's measured
+    // block reads `cad-planner 146,405`) three lines from the `--tokens` order
+    // that copies them, so `--tokens 146,405` is the transcription the prose
+    // itself models. Refusing it drops the append, and the `dispatch` half is
+    // already written, so the worker is stranded in renderTrace's unpaired[]
+    // forever - escalating a recording error into loss of the bracket it was
+    // recording. Grouping is stripped only in the strict 3-digit shape, so
+    // `1,2,3` and `146,40` are still malformed CALLS and still refused.
+    let tokens;
+    if ('tokens' in opts) {
+      const raw = typeof opts.tokens === 'string' && /^\d{1,3}(?:,\d{3})+$/.test(opts.tokens.trim())
+        ? opts.tokens.trim().replace(/,/g, '')
+        : opts.tokens;
+      const parsed = requireInt(raw);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', 'trace append --tokens needs a non-negative integer');
+      }
+      tokens = parsed.value;
+    }
+
+    // --read: the read-set the SITE caused the worker to read, as ONE
+    // comma-separated value split the way `phase-done --reqs` splits its ids.
+    // A repeated flag is impossible by construction rather than by choice -
+    // `parseArgs` does `opts[a.slice(2)] = next`, so `--read a --read b` would
+    // keep only `b` and the record would drop most of its rows while looking
+    // complete. Do not "improve" this into a repeatable flag.
+    //
+    // GRAMMAR: an element is any VERBATIM string naming something the site
+    // caused the worker to read - a path, a glob, or a non-path reference (a
+    // `<base>..<head>` ref range) the worker resolves for itself. Stored with
+    // no existence check, no normalization and no byte measurement, so a reader
+    // converting the set to bytes must resolve each element BY KIND rather than
+    // assume a plain path.
+    let read;
+    if ('read' in opts) {
+      const list = typeof opts.read === 'string'
+        ? opts.read.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      // A bare `--read`, an empty string, or an all-blank value is almost
+      // always an unset `"$PATHS"`, and a complete-looking dispatch with no
+      // read-set is the failure this refusal exists against.
+      if (!list.length) {
+        return fail('bad-args', 'trace append --read needs a comma-separated path list');
+      }
+      read = list;
+    }
+
+    // No flag below is coupled to an event NAME: the seam stays event-agnostic
+    // exactly as it is today, which is what makes `return`, `checkpoint` and
+    // `escalation` store tokens identically.
     const res = appendEvent(dir, {
-      phase: parsedPhase.value,
+      // The caller's SPELLING, which is what separates `1.10` from `1.1`:
+      // normalized, both phases shared one trace key and one correlation id, so
+      // the record joined two phases into one story. `lib/trace.mjs`'s `key()`
+      // stringifies both sides of every comparison, so the derived id, the
+      // render filter and the dispatch/terminal pairing all keep working
+      // against traces written before this change and lib/trace.mjs needs no
+      // edit.
+      phase: parsedPhase.raw,
       family,
       event,
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
       ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
       ...(typeof opts.detail === 'string' && opts.detail ? { detail: opts.detail } : {}),
+      // A bare `--role` parses as boolean `true`; the same guard `--plan` and
+      // `--sha` use records nothing rather than the literal `true`.
+      ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
+      ...(tokens === undefined ? {} : { tokens }),
+      ...(read === undefined ? {} : { read }),
     });
     return ok({
       written: res.written,
@@ -1781,9 +2218,9 @@ function cmdTrace(dir, sub, opts) {
   if (sub === 'render') {
     let phase;
     if (opts.phase !== undefined) {
-      const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+      const parsedPhase = requirePhaseArg(opts.phase);
       if (!parsedPhase.ok) return fail('bad-args', 'trace render --phase must be a phase number');
-      phase = parsedPhase.value;
+      phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
     return ok({
@@ -1791,12 +2228,13 @@ function cmdTrace(dir, sub, opts) {
       corr: r.corr,
       capped: r.capped,
       counts: r.counts,
+      ...(Object.keys(r.roles).length ? { roles: r.roles } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       events: r.events,
       unpaired: r.unpaired,
     });
   }
-  return fail('usage', 'trace <append|render>');
+  return fail('usage', 'trace <append|render|ignore>');
 }
 
 // ---------------------------------------------------------------------------
@@ -2064,6 +2502,131 @@ function cmdRenumber(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// debt-harvest - every `CADENCE-DEBT` marker in the tracked tree, collected into
+// `.planning/CAPTURE.md`'s own section. The grammar and the rendering live in
+// lib/debt-markers.mjs (pure); this owns the walk, the reads and the write.
+//
+// `--root` is the PROJECT root, not `--dir`: this scans SOURCE and writes into
+// `.planning`, the same reason `detect-commands` states for its own flag.
+// ---------------------------------------------------------------------------
+
+/** Files larger than this are skipped silently - a marker lives on one line. */
+const DEBT_MAX_FILE_BYTES = 1048576;
+
+/** The heading the harvest owns and rewrites wholesale. */
+const DEBT_HEADING = '## Debt markers';
+
+/**
+ * Replace `heading`'s body wholesale, or append the section when it is absent.
+ *
+ * Bounded at BOTH ends by the EXPORTED `sectionSpan` rather than a second fence
+ * scanner (D-12): a `## ` line inside a fenced block in someone's `## Todos`
+ * bullet must not be read as the section boundary - nor as the section's START.
+ * Finding the heading with a bare `findIndex` was the second half of that same
+ * bug and the more destructive one: a fenced example of `## Debt markers` in an
+ * earlier section became the rewrite's anchor, and everything from inside that
+ * code block onward - `## Seeds`, `## Notes`, their bullets - was replaced by
+ * the new body.
+ * @param {string} text @param {string} heading @param {string} body
+ * @returns {string}
+ */
+function replaceSection(text, heading, body) {
+  const lines = text.split('\n');
+  const { start, end } = sectionSpan(lines, heading);
+  if (start < 0) {
+    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
+    return `${text}${sep}${heading}\n\n${body}`;
+  }
+  const tail = lines.slice(end);
+  return `${lines.slice(0, start + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
+}
+
+function cmdDebtHarvest(root) {
+  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  /** @type {string} */
+  let listing;
+  try {
+    listing = execFileSync('git', ['-C', root, 'ls-files', '-z'],
+      { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
+  } catch (e) {
+    // An UNENUMERABLE tree must never report zero markers: `markers: 0` is the
+    // answer a caller acts on, and it has to mean "none planted", never "the
+    // walk did not happen".
+    return fail('no-git', `${root} could not be enumerated with git ls-files`
+      + ` (${e && e.message ? e.message.split('\n')[0] : String(e)})`);
+  }
+
+  const entries = [];
+  let files = 0;
+  for (const rel of listing.split('\0')) {
+    if (!rel) continue;
+    const segs = rel.split('/');
+    // `.planning/` holds the harvest's OWN OUTPUT, which is TRACKED in some
+    // projects (hindsight, assistant) even though it is gitignored here - so
+    // scanning it would make the harvest ingest itself and destroy the
+    // idempotence the whole design rests on. It also holds every planning doc
+    // that quotes the convention.
+    if (segs.includes('.planning')) continue;
+    // `git ls-files` omits UNTRACKED files, which is what keeps an ignored
+    // `node_modules/` out in the ordinary case. It is NOT "every ignored file
+    // for free": an ignore rule does not remove an ALREADY TRACKED path from
+    // `ls-files`, so a force-added (`git add -f`) or historically tracked
+    // `node_modules/pkg/x.js` is still enumerated and would contribute
+    // third-party markers. Hence the explicit skip, here beside the other one.
+    if (segs.includes('node_modules')) continue;
+    const abs = join(root, rel);
+    let buf;
+    try {
+      // `lstatSync`, so a SYMLINK is classified as a link rather than as whatever
+      // it points at. `statSync` followed it and the read followed it too, so a
+      // tracked `src/link.js -> /tmp/outside.js` put the external file's marker in
+      // the queue under the in-tree path - the harvest reporting a corner-cut at a
+      // line that does not contain one, sourced from a file the project does not
+      // contain. A tracked symlink's TARGET is either in the tree (enumerated on
+      // its own path, and reported there) or outside it, so skipping links loses
+      // no marker that belongs here.
+      const st = lstatSync(abs);
+      if (st.isSymbolicLink()) continue;
+      if (st.size > DEBT_MAX_FILE_BYTES) continue;
+      buf = readFileSync(abs);
+    } catch { continue; } // deleted since ls-files, or unreadable
+    if (buf.includes(0)) continue; // binary
+    files++;
+    for (const m of debtMarkersIn(buf.toString('utf8'))) entries.push({ ...m, path: rel });
+  }
+
+  const captureFile = join(root, '.planning', 'CAPTURE.md');
+  const body = renderDebtSection(entries);
+  const existing = read(captureFile);
+  const next = existing === null
+    // Created with the same three headings /cad-capture creates, so a harvest on
+    // a project with no queue yet leaves the file /cad-capture expects.
+    ? `## Todos\n\n- None.\n\n## Seeds\n\n- None.\n\n## Notes\n\n- None.\n\n${DEBT_HEADING}\n\n${body}`
+    : replaceSection(existing, DEBT_HEADING, body);
+  // Written ONLY when it differs, so a second run reports written:false and
+  // leaves the file byte-identical - the idempotence AC6 asks for.
+  let written = false;
+  if (next !== existing) {
+    try {
+      atomicWrite(captureFile, next);
+    } catch (e) {
+      return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
+    }
+    written = true;
+  }
+  const malformed = entries.filter((e) => e.malformed)
+    .map((e) => ({ path: e.path, line: e.line, missing: e.malformed }));
+  ok({
+    root,
+    file: captureFile,
+    markers: entries.length,
+    files,
+    written,
+    ...(malformed.length ? { malformed } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -2111,6 +2674,15 @@ const COMMANDS = {
     ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
     : cmdDetectCommands(opts.root || process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
+  // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
+  // SOURCE and writes into `.planning`. Same present-but-unusable refusal
+  // `trace ignore` carries.
+  'debt-harvest': (_dir, _sub, opts) => {
+    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
+      return fail('bad-args', 'debt-harvest --root needs a path after it: --root <project root>');
+    }
+    return cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd());
+  },
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
+import { DEBT_TOKEN } from './lib/debt-markers.mjs';
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 
@@ -848,6 +849,68 @@ test('uat record: verifier source cannot overwrite a recorded result', () => {
     '--source', 'verifier'], dir);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'would-overwrite');
+});
+
+// The walk's own provenance. `source` accepted any string and stored nothing
+// outside `verifier`, so a check the MODEL ran and cited was written to disk as
+// a user answer with nothing reporting the drop - registration is what makes
+// the value survive, not merely writing it.
+test('uat record --source model: stores the provenance and it survives a later record', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--evidence', 'node --test x.test.mjs -> 12 pass 0 fail', '--source', 'model'], dir);
+  assert.equal(r.ok, true);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 1\. Login works\nexpected: [^\n]*\nstatus: pass\nfirst_pass: pass\nsource: model/);
+  // ...and the whole-file rewrite a record on a DIFFERENT item performs keeps it
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  const after = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(after, /source: model/);
+  assert.equal(after.match(/source:/g).length, 1); // item 2's user answer wrote none
+});
+
+test('uat record: an out-of-enum --source is refused with the file byte-unchanged', () => {
+  const dir = uatTree();
+  const before = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--source', 'bogus'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /user \| verifier \| model/);
+  assert.equal(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), before);
+});
+
+test('uat record --source user: writes no source line - user stays implicit', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--source', 'user'], dir);
+  assert.equal(r.ok, true);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.equal(/source:/.test(text), false);
+});
+
+// `why_human` is the verifier's per-item reason the walk reads as already
+// judged. It reached UAT.md through no path at all before: `merge` appended the
+// human check without it, so the walk had to re-judge every item the deep pass
+// had already ruled on.
+test('uat merge: a human_checks why_human is carried onto the appended item and survives', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    human_checks: [
+      { name: 'Card charges', expected: 'receipt emailed', why_human: 'moves real money' },
+      { name: 'Prints on the label printer', expected: 'label ejects' }, // no reason given
+    ],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.added, 2);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 3\. Card charges\nexpected: receipt emailed\norigin: verifier\nwhy_human: moves real money\nstatus: pending/);
+  // no default is invented for the entry that carried none
+  assert.match(text, /### 4\. Prints on the label printer\nexpected: label ejects\norigin: verifier\nstatus: pending/);
+  // ...and the first `record` rewrite preserves it - registration, not luck
+  run(['uat', 'record', '--phase', '1', '--item', '3', '--result', 'pass'], dir);
+  const after = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(after, /why_human: moves real money/);
 });
 
 test('uat refresh: appends only new names, never touches recorded results', () => {
@@ -1859,6 +1922,47 @@ test('audit: an ## Active id that is not id-shaped can never reach the arithmeti
   assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
 });
 
+test('audit: a digit-leading category with a letter in it reaches the arithmetic (PRS-02)', () => {
+  // `2FA-01` is how a real project spells this, and the head-anchored admission
+  // test held it out of `unpicked`, out of `unseeded.active_ids` and out of
+  // `counts` entirely - an `## Active` requirement no phase picked up, silently
+  // absolving the traceability gate.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **2FA-01**: two-factor auth\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.requirements, [{ id: '2FA-01', break: 'unpicked' }]);
+  assert.deepEqual(r.unseeded, { active_ids: ['2FA-01'] });
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+  assert.equal(r.counts.total, r.counts.traced + r.counts.broken + r.counts.deferred);
+  // ...and it is a DECLARATION, so nothing reports it as a non-id bullet.
+  assert.equal((r.active_issues || []).length, 0, JSON.stringify(r.active_issues));
+});
+
+test('audit: a category with NO letter at all is still a phantom, reported and never counted', () => {
+  // The same fixture spelled `2026-08`: a bolded date must not become an admitted
+  // requirement id feeding the counts - the phantom `orphans.plan_ids` break this
+  // project already paid for once.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **2026-08**: the August slice\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements, []);
+  assert.deepEqual(r.unseeded, { active_ids: [] });
+  assert.equal(r.active_issues[0].code, 'active-non-id-bullet');
+  assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
+});
+
 test('audit: a v1.3.1-shaped ## Active table is reported in active_issues - and its ids stay invisible to the break', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'Done', checked: true }],
@@ -1922,6 +2026,155 @@ test('audit: a colon INSIDE the bold span reports, and is never normalized into 
   assert.equal(r.active_issues[0].code, 'active-non-id-bullet');
   // One requirement, counted once - not `AUD-01` traced plus `AUD-01:` broken.
   assert.deepEqual(r.counts, { total: 1, traced: 1, broken: 0, deferred: 0 });
+});
+
+// --- audit: version_drift (FRI-03) -------------------------------------------
+// The predicate is "the planning docs name a version this repo has ALREADY
+// TAGGED, while the cycle under that number is still open". Not `docs !=
+// manifest`: no manifest is read at all (D-03), and at tag v2.4.0 this repo's
+// manifest agreed with its docs, so a manifest test was silent on issue #87.
+
+/**
+ * `makeTree`'s output made a REAL git repo carrying `tags`, with a PROJECT.md
+ * whose `### Active` names `version`. Modelled on git-branch.test.mjs's
+ * `taggedFixture` and NOT on `leaseRepo`: identity and BOTH config scopes are
+ * neutralized in the env, so `git tag` cannot die with `fatal: no tag message?`
+ * on a machine carrying a global `tag.gpgsign` / `commit.gpgsign` - this one
+ * does. `dir` is the `.planning` dir, so the repo root is one level up.
+ * @param {any} spec @param {{version?: string|null, tags?: string[],
+ *   roadmapTitle?: string}} opts
+ */
+function taggedTree(spec, { version = 'v9.9.0', tags = [], roadmapTitle } = {}) {
+  const dir = makeTree(spec);
+  if (version !== null) {
+    writeFileSync(join(dir, 'PROJECT.md'),
+      `# Fixture\n\n## Requirements\n\n### Active\n\n\`${version}\` - the open cycle\n\n### Out of Scope\n`);
+  } else {
+    writeFileSync(join(dir, 'PROJECT.md'), '# Fixture\n\n## Requirements\n\n### Active\n\nNo version token here.\n\n### Out of Scope\n');
+  }
+  if (roadmapTitle !== undefined) {
+    const text = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    writeFileSync(join(dir, 'ROADMAP.md'), text.replace(/^# .*$/m, roadmapTitle));
+  }
+  const root = dirname(dir);
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  };
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore', env });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  for (const t of tags) git('tag', t);
+  return dir;
+}
+
+/**
+ * One roadmap phase; `done` decides whether its artifacts read as complete.
+ * Both arms are a CLEAN audit - the plan declares the requirement, so the row
+ * traces either way - which is what makes `version_drift` the only key that
+ * varies between these fixtures.
+ */
+const cycleSpec = (done) => ({
+  roadmap: [{ n: 1, name: 'One', checked: done }],
+  phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: done,
+    uat: [{ status: done ? 'pass' : 'pending' }] } },
+  reqs: [['AUD-01', 1, done ? 'Complete' : 'Pending']],
+});
+
+test('audit: a doc version a tag already carries, with the cycle still open, emits version_drift', () => {
+  const dir = taggedTree(cycleSpec(false), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
+test('audit: the SAME tagged version with every phase complete is the interrupted close, not drift', () => {
+  // D-01's exemption: milestone.md tags at step 2 and evolves PROJECT.md at
+  // step 4, so a close interrupted between them leaves exactly this on disk.
+  // This case is what a tag-only predicate would get wrong.
+  const dir = taggedTree(cycleSpec(true), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+});
+
+test('audit: a phase whose checklist holds only a blocked item does not hold the cycle open', () => {
+  // `blocked` is TERMINAL (verify.md) and `uatComplete` refuses it, so this
+  // phase can never derive complete. Under a complete-only exemption the gate
+  // would FAIL forever with "complete the close" unreachable as a remedy.
+  const dir = taggedTree({
+    roadmap: [{ n: 1, name: 'One', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: true,
+      uat: [{ status: 'pass' }, { status: 'blocked', reason: 'needs the device' }] } },
+    reqs: [['AUD-01', 1, 'Complete']],
+  }, { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+});
+
+test('audit: one still-answerable item beside a blocked one keeps the cycle open', () => {
+  // The complement of the case above: `pending` is what "still being worked
+  // under a published number" looks like, and the blocked item beside it
+  // changes nothing.
+  const dir = taggedTree({
+    roadmap: [{ n: 1, name: 'One', checked: false }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: true,
+      uat: [{ status: 'pending' }, { status: 'blocked', reason: 'needs the device' }] } },
+    reqs: [['AUD-01', 1, 'Pending']],
+  }, { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
+test('audit: a doc version that merely SORTS BELOW the newest tag is not drift - membership, not order', () => {
+  // D-04: `v9.9.0` published by nothing while `v9.9.1` exists is a legitimate
+  // maintenance milestone, and the retired scalar comparand refused exactly it.
+  const dir = taggedTree(cycleSpec(false), { version: 'v9.9.0', tags: ['v9.9.1'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+});
+
+test('audit: no git repo at all leaves the envelope unchanged - no tags is no evidence, never a failure', () => {
+  const dir = makeTree(cycleSpec(false));
+  writeFileSync(join(dir, 'PROJECT.md'),
+    '# Fixture\n\n## Requirements\n\n### Active\n\n`v9.9.0` - the open cycle\n\n### Out of Scope\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+  // The ordinary open-cycle arithmetic still runs: an incomplete phase's row is
+  // `not-verified`, exactly as it is with a repo present. The absent repo costs
+  // the audit nothing but the tag question.
+  assert.equal(r.requirements[0].break, 'not-verified');
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+});
+
+test('audit: with no ### Active version, the ROADMAP title supplies the comparand', () => {
+  // The same `### Active` -> ROADMAP-title precedence branch naming uses - one
+  // prose reader, shared, so the two cannot disagree about the milestone.
+  const dir = taggedTree(cycleSpec(false),
+    { version: null, tags: ['v9.9.0'], roadmapTitle: '# Roadmap: Fixture v9.9.0' });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
+test('audit: the v2.4.0 state of this repo (issue #87) fires - the regression pin FRI-03 exists for', () => {
+  // Docs Active v2.4.0, tag v2.4.0 present, phases still open. The manifest
+  // ALSO read 2.4.0 at that moment, which is why a manifest predicate would
+  // have been silent here and the tag-plus-open-cycle one is not.
+  const dir = taggedTree(cycleSpec(false), { version: 'v2.4.0', tags: ['v2.3.0', 'v2.4.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v2.4.0', published_as: 'v2.4.0', cycle_state: 'open' });
 });
 
 test('seed-reqs: a v1.3.1-shaped ## Active table leaves its envelope unchanged - the delegation did not leak into the writer', () => {
@@ -4081,4 +4334,625 @@ test('lease-check: a staged path that is not valid UTF-8 is refused BY NAME, nev
   assert.equal(r.reason, 'unrepresentable-paths');
   assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"']);
   assert.equal(r._exit, 1);
+});
+
+// --- --phase carries the caller's spelling, at every shape site (D-02) -------
+//
+// `String(Number('1.10'))` is `'1.1'`, so every seam that built a phase
+// directory from the NUMBER read a different phase's files and said ok:true
+// about it. These rows are the falsifying fixtures: a tree where both
+// spellings exist as separate directories, and a tree where the padded one
+// does not exist at all.
+
+test('lease-check: --phase 1.10 leases against phases/1.10, not phases/1.1', () => {
+  const { repo, dir } = leaseRepo({ phase: '1.1', files: ['one-one.txt'] });
+  const pdir = join(dir, 'phases', '1.10');
+  mkdirSync(pdir, { recursive: true });
+  writeFileSync(join(pdir, 'PLAN.md'), '---\nphase: 1.10\nfiles:\n  - one-ten.txt\n---\n# Plan\n');
+  stage(repo, 'one-ten.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1.10', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.plan_file, '.planning/phases/1.10/PLAN.md');
+  // ...and phase 1.1's own lease does NOT license 1.10's file.
+  const other = leaseCheck(repo, dir, ['--phase', '1.1', '--plan', '1']);
+  assert.equal(other.ok, false);
+  assert.equal(other.plan_file, '.planning/phases/1.1/PLAN.md');
+  assert.deepEqual(other.undeclared, ['one-ten.txt']);
+});
+
+test('lease-check: --phase 08 names phases/08, never answering about phases/8', () => {
+  const { repo, dir } = leaseRepo({ phase: 8, files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '08', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-plan');
+  assert.match(r.detail, /phases[/\\]08$/);
+  assert.equal(r.hint, '/cad-plan 08');
+});
+
+test('plan-overlap: --phase 08 reports no-phase-dir naming phases/08', () => {
+  const dir = makeTree({ roadmap: [{ n: 8, name: 'Eight' }], phases: { 8: { plan: true } } });
+  const r = run(['plan-overlap', '--phase', '08'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.match(r.detail, /phases[/\\]08 not found$/);
+  // ...and the legal spelling still answers.
+  assert.equal(run(['plan-overlap', '--phase', '8'], dir).ok, true);
+});
+
+test('plan-overlap: --phase 1.10 intersects phases/1.10\'s plans', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  // phases/1.1 holds a SINGLE plan; phases/1.10 holds two that overlap. A
+  // normalizing reader answers "fewer than two plans - nothing to intersect".
+  const one = join(dir, 'phases', '1.1');
+  mkdirSync(one, { recursive: true });
+  writeFileSync(join(one, 'PLAN.md'), '---\nphase: 1.1\nfiles:\n  - a.txt\n---\n# Plan\n');
+  const ten = join(dir, 'phases', '1.10');
+  mkdirSync(ten, { recursive: true });
+  writeFileSync(join(ten, 'PLAN-1.md'), '---\nphase: 1.10\nfiles:\n  - shared.txt\n---\n# Plan 1\n');
+  writeFileSync(join(ten, 'PLAN-2.md'), '---\nphase: 1.10\nfiles:\n  - shared.txt\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.note, undefined);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['shared.txt'] }]);
+  // The echoed phase stays the NUMBER - arithmetic and comparisons keep it.
+  assert.equal(r.phase, 1.1);
+});
+
+test('uat: --phase 1.10 reads phases/1.10/UAT.md, never phase 1.1\'s checklist', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { '1.1': { uat: [{ status: 'pass' }] } } });
+  const r = run(['uat', 'status', '--phase', '1.10'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-uat');
+  assert.match(r.detail, /phases[/\\]1\.10[/\\]UAT\.md not found$/);
+  // ...and `uat init` on 1.10 writes ITS OWN file, leaving 1.1's untouched.
+  const before = readFileSync(join(dir, 'phases', '1.1', 'UAT.md'), 'utf8');
+  mkdirSync(join(dir, 'phases', '1.10'), { recursive: true });
+  const init = run(['uat', 'init', '--phase', '1.10'], dir,
+    JSON.stringify([{ name: 'ten', expected: 'ten' }]));
+  assert.equal(init.ok, true, JSON.stringify(init));
+  assert.match(init.file, /phases[/\\]1\.10[/\\]UAT\.md$/);
+  assert.equal(readFileSync(join(dir, 'phases', '1.1', 'UAT.md'), 'utf8'), before);
+  // The frontmatter LABEL is the caller's spelling too.
+  assert.match(readFileSync(join(dir, 'phases', '1.10', 'UAT.md'), 'utf8'), /^phase: 1\.10$/m);
+});
+
+test('uat: a malformed --phase is refused in the shared wording, before any read', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { uat: [{ status: 'pass' }] } } });
+  for (const bad of ['-1', '1e21', 'abc']) {
+    const r = run(['uat', 'status', '--phase', bad], dir);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+  }
+});
+
+test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 8, name: 'Eight' }],
+    phases: { 8: { plan: true, planReqs: ['FLD-01'] } },
+    reqs: [],
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements\n\n## Active\n\n- **FLD-01**: x\n\n## Traceability\n\n'
+    + '| Requirement | Phase | Status |\n|---|---|---|\n');
+  const r = run(['seed-reqs', '--phase', '08'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.match(r.detail, /phases[/\\]08 not found$/);
+  // ...and the legal spelling seeds.
+  assert.deepEqual(run(['seed-reqs', '--phase', '8'], dir).seeded, ['FLD-01']);
+});
+
+// --- status: the phase-directory grammar, reported and never resolved --------
+//
+// D-01: Cadence states numeric-only as the grammar and REPORTS what violates it.
+// It does not learn to resolve `08-meteogram-legend`, ship a `<N>-<slug>` second
+// form, or migrate anything - so these rows assert a diagnostic, never a lookup.
+
+/** `phases/<name>/` directories on a tree, created empty. */
+function phaseDirs(dir, names) {
+  for (const name of names) mkdirSync(join(dir, 'phases', name), { recursive: true });
+  return dir;
+}
+
+const grammarDrift = (r) => (r.drift || []).filter((d) => d.kind === 'phase-dir-grammar');
+
+test('status: named and zero-padded phase dirs are reported, grouped by prefix', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { plan: true } } });
+  phaseDirs(dir, ['08-meteogram-legend', '08', '14-data-depth-x', '14-shared-derivation']);
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const g = grammarDrift(r);
+  assert.equal(g.length, 2, JSON.stringify(g));
+  assert.deepEqual(g[0].entries, ['08', '08-meteogram-legend']);
+  assert.match(g[0].detail, /share numeric prefix 8/);
+  assert.deepEqual(g[1].entries, ['14-data-depth-x', '14-shared-derivation']);
+  assert.match(g[1].detail, /share numeric prefix 14/);
+  // The legal directory is never itself an entry, and the kind carries no
+  // `phase` key - there is no phase number to report.
+  assert.equal(g.some((d) => d.entries.includes('1')), false);
+  assert.equal('phase' in g[0], false);
+});
+
+test('status: a tree of legal phase dirs reports no drift at all', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 10, name: 'Ten' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 10: { plan: true } },
+  });
+  phaseDirs(dir, ['2.1']);
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.drift, undefined, JSON.stringify(r.drift));
+});
+
+test('status: a stray FILE under phases/ is not a phase directory and is not reported', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { plan: true } } });
+  writeFileSync(join(dir, 'phases', '.DS_Store'), 'junk');
+  writeFileSync(join(dir, 'phases', 'notes.md'), '# scratch\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(grammarDrift(r), []);
+});
+
+test('status: 08 beside a legal 8 names the phase it collides with', () => {
+  const dir = makeTree({ roadmap: [{ n: 8, name: 'Eight' }], phases: { 8: { plan: true } } });
+  phaseDirs(dir, ['08']);
+  const r = run(['status'], dir);
+  const g = grammarDrift(r);
+  assert.equal(g.length, 1, JSON.stringify(g));
+  assert.deepEqual(g[0].entries, ['08']);   // exactly the illegal one
+  assert.match(g[0].detail, /phases[/\\]?8 is the phase they collide with/);
+  assert.match(g[0].detail, /is not a phase directory name/);
+});
+
+// --- trace ignore: the run record stays out of git by itself (FLD-02) --------
+//
+// The other `--root` subcommand, tested beside detect-commands for that reason.
+// `--root` is the PROJECT root here (that is where `.gitignore` lives), and the
+// write arm is scaffold-time only: `--check` is what /cad-health runs, and it
+// may not edit a file it did not create (D-03).
+
+/** A scratch PROJECT root, a git repo unless `git:false`. */
+function ignoreRoot({ git = true, gitignore = null, planning = true } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-ignore-'));
+  if (git) {
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: root });
+    execFileSync('git', ['config', 'user.name', 'T'], { cwd: root });
+  }
+  if (planning) mkdirSync(join(root, '.planning'), { recursive: true });
+  if (gitignore !== null) writeFileSync(join(root, '.gitignore'), gitignore);
+  return root;
+}
+
+/** `trace ignore` against a project root; parse its one JSON line. */
+function traceIgnore(root, extra = []) {
+  const args = root === null ? ['trace', 'ignore', ...extra]
+    : ['trace', 'ignore', '--root', root, ...extra];
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, ...args], { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+const gitignoreOf = (root) => readFileSync(join(root, '.gitignore'), 'utf8');
+
+test('trace ignore: a fresh repo with no .gitignore gets the line written', () => {
+  const root = ignoreRoot();
+  const r = traceIgnore(root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.written, true);
+  assert.equal(r.ignored, false);         // the state as FOUND
+  assert.equal(r.tracked, false);
+  assert.equal(r.line, '.planning/trace.jsonl');
+  assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
+});
+
+test('trace ignore: a re-run adds no second line and touches no byte', () => {
+  const root = ignoreRoot();
+  assert.equal(traceIgnore(root).written, true);
+  const after = gitignoreOf(root);
+  const again = traceIgnore(root);
+  assert.equal(again.written, false);
+  assert.equal(again.reason, 'already-ignored');
+  assert.equal(again.ignored, true);
+  assert.equal(gitignoreOf(root), after);
+});
+
+test('trace ignore: a brownfield .gitignore keeps every line it had', () => {
+  // No trailing newline, deliberately: the shape that would otherwise glue the
+  // new line onto the last existing one.
+  const root = ignoreRoot({ gitignore: 'node_modules/\ndist/\n*.log' });
+  const r = traceIgnore(root);
+  assert.equal(r.written, true, JSON.stringify(r));
+  const lines = gitignoreOf(root).split('\n');
+  for (const kept of ['node_modules/', 'dist/', '*.log']) {
+    assert.ok(lines.includes(kept), `lost ${kept}: ${JSON.stringify(lines)}`);
+  }
+  assert.ok(lines.includes('.planning/trace.jsonl'), JSON.stringify(lines));
+});
+
+test('trace ignore: a project ignoring .planning/ wholesale is already correct', () => {
+  const root = ignoreRoot({ gitignore: '.planning/\n' });
+  const r = traceIgnore(root, ['--check']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.ignored, true);
+  assert.equal(r.method, 'git');          // only git can see a directory rule
+  assert.equal(r.written, false);
+  // ...and --check never writes, so the file is exactly what it was.
+  assert.equal(gitignoreOf(root), '.planning/\n');
+  // The write arm agrees: nothing to add.
+  assert.equal(traceIgnore(root).written, false);
+  assert.equal(gitignoreOf(root), '.planning/\n');
+});
+
+test('trace ignore: a non-git root falls back to the literal scan and still writes', () => {
+  const root = ignoreRoot({ git: false });
+  const r = traceIgnore(root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.method, 'file');
+  assert.equal(r.written, true);
+  assert.equal(r.tracked, false);
+  assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
+  // ...and the literal scan reads its own write back on the next run.
+  assert.equal(traceIgnore(root).reason, 'already-ignored');
+});
+
+test('trace ignore: a tracked run record is REPORTED, never quietly ignored', () => {
+  const root = ignoreRoot();
+  writeFileSync(join(root, '.planning', 'trace.jsonl'), '{"phase":1}\n');
+  execFileSync('git', ['add', '--', '.planning/trace.jsonl'], { cwd: root });
+  const r = traceIgnore(root, ['--check']);
+  assert.equal(r.tracked, true, JSON.stringify(r));
+  assert.equal(r.ignored, false);
+});
+
+test('trace ignore: a TRACKED record whose line is present reports ignored and writes nothing', () => {
+  // The regression the `--no-index` flag closes. `check-ignore` answers "would
+  // this path be ignored if it were untracked", so a path in the INDEX matched
+  // nothing at all: `ignored` came back false with the rule sitting right there
+  // in `.gitignore`, and the write arm - which keys off that value - appended the
+  // comment and the line again on EVERY run. Two runs left three copies.
+  const root = ignoreRoot({ gitignore: '.planning/trace.jsonl\n' });
+  writeFileSync(join(root, '.planning', 'trace.jsonl'), '{"phase":1}\n');
+  execFileSync('git', ['add', '-f', '--', '.planning/trace.jsonl'], { cwd: root });
+  const check = traceIgnore(root, ['--check']);
+  assert.equal(check.ignored, true, JSON.stringify(check));
+  assert.equal(check.tracked, true, JSON.stringify(check));
+  assert.equal(check.method, 'git');
+  assert.match(check.source, /\.gitignore$/);
+  // Both facts survive together: the rule is there AND the file is still indexed,
+  // which is the state whose remedy is `git rm --cached` and not another line.
+  const before = gitignoreOf(root);
+  assert.equal(traceIgnore(root).written, false);
+  assert.equal(traceIgnore(root).written, false);
+  assert.equal(gitignoreOf(root), before);
+  assert.equal(gitignoreOf(root).match(/^\.planning\/trace\.jsonl$/gm).length, 1);
+});
+
+test('trace ignore: a .git/info/exclude match does NOT satisfy the line', () => {
+  // The reason `-v` is used instead of `-q`: neither `.git/info/exclude` nor
+  // core.excludesFile is cloned, so a machine-local exclusion would report
+  // ignored:true and leave the project with no line of its own - and the
+  // collaborator who clones it commits the run record.
+  const root = ignoreRoot();
+  writeFileSync(join(root, '.git', 'info', 'exclude'), '.planning/trace.jsonl\n');
+  const check = traceIgnore(root, ['--check']);
+  assert.equal(check.ignored, false, JSON.stringify(check));
+  assert.equal(check.method, 'git');
+  assert.match(check.source, /exclude$/);
+  const r = traceIgnore(root);
+  assert.equal(r.written, true, JSON.stringify(r));
+  assert.match(gitignoreOf(root), /^\.planning\/trace\.jsonl$/m);
+});
+
+test('trace ignore: a --root present with nothing usable is refused, never the cwd', () => {
+  const root = ignoreRoot();
+  // A valueless flag: parseArgs renders it as boolean true.
+  const bare = traceIgnore(null, ['--root']);
+  assert.equal(bare.ok, false, JSON.stringify(bare));
+  assert.equal(bare.reason, 'bad-args');
+  assert.match(bare.detail, /--root/);
+  const empty = traceIgnore('');
+  assert.equal(empty.ok, false, JSON.stringify(empty));
+  assert.equal(empty.reason, 'bad-args');
+  // ...and the usable form still works, so the guard is not refusing everything.
+  assert.equal(traceIgnore(root).ok, true);
+});
+
+// --- debt-harvest: markers in tracked code reach the queue (DBT-01) ----------
+//
+// The token is BUILT from the export, never typed as a literal followed by a
+// colon: the harvest scans this tracked test file, and a literal marker here
+// would be collected as a real one - breaking `debt-harvest --root .` over this
+// repo, which must report zero.
+const debtLine = (text, ceiling, trigger) => {
+  const fields = [` ${text}`];
+  if (ceiling) fields.push(` ceiling: ${ceiling}`);
+  if (trigger) fields.push(` trigger: ${trigger}`);
+  return `${DEBT_TOKEN}:${fields.join(' |')}`;
+};
+
+/** A scratch PROJECT root that is a git repo, with `.planning/` present. */
+function debtRepo() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-debt-'));
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: root });
+  execFileSync('git', ['config', 'user.name', 'T'], { cwd: root });
+  mkdirSync(join(root, '.planning'), { recursive: true });
+  return root;
+}
+
+/** Write a file under the root and `git add` it (optionally forced). */
+function debtAdd(root, rel, body, force = false) {
+  const abs = join(root, rel);
+  mkdirSync(dirname(abs), { recursive: true });
+  writeFileSync(abs, body);
+  execFileSync('git', ['add', ...(force ? ['-f'] : []), '--', rel], { cwd: root });
+}
+
+/** `debt-harvest` against a project root; parse its one JSON line. */
+function harvest(root, extra = []) {
+  const args = root === null ? ['debt-harvest', ...extra]
+    : ['debt-harvest', '--root', root, ...extra];
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, ...args], { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+const captureOf = (root) => readFileSync(join(root, '.planning', 'CAPTURE.md'), 'utf8');
+
+test('debt-harvest: a planted marker is collected with its ceiling and trigger', () => {
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('single-tenant only', 'no tenant column', 'tenant two')}\n`);
+  const r = harvest(root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.markers, 1);
+  assert.equal(r.written, true);
+  const body = captureOf(root);
+  assert.match(body, /## Debt markers/);
+  assert.match(body, /- `src\/a\.js:1` single-tenant only - ceiling: no tenant column - trigger: tenant two/);
+});
+
+test('debt-harvest: the 19 conventional markers contribute NOTHING (AC5)', () => {
+  const root = debtRepo();
+  debtAdd(root, 'src/b.js', ['// TODO: fix this', '// FIXME: broken', '// XXX: careful',
+    '// HACK: works for now', '// NOTE: read me', '// placeholder', '// not implemented',
+    '// SHORTCUT: nope', '// DEBT: nope', '// CORNER: nope', '// TRIPWIRE: nope',
+    '// CUT: nope', '// CEILING: nope', '// CAD-DEBT: nope', '// todo!()',
+    '// unimplemented!()', '// WIP', '// REVIEW', '// OPTIMIZE'].join('\n'));
+  const r = harvest(root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.markers, 0);
+  assert.match(captureOf(root), /## Debt markers\n\n- None\.\n/);
+});
+
+test('debt-harvest: an untracked file and an ignored node_modules contribute nothing (AC5)', () => {
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('tracked cut', 'c', 't')}\n`);
+  // Untracked: `git ls-files` never lists it.
+  mkdirSync(join(root, 'src'), { recursive: true });
+  writeFileSync(join(root, 'src', 'untracked.js'), `// ${debtLine('untracked cut', 'c', 't')}\n`);
+  // Ignored AND untracked: the ordinary node_modules case.
+  writeFileSync(join(root, '.gitignore'), 'node_modules/\n');
+  execFileSync('git', ['add', '--', '.gitignore'], { cwd: root });
+  mkdirSync(join(root, 'node_modules', 'pkg'), { recursive: true });
+  writeFileSync(join(root, 'node_modules', 'pkg', 'x.js'), `// ${debtLine('vendor cut', 'c', 't')}\n`);
+  const r = harvest(root);
+  assert.equal(r.markers, 1, JSON.stringify(r));
+  assert.match(captureOf(root), /tracked cut/);
+  assert.doesNotMatch(captureOf(root), /untracked cut|vendor cut/);
+});
+
+test('debt-harvest: a FORCE-ADDED node_modules file is enumerated and still skipped', () => {
+  // The claim `git ls-files` does NOT support: an ignore rule does not remove an
+  // already-tracked path, so `ls-files` lists a force-added node_modules file.
+  // The explicit segment skip is what keeps third-party markers out, and this is
+  // the fixture that fails without it.
+  const root = debtRepo();
+  writeFileSync(join(root, '.gitignore'), 'node_modules/\n');
+  execFileSync('git', ['add', '--', '.gitignore'], { cwd: root });
+  debtAdd(root, 'node_modules/pkg/y.js', `// ${debtLine('vendor cut', 'c', 't')}\n`, true);
+  // The premise: git really does enumerate it.
+  const listed = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' });
+  assert.match(listed, /node_modules\/pkg\/y\.js/, 'fixture is wrong: git did not track it');
+  const r = harvest(root);
+  assert.equal(r.markers, 0, JSON.stringify(r));
+});
+
+test('debt-harvest: running twice leaves CAPTURE.md byte-identical (AC6)', () => {
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  const first = harvest(root);
+  assert.equal(first.written, true);
+  const after = captureOf(root);
+  const second = harvest(root);
+  assert.equal(second.written, false, JSON.stringify(second));
+  assert.equal(second.markers, 1);
+  assert.equal(captureOf(root), after);
+});
+
+test('debt-harvest: ## Todos is never touched, and a deleted marker disappears (AC6)', () => {
+  const root = debtRepo();
+  const todos = '## Todos\n\n- [ ] (phase 1) a hand-written item\n\n## Seeds\n\n- a seed\n';
+  writeFileSync(join(root, '.planning', 'CAPTURE.md'), todos);
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  assert.match(captureOf(root), /- \[ \] \(phase 1\) a hand-written item/);
+  assert.match(captureOf(root), /a cut/);
+  // Delete the marker from source: its bullet goes, the hand-written queue stays.
+  writeFileSync(join(root, 'src', 'a.js'), '// nothing to see\n');
+  const r = harvest(root);
+  assert.equal(r.markers, 0, JSON.stringify(r));
+  assert.doesNotMatch(captureOf(root), /a cut/);
+  assert.match(captureOf(root), /- \[ \] \(phase 1\) a hand-written item/);
+  assert.match(captureOf(root), /- a seed/);
+  // Every pre-existing section survived the rewrite.
+  assert.ok(captureOf(root).startsWith(todos.split('\n')[0]));
+});
+
+test('debt-harvest: a fenced ## line in someone else\'s bullet is never touched (D-12)', () => {
+  // The harvest rewrites ONE section, so a `## ` line fenced inside a `## Todos`
+  // bullet sits in the untouched prefix and survives whatever the bound does.
+  // This row pins that the rewrite does not reach it; the row BELOW is the one
+  // that proves the bound itself.
+  const root = debtRepo();
+  const fenced = '## Todos\n\n- [ ] keep this bullet:\n\n  ```sh\n  ## build output\n  make dist\n  ```\n\n'
+    + '## Debt markers\n\n- None.\n';
+  writeFileSync(join(root, '.planning', 'CAPTURE.md'), fenced);
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  const body = captureOf(root);
+  assert.match(body, /## build output/);          // not truncated mid-fence
+  assert.equal((body.match(/```/g) || []).length, 2, 'fence count must stay even');
+  assert.match(body, /make dist/);
+  assert.match(body, /a cut/);
+});
+
+test('debt-harvest: the section bound reads a fence, so stale debris cannot survive (D-12)', () => {
+  // The fixture where the bound actually DECIDES: `## Debt markers` comes FIRST
+  // and holds a stale fenced block whose content has a `## ` line. A bare
+  // `/^## /` boundary test stops INSIDE that fence, so everything from
+  // `## build output` down - an unclosed fence and its debris - is kept as the
+  // tail and re-emitted after the new body, leaving an odd fence count and
+  // rendering the rest of the queue as code. `sectionBound` skips fenced lines,
+  // so the whole stale section is replaced and `## Todos` is the real boundary.
+  const root = debtRepo();
+  // The `## ` line must be at column 0 INSIDE the fence: `sectionBound`'s own
+  // heading test is `/^## /`, so an INDENTED `  ## build output` is invisible to
+  // both readers and would make this row pass either way.
+  writeFileSync(join(root, '.planning', 'CAPTURE.md'),
+    '## Debt markers\n\n- [ ] stale hand note:\n\n```sh\n## build output\nmake dist\n```\n\n'
+    + '## Todos\n\n- [ ] a hand-written item\n');
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  const body = captureOf(root);
+  assert.match(body, /a cut/);
+  assert.match(body, /- \[ \] a hand-written item/);   // the real next section survives
+  assert.doesNotMatch(body, /## build output/, 'stale fenced debris survived the rewrite');
+  assert.doesNotMatch(body, /make dist/);
+  assert.equal((body.match(/```/g) || []).length, 0, 'an unclosed fence was left behind');
+});
+
+test('debt-harvest: a FENCED example of the owned heading is not mistaken for it', () => {
+  // The START boundary, which `sectionBound` never covered: the two rows above
+  // both hand `replaceSection` a heading it finds in the right place, and a bare
+  // `lines.findIndex((l) => l.trim() === heading)` passes them. Here the document
+  // has NO real `## Debt markers` - only a fenced EXAMPLE of one inside a `##
+  // Todos` bullet - so a fence-blind search anchors the rewrite inside that code
+  // block. The scan then resumes mid-fence, reads the block's CLOSING fence as an
+  // opener, finds no boundary at all, and every later section is replaced by the
+  // new body: `## Seeds` and `## Notes` disappear outright. The correct answer is
+  // to leave the example alone and APPEND a real section at the end.
+  const root = debtRepo();
+  writeFileSync(join(root, '.planning', 'CAPTURE.md'),
+    '## Todos\n\n- [ ] document the marker grammar, like:\n\n```md\n## Debt markers\n'
+    + '- `src/x.js:1` an example bullet\n```\n\n'
+    + '## Seeds\n\n- [ ] a seed\n\n## Notes\n\n- keep me\n');
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  const body = captureOf(root);
+  assert.match(body, /- \[ \] a seed/, '## Seeds was destroyed by a false start boundary');
+  assert.match(body, /- keep me/, '## Notes was destroyed by a false start boundary');
+  assert.match(body, /- \[ \] document the marker grammar/);
+  assert.match(body, /an example bullet/, 'the fenced example was rewritten');
+  assert.equal((body.match(/```/g) || []).length, 2, 'fence count must stay even');
+  // ...and the real section landed, appended after the document rather than into
+  // the example.
+  assert.match(body, /a cut/);
+  assert.ok(body.indexOf('- keep me') < body.lastIndexOf('## Debt markers'),
+    'the real section must be appended AFTER the existing content');
+});
+
+test('debt-harvest: a TRACKED CAPTURE.md already holding a section stays idempotent', () => {
+  // The self-ingestion guard: `.planning/` is skipped, so the harvest's own
+  // output is never read back as a marker even where the queue is tracked.
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  execFileSync('git', ['add', '--', '.planning/CAPTURE.md'], { cwd: root });
+  const after = captureOf(root);
+  const r = harvest(root);
+  assert.equal(r.markers, 1, JSON.stringify(r));   // still 1, not 2
+  assert.equal(r.written, false);
+  assert.equal(captureOf(root), after);
+});
+
+test('debt-harvest: a malformed marker is reported, never dropped', () => {
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('no trigger stated', 'a ceiling', null)}\n`);
+  const r = harvest(root);
+  assert.equal(r.markers, 1);
+  assert.deepEqual(r.malformed, [{ path: 'src/a.js', line: 1, missing: ['trigger'] }]);
+  assert.match(captureOf(root), /trigger: \(unstated\)/);
+});
+
+test('debt-harvest: a tracked SYMLINK out of the tree contributes nothing', () => {
+  // `statSync`/`readFileSync` both follow a link, so the harvest read a file the
+  // project does not contain and filed its marker under the in-tree path - a
+  // corner-cut reported at a line that holds no marker. A tracked link's target is
+  // either in the tree (enumerated on its own path) or outside it, so skipping
+  // links loses nothing that belongs here.
+  const root = debtRepo();
+  const outside = join(mkdtempSync(join(tmpdir(), 'cad-debt-out-')), 'outside.js');
+  writeFileSync(outside, `// ${debtLine('external cut', 'cx', 'tx')}\n`);
+  mkdirSync(join(root, 'src'), { recursive: true });
+  symlinkSync(outside, join(root, 'src', 'link.js'));
+  execFileSync('git', ['add', '--', 'src/link.js'], { cwd: root });
+  debtAdd(root, 'src/real.js', `// ${debtLine('in-tree cut', 'c', 't')}\n`);
+  const r = harvest(root);
+  assert.equal(r.markers, 1, JSON.stringify(r));
+  const body = captureOf(root);
+  assert.match(body, /in-tree cut/);
+  assert.doesNotMatch(body, /external cut/, 'a symlink target outside the tree was read');
+  assert.doesNotMatch(body, /link\.js/);
+});
+
+test('debt-harvest: a non-git root is ok:false, never a zero-marker answer', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cad-debt-nogit-'));
+  mkdirSync(join(root, '.planning'), { recursive: true });
+  const r = harvest(root);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-git');
+  assert.equal(existsSync(join(root, '.planning', 'CAPTURE.md')), false);
+});
+
+test('debt-harvest: a --root present with nothing usable is refused, never the cwd', () => {
+  const bare = harvest(null, ['--root']);
+  assert.equal(bare.ok, false, JSON.stringify(bare));
+  assert.equal(bare.reason, 'bad-args');
+  const empty = harvest('');
+  assert.equal(empty.ok, false, JSON.stringify(empty));
+  assert.equal(empty.reason, 'bad-args');
+});
+
+test('debt-harvest: an absent CAPTURE.md is created with the /cad-capture headings', () => {
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  const body = captureOf(root);
+  for (const h of ['## Todos', '## Seeds', '## Notes', '## Debt markers']) {
+    assert.ok(body.includes(h), `missing ${h}: ${body}`);
+  }
+});
+
+test('debt-harvest: a planning doc QUOTING a literal marker is not harvested', () => {
+  // The fixture the `.planning/` skip actually needs. Removing the skip does NOT
+  // redden the tracked-CAPTURE.md row above - the rendered section carries no
+  // token, so the harvest cannot re-ingest its own output through it. What the
+  // skip really protects is a planning DOC that writes a literal marker line
+  // while describing one: a PLAN, a CONTEXT or a SUMMARY quoting the grammar
+  // would otherwise land in the queue as a real corner-cut, on a phase that cut
+  // nothing.
+  const root = debtRepo();
+  debtAdd(root, 'src/a.js', `// ${debtLine('a real cut', 'c', 't')}\n`);
+  debtAdd(root, '.planning/phases/1/PLAN.md',
+    `# Plan\n\nMark it like this: \`${debtLine('example only', 'nothing', 'never')}\`\n`);
+  const r = harvest(root);
+  assert.equal(r.markers, 1, JSON.stringify(r));
+  assert.match(captureOf(root), /a real cut/);
+  assert.doesNotMatch(captureOf(root), /example only/);
 });

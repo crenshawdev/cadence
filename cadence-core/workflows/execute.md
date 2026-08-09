@@ -189,8 +189,9 @@ successive executors in the phase share a cached prefix: phase-level context
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
-report format) - `cad-executor.md` already carries them as its stable, cached
-definition. Repeating them in the volatile dispatch tail pays for cached
+report format) - `skills/cad-executor-contract/SKILL.md` already carries them as
+its stable, cached definition, preloaded by every `cad-executor` rung file
+(`agents/cad-executor.md` is a stub naming the rung and that contract). Repeating them in the volatile dispatch tail pays for cached
 content twice.
 
 **The report file (both paths).** An executor writes its task table to
@@ -211,9 +212,9 @@ happened to the worker that caused it. Immediately before a plan goes to an
 executor, and again once that executor comes back, append one event each:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --detail "<one line>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k> --role cad-executor --read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k> --role cad-executor --tokens <the token count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
 ```
 
 The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
@@ -222,8 +223,30 @@ another path or rung. All three close a bracket; a worker with none of them is
 what `trace render` reports as unpaired. `--plan <k>` is the WORKER key - the
 plan number here, the role name for a role-dispatched worker.
 
+`--role` is a SEPARATE key from `--plan`, and both are load-bearing. `--plan` is
+what pairs a dispatch with its close; `--role` is what the per-role totals group
+on. Keyed on `--plan` alone, this workflow's executors would file under plan
+NUMBERS while every role-dispatched worker filed under a role NAME, and
+`cad-executor` - the single largest spender in a phase - is the one line the
+totals could never print. `--read` is what this site causes the executor to read:
+the shared set every plan in the phase re-reads, plus that plan's own file.
+`--tokens` is read off the HOST's subagent return metadata at the moment the
+executor returns; OMIT the flag when the return carries no figure, since
+`--tokens 0` would claim a dispatch that cost nothing. A return carrying none is
+ROUTINE rather than a defect - built-in agent types report no figure where a
+plugin agent reports one - so the resulting `unrecorded` names a silent return,
+never a skipped bracket. A worktree executor still emits nothing of its own -
+these are the ORCHESTRATOR's lines.
+
+The `phase_start` line in `start` is NOT one of these. It is the correlation-id
+ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:
+keying it into the role table would invent a role that never ran.
+
 A worktree executor emits NO trace events of its own, and inner tool-level
-detail is deliberately not captured. `.planning/trace.jsonl` is gitignored, so
+detail is deliberately not captured. `.planning/trace.jsonl` is gitignored -
+`/cad-new-project` writes that line through `planning.mjs trace ignore` at
+scaffold time, and `/cad-health` REPORTS a project scaffolded before that seam
+existed rather than editing its `.gitignore` - so
 nothing a worktree wrote could ride the merge back, and the executor's return is
 a frozen five-field digest with no room for one. The orchestrator's brackets are
 what make every worker attributable; what happened INSIDE a worker is its report
@@ -264,8 +287,9 @@ survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
 before presenting, since this workflow does not preload it. The
-`risk_surface` arm is untouched by any of that: a matched risk surface still
-halts, and triage is not an override for it.
+`risk_surface` arm is untouched by the TRIAGE rule specifically: a matched risk
+surface still halts, and triage is not an override for it. It is NOT exempt
+from the same file's ONE-round re-arm cap, which binds every blocking gate.
 </step>
 
 <step name="handle_checkpoint">
@@ -284,7 +308,10 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   returned - shape (c). It is a path and not refs because the diff is staged
   and uncommitted, and in worktree mode it is not in this tree at all.
   Blocking: on FAIL, findings are fixed or the user explicitly overrides -
-  never silently proceed.
+  never silently proceed. The re-arm on that fix is CAPPED at ONE narrowed
+  round, and the cap lives only in
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
+  before the fix lands, since this workflow does not preload it.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
@@ -303,8 +330,9 @@ worktree and the fork point is the user's `worktree.baseRef` setting.
 After that remedy has failed twice, the plan falls back to the SEQUENTIAL path in
 the main tree, and an `escalation` lifecycle event records the worker that
 changed paths. A fallback and not a bounded re-dispatch loop: every failure arm
-in choose_path already resolves to sequential, and a loop here would put the
-unbounded re-arm filed against the review triggers onto the execute path too.
+in choose_path already resolves to sequential, and a loop here would put a second
+re-arm on the execute path beside the review triggers' own, which
+`references/triage-gate.md` caps at one round.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
@@ -351,14 +379,15 @@ fork-point default.)
    presenting, since this workflow does not preload it, and act only on what
    the user names.
 6. Fire the `phase_diff` trigger (references/review-triggers.md) with the refs
-   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). Off by default
-   (opt-in) -
+   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). At the default
+   `shipped` stakes it is `advisory`; off only at `solo` -
    it exists because the per-plan reviews above each see one plan's diff in
    isolation, so a bug in the INTERACTION of two merged plans is invisible
    to them until pre_ship at land time. Parallel path only: on the
    sequential path each diff review already sees a tree containing all
-   prior plans' work. It is `adjudicated` wherever it is on at all (critical
-   only), so its survivors go through the same triage gate, NONE the default:
+   prior plans' work. It is `advisory` at `shipped` and `adjudicated` at
+   `critical`; where it adjudicates, its survivors go through the same triage
+   gate, NONE the default:
    RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it, and act only on
    what the user names.
@@ -401,6 +430,13 @@ SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
 deferred item routed here resurfaces on its phase instead of surviving only
 because the next executor re-notices it. Do not duplicate an item already
 present. This file joins the docs commit in the state step.
+
+Then run
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
+so a `CADENCE-DEBT` marker planted during the phase lands in the queue on the
+phase that planted it. BEST EFFORT: it rewrites its own `## Debt markers`
+section and touches nothing else, and a non-zero exit is reported in one line
+and never blocks the summary.
 </step>
 
 <step name="state">

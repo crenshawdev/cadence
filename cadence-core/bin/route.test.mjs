@@ -771,6 +771,24 @@ test('a --phase that is not a phase number does NOT fall through to the cursor',
   assert.equal(resolve('cad-executor', file, ['--phase', '9']).stakes, 'critical');
 });
 
+test('--phase 1.10 floors off phases/1.10, never phases/1.1 (D-02)', () => {
+  // The third `--phase` shape site, now on the shared reader: the local
+  // PHASE_RE kept the raw string already, but the trace event below did not, and
+  // the rule has to be ONE rule. A sub-phase pair is the falsifying fixture -
+  // `1.10` and `1.1` are different directories and only one declares the auth
+  // path, so a normalizing reader resolves the wrong one's floor.
+  const file = planningRoot(['README.md'], { phase: '1.1' });
+  const pdir = join(dirname(file), 'phases', '1.10');
+  mkdirSync(pdir, { recursive: true });
+  writeFileSync(join(pdir, 'PLAN.md'), planText(['README.md', 'src/auth/session.rs']));
+  const r = resolve('cad-executor', file, ['--phase', '1.10']);
+  assert.equal(r.ok, true);
+  assert.equal(r.stakes, 'critical');
+  assert.equal(floorEntries(r).length, 1, JSON.stringify(r.reason));
+  // ...and 1.1, whose own PLAN declares nothing risky, still resolves solo.
+  assert.equal(resolve('cad-executor', file, ['--phase', '1.1']).stakes, 'solo');
+});
+
 test('D-09: cad-planner and cad-assumptions-analyzer resolve at the baseline', () => {
   // Passing --phase explicitly, so the row proves the ROLE arm rather than an
   // absent phase: the cursor lags /cad-context, so "no PLAN yet" alone would
@@ -1437,7 +1455,9 @@ test('a resolve records ONE routing event carrying the decision, not the text', 
   assert.equal(e.family, 'routing');
   assert.equal(e.event, 'resolve');
   assert.equal(e.corr, '4');            // no phase_start anchor: the phase alone
-  assert.equal(e.phase, 4);
+  // The caller's own SPELLING, not `Number(opts.phase)` (D-02): normalizing it
+  // put `1.1` and `1.10` under one trace key and one correlation id.
+  assert.equal(e.phase, '4');
   assert.equal(e.role, 'cad-executor');
   assert.equal(e.stakes, r.stakes);
   assert.equal(e.agent, r.agent);

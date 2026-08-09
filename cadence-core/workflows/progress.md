@@ -33,7 +33,8 @@ Its one JSON line carries everything this workflow reads:
   When its status is `paused`, its `next` is the resume pointer /cad-pause
   wrote - the one-line "where I was".
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`,
-  `phase-dir` (a `phases/<N>/` dir surviving a milestone close).
+  `phase-dir` (a `phases/<N>/` dir surviving a milestone close),
+  `phase-dir-grammar` (a `phases/` entry outside the directory grammar).
 
 On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
 project here. /cad-new-project starts one.") and stop.
@@ -92,7 +93,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase 
 ```
 
 Print the four family counts (`routing`, `provider`, `lifecycle`, `outcome`)
-under the record's one `corr`; then every `unpaired` entry, which names a worker
+under the record's one `corr`; then the `roles` block, one line per role key
+carrying its token total, its dispatch count, and its `unrecorded` count when
+present - what each worker in this phase COST. Read it by this rule, which is
+the distinction the block exists to protect: an absent token total means NO
+dispatch of that role reported a figure, and is printed as `unrecorded`, never
+as `0` - a role that was never measured and a role that spent nothing are
+different answers. An `unrecorded` count BESIDE a real total means that many of
+that role's dispatches came back without one, so the total is real but short. A
+render carrying no `roles` key prints nothing for it, exactly as an absent trace
+file already prints empty counts. Then every `unpaired` entry, which names a worker
 that was handed work and never came back with a return, checkpoint or
 escalation; then the `capped` flag when it is true, which means the record hit
 its size bound and what follows is missing rather than absent. An absent trace
@@ -160,7 +170,8 @@ workflow. cad-progress never does the work itself.
   edited here.
 - No stored analytics or progress artifacts; `--stats` and `--trace` both derive
   on demand and write nothing. The trace file itself is written by the seams and
-  by the execute and verify workflows - never by progress.
+  by the context, plan, execute, verify and verify-deep workflows, plus the
+  reviewer bracket in `references/review-triggers.md` - never by progress.
 - Never invoke a spine skill without the user accepting the offer.
 </guardrails>
 

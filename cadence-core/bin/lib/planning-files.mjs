@@ -272,12 +272,28 @@ const REQ_ID_TOKEN_G = new RegExp(REQ_ID_TOKEN.source, 'g');
 // it. So the narrowing lives HERE instead, as a question `audit` asks before
 // letting an id break the verdict: a bold bullet whose span is not id-shaped is
 // REPORTED (`active-non-id-bullet`) and never counted.
-const REQ_ID_EXACT = /^(?:[A-Z][A-Z0-9]{1,7}-\d+|#\d+)$/;
+//
+// A letter is required SOMEWHERE in the category, not at its head (PRS-02): a
+// real project spells requirements `2FA-01`, `3DS-02` and `A11Y-01`, and the
+// head-anchored form refused all three. The 2-8 character length window is
+// preserved exactly as it was, by the lookahead rather than by counting inside
+// the alternation - `A11Y` carries digits at both of the positions a
+// `[A-Z0-9]{1,2}[A-Z][A-Z0-9]{0,6}` form would need the letter to fall in, so
+// the length has to be asserted separately from where the letter sits.
+//
+// A bare `[A-Z0-9]` lead - no letter required at all - stays REFUSED and must
+// not be reintroduced. `ACTIVE_BULLET` reads ANY bold span as an id and
+// narrowing it is off the table, so this is the ONLY filter standing between a
+// bolded date or plan reference (`- **2026-08**: ...`, `- **14-01**: ...`) and
+// `audit`'s counts, `unpicked`, and a phantom `orphans.plan_ids` break already
+// paid for once.
+const REQ_ID_EXACT = /^(?:(?=[A-Z0-9]{2,8}-)[A-Z0-9]*[A-Z][A-Z0-9]*-\d+|#\d+)$/;
 
 /**
  * Is `id` exactly a requirement id, the whole string and nothing else? The
  * admission test for anything that moves `audit`'s arithmetic: `AUTH-01` yes,
- * `AUTH-01:` no (the colon belongs outside the bold span), `Note` no.
+ * `2FA-01` yes, `AUTH-01:` no (the colon belongs outside the bold span), `Note`
+ * no, `2026-08` no (a category with no letter in it at all).
  * @param {string} id @returns {boolean}
  */
 export function isRequirementId(id) {
@@ -939,8 +955,19 @@ export function classifyAcceptanceCriteria(text) {
 // survives `init` and is destroyed by the first `record` (D-05). `criterion`
 // and `origin` sit directly after `expected` because that is where a hand-added
 // line has to be for the first rewrite not to move it.
-const UAT_FIELDS = ['expected', 'criterion', 'origin', 'status', 'first_pass',
-  'source', 'evidence', 'reported', 'severity', 'cause', 'fix', 'reason'];
+const UAT_FIELDS = ['expected', 'criterion', 'origin', 'why_human', 'status',
+  'first_pass', 'source', 'evidence', 'reported', 'severity', 'cause', 'fix',
+  'reason'];
+
+// The one place the `source` enum lives - where a RESULT came from. `user` is
+// IMPLICIT and never written onto an item (an existing checklist stays
+// byte-identical), so the two values that ever render are `verifier` (a deep
+// pass merged the result) and `model` (the walk ran the check itself and cited
+// its command and output). Registration is not optional: `uat record` accepted
+// any string and silently stored nothing outside `verifier`, so a
+// walk-executed pass was indistinguishable from a user answer with nothing
+// reporting the drop.
+export const UAT_SOURCES = ['user', 'verifier', 'model'];
 
 // The one place the `origin` enum lives. `criterion` is the criterion-derived
 // marker by its own presence, so `origin: criterion` is only ever a repair for
@@ -976,16 +1003,57 @@ const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started'
  * of indent, a run of three or more backticks or tildes, and a closer that
  * matches the opener's character, is at least as long, and carries no info
  * string.
+ * EXPORTED for the debt harvest's `CAPTURE.md` section writer (D-12), which
+ * rewrites one `## ` section wholesale and needs exactly this rule. A second
+ * fence scanner there would drift from this one, and the defect it would
+ * reintroduce is the one described above: a bullet whose text carries a fenced
+ * block with a `## ` line inside it, truncated mid-fence.
  * @param {string[]} lines
  * @returns {number}
  */
-function sectionBound(lines) {
+export function sectionBound(lines) {
   const fenced = fenceScanner();
   for (let i = 0; i < lines.length; i++) {
     if (fenced(lines[i])) continue;
     if (/^## /.test(lines[i])) return i;
   }
   return -1;
+}
+
+/**
+ * BOTH ends of one `## ` section, as absolute indices into `lines`:
+ * `{start, end}`, where `start` is the heading's own line and `end` is the next
+ * `## ` heading after it (or `lines.length` when the section runs to the end).
+ * `start` is -1 when the heading does not occur outside a fence, and `end` is
+ * then -1 too.
+ *
+ * Both ends, one scanner, ONE walk - which is the whole point. `sectionBound`
+ * fixed the END only, so a caller still had to find the heading itself, and the
+ * obvious `lines.findIndex((l) => l.trim() === heading)` carries no fence state:
+ * a fenced EXAMPLE of the heading in an earlier section was taken as the real
+ * one, and the rewrite then started inside somebody's code block. Worse than the
+ * end-boundary bug it mirrors, because the scan that resumed at that false start
+ * read the block's CLOSING fence as an opener and swallowed every heading after
+ * it - `.planning/CAPTURE.md` lost `## Seeds` and `## Notes` outright. A start
+ * found by a fence-blind test cannot be repaired by a fence-aware end, so the
+ * two ends belong in one function and callers get them together.
+ * @param {string[]} lines @param {string} heading
+ * @returns {{start: number, end: number}}
+ */
+export function sectionSpan(lines, heading) {
+  const fenced = fenceScanner();
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    // The scanner is fed EVERY line in order and never restarted, so the fence
+    // state at `start` is the state a reader of the whole document would have.
+    if (fenced(lines[i])) continue;
+    if (start < 0) {
+      if (lines[i].trim() === heading) start = i;
+      continue;
+    }
+    if (/^## /.test(lines[i])) return { start, end: i };
+  }
+  return { start, end: start < 0 ? -1 : lines.length };
 }
 
 /**

@@ -111,7 +111,10 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    trigger (references/review-triggers.md) before it is trusted. The fix is
    staged in THIS tree, so the artifact is the staged-diff scope - shape (b):
    the reviewer runs `git diff --cached` in the cwd it inherits, never the
-   diff text.
+   diff text. That gate is `blocking` and its re-arm is CAPPED at ONE narrowed
+   round - RE-READ
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before
+   fixing a FAIL, since this workflow does not preload it.
 4. Verify: re-run the reproduction. Symptom gone -> set Status: resolved, fill
    Resolution, done. Symptom remains -> increment Attempts, record what the
    attempt changed and did not, and return to the method loop (the failed fix

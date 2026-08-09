@@ -27,7 +27,19 @@ line):
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
    /cad-progress shows where you are."
 2. If not in a git repo (`git rev-parse --git-dir` fails), run `git init`.
-3. `mkdir -p .planning`
+3. `mkdir -p .planning`, then keep the run record out of git:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root .
+   ```
+
+   Append-if-absent: it creates `.gitignore` when there is none, and a
+   brownfield `.gitignore` keeps every line it had. A re-run adds no second
+   line (`written:false`, `reason:"already-ignored"`), and a project that
+   ignores `.planning/` wholesale is already correct and is left alone.
+   `.planning/trace.jsonl` is ONE MACHINE's routing/provider/worker record, so a
+   project must not commit it - and this seam is the only thing in Cadence that
+   writes that line.
 4. If `.planning/config.json` does not exist, copy the engine template
    verbatim:
 
@@ -36,8 +48,8 @@ line):
    ```
 
    Ask no configuration questions. Tell the user in one line:
-   "Config written with defaults (interactive, research off, plan check and
-   verifier on). /cad-config changes any of it."
+   "Config written with defaults (standard granularity, shipped stakes,
+   research off, plan check and verifier on). /cad-config changes any of it."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 
@@ -163,6 +175,13 @@ Write ONE file: .planning/research/RESEARCH.md with those three sections
 plus Sources and a confidence level per recommendation. Write the file
 first, then return a one-paragraph summary.
 ```
+
+This agent is the one Cadence dispatch path with NO `maxTurns` runaway bound,
+and it is excluded deliberately rather than overlooked: `maxTurns` is per-FILE
+frontmatter, this pass dispatches a generic host agent Cadence owns no file for,
+and minting a 20th rung file to bound one optional research pass would cost a
+`route-table.json` rung row plus both directions of self-verify's rung checks.
+Its bound is `workflow.subagent_timeout` alone - wall-clock, not turns.
 
 On return, verify `.planning/research/RESEARCH.md` exists and is non-empty.
 If the agent returned the document inline without writing it, write the file

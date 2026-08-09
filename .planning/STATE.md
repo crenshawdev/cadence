@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 4 (Queue triage)
-Status: planned
-Next: /cad-execute 3
-Updated: 2026-08-08
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
+Updated: 2026-08-09

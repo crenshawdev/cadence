@@ -3,7 +3,7 @@
 // functions are pure, so this needs no subprocess or live git.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
+import { integrationBranchName, decideBranch, activeVersion } from './lib/branch-decision.mjs';
 
 // --- integrationBranchName --------------------------------------------------
 
@@ -224,4 +224,43 @@ test('published: the naming-problem ask still wins over the published guard', ()
   assert.equal(r.action, 'ask');
   assert.equal(r.branch, null);
   assert.match(r.reason, /naming-problem/);
+});
+
+// ---------------------------------------------------------------------------
+// activeVersion: the milestone DECLARATION, not the first token in the prose
+// ---------------------------------------------------------------------------
+
+/** A PROJECT.md whose `### Active` body is exactly `body`. */
+const project = (body) =>
+  `# P\n\n## Requirements\n\n### Active\n\n${body}\n\n### Out of Scope\n`;
+
+test('activeVersion: the line-anchored declaration wins over a predecessor named first', () => {
+  // The shipped shape, with the closed predecessor mentioned in the same
+  // sentence. A first-token-anywhere scan returns v2.5.0 here, and since that
+  // version IS tagged the audit's version_drift hard-FAILs the ship gate on
+  // docs that are perfectly correct.
+  const text = project(
+    'The predecessor `v2.5.0 - what Cadence says about itself` closed 2026-08-08.\n'
+    + '**`v2.6.0 - the reconciliation cycle`**, opened the same day.');
+  assert.equal(activeVersion(text), 'v2.6.0');
+});
+
+test('activeVersion: markdown furniture does not break the anchor', () => {
+  assert.equal(activeVersion(project('**`v3.0.0`** - the cycle')), 'v3.0.0');
+  assert.equal(activeVersion(project('- v3.0.0 - the cycle')), 'v3.0.0');
+  assert.equal(activeVersion(project('`v3.0.0` - the cycle')), 'v3.0.0');
+  assert.equal(activeVersion(project('> **v3.0.0** - the cycle')), 'v3.0.0');
+});
+
+test('activeVersion: with no declaration line, the first token in the prose still answers', () => {
+  // The fallback is deliberate - a section that only ever mentions its version
+  // mid-sentence answers rather than going silent, which is what a strict
+  // anchor would do to every pre-existing PROJECT.md.
+  assert.equal(activeVersion(project('We are working towards v4.1.0 this cycle.')), 'v4.1.0');
+  assert.equal(activeVersion(project('No version token here.')), null);
+});
+
+test('activeVersion: the Active body ends at the next heading', () => {
+  const text = '# P\n\n### Active\n\nNo token.\n\n### Out of Scope\n\n`v9.9.9` - not this one\n';
+  assert.equal(activeVersion(text), null);
 });

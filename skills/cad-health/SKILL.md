@@ -23,6 +23,19 @@ Check, then report - do not fix without asking.
 1. **Presence.** `.planning/` exists with PROJECT.md, REQUIREMENTS.md,
    ROADMAP.md, STATE.md. A missing core doc is an issue (point at
    /cad-new-project if the dir itself is absent).
+   - The run record stays out of git. Run
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root . --check`
+     and report an issue when `ignored` is false or `tracked` is true. Silent when
+     the record is ignored and untracked. A project scaffolded before that seam
+     existed has no line of its own; `--check` writes nothing and this step never
+     edits the user's `.gitignore`.
+     The two flags are separate facts and take DIFFERENT remedies, so name the one
+     that applies rather than one command for both: `ignored:false` is a missing
+     rule, fixed by the same command without `--check`; `tracked:true` means the
+     record is in the index ALREADY, where no ignore rule reaches it, and the fix
+     is `git rm --cached .planning/trace.jsonl`. Both can be true at once, and
+     then both steps are needed - adding the rule alone leaves a tracked file that
+     keeps getting committed.
 
 2. **STATE cursor.** Exactly the 4-line schema (Phase / Status / Next / Updated -
    references/conventions.md). `Status` is one of the lifecycle values
@@ -44,7 +57,12 @@ Check, then report - do not fix without asking.
    both clauses pass, and a surviving `phases/<N>/` dir there means the prune
    was interrupted (/cad-milestone finishes it).
    `.planning/phases/<N>/` dirs correspond to real phases (a planned
-   phase with no dir yet is fine; a dir with no phase is an issue). A phase
+   phase with no dir yet is fine; a dir with no phase is an issue). The
+   directory grammar is a bare integer or `N.M`, no zero-padding and no slug
+   (references/conventions.md): report every `phase-dir-grammar` entry
+   `planning.mjs status` returns as an issue naming the entries it lists -
+   Cadence resolves no other spelling, so those directories are unsupported, and
+   renaming them is the user's call and never an auto-fix. A phase
    marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all
    `Complete` (or a `Complete` requirement whose phase is still `- [ ]`) is a
    status-drift issue - flag it. This is the cheap structural check that a

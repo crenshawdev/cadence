@@ -6,9 +6,30 @@ What each gate arm does once a review's findings are in hand. The gate is one of
 
 - **advisory** - report the findings, continue. Nothing halts.
 - **blocking** - PASS if no `blocker`/`high` finding survives, else FAIL. On
-  FAIL, halt and surface the findings; resume only after they are fixed (re-run
-  fire) or the user explicitly overrides. A reviewer that could not run does not
-  silently PASS - report that the gate could not be evaluated and ask.
+  FAIL, halt and surface the findings; resume only after they are fixed or the
+  user explicitly overrides. A reviewer that could not run does not silently
+  PASS - report that the gate could not be evaluated and ask. The re-arm on that
+  fix is CAPPED - see below.
+
+**The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
+FAIL is itself reviewable work, so the trigger re-arms on it; unbounded, that is
+a loop with no terminal state. It is bounded in the vocabulary the spine's other
+blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
+
+1. The fix lands -> fire ONCE more, NARROWED: the artifact is the fix's own diff
+   plus the blocker list it is confirming, NOT the whole artifact again, and it
+   asks one question - is each blocker actually closed, and did the fix introduce
+   anything new?
+2. Nothing `blocker`/`high` survives that pass -> resume. One still survives ->
+   STOP and ask the user (ask-user seam): proceed anyway, or stop and fix by
+   hand. Name the reason in the ask - "`<trigger>` re-armed once on its own fix
+   and still reports N blocker/high findings" - and never fire that trigger again
+   in this loop.
+
+The round count is orchestrator-context state expressed in prose, not persisted
+state: nothing on disk counts fires, so a `/clear` between rounds resets the
+count and the next fix gets a fresh re-arm. That limit is stated rather than
+assumed.
 - **adjudicated** - the survivors are already grounded, so what remains is the
   USER's choice, not the model's. Present them as a NUMBERED list, one line per
   survivor: severity, `file:line`, claim. Then ask which to act on through

@@ -102,6 +102,47 @@ volatile per-phase data, while the agent's stable instruction to consume and
 cite them lives in its cached file. On `none`, or when results are empty, omit
 the block.
 
+Bracket this worker in the joined run record first - one lifecycle event before
+the spawn-agent seam call below, keyed `--plan cad-assumptions-analyzer`, which
+is the WORKER key the trace's pairing rule takes for a role-dispatched worker,
+and `--role` the same, which is the key the per-role totals group on:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --read ".planning/ROADMAP.md,.planning/phases/<each prior N>/CONTEXT.md"
+```
+
+`--read` is what this SITE causes the worker to read, which is not the same as
+what the prompt below names. The prompt names no planning path at all; the
+analyzer's contract (`skills/cad-assumptions-analyzer-contract`) is what sends
+it to the roadmap entry and the prior phases' context files, and this is the
+single most expensive dispatch in the whole spine. Record the contract-prescribed
+set, or the record under-reports what this dispatch costs by a full copy of the
+planning set.
+
+**Where the token number comes from, once, for every bracket in this plugin.**
+The closing event's `--tokens` is read off the HOST's subagent return metadata at
+the moment the worker returns - Cadence adds no hook, no seam and no capture
+mechanism to obtain it. When the return carries no figure, OMIT the flag: an
+absent total means "no dispatch of this role reported one", and `--tokens 0`
+would claim a dispatch that cost nothing.
+
+A missing figure is ROUTINE, not evidence of a skipped bracket. Measured on this
+repo: every PLUGIN agent's return carried one (`cad-assumptions-analyzer`
+186,577, `cad-planner` 146,405, `cad-executor` 154,523, `cad-plan-checker`
+47,717, `cad-verifier` 78,034), while a BUILT-IN agent type - `Explore` -
+returned none at all. So `unrecorded` in `trace render` reads as "this worker's
+return carried no number", never as "this bracket never fired": `unrecorded` can
+only be nonzero where a dispatch was counted, and the dispatch COUNT beside it
+records that the dispatch half was WRITTEN.
+
+Read the three states apart, because only two of them are visible at all. A
+dispatch that was written and never closed is `unpaired`. A dispatch that was
+written, closed, and carried no number is `unrecorded`. A bracket for which no
+event was appended AT ALL appears NOWHERE - not in `roles`, not in `unpaired` -
+which is exactly why the append is not optional and why the census in
+`trace.test.mjs` binds these lines per file. Do not substitute an estimate, a
+token count from a different worker, or a figure the host did not report.
+
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), timeout `workflow.subagent_timeout` (read above).
 This keeps raw file contents out of the main context. Prompt payload:
@@ -117,15 +158,29 @@ Analyze the codebase for Phase {N}: {phase_name}.
 Follow your output format exactly.
 ```
 
+The dispatch came back, so close its bracket before anything else:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return>
+```
+
 Wait for the result. Parse:
 - `assumptions[]` - each with area, statement, evidence, if-wrong
   consequence, confidence (Confident / Likely / Unclear), and alternatives
   (Likely/Unclear items only)
 - `needs_research[]` - topics the codebase alone could not settle (often empty)
 
-If the agent fails or times out, say so and continue with a plain
-conversational pass: derive 2-4 gray areas from the phase goal yourself and
-treat each as Unclear below. Do not silently degrade.
+If the agent fails or times out, close the bracket on THIS arm instead - it is
+the only other way this dispatch can end, and an unclosed bracket is what
+`trace render` reports as a worker that never came back:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --detail "<what failed>"
+```
+
+Then say so and continue with a plain conversational pass: derive 2-4 gray areas
+from the phase goal yourself and treat each as Unclear below. Do not silently
+degrade.
 </step>
 
 <step name="close_gray_areas">

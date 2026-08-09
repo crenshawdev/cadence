@@ -24,3 +24,13 @@ scratch/
 
 # Joined run record — local diagnostics only, one machine's routing/provider/worker events
 /.planning/trace.jsonl
+
+# Triage working copies — these hold copies of the raw planning queue, the same
+# candid text the /.planning/CAPTURE.md line above withholds, so tracking them
+# would republish exactly what that line exists to keep out of the public repo.
+# Matched on the directory name at any depth under /.planning/, NOT on one fixed
+# parent: a milestone close MOVES phases/<N>/ to _archive-<label>/<N>/ and
+# commits everything under it, so a pattern anchored to phases/ would stop
+# ignoring these copies at exactly the moment they get staged. The same reason
+# covers tasks/<name>/ and spikes/<name>/, which are tracked trees too.
+/.planning/**/triage-work/

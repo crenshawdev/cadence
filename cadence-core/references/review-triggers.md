@@ -82,11 +82,44 @@ Issue the resolved set in ONE message (seams.md Concurrent dispatch);
 serialize only when one dispatch consumes another's output, which a reviewer
 set never does. Per backend:
 
-- **claude-subagent**: dispatch the `agent` and `model` the step-1 resolve
+- **claude-subagent**: bracket this worker in the joined run record first, keyed
+  `--plan cad-reviewer --role cad-reviewer`, with `--read` carrying the payload
+  reference step 2 assembled - the file path(s) for shape (c), the
+  `<base_ref>..<head_ref>` pair for shapes (a) and (b), the named scope for an
+  in-context artifact. Never empty: resolving that reference is step one of the
+  reviewer's own contract (`skills/cad-reviewer-contract`), so it is exactly what
+  this site causes it to read, and the read-set grammar admits a non-path
+  reference as readily as a path.
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<the payload reference>"
+  ```
+
+  `<N>` follows the rule the adjudication append in step 5 already states: the
+  phase in hand, or the STATE cursor's phase for a milestone-scoped trigger.
+
+  Then dispatch the `agent` and `model` the step-1 resolve
   returned, through the spawn-agent seam, with the payload as its prompt. It
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
-  the JSON object it returns. That agent is the reviewer rung the LEVEL names -
+  the JSON object it returns, and close the bracket the moment you have it -
+  `--tokens` read off the HOST's subagent return metadata, OMITTED when the
+  return carries no figure (never `--tokens 0`):
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
+  ```
+
+  A dispatch that failed, returned nothing, or returned an unparseable object
+  closes as `--event checkpoint` with the same keys and a `--detail` line
+  instead - a reviewer that burned its budget and came back unusable is exactly
+  the dispatch whose cost must still reach the record:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --detail "<what failed>"
+  ```
+
+  That agent is the reviewer rung the LEVEL names -
   `cad-reviewer-medium` at solo, `cad-reviewer-xhigh` at shipped AND critical,
   and `cad-reviewer-max` when a critical-level
   fire is re-dispatched with `--attempt 2`. The unsuffixed `cad-reviewer` is
@@ -106,7 +139,13 @@ set never does. Per backend:
   "fix" it by editing the config or by pretending the effort applied.
 - **any cross-model provider** (`openai` / `gemini` / `deepseek`, ...): an API
   call runs nothing, so this is the one backend that cannot resolve a reference
-  itself. Compose the payload FILE in two shell steps and pass it with the
+  itself. **This arm gets NO lifecycle bracket and no token field, deliberately.**
+  It is the one place a real API-reported usage figure could exist rather than a
+  host-reported one, and no adapter extracts one today. State the consequence
+  rather than let a reader infer completeness: under a panel, `cad-reviewer`'s
+  per-role total in `trace render` covers the claude-subagent voice ONLY, and the
+  provider call that ran beside it is unmeasured, so that number is short by an
+  unstated amount. Compose the payload FILE in two shell steps and pass it with the
   EXISTING `--payload <file>` flag - no new subcommand or flag:
   ```
   git diff <base_ref>..<head_ref> > "${TMPDIR:-/tmp}/cad-artifact.txt"
@@ -184,12 +223,14 @@ cross-model reviewer is only half of it. Name the set that RAN, never the set
 the trigger asked for.
 
 ### 6. Consequence (gate)
-`references/triage-gate.md` holds this step whole: all three arms
-(`advisory` / `blocking` / `adjudicated`), the multi-select triage the
-adjudicated arm asks, the `git.auto_close` carve-out scoped to `pre_ship`
-inside `/cad-land`, and the `cad-verify` fix-list rule. It is a separate file
-because three workflows re-read it at their triage sites without loading this
-one.
+RE-READ `references/triage-gate.md` before acting on ANY gate - `blocking`
+included, not only `adjudicated`. It holds this step whole: all three arms
+(`advisory` / `blocking` / `adjudicated`), the ONE-round cap on a blocking
+re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
+carve-out scoped to `pre_ship` inside `/cad-land`, and the `cad-verify`
+fix-list rule. It is a separate file because the fire sites re-read it at their
+gate step without loading this one - and a `blocking` site that treats the read
+as an adjudicated-only errand is exactly how an uncapped re-arm gets back in.
 
 ## Wiring (which skill fires what)
 
@@ -199,8 +240,8 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 |---|---|---|---|---|
 | `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / adjudicated / adjudicated |
 | `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / advisory / blocking |
-| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path the checkpoint returned, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
-| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / off / adjudicated |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
+| `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / advisory / adjudicated |
 | `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |
 
 `risk_surface` is `blocking` at every level on purpose: it fires only on a

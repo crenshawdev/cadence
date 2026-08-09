@@ -52,7 +52,7 @@ Read the code: `cadence-core/bin/review-provider.mjs`, `cadence-core/references/
 
 Adversarial review is a pure function, an artifact goes in and structured findings come out, file, line, severity, claim, failure scenario. Nothing about that job wants an agent harness driving it.
 
-That is why the cross-model reviewers are direct API calls and not a CLI subprocess. The API enforces the output shape (OpenAI `response_format`, Gemini `responseSchema`), so findings come back in the exact schema every time, no scraping stdout, no `jq` fallback, no stripping telemetry out of the answer, the whole class of fragile parsing that comes with shelling out to a coding CLI is simply not there. The main model is the adjudicator, it does the grounding and kills the false positives, so a reviewer's ability to wander off and investigate on its own is dead weight here anyway.
+That is why the cross-model reviewers are direct API calls and not a CLI subprocess. The API enforces the output shape (OpenAI's Responses API `text.format` carrying a strict `json_schema`, Gemini's `responseSchema`), so findings come back in the exact schema every time, no scraping stdout, no `jq` fallback, no stripping telemetry out of the answer, the whole class of fragile parsing that comes with shelling out to a coding CLI is simply not there. The main model is the adjudicator, it does the grounding and kills the false positives, so a reviewer's ability to wander off and investigate on its own is dead weight here anyway.
 
 Read the code: `cadence-core/bin/review-provider.mjs`, `cadence-core/references/provider-api.md`. Design record: `DESIGN.md`, "Adversarial review."
 

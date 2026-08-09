@@ -6,11 +6,15 @@ it actually runs; return to verify.md `walk` afterward.
 <step name="dispatch">
 Bracket this worker in the joined run record first - one lifecycle event before
 the spawn-agent seam call below, keyed `--plan cad-verifier`, which is the WORKER
-key the trace's pairing rule takes for a role-dispatched worker:
+key the trace's pairing rule takes for a role-dispatched worker, and `--role
+cad-verifier`, which is the separate key the per-role totals group on:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-verifier
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-verifier --role cad-verifier --read ".planning/phases/<N>/PLAN*.md,.planning/phases/<N>/SUMMARY*.md,.planning/ROADMAP.md,.planning/phases/<N>/UAT.md"
 ```
+
+`--read` is the set this site causes the verifier to read - the same paths the
+dispatch instruction below hands it.
 
 Dispatch cad-verifier via the spawn-agent seam with the phase number, goal,
 the current UAT items, the PLAN/SUMMARY/ROADMAP paths, and the path it must
@@ -27,8 +31,15 @@ two arms, and `fall_through` is the single terminal failure one both share.
 The dispatch came back, so close its bracket before anything else:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-verifier
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-verifier --role cad-verifier --tokens <the token count on the subagent return>
 ```
+
+`--tokens` is read off the HOST's subagent return metadata at the moment the
+verifier returns; OMIT the flag when the return carries no figure, since
+`--tokens 0` would claim a dispatch that cost nothing. A return carrying none is
+ROUTINE rather than a defect - built-in agent types report no figure where a
+plugin agent reports one - so the resulting `unrecorded` names a silent return,
+never a skipped bracket.
 
 One call. The verifier's file goes in as it was written - nothing is
 transcribed, reshaped, or copied by hand:
@@ -68,7 +79,7 @@ the only place a deep pass can end unfinished, so an unclosed bracket here is
 what `trace render` would report as an unpaired worker:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-verifier --detail "<what failed>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-verifier --role cad-verifier --tokens <the token count on the subagent return> --detail "<what failed>"
 ```
 
 Say in ONE line what failed, write nothing else, and return to verify.md `walk`

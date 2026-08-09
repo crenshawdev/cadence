@@ -1,0 +1,84 @@
+{
+  "status": "delivered",
+  "score": "7/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "Every open bullet above `## Archive` that was present at the baseline carries exactly one of the four D-04 verdict clauses, and all of them are current-cycle items",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`.planning/CAPTURE.md` has `## Archive` at :131 with 30 `- [ ]` bullets above it. A strict regex for the four shapes (`CLOSED <date> by <sha>` / `CLOSED <date> verified live against ` / `MOOT <date>, ` / `KEPT <date>, re-verified against `) matches exactly once on 28 of them (24 KEPT, 4 CLOSED, 0 MOOT) and zero times on the two at :102 and :103. Those two are absent from `.planning/phases/1/triage-work/baseline/CAPTURE.md` (baseline holds 213 open bullets; a full accounting shows 185 archived verbatim + 28 triaged = 213, none unaccounted), so they are the post-baseline `/cad-execute` summary appends AC1 exempts - their text matches SUMMARY.md's own `## Open items` entries (trace.mjs NUL bytes, the `(phase 5, criteria-coverage)` note). The same two are also the only above-archive bullets not matching `triage-work/current-cycle.txt` (38 lines = 28 open + 10 checked)."
+    },
+    {
+      "n": 2,
+      "truth": "Every non-current-cycle open item present at the baseline sits under `## Archive` under one dated block reason, and archived text is invisible to recall rather than absent",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "185 `- [ ]` bullets sit below `## Archive`; all 185 are byte-verbatim lines of `triage-work/baseline/CAPTURE.md` with zero duplicates and zero baseline open items unaccounted for (185 + 28 = 213). The section opens at `.planning/CAPTURE.md:131-140` with one dated block reason (\"Archived 2026-08-08, as one block, by v2.6.0 phase 1: **185 open items...**\") stating the presumptive-death premise, not a per-item verdict. Re-ran the paired control myself against fresh snapshots of the CURRENT live file (the executor's `snap-live`/`snap-control` are stale, sha mismatch): `planning.mjs recall --dir <live> interrogation` -> `{\"ok\":true,\"results\":[]}`; the same query against a control built with the single `sed 's/^## Notes$/## Notes-orig/; s/^## Archive$/## Notes/'` pass (`grep -c '^## Notes$'` = 1) returns the archived bullet at score 3.0682. The token occurs only at `.planning/CAPTURE.md:161`, below the archive heading."
+    },
+    {
+      "n": 3,
+      "truth": "Closed `- [x]` items stayed in `## Todos` and stayed in the recall corpus",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`grep -c '^- \\[x\\]'` = 51 in both the live file and the baseline; zero `- [x]` bullets sit below `## Archive`. `parseCaptureSnippets` over the live file yields 88 snippets of which 51 start with `[closed] `, and none is the bare string `[closed]` (the flagged empty-checkbox trigger was not created). `planning.mjs recall --dir <live snapshot> \"git guard tokenizer\"` returns the \"Six pre-existing `git-guard` rail-3 holes\" item at rank 1, score 7.6432."
+    },
+    {
+      "n": 4,
+      "truth": "No bullet the reader can still see carries a bare `(phase N)` tag naming a pre-v2.5.0 milestone, and requalified tags name the right milestone",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Applying the reader's own anchored regex (`planning-files.mjs:627`, `/^\\(phase (\\d+(?:\\.\\d+)?)\\)\\s*/`) after the checkbox strip to every bullet above `## Archive`: 40 bare tags, all `(phase 1)` or `(phase 2)` and all v2.5.0 captures (30 open - the 28 triaged plus the 2 execute appends - and 10 checked), plus 32 tags in the `(vX.Y.Z phase N)` form. Sampled three requalifications against the tree: `git describe --contains 81bab78` -> v1.4.0^2~23 for `(v1.4.0 phase 4)`, `1e34058` -> v2.0.0^2~58 for `(v2.0.0 phase 3)`, `19e6eba` -> v2.3.0^2~18 for `(v2.3.0 phase 2)`. The two `(phase 5, criteria-coverage)` bullets at :53-54 that SUMMARY names are outside AC6's set by CONTEXT D-05's own stated evidence (the anchored regex needs `)` right after the digits, so this shape yields no phase field and cannot collide); no visible bullet parses to a pre-v2.5.0 phase field."
+    },
+    {
+      "n": 5,
+      "truth": "SUMMARY.md carries the kept-item assignment list phases 2 and 3 can consume without re-reading the queue, with admissible targets only",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`.planning/phases/1/SUMMARY.md:114-149` holds 24 KEPT rows plus 1 `## Notes` carry-over row, matching the queue exactly (24 `KEPT <date>, re-verified against` clauses above `## Archive`). All 25 rows are byte-identical to the table under `## For SUMMARY.md - kept-item assignment list` at `.planning/phases/1/reports/plan-1.md:188`, so nothing was paraphrased in transit. Target column values are only `phase 2` (2) and `unassigned` (23) - no third value, per D-12. `git check-ignore -q .planning/phases/1/reports/plan-1.md` exits non-zero, so the durable route is tracked."
+    },
+    {
+      "n": 6,
+      "truth": "Verdicts are backed by the tree rather than by the item's own wording (the goal's operative clause)",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "All 4 CLOSED verdicts re-checked at their cited lines, since CLOSED is the direction that removes an item from the live set: `.planning/_archive-v2.5.0/2/MEASUREMENTS.md` plus `planning.mjs:934` (still the conditional spread, so absence is the signal); `self-verify.mjs:196-200` now carries `'*': ['--root']` and a bare `'': []` row beside `resident`; `node cadence-core/bin/weight.mjs --root` returns `{\"ok\":false,\"reason\":\"missing-flag-value\",\"detail\":\"--root\"}` as the verdict claims; `lib/deferred-reads.mjs:29-38` states the anchors-not-a-count reversal. Sampled 4 KEPT citations, all resolving as described: `planning.mjs:2120` is `const dir = opts.dir || '.planning';` (the carry-over row's re-read line, correcting the queue's stale `:793` and CONTEXT's stale `:1675`), `land-cleanup.mjs:78-79`, `git-publish.mjs:116-118`, `planning.mjs:1504-1506`, `lib/branch-decision.mjs:99-105`. Zero MOOT verdicts were issued, so no item left the live set on a stated reason alone."
+    },
+    {
+      "n": 7,
+      "truth": "The phase's one tracked change actually protects the working copies it exists to protect",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "`.gitignore:36` is `/.planning/**/triage-work/` (matched on the directory name at any depth, per the da4e3aa fix). `git check-ignore -q .planning/phases/1/triage-work/baseline/CAPTURE.md` exits 0, and `git check-ignore --no-index -q .planning/_archive-v2.6.0/1/triage-work/baseline/CAPTURE.md` also exits 0, so a milestone close moving `phases/<N>/` under `_archive-*` cannot publish the 716 KB of candid copies. `git status --porcelain .planning/phases/1/` lists no triage-work path. Commits e578e76 (ignore rule), da4e3aa (re-anchor), 160afab and 7afcd05 (SUMMARY/report) are the whole tracked footprint, consistent with tasks 2-5 producing none by design."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "AC1 - Only current-cycle items remain open, each with one verdict",
+      "evidence": "28 of the 30 open bullets above `## Archive` carry exactly one of the four D-04 verdict shapes (24 KEPT, 4 CLOSED); the 2 without are absent from `triage-work/baseline/CAPTURE.md` and are the `/cad-execute` summary appends AC1 exempts. 185 archived + 28 triaged accounts for all 213 baseline open items."
+    },
+    {
+      "k": 2,
+      "name": "AC2 - Historical items archived as a block, invisible to recall",
+      "evidence": "185 bullets under `## Archive` (`.planning/CAPTURE.md:131`) with one dated block reason and no per-item verdict; all 185 verbatim from the baseline, no dupes. Re-run against fresh snapshots: `recall` for `interrogation` returns `{\"ok\":true,\"results\":[]}` live and the bullet (3.0682) against the single-pass `sed` control whose `## Notes` count is 1 - a zero that is invisibility, not absence."
+    },
+    {
+      "k": 3,
+      "name": "AC3 - Closed items stay in Todos and stay in the corpus",
+      "evidence": "51 `- [x]` bullets, zero below `## Archive`; `parseCaptureSnippets` yields 51 `[closed] ` docs of 88 and no bare `[closed]`; `git guard tokenizer` still returns \"Six pre-existing `git-guard` rail-3 holes\" at rank 1 (7.6432)."
+    },
+    {
+      "k": 4,
+      "name": "AC6 - No visible bare (phase N) tag names a pre-v2.5.0 milestone",
+      "evidence": "All 40 bare tags above `## Archive` are v2.5.0 `(phase 1)`/`(phase 2)` captures; 32 historical tags read `(vX.Y.Z phase N)` and no longer parse as a phase field, three of them confirmed by `git describe --contains` (81bab78 -> v1.4.0, 1e34058 -> v2.0.0, 19e6eba -> v2.3.0). The `(phase 5, criteria-coverage)` pair SUMMARY names is excluded by D-05's own regex evidence."
+    },
+    {
+      "k": 5,
+      "name": "AC7 - SUMMARY carries the kept-item assignment list",
+      "evidence": "`SUMMARY.md:114-149`: 24 KEPT rows + 1 carry-over, equal to the queue's 24 KEPT verdicts, byte-identical to the table at `reports/plan-1.md:188`, targets only `phase 2` (2) and `unassigned` (23)."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}

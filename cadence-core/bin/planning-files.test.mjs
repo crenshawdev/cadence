@@ -793,20 +793,26 @@ const ACTIVE_ROWS = [
     text: activeDoc('- **#41**: silent data-file failure'),
     ids: ['#41'], codes: [],
   },
-  // The digit-leading category, both halves of the same limit. `isRequirementId`
-  // anchors the category's first character as a LETTER, so `2FA-01` is reported
-  // and never counted - and `REQ_ID_TOKEN` carries the same anchor, so unbolding
-  // it (the remedy the table refuses here) takes it from reported to invisible.
-  // Pinned because the limit is STATED in prose
-  // (references/req-traceability.md's remedy table, templates/REQUIREMENTS.md):
-  // widening either anchor must break these rows deliberately, never silently.
+  // The digit-leading category, and the ASYMMETRY between the two regexes that
+  // PRS-02 deliberately creates. `isRequirementId` now admits a category with a
+  // letter anywhere in it, so a bolded `2FA-01` is a real declaration and reports
+  // nothing. `REQ_ID_TOKEN` is UNCHANGED (D-05 refuses to touch the unanchored
+  // prose scan), so the same id UNBOLDED is still not a token - which is a
+  // narrower blind spot than it was, since the bolded form is the one a project
+  // actually writes. Both rows are pinned so a later "consistency" edit to
+  // REQ_ID_TOKEN has to break one of them deliberately.
   {
-    name: 'active-non-id-bullet: a DIGIT-LEADING category is held out too - the stated v1.4.0 limit',
+    name: 'a digit-leading category with a letter in it IS an id - reports nothing (PRS-02)',
     text: activeDoc('- **2FA-01**: two-factor auth'),
-    ids: ['2FA-01'], codes: ['active-non-id-bullet'],
+    ids: ['2FA-01'], codes: [],
   },
   {
-    name: 'a digit-leading id UNBOLDED is SILENT - the same anchor, in the prose scan',
+    name: 'a category with NO letter at all is still held out and reported',
+    text: activeDoc('- **2026-08**: the August slice'),
+    ids: ['2026-08'], codes: ['active-non-id-bullet'],
+  },
+  {
+    name: 'a digit-leading id UNBOLDED is SILENT - REQ_ID_TOKEN keeps its letter head',
     text: activeDoc('- 2FA-01: two-factor auth'),
     ids: [], codes: [],
   },
@@ -1421,15 +1427,20 @@ test('classifyAcceptanceCriteria: phases 1-4 of this repo read AC1-AC7 with no i
 // verdict. Anchored on purpose - `REQ_ID_TOKEN` beside it is unanchored because
 // it SCANS prose; conflating the two is what let `Note` and `AUD-01:` in.
 test('isRequirementId: the whole string and nothing else, in both shipped spellings', () => {
-  for (const yes of ['AUD-01', 'GRM-01', 'AB-1', 'ABCDEFGH-12', '#41', 'A11Y-01']) {
+  // A letter is required SOMEWHERE in the category, not at its head (PRS-02):
+  // `2FA-01`, `3DS-02` and `A11Y-01` are how a real project spells these, and
+  // the head-anchored form refused the first two.
+  for (const yes of ['AUD-01', 'GRM-01', 'AB-1', 'ABCDEFGH-12', '#41', 'A11Y-01',
+    '2FA-01', '3DS-02']) {
     assert.equal(isRequirementId(yes), true, yes);
   }
-  // `2FA-01`/`3DS-02`: the category's FIRST character must be a letter, though
-  // digits are admitted after it (`A11Y-01` passes). A stated limit, not an
-  // oversight - `REQ_ID_TOKEN` scans arbitrary prose, where a digit-leading
-  // category would make every date (`2026-07-28`) an id token.
+  // A category with NO letter in it at all stays refused, and that is the whole
+  // remaining narrowing: `ACTIVE_BULLET` reads any bold span as an id, so this
+  // test is the only thing standing between a bolded date or plan reference and
+  // `audit`'s counts. The 2-8 character window is unchanged - `A-01` (one) and
+  // `ABCDEFGHI-1` (nine) are refused before and after.
   for (const no of ['Note', 'AUD-01:', 'AUD-01 (the gate)', 'aud-01', 'A-01', 'ABCDEFGHI-1',
-    'AUD-01 ', '#41.', 'see AUD-01', '', '2FA-01', '3DS-02']) {
+    'AUD-01 ', '#41.', 'see AUD-01', '', '14-01', '08-02', '2026-08']) {
     assert.equal(isRequirementId(no), false, no);
   }
 });

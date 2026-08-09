@@ -1,0 +1,146 @@
+{
+  "status": "gaps",
+  "score": "6/10",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "verify.md states the human-check bar explicitly - human-verify only when the model cannot execute (irreversible against real data, or outside reach: credentials, GUI, hardware, another machine)",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/workflows/verify.md:141-146 - '**The bar.** An item is a HUMAN check only when the model cannot execute it - it is irreversible against real data, or it is outside the model's reach (credentials it does not hold, a GUI, hardware, another machine). Everything else the model runs.' Matches item 1's `expected` verbatim in wording and in the four named exclusions."
+    },
+    {
+      "n": 2,
+      "truth": "The bar's operational predicate admits ONLY items the model cannot execute - i.e. the two 'already judged' short-circuits are true supersets of nothing model-executable",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "cadence-core/workflows/verify.md:147-153 routes an item carrying `why_human` straight to pass 2, 'their reason stands and is not re-litigated'. But `skills/cad-verifier-contract/SKILL.md:194` writes `human_checks` (and therefore `why_human`) 'one per UNCERTAIN truth and per human-only check', and :86-90 creates UNCERTAIN whenever a wired truth simply lacks an observed probe ('Upgrade to VERIFIED only on evidence - one named test that exercises it passes... Otherwise the truth is UNCERTAIN and becomes a human check'). A truth whose only defect is that the verifier did not run the named test is exactly a model-executable check, and it arrives at the walk carrying `why_human`. The SUMMARY's third high finding is confirmed against both files."
+    },
+    {
+      "n": 3,
+      "truth": "A model-executed UAT result is mechanically distinguishable from a user answer and from a deep-pass verifier result, and `why_human` survives merge into UAT.md",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "cadence-core/bin/lib/planning-files.mjs:954 `UAT_SOURCES = ['user','verifier','model']`, :942 `why_human` registered in UAT_FIELDS; cadence-core/bin/planning.mjs:561-562 pre-write enum guard, :597 `if (source !== 'user') item.source = source` (user stays implicit), :765-773 merge carries `why_human`. Four named tests pass: planning.test.mjs:857, :871, :882, :895 (full run 1367 pass / 0 fail)."
+    },
+    {
+      "n": 4,
+      "truth": "A live walk over 9 read-only items + 1 destructive item ends the turn asking about exactly 1 item, with a 9-row executed-and-cited table above it",
+      "status": "UNCERTAIN",
+      "uat_item": 2,
+      "evidence": "The prose exists (cadence-core/workflows/verify.md:139-200 pass 1 / pass 2, report line at :321 `{v} auto-verified, {m} model-executed`), but the walk is only reachable through `${CLAUDE_PLUGIN_ROOT}` resolution in skills/cad-verify, so no probe in this tree observes the turn-ending behaviour. Compounded by truth 2: the `why_human` short-circuit would send model-executable items to the ask even after a reinstall."
+    },
+    {
+      "n": 5,
+      "truth": "The one-re-arm cap is stated in one place every risk_surface fire site shares, and reaches all five sites",
+      "status": "FAILED",
+      "uat_item": 3,
+      "evidence": "The cap itself is real and terminal: cadence-core/references/triage-gate.md:14-32 ('**The blocking re-arm is capped at ONE round.**', narrowed second pass, terminal ask naming '`<trigger>` re-armed once on its own fix and still reports N blocker/high findings', 'never fire that trigger again in this loop'), with the /clear caveat stated at :29-32. Reach is the hole. Repo-wide grep for `triage-gate` outside the file itself returns 9 hits; every RE-READ imperative is scoped to a non-risk_surface arm: execute.md:265 (`diff` at adjudicated), :351 and :363 (`diff` / `phase_diff` at adjudicated), verify.md:259 (the fix-list adjudication), plan.md:248, skills/cad-land/SKILL.md:57. task.md:74, debug.md:110 and references/git-guard.md:121-122 name only `references/review-triggers.md`, whose step 6 (:187) delegates declaratively ('holds this step whole') with no read imperative. execute.md's own risk_surface handler at :282-289 restates the blocking consequence INLINE with no cap and no pointer ('Blocking: on FAIL, findings are fixed or the user explicitly overrides - never silently proceed'), and :267-269 actively steers the reader away ('The `risk_surface` arm is untouched by any of that'). execute.md:307-308 does name the cap, but in the worktree-remedy paragraph, not at the fire site."
+    },
+    {
+      "n": 6,
+      "truth": "A spike recorded what a maxTurns-capped run actually returns, with a verdict, before any value shipped",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": ".planning/spikes/maxturns-cap-behaviour/SPIKE.md:3 'closed 2026-08-08. Experiment run; verdict below.', :43-45 criteria written as validated/invalidated arms, :153 'VERDICT: validated', :155 RECOMMENDATION sizing 400 against 59 observed executor rounds. Commit order holds: 3d82fa5 (criteria, before the experiment) precedes 90c4c44 (close) precedes e8b949b (the value)."
+    },
+    {
+      "n": 7,
+      "truth": "Every dispatched agent carries an explicit runaway-loop bound, or the uncovered path is named with its reason",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`grep -c '^maxTurns:' agents/*.md` returns 1 for each of the 19 files. The one uncovered path is named in the shipped prose, not only in the phase record: cadence-core/workflows/new-project.md (added by e8b949b) - 'This agent is the one Cadence dispatch path with NO `maxTurns` runaway bound, and it is excluded deliberately rather than overlooked... Its bound is `workflow.subagent_timeout` alone - wall-clock, not turns.' CONTEXT D-13 required exactly that."
+    },
+    {
+      "n": 8,
+      "truth": "/cad-audit FAILs on an already-published planning-doc version, fixture-proved, with the three non-drift states honored",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Seam: cadence-core/bin/planning.mjs:998-1008 computes `docVersion` -> `tagCarrying(readTags(dir), ...)` -> emits `version_drift {doc_version, published_as, cycle_state}`. Six fixtures on a tagged scratch repo, all green when run by name (planning.test.mjs:2044 drift fires, :2052 every-phase-complete exemption, :2062 sort-below is not drift, :2071 no-git-repo, :2085 ROADMAP-title fallback, :2096 the #87 v2.4.0 regression pin). Gate acts on it: audit.md:104-111 (the break), :121 (§3 remedy pair), :144 ('OR `version_drift` is present' inside FAIL), :152-170 (not-additive argument, the three non-drift states, the manifest-is-not-a-comparand argument)."
+    },
+    {
+      "n": 9,
+      "truth": "The interrupted-close exemption exempts exactly the states audit.md declares exempt",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "planning.mjs:1007-1008 gates the exemption on `derivePhases(...).some((p) => p.status !== 'complete')`, and planning.mjs:116-130 derives `complete` only when SUMMARY.md exists AND `uatComplete(uat)`; planning-files.mjs:1097-1099 makes `uatComplete` false for any item that is not pass-or-skipped-with-reason. Two consequences: (a) milestone.md:82-83 explicitly sanctions closing with an unfinished phase left in place ('a milestone can close with deferred work that rolls to the next'), so a close interrupted between the tag and the PROJECT.md evolve in that sanctioned shape fires drift in the state audit.md:159-161 calls exempt; (b) a UAT holding a `blocked` item can never derive complete, while verify.md:158 states `blocked` is TERMINAL ('nothing returns an item to the walk from it'), so audit.md:110-111's remedy 'complete the close so no phase is left open' is unreachable for that phase. The SUMMARY's second high finding is confirmed."
+    },
+    {
+      "n": 10,
+      "truth": "The phase's edits leave both CI gates green with weight-budgets.json regenerated",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node --test cadence-core/bin/*.test.mjs` -> `tests 1367 / pass 1367 / fail 0`. `node cadence-core/bin/self-verify.mjs` -> `{\"ok\":true,...,\"problems\":[]}` exit 0, with `budgets` among the checked arms. Working tree clean apart from the untracked UAT.md, so the committed weight-budgets.json is the one that passes (e8b949b and 50dca22 both carry budget updates). No unreferenced debt markers on the goal path: every TODO/placeholder hit in the changed files is parser test data or prose about comment grammar."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Human-check bar stated in verify.md",
+      "evidence": "cadence-core/workflows/verify.md:141-146 states the bar with all four exclusions verbatim (irreversible against real data; credentials, GUI, hardware, another machine). Note the separate gap filed against the bar's OPERATIONAL predicate - the stated sentence is correct, the short-circuit below it is not."
+    },
+    {
+      "k": 4,
+      "name": "maxTurns spike recorded a verdict before value shipped",
+      "evidence": ".planning/spikes/maxturns-cap-behaviour/SPIKE.md:3, :43-45, :153 (VERDICT: validated), :155; commit order 3d82fa5 (criteria) -> 90c4c44 (close) -> e8b949b (the maxTurns: 400 value)."
+    },
+    {
+      "k": 5,
+      "name": "Every dispatched agent carries a runaway-loop bound",
+      "evidence": "`grep -c '^maxTurns:' agents/*.md` -> 1 on each of 19 files; the uncovered new-project.md research dispatch is named in that workflow's own prose with its reason and its wall-clock bound (workflow.subagent_timeout)."
+    },
+    {
+      "k": 6,
+      "name": "/cad-audit FAILs on an already-published planning-doc version",
+      "evidence": "planning.mjs:998-1008 emits version_drift from real tags; six named fixtures pass (planning.test.mjs:2044, :2052, :2062, :2071, :2085, :2096 including the #87 v2.4.0 pin); audit.md:104-111, :144, :152-170 make it verdict-moving with the three non-drift states stated. The exemption predicate's false-positive window is filed as its own gap rather than against this item."
+    },
+    {
+      "k": 7,
+      "name": "Test suite and self-verify green with budgets regenerated",
+      "evidence": "node --test cadence-core/bin/*.test.mjs -> 1367 pass 0 fail; node cadence-core/bin/self-verify.mjs -> {\"ok\":true,\"problems\":[]} with the budgets arm checked; tree clean."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 3,
+      "name": "risk_surface re-arm is bounded",
+      "reason": "unwired - the cap text is real and terminal, but no risk_surface fire site is instructed to load the file that holds it, and execute.md's fire site restates the blocking consequence inline without it",
+      "evidence": "cadence-core/references/triage-gate.md:14-32 holds a correct, terminating cap with a named terminal ask. Reach fails: all nine external references to triage-gate.md are scoped to non-risk_surface arms - execute.md:265, :351, :363 (diff / phase_diff at adjudicated), verify.md:259 (fix-list adjudication), plan.md:248, skills/cad-land/SKILL.md:57. cadence-core/workflows/task.md:74, cadence-core/workflows/debug.md:110 and cadence-core/references/git-guard.md:121-122 point only at review-triggers.md, whose step 6 (references/review-triggers.md:187) delegates declaratively with no read imperative. cadence-core/workflows/execute.md:282-289 restates the blocking arm inline with no cap, and :267-269 tells the reader the risk_surface arm is 'untouched by any of that'. execute.md:307-308 names the cap only in the worktree-remedy paragraph.",
+      "severity": "major",
+      "missing": "An explicit read/RE-READ of references/triage-gate.md at each risk_surface fire site (execute.md's handle_checkpoint risk_surface bullet, task.md risk_check, debug.md Resolve step 3, verify.md step 3's commit-time fire, git-guard.md §4), or a one-line cap restatement at the fire sites; plus turning review-triggers.md:187's 'holds this step whole' into a read imperative. Also fold the cap into execute.md:282-289's inline blocking restatement so it stops shadowing the shared file."
+    },
+    {
+      "name": "The walk's human-check bar admits model-executable items via why_human",
+      "reason": "behavior wrong - verify.md's short-circuit treats why_human as proof an item is human-only, but the verifier contract writes why_human for every UNCERTAIN truth, including truths a model can settle by running a named test",
+      "evidence": "cadence-core/workflows/verify.md:147-153 ('Two kinds of item are ALREADY judged; their reason stands and is not re-litigated... an item carrying `why_human` - the deep pass ruled on it and said why... Both go straight to pass 2, and pass 1 never runs their commands') against skills/cad-verifier-contract/SKILL.md:194 ('`human_checks` - one per UNCERTAIN truth and per human-only check') and :86-90 (a wired truth with no observed probe becomes UNCERTAIN and therefore a human check). The union is strictly larger than 'the model cannot execute it', so exactly the items FRI-01 exists to stop interrogating the user about can carry why_human and skip pass 1.",
+      "severity": "major",
+      "missing": "Either narrow the contract so why_human is written only for human-only checks (a separate field, e.g. why_uncertain, for probe-less UNCERTAIN truths), or make verify.md re-apply the bar to a why_human item instead of treating it as already judged - read the reason and route to pass 2 only when it names irreversibility or an out-of-reach resource. Whichever side moves, the two files must state the same predicate."
+    },
+    {
+      "name": "version_drift's interrupted-close exemption fires on a sanctioned close",
+      "reason": "behavior wrong - the exemption is 'every phase derives complete', which is narrower than the state audit.md declares exempt, and its stated remedy is unreachable for a phase holding a blocked UAT item",
+      "evidence": "cadence-core/bin/planning.mjs:1007-1008 (`derivePhases(...).some((p) => p.status !== 'complete')`), :116-130 (complete requires SUMMARY.md AND uatComplete), cadence-core/bin/lib/planning-files.mjs:1097-1099 (a blocked item makes uatComplete false) against cadence-core/workflows/milestone.md:82-83 ('a milestone can close with deferred work that rolls to the next') and cadence-core/workflows/audit.md:159-161 (the exemption as written) plus audit.md:110-111 (the remedy) and cadence-core/workflows/verify.md:158 ('`blocked` is TERMINAL'). Not reproducible in this repo today because no tag carries the docs' Active version.",
+      "severity": "minor",
+      "missing": "Widen the exemption to the state milestone.md actually sanctions - e.g. exempt when the tag exists and no phase is still pre-SUMMARY, or exempt phases whose only incompleteness is a blocked/deferred UAT item - and add a fixture for the tag-plus-rolled-over-phase shape. If the narrow predicate is intended, restate audit.md:159-161 and the :110-111 remedy in those exact terms."
+    },
+    {
+      "name": "version_drift's comparand is a first-version-token scan of free prose",
+      "reason": "behavior wrong under a benign edit - activeVersion() returns the first version token anywhere in the PROJECT.md ### Active body, so an Active section that names the predecessor before the current milestone reports the predecessor and hard-FAILs the ship gate on correct docs",
+      "evidence": "cadence-core/bin/lib/branch-decision.mjs:57-68 (scan from `### Active` to the next heading, return the first VERSION_RE match) feeding cadence-core/bin/planning.mjs:998. This repo's .planning/PROJECT.md:103 happens to name v2.6.0 before :104 names the closed v2.5.0, so the correct token wins today by ordering alone; one clause reorder inverts it, and v2.5.0 IS tagged.",
+      "severity": "minor",
+      "missing": "Anchor the comparand to the Active milestone's declared form (the bolded backticked `vX.Y.Z — name` token) rather than the first token in the body, or take the last/only token on the milestone-declaration line, with a fixture for an Active body that mentions the predecessor first."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "Reinstall the plugin from cadence/v2.6.0, build a scratch phase with 9 read-only-command UAT items + 1 destructive item, and run /cad-verify <N>",
+      "expected": "The turn ends asking about exactly 1 item, a 9-row executed-and-cited results table is printed above the ask, and `grep -c '^source: model' .planning/phases/<N>/UAT.md` returns 9. Steps: 1) reinstall the plugin from this branch; 2) create the scratch phase and its UAT.md; 3) run `/cad-verify <N>`; 4) run `grep -c '^source: model' .planning/phases/<N>/UAT.md` and expect `9`.",
+      "why_human": "The walk is prose the host resolves through ${CLAUDE_PLUGIN_ROOT}; nothing in this checkout executes it, so no probe here can observe whether the turn actually ends after one item. Note the why_human gap above predicts a failure mode for this check: any scratch item carrying why_human will route to the ask regardless of executability."
+    },
+    {
+      "name": "With the plugin reinstalled, run /cad-audit against a checkout whose PROJECT.md ### Active names an already-tagged version",
+      "expected": "The gate reports FAIL and names the doc version, the tag spelling that carries it, and the cycle state - not a PASS-with-warnings. Steps: 1) reinstall the plugin from this branch; 2) point a scratch checkout's PROJECT.md ### Active at a version the repo already tags; 3) run `/cad-audit`; 4) expect a FAIL verdict citing version_drift.",
+      "why_human": "D-17: skills/cad-audit/SKILL.md:30 resolves the seam through ${CLAUDE_PLUGIN_ROOT}, so the installed command still runs the previous plugin version. The seam and its fixtures are proven here; the end-to-end gate verdict is not observable from this branch."
+    }
+  ]
+}

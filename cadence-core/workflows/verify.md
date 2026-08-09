@@ -138,8 +138,79 @@ and follow it. Otherwise skip to `walk`.
 </step>
 
 <step name="walk">
-Walk from the `next` item each seam call returns - no UAT.md re-reads
-between items. Present one item:
+TWO passes: the model executes and cites everything it can, then the user is
+asked about only what is left. Interrogating the user with a command the model
+can run itself is the defect this step exists to prevent.
+
+**The bar.** An item is a HUMAN check only when the model cannot execute it -
+it is irreversible against real data, or it is outside the model's reach
+(credentials it does not hold, a GUI, hardware, another machine). Everything
+else the model runs. ONE kind of item is ALREADY judged; its reason stands and
+is not re-litigated:
+
+- an item whose `expected` carries the CONTEXT-time
+  `(human-verify: needs <tool/service>)` suffix, written precisely when that
+  tool is known absent on THIS machine.
+
+A `why_human` item is NOT that kind, and the field is not the predicate. The
+deep pass writes `why_human` for every UNCERTAIN truth as well as every
+human-only check (`skills/cad-verifier-contract`), and a truth is UNCERTAIN
+whenever no probe was observed - which is precisely a check the model can settle
+by running one. So READ the reason and apply the bar to it: it goes to pass 2
+only when it names irreversibility against real data or a resource outside the
+model's reach. Anything else - "no probe ran", "not exercised by a named test" -
+goes to pass 1 and is executed. Taking the field's presence as the answer hands
+the user back exactly the commands this step exists to run.
+
+The suffix-tagged item, and a `why_human` item whose reason clears that reading,
+go straight to pass 2; pass 1 never runs their commands.
+
+`blocked` is TERMINAL - nothing returns an item to the walk from it (`next`
+offers only `pending`, `refresh` appends only unseen names, `route_failures`'
+reset is scoped to `status: fail`, and completion refuses it), so a bar applied
+loosely enough to run an impossible command puts the phase permanently out of
+reach of Complete. Pass 1 records `blocked` ONLY for an item that cleared the
+bar and then failed on an environmental cause the bar did not predict, and the
+results table says it needs the user's answer on the next run rather than being
+left to rot.
+
+**Pass 1 - execute and cite.** Read `.planning/phases/<N>/UAT.md` ONCE, at the
+top of the walk, for the pending items and their `expected` text. It has no
+substitute: `uat status` returns `status`, `counts`, `result` and
+`first_pending` alone - no item list, no `expected` string - and on a resumed
+session nothing has put the item bodies in context at all. ONE read BEFORE the
+chain starts, so the "no UAT.md re-reads between items" rule is unchanged and
+still governs pass 2.
+
+Then, before offering ANY item, run the check for every pending item that
+clears the bar and record each the moment it is settled:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat record --phase <N> --item <k> --result <r> \
+  --evidence "<the command and the output that settles it>" --source model
+```
+
+One call per item, never a `uat merge` payload: merge atomically overwrites
+`phases/<N>/FINDINGS.json` on every success and would clobber the deep pass's
+envelope, the file that exists to make a discarded verifier finding
+recoverable.
+
+Then print ONE results table, so the executed items are visible in the
+transcript and not only on disk:
+
+```
+| # | Item | Result | Evidence |
+|---|---|---|---|
+| 3 | Lease check refuses | pass | `node --test x.test.mjs` -> `262 pass 0 fail` |
+```
+
+A pass-1 `fail` routes to `route_failures` unchanged - the walk fixes nothing
+itself.
+
+**Pass 2 - the ask.** Walk only the items that survive the bar, from the `next`
+item each seam call returns - no UAT.md re-reads between items. This needs
+nothing new: an item recorded in pass 1 is no longer `pending`, so `next` stops
+offering it. Present one item:
 
 ```
 ## {n}/{total}: {name}
@@ -205,7 +276,9 @@ For each item with `status: fail` and no recorded cause:
    references/git-guard.md (protected-branch guard, specific files, risk-surface
    trigger at commit time - the fix is staged in THIS tree, so that fire
    carries the staged-diff scope, shape (b): the reviewer runs
-   `git diff --cached` in the cwd it inherits). Then set the item back to
+   `git diff --cached` in the cwd it inherits; that gate is blocking and its
+   re-arm is capped at ONE narrowed round by the same triage-gate.md this step
+   already re-reads). Then set the item back to
    pending for retest:
    `uat record --item <k> --result pending --fix "{hash}, retest"` and offer
    to re-walk it immediately (first_pass keeps the original fail).
@@ -257,7 +330,7 @@ Report tersely:
 
 ```
 UAT {complete|partial}: phase <N>
-Passed {n}/{total} ({v} auto-verified) | Failed {n} | Skipped {n} | Blocked {n}
+Passed {n}/{total} ({v} auto-verified, {m} model-executed) | Failed {n} | Skipped {n} | Blocked {n}
 Reworked {n} (items that failed first pass, then were fixed)
 {open failed items, one line each, if any}
 ```
@@ -272,8 +345,10 @@ hold the result and the next command starts fresh.
 </process>
 
 <guardrails>
-- A pass comes from the user's own answer or cited cad-verifier evidence -
-  never from assuming a criterion holds because the code "should" work.
+- A pass comes from the user's own answer, cited cad-verifier evidence, or a
+  walk-executed check whose command and output are cited on the item
+  (`source: model`) - never from assuming a criterion holds because the code
+  "should" work.
 - UAT.md is written ONLY through the uat seam - the seam guarantees what
   the prose used to beg for: user results unoverwritable, first_pass
   set-once, counts always consistent, every write atomic.

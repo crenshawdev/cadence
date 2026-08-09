@@ -6,6 +6,219 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-08-09
+
+The four defects `2.6.0`'s own doc sweep found and filed rather than reworded
+away, plus what the pre-ship review caught on the way out. One phase and a
+review pass, 14 commits. Every fix here ships with a check that was watched to
+fail against the unpatched code first, because a check nobody has seen fail is
+a guess wearing a verdict.
+
+The review pass is why this is 14 commits and not six. A cross-model reviewer
+over the branch diff returned eight findings and every one of them held up
+against the tree, including a blocking review gate that could not fire at all
+and a harvester reporting itself as technical debt. Two of them were defects in
+the fixes for the other six, caught by re-firing the same gate against the tree
+that actually ships.
+
+### Fixed
+
+- **`cadence-core/bin/lib/trace.mjs` no longer contains two literal NUL bytes.**
+  They were typed into the worker key's template string instead of the `\0`
+  escape, so `file(1)` called the source `data` and every `grep` or `rg` over
+  `cadence-core/bin/**` silently skipped that whole file without `-a`. It cost me
+  a debugging detour during 2.6.0's UAT and it would have cost the next one too.
+  The separator is still U+0000 at runtime, only the source bytes changed.
+  `self-verify` gained check 15, `nul-byte-in-source`, over every regular file
+  under `cadence-core/bin` including the test files, so it cannot come back.
+
+- **The `phase_diff` gate row said `off / off / adjudicated` while the resolver
+  returned `off / advisory / adjudicated`.** Wrong in
+  `cadence-core/references/review-triggers.md` and in `docs/WORKFLOW.md`'s copy
+  of it, and four of 2.6.0's eighteen stale doc rows were that one row copied.
+  A new `prose-agreement.test.mjs` drives `route.mjs resolve` at all three stakes
+  levels and compares both prose sites to what actually comes back, so the copy
+  cannot drift from the code again.
+
+- **The plan checker's contract contradicted itself about its own size.** `:42`
+  said "Check six dimensions" and listed six, while `:113`'s success criterion
+  still said "All five dimensions checked." A checker whose completion
+  criterion names five of six can report success having skipped the
+  dimension 2.5.0 shipped a cycle early to bound plan size. The count is now
+  pinned three ways: the number in each block, and the number of dimensions
+  actually enumerated between them.
+
+- **The `risk_surface` wiring row admitted shape (c) only as "the flagged-diff
+  FILE path the checkpoint returned."** `/cad-task` is the one fire site with no
+  executor and no checkpoint, so it produced a shape-(c) path the row did not
+  describe. The qualifier is gone; `cadence-core/workflows/task.md` keeps its
+  named transient path, its never-stage rule and its delete-on-return cleanup.
+
+- **`/cad-task`'s `risk_surface` fire could not run at all on the inline path.**
+  The step told the model to write the flagged diff to
+  `.planning/tasks/{slug}/risk-task-{slug}.diff`, but `{slug}` and that
+  directory are created only by the PLANNED path, which itself declines to
+  create them when `.planning/` is absent. On an inline task, or in any repo
+  with no `.planning/`, the redirect failed `No such file or directory` and the
+  trigger is `blocking` at every level, so this was a blocking gate that could
+  not fire rather than one that passed. The planned path keeps the named path
+  it already owns; inline writes to `${TMPDIR:-/tmp}` and leaves no directory
+  behind.
+
+- **`trace append --tokens 146,405` no longer throws the whole append away.**
+  A malformed `--tokens` appends nothing by design, so that the caller cannot
+  believe a figure was recorded when it was dropped. But this plugin prints
+  token figures comma-grouped three lines above the order that copies them, so
+  the grouped form is the transcription its own prose models. Refusing it left
+  the `dispatch` half of the bracket open and the worker stranded `unpaired`
+  forever, which escalates a recording error into loss of the bracket it was
+  recording. Grouping is stripped only in the strict 3-digit shape, so `1,2,3`
+  and `146,40` are still refused.
+
+- **The technical-debt harvester stopped reporting itself as technical debt.**
+  `markerSegments`' doc comment spelled the marker token followed by a colon,
+  so `debt-harvest` found exactly one marker in the whole tree and it was the
+  file doing the finding: a corner-cut that does not exist, landing in the
+  queue a human triages. Both the note above `DEBT_TOKEN` and
+  `conventions.md` already stated that documentation never writes a literal
+  marker line.
+
+- **The four `docs/EVIDENCE.md` tables nothing was checking are now pinned.**
+  The byte checks above covered the twelve-largest table and the per-directory
+  subtotals. The turn-one table, eager-vs-reachable, zero-resident and dispatch
+  are measured by a different seam and were asserted against nothing, so adding
+  a sentence to any workflow and re-pinning its budget left `/cad-execute`'s
+  turn-one and reachable figures both silently wrong. The file also stops
+  naming a provenance commit, which is the same staleness one level up.
+
+- **The planning docs agree on which milestone is open.** The `v2.6.1` close
+  ran the manifest bump and the phase prune and stopped, leaving `DFC-01..04`
+  pointing at a phase the prune had removed: `/cad-audit` returned 4/4 broken,
+  a hard FAIL, so the next milestone would have halted at its own gate before
+  it could tag. `PROJECT.md` separately still called `v2.5.0` the current
+  release, two releases behind the manifest, and `CONTRIBUTING.md` still
+  described the byte-budget check as failing only on growth.
+
+### Changed
+
+- **A budgeted surface now fails `self-verify` when it SHRINKS, not just when it
+  grows.** `docs/EVIDENCE.md` published "93 surfaces at exactly their byte count,
+  total slack 0" as if that were enforced. It was a maintenance convention: the
+  check read `bytes > budget`, so any deletion sailed through and the entry went
+  stale in silence. That is how `review-triggers.md` came to be quoted at
+  17,733 B in four places at once. The new `budget-undershoot` kind names the
+  direction, and the four sites quoting that file's size moved together to 17,714
+  with a `weighAll`-backed test over every row of the twelve-largest table.
+
+## [2.6.0] - 2026-08-09
+
+The reconciliation cycle. `2.5.0` closed early and handed this release its
+deferred half, so nothing here is new construction: it is the queue nobody could
+read, the friction you hit by hand every session, the defects Cadence's own
+seams hit on other people's projects, and the first honest measurement of what a
+phase costs. 73 commits across five phases.
+
+Three of the five phases were scoped by running Cadence against real projects
+rather than by reading its own source. A parser pass planned from reading
+`planning-files.mjs` was cut when running that parser over every plan file in
+five live projects produced zero issues, and the two things the same survey found
+actually broken took its place.
+
+### Added
+
+- **Per-role token accounting.** `trace append` takes `--tokens`, `--role` and
+  `--read` on lifecycle events, and `planning.mjs trace render` and
+  `/cad-progress --trace` print what each role cost and how many dispatches it
+  took. A role that ran without a token figure reports an `unrecorded` dispatch
+  count beside its total rather than a zero, because those are different claims.
+  All five phase-scoped dispatch sites now bracket their workers, held in place
+  by a per-file census in the test suite. Before this, 71% of subagent spend
+  happened at sites nothing was measuring: 206,901 tokens for the assumptions
+  analyzer, 346,882 for planner plus checker plus revision, 219,068 for two
+  reviewers, against 310,503 for the only two sites that were bracketed.
+
+- **A runaway-loop bound on every dispatched agent.** All 19 rung files carry
+  `maxTurns: 400`. A spike ran first to establish what the host actually returns
+  at the cap, because shipping a value that converts a long executor run into a
+  failed dispatch would have been worse than no bound at all.
+
+- **`CADENCE-DEBT` markers and a harvest seam.** A deliberate corner-cut carries
+  a marker at its location naming its ceiling and the trigger that should prompt
+  revisiting it, and `planning.mjs debt-harvest` collects them into
+  `.planning/CAPTURE.md`. Idempotent, with its own regression test, because the
+  queue is a regenerable view and the marker in tracked code is the record.
+
+- **A committed doc-claim ledger.** `.planning/DOCS-CLAIMS.md` holds every claim
+  a `/cad-docs-verify` sweep raised with its verdict and its resolution, so the
+  next cycle re-verifies a fixed set of ids instead of re-extracting from scratch
+  and calling the difference progress.
+
+- **`docs/EVIDENCE.md`.** Turn-one bytes for all 23 commands, eager against
+  reachable for the ten heaviest, dispatch bytes for all 19 rung agents, each
+  table printed beside the exact `weight.mjs` command that regenerates it.
+
+### Changed
+
+- **The verify walk runs what it can before it asks you anything.** `/cad-verify`
+  now states the bar out loud: an item is a human check only when the model
+  cannot execute it, meaning irreversible against real data, or outside its reach
+  (credentials, a GUI, hardware, another machine). Everything else is executed
+  and cited as a results table. A walk of nine read-only commands and one
+  destructive one ends the turn asking about one item, not ten. Model-executed
+  results carry their own provenance, distinct from a user's answer and from a
+  verifier's.
+
+- **The capture queue stops being append-only.** 213 open items became 28
+  current-cycle items each carrying a dated, tree-backed verdict, with the 185
+  historical ones moved under a single dated `## Archive` block that
+  `planning.mjs recall` cannot see. That file is the input to every planning
+  dispatch's recall, so its noise was being paid for on every one.
+
+- **Phase directories are numeric-only, and Cadence says so.** `08-meteogram-legend`
+  is not a phase directory, `/cad-health` reports one as a violation, and a
+  numeric-prefix collision produces a named diagnostic instead of one directory
+  silently shadowing the other. This is a breaking change for a project using
+  named directories, taken deliberately: the seams were already unusable there,
+  and an honest refusal beats a clean wrong answer.
+
+### Fixed
+
+- **A blocking review can no longer re-arm without bound on its own fix.** The
+  cap is one round, written once in the consequence gate every fire site shares,
+  so it reaches `/cad-execute`, `/cad-task`, `/cad-debug`, `/cad-verify` and the
+  git guard rather than one of them. Exceeding it hands the remainder to you with
+  a named reason.
+
+- **A planning-doc version the project already published is caught at the ship
+  gate.** `/cad-audit` emits a verdict-moving `version_drift` break, compared
+  against the repo's own git tags rather than the plugin manifest, which resolves
+  relative to the script and would have compared your milestone against Cadence's
+  version in any project that is not this one. That is issue #87's failure mode,
+  which happened on this repo in July.
+
+- **A project Cadence creates keeps its run record out of git.**
+  `execute.md` asserted `.planning/trace.jsonl` "is gitignored" as the reason a
+  worktree's trace cannot ride a merge back, and nothing in Cadence wrote that
+  line. It held here only because it was added by hand. Every other Cadence
+  project was committing its routing, provider and worker events on the next
+  `git add .planning`.
+
+- **`--phase` carries the string you typed, at every seam that takes it.**
+  `--phase 1.10` was reading `phases/1.1` and answering about a different phase.
+
+- **`REQ_ID_EXACT` admits `2FA-01`.** A requirement id whose category does not
+  start with a letter was refused, a regression from `1.4.0`.
+
+- **18 stale claims across `README.md`, `METHOD.md`, `INTERNALS.md`,
+  `CONTRIBUTING.md` and six workflow files.** A full sweep of the doc surface
+  checked 547 claims against the live code: 509 accurate, 18 stale, 20 that
+  cannot be settled mechanically. Every stale one is corrected against its own
+  evidence or recorded as a divergence with the reason it stands. Four turned out
+  to describe real defects rather than stale prose and are filed as their own
+  requirements instead of being reworded away, including a wiring-table row that
+  was the single source of four separate wrong claims, and two literal NUL bytes
+  in `lib/trace.mjs` that make `grep` skip that file without `-a`.
+
 ## [2.5.0] - 2026-08-08
 
 Scoped down at the close. This release ships the benchmark quick wins and the
@@ -1584,6 +1797,8 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
+[2.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.0
 [2.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.5.0
 [2.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.4.0
 [2.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.3.0

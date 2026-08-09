@@ -8,14 +8,23 @@
 // seam that wraps it: the seam and the rail-1 prose it drives share this one
 // source of truth, and it runs fully under `node --test` with no live git.
 //
-// Public surface: `integrationBranchName` and `decideBranch`, and nothing else.
-// `activeVersion` and `titleVersion` are module-private inputs to
-// `integrationBranchName`. They used to be exported for the release-bump
-// derivation to reuse; REL-03 removed that consumer, because a RELEASE number
-// read from prose no path keeps current is how the wrong version ships. Branch
-// naming keeps the `### Active` -> ROADMAP-title precedence exactly as it was
-// (D-11): a misnamed branch is visible and recoverable, a mis-shipped version
-// is not.
+// Public surface: `integrationBranchName` and `decideBranch`, plus the three
+// readers they are built from - `activeVersion`, `titleVersion` and
+// `tagCarrying` - exported for exactly ONE other consumer, `planning.mjs
+// cmdAudit`'s `version_drift` signal (FRI-03). That consumer asks this module's
+// own question at a second moment: branch naming asks it before a cycle starts,
+// the audit asks it at the ship gate, and both must read the SAME prose with the
+// SAME `### Active` -> ROADMAP-title precedence. A second reader beside this one
+// is the drift this module's single-reader discipline exists to prevent.
+//
+// FOR DRIFT DETECTION ONLY. `activeVersion` and `titleVersion` used to be
+// exported for the release-bump derivation to reuse; REL-03 removed that
+// consumer, because a RELEASE number read from prose no path keeps current is
+// how the wrong version ships, and that ban STANDS - re-exporting them here
+// licenses reading the planning docs to REPORT a mismatch, never to derive a
+// number anything ships under. Branch naming keeps the precedence exactly as it
+// was (D-11): a misnamed branch is visible and recoverable, a mis-shipped
+// version is not.
 //
 // The published-version comparison (QW-04) enters here as an ARGUMENT, never as
 // a read: the seam does the `git tag --list` and hands the answer down, so this
@@ -39,30 +48,47 @@ import { compareVersions } from './release-decision.mjs';
 // (v1.1.0-rc.2). Matches the milestone-of-record Cadence names a branch after.
 const VERSION_RE = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
 
+// The milestone DECLARATION: a version token opening its line, past nothing but
+// markdown furniture (bullet, emphasis, backtick, blockquote). The shipped
+// PROJECT.md shape is ``**`v2.6.0 - name`**, opened <date>``, and the anchor is
+// what separates that declaration from prose in the same section that merely
+// MENTIONS a version - a "the predecessor `v2.5.0` closed" sentence is a
+// mention, and reading it as the milestone hard-FAILs the ship gate on correct
+// docs (`version_drift` compares this against the tag list).
+const DECLARED_VERSION_RE = new RegExp(`^[\\s>*_\`-]*(${VERSION_RE.source})`);
+
 /**
  * The version named in the `### Active` section of PROJECT.md, or null.
  * Scans the section body (from the `### Active` heading to the next level-1..3
- * heading) for the first version token.
+ * heading) for the milestone declaration - the first LINE-ANCHORED version
+ * token. Falls back to the first token anywhere in the body when no line
+ * declares one, so a section that only ever mentions its version in prose still
+ * answers rather than going silent.
  * @param {string} projectText
  */
-function activeVersion(projectText) {
+export function activeVersion(projectText) {
   if (!projectText) return null;
   const lines = String(projectText).split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
   if (start < 0) return null;
+  let loose = null;
   for (let i = start + 1; i < lines.length; i++) {
     if (/^#{1,3}\s/.test(lines[i])) break; // next section ends the Active body
-    const m = lines[i].match(VERSION_RE);
-    if (m) return m[0];
+    const declared = lines[i].match(DECLARED_VERSION_RE);
+    if (declared) return declared[1];
+    if (loose === null) {
+      const m = lines[i].match(VERSION_RE);
+      if (m) loose = m[0];
+    }
   }
-  return null;
+  return loose;
 }
 
 /**
  * The version named in the first `# ` (level-1) heading of ROADMAP.md, or null.
  * @param {string} roadmapText
  */
-function titleVersion(roadmapText) {
+export function titleVersion(roadmapText) {
   if (!roadmapText) return null;
   const title = String(roadmapText).split('\n').find((l) => /^#\s/.test(l));
   if (!title) return null;
@@ -99,7 +125,7 @@ function stripLeadingV(v) {
  * @param {any} publishedVersions @param {string} version
  * @returns {string|null}
  */
-function tagCarrying(publishedVersions, version) {
+export function tagCarrying(publishedVersions, version) {
   const tags = Array.isArray(publishedVersions) ? publishedVersions
     : (typeof publishedVersions === 'string' && publishedVersions ? [publishedVersions] : []);
   for (const tag of tags) {

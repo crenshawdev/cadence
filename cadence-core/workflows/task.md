@@ -73,8 +73,41 @@ No PLAN.md, no SUMMARY.md, no state writes.
 <step name="risk_check">
 If any commit's diff touched a risk surface, fire the `risk_surface` review
 trigger per references/review-triggers.md before reporting done. The commits
-already exist, so the artifact is refs - shape (a):
-`{base_ref: parent of the task's first commit, head_ref: HEAD}`.
+already exist, so there is no staged diff in the index: write
+`git diff <parent of the task's first commit>..HEAD` to
+`.planning/tasks/{slug}/risk-task-{slug}.diff` and fire with that path - shape (c), the
+flagged-diff FILE path, since shape (a) refs is not one of the shapes the wiring
+table admits for `risk_surface`. That file is transient exactly like
+`execute.md`'s `plan-<k>-risk-task-<n>.diff`: never stage it, and delete it once
+the trigger returns.
+
+`{slug}` is this task's own slug, and neither it nor that directory is created
+by the INLINE path - `planned_path` step 1 is the only writer of
+`.planning/tasks/{slug}/`, and it declines to create even that when `.planning/`
+is absent, because a task plan does not justify project scaffolding. So derive
+the slug here when the inline path did not (kebab-case of the task description).
+A redirect into a directory nothing created fails `No such file or directory`,
+and this trigger is `blocking` at every level, so that failure is a blocking
+gate that cannot fire rather than a gate that passes.
+
+Which directory depends on whether this task already owns one, and the INLINE
+path never does:
+
+- The PLANNED path wrote `.planning/tasks/{slug}/PLAN.md`, so the directory
+  exists and the diff goes beside it at the named path above. Delete the
+  `.diff` on return and the directory stays, correctly - it holds the plan.
+- The INLINE path creates no directory and must not start now: `Zero planning
+  artifacts for inline tasks` is this workflow's own success criterion, and an
+  inline task that `mkdir -p`s a slug directory leaves it behind empty once the
+  transient diff is deleted, accreting one per risk-surface task. So write to
+  `${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` and fire with THAT path -
+  still shape (c), which since `v2.6.1` admits a flagged-diff file however it
+  was produced. The same applies when `.planning/` does not exist at all.
+
+This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
+narrowed round - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
+FAIL, since this workflow does not preload it and the cap lives only there.
 </step>
 
 <step name="done">

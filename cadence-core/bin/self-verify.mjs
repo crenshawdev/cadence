@@ -79,6 +79,14 @@
 //                    opt-out of the flag lint rather than a problem, and the
 //                    table's completeness could not be checked from the prose
 //                    side at all. It is checked from the tree side here.
+//  15. NUL bytes     no file under cadence-core/bin may contain a literal
+//                    U+0000. One makes GNU `grep -rn` print nothing at all for
+//                    that file without `-a` and `rg` skip it silently, so the
+//                    file drops out of every search while looking present.
+//                    `git grep` still matches (its binary heuristic reads only
+//                    the head of the blob), which is why the defect survived.
+//                    The walk here is extension-blind and exclusion-free -
+//                    tests and JSON data files go dark the same way sources do.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -147,8 +155,16 @@ const CONTRACTS = {
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],
     recall: [],
-    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
+    // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
+    // keeps only the last). Its grammar is deliberately heterogeneous: an
+    // element is any verbatim string naming something the site caused the
+    // worker to read - a path, a glob, or a non-path reference (a
+    // `<base>..<head>` ref range) the worker resolves for itself.
+    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
+      '--role', '--tokens', '--read'],
     'trace render': ['--phase'],
+    'trace ignore': ['--root', '--check'],
+    'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },
@@ -312,10 +328,19 @@ function* mdFiles(root) {
  * Guarded per ENTRY like `mdFiles`, for the #49.1 reason: one unreadable
  * descendant must hide only its own children, not silently unlint every
  * sibling.
+ *
+ * `{ every: true }` drops BOTH exclusions and the extension filter with them,
+ * yielding every regular file under the directory - that arm is check 15's
+ * input, not check 12's. A byte-level fault has no reason to respect the
+ * boundaries a source-lint draws: a NUL typed into a `*.test.mjs`, into
+ * `lib/config-merge.mjs`, or into `weight-budgets.json` makes `grep` skip that
+ * file exactly as loudly as one typed into a linted seam.
  * @param {string} root
+ * @param {{ every?: boolean }} [opts]
  * @returns {Generator<{ file: string, unreadable?: string }>}
  */
-function* binFiles(root) {
+function* binFiles(root, opts = {}) {
+  const every = opts.every === true;
   const binDir = join(root, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
   /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
@@ -331,6 +356,11 @@ function* binFiles(root) {
       const f = join(dir, d.name);
       if (d.isDirectory()) {
         yield* walk(f);
+        continue;
+      }
+      if (every) {
+        if (!d.isFile()) continue;
+        yield { file: f };
         continue;
       }
       if (!f.endsWith('.mjs') || f.endsWith('.test.mjs') || f === skip) continue;
@@ -609,9 +639,19 @@ function run(root) {
 
   // 4. context-weight budgets: every measured prose surface (agents/skills/
   // workflows, via the SAME lib weight.mjs reports with, so enforced weight
-  // cannot diverge from reported weight) must have a budget entry and stay at
-  // or under it. The manifest is root-relative like config.schema.json, so a
-  // --root fixture can supply its own; an absent manifest skips the check.
+  // cannot diverge from reported weight) must have a budget entry and EQUAL it
+  // exactly - a shrink is as much a mismatch as a growth. The manifest is
+  // root-relative like config.schema.json, so a --root fixture can supply its
+  // own; an absent manifest skips the check.
+  //
+  // Exact, not "at or under", because there is no regeneration path: no
+  // `--write-budgets`, no derive-on-run, entries are hand-copied from
+  // weight.mjs. "93 surfaces at exactly their byte count, total slack 0" was
+  // therefore a maintenance CONVENTION that docs/EVIDENCE.md published as if it
+  // were enforced, and an overrun-only comparison let a surface shrink under
+  // its entry with CI fully green - burning the slack that the next growth then
+  // spends invisibly. DFC-03's own fix is the worked example: one byte smaller,
+  // silently under budget (D-13).
   const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
   if (existsSync(budgetPath)) {
     // Same guard as INTERNALS.md above: unreadable OR malformed JSON here
@@ -629,9 +669,15 @@ function run(root) {
         continue;
       }
       const budget = budgets[surface];
+      // Two kinds rather than one, so triage reads the DIRECTION off the kind:
+      // an overrun is prose that grew, an undershoot is an entry that needs
+      // re-pinning to what the surface now measures.
       if (bytes > budget) {
         problems.push({ kind: 'budget-overrun', file: surface,
           detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
+      } else if (bytes < budget) {
+        problems.push({ kind: 'budget-undershoot', file: surface,
+          detail: `${bytes}B is under budget ${budget}B by ${budget - bytes}B - re-pin the entry` });
       }
     }
   } else if (isFullTree) {
@@ -1073,6 +1119,40 @@ function run(root) {
     }
   }
 
+  // 15. no literal U+0000 in any file under cadence-core/bin. A NUL makes GNU
+  // `grep -rn` treat the whole file as binary and print NOTHING for it without
+  // `-a`, and `rg` skip it silently - two NULs inside one template literal in
+  // lib/trace.mjs cost a debugging detour before anyone noticed the file was
+  // absent from every search. `git grep` does NOT catch it (its binary
+  // heuristic inspects only the head of the blob), so this is the check.
+  //
+  // The walk is `{ every: true }`: extension-blind and exclusion-free, because
+  // `grep` does not care that a file is a test or a JSON data file. Scoped to
+  // cadence-core/bin and nothing wider - .planning/_archive-v2.5.0/1/PLAN-2.md
+  // carries the same two bytes inside an immutable phase record, and a
+  // tree-wide guard would land red on a record no one may rewrite.
+  for (const { file, unreadable } of binFiles(root, { every: true })) {
+    const rel = relative(root, file);
+    if (unreadable) {
+      problems.push({ kind: 'unreadable-surface', file: rel, detail: unreadable });
+      continue;
+    }
+    let buf = null;
+    try {
+      buf = readFileSync(file);
+    } catch (e) {
+      problems.push({ kind: 'unreadable-surface', file: rel,
+        detail: e && e.code ? e.code : String(e) });
+      continue;
+    }
+    const at = buf.indexOf(0);
+    if (at < 0) continue;
+    let count = 0;
+    for (let i = at; i < buf.length; i++) if (buf[i] === 0) count++;
+    problems.push({ kind: 'nul-byte-in-source', file: rel,
+      detail: `literal U+0000 at byte offset ${at} (${count} in file) - type \\0 instead` });
+  }
+
   return problems;
 }
 
@@ -1083,7 +1163,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

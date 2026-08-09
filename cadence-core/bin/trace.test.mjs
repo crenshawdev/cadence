@@ -232,6 +232,21 @@ test('renderTrace: a re-run never pairs across runs, and unpaired names the run'
   assert.deepEqual(r.unpaired.map((u) => u.corr).filter((c) => c === '1-bbb'), []);
 });
 
+test('renderTrace: the U+0000 worker separator keeps two SHIFTED brackets apart', () => {
+  // The source of that separator was two literal NUL bytes until DFC-01 turned
+  // them into `\0` escapes, and nothing pinned it: deleting the separator, or
+  // swapping it for a character a corr/phase/plan value may itself contain,
+  // changes the key only for inputs whose parts CONCATENATE alike. Both rows
+  // below join to "abcp", so an unseparated key pairs a dispatch with a foreign
+  // return and reports a clean run; a separated one leaves the dispatch open.
+  const dir = root();
+  appendFileSync(tracePath(dir),
+    `${JSON.stringify({ corr: 'a', phase: 'bc', plan: 'p', family: 'lifecycle', event: DISPATCH })}\n`
+    + `${JSON.stringify({ corr: 'ab', phase: 'c', plan: 'p', family: 'lifecycle', event: TERMINAL[0] })}\n`);
+  const r = renderTrace(dir);
+  assert.deepEqual(r.unpaired.map((u) => [u.corr, u.phase, u.plan]), [['a', 'bc', 'p']]);
+});
+
 test('renderTrace: a malformed line is skipped and counted, the rest still read', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
@@ -301,12 +316,352 @@ test('seam: a malformed call is ok:false, an unwritten append is ok:true', () =>
   assert.equal(r.reason, 'ENOTDIR');
 });
 
+test('seam: 1.1 and 1.10 are two phases, not one trace key (D-02)', () => {
+  // The defect recalled from phase 1's queue: `--phase` was read as a NUMBER, so
+  // `1.10` normalized to `1.1` and both sub-phases shared one key and one
+  // correlation id - the record joined two phases into one story.
+  const dir = root();
+  const a = run(dir, ['trace', 'append', '--phase', '1.1', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'aaa1111']);
+  const b = run(dir, ['trace', 'append', '--phase', '1.10', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'bbb2222']);
+  assert.equal(a.corr, '1.1-aaa1111');
+  assert.equal(b.corr, '1.10-bbb2222');
+
+  const ten = run(dir, ['trace', 'render', '--phase', '1.10']);
+  assert.equal(ten.corr, '1.10-bbb2222');
+  assert.equal(ten.events.length, 1, JSON.stringify(ten.events));
+  assert.equal(ten.events[0].phase, '1.10');
+
+  const one = run(dir, ['trace', 'render', '--phase', '1.1']);
+  assert.equal(one.corr, '1.1-aaa1111');
+  assert.equal(one.events.length, 1, JSON.stringify(one.events));
+  assert.equal(one.events[0].phase, '1.1');
+});
+
 test('seam: render on an absent trace file is ok:true with empty events', () => {
   const dir = root();
   const r = run(dir, ['trace', 'render', '--phase', '1']);
   assert.equal(r.ok, true);
   assert.deepEqual(r.events, []);
   assert.deepEqual(r.unpaired, []);
+});
+
+// --- what a dispatch COST: --tokens, --role, --read --------------------------
+
+/** The trace file's exact bytes, or null when it does not exist yet. */
+function traceBytes(dir) {
+  try { return readFileSync(tracePath(dir), 'utf8'); } catch { return null; }
+}
+
+test('seam: --role and --tokens ride one lifecycle event, tokens as a NUMBER', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', '12345']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.role, 'cad-executor');
+  assert.equal(e.tokens, 12345);
+  // A NUMBER, not the string the flag arrived as: a reader must be able to sum
+  // the field without type-checking it first.
+  assert.equal(typeof e.tokens, 'number');
+  assert.match(traceBytes(dir), /"tokens":12345/);
+});
+
+test('seam: --plan and --role are two separate fields on the same event', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '2', '--role', 'cad-executor', '--read', 'PLAN.md']);
+  const [e] = lines(dir);
+  // `--plan` stays the PAIRING key; `--role` is the grouping key. Collapsing
+  // them would key executors by plan NUMBER while every other worker keys by
+  // role NAME.
+  assert.equal(e.plan, '2');
+  assert.equal(e.role, 'cad-executor');
+});
+
+test('seam: --tokens accepts the comma grouping this plugin prints figures in', () => {
+  // context.md prints `cad-planner 146,405` three lines from the --tokens
+  // order that copies it, so the grouped form is the transcription the prose
+  // models. Refusing it dropped the whole append and stranded the worker
+  // unpaired, which is worse than the recording error it was refusing.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-planner', '--tokens', '146,405']);
+  assert.equal(r.ok, true);
+  const [e] = lines(dir);
+  assert.equal(e.tokens, 146405);
+  assert.equal(typeof e.tokens, 'number');
+});
+
+test('seam: a malformed --tokens appends NOTHING at all', () => {
+  const dir = root();
+  for (const bad of ['abc', '-1', '1.5', '', '1,2,3', '146,40']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // Byte-identical (or still absent): a best-effort append with the field
+    // dropped would render the role `unrecorded` while the caller believed a
+    // figure was recorded.
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--tokens` (parsed as boolean true) is refused the same way.
+  const bare = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--tokens']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: --tokens lands identically on return, checkpoint and escalation', () => {
+  const dir = root();
+  for (const event of TERMINAL) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', event, '--plan', 'cad-planner', '--role', 'cad-planner', '--tokens', '7']);
+    assert.equal(r.ok, true, event);
+  }
+  const written = lines(dir);
+  assert.deepEqual(written.map((e) => e.event), TERMINAL);
+  // No flag is coupled to an event name, which is what makes all three store
+  // the figure the same way.
+  assert.deepEqual(written.map((e) => e.tokens), TERMINAL.map(() => 7));
+});
+
+test('seam: --tokens 0 is a recorded figure, not an omission', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.tokens, 0);
+  assert.ok('tokens' in e);
+});
+
+test('seam: a bare --role writes no role key rather than the literal true', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role']);
+  const [e] = lines(dir);
+  assert.equal('role' in e, false, JSON.stringify(e));
+});
+
+test('seam: --read stores a comma-separated set as an array, verbatim', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-planner', '--role', 'cad-planner',
+    '--read', 'a.md,b.md,c.md']);
+  assert.equal(r.ok, true);
+  const rendered = run(dir, ['trace', 'render', '--phase', '4']);
+  assert.deepEqual(rendered.events[0].read, ['a.md', 'b.md', 'c.md']);
+});
+
+test('seam: --read trims whitespace and drops empty segments', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'p', '--read', 'a.md, ,b.md,']);
+  assert.deepEqual(lines(dir)[0].read, ['a.md', 'b.md']);
+});
+
+test('seam: an empty --read appends nothing', () => {
+  const dir = root();
+  // A bare `--read` (boolean true) and an empty string are both almost always
+  // an unset `"$PATHS"`; recording a complete-looking dispatch with no
+  // read-set is the failure this refusal exists against.
+  for (const args of [['--read'], ['--read', ''], ['--read', ' , ,']]) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'dispatch', '--plan', 'p', ...args]);
+    assert.equal(r.ok, false, JSON.stringify(args));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(args));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: --read stores what it was handed, existence unchecked', () => {
+  const dir = root();
+  // The grammar admits a path, a glob, or a non-path reference the worker
+  // resolves for itself - stored verbatim, with no existence check, no
+  // normalization and no byte measurement.
+  const set = '.planning/does-not-exist.md,.planning/phases/*/PLAN*.md,abc1234..def5678';
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--read', set]);
+  assert.deepEqual(lines(dir)[0].read, set.split(','));
+});
+
+// --- per-role totals ----------------------------------------------------------
+
+test('render: a fully-recorded role carries a total and NO unrecorded key', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 900 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 900 } });
+});
+
+test('render: a half-recorded role shows BOTH a total and an unrecorded count', () => {
+  const dir = root();
+  for (const n of [1, 2, 3]) {
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: String(n), role: 'cad-executor' });
+  }
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 100 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 200 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '3', role: 'cad-executor' });
+  // A half-recorded role has no honest representation as a single number: 2 of
+  // 3 dispatches reported, so 300 is a real total AND one dispatch is missing.
+  assert.deepEqual(renderTrace(dir, 4).roles,
+    { 'cad-executor': { dispatches: 3, tokens: 300, unrecorded: 1 } });
+});
+
+test('render: a role whose dispatches carried nothing shows no tokens key at all', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: 'cad-reviewer', role: 'cad-reviewer' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: 'cad-reviewer', role: 'cad-reviewer' });
+  const row = renderTrace(dir, 4).roles['cad-reviewer'];
+  // `unrecorded` is a COUNT beside an absent total, never a zero total: zero,
+  // unrecorded and recorded are three different states.
+  assert.deepEqual(row, { dispatches: 1, unrecorded: 1 });
+  assert.equal('tokens' in row, false);
+});
+
+test('render: two roles in one phase are grouped separately', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: 'cad-planner', role: 'cad-planner' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: 'cad-planner', role: 'cad-planner', tokens: 900 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: 'cad-reviewer', role: 'cad-reviewer' });
+  assert.deepEqual(renderTrace(dir, 4).roles, {
+    'cad-planner': { dispatches: 1, tokens: 900 },
+    'cad-reviewer': { dispatches: 1, unrecorded: 1 },
+  });
+});
+
+test('render: tokens on checkpoint and escalation aggregate as on return', () => {
+  for (const event of TERMINAL) {
+    const dir = root();
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event, plan: '1', role: 'cad-executor', tokens: 5 });
+    // A checkpointed worker did the work twice; closing on `return` alone would
+    // leave exactly the runs that burned most reported as `unrecorded`.
+    assert.deepEqual(renderTrace(dir, 4).roles,
+      { 'cad-executor': { dispatches: 1, tokens: 5 } }, event);
+  }
+});
+
+test('render: a bracket with no role lands under the "" key rather than vanishing', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', tokens: 42 });
+  assert.deepEqual(renderTrace(dir, 4).roles, { '': { dispatches: 1, tokens: 42 } });
+});
+
+test('render: a phase with no lifecycle events renders an empty roles map', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'routing', event: 'resolve' });
+  assert.deepEqual(renderTrace(dir, 4).roles, {});
+  // ...and the seam omits the key entirely, per the absent-optionals convention.
+  assert.equal('roles' in run(dir, ['trace', 'render', '--phase', '4']), false);
+});
+
+test('render: the ANCHOR event invents no role row', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: ANCHOR, sha: 'abc1234' });
+  // `phase_start` is the correlation-id anchor, not a worker: keying it into
+  // the role table would invent a role that never ran.
+  assert.deepEqual(renderTrace(dir, 4).roles, {});
+});
+
+test('render: a string tokens value contributes 0 and counts as unrecorded', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendFileSync(tracePath(dir), `${JSON.stringify({
+    corr: '4', phase: 4, ts: 'x', family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: '12345',
+  })}\n`);
+  // A hand-edited or foreign-producer line must never be string-concatenated
+  // onto a numeric total.
+  assert.deepEqual(renderTrace(dir, 4).roles, { 'cad-executor': { dispatches: 1, unrecorded: 1 } });
+});
+
+test('render: per-role grouping did not become a second pairing rule', () => {
+  const dir = root();
+  // Two plans, one role: pairing stays keyed on (corr, phase, plan), so both
+  // brackets close, while the role table sums them into one row.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 20 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, tokens: 30 } });
+});
+
+test('render: a terminal is billed to the role that DISPATCHED, not its own', () => {
+  const dir = root();
+  // The two halves of a bracket are written by two separate prose lines, so
+  // they can disagree. Billing each half to whatever it names is the worst
+  // available answer: the worker that really ran reads as unmeasured while a
+  // role that never dispatched carries its bill.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-reviewer', tokens: 500 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 500 } },
+    'the dispatch role owns the figure, and the mistyped closing role invents no row');
+});
+
+test('render: an UNMATCHED terminal shows its tokens but funds no dispatch', () => {
+  const dir = root();
+  // No dispatch to speak for it, so it falls back to its own role - and must
+  // not drive any role's `unrecorded` below zero.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '7', role: 'cad-verifier', tokens: 42 });
+  assert.deepEqual(renderTrace(dir, 4).roles, { 'cad-verifier': { dispatches: 0, tokens: 42 } });
+});
+
+test('render: a duplicated terminal cannot fund a second dispatch', () => {
+  const dir = root();
+  // Two dispatches, one genuine close, then a replayed close for the SAME
+  // worker. Counting token-bearing EVENTS would report both workers funded and
+  // hide the one that never came back with a figure.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 100 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'checkpoint', plan: '1', role: 'cad-executor', tokens: 100 });
+  const r = renderTrace(dir, 4);
+  assert.equal(r.unpaired.length, 1, 'plan 2 never closed');
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, tokens: 200, unrecorded: 1 } },
+    'both figures are summed, but plan 2 stays unrecorded');
+});
+
+test('render: a role named __proto__ is an own row, not a prototype write', () => {
+  const dir = root();
+  // Plain assignment of this one key hits the prototype setter, so the row
+  // silently does not exist and the seam's omit-when-empty gate can drop the
+  // WHOLE block - one hostile role name erasing every other role's accounting.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: '__proto__' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: '__proto__', tokens: 5 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  const r = renderTrace(dir, 4);
+  assert.ok(Object.prototype.hasOwnProperty.call(r.roles, '__proto__'),
+    '__proto__ is an OWN property of roles');
+  assert.deepEqual(r.roles['__proto__'], { dispatches: 1, tokens: 5 });
+  assert.deepEqual(Object.keys(r.roles).sort(), ['__proto__', 'cad-executor'],
+    'the sibling role survives - the block is not dropped');
+});
+
+test('seam: trace render surfaces the roles block through the CLI', () => {
+  const dir = root();
+  const base = ['trace', 'append', '--phase', '4', '--family', 'lifecycle'];
+  run(dir, [...base, '--event', 'dispatch', '--plan', 'cad-planner', '--role', 'cad-planner',
+    '--read', '.planning/ROADMAP.md']);
+  run(dir, [...base, '--event', 'return', '--plan', 'cad-planner', '--role', 'cad-planner',
+    '--tokens', '900']);
+  run(dir, [...base, '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--read', 'HEAD~1..HEAD']);
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '4']).roles, {
+    'cad-planner': { dispatches: 1, tokens: 900 },
+    'cad-reviewer': { dispatches: 1, unrecorded: 1 },
+  });
 });
 
 // --- the producer census ------------------------------------------------------
@@ -353,19 +708,55 @@ function proseSurfaces() {
 }
 
 /**
- * Every `trace append` invocation in one text, as `{family, event}`. Shell line
- * continuations are joined first so a wrapped invocation is read whole rather
- * than read as a flagless fragment.
+ * The files that MUST bracket a worker, mapped to the number of dispatch
+ * moments each one carries. Deliberately per-FILE, which REVERSES the note
+ * `.planning/_archive-v2.5.0/1/reports/plan-2.md` left when it called a
+ * per-file producer assertion "overfitting to today's file layout": the bracket
+ * set stopped being an accident of layout the day it became a stated
+ * requirement, so binding the test to it is now the point. A file dropping to
+ * zero brackets, or `plan.md` quietly shedding three of its four, is a paid
+ * dispatch whose cost never reaches the record - which a global "somebody
+ * writes a dispatch somewhere" check cannot see.
+ */
+const BRACKETING = new Map([
+  [join('cadence-core', 'workflows', 'context.md'), 1],
+  [join('cadence-core', 'workflows', 'plan.md'), 4],
+  [join('cadence-core', 'references', 'review-triggers.md'), 1],
+  [join('cadence-core', 'workflows', 'execute.md'), 1],
+  [join('cadence-core', 'workflows', 'verify-deep.md'), 1],
+]);
+
+/**
+ * Every `trace append` invocation in one text, as
+ * `{family, event, plan, role, read}`. Shell line continuations are joined
+ * first so a wrapped invocation is read whole rather than read as a flagless
+ * fragment.
  * @param {string} text
  */
 function traceAppends(text) {
   const joined = text.replace(/\\\r?\n\s*/g, ' ');
   const out = [];
+  // Quoted form FIRST for --read: its value is a comma-separated list that may
+  // contain spaces, and a bare `\S+` would truncate it at the first one - a
+  // populated read-set would then read as a one-element one, and `--read ""`
+  // would read as the two-character value `""` rather than as empty.
+  const flag = (line, name, quotable) => {
+    if (quotable) {
+      const quoted = new RegExp(`--${name}\\s+"([^"]*)"`).exec(line);
+      if (quoted) return quoted[1];
+    }
+    const bare = new RegExp(`--${name}\\s+(\\S+)`).exec(line);
+    return bare ? bare[1] : null;
+  };
   for (const line of joined.split('\n')) {
     if (!/\btrace\s+append\b/.test(line)) continue;
-    const family = /--family\s+(\S+)/.exec(line);
-    const event = /--event\s+(\S+)/.exec(line);
-    out.push({ family: family ? family[1] : null, event: event ? event[1] : null });
+    out.push({
+      family: flag(line, 'family', false),
+      event: flag(line, 'event', false),
+      plan: flag(line, 'plan', false),
+      role: flag(line, 'role', false),
+      read: flag(line, 'read', true),
+    });
   }
   return out;
 }
@@ -420,4 +811,68 @@ test('census: every trace family has a producer, and every producer speaks the r
     `no prose producer writes \`${DISPATCH}\`, so no bracket ever opens. ${found()}`);
   assert.ok(events.some((e) => TERMINAL.includes(e)),
     `no prose producer writes any of ${TERMINAL.join(', ')}, so no bracket ever closes. ${found()}`);
+
+  // --- per-FILE bracket coverage (see BRACKETING) -----------------------------
+  //
+  // Both halves are counted, and that is what makes this mean "every bracket in
+  // this file is CLOSED" rather than "this file brackets something". A file
+  // carrying four dispatches and three closes satisfies any presence check
+  // while one bracket hangs open forever - and a hanging bracket is precisely
+  // the dispatch whose cost never reaches the record.
+  for (const [file, minDispatch] of BRACKETING) {
+    const own = lifecycle.filter((p) => p.where === file);
+    const dispatched = own.filter((p) => String(p.event) === DISPATCH);
+    const closed = own.filter((p) => TERMINAL.includes(String(p.event)));
+    assert.ok(dispatched.length >= minDispatch,
+      `${file}: expected at least ${minDispatch} written \`--event ${DISPATCH}\` bracket(s), `
+      + `found ${dispatched.length}. A dispatch site with no bracket is a paid worker whose `
+      + 'cost never reaches the run record.');
+    assert.ok(closed.length >= dispatched.length,
+      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${closed.length} closing `
+      + `event(s) (${TERMINAL.join(' / ')}). At least one bracket is left open.`);
+    // ...and the PRIMARY close counted on its own. A site writes its arms as
+    // alternatives - a `return` form AND a `checkpoint` form for the same one
+    // dispatch - so a file with four dispatches carries eight closing lines,
+    // and the count above keeps passing while a whole site loses both of its
+    // arms. Every dispatch moment in every bracketing file writes exactly one
+    // `return` form, so counting that form is what actually says "no bracket
+    // here is left open".
+    const returned = own.filter((p) => String(p.event) === 'return');
+    assert.ok(returned.length >= dispatched.length,
+      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${returned.length} `
+      + '`--event return` close(s). Each dispatch moment writes its own; one of them is '
+      + 'unclosed on its success path.');
+    // ...and the FAILURE arm counted the same way. The two assertions above
+    // both stay green when every `checkpoint` close is deleted - four
+    // dispatches, four returns, four terminals - so neither of them protects
+    // the arm that closes a dispatch which came back unusable. That arm is the
+    // load-bearing one for this phase's whole point: a worker that burned its
+    // budget and returned nothing parseable is exactly the cost that must
+    // still reach the record, and its `return` form never fires.
+    const checkpointed = own.filter((p) => String(p.event) === 'checkpoint');
+    assert.ok(checkpointed.length >= dispatched.length,
+      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${checkpointed.length} `
+      + '`--event checkpoint` close(s). Each dispatch moment writes its own; one of them is '
+      + 'unclosed on its FAILURE path, so a worker that came back unusable goes unbilled.');
+  }
+
+  // --- every bracket half is keyed, and every dispatch names what it caused ---
+  //
+  // The terminal half of the role assertion is not decoration: terminal lines
+  // are the ones carrying `--tokens`, so a prose edit dropping `--role` from a
+  // terminal ALONE would file every token figure under the "" key while
+  // dispatch counts stayed keyed by role - each role reported fully
+  // `unrecorded` beside a nonzero unkeyed total, with the whole suite green.
+  for (const p of lifecycle) {
+    const event = String(p.event);
+    if (event === ANCHOR) continue;   // the correlation-id anchor is not a worker
+    if (event !== DISPATCH && !TERMINAL.includes(event)) continue;
+    assert.ok(p.role && p.role.trim(),
+      `${p.where}: \`--event ${event}\` with no \`--role\` - its worker cannot be grouped `
+      + 'into the per-role totals at all.');
+    if (event !== DISPATCH) continue;
+    assert.ok(p.read && p.read.trim(),
+      `${p.where}: \`--event ${DISPATCH}\` with an empty or absent \`--read\` - the record `
+      + 'would show a dispatch that caused no reads.');
+  }
 });

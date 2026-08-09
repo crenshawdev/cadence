@@ -1,0 +1,132 @@
+{
+  "status": "gaps",
+  "score": "6/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "conventions.md states numeric-only as the phase-directory grammar with no permitting clause, and `status` reports one `phase-dir-grammar` entry per numeric-prefix group for every `phases/` entry outside it",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/references/conventions.md:22-32 states the grammar and the report/never-resolve guarantee; `grep -n 'Match an existing directory' conventions.md` returns nothing (exit 1). cadence-core/bin/planning.mjs:155 PHASE_DIR_NAME, :176 phaseDirGrammarDrift, wired at :288 inside cmdStatus. Ran the four named cases in cadence-core/bin/planning.test.mjs:4460-4505 - all 4 pass, incl. the 08/08-meteogram-legend and 14-* grouping with `share numeric prefix` and the `08` beside legal `8` collision naming. `node cadence-core/bin/planning.mjs status` on this repo -> drift: None. Caveat (already filed in SUMMARY.md open items, low): PHASE_DIR_NAME accepts `1.01` and `2.0` although its own detail says 'no zero-padding'."
+    },
+    {
+      "n": 2,
+      "truth": "conventions.md's grammar sentence no longer permits an existing named directory and cad-health/progress.md name the new drift kind",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/references/conventions.md:22-32 (no 'Match an existing directory' sentence anywhere in the file); skills/cad-health/SKILL.md:56 reports every `phase-dir-grammar` entry as an issue and states renaming is never an auto-fix; cadence-core/workflows/progress.md:37 lists the kind. Legal-tree fixture -> `drift: undefined` (planning.test.mjs case, run green)."
+    },
+    {
+      "n": 3,
+      "truth": "every `--phase` seam builds its path from the string the caller typed: 1.10 addresses phases/1.10 and 08 names phases/08",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Live on a scratch tree holding both phases/1.1/PLAN.md and phases/1.10/PLAN.md: `lease-check --phase 1.10 --plan 1` -> plan_file .../phases/1.10/PLAN.md; `plan-overlap --phase 08` -> {ok:false, no-phase-dir, detail '.../phases/08 not found'}; `uat status --phase 08` -> detail '.../phases/08/UAT.md not found'. Trace: appends at --phase 1.1 and --phase 1.10 wrote `\"phase\":\"1.1\"` and `\"phase\":\"1.10\"` with corr 1.1 vs 1.10, and `trace render --phase 1.10` returned exactly the one 1.10 event. requirePhaseArg at cadence-core/bin/lib/require-int.mjs, imported and used in route.mjs:55,230,596 with the local PHASE_RE gone."
+    },
+    {
+      "n": 4,
+      "truth": "a project Cadence scaffolds keeps .planning/trace.jsonl out of git by itself - append-if-absent, no-op on re-run, brownfield lines preserved - and the seam is called from the scaffold step",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Scratch git root with a brownfield 3-line .gitignore ending WITHOUT a newline: `trace ignore --root .` -> written:true; all three original lines survive verbatim, the comment+line land on their own lines; re-run -> {ignored:true, method:'git', source:'.gitignore', written:false, reason:'already-ignored'} with the file byte-identical (md5 stable). `--root \"\"` and a valueless `--root` both -> {ok:false, bad-args} naming the flag. Call site: cadence-core/workflows/new-project.md:33 inside the setup Bash step; CONTRACTS row cadence-core/bin/self-verify.mjs:152."
+    },
+    {
+      "n": 5,
+      "truth": "an existing project whose run record is tracked or unignored is REPORTED accurately and edited by nothing",
+      "status": "FAILED",
+      "uat_item": 5,
+      "evidence": "Scratch repo with `.planning/trace.jsonl` in .gitignore AND force-added: `trace ignore --root . --check` -> {\"ignored\":false,\"tracked\":true,\"written\":false}. `ignored` is FALSE while the line is present, because `git check-ignore` does not match a tracked path without `--no-index` (cadence-core/bin/planning.mjs gitIgnoreState). The write arm then appended comment+line on run 1 AND again on run 2, leaving THREE copies of `.planning/trace.jsonl` in .gitignore - so the fix skills/cad-health/SKILL.md:27-29 names ('the same command without --check') duplicates the line and does not untrack. --check itself edits nothing, so that half of the item holds."
+    },
+    {
+      "n": 6,
+      "truth": "2FA-01 is a requirement id everywhere audit counts one, while 14-01, 08-02 and 2026-08 are not",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "isRequirementId direct call: 2FA-01/3DS-02/A11Y-01/TRI-01/#41 true; 14-01/08-02/2026-08/A-01/9-char-category false. cadence-core/bin/lib/planning-files.mjs REQ_ID_EXACT = ^(?:(?=[A-Z0-9]{2,8}-)[A-Z0-9]*[A-Z][A-Z0-9]*-\\d+|#\\d+)$, REQ_ID_TOKEN untouched. planning.test.mjs:1925-1945 asserts the audit fixture yields {id:'2FA-01',break:'unpicked'}, unseeded.active_ids ['2FA-01'] and counts {total:1,broken:1} with the total invariant holding; the 2026-08 twin stays a reported phantom. Both named tests pass. Known residue, filed at .planning/CAPTURE.md:121 and in SUMMARY.md: references/req-traceability.md:50, :150 and templates/REQUIREMENTS.md:63 still state the old head-anchored limit and are now FALSE."
+    },
+    {
+      "n": 7,
+      "truth": "the harvest returns exactly the planted CADENCE-DEBT markers and nothing else - no conventional markers, no node_modules, no untracked file",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Scratch git repo: src/a.js with two markers (one missing ceiling), src/b.js with TODO/FIXME/XXX/HACK/NOTE plus the token WITHOUT a colon, a FORCE-ADDED node_modules/pkg/x.js marker, and an untracked src/untracked.js marker. `debt-harvest --root .` -> {markers:2, files:3, written:true, malformed:[{path:'src/a.js',line:3,missing:['ceiling']}]}; CAPTURE.md's `## Debt markers` holds exactly the two src/a.js bullets with '(unstated)' on the missing ceiling. On this repo: {markers:0, files:190, written:false}. Full tree: `node --test cadence-core/bin/debt-markers.test.mjs` 10/10."
+    },
+    {
+      "n": 8,
+      "truth": "the harvest is idempotent, a deleted marker leaves the section, and the rewrite never touches the rest of CAPTURE.md",
+      "status": "FAILED",
+      "uat_item": 8,
+      "evidence": "The plain path holds: second run -> written:false with CAPTURE.md md5-identical, and deleting the marker from src/a.js left `## Debt markers` at `- None.` with `## Todos`, `## Seeds` and `## Notes` intact. But the START boundary of the rewrite is fence-blind (planning.mjs replaceSection: `lines.findIndex(l => l.trim() === heading)`, no fence state; the exported sectionBound guards only the END). Reproduced live: a CAPTURE.md whose `## Todos` bullet quotes `## Debt markers` inside a fenced block was rewritten FROM INSIDE THE FENCE - `## Seeds`, `## Notes` and the user's '- keep me' bullet were DESTROYED and the fence left unclosed. That is data loss in a user file, and it also mangles `## Todos`, which this item asserts is untouched."
+    },
+    {
+      "n": 9,
+      "truth": "the whole tree is green and every fix carries a regression test proved failing-capable",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "`node --test cadence-core/bin/*.test.mjs` -> 1425 tests, 1425 pass, 0 fail (the SUMMARY's number reproduced). `npx tsc -p tsconfig.ci.json` -> exit 0, no diagnostics. `node cadence-core/bin/self-verify.mjs --root .` -> ok:true, problems: [] (which also proves the regenerated weight-budgets.json entries and lints the new prose invocations against the two new CONTRACTS rows at self-verify.mjs:152-153). .planning/phases/3/reports/plan-1.md:47-55 carries a five-row failing-capable table with the mutation and the RED count per fix, plus task 4's stated deviation from D-05's literal regex. Working tree clean apart from the untracked UAT.md."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Named and zero-padded phase dirs are each reported, the 14- pair together (AC1)",
+      "evidence": "planning.mjs:155/:176/:288 (PHASE_DIR_NAME, phaseDirGrammarDrift, wired in cmdStatus); the four planning.test.mjs cases at :4460-4505 pass, incl. entries ['08','08-meteogram-legend'] with 'share numeric prefix 8' and ['14-data-depth-x','14-shared-derivation'] with prefix 14, no entry naming legal '1', no `phase` key. `status` on this repo -> drift: None."
+    },
+    {
+      "k": 2,
+      "name": "A legal phases/ tree reports zero grammar violations, and conventions.md no longer permits a named directory (AC1)",
+      "evidence": "Legal-tree fixture (1, 2, 2.1, 10) -> drift: undefined; a stray FILE under phases/ produces no entry. conventions.md:22-32 states the grammar and the report-never-resolve guarantee; grep for 'Match an existing directory' returns nothing. cad-health SKILL.md:56 and progress.md:37 name the kind."
+    },
+    {
+      "k": 3,
+      "name": "`--phase 1.10` addresses phases/1.10 and `--phase 08` names phases/08 (AC2)",
+      "evidence": "Live scratch tree: lease-check --phase 1.10 -> plan_file .../phases/1.10/PLAN.md; plan-overlap --phase 08 -> detail '.../phases/08 not found'; uat status --phase 08 -> '.../phases/08/UAT.md not found'; trace appends carry \"phase\":\"1.10\" vs \"1.1\" with distinct corr and render --phase 1.10 returns only the 1.10 event. route.mjs imports requirePhaseArg (:55) and its local PHASE_RE is gone."
+    },
+    {
+      "k": 4,
+      "name": "A scaffolded project gitignores its run record, idempotently, without losing brownfield lines (AC3)",
+      "evidence": "Brownfield .gitignore with no trailing newline: written:true, all three original lines verbatim; re-run written:false/reason already-ignored with md5 unchanged; --root \"\" and valueless --root both bad-args. Call site new-project.md:33; CONTRACTS row self-verify.mjs:152."
+    },
+    {
+      "k": 6,
+      "name": "`2FA-01` is a requirement id everywhere audit counts one (AC4)",
+      "evidence": "isRequirementId: 2FA-01/3DS-02/A11Y-01/#41 true, 14-01/08-02/2026-08/A-01 false. planning.test.mjs:1925-1945 audit fixture -> unpicked entry, unseeded.active_ids, counts.total 1 with the invariant holding; both named tests pass."
+    },
+    {
+      "k": 7,
+      "name": "The harvest returns exactly the planted markers and nothing else (AC5)",
+      "evidence": "Scratch repo -> {markers:2, files:3, malformed for the missing ceiling}; TODO/FIXME/XXX/HACK/NOTE, a token with no colon, a force-added node_modules marker and an untracked marker all contributed nothing. This repo -> markers:0, files:190. debt-markers.test.mjs 10/10."
+    },
+    {
+      "k": 9,
+      "name": "The whole tree is green and every fix carries a failing-capable regression test (AC7)",
+      "evidence": "1425/1425 tests pass; tsc exit 0; self-verify ok:true with problems: []; reports/plan-1.md:47-55 records the mutation and RED count for all five fixes."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 5,
+      "name": "An existing project whose run record is tracked or unignored is REPORTED and edited by nothing (AC3)",
+      "reason": "behavior wrong - `trace ignore` reports `ignored:false` when the .gitignore line IS present, whenever the path is also tracked, and the remedy it names then duplicates the line on every run",
+      "evidence": "cadence-core/bin/planning.mjs (gitIgnoreState / cmdTraceIgnore): `git check-ignore -v` does not match a TRACKED path without `--no-index`, so no source is found. Live on a scratch repo with `.planning/trace.jsonl` both in .gitignore and force-added: `--check` -> {\"ignored\":false,\"tracked\":true,\"written\":false}; the write arm returned written:true on run 1 AND run 2, leaving three copies of the line in .gitignore. skills/cad-health/SKILL.md:27-29 names that exact command as the fix, so the health walk sends the user at a non-idempotent no-op that never untracks. AC3's 're-running does not duplicate the line' is violated in this state. Disclosed in SUMMARY.md 'Open items' as high/live-verified under an advisory gate.",
+      "severity": "major",
+      "missing": "Resolve `ignored` with `git check-ignore --no-index -v` (or fall back to the literal .gitignore scan) so a present line reports true; make the write arm a no-op once the line exists regardless of `tracked`; and have cad-health's issue text name the untrack step (`git rm --cached .planning/trace.jsonl`) when `tracked` is true, since adding an ignore line does not untrack a tracked file. Add the tracked-and-ignored fixture as a regression case."
+    },
+    {
+      "k": 8,
+      "name": "The harvest is idempotent and a deleted marker leaves the section without touching `## Todos` (AC6)",
+      "reason": "behavior wrong - the section rewrite's START boundary is fence-blind and deletes user content from CAPTURE.md",
+      "evidence": "cadence-core/bin/planning.mjs replaceSection locates the owned heading with `lines.findIndex(l => l.trim() === heading)` and carries no fence state; the newly exported `sectionBound` (cadence-core/bin/lib/planning-files.mjs) guards the END only, so the D-12 comment's claim that this shape is covered holds in one direction. Reproduced live on a scratch repo: a CAPTURE.md whose `## Todos` bullet quoted `## Debt markers` inside a ``` fence came back with everything from inside the fence onward replaced - `## Seeds`, `## Notes` and the '- keep me' bullet gone, the fence unclosed - after one `debt-harvest --root .`. The plain idempotence and marker-deletion paths were verified green (written:false, md5-identical, `## Todos` intact), so this is the fenced-heading path only. Disclosed in SUMMARY.md 'Open items' as high/live-verified.",
+      "severity": "major",
+      "missing": "Make the START scan fence-aware with the same rule `sectionBound` uses (one shared bounding helper that returns both start and end), and add the regression fixture that reddens it: a `## Todos` bullet holding a fenced block whose body contains `## Debt markers` at column 0, asserting `## Seeds` and `## Notes` survive byte-identical."
+    },
+    {
+      "name": "The harvest's marker parse loses data on two shapes it does not refuse",
+      "reason": "behavior wrong - two data-fidelity defects in the harvest that AC5's 'exactly the planted markers' does not survive on the shapes involved",
+      "evidence": "(1) cadence-core/bin/lib/debt-markers.mjs:62-73 takes `indexOf(MARKER_HEAD)` only and then parses EVERY later pipe field into that one marker. Verified by direct call: a line carrying two markers returned ONE entry with text 'first' but ceiling 'c2' and trigger 't2' - the second marker's fields silently attached to the first. (2) planning.mjs's harvest reads with statSync/readFileSync, so a tracked symlink pointing outside the tree contributes the external file's marker under the in-tree path (SUMMARY.md records this live-verified as `src/link.js -> /tmp/outside-debt.js`). Both are disclosed in SUMMARY.md 'Open items' (medium and low) under the advisory review gate, so they are reported rather than hidden - filed here because they sit on AC5's path.",
+      "severity": "minor",
+      "missing": "Scan all MARKER_HEAD occurrences per line (or refuse a multi-marker line with `malformed`), and use lstatSync plus a resolved-path-under-root check before reading a tracked path."
+    }
+  ],
+  "human_checks": []
+}

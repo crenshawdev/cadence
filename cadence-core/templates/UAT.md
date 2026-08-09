@@ -57,6 +57,12 @@ expected: [observable behavior]
 status: blocked
 reason: [what is missing - server, device, build, another phase]
 
+### 7. [Name]
+expected: [observable behavior]
+origin: verifier
+why_human: [why inspection cannot settle it - credentials, GUI, hardware]
+status: pending
+
 ## Summary
 
 total: [N]
@@ -111,10 +117,15 @@ reworked: [N]
   file to repair, because the AC-id grammar post-dates the fields. And a
   checklist carrying the marker is never legacy however few links its items
   hold - dropped links break.
-- `source: verifier` marks results merged from a cad-verifier pass; they
-  are skipped in the walk but stay visible here with their evidence. It is
-  where a RESULT came from, never where an ITEM came from - that is
-  `origin`'s job, and conflating them exempts nearly every item.
+- `source`: `user | verifier | model` - where a RESULT came from, never
+  where an ITEM came from (that is `origin`'s job, and conflating them
+  exempts nearly every item). `user` is implicit and never written.
+  `verifier` marks results merged from a cad-verifier pass; they are
+  skipped in the walk but stay visible here with their evidence. `model`
+  marks a check the walk ran itself and cited its command and output for.
+- `why_human`: the verifier's per-item reason inspection cannot settle
+  this check, written by `uat merge` from `human_checks[].why_human`. The
+  walk reads it as already judged and does not re-litigate the reason.
 - Failure evidence lives on the item (reported / severity / cause / fix) -
   there is no separate gaps section.
 - Summary counts: recomputed and overwritten after every response.

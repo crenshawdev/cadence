@@ -110,7 +110,7 @@ everything you find now - there is no second look.
 
 <success_criteria>
 - [ ] Truths derived independently before reading the plan's own list
-- [ ] All five dimensions checked
+- [ ] All six dimensions checked
 - [ ] Every finding has severity, location, and a concrete fix
 - [ ] Exactly one return marker
 </success_criteria>
