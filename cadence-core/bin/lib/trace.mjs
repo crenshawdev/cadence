@@ -232,6 +232,8 @@ export function appendEvent(planningRoot, event) {
  * @property {boolean} capped true when the file is at or over MAX_TRACE_BYTES
  * @property {{routing: number, provider: number, lifecycle: number, outcome: number}} counts
  * @property {number} malformed lines that did not parse as JSON
+ * @property {Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>} roles
+ *   what each role COST, keyed by the lifecycle events' `role` field
  * @property {Record<string, any>[]} events
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
  */
@@ -270,8 +272,22 @@ export function renderTrace(planningRoot, phase) {
     capped: false,
     counts: { routing: 0, provider: 0, lifecycle: 0, outcome: 0 },
     malformed: 0,
+    roles: {},
     events: [],
     unpaired: [],
+  };
+
+  // Per-role accumulators, kept beside `out.roles` rather than in it: `recorded`
+  // is how many of a role's dispatches came back with a figure, which the
+  // emitted shape carries only as its complement (`unrecorded`), so it must not
+  // leak into the rendered object.
+  /** @type {Map<string, {dispatches: number, tokens: number, recorded: number}>} */
+  const roleTotals = new Map();
+  /** @param {string} k */
+  const roleRow = (k) => {
+    let row = roleTotals.get(k);
+    if (!row) { row = { dispatches: 0, tokens: 0, recorded: 0 }; roleTotals.set(k, row); }
+    return row;
   };
 
   try {
@@ -293,8 +309,25 @@ export function renderTrace(planningRoot, phase) {
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
     if (e.family !== 'lifecycle') continue;
+
+    // Per-role accounting, keyed on `role` and deliberately NOT on the pairing
+    // key below: a bracket that omitted `--role` keys the empty string exactly
+    // as `plan` already does, so a forgotten flag stays VISIBLE as an unkeyed
+    // row instead of vanishing from the totals. A token figure is summed from
+    // ANY lifecycle event carrying a finite number - prose writes it once, at
+    // the close, but a figure written at the wrong half of a bracket is then
+    // counted rather than silently dropped. A non-numeric `tokens` on a
+    // hand-edited or foreign-producer line contributes NOTHING and is never
+    // string-concatenated onto the total.
+    if (typeof e.tokens === 'number' && Number.isFinite(e.tokens)) {
+      const row = roleRow(key(e.role));
+      row.tokens += e.tokens;
+      row.recorded++;
+    }
+
     const worker = `${key(e.corr)} ${key(e.phase)} ${key(e.plan)}`;
     if (e.event === DISPATCH) {
+      roleRow(key(e.role)).dispatches++;
       const pending = open.get(worker) || [];
       pending.push({ corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts });
       open.set(worker, pending);
@@ -304,5 +337,18 @@ export function renderTrace(planningRoot, phase) {
     }
   }
   for (const pending of open.values()) out.unpaired.push(...pending);
+
+  // The token total is OMITTED when nothing was recorded, so a role with no
+  // figure never shows a zero it would be read as having spent; `unrecorded` is
+  // a dispatch COUNT, omitted at zero, never the string `unrecorded` sitting in
+  // a numeric field. The internal `recorded` counter is dropped here.
+  for (const [role, row] of roleTotals) {
+    const unrecorded = Math.max(0, row.dispatches - row.recorded);
+    out.roles[role] = {
+      dispatches: row.dispatches,
+      ...(row.recorded ? { tokens: row.tokens } : {}),
+      ...(unrecorded ? { unrecorded } : {}),
+    };
+  }
   return out;
 }

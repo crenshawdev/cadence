@@ -462,6 +462,126 @@ test('seam: --read stores what it was handed, existence unchecked', () => {
   assert.deepEqual(lines(dir)[0].read, set.split(','));
 });
 
+// --- per-role totals ----------------------------------------------------------
+
+test('render: a fully-recorded role carries a total and NO unrecorded key', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 900 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 900 } });
+});
+
+test('render: a half-recorded role shows BOTH a total and an unrecorded count', () => {
+  const dir = root();
+  for (const n of [1, 2, 3]) {
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: String(n), role: 'cad-executor' });
+  }
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 100 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 200 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '3', role: 'cad-executor' });
+  // A half-recorded role has no honest representation as a single number: 2 of
+  // 3 dispatches reported, so 300 is a real total AND one dispatch is missing.
+  assert.deepEqual(renderTrace(dir, 4).roles,
+    { 'cad-executor': { dispatches: 3, tokens: 300, unrecorded: 1 } });
+});
+
+test('render: a role whose dispatches carried nothing shows no tokens key at all', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: 'cad-reviewer', role: 'cad-reviewer' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: 'cad-reviewer', role: 'cad-reviewer' });
+  const row = renderTrace(dir, 4).roles['cad-reviewer'];
+  // `unrecorded` is a COUNT beside an absent total, never a zero total: zero,
+  // unrecorded and recorded are three different states.
+  assert.deepEqual(row, { dispatches: 1, unrecorded: 1 });
+  assert.equal('tokens' in row, false);
+});
+
+test('render: two roles in one phase are grouped separately', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: 'cad-planner', role: 'cad-planner' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: 'cad-planner', role: 'cad-planner', tokens: 900 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: 'cad-reviewer', role: 'cad-reviewer' });
+  assert.deepEqual(renderTrace(dir, 4).roles, {
+    'cad-planner': { dispatches: 1, tokens: 900 },
+    'cad-reviewer': { dispatches: 1, unrecorded: 1 },
+  });
+});
+
+test('render: tokens on checkpoint and escalation aggregate as on return', () => {
+  for (const event of TERMINAL) {
+    const dir = root();
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event, plan: '1', role: 'cad-executor', tokens: 5 });
+    // A checkpointed worker did the work twice; closing on `return` alone would
+    // leave exactly the runs that burned most reported as `unrecorded`.
+    assert.deepEqual(renderTrace(dir, 4).roles,
+      { 'cad-executor': { dispatches: 1, tokens: 5 } }, event);
+  }
+});
+
+test('render: a bracket with no role lands under the "" key rather than vanishing', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', tokens: 42 });
+  assert.deepEqual(renderTrace(dir, 4).roles, { '': { dispatches: 1, tokens: 42 } });
+});
+
+test('render: a phase with no lifecycle events renders an empty roles map', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'routing', event: 'resolve' });
+  assert.deepEqual(renderTrace(dir, 4).roles, {});
+  // ...and the seam omits the key entirely, per the absent-optionals convention.
+  assert.equal('roles' in run(dir, ['trace', 'render', '--phase', '4']), false);
+});
+
+test('render: the ANCHOR event invents no role row', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: ANCHOR, sha: 'abc1234' });
+  // `phase_start` is the correlation-id anchor, not a worker: keying it into
+  // the role table would invent a role that never ran.
+  assert.deepEqual(renderTrace(dir, 4).roles, {});
+});
+
+test('render: a string tokens value contributes 0 and counts as unrecorded', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendFileSync(tracePath(dir), `${JSON.stringify({
+    corr: '4', phase: 4, ts: 'x', family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: '12345',
+  })}\n`);
+  // A hand-edited or foreign-producer line must never be string-concatenated
+  // onto a numeric total.
+  assert.deepEqual(renderTrace(dir, 4).roles, { 'cad-executor': { dispatches: 1, unrecorded: 1 } });
+});
+
+test('render: per-role grouping did not become a second pairing rule', () => {
+  const dir = root();
+  // Two plans, one role: pairing stays keyed on (corr, phase, plan), so both
+  // brackets close, while the role table sums them into one row.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 20 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, tokens: 30 } });
+});
+
+test('seam: trace render surfaces the roles block through the CLI', () => {
+  const dir = root();
+  const base = ['trace', 'append', '--phase', '4', '--family', 'lifecycle'];
+  run(dir, [...base, '--event', 'dispatch', '--plan', 'cad-planner', '--role', 'cad-planner',
+    '--read', '.planning/ROADMAP.md']);
+  run(dir, [...base, '--event', 'return', '--plan', 'cad-planner', '--role', 'cad-planner',
+    '--tokens', '900']);
+  run(dir, [...base, '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--read', 'HEAD~1..HEAD']);
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '4']).roles, {
+    'cad-planner': { dispatches: 1, tokens: 900 },
+    'cad-reviewer': { dispatches: 1, unrecorded: 1 },
+  });
+});
+
 // --- the producer census ------------------------------------------------------
 //
 // THIS IS A REGRESSION GUARD, NOT A CLOSURE. It closes no UAT item and fixes no

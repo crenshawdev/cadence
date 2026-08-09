@@ -2216,6 +2216,7 @@ function cmdTrace(dir, sub, opts) {
       corr: r.corr,
       capped: r.capped,
       counts: r.counts,
+      ...(Object.keys(r.roles).length ? { roles: r.roles } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       events: r.events,
       unpaired: r.unpaired,
