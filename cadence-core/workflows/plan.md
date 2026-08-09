@@ -182,7 +182,10 @@ plan's truths and tasks, citing each recalled item's `source` file and `phase`
 The dispatch came back, so close its bracket before anything else - `--tokens`
 is read off the HOST's subagent return metadata at the moment the worker
 returns, and is OMITTED when the return carries no figure (never `--tokens 0`,
-which would claim a dispatch that cost nothing):
+which would claim a dispatch that cost nothing). A return carrying none is
+ROUTINE rather than a defect - built-in agent types report no figure where a
+plugin agent reports one - so the resulting `unrecorded` names a silent return,
+never a skipped bracket:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>

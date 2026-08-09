@@ -126,6 +126,16 @@ mechanism to obtain it. When the return carries no figure, OMIT the flag: an
 absent total means "no dispatch of this role reported one", and `--tokens 0`
 would claim a dispatch that cost nothing.
 
+A missing figure is ROUTINE, not evidence of a skipped bracket. Measured on this
+repo: every PLUGIN agent's return carried one (`cad-planner` 146,405,
+`cad-executor` 154,523, `cad-plan-checker` 47,717, `cad-verifier` 78,034), while
+a BUILT-IN agent type - `Explore` - returned none at all. So `unrecorded` in
+`trace render` reads as "this worker's return carried no number", never as "this
+bracket never fired": the dispatch COUNT beside it is what proves the bracket
+ran, and a bracket that truly never fired shows up in `unpaired` instead. Do not
+substitute an estimate, a token count from a different worker, or a figure the
+host did not report.
+
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), timeout `workflow.subagent_timeout` (read above).
 This keeps raw file contents out of the main context. Prompt payload:

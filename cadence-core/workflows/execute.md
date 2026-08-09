@@ -231,8 +231,11 @@ totals could never print. `--read` is what this site causes the executor to read
 the shared set every plan in the phase re-reads, plus that plan's own file.
 `--tokens` is read off the HOST's subagent return metadata at the moment the
 executor returns; OMIT the flag when the return carries no figure, since
-`--tokens 0` would claim a dispatch that cost nothing. A worktree executor still
-emits nothing of its own - these are the ORCHESTRATOR's lines.
+`--tokens 0` would claim a dispatch that cost nothing. A return carrying none is
+ROUTINE rather than a defect - built-in agent types report no figure where a
+plugin agent reports one - so the resulting `unrecorded` names a silent return,
+never a skipped bracket. A worktree executor still emits nothing of its own -
+these are the ORCHESTRATOR's lines.
 
 The `phase_start` line in `start` is NOT one of these. It is the correlation-id
 ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:

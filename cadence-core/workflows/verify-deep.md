@@ -36,7 +36,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 
 `--tokens` is read off the HOST's subagent return metadata at the moment the
 verifier returns; OMIT the flag when the return carries no figure, since
-`--tokens 0` would claim a dispatch that cost nothing.
+`--tokens 0` would claim a dispatch that cost nothing. A return carrying none is
+ROUTINE rather than a defect - built-in agent types report no figure where a
+plugin agent reports one - so the resulting `unrecorded` names a silent return,
+never a skipped bracket.
 
 One call. The verifier's file goes in as it was written - nothing is
 transcribed, reshaped, or copied by hand:
