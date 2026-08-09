@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 5 (Token accounting)
-Status: phase complete
-Next: /cad-context 5
+Phase: 5 of 5 (Doc sweep)
+Status: context gathered
+Next: /cad-plan 5
 Updated: 2026-08-09
