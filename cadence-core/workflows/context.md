@@ -127,14 +127,21 @@ absent total means "no dispatch of this role reported one", and `--tokens 0`
 would claim a dispatch that cost nothing.
 
 A missing figure is ROUTINE, not evidence of a skipped bracket. Measured on this
-repo: every PLUGIN agent's return carried one (`cad-planner` 146,405,
-`cad-executor` 154,523, `cad-plan-checker` 47,717, `cad-verifier` 78,034), while
-a BUILT-IN agent type - `Explore` - returned none at all. So `unrecorded` in
-`trace render` reads as "this worker's return carried no number", never as "this
-bracket never fired": the dispatch COUNT beside it is what proves the bracket
-ran, and a bracket that truly never fired shows up in `unpaired` instead. Do not
-substitute an estimate, a token count from a different worker, or a figure the
-host did not report.
+repo: every PLUGIN agent's return carried one (`cad-assumptions-analyzer`
+186,577, `cad-planner` 146,405, `cad-executor` 154,523, `cad-plan-checker`
+47,717, `cad-verifier` 78,034), while a BUILT-IN agent type - `Explore` -
+returned none at all. So `unrecorded` in `trace render` reads as "this worker's
+return carried no number", never as "this bracket never fired": `unrecorded` can
+only be nonzero where a dispatch was counted, and the dispatch COUNT beside it
+records that the dispatch half was WRITTEN.
+
+Read the three states apart, because only two of them are visible at all. A
+dispatch that was written and never closed is `unpaired`. A dispatch that was
+written, closed, and carried no number is `unrecorded`. A bracket for which no
+event was appended AT ALL appears NOWHERE - not in `roles`, not in `unpaired` -
+which is exactly why the append is not optional and why the census in
+`trace.test.mjs` binds these lines per file. Do not substitute an estimate, a
+token count from a different worker, or a figure the host did not report.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), timeout `workflow.subagent_timeout` (read above).
