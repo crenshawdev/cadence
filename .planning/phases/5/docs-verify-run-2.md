@@ -56,7 +56,7 @@ filed as `DFC-01`, `DFC-02` and `DFC-03` under `## Deferred` in
 | unverifiable | 20 | 20 |
 | **total** | **547** | **547** |
 
-Ledger resolutions: 509 `accurate`, 20 `corrected`, 18 `divergence`. Zero
+Ledger resolutions: 509 `accurate`, 19 `corrected`, 19 `divergence`. Zero
 `pending`, zero empty.
 
 The 20 unverifiable rows do not become verifiable by being corrected, and the
