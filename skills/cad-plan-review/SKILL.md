@@ -36,7 +36,7 @@ this delegates to `fire(plan)`, which grounds and adjudicates once.
 
 2. **Fire the `plan` trigger** with the resolved PLAN file(s) as the artifact -
    Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` here,
-   not preloaded (15,376 B, one site). Honor `review.triggers.plan.gate`
+   not preloaded (17,733 B, one site). Honor `review.triggers.plan.gate`
    (default adjudicated) always; its `tier` and `effort` reach cross-model
    reviewers only. This resolves the reviewer set
    (claude-subagent and/or a configured cross-model reviewer), runs them, and -
