@@ -147,7 +147,13 @@ const CONTRACTS = {
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],
     recall: [],
-    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
+    // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
+    // keeps only the last). Its grammar is deliberately heterogeneous: an
+    // element is any verbatim string naming something the site caused the
+    // worker to read - a path, a glob, or a non-path reference (a
+    // `<base>..<head>` ref range) the worker resolves for itself.
+    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
+      '--role', '--tokens', '--read'],
     'trace render': ['--phase'],
     'trace ignore': ['--root', '--check'],
     'debt-harvest': ['--root'],

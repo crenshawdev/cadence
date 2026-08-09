@@ -332,6 +332,136 @@ test('seam: render on an absent trace file is ok:true with empty events', () => 
   assert.deepEqual(r.unpaired, []);
 });
 
+// --- what a dispatch COST: --tokens, --role, --read --------------------------
+
+/** The trace file's exact bytes, or null when it does not exist yet. */
+function traceBytes(dir) {
+  try { return readFileSync(tracePath(dir), 'utf8'); } catch { return null; }
+}
+
+test('seam: --role and --tokens ride one lifecycle event, tokens as a NUMBER', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', '12345']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.role, 'cad-executor');
+  assert.equal(e.tokens, 12345);
+  // A NUMBER, not the string the flag arrived as: a reader must be able to sum
+  // the field without type-checking it first.
+  assert.equal(typeof e.tokens, 'number');
+  assert.match(traceBytes(dir), /"tokens":12345/);
+});
+
+test('seam: --plan and --role are two separate fields on the same event', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '2', '--role', 'cad-executor', '--read', 'PLAN.md']);
+  const [e] = lines(dir);
+  // `--plan` stays the PAIRING key; `--role` is the grouping key. Collapsing
+  // them would key executors by plan NUMBER while every other worker keys by
+  // role NAME.
+  assert.equal(e.plan, '2');
+  assert.equal(e.role, 'cad-executor');
+});
+
+test('seam: a malformed --tokens appends NOTHING at all', () => {
+  const dir = root();
+  for (const bad of ['abc', '-1', '1.5', '']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // Byte-identical (or still absent): a best-effort append with the field
+    // dropped would render the role `unrecorded` while the caller believed a
+    // figure was recorded.
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--tokens` (parsed as boolean true) is refused the same way.
+  const bare = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--tokens']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: --tokens lands identically on return, checkpoint and escalation', () => {
+  const dir = root();
+  for (const event of TERMINAL) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', event, '--plan', 'cad-planner', '--role', 'cad-planner', '--tokens', '7']);
+    assert.equal(r.ok, true, event);
+  }
+  const written = lines(dir);
+  assert.deepEqual(written.map((e) => e.event), TERMINAL);
+  // No flag is coupled to an event name, which is what makes all three store
+  // the figure the same way.
+  assert.deepEqual(written.map((e) => e.tokens), TERMINAL.map(() => 7));
+});
+
+test('seam: --tokens 0 is a recorded figure, not an omission', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.tokens, 0);
+  assert.ok('tokens' in e);
+});
+
+test('seam: a bare --role writes no role key rather than the literal true', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role']);
+  const [e] = lines(dir);
+  assert.equal('role' in e, false, JSON.stringify(e));
+});
+
+test('seam: --read stores a comma-separated set as an array, verbatim', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-planner', '--role', 'cad-planner',
+    '--read', 'a.md,b.md,c.md']);
+  assert.equal(r.ok, true);
+  const rendered = run(dir, ['trace', 'render', '--phase', '4']);
+  assert.deepEqual(rendered.events[0].read, ['a.md', 'b.md', 'c.md']);
+});
+
+test('seam: --read trims whitespace and drops empty segments', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'p', '--read', 'a.md, ,b.md,']);
+  assert.deepEqual(lines(dir)[0].read, ['a.md', 'b.md']);
+});
+
+test('seam: an empty --read appends nothing', () => {
+  const dir = root();
+  // A bare `--read` (boolean true) and an empty string are both almost always
+  // an unset `"$PATHS"`; recording a complete-looking dispatch with no
+  // read-set is the failure this refusal exists against.
+  for (const args of [['--read'], ['--read', ''], ['--read', ' , ,']]) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'dispatch', '--plan', 'p', ...args]);
+    assert.equal(r.ok, false, JSON.stringify(args));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(args));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: --read stores what it was handed, existence unchecked', () => {
+  const dir = root();
+  // The grammar admits a path, a glob, or a non-path reference the worker
+  // resolves for itself - stored verbatim, with no existence check, no
+  // normalization and no byte measurement.
+  const set = '.planning/does-not-exist.md,.planning/phases/*/PLAN*.md,abc1234..def5678';
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--read', set]);
+  assert.deepEqual(lines(dir)[0].read, set.split(','));
+});
+
 // --- the producer census ------------------------------------------------------
 //
 // THIS IS A REGRESSION GUARD, NOT A CLOSURE. It closes no UAT item and fixes no

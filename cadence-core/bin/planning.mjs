@@ -41,10 +41,17 @@
 //                                   read from its manifests (NOT --dir: --root
 //                                   is the PROJECT root, one level deep only)
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
-//               [--detail "<text>"]  one line onto .planning/trace.jsonl
-//   trace render [--phase N]        the four families, the derived id, and
-//                                   every worker dispatch paired to its
-//                                   return/checkpoint/escalation
+//               [--detail "<text>"] [--role <name>] [--tokens <n>]
+//               [--read "<a,b,c>"]  one line onto .planning/trace.jsonl.
+//                                   --role groups the per-role totals (--plan
+//                                   stays the pairing key), --tokens is what
+//                                   the dispatch cost as a non-negative
+//                                   integer, --read is ONE comma-separated
+//                                   read-set stored verbatim
+//   trace render [--phase N]        the four families, the derived id, every
+//                                   worker dispatch paired to its
+//                                   return/checkpoint/escalation, and the
+//                                   per-role dispatch/token totals
 //   debt-harvest [--root <path>]    every CADENCE-DEBT marker in the tracked
 //                                   tree, collected into .planning/CAPTURE.md's
 //                                   own `## Debt markers` section (NOT --dir:
@@ -2124,6 +2131,52 @@ function cmdTrace(dir, sub, opts) {
     }
     const event = typeof opts.event === 'string' && opts.event ? opts.event : '';
     if (!event) return fail('bad-args', 'trace append needs --event <name>');
+
+    // --tokens: what the dispatch COST, read by the orchestrator off the
+    // worker's return metadata. A malformed value is a malformed CALL, not a
+    // best-effort append with the field dropped: a dropped field renders the
+    // role `unrecorded` while the caller believes a figure was recorded, which
+    // is exactly the zero/unrecorded/recorded conflation the per-role block
+    // exists to prevent. So nothing at all is appended here.
+    let tokens;
+    if ('tokens' in opts) {
+      const parsed = requireInt(opts.tokens);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', 'trace append --tokens needs a non-negative integer');
+      }
+      tokens = parsed.value;
+    }
+
+    // --read: the read-set the SITE caused the worker to read, as ONE
+    // comma-separated value split the way `phase-done --reqs` splits its ids.
+    // A repeated flag is impossible by construction rather than by choice -
+    // `parseArgs` does `opts[a.slice(2)] = next`, so `--read a --read b` would
+    // keep only `b` and the record would drop most of its rows while looking
+    // complete. Do not "improve" this into a repeatable flag.
+    //
+    // GRAMMAR: an element is any VERBATIM string naming something the site
+    // caused the worker to read - a path, a glob, or a non-path reference (a
+    // `<base>..<head>` ref range) the worker resolves for itself. Stored with
+    // no existence check, no normalization and no byte measurement, so a reader
+    // converting the set to bytes must resolve each element BY KIND rather than
+    // assume a plain path.
+    let read;
+    if ('read' in opts) {
+      const list = typeof opts.read === 'string'
+        ? opts.read.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+      // A bare `--read`, an empty string, or an all-blank value is almost
+      // always an unset `"$PATHS"`, and a complete-looking dispatch with no
+      // read-set is the failure this refusal exists against.
+      if (!list.length) {
+        return fail('bad-args', 'trace append --read needs a comma-separated path list');
+      }
+      read = list;
+    }
+
+    // No flag below is coupled to an event NAME: the seam stays event-agnostic
+    // exactly as it is today, which is what makes `return`, `checkpoint` and
+    // `escalation` store tokens identically.
     const res = appendEvent(dir, {
       // The caller's SPELLING, which is what separates `1.10` from `1.1`:
       // normalized, both phases shared one trace key and one correlation id, so
@@ -2138,6 +2191,11 @@ function cmdTrace(dir, sub, opts) {
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
       ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
       ...(typeof opts.detail === 'string' && opts.detail ? { detail: opts.detail } : {}),
+      // A bare `--role` parses as boolean `true`; the same guard `--plan` and
+      // `--sha` use records nothing rather than the literal `true`.
+      ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
+      ...(tokens === undefined ? {} : { tokens }),
+      ...(read === undefined ? {} : { read }),
     });
     return ok({
       written: res.written,
