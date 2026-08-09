@@ -1,62 +1,40 @@
-# Requirements: Cadence (v2.5.0 shipped)
+# Requirements: Cadence (v2.6.0 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v2.6.0 — the reconciliation cycle`. Opened 2026-08-08 when `v2.5.0` closed
-early. These nine requirements are `v2.5.0`'s deferred half, carried forward
-unchanged: they were never planned against, never cut, and never re-scoped
-except where noted on `REC-01`/`REC-02` below.
+`v2.6.1 — the defects the sweep found`. Opened 2026-08-09 when `v2.6.0` closed
+with all fourteen of its requirements delivered. The entire scope is the four
+defects that cycle's own doc sweep found and filed under `## Deferred` rather
+than rewording away, now promoted here.
 
-Why it split. `v2.5.0` ended up containing a fix to Cadence's own planning
-gates - `workflow.max_plan_tasks` plus a proportionality dimension on
-`cad-plan-checker` - and that fix does nothing until it ships and installs.
-Queue triage had by then been planned at 10 tasks, cut, replanned at 15, and passed
-every gate both times, which is precisely the failure the new ceiling exists to
-catch. Planning four more phases before the release would have run all four
-through the same unbounded gates. So the cycle closed on what was verifiably
-done and the rest rolls here, where the gates work.
+Why they are a cycle rather than a backlog. Each is located to a file and a
+line, each is close to a one-line fix, and none is a design question, so the
+whole thing is small on purpose. Filing them was an explicit refusal to convert
+a bug into a documentation edit (that is `DOC-03`, which shipped in v2.6.0); a
+defect filed and then left for a convenient cycle just ages into the next
+sweep's findings, which is the failure the filing existed to prevent.
 
-What this cycle is. A reconciliation cycle, not a construction one.
-`.planning/CAPTURE.md` holds 213 open items (as of 2026-08-08) accumulated over
-nine milestones; some were closed by work that shipped and never struck, some
-describe code that no longer exists, and the real ones have gone unread because
-the file is too long to triage in passing. That same file is the input to
-`/cad-plan`'s recall, so its noise is paid for at every planning dispatch. The
-outward half is the same problem: what Cadence claims about itself in
-`README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and its workflow
-prose has never been checked end to end against the code.
+What to plan for rather than discover: `DFC-02` and `DFC-04` both live in
+`cadence-core/references/review-triggers.md`, a file sitting at exactly its byte
+budget with zero slack, and that budget figure is quoted inline by
+`skills/cad-land/SKILL.md` and `skills/cad-plan-review/SKILL.md`. Either fix is
+three coordinated edits, not one. `cadence-core/references/**` was outside
+v2.6.0's swept surface, which is why both were filed instead of corrected in
+place.
 
-`FRI-*` is the friction the user hits by hand every session and `PRS-*` the
-planning-data parser every other seam reads through. Both were scoped from items
-whose claims were re-confirmed against the live tree before being written down —
-the [blocker] O(K x N) git-guard item, by contrast, was closed by `TOK-02` in
-v2.2.0 and is deliberately absent.
+Guardrail, earned twice in v2.6.0: a correction is not free. Two independent
+review passes each caught that cycle's doc sweep breaking something while fixing
+something else, once shipping a command name that exists nowhere in the tree,
+once replacing a working artifact reference with an under-specified one. Every
+fix here lands with the check that would have caught its own failure mode.
 
-v2.5.0's roadmap phases 3-6 carry over, renumbered 1-4 on 2026-08-08 at the open
-so this cycle starts where a cycle starts. Queue triage keeps its gathered
-context and its written plan, now at `phases/1/CONTEXT.md` and
-`phases/1/PLAN.md`, so the cycle resumes from a planned phase rather than a blank
-one. A bare `phase N` in this section means a `v2.6.0` phase; a shipped
-predecessor is written `v2.5.0 phase N`. `/cad-plan` seeds each id's Traceability
-row as its phase is planned.
-
-- **REC-01**: The capture queue stops carrying items nobody has read. Every non-current-cycle open `CAPTURE.md` item is archived as a block under one dated reason — an item carried unread across nine milestones is presumptively dead, and proving that one item at a time costs more than it returns. Every current-cycle (v2.5.0) item IS triaged individually against the live tree and lands in exactly one of three states: closed with the commit or tree evidence that closed it named, moot with the reason stated, or kept with its claim re-verified. No current-cycle item survives on its original wording alone (rescoped 2026-08-08; the original per-item rule over all 213 open items was planned twice, failed review twice, and cost days of executor time for a queue nobody reads)
-- **REC-02**: The capture file stops being an append-only log: moot items move out of the live queue to a `## Archive` section, so what `/cad-plan`'s recall reads is the set of things still true. Closed items stay, carrying their `[closed]` marker — `planning-files.mjs:602-609` keeps them in the corpus on purpose as the prior evidence recall exists to surface, and they are 18.9% of it. Archive invisibility is proved directly rather than by measurement: a token occurring only in archived text returns zero from recall, while the same token against a control copy whose `## Archive` heading is renamed into the walked set returns the bullet (the before/after BM25 measurement was dropped 2026-08-08 with the scope cut — it measured work this phase no longer does; the isolation method is preserved verbatim at phase 1 CONTEXT D-07 for any later phase that needs it)
-- **FRI-01**: `/cad-verify` states the human-check bar — an item is human-verify only when the model cannot execute it (irreversible against real data, or outside its reach: credentials, GUI, hardware, another machine) — and its walk runs and cites everything else as a results table, reserving the one-at-a-time turn-ending walk for the items that survive the bar. `cad-verifier`'s `why_human` field already encodes this; the walk does not apply it
-- **FRI-02**: A blocking review trigger cannot re-arm without bound on the commit that fixes the findings it just raised: the cap is stated, the loop terminates, and exceeding it surfaces a named reason. Every dispatched agent carries an explicit runaway-loop bound (issue #72 — `maxTurns` is the only guard the host offers and Cadence sets it nowhere)
-- **FRI-03**: A planning-doc version the project has ALREADY PUBLISHED is detected mechanically by `/cad-audit`, rather than only reported by the `/cad-health` prose rule `QW-04` ships (issue #87). The routing-floor and branch-naming halves of this requirement moved to `QW-03` and `QW-04`, which closed them in v2.5.0 phase 1. NARROWED 2026-08-08 to the `/cad-audit` arm alone; the self-verify arm is dropped. `QW-04` already ships a published-version guard and a `/cad-health` rule, so this was building detectors two AND three for one incident that is already caught. `/cad-audit` is the arm that matters because it is the ship gate a close runs through, and one detector at the gate is the whole requirement
-- **FLD-01**: A phase directory named `08-meteogram-legend` is addressable by every seam that takes `--phase`, or Cadence states numeric-only as a grammar and `/cad-health` reports a violation. Today `planning.mjs plan-overlap --phase 08-meteogram-legend` returns `bad-args`, so those seams are simply unusable on `tempest` and `atmos`, both shipped projects using named directories. A numeric-prefix collision (`atmos` has `14-data-depth-...` and `14-shared-derivation-extraction`) produces a named diagnostic rather than one silently shadowing the other. Found 2026-08-08 by running Cadence's own seams across ten live projects; unfiled until then, which is `XCP-01`'s argument demonstrated rather than asserted
-- **FLD-02**: A project Cadence created keeps `.planning/trace.jsonl` out of git without the user having done anything by hand. `cadence-core/workflows/execute.md:226` asserts the record "is gitignored" as the load-bearing reason a worktree's trace cannot ride a merge back, and NOTHING in Cadence writes that line - `/cad-new-project` mentions gitignore nowhere, and the premise holds in this repo only because it was added manually. Every other Cadence project commits its run record, carrying routing, provider and worker events, on the next `git add .planning`. Nine projects have no trace today only because none has run a phase since `QW-02` shipped in `v2.5.0`. Proved on a scratch project, not on this one
-- **PRS-02**: `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the v1.4.0 phase-5 regression, with a regression test proved failing-capable against the unpatched code. NARROWED 2026-08-08: `promoteUnreleased` fence-awareness and the `unseeded` populated-table arm moved to Deferred with `PRS-01`, for the reason recorded there. This id keeps only the defect with a recorded field occurrence
-- **DBT-01**: A deliberate corner-cut is marked where it is cut, and the marker reaches the deferred-work queue instead of rotting in a comment nobody greps for. Three parts: a stated convention for marking a shortcut at its location in the code, naming the shortcut's CEILING (what it does not handle) and the TRIGGER that should prompt revisiting it; a harvest that collects those markers into `.planning/CAPTURE.md`, the deferred-work stream `/cad-capture` already owns; and a regression test proving the harvest finds a planted marker and does not invent one. Part 3 of issue #95 only, pulled forward 2026-08-08 as a foothold - parts 1 and 2 (the executor's YAGNI posture and the review delete-list) stay deferred under `MIN-01` with their existing reasoning, because they add resident prose on the dispatch path and this does not. Two findings that constrain it, measured before it was written: the tree already carries 19 conventional markers (14 `TODO`, 2 `NOTE`, 1 each `XXX`/`HACK`/`FIXME`) and nothing lints any of them, so the convention needs its OWN token or the harvest returns 19 false positives on its first run; and `.planning/CAPTURE.md` is gitignored here and in `burnrate` but TRACKED in `hindsight` and `assistant`, so the queue's durability varies by project. That asymmetry has one coherent answer and the requirement takes it: the marker in tracked code is the durable record, the queue is a REGENERABLE view of it, and the harvest is idempotent - a queue lost to a clone is rebuilt by re-running the harvest. The harvest is a seam rather than a documented grep for the same reason: only a seam can be idempotent and carry the regression test, and per D-20 it ships with its `CONTRACTS` row in the same task
-- **TOK-03**: What a dispatch costs is recorded where it happens. `trace append` takes a numeric token count on a lifecycle `return` and stores it on the event, and EVERY site that dispatches a worker brackets it. The second half is the larger one and it is measured, not assumed: only `execute.md` and `verify-deep.md` bracket anything today, while `context.md` (1 dispatch), `plan.md` (3) and `review-triggers.md` (every reviewer - it records an adjudication outcome but no lifecycle bracket) have none. On the session that scoped this phase, 71% of subagent spend happened at unbracketed sites: 206,901 tokens for the assumptions analyzer, 346,882 for planner plus checker plus revision, 219,068 for two reviewers, against 310,503 for the two bracketed roles. Adding a token field without the missing brackets would have measured the cheap 29% and reported it as the whole. `trace render` then reports per-role totals - tokens and dispatch count per worker key - beside the four family counts, and a role that ran with no figure available renders `unrecorded` rather than zero, because those are different claims. Cheap by construction: `renderEvent` already spreads unknown fields onto the line (`trace.mjs`), so no library schema changes - what is new is a CLI flag with numeric validation and its `CONTRACTS` row, plus prose brackets at six dispatch sites
-- **TOK-04**: The trace records the READ-SET each dispatch was told to consume - the planning-doc paths named in its prompt - so the duplicate-read fraction is computed from the record instead of estimated. Motivation, measured: `PROJECT + REQUIREMENTS + ROADMAP + CONTEXT` is 85,413 B (~21.4K tokens) in this repo, and five dispatches were each told to read that same set for phase 2's planning - about 107K tokens of byte-identical re-reads. Whether that is 15% of the phase's spend or 40% is currently unanswerable, and the answer decides whether trimming the planning docs is worth a requirement at all. This is the half that makes `TOK-03`'s totals actionable rather than merely true: knowing a role cost 200K says nothing about what to cut, while knowing 21K of it was the same four files every other role also read does
-- **EVD-02**: One runtime-evidence artifact is committed and linked from `README.md`: the `weight.mjs` resident and turn-one byte figures with the exact command that regenerates them, plus - if a non-Cadence project has run a phase by then - that project's phase trace, named with the project it came from and the environment it ran in. DEMOTED 2026-08-08 from its own phase to one task in the doc sweep, and `EVD-01`'s export-and-redaction machinery deferred with it: the publish half was scoped from an external audit rather than from anything failing, and `FLD-02` carries the part that is actually broken. The trace half is contingent by design - no non-Cadence project has a run record yet - and the byte half stands alone if none arrives. If the trace lands, the artifact states that it records a run that happened and is not reproducible. The trace comes from a project that is NOT Cadence: Cadence measuring Cadence is the weakest available evidence for the one thing the 2026 harness dossier could not check, and five shipped projects are available (`tempest` v2.9.5, `burnrate` v1.0.3, `weathervane` v0.9.1, `atmos` v1.3.1-alpha, `placer` v0.1.0-beta.2), with `hindsight` and `assistant` mid-cycle
-- **DOC-02**: `/cad-docs-verify` runs across the whole doc surface — `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md` — and every claim it reports stale is either corrected or recorded as a known divergence with its reason. The run is repeatable and its output is committed, so the next cycle starts from a diff rather than a fresh sweep
-- **DOC-03**: A claim that turns out to describe a real defect rather than stale prose is filed as its own requirement rather than silently reworded, so the cycle cannot quietly convert a bug into a documentation edit
+- **DFC-01**: `cadence-core/bin/lib/trace.mjs:336` builds the composite worker key with two literal U+0000 bytes typed into the template string rather than the `\0` escape sequence, so `file(1)` classifies the source as `data` and every `grep`/`rg` over `cadence-core/bin/**` silently skips that whole file unless the caller passes `-a`. The code computes the right key, which is why no test catches it — the defect is entirely in what the bytes do to every tool that reads the file afterwards, and a search that silently omits one file returns a wrong answer with no error. It is a one-character-per-byte fix (`^@` -> `\0`) that changes no behaviour. Filed rather than fixed inline because phase 5 edits documentation and this is a source change; filed rather than left as a note because it has already cost a debugging detour in phase 4's UAT, its only prior record was `.planning/CAPTURE.md`, which is gitignored in this repo and therefore exists on one machine only, and every pass that does not know about it rediscovers it and works around it. Named in advance by `phases/5/PLAN.md` task 3 and filed whether or not the sweep surfaced it; run 1 did not, because the file is outside the swept surface
+- **DFC-02**: The review-trigger wiring table at `cadence-core/references/review-triggers.md:244` states `phase_diff`'s gates as `off / off / adjudicated` across solo/shipped/critical, and `docs/WORKFLOW.md:168` carries the same row. The live `cadence-core/route-table.json` resolves `off / advisory / adjudicated`, and the `review.triggers.phase_diff.gate` schema default is `advisory`. Not a wording preference: `review-triggers.md` is the reference every other surface cites for this table, so four of run 1's eighteen stale rows — `METHOD.md:276`, `METHOD.md:279`, `cadence-core/workflows/execute.md:382-383`, `:387-388` — are one fact copied out of it, and correcting the four without correcting the source leaves the drift to be re-derived. Both files are outside AC1's swept surface (`cadence-core/references/**` and `docs/**` are excluded by `phases/5/CONTEXT.md`'s scope boundary and by the plan's file lease), and `review-triggers.md` sits at exactly its 17,733 B budget with zero slack, so `off` -> `advisory` also moves the budget and the two inline figures AC6 is fixing in the same phase. Filed rather than reworded away, and rather than widened into scope on an executor's own judgement
+- **DFC-03**: `skills/cad-plan-checker-contract/SKILL.md` contradicts itself about its own size: `:42` says "Check six dimensions" and lists Proportionality as the sixth, while `:113`'s `<success_criteria>` still says "All five dimensions checked". A checker whose completion criterion names five of the six it was told to check can report success having skipped the one added to bound plan size, which is the dimension `v2.5.0` shipped the whole cycle early to install. Same fact as run 1's `METHOD.md:91` row, one file over; that row is corrected in this phase, this one is filed because `skills/**` is outside AC1's surface and the file is not in the plan's lease
+- **DFC-04**: The `risk_surface` row of the wiring table at `cadence-core/references/review-triggers.md:243` admits only shape (c), the flagged-diff file path a checkpoint returns, and shape (b), the staged-diff scope. It omits shape (a), refs — and `/cad-task` is the one `risk_surface` fire site whose commits already exist in the orchestrator's own tree, so a ref pair does name them, there is no executor, and no checkpoint returns a path. `cadence-core/workflows/task.md:75-77` used shape (a) for exactly that reason and phase 5 rewrote it to conform to the table, which replaced a working artifact with a file the corrected text names no path, no never-stage rule and no cleanup for — unlike the sibling site at `execute.md:450-452`, which names `plan-<k>-risk-task-<n>.diff` and states it must never be staged. The defect is the table's missing row, not the workflow's prose; filed rather than reworded because reverting `task.md` alone would recreate the contradiction the sweep found, and widening the fix into `references/**` is outside AC1's surface and the plan's lease. Whoever takes it decides one thing: admit shape (a) on that row for already-committed fire sites, or keep the table as-is and give `/cad-task` the same named transient-diff path and never-stage rule `execute.md` already has
 
 ## Shipped
 
@@ -67,6 +45,20 @@ parses only the Traceability table).
 
 | Requirement | Phase | Status | Milestone |
 |-------------|-------|--------|-----------|
+| REC-01 (capture queue triaged, non-current items archived under one dated reason) | 1 | Complete | v2.6.0 |
+| REC-02 (moot items leave the live queue; closed items stay in the recall corpus) | 1 | Complete | v2.6.0 |
+| FRI-01 (the verify walk states the human-check bar and runs everything else) | 2 | Complete | v2.6.0 |
+| FRI-02 (the blocking re-arm is capped at one round; every agent carries maxTurns) | 2 | Complete | v2.6.0 |
+| FRI-03 (/cad-audit detects an already-published planning-doc version) | 2 | Complete | v2.6.0 |
+| FLD-01 (numeric-only phase-directory grammar, stated and reported) | 3 | Complete | v2.6.0 |
+| FLD-02 (a project Cadence creates keeps .planning/trace.jsonl out of git) | 3 | Complete | v2.6.0 |
+| PRS-02 (REQ_ID_EXACT admits a category not starting with a letter) | 3 | Complete | v2.6.0 |
+| DBT-01 (CADENCE-DEBT markers plus an idempotent debt-harvest seam) | 3 | Complete | v2.6.0 |
+| TOK-03 (--tokens, --role and --read on trace append; per-role totals in render) | 4 | Complete | v2.6.0 |
+| TOK-04 (every phase-scoped dispatch site brackets its worker) | 4 | Complete | v2.6.0 |
+| EVD-02 (docs/EVIDENCE.md, measured byte figures linked from README) | 5 | Complete | v2.6.0 |
+| DOC-02 (/cad-docs-verify across the whole doc surface, output committed) | 5 | Complete | v2.6.0 |
+| DOC-03 (a real defect is filed as its own requirement, never reworded away) | 5 | Complete | v2.6.0 |
 | RCL-01 (BM25 recall over `.planning/`, one-line JSON, deterministic) | 1 | Complete | v1.1.0-rc.1 |
 | RCL-02 (empty corpus → `{ok:true, results:[]}`, never an error) | 1 | Complete | v1.1.0-rc.1 |
 | RCL-03 (`memory.backend` accepts `builtin`, defaults to it; `none` disables recall) | 1 | Complete | v1.1.0-rc.1 |
@@ -171,10 +163,6 @@ queue triage alone.
 - **MIN-01**: Over-building is named and attacked at the three points it can be, as ONE stated posture rather than three proposals: `cad-executor` ships the lean version and flags the fuller option in its deviation record instead of building it speculatively; a review pass hunts complexity to DELETE (reinvented stdlib, single-implementation abstractions, dead flexibility, config nobody sets) and returns a ranked delete-list applying nothing, separate from the correctness reviewer. **Part 3 - the in-code shortcut marker and its harvest - was PULLED FORWARD 2026-08-08 as `DBT-01`, in `v2.6.0` phase 3, and is no longer part of this id.** It was the only one of the three that adds no resident prose to the dispatch path - a convention plus a seam - so the objection that keeps the other two here does not reach it. What remains deferred under this id is parts 1 and 2. Folded 2026-08-08 from issues #29, #30 and #31 into #95 - each part is nearly worthless alone (a delete-list nobody acts on, a YAGNI default with no pass catching what slips through, a marker convention with no harvest), and an adversarial CORRECTNESS review structurally cannot catch over-building because nothing it checks is wrong. Not `v2.6.0`: parts 1 and 2 add resident prose, the same objection that deferred `CTX-02`, and this cycle's live-friction surfaces already sit at exactly their byte budgets. The 2026 harness dossier (audited at `v2.4.0`, ranked Cadence #1 of 35) lists this as improvement priority #4, reading the three open issues as outstanding
 - **RCL-06**: External memory backends (mem-*/claude-mem/MCP) behind the same `recall(query) → snippets` contract
 - **CTX-02**: Prose that rides every dispatch is stated once rather than restated per file: a writing contract (issue #69) preloaded and asserted to resolve for every agent, and a review minimalism lens (issue #29) reporting what could be deleted, separately from the correctness pass. Deferred out of `v2.5.0` on 2026-08-08 at phase-2 context: both halves ADD resident bytes in the phase that exists to cut them, and the writing contract's premise is false in this tree — nothing restates a writing contract per agent today (grep of `skills/`, `agents/`, `cadence-core/` returns zero), so it is net-new prose on all 19 agent files rather than a deduplication. The minimalism lens as a new review trigger needs coordinated edits across at least six mutually self-verified surfaces, every one of which adds bytes. Neither issue has a statement in this tree to plan against. See `phases/2/CONTEXT.md` D-06
-- **DFC-01**: `cadence-core/bin/lib/trace.mjs:336` builds the composite worker key with two literal U+0000 bytes typed into the template string rather than the `\0` escape sequence, so `file(1)` classifies the source as `data` and every `grep`/`rg` over `cadence-core/bin/**` silently skips that whole file unless the caller passes `-a`. The code computes the right key, which is why no test catches it — the defect is entirely in what the bytes do to every tool that reads the file afterwards, and a search that silently omits one file returns a wrong answer with no error. It is a one-character-per-byte fix (`^@` -> `\0`) that changes no behaviour. Filed rather than fixed inline because phase 5 edits documentation and this is a source change; filed rather than left as a note because it has already cost a debugging detour in phase 4's UAT, its only prior record was `.planning/CAPTURE.md`, which is gitignored in this repo and therefore exists on one machine only, and every pass that does not know about it rediscovers it and works around it. Named in advance by `phases/5/PLAN.md` task 3 and filed whether or not the sweep surfaced it; run 1 did not, because the file is outside the swept surface
-- **DFC-02**: The review-trigger wiring table at `cadence-core/references/review-triggers.md:244` states `phase_diff`'s gates as `off / off / adjudicated` across solo/shipped/critical, and `docs/WORKFLOW.md:168` carries the same row. The live `cadence-core/route-table.json` resolves `off / advisory / adjudicated`, and the `review.triggers.phase_diff.gate` schema default is `advisory`. Not a wording preference: `review-triggers.md` is the reference every other surface cites for this table, so four of run 1's eighteen stale rows — `METHOD.md:276`, `METHOD.md:279`, `cadence-core/workflows/execute.md:382-383`, `:387-388` — are one fact copied out of it, and correcting the four without correcting the source leaves the drift to be re-derived. Both files are outside AC1's swept surface (`cadence-core/references/**` and `docs/**` are excluded by `phases/5/CONTEXT.md`'s scope boundary and by the plan's file lease), and `review-triggers.md` sits at exactly its 17,733 B budget with zero slack, so `off` -> `advisory` also moves the budget and the two inline figures AC6 is fixing in the same phase. Filed rather than reworded away, and rather than widened into scope on an executor's own judgement
-- **DFC-03**: `skills/cad-plan-checker-contract/SKILL.md` contradicts itself about its own size: `:42` says "Check six dimensions" and lists Proportionality as the sixth, while `:113`'s `<success_criteria>` still says "All five dimensions checked". A checker whose completion criterion names five of the six it was told to check can report success having skipped the one added to bound plan size, which is the dimension `v2.5.0` shipped the whole cycle early to install. Same fact as run 1's `METHOD.md:91` row, one file over; that row is corrected in this phase, this one is filed because `skills/**` is outside AC1's surface and the file is not in the plan's lease
-- **DFC-04**: The `risk_surface` row of the wiring table at `cadence-core/references/review-triggers.md:243` admits only shape (c), the flagged-diff file path a checkpoint returns, and shape (b), the staged-diff scope. It omits shape (a), refs — and `/cad-task` is the one `risk_surface` fire site whose commits already exist in the orchestrator's own tree, so a ref pair does name them, there is no executor, and no checkpoint returns a path. `cadence-core/workflows/task.md:75-77` used shape (a) for exactly that reason and phase 5 rewrote it to conform to the table, which replaced a working artifact with a file the corrected text names no path, no never-stage rule and no cleanup for — unlike the sibling site at `execute.md:450-452`, which names `plan-<k>-risk-task-<n>.diff` and states it must never be staged. The defect is the table's missing row, not the workflow's prose; filed rather than reworded because reverting `task.md` alone would recreate the contradiction the sweep found, and widening the fix into `references/**` is outside AC1's surface and the plan's lease. Whoever takes it decides one thing: admit shape (a) on that row for already-committed fire sites, or keep the table as-is and give `/cad-task` the same named transient-diff path and never-stage rule `execute.md` already has
 
 ## Out of Scope
 
@@ -198,20 +186,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REC-01 | Phase 1 | Complete |
-| REC-02 | Phase 1 | Complete |
-| FRI-01 | Phase 2 | Complete |
-| FRI-02 | Phase 2 | Complete |
-| FRI-03 | Phase 2 | Complete |
-| FLD-01 | Phase 3 | Complete |
-| FLD-02 | Phase 3 | Complete |
-| PRS-02 | Phase 3 | Complete |
-| DBT-01 | Phase 3 | Complete |
-| TOK-03 | Phase 4 | Complete |
-| TOK-04 | Phase 4 | Complete |
-| DOC-02 | Phase 5 | Complete |
-| DOC-03 | Phase 5 | Complete |
-| EVD-02 | Phase 5 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
@@ -219,4 +193,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-08 v2.6.0's four carried-over phases renumbered 3-6 -> 1-4, so the cycle starts at phase 1; queue triage's context and plan moved to `phases/1/`*
+*Last updated: 2026-08-09 v2.6.0 closed with all fourteen requirements delivered; they move to `## Shipped` as rows and `## Traceability` starts clean. `v2.6.1` opens on DFC-01..04, promoted out of `## Deferred`*

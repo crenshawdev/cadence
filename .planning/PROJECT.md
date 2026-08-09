@@ -98,91 +98,50 @@ context-gathering, and debugging — without any external memory system.
 - ✓ Every `review-provider.mjs` failure path fault-injected with a test proving what the caller sees, and drop-outs recorded before the wire rather than only past it (QW-05) — v2.5.0
 - ✓ `weight.mjs resident` composes eager, reachable and dispatch bytes; `cad-land` and `cad-plan-review` stop eagerly preloading references they read at one step, with a self-verify check that a de-preloaded reference keeps a Read at the arm that needs it (CTX-01) — v2.5.0
 
+- ✓ `v2.6.0 — the reconciliation cycle`: the capture queue triaged from 213 open items to 28 with the rest archived out of the recall corpus (REC-01, REC-02); the verify walk, the unbounded re-arm and version drift (FRI-01..03); named phase dirs, an ignored run record, `REQ_ID_EXACT` and the debt-marker harvest (FLD-01, FLD-02, PRS-02, DBT-01); per-role token accounting with every phase dispatch bracketed (TOK-03, TOK-04); and the first end-to-end doc sweep, 547 claims with a committed ledger (DOC-02, DOC-03, EVD-02) — v2.6.0
+
 ### Active
 
-**`v2.6.0 — the reconciliation cycle`**, opened 2026-08-08. The predecessor
-`v2.5.0 — what Cadence says about itself` closed the same day with six of its
-fifteen requirements delivered (QW-01..05, CTX-01 — rows above), the audit green
-on those six (6/6 traced, 0 broken), and the manifest at `2.5.0`.
+**`v2.6.1 — the defects the sweep found`**, opened 2026-08-09. The predecessor
+`v2.6.0 — the reconciliation cycle` closed the same day with all fourteen of its
+requirements delivered, the audit green (14/14 traced, 0 broken; 33/33
+acceptance criteria covered), and the manifest bumped to `2.6.0` unpushed and
+untagged.
 
-**v2.5.0 closed early, on purpose.** Its nine remaining requirements — REC, FRI,
-PRS and DOC, its roadmap phases 3 through 6 — were not cut, dropped or
-re-scoped. They roll into this cycle whole, renumbered 1 through 4 at the open
-so a new cycle starts at 1, with queue triage's gathered context and written
-plan intact at `phases/1/CONTEXT.md` and `phases/1/PLAN.md`, so this cycle
-resumes from a planned phase.
+**A patch cycle, deliberately small.** Its whole scope is `DFC-01` through
+`DFC-04`, the four defects v2.6.0's own doc sweep found and filed rather than
+reworded away. Each is located to a file and a line, each is close to a one-line
+fix, and none of them is a design question. They are here as their own cycle
+instead of riding the next feature cycle because that is what filing them was
+for: a defect that gets filed and then waits for a convenient cycle is a defect
+that ages into the next sweep's findings.
 
-The reason is worth keeping, because it is a rule rather than an incident.
-v2.5.0 ended up containing a fix to Cadence's own planning gates: nothing
-bounded plan size, so `cad-plan-checker` asked only whether a plan achieved the
-goal — a question a bigger plan answers better — and `cad-planner` had a
-`## PHASE TOO BIG` marker reachable only by its own judgement, against a
-contract forbidding it to reduce scope. Queue triage was planned at 10 tasks, cut,
-replanned at 15, and passed every gate both times. The fix (`max_plan_tasks`
-plus a proportionality dimension asked independently of the goal) cannot bound
-anything until it ships and installs. Planning four more phases before the
-release would have run all four through the gates that made the fix necessary.
-**When a cycle produces a tool that changes how the next work is done, ship it
-before doing the next work.**
+What they are. Two literal NUL bytes in `cadence-core/bin/lib/trace.mjs:336`
+that make every `grep` over `cadence-core/bin/**` silently skip that whole file
+without `-a`, which has already cost one debugging detour. A wiring-table row in
+`cadence-core/references/review-triggers.md:244` stating `phase_diff`'s gates as
+`off / off / adjudicated` when the live route table resolves
+`off / advisory / adjudicated`, which was the single source of four separate
+wrong claims across two documents. `skills/cad-plan-checker-contract/SKILL.md`
+telling itself to check six dimensions at `:42` and to report success on five at
+`:113`, so the checker can pass having skipped the one that bounds plan size.
+And the `risk_surface` row of that same wiring table admitting no shape for the
+one fire site whose commits already exist, which is why correcting `/cad-task`
+to match it produced a worse instruction than the one it replaced.
 
-This cycle turns on the queue. `.planning/CAPTURE.md` holds 213 open items (as
-of 2026-08-08) accumulated across nine milestones. Some were closed by work that
-shipped and were never struck; some are real and have been carried unread for
-months because the file is too long to triage in passing. A queue nobody can
-read is the same failure as no queue, and it is the input to `/cad-plan`'s
-recall.
+Two of the four sit in `cadence-core/references/**`, which the v2.6.0 sweep
+excluded from its surface. Correcting `review-triggers.md` moves a file sitting
+at exactly its byte budget with zero slack, and that budget figure is quoted
+inline by two skills, so the fix is three coordinated edits rather than one. That
+is the whole reason it was filed instead of done in place, and it is the first
+thing this cycle should plan for rather than discover.
 
-The cycle is therefore **reconciliation, not construction**. The triage itself
-was re-scoped on 2026-08-08 before any of it ran: rather than a tree-backed
-verdict for each of 213 items, non-current-cycle items are archived as a block
-under one dated reason and only the current-cycle items are read individually.
-An item carried unread across nine milestones is presumptively dead, and proving
-that one item at a time costs more than it returns. Then the same pass outward —
-reconcile what Cadence claims about itself, in `README.md`, `METHOD.md`,
-`INTERNALS.md`, `CONTRIBUTING.md` and the workflow prose, against what the code
-now does. `/cad-docs-verify` exists for exactly this and has never been run
-across the whole surface.
-
-Guardrail for the cycle, learned from v2.3.0 and unchanged: an item is closed
-only against evidence from the tree, never because it reads as done. A close-out
-names the commit or the `file:line` that closed it, the same way a UAT item
-names its evidence.
-
-### Out of Scope
-
-- Embeddings / vector search — BM25 is deterministic, zero-dep, and sufficient for a corpus of dozens of markdown files (Ratel's benchmark is the existence proof); embeddings add infra Cadence's philosophy forbids
-- External memory backends (mem-*, claude-mem, MCP) in this cycle — the `builtin` backend defines the recall contract first; external backends slot in behind the same seam later
-- Knowledge memory / cross-project recall — Cadence owns project-scoped working memory only; global memory belongs to the developer's own tools (LINEAGE cut, stands)
-- Runtime token telemetry of live sessions — Claude Code exposes no per-turn stats to a plugin script; measurement is static prose weight, not live usage
-- Second-model lanes (research/verify/build) — deferred to a later cycle, tracked separately
-
-## Context
-
-Brownfield: Cadence v1.0.0 shipped publicly today (2026-07-16, repo
-crenshawdev/cadence, tag v1.0.0). This cycle is v1.1.0, built by dogfooding
-Cadence on itself — the first project init on this repo.
-
-The gap being closed: deviations are recorded at execute time (cad-executor →
-SUMMARY.md), CAPTURE.md accumulates, UAT findings accumulate — but neither
-cad-plan nor cad-context reads any of it back. `memory.backend` is an empty
-socket (`enum: ["none"]`).
-
-Design provenance: inspired by ratel-ai/ratel — progressive disclosure via
-deterministic BM25 catalogs, no vector DB, no infra. Cadence applies the same
-bet to its own planning artifacts rather than to tool schemas.
-
-Established patterns this work must follow: zero-dep Node seam scripts in
-`cadence-core/bin` with one-line JSON stdout and exit codes; every new
-subcommand gets a CONTRACTS entry in self-verify.mjs plus tests in the
-sibling `*.test.mjs`; prose keeps judgment, scripts keep invariants.
-
-## Constraints
-
-- **Dependencies**: zero runtime deps — BM25 and stats are hand-rolled JS in `cadence-core/bin` (lib/ helpers allowed)
-- **Compatibility**: existing `.planning/` layouts must work unchanged; recall on a project with no SUMMARYs degrades to empty results, never an error
-- **Determinism**: same corpus + same query → same results; no timestamps, no randomness in ranking
-- **Toolchain**: Node 22/24 (CI matrix), `node --test`, `tsc --checkJs` must stay green
-- **Semver honesty**: `v1.0.0` is the public baseline (immutable). `v1.1.0` shipped through `-rc.N` candidates; `v1.2.0` is a straight minor bump cut at publish. A larger future scope may use `-rc.N` again; small backward-compatible cycles tag straight. Never retag a published version. `v2.0.0` is major for one reason only: `model.profile`'s enum values change with no back-compat alias, so a config a user wrote stops validating.
+Guardrail for the cycle, carried from v2.6.0 and earned twice in it: a
+correction is not free. Two independent review passes each caught v2.6.0's doc
+sweep breaking something while fixing something else, once shipping a command
+name that exists nowhere in the tree, once replacing a working artifact
+reference with an under-specified one. Every fix here lands with the check that
+would have caught its own failure mode.
 
 ## Key Decisions
 
