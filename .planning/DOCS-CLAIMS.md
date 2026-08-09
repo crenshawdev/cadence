@@ -44,9 +44,12 @@ Two constraints the sweep ran under:
   (D-14). The adjacent "no dependencies / no `npm install`" claim was judged on
   its own merits and came back stale.
 
-A search hazard applied throughout, and still applies: `cadence-core/bin/lib/trace.mjs`
-carries two literal NUL bytes at `:336`, so `grep`/`rg` over `cadence-core/bin/**`
-silently skips that whole file without `-a`. Filed as `DFC-01`.
+A search hazard applied throughout run 1, and no longer applies:
+`cadence-core/bin/lib/trace.mjs` carried two literal NUL bytes at `:336`, so
+`grep`/`rg` over `cadence-core/bin/**` silently skipped that whole file without
+`-a`. Filed as `DFC-01` and CLOSED in phase 1 of `v2.6.1` (`1e949bc`): the bytes
+are now the `\0` escape and `self-verify` check 15 fails on a literal U+0000
+anywhere under `cadence-core/bin/**`.
 
 ## Reading this ledger
 
@@ -94,26 +97,38 @@ Run 1 found no claim describing a code defect: all 18 stale rows are stale
 PROSE, with the code correct in every one of them. So no ledger row carries a
 `divergence - code defect` resolution. Three ids were nonetheless filed under
 `## Deferred` in `.planning/REQUIREMENTS.md`, because each names something real
-that a correction inside this surface would otherwise bury (DOC-03):
+that a correction inside this surface would otherwise bury (DOC-03). All three
+are now CLOSED at their source in phase 1 of `v2.6.1`, each landing with a check
+that fails against the unpatched tree:
 
-- **DFC-01** — `cadence-core/bin/lib/trace.mjs:336` carries two literal NUL
-  bytes, so every `grep`/`rg` over `cadence-core/bin/**` skips that file
+- **DFC-01** — `cadence-core/bin/lib/trace.mjs:336` carried two literal NUL
+  bytes, so every `grep`/`rg` over `cadence-core/bin/**` skipped that file
   without `-a`. A genuine code defect, named in advance by the plan and filed
   whether or not the sweep surfaced it. It did not: the file is outside the
-  surface.
+  surface. CLOSED `1e949bc` — both bytes are the two-character `\0` escape,
+  behaviour identical, and `self-verify` check 15 reports
+  `nul-byte-in-source` for a literal U+0000 in ANY file under
+  `cadence-core/bin/**`, tests included.
 - **DFC-02** — `cadence-core/references/review-triggers.md:244` (and
-  `docs/WORKFLOW.md:168`) state `phase_diff` as `off / off / adjudicated`
+  `docs/WORKFLOW.md:168`) stated `phase_diff` as `off / off / adjudicated`
   against a live `off / advisory / adjudicated`. Both files are outside this
   surface, and that row is the shared source of the four stale rows `METHOD-01`,
-  `METHOD-02`, `EXECUTE-02` and `EXECUTE-03`. Those four are corrected here; the
-  source they were copied from is filed, not widened into scope.
-- **DFC-03** — `skills/cad-plan-checker-contract/SKILL.md:113` still says "All
-  five dimensions checked" while `:42` of the same file says six. Same fact as
-  `METHOD-03`, one file over and outside this surface.
+  `METHOD-02`, `EXECUTE-02` and `EXECUTE-03`. Those four were corrected here;
+  the source they were copied from was filed, not widened into scope.
+  CLOSED `98be3d2` — both cells now read `off / advisory / adjudicated`, and
+  `prose-agreement.test.mjs` asserts each against what
+  `route.mjs resolve --role cad-reviewer` returns per stakes level.
+- **DFC-03** — `skills/cad-plan-checker-contract/SKILL.md:113` said "All
+  five dimensions checked" while `:42` of the same file said six. Same fact as
+  `METHOD-03`, one file over and outside this surface. CLOSED `f6eed02` — the
+  criterion reads six, and `prose-agreement.test.mjs` fails when the declared
+  count, the claimed count and the enumerated items disagree.
 
 Where a row's correction has a filing behind it, the row's resolution names the
 id: `corrected - <sha> + DFC-0k`. The suffix is the row's only link to its
-filing, so a future diff can tell a corrected copy from a fixed source.
+filing, so a future diff can tell a corrected copy from a fixed source. It
+carries the filing's status too — `DFC-0k closed <sha>` once the source is
+fixed, which is what makes that link answer the only question it is asked.
 
 ## Claims
 
@@ -170,9 +185,9 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
 | README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one |
 | README-51 | README.md | 134 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
-| METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 |
-| METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 |
-| METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 |
+| METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 |
+| METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 |
+| METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 closed f6eed02 |
 | METHOD-04 | METHOD.md | 301-303 | "Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema." | stale | corrected - b2bad1a |
 | METHOD-05 | METHOD.md | 20 | `skills/cad-planner-contract/SKILL.md` is where planning lives. | accurate | accurate |
 | METHOD-06 | METHOD.md | 24-31 | The planner follows the five-step goal-backward order (goal, truths, artifacts, wiring, tasks). | accurate | accurate |
@@ -446,8 +461,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | DOCS-VERIFY-03 | cadence-core/workflows/docs-verify.md | 46 | The report table columns are `claim \| location \| verdict \| correct value (if stale)`. | accurate | accurate |
 | DOCS-VERIFY-04 | cadence-core/workflows/docs-verify.md | 40-44 | Verdicts are exactly `accurate \| stale \| unverifiable`. | accurate | accurate |
 | EXECUTE-01 | cadence-core/workflows/execute.md | 191-193 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected - 044806c |
-| EXECUTE-02 | cadence-core/workflows/execute.md | 382-383 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 |
-| EXECUTE-03 | cadence-core/workflows/execute.md | 387-388 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 |
+| EXECUTE-02 | cadence-core/workflows/execute.md | 382-383 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 |
+| EXECUTE-03 | cadence-core/workflows/execute.md | 387-388 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 |
 | EXECUTE-04 | cadence-core/workflows/execute.md | 18-24 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate |
 | EXECUTE-05 | cadence-core/workflows/execute.md | 24-25 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate |
 | EXECUTE-06 | cadence-core/workflows/execute.md | 35-39 | The ten config keys in the single `config.mjs get` all exist. | accurate | accurate |
@@ -585,7 +600,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | PROGRESS-20 | cadence-core/workflows/progress.md | 138 | `workflow.skip_discuss` selects /cad-plan over /cad-context. | accurate | accurate |
 | SPIKE-01 | cadence-core/workflows/spike.md | 20-21,45 | The spike record lives at `.planning/spikes/<slug>/SPIKE.md`. | accurate | accurate |
 | SPIKE-02 | cadence-core/workflows/spike.md | 51 | The SPIKE.md commit honors the protected-branch guard. | accurate | accurate |
-| TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | corrected - 044806c |
+| TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | corrected - 044806c + DFC-04 closed 98be3d2 |
 | TASK-02 | cadence-core/workflows/task.md | 2-4 | Rail 1 is the protected-branch check plus base-integrity plus the integration-branch decision, not a bare branch check. | accurate | accurate |
 | TASK-03 | cadence-core/workflows/task.md | 23 | `cadence-core/references/git-guard.md` exists. | accurate | accurate |
 | TASK-04 | cadence-core/workflows/task.md | 46 | `workflow.test_command` is a config key. | accurate | accurate |
