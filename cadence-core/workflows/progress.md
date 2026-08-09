@@ -170,7 +170,8 @@ workflow. cad-progress never does the work itself.
   edited here.
 - No stored analytics or progress artifacts; `--stats` and `--trace` both derive
   on demand and write nothing. The trace file itself is written by the seams and
-  by the execute and verify workflows - never by progress.
+  by the context, plan, execute, verify and verify-deep workflows, plus the
+  reviewer bracket in `references/review-triggers.md` - never by progress.
 - Never invoke a spine skill without the user accepting the offer.
 </guardrails>
 

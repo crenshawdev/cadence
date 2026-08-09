@@ -73,8 +73,10 @@ No PLAN.md, no SUMMARY.md, no state writes.
 <step name="risk_check">
 If any commit's diff touched a risk surface, fire the `risk_surface` review
 trigger per references/review-triggers.md before reporting done. The commits
-already exist, so the artifact is refs - shape (a):
-`{base_ref: parent of the task's first commit, head_ref: HEAD}`.
+already exist, so there is no staged diff in the index: capture the flagged
+range to a file and fire with its path - shape (c), the flagged-diff FILE path,
+from `git diff <parent of the task's first commit>..HEAD`. Shape (a) refs is
+not one of the shapes the wiring table admits for `risk_surface`.
 
 This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ

@@ -48,8 +48,8 @@ line):
    ```
 
    Ask no configuration questions. Tell the user in one line:
-   "Config written with defaults (interactive, research off, plan check and
-   verifier on). /cad-config changes any of it."
+   "Config written with defaults (standard granularity, shipped stakes,
+   research off, plan check and verifier on). /cad-config changes any of it."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 

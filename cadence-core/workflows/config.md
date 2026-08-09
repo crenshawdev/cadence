@@ -94,7 +94,7 @@ selectable option and its `description`.
 | `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
 | `workflow.lint_command` | str\|null | Command an executor runs for static analysis before it commits - LINT only, there is no typecheck key | shell string, or `null` (none set; the executor detects instead) | null |
 | **Parallelization** |||||
-| `parallelization.enabled` | bool | Run independent plans concurrently | `true`→parallel · `false`→sequential | false |
+| `parallelization.enabled` | bool | Run independent plans concurrently | `true`→parallel · `false`→sequential | true |
 | `parallelization.max_concurrent_agents` | int | Cap on simultaneous agents | e.g. `3` | 3 |
 | `parallelization.min_plans_for_parallel` | int | Min plans before going parallel | e.g. `2` | 2 |
 | `parallelization.use_worktrees` | bool | Isolate parallel writes in git worktrees | `true`→isolate · `false`→shared tree | true |
@@ -123,9 +123,9 @@ selectable option and its `description`.
 | `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
 | `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
 | `review.consult.attempt_threshold` | int | Failed fix attempts on one bug before cad-debug offers a consult | e.g. `3` | 3 |
-| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground, then present the survivors and ask which to act on (default none) | per §7 |
-| `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger - **cross-model only** (the claude-subagent reviewer's model comes from the routing cell) | `flagship` · `balanced` · `cheap` | per §7 |
-| `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger - **cross-model only** (claude-subagent effort is frontmatter-frozen) | `minimal` · `low` · `medium` · `high` | per §7 |
+| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground, then present the survivors and ask which to act on (default none) | `adjudicated` for plan/pre_ship · `advisory` for diff/phase_diff · `blocking` for risk_surface |
+| `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger - **cross-model only** (the claude-subagent reviewer's model comes from the routing cell) | `flagship` · `balanced` · `cheap` | `flagship`, except `balanced` for diff |
+| `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger - **cross-model only** (claude-subagent effort is frontmatter-frozen) | `minimal` · `low` · `medium` · `high` | `high`, except `medium` for diff |
 
 `<t>` ∈ `{plan, diff, risk_surface, phase_diff, pre_ship}` - present the triggers as
 their own page (or a "Review triggers?" opt-in step) since they are power knobs.

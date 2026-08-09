@@ -189,8 +189,9 @@ successive executors in the phase share a cached prefix: phase-level context
 
 Do NOT restate the executor's standing rules (atomic commit per task,
 deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the
-report format) - `cad-executor.md` already carries them as its stable, cached
-definition. Repeating them in the volatile dispatch tail pays for cached
+report format) - `skills/cad-executor-contract/SKILL.md` already carries them as
+its stable, cached definition, preloaded by every `cad-executor` rung file
+(`agents/cad-executor.md` is a stub naming the rung and that contract). Repeating them in the volatile dispatch tail pays for cached
 content twice.
 
 **The report file (both paths).** An executor writes its task table to
@@ -378,14 +379,15 @@ fork-point default.)
    presenting, since this workflow does not preload it, and act only on what
    the user names.
 6. Fire the `phase_diff` trigger (references/review-triggers.md) with the refs
-   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). Off by default
-   (opt-in) -
+   `{base_ref: PHASE_START, head_ref: HEAD}` - shape (a). At the default
+   `shipped` stakes it is `advisory`; off only at `solo` -
    it exists because the per-plan reviews above each see one plan's diff in
    isolation, so a bug in the INTERACTION of two merged plans is invisible
    to them until pre_ship at land time. Parallel path only: on the
    sequential path each diff review already sees a tree containing all
-   prior plans' work. It is `adjudicated` wherever it is on at all (critical
-   only), so its survivors go through the same triage gate, NONE the default:
+   prior plans' work. It is `advisory` at `shipped` and `adjudicated` at
+   `critical`; where it adjudicates, its survivors go through the same triage
+   gate, NONE the default:
    RE-READ `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
    before presenting, since this workflow does not preload it, and act only on
    what the user names.

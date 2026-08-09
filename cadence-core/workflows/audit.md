@@ -28,9 +28,10 @@ than a dropped requirement), `frontmatter_issues` (a plan file whose
 `requirements:` frontmatter fell outside the stated grammar -
 `references/plan-frontmatter.md`), `unseeded` (the `## Active` ids with no
 Traceability row, at any row count - each also carries an `unpicked` break;
-only ids whose prefix is 2-8 characters STARTING WITH A LETTER, or `#N`, are
-admitted here, so a digit-leading category like `2FA-01` appears in neither
-`unseeded` nor `counts` and is reported only in `active_issues` - do not read
+only ids whose category is 2-8 characters of `[A-Z0-9]` HOLDING AT LEAST ONE
+LETTER, anywhere in it, or `#N`, are admitted here - `2FA-01` is admitted, an
+all-digit category like `14-01` or `2026-08` is not and appears in neither
+`unseeded` nor `counts`, being reported only in `active_issues` - do not read
 an empty `unseeded` as proof the section is covered),
 `active_issues` (a line inside `## Active` outside the stated bullet grammar -
 `references/req-traceability.md`), `nonconforming_plans` (a `PLAN*.md`
@@ -135,8 +136,8 @@ payload-dropping diagnostic code can still leave a requirement untraced;
 neither until that line is rewritten as a `- **ID**: ...` bullet whose bold
 span is exactly the id. On an `active-non-id-bullet` the line may ALREADY be
 such a bullet: if the span holds nothing but the id and it is still reported,
-the id failed the admission test above (a digit-leading category), and no
-rewrite of that line will count it - say so rather than issuing a remedy that
+the id failed the admission test above (an all-digit category, no letter
+anywhere in it), and no rewrite of that line will count it - say so rather than issuing a remedy that
 does nothing. `unseeded` is NOT additive:
 every id it names also carries an `unpicked` break and is already counted.
 Either way there is no third, softened state: a broken requirement still fails

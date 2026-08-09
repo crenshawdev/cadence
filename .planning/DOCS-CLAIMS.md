@@ -302,8 +302,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | CONTRIBUTING-15 | CONTRIBUTING.md | 5,7,9 | "Bug reports are welcome... doc fixes land fast"; the feature-PR policy. | unverifiable | divergence - maintainer intent, no code surface to check it against |
 | CONTRIBUTING-16 | CONTRIBUTING.md | 21 | "The self-verify step is the one that catches most drift." | unverifiable | divergence - a relative-yield judgment across three checks; nothing measures it |
 | CONTRIBUTING-17 | CONTRIBUTING.md | 25 | What a good bug report contains (Claude Code version, `node --version`, the relevant `.planning/` slice). | unverifiable | divergence - process guidance rather than a code claim; `.github/ISSUE_TEMPLATE/bug_report.md` exists but enforces no field |
-| AUDIT-01 | cadence-core/workflows/audit.md | 31-34 | A digit-leading category like `2FA-01` is not admitted, so it appears in neither `unseeded` nor `counts` and is reported only in `active_issues`. | stale | pending |
-| AUDIT-02 | cadence-core/workflows/audit.md | 136-140 | On an `active-non-id-bullet`, a span holding nothing but the id that is still reported means the id failed the admission test (a digit-leading category), and no rewrite will count it. | stale | pending |
+| AUDIT-01 | cadence-core/workflows/audit.md | 31-34 | A digit-leading category like `2FA-01` is not admitted, so it appears in neither `unseeded` nor `counts` and is reported only in `active_issues`. | stale | corrected (task 5) |
+| AUDIT-02 | cadence-core/workflows/audit.md | 136-140 | On an `active-non-id-bullet`, a span holding nothing but the id that is still reported means the id failed the admission test (a digit-leading category), and no rewrite will count it. | stale | corrected (task 5) |
 | AUDIT-03 | cadence-core/workflows/audit.md | 19 | `planning.mjs audit` exists and returns one JSON line. | accurate | accurate |
 | AUDIT-04 | cadence-core/workflows/audit.md | 23-24 | Break codes are `no-phase \| phase-missing \| no-plan \| not-verified \| drift \| unpicked`. | accurate | accurate |
 | AUDIT-05 | cadence-core/workflows/audit.md | 25 | `orphans.plan_ids` holds plan frontmatter referencing unknown REQ-IDs. | accurate | accurate |
@@ -335,8 +335,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | AUDIT-31 | cadence-core/workflows/audit.md | 194-196 | An absent UAT.md under a present CONTEXT breaks every declared criterion as `missing-uat` on a checked box. | accurate | accurate |
 | AUDIT-32 | cadence-core/workflows/audit.md | 196-197 | `context_issues` can carry `criterion-duplicate-id` / `criterion-unidded`. | accurate | accurate |
 | AUDIT-33 | cadence-core/workflows/audit.md | 198-201 | First-occurrence-wins on a duplicate id, so a second bullet reusing one is dropped from the coverage domain. | accurate | accurate |
-| CONFIG-01 | cadence-core/workflows/config.md | 97 | `parallelization.enabled` default is `false`. | stale | pending |
-| CONFIG-02 | cadence-core/workflows/config.md | 126-128 | The `review.triggers.<t>.{gate,tier,effort}` defaults are "per DESIGN section 7". | stale | pending |
+| CONFIG-01 | cadence-core/workflows/config.md | 97 | `parallelization.enabled` default is `false`. | stale | corrected (task 5) |
+| CONFIG-02 | cadence-core/workflows/config.md | 126-128 | The `review.triggers.<t>.{gate,tier,effort}` defaults are "per DESIGN section 7". | stale | corrected (task 5) |
 | CONFIG-03 | cadence-core/workflows/config.md | 3-5 | Canonical shape lives in `cadence-core/config.schema.json`, enforced by `bin/config.mjs`. | accurate | accurate |
 | CONFIG-04 | cadence-core/workflows/config.md | 5 | `cadence-core/templates/config.json` is the scaffolded default. | accurate | accurate |
 | CONFIG-05 | cadence-core/workflows/config.md | 29 | `model.overrides` carries six role pins. | accurate | accurate |
@@ -426,8 +426,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | DEBUG-08 | cadence-core/workflows/debug.md | 126-127 | `review.consult.attempt_threshold` default is 3. | accurate | accurate |
 | DEBUG-09 | cadence-core/workflows/debug.md | 123, 137 | `references/consult.md` defines `offer_consult`. | accurate | accurate |
 | DEBUG-10 | cadence-core/workflows/debug.md | 110 | `cad-debug` is one of the skills that fires `risk_surface`. | accurate | accurate |
-| DECISION-REVIEW-01 | cadence-core/workflows/decision-review.md | 120-121, 162-163 | D-09: the runtime exposes no per-turn token/dollar figures, so cost reporting stays qualitative. | unverifiable | pending |
-| DECISION-REVIEW-02 | cadence-core/workflows/decision-review.md | 54-55 | The cross-model arm rests on the Phase-1 REV-01 seam repair - a symlinked install must run this seam for real, not no-op. | unverifiable | pending |
+| DECISION-REVIEW-01 | cadence-core/workflows/decision-review.md | 120-121, 162-163 | D-09: the runtime exposes no per-turn token/dollar figures, so cost reporting stays qualitative. | unverifiable | divergence - needs runtime introspection of the hosts per-turn accounting; phase 4s CONTEXT already adjudicated this against that phases subagent-return figures and ruled them a different claim |
+| DECISION-REVIEW-02 | cadence-core/workflows/decision-review.md | 54-55 | The cross-model arm rests on the Phase-1 REV-01 seam repair - a symlinked install must run this seam for real, not no-op. | unverifiable | divergence - a claim about a past repairs effect under a symlinked install; needs an installed-plugin runtime to test |
 | DECISION-REVIEW-03 | cadence-core/workflows/decision-review.md | 2-5, 24-26 | The target is a `- D-NN (...)` line under `## Durable decisions` / `## Decisions`, or a PROJECT.md `## Key Decisions` row. | accurate | accurate |
 | DECISION-REVIEW-04 | cadence-core/workflows/decision-review.md | 11-12, 152-154 | This workflow has no entry in `references/review-triggers.md`'s wiring table. | accurate | accurate |
 | DECISION-REVIEW-05 | cadence-core/workflows/decision-review.md | 43-44 | The reviewer set resolves from `review.reviewers[]` exactly as review-triggers.md step 3 does. | accurate | accurate |
@@ -441,9 +441,9 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | DOCS-VERIFY-02 | cadence-core/workflows/docs-verify.md | 10-11 | The default target set is `README.md` plus `docs/**`. | accurate | accurate |
 | DOCS-VERIFY-03 | cadence-core/workflows/docs-verify.md | 46 | The report table columns are `claim \| location \| verdict \| correct value (if stale)`. | accurate | accurate |
 | DOCS-VERIFY-04 | cadence-core/workflows/docs-verify.md | 40-44 | Verdicts are exactly `accurate \| stale \| unverifiable`. | accurate | accurate |
-| EXECUTE-01 | cadence-core/workflows/execute.md | 191-193 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | pending |
-| EXECUTE-02 | cadence-core/workflows/execute.md | 382-383 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | pending |
-| EXECUTE-03 | cadence-core/workflows/execute.md | 387-388 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | pending |
+| EXECUTE-01 | cadence-core/workflows/execute.md | 191-193 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected (task 5) |
+| EXECUTE-02 | cadence-core/workflows/execute.md | 382-383 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected (task 5) + DFC-02 |
+| EXECUTE-03 | cadence-core/workflows/execute.md | 387-388 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected (task 5) + DFC-02 |
 | EXECUTE-04 | cadence-core/workflows/execute.md | 18-24 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate |
 | EXECUTE-05 | cadence-core/workflows/execute.md | 24-25 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate |
 | EXECUTE-06 | cadence-core/workflows/execute.md | 35-39 | The ten config keys in the single `config.mjs get` all exist. | accurate | accurate |
@@ -487,8 +487,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | MILESTONE-14 | cadence-core/workflows/milestone.md | 117-119 | `/cad-phase add` is the only workflow that appends a phase line to an existing roadmap. | accurate | accurate |
 | MILESTONE-15 | cadence-core/workflows/milestone.md | 128-131 | `git.auto_close` false is the default, so the tag stays unpushed and publishing is a separate `/cad-land`. | accurate | accurate |
 | MILESTONE-16 | cadence-core/workflows/milestone.md | 138-142 | The chain reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback (`resolveReapBranch`). | accurate | accurate |
-| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 51 | The written defaults are "interactive, research off, plan check and verifier on". | stale | pending |
-| NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 95 | Structured-question headers are capped at 12 characters. | unverifiable | pending |
+| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 51 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected (task 5) |
+| NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 95 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` |
 | NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 29 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate |
 | NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 33 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate |
 | NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 38 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate |
@@ -526,8 +526,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | PLAN-GAPS-02 | cadence-core/workflows/plan-gaps.md | 13 | A missing checklist returns `no-uat`. | accurate | accurate |
 | PLAN-GAPS-03 | cadence-core/workflows/plan-gaps.md | 15 | `.planning/phases/<N>/UAT.md` holds the item detail. | accurate | accurate |
 | PLAN-GAPS-04 | cadence-core/workflows/plan-gaps.md | 19 | plan.md has a `spawn_planner` step to rejoin. | accurate | accurate |
-| PLAN-01 | cadence-core/workflows/plan.md | 102 | `(D-03)` names the decision that recall's backend-off return is a backstop, not this workflow's gate. | unverifiable | pending |
-| PLAN-02 | cadence-core/workflows/plan.md | 118 | `(D-01 / cache discipline)` names the decision that recall snippets ride the dispatch prompt. | unverifiable | pending |
+| PLAN-01 | cadence-core/workflows/plan.md | 102 | `(D-03)` names the decision that recall's backend-off return is a backstop, not this workflow's gate. | unverifiable | divergence - a bare decision id naming no phase or file; the CONTEXT that held it is in neither the live `.planning/` tree nor any `_archive-*` milestone, so it cannot be resolved mechanically |
+| PLAN-02 | cadence-core/workflows/plan.md | 118 | `(D-01 / cache discipline)` names the decision that recall snippets ride the dispatch prompt. | unverifiable | divergence - same for the `D-01` half; the `cache discipline` half resolves at `references/seams.md:191` |
 | PLAN-03 | cadence-core/workflows/plan.md | 8 | 4 flags, not ~20. | accurate | accurate |
 | PLAN-04 | cadence-core/workflows/plan.md | 19-21 | `planning.mjs status` returns `current` and a `phases[]` showing which phases still need plans. | accurate | accurate |
 | PLAN-05 | cadence-core/workflows/plan.md | 22-24 | `ok:true` with `cycle: "none"` and an empty `phases[]` is a derived closed milestone. | accurate | accurate |
@@ -559,7 +559,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | PLAN-31 | cadence-core/workflows/plan.md | 367-372 | It reports `orphan_ids`, `no_active_section: true`, and always Pending status. | accurate | accurate |
 | PLAN-32 | cadence-core/workflows/plan.md | 379 | `cursor set --phase {N} --status planned --next "/cad-execute {N}"` is valid. | accurate | accurate |
 | PLAN-33 | cadence-core/workflows/plan.md | 383 | `references/git-guard.md` rail 1 is the protected-branch guard. | accurate | accurate |
-| PROGRESS-01 | cadence-core/workflows/progress.md | 172-173 | The trace file is written by the seams and by the execute and verify workflows. | stale | pending |
+| PROGRESS-01 | cadence-core/workflows/progress.md | 172-173 | The trace file is written by the seams and by the execute and verify workflows. | stale | corrected (task 5) |
 | PROGRESS-02 | cadence-core/workflows/progress.md | 18 | `planning.mjs status` is the derivation. | accurate | accurate |
 | PROGRESS-03 | cadence-core/workflows/progress.md | 23-25 | Derived statuses are unplanned -> planned -> executed -> complete, with UAT counts. | accurate | accurate |
 | PROGRESS-04 | cadence-core/workflows/progress.md | 26 | `current` is the lowest non-complete phase, null when all complete. | accurate | accurate |
@@ -581,7 +581,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | PROGRESS-20 | cadence-core/workflows/progress.md | 138 | `workflow.skip_discuss` selects /cad-plan over /cad-context. | accurate | accurate |
 | SPIKE-01 | cadence-core/workflows/spike.md | 20-21,45 | The spike record lives at `.planning/spikes/<slug>/SPIKE.md`. | accurate | accurate |
 | SPIKE-02 | cadence-core/workflows/spike.md | 51 | The SPIKE.md commit honors the protected-branch guard. | accurate | accurate |
-| TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | pending |
+| TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | corrected (task 5) |
 | TASK-02 | cadence-core/workflows/task.md | 2-4 | Rail 1 is the protected-branch check plus base-integrity plus the integration-branch decision, not a bare branch check. | accurate | accurate |
 | TASK-03 | cadence-core/workflows/task.md | 23 | `cadence-core/references/git-guard.md` exists. | accurate | accurate |
 | TASK-04 | cadence-core/workflows/task.md | 46 | `workflow.test_command` is a config key. | accurate | accurate |
