@@ -91,7 +91,7 @@ each release tag are their archive.
 
 - [x] **Phase 1: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 2: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
-- [ ] **Phase 3: Field friction** - what is broken for Cadence's users right now: named phase dirs the seams cannot address, and a run record every project commits by default
+- [ ] **Phase 3: Field friction** - what is broken for Cadence's users right now: named phase dirs the seams cannot address, a run record every project commits by default, and a shortcut marker that reaches the queue
 - [ ] **Phase 4: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
@@ -140,13 +140,14 @@ defects are real in the code and have never given anyone a wrong answer, so
 did bite - the `REQ_ID_EXACT` regression - stays, and the two things the same
 survey found actually broken take the space.
 **Depends on:** Phase 1
-**Requirements:** FLD-01, FLD-02, PRS-02
+**Requirements:** FLD-01, FLD-02, PRS-02, DBT-01
 **Success Criteria:**
 1. A phase directory named `08-meteogram-legend` is addressable by every seam that takes `--phase`. Today `planning.mjs plan-overlap --phase 08-meteogram-legend` returns `bad-args`, and `tempest` and `atmos` both use named directories, so those seams are unusable on two shipped projects. Either the seams accept the named form or Cadence states numeric-only as a grammar and `/cad-health` reports a violation - what is not acceptable is the current silence.
 2. Two phase directories whose numeric prefix collides (`atmos` has `14-data-depth-...` and `14-shared-derivation-extraction`) produce a named diagnostic rather than one silently shadowing the other.
 3. A project Cadence created keeps `.planning/trace.jsonl` out of git without the user having done anything by hand. `cadence-core/workflows/execute.md:226` asserts the record "is gitignored" as the reason a worktree's trace cannot ride a merge back, and nothing in Cadence writes that line - it holds in this repo only because it was added manually, so every other Cadence project commits its run record on the next `git add .planning`. Proved on a scratch project, not on this one.
 4. `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the v1.4.0 phase-5 regression - the one parser defect with a recorded field occurrence.
-5. Each fix lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
+5. A deliberate corner-cut carries a marker at its location in the code naming the shortcut's ceiling and the trigger that should prompt revisiting it, and a harvest collects those markers into `.planning/CAPTURE.md`. The marker token is distinct from the 19 conventional markers already in the tree (14 `TODO`, 2 `NOTE`, 1 each `XXX`/`HACK`/`FIXME`, none of them linted), so the harvest's first run over this repo returns only planted markers and zero of those 19. The harvest is a seam with its `CONTRACTS` row, not a documented grep, because only a seam can be idempotent and carry a test - and it must be idempotent: `.planning/CAPTURE.md` is gitignored here and in `burnrate` but tracked in `hindsight` and `assistant`, so the marker in tracked code is the durable record and the queue is a regenerable view of it.
+6. A regression test proves the harvest finds a planted marker and does not invent one, and each fix in this phase lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
 
 ### Phase 4: Doc sweep
 **Goal:** What Cadence claims about itself matches what it does, and the next
