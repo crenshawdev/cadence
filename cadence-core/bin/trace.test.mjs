@@ -626,19 +626,55 @@ function proseSurfaces() {
 }
 
 /**
- * Every `trace append` invocation in one text, as `{family, event}`. Shell line
- * continuations are joined first so a wrapped invocation is read whole rather
- * than read as a flagless fragment.
+ * The files that MUST bracket a worker, mapped to the number of dispatch
+ * moments each one carries. Deliberately per-FILE, which REVERSES the note
+ * `.planning/_archive-v2.5.0/1/reports/plan-2.md` left when it called a
+ * per-file producer assertion "overfitting to today's file layout": the bracket
+ * set stopped being an accident of layout the day it became a stated
+ * requirement, so binding the test to it is now the point. A file dropping to
+ * zero brackets, or `plan.md` quietly shedding three of its four, is a paid
+ * dispatch whose cost never reaches the record - which a global "somebody
+ * writes a dispatch somewhere" check cannot see.
+ */
+const BRACKETING = new Map([
+  [join('cadence-core', 'workflows', 'context.md'), 1],
+  [join('cadence-core', 'workflows', 'plan.md'), 4],
+  [join('cadence-core', 'references', 'review-triggers.md'), 1],
+  [join('cadence-core', 'workflows', 'execute.md'), 1],
+  [join('cadence-core', 'workflows', 'verify-deep.md'), 1],
+]);
+
+/**
+ * Every `trace append` invocation in one text, as
+ * `{family, event, plan, role, read}`. Shell line continuations are joined
+ * first so a wrapped invocation is read whole rather than read as a flagless
+ * fragment.
  * @param {string} text
  */
 function traceAppends(text) {
   const joined = text.replace(/\\\r?\n\s*/g, ' ');
   const out = [];
+  // Quoted form FIRST for --read: its value is a comma-separated list that may
+  // contain spaces, and a bare `\S+` would truncate it at the first one - a
+  // populated read-set would then read as a one-element one, and `--read ""`
+  // would read as the two-character value `""` rather than as empty.
+  const flag = (line, name, quotable) => {
+    if (quotable) {
+      const quoted = new RegExp(`--${name}\\s+"([^"]*)"`).exec(line);
+      if (quoted) return quoted[1];
+    }
+    const bare = new RegExp(`--${name}\\s+(\\S+)`).exec(line);
+    return bare ? bare[1] : null;
+  };
   for (const line of joined.split('\n')) {
     if (!/\btrace\s+append\b/.test(line)) continue;
-    const family = /--family\s+(\S+)/.exec(line);
-    const event = /--event\s+(\S+)/.exec(line);
-    out.push({ family: family ? family[1] : null, event: event ? event[1] : null });
+    out.push({
+      family: flag(line, 'family', false),
+      event: flag(line, 'event', false),
+      plan: flag(line, 'plan', false),
+      role: flag(line, 'role', false),
+      read: flag(line, 'read', true),
+    });
   }
   return out;
 }
@@ -693,4 +729,56 @@ test('census: every trace family has a producer, and every producer speaks the r
     `no prose producer writes \`${DISPATCH}\`, so no bracket ever opens. ${found()}`);
   assert.ok(events.some((e) => TERMINAL.includes(e)),
     `no prose producer writes any of ${TERMINAL.join(', ')}, so no bracket ever closes. ${found()}`);
+
+  // --- per-FILE bracket coverage (see BRACKETING) -----------------------------
+  //
+  // Both halves are counted, and that is what makes this mean "every bracket in
+  // this file is CLOSED" rather than "this file brackets something". A file
+  // carrying four dispatches and three closes satisfies any presence check
+  // while one bracket hangs open forever - and a hanging bracket is precisely
+  // the dispatch whose cost never reaches the record.
+  for (const [file, minDispatch] of BRACKETING) {
+    const own = lifecycle.filter((p) => p.where === file);
+    const dispatched = own.filter((p) => String(p.event) === DISPATCH);
+    const closed = own.filter((p) => TERMINAL.includes(String(p.event)));
+    assert.ok(dispatched.length >= minDispatch,
+      `${file}: expected at least ${minDispatch} written \`--event ${DISPATCH}\` bracket(s), `
+      + `found ${dispatched.length}. A dispatch site with no bracket is a paid worker whose `
+      + 'cost never reaches the run record.');
+    assert.ok(closed.length >= dispatched.length,
+      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${closed.length} closing `
+      + `event(s) (${TERMINAL.join(' / ')}). At least one bracket is left open.`);
+    // ...and the PRIMARY close counted on its own. A site writes its arms as
+    // alternatives - a `return` form AND a `checkpoint` form for the same one
+    // dispatch - so a file with four dispatches carries eight closing lines,
+    // and the count above keeps passing while a whole site loses both of its
+    // arms. Every dispatch moment in every bracketing file writes exactly one
+    // `return` form, so counting that form is what actually says "no bracket
+    // here is left open".
+    const returned = own.filter((p) => String(p.event) === 'return');
+    assert.ok(returned.length >= dispatched.length,
+      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${returned.length} `
+      + '`--event return` close(s). Each dispatch moment writes its own; one of them is '
+      + 'unclosed on its success path.');
+  }
+
+  // --- every bracket half is keyed, and every dispatch names what it caused ---
+  //
+  // The terminal half of the role assertion is not decoration: terminal lines
+  // are the ones carrying `--tokens`, so a prose edit dropping `--role` from a
+  // terminal ALONE would file every token figure under the "" key while
+  // dispatch counts stayed keyed by role - each role reported fully
+  // `unrecorded` beside a nonzero unkeyed total, with the whole suite green.
+  for (const p of lifecycle) {
+    const event = String(p.event);
+    if (event === ANCHOR) continue;   // the correlation-id anchor is not a worker
+    if (event !== DISPATCH && !TERMINAL.includes(event)) continue;
+    assert.ok(p.role && p.role.trim(),
+      `${p.where}: \`--event ${event}\` with no \`--role\` - its worker cannot be grouped `
+      + 'into the per-role totals at all.');
+    if (event !== DISPATCH) continue;
+    assert.ok(p.read && p.read.trim(),
+      `${p.where}: \`--event ${DISPATCH}\` with an empty or absent \`--read\` - the record `
+      + 'would show a dispatch that caused no reads.');
+  }
 });
