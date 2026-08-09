@@ -3,7 +3,7 @@
 Re-verified 2026-08-09 at `c0a7326` on `cadence/v2.6.0`, against
 `.planning/DOCS-CLAIMS.md`'s 547 ids.
 
-**run-1 stale 18 -> run-2 stale 0 + 18 divergences**
+**run-1 stale 18 -> run-2 stale 0 + 19 divergences**
 
 This is not a second extraction. D-03 defines the confirmation run as a pass
 over the ledger's IDS, so the delta above is a set difference on a fixed claim
@@ -60,14 +60,17 @@ Ledger resolutions: 509 `accurate`, 19 `corrected`, 19 `divergence`. Zero
 `pending`, zero empty.
 
 The 20 unverifiable rows do not become verifiable by being corrected, and the
-count is deliberately flat. Eighteen are recorded as divergences with the reason
+count is deliberately flat. Nineteen are recorded as divergences with the reason
 each stands: personal billing data, Claude Code host behaviour, historical
 measurements of code that no longer exists, judgments no count settles, and two
 bare decision ids whose CONTEXT is in neither the live tree nor any archive. The
-other two are `README.md:132`'s v2.3.0 figures, which were re-anchored at task 1
-rather than restated as current — the before/after is the paragraph's point, and
-`docs/EVIDENCE.md` now carries the current numbers beside the command that
-regenerates them.
+remaining one is the first of `README.md:132`'s two v2.3.0 figures, re-anchored
+at task 1 rather than restated as current — the before/after is the paragraph's
+point, and `docs/EVIDENCE.md` now carries the current numbers beside the command
+that regenerates them. The second (`README-50`, the 8,550 -> 5,397 description
+figure) reverted to a divergence after the diff review: task 1's "measured at
+v2.3.0" frame is scoped to the preceding sentence and never reached that claim,
+so nothing about that prose was edited.
 
 ## Rows
 
