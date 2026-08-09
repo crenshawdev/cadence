@@ -69,6 +69,13 @@ in that doc, so next cycle's `README-02` need not be this cycle's.
 diff joined on the id alone would report a resolved claim as regressed and a
 newly drifted one as already corrected.
 
+**The `line` column is run 1's location**, read at `a6b8931`. Phase 5's own
+corrections moved some of them: `METHOD.md`'s six-dimensions fix at `:91` grew
+by three lines, so every `METHOD.md` row below it now sits three lines lower
+than its cell says. The column is provenance, not an address to seek to, and the
+join rule above is on `doc` plus claim text precisely so a line that moved
+cannot break the diff.
+
 **Resolution values.** `accurate` on every row the sweep confirmed;
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
 the commit that edited it; `divergence - <reason>` on one deliberately left
@@ -108,8 +115,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 
 | id | doc | line | claim | verdict | resolution |
 |---|---|---|---|---|---|
-| README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | pending |
-| README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | pending |
+| README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected (task 4) |
+| README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected (task 4) |
 | README-03 | README.md | 10-11 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate |
 | README-04 | README.md | 14 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate |
 | README-05 | README.md | 26 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate |
@@ -154,15 +161,15 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | README-44 | README.md | 138 | Today it is 23 skills and 6 agent roles across 19 rung files. | accurate | accurate |
 | README-45 | README.md | 140 | CI fails the build when the prose drifts from the code. | accurate | accurate |
 | README-46 | README.md | 142 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate |
-| README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | pending |
-| README-48 | README.md | 128 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | pending |
-| README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | pending |
-| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | pending |
-| README-51 | README.md | 134 | Five of the twelve commands ended up slightly heavier. | unverifiable | pending |
-| METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | pending |
-| METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | pending |
-| METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | pending |
-| METHOD-04 | METHOD.md | 301-303 | "Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema." | stale | pending |
+| README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves |
+| README-48 | README.md | 128 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
+| README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected (task 1) |
+| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | corrected (task 1) |
+| README-51 | README.md | 134 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
+| METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected (task 4) + DFC-02 |
+| METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected (task 4) + DFC-02 |
+| METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected (task 4) + DFC-03 |
+| METHOD-04 | METHOD.md | 301-303 | "Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema." | stale | corrected (task 4) |
 | METHOD-05 | METHOD.md | 20 | `skills/cad-planner-contract/SKILL.md` is where planning lives. | accurate | accurate |
 | METHOD-06 | METHOD.md | 24-31 | The planner follows the five-step goal-backward order (goal, truths, artifacts, wiring, tasks). | accurate | accurate |
 | METHOD-07 | METHOD.md | 28 | 3 to 7 observable truths. | accurate | accurate |
@@ -240,8 +247,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | METHOD-79 | METHOD.md | 584-589 | Five surface sets weighed against `cadence-core/bin/weight-budgets.json`: agents, SKILL.md, workflows, `references/`, `templates/`. | accurate | accurate |
 | METHOD-80 | METHOD.md | 593 | `/cad-docs-verify` checks factual claims against the live codebase. | accurate | accurate |
 | METHOD-81 | METHOD.md | 600-614 | Every path in the "Where each rule lives" table. | accurate | accurate |
-| METHOD-82 | METHOD.md | 258 | "This is the largest subsystem and the one that most shapes the output quality." | unverifiable | pending |
-| INTERNALS-01 | INTERNALS.md | 55 | "The API enforces the output shape (OpenAI `response_format`, Gemini `responseSchema`)." | stale | pending |
+| METHOD-82 | METHOD.md | 258 | "This is the largest subsystem and the one that most shapes the output quality." | unverifiable | divergence - a judgment about which subsystem most shapes output quality; no byte count settles it, and the subsystem spans several files |
+| INTERNALS-01 | INTERNALS.md | 55 | "The API enforces the output shape (OpenAI `response_format`, Gemini `responseSchema`)." | stale | corrected (task 4) |
 | INTERNALS-02 | INTERNALS.md | 11 | 19 files cover the six roles. | accurate | accurate |
 | INTERNALS-03 | INTERNALS.md | 11 | `cad-plan-checker-medium` and `cad-plan-checker-high` are the same contract at two depths. | accurate | accurate |
 | INTERNALS-04 | INTERNALS.md | 11 | `lib/rung-agent.mjs` states the rung->file map per role; the analyzer's unsuffixed file is its `xhigh` rung and `-high` is the lower one. | accurate | accurate |
@@ -272,13 +279,13 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | INTERNALS-29 | INTERNALS.md | 79 | `node cadence-core/bin/weight.mjs resident --root <repo root>` works. | accurate | accurate |
 | INTERNALS-30 | INTERNALS.md | 81 | `lib/resident-weight.mjs` and `bin/weight.test.mjs` exist. | accurate | accurate |
 | INTERNALS-31 | INTERNALS.md | 43,45 | "Cross-model review can call OpenAI or Gemini for a second opinion." | accurate | accurate |
-| INTERNALS-32 | INTERNALS.md | 9 | The host's override resolution order is environment -> per-invocation parameter -> frontmatter -> session, and reasoning effort cannot be overridden. | unverifiable | pending |
-| INTERNALS-33 | INTERNALS.md | 45-47 | Live detection actually returns what a key can reach, and a model-not-found mid-review offers re-detect. | unverifiable | pending |
-| INTERNALS-34 | INTERNALS.md | 31 | The six shapes v1.4.0 found silent (`git -C`, `&`, `$(...)`, backticks, subshell, escaped quote, `bash -c`). | unverifiable | pending |
-| INTERNALS-35 | INTERNALS.md | 35 | The old scan was O(KxN), 3.1GB at 224KB input, V8 abort at 280KB. | unverifiable | pending |
-| INTERNALS-36 | INTERNALS.md | 37 | The 336KB input that aborted the old hook decides in milliseconds. | unverifiable | pending |
-| INTERNALS-37 | INTERNALS.md | 73 | "Before I cut it, `/cad-land` was the heaviest in the plugin by eager bytes and the second lightest of the five I measured by reachable." | unverifiable | pending |
-| CONTRIBUTING-01 | CONTRIBUTING.md | 13 | "Cadence has no build step and no dependencies. The scripts inside are zero-dependency Node, so there is no `npm install`." | stale | pending |
+| INTERNALS-32 | INTERNALS.md | 9 | The host's override resolution order is environment -> per-invocation parameter -> frontmatter -> session, and reasoning effort cannot be overridden. | unverifiable | divergence - Claude Code host behaviour, external to this repository; the design depends on it but nothing here can decide it |
+| INTERNALS-33 | INTERNALS.md | 45-47 | Live detection actually returns what a key can reach, and a model-not-found mid-review offers re-detect. | unverifiable | divergence - requires a live provider key and network |
+| INTERNALS-34 | INTERNALS.md | 31 | The six shapes v1.4.0 found silent (`git -C`, `&`, `$(...)`, backticks, subshell, escaped quote, `bash -c`). | unverifiable | divergence - a historical claim about a reader deleted in v2.2.0; true when made and unreproducible now |
+| INTERNALS-35 | INTERNALS.md | 35 | The old scan was O(KxN), 3.1GB at 224KB input, V8 abort at 280KB. | unverifiable | divergence - a measurement of code that no longer exists in the tree |
+| INTERNALS-36 | INTERNALS.md | 37 | The 336KB input that aborted the old hook decides in milliseconds. | unverifiable | divergence - needs a benchmark run, not attempted in this sweep |
+| INTERNALS-37 | INTERNALS.md | 73 | "Before I cut it, `/cad-land` was the heaviest in the plugin by eager bytes and the second lightest of the five I measured by reachable." | unverifiable | divergence - explicitly a pre-cut measurement over the five commands measured then; current figures are published in `docs/EVIDENCE.md` |
+| CONTRIBUTING-01 | CONTRIBUTING.md | 13 | "Cadence has no build step and no dependencies. The scripts inside are zero-dependency Node, so there is no `npm install`." | stale | corrected (task 4) |
 | CONTRIBUTING-02 | CONTRIBUTING.md | 13 | "The same three checks CI runs" - three checks, runnable locally. | accurate | accurate |
 | CONTRIBUTING-03 | CONTRIBUTING.md | 16 | `node --test cadence-core/bin/*.test.mjs` - unit tests for the seam cores. | accurate | accurate |
 | CONTRIBUTING-04 | CONTRIBUTING.md | 17 | `node cadence-core/bin/self-verify.mjs` - the prose<->code drift linter. | accurate | accurate |
@@ -292,9 +299,9 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | CONTRIBUTING-12 | CONTRIBUTING.md | 9,29 | The MIT license, and contributions landing under it. | accurate | accurate |
 | CONTRIBUTING-13 | CONTRIBUTING.md | 29 | Cadence is a derivative of GSD at `https://github.com/open-gsd/gsd-core`, spelled out in `NOTICE.md` and `LINEAGE.md`. | accurate | accurate |
 | CONTRIBUTING-14 | CONTRIBUTING.md | 3 | `MANIFESTO.md` link. | accurate | accurate |
-| CONTRIBUTING-15 | CONTRIBUTING.md | 5,7,9 | "Bug reports are welcome... doc fixes land fast"; the feature-PR policy. | unverifiable | pending |
-| CONTRIBUTING-16 | CONTRIBUTING.md | 21 | "The self-verify step is the one that catches most drift." | unverifiable | pending |
-| CONTRIBUTING-17 | CONTRIBUTING.md | 25 | What a good bug report contains (Claude Code version, `node --version`, the relevant `.planning/` slice). | unverifiable | pending |
+| CONTRIBUTING-15 | CONTRIBUTING.md | 5,7,9 | "Bug reports are welcome... doc fixes land fast"; the feature-PR policy. | unverifiable | divergence - maintainer intent, no code surface to check it against |
+| CONTRIBUTING-16 | CONTRIBUTING.md | 21 | "The self-verify step is the one that catches most drift." | unverifiable | divergence - a relative-yield judgment across three checks; nothing measures it |
+| CONTRIBUTING-17 | CONTRIBUTING.md | 25 | What a good bug report contains (Claude Code version, `node --version`, the relevant `.planning/` slice). | unverifiable | divergence - process guidance rather than a code claim; `.github/ISSUE_TEMPLATE/bug_report.md` exists but enforces no field |
 | AUDIT-01 | cadence-core/workflows/audit.md | 31-34 | A digit-leading category like `2FA-01` is not admitted, so it appears in neither `unseeded` nor `counts` and is reported only in `active_issues`. | stale | pending |
 | AUDIT-02 | cadence-core/workflows/audit.md | 136-140 | On an `active-non-id-bullet`, a span holding nothing but the id that is still reported means the id failed the admission test (a digit-leading category), and no rewrite will count it. | stale | pending |
 | AUDIT-03 | cadence-core/workflows/audit.md | 19 | `planning.mjs audit` exists and returns one JSON line. | accurate | accurate |

@@ -87,8 +87,11 @@ before it is allowed to open the plan*, then checks the plan against its own
 derivation rather than against the plan's claims about itself. That ordering is
 deliberate: reading the plan first anchors you to its framing.
 
-It checks five dimensions — requirement coverage, task completeness, sequencing,
-goal-backward truths, and scope sanity — and every finding carries a severity. A
+It checks six dimensions — requirement coverage, task completeness, sequencing,
+goal-backward truths, scope sanity, and proportionality, which asks separately
+from the goal whether this is the smallest plan that reaches it and whether it
+sits inside the `workflow.max_plan_tasks` ceiling — and every finding carries a
+severity. A
 truth that no task makes true is a BLOCKER. A task that no truth needs is a
 WARNING, because that is scope creep. Findings without a severity are invalid
 output, and softening a blocker to be agreeable is called out explicitly.
@@ -273,11 +276,12 @@ rather than scattered across twenty workflows.
 | `plan` | `/cad-plan` | after PLAN.md is written | adjudicated |
 | `diff` | `/cad-execute` | at plan completion | advisory |
 | `risk_surface` | execute, debug, task, verify | on detection match, at commit time | blocking |
-| `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | off (opt-in) |
+| `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | advisory |
 | `pre_ship` | `/cad-land` | before publishing | adjudicated |
 
-Four of the five fire on their own; `phase_diff` ships off because most projects
-never run the parallel path. The gate (`off`, `advisory`, `blocking`,
+All five fire on their own at the default `shipped` level. `phase_diff` is the
+one that is off at `solo`, and it is the one that only ever fires on the
+parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
 `adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
 `adjudicated`) decides how multiple reviewers combine, and where they disagree the
 gate wins, because it is the stronger signal.
@@ -300,7 +304,9 @@ diff.
 
 The default reviewer is a fresh-context Claude subagent needing no API key.
 Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct
-API call with the provider enforcing the output schema.
+API call. OpenAI and Gemini enforce the output schema server-side; DeepSeek has no
+server-side schema, so its adapter injects the schema into the prompt and asserts
+the shape of the answer on return.
 
 Every backend returns the same shape:
 
