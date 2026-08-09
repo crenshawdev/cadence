@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { weighAll } from './lib/surface-weight.mjs';
+import { residentWeight } from './lib/resident-weight.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -262,4 +263,109 @@ test('docs/EVIDENCE.md: the per-directory subtotals and grand total are the meas
   const [, count, bytes] = total.split('|').slice(1, -1).map((c) => c.trim().replace(/\*/g, ''));
   assert.equal(num(count), all.length, 'grand-total surface count');
   assert.equal(num(bytes), all.reduce((t, s) => t + s.bytes, 0), 'grand-total bytes');
+});
+
+// --- the four EVIDENCE tables the byte checks above did NOT reach -----------
+//
+// The twelve-largest and per-directory checks above pin `weighAll`'s output.
+// They leave four tables measured by `residentWeight` pinned by nothing, which
+// is the same failure class EVIDENCE.md:171-177 claims to have closed: add one
+// sentence to any workflow, re-pin its budget entry, and self-verify goes green
+// while the turn-one, eager/reachable and dispatch figures quietly go wrong.
+// The file's own promise at :6 is "check the tree out, run the command,
+// compare" - so every measured figure it prints is checked here, not four of
+// the six tables' worth.
+
+/** Rows of the markdown table that starts at the first line matching `head`. */
+const rowsUnder = (text, head) => {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => l.startsWith(head));
+  assert.ok(start >= 0, `no table row starting ${head}`);
+  let i = start;
+  while (i > 0 && lines[i - 1].startsWith('|')) i -= 1;
+  const out = [];
+  for (; i < lines.length && lines[i].startsWith('|'); i += 1) {
+    const cells = lines[i].split('|').slice(1, -1).map((c) => c.trim().replace(/\*/g, ''));
+    if (cells.every((c) => /^-*:?-*$/.test(c) || c === '')) continue;
+    // Drop the header: a data row always ends in a byte figure, a header never
+    // does, and walking back to the table start necessarily picks the header up.
+    if (!/^[\d,]+$/.test(cells[cells.length - 1])) continue;
+    out.push(cells);
+  }
+  return out;
+};
+
+test('docs/EVIDENCE.md: every turn-one byte figure is what residentWeight measures', () => {
+  const r = residentWeight(REPO);
+  const evidence = doc('docs', 'EVIDENCE.md');
+  const num = (s) => Number(s.replace(/,/g, ''));
+
+  const rows = rowsUnder(evidence, '| Command | Turn-one bytes |')
+    .filter((c) => c[0].startsWith('`/'));
+  const byCommand = new Map(r.commands.map((c) => [c.command, c]));
+
+  let sum = 0;
+  for (const [name, bytes] of rows) {
+    const command = name.replace(/[`/]/g, '');
+    const measured = byCommand.get(command);
+    assert.ok(measured, `EVIDENCE names ${name}, residentWeight does not measure it`);
+    assert.equal(num(bytes), measured.eagerBytes, `${name} turn-one bytes`);
+    sum += measured.eagerBytes;
+  }
+  assert.equal(rows.length, r.commands.length, 'a measured command has no turn-one row');
+
+  const total = evidence.split('\n').find((l) => l.startsWith('| **23 user-invocable commands**'));
+  assert.ok(total, 'no turn-one total row');
+  assert.equal(num(total.split('|').slice(1, -1)[1].trim().replace(/\*/g, '')), sum,
+    'turn-one total is not the sum of the column above it');
+});
+
+test('docs/EVIDENCE.md: every eager-vs-reachable pair is what residentWeight measures', () => {
+  const r = residentWeight(REPO);
+  const evidence = doc('docs', 'EVIDENCE.md');
+  const num = (s) => Number(s.replace(/,/g, ''));
+  const byCommand = new Map(r.commands.map((c) => [c.command, c]));
+
+  const rows = rowsUnder(evidence, '| Command | Eager (turn one) |');
+  assert.ok(rows.length >= 10, 'the eager-vs-reachable table lost rows');
+  for (const [name, eager, reachable] of rows) {
+    const command = name.replace(/[`/]/g, '');
+    const measured = byCommand.get(command);
+    assert.ok(measured, `EVIDENCE names ${name}, residentWeight does not measure it`);
+    assert.equal(num(eager), measured.eagerBytes, `${name} eager bytes`);
+    assert.equal(num(reachable), measured.reachableBytes, `${name} reachable bytes`);
+  }
+});
+
+test('docs/EVIDENCE.md: the zero-resident surfaces and their total are measured', () => {
+  const r = residentWeight(REPO);
+  const evidence = doc('docs', 'EVIDENCE.md');
+  const num = (s) => Number(s.replace(/,/g, ''));
+
+  for (const s of r.zeroResident) {
+    const row = evidence.split('\n').find((l) => l.startsWith(`| \`${s.surface}\` |`));
+    assert.ok(row, `${s.surface} reaches no command but EVIDENCE does not list it`);
+    assert.equal(num(row.split('|').slice(1, -1)[1].trim()), s.bytes, `${s.surface} bytes`);
+  }
+  assert.ok(evidence.includes(r.zeroResidentBytes.toLocaleString('en-US')),
+    `EVIDENCE does not state the zero-resident total ${r.zeroResidentBytes}`);
+});
+
+test('docs/EVIDENCE.md: every dispatch row states the measured agent and dispatch bytes', () => {
+  const r = residentWeight(REPO);
+  const evidence = doc('docs', 'EVIDENCE.md');
+  const num = (s) => Number(s.replace(/,/g, ''));
+
+  const rows = rowsUnder(evidence, '| Role | Agent file |');
+  assert.equal(rows.length, r.roles.length, 'a measured rung agent has no dispatch row');
+
+  const byAgent = new Map(r.roles.map((x) => [x.agent, x]));
+  for (const [role, agent, agentBytes, dispatchBytes] of rows) {
+    const file = agent.replace(/`/g, '');
+    const measured = byAgent.get(file);
+    assert.ok(measured, `EVIDENCE names ${file}, residentWeight does not measure it`);
+    assert.equal(role, measured.role, `${file} role`);
+    assert.equal(num(agentBytes), measured.agentBytes, `${file} agent bytes`);
+    assert.equal(num(dispatchBytes), measured.dispatchBytes, `${file} dispatch bytes`);
+  }
 });
