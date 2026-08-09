@@ -101,7 +101,9 @@ phase's commits):
 
 - Debt markers: TODO, FIXME, XXX, HACK, "placeholder", "not implemented".
   A marker with no issue/ticket reference on the line, in a phase file,
-  is a gap.
+  is a gap. A `CADENCE-DEBT` marker is EXEMPT under that clause - its
+  required ceiling and trigger fields are the reference, and
+  `debt-harvest` is what carries it forward (references/conventions.md).
 - Empty implementations: bare `return null/None/[]/{}`, empty handler
   bodies, `todo!()`, `unimplemented!()`.
 - Hardcoded values where data should flow: static returns instead of a

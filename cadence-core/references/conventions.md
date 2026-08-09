@@ -32,6 +32,39 @@ Nothing here reaches an agent that has not read it.
   renaming it is the user's call, never an auto-fix.
   Created lazily by the first skill that needs it (cad-context or cad-plan).
 
+## Deliberate shortcuts
+
+A corner cut on purpose is marked at the line it was cut, in whatever comment
+syntax the file already uses, on ONE line. The marker is the token
+`CADENCE-DEBT` followed immediately by a colon, then three fields in order,
+separated by ` | `:
+
+1. the one-line description of what was cut;
+2. `ceiling` and a colon, then what it does not handle;
+3. `trigger` and a colon, then what should prompt revisiting it.
+
+Both named fields are REQUIRED. A marker missing one is named by the harvest
+rather than dropped, so an incomplete marker is visible instead of silent.
+
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
+collects every marker in the tracked tree into `.planning/CAPTURE.md`'s own
+`## Debt markers` section, rewritten wholesale on each run. The MARKER in
+tracked code is the durable record; that section is a regenerable view of it, so
+deleting a marker from source removes its bullet on the next run. The harvest
+does not add its section to the recall walk, so a harvested marker reaches
+`/cad-plan`'s recall only when it is promoted by hand.
+
+The token is namespaced so it cannot collide with a marker another tool or
+another contributor introduces, and it is not negotiable later: once markers are
+planted across a tree, changing the token means editing every one of them.
+Measured over this tree with `git grep -w` on 2026-08-09, `SHORTCUT`, `DEBT`,
+`CORNER`, `TRIPWIRE`, `CADENCE-DEBT` and `CAD-DEBT` all returned zero, while
+`CUT` returned 9 and `CEILING` 1 - so those two were never candidates.
+
+Documentation ABOUT this convention describes the fields in prose, as this
+section does, and never writes a literal marker line: the harvest scans tracked
+source, so a documented example would be ingested as a real marker.
+
 ## Config resolution
 
 The only correct read is the seam - one call for every key the workflow uses:

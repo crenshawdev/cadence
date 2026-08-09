@@ -150,6 +150,7 @@ const CONTRACTS = {
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
     'trace render': ['--phase'],
     'trace ignore': ['--root', '--check'],
+    'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },

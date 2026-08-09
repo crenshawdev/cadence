@@ -217,7 +217,9 @@ On the files the phase touched: debt markers (TODO, FIXME, XXX, HACK,
 "placeholder", "not implemented") with no issue reference, empty implementations
 and `todo!()`, hardcoded values where data should flow, and log-only handlers.
 A match counts as a gap only when it sits on the goal path — test fixtures and
-deliberate follow-up markers carrying a ticket reference are not gaps.
+deliberate follow-up markers carrying a ticket reference are not gaps. A
+`CADENCE-DEBT` marker is exempt under that same clause: its required ceiling and
+trigger fields ARE the reference, and the harvest is what carries it forward.
 
 ### Spot-checks are bounded on purpose
 

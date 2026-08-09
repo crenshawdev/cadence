@@ -25,7 +25,7 @@
     "cadence-core/references/bug-patterns.md": 4247,
     "cadence-core/references/config-reach.md": 18623,
     "cadence-core/references/consult.md": 4348,
-    "cadence-core/references/conventions.md": 5718,
+    "cadence-core/references/conventions.md": 7510,
     "cadence-core/references/git-guard.md": 6721,
     "cadence-core/references/git-publish.md": 4611,
     "cadence-core/references/model-hints.json": 2635,
@@ -92,7 +92,7 @@
     "skills/cad-spike/SKILL.md": 1178,
     "skills/cad-task/SKILL.md": 737,
     "skills/cad-undo/SKILL.md": 1093,
-    "skills/cad-verifier-contract/SKILL.md": 10009,
+    "skills/cad-verifier-contract/SKILL.md": 10201,
     "skills/cad-verify/SKILL.md": 1102
   }
 }
