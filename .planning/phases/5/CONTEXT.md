@@ -7,7 +7,7 @@ Feeds: /cad-plan 5
 
 In: `/cad-docs-verify` across the surface AC1 names - `README.md`, `METHOD.md`,
 `INTERNALS.md`, `CONTRIBUTING.md` and the 21 files in `cadence-core/workflows/`
-(25 files, 268,982 B) - with every reported claim resolved to `corrected` or
+(25 files, 268,992 B) - with every reported claim resolved to `corrected` or
 `divergence`, a committed claim ledger that makes the next cycle a diff rather
 than a fresh sweep (DOC-02), a real defect filed as its own requirement instead
 of reworded away (DOC-03), and one runtime-evidence artifact under `docs/`
@@ -109,7 +109,7 @@ inside the resolved `workflow.max_plan_tasks` ceiling of 8.
   `.planning/ROADMAP.md:185`.
 - D-02 (Three runs by doc group): The sweep is three invocations - root docs (4
   files, 69,691 B) / `cadence-core/workflows/` A-M / N-Z - joined by the single
-  ledger. One invocation cannot cover the surface: it is 25 files / 268,982 B
+  ledger. One invocation cannot cover the surface: it is 25 files / 268,992 B
   carrying 1,142 distinct backticked tokens, and `cad-docs-verify` has no
   dispatch, so every doc read plus every verification read lands in one
   context. The only prior run handled 32 claims on a smaller surface. Evidence:

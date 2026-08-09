@@ -205,6 +205,9 @@ section only, bounded at the next `## ` heading.
 | DBT-01 | Phase 3 | Complete |
 | TOK-03 | Phase 4 | Complete |
 | TOK-04 | Phase 4 | Complete |
+| DOC-02 | Phase 5 | Pending |
+| DOC-03 | Phase 5 | Pending |
+| EVD-02 | Phase 5 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
