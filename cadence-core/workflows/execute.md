@@ -409,6 +409,13 @@ SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
 deferred item routed here resurfaces on its phase instead of surviving only
 because the next executor re-notices it. Do not duplicate an item already
 present. This file joins the docs commit in the state step.
+
+Then run
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
+so a `CADENCE-DEBT` marker planted during the phase lands in the queue on the
+phase that planted it. BEST EFFORT: it rewrites its own `## Debt markers`
+section and touches nothing else, and a non-zero exit is reported in one line
+and never blocks the summary.
 </step>
 
 <step name="state">

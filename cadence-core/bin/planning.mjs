@@ -45,6 +45,10 @@
 //   trace render [--phase N]        the four families, the derived id, and
 //                                   every worker dispatch paired to its
 //                                   return/checkpoint/escalation
+//   debt-harvest [--root <path>]    every CADENCE-DEBT marker in the tracked
+//                                   tree, collected into .planning/CAPTURE.md's
+//                                   own `## Debt markers` section (NOT --dir:
+//                                   it scans source and writes into .planning)
 //   trace ignore [--root <path>] [--check]
 //                                   keep .planning/trace.jsonl out of git:
 //                                   append-if-absent at scaffold time, or
@@ -53,7 +57,7 @@
 //                                   .gitignore lives)
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync, statSync } from 'node:fs';
 import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -67,7 +71,9 @@ import {
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
+  sectionBound,
 } from './lib/planning-files.mjs';
+import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
 // exist rather than growing second ones: the SAME prose version reader branch
@@ -2413,6 +2419,119 @@ function cmdRenumber(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// debt-harvest - every `CADENCE-DEBT` marker in the tracked tree, collected into
+// `.planning/CAPTURE.md`'s own section. The grammar and the rendering live in
+// lib/debt-markers.mjs (pure); this owns the walk, the reads and the write.
+//
+// `--root` is the PROJECT root, not `--dir`: this scans SOURCE and writes into
+// `.planning`, the same reason `detect-commands` states for its own flag.
+// ---------------------------------------------------------------------------
+
+/** Files larger than this are skipped silently - a marker lives on one line. */
+const DEBT_MAX_FILE_BYTES = 1048576;
+
+/** The heading the harvest owns and rewrites wholesale. */
+const DEBT_HEADING = '## Debt markers';
+
+/**
+ * Replace `heading`'s body wholesale, or append the section when it is absent.
+ *
+ * Bounded by the EXPORTED `sectionBound` rather than a second fence scanner
+ * (D-12): a `## ` line inside a fenced block in someone's `## Todos` bullet must
+ * not be read as the section boundary, or the rewrite truncates their bullet
+ * mid-fence and leaves an odd fence count behind it.
+ * @param {string} text @param {string} heading @param {string} body
+ * @returns {string}
+ */
+function replaceSection(text, heading, body) {
+  const lines = text.split('\n');
+  const at = lines.findIndex((l) => l.trim() === heading);
+  if (at < 0) {
+    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
+    return `${text}${sep}${heading}\n\n${body}`;
+  }
+  const after = lines.slice(at + 1);
+  const bound = sectionBound(after);
+  const tail = bound < 0 ? [] : after.slice(bound);
+  return `${lines.slice(0, at + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
+}
+
+function cmdDebtHarvest(root) {
+  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  /** @type {string} */
+  let listing;
+  try {
+    listing = execFileSync('git', ['-C', root, 'ls-files', '-z'],
+      { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 }).toString('utf8');
+  } catch (e) {
+    // An UNENUMERABLE tree must never report zero markers: `markers: 0` is the
+    // answer a caller acts on, and it has to mean "none planted", never "the
+    // walk did not happen".
+    return fail('no-git', `${root} could not be enumerated with git ls-files`
+      + ` (${e && e.message ? e.message.split('\n')[0] : String(e)})`);
+  }
+
+  const entries = [];
+  let files = 0;
+  for (const rel of listing.split('\0')) {
+    if (!rel) continue;
+    const segs = rel.split('/');
+    // `.planning/` holds the harvest's OWN OUTPUT, which is TRACKED in some
+    // projects (hindsight, assistant) even though it is gitignored here - so
+    // scanning it would make the harvest ingest itself and destroy the
+    // idempotence the whole design rests on. It also holds every planning doc
+    // that quotes the convention.
+    if (segs.includes('.planning')) continue;
+    // `git ls-files` omits UNTRACKED files, which is what keeps an ignored
+    // `node_modules/` out in the ordinary case. It is NOT "every ignored file
+    // for free": an ignore rule does not remove an ALREADY TRACKED path from
+    // `ls-files`, so a force-added (`git add -f`) or historically tracked
+    // `node_modules/pkg/x.js` is still enumerated and would contribute
+    // third-party markers. Hence the explicit skip, here beside the other one.
+    if (segs.includes('node_modules')) continue;
+    const abs = join(root, rel);
+    let buf;
+    try {
+      if (statSync(abs).size > DEBT_MAX_FILE_BYTES) continue;
+      buf = readFileSync(abs);
+    } catch { continue; } // deleted since ls-files, or unreadable
+    if (buf.includes(0)) continue; // binary
+    files++;
+    for (const m of debtMarkersIn(buf.toString('utf8'))) entries.push({ ...m, path: rel });
+  }
+
+  const captureFile = join(root, '.planning', 'CAPTURE.md');
+  const body = renderDebtSection(entries);
+  const existing = read(captureFile);
+  const next = existing === null
+    // Created with the same three headings /cad-capture creates, so a harvest on
+    // a project with no queue yet leaves the file /cad-capture expects.
+    ? `## Todos\n\n- None.\n\n## Seeds\n\n- None.\n\n## Notes\n\n- None.\n\n${DEBT_HEADING}\n\n${body}`
+    : replaceSection(existing, DEBT_HEADING, body);
+  // Written ONLY when it differs, so a second run reports written:false and
+  // leaves the file byte-identical - the idempotence AC6 asks for.
+  let written = false;
+  if (next !== existing) {
+    try {
+      atomicWrite(captureFile, next);
+    } catch (e) {
+      return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
+    }
+    written = true;
+  }
+  const malformed = entries.filter((e) => e.malformed)
+    .map((e) => ({ path: e.path, line: e.line, missing: e.malformed }));
+  ok({
+    root,
+    file: captureFile,
+    markers: entries.length,
+    files,
+    written,
+    ...(malformed.length ? { malformed } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -2460,6 +2579,15 @@ const COMMANDS = {
     ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
     : cmdDetectCommands(opts.root || process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
+  // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
+  // SOURCE and writes into `.planning`. Same present-but-unusable refusal
+  // `trace ignore` carries.
+  'debt-harvest': (_dir, _sub, opts) => {
+    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
+      return fail('bad-args', 'debt-harvest --root needs a path after it: --root <project root>');
+    }
+    return cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd());
+  },
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
 };
 

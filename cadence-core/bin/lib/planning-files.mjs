@@ -1003,10 +1003,15 @@ const UAT_FM_FIELDS = ['status', 'phase', 'fields_version', 'sources', 'started'
  * of indent, a run of three or more backticks or tildes, and a closer that
  * matches the opener's character, is at least as long, and carries no info
  * string.
+ * EXPORTED for the debt harvest's `CAPTURE.md` section writer (D-12), which
+ * rewrites one `## ` section wholesale and needs exactly this rule. A second
+ * fence scanner there would drift from this one, and the defect it would
+ * reintroduce is the one described above: a bullet whose text carries a fenced
+ * block with a `## ` line inside it, truncated mid-fence.
  * @param {string[]} lines
  * @returns {number}
  */
-function sectionBound(lines) {
+export function sectionBound(lines) {
   const fenced = fenceScanner();
   for (let i = 0; i < lines.length; i++) {
     if (fenced(lines[i])) continue;
