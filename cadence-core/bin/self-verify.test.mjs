@@ -322,13 +322,30 @@ test('a surface over its declared budget is flagged with the overage', () => {
     && x.file === 'agents/big.md' && /exceeds budget 10B/.test(x.detail)));
 });
 
-test('a surface at or under its budget yields no overrun', () => {
+test('a surface EXACTLY at its budget yields no budget problem', () => {
   const body = 'hello';
   const root = fixtureWith({
     agents: { 'ok.md': body },
-    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 100 },
+    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') },
   });
-  assert.ok(!run(['--root', root]).problems.some((x) => x.kind === 'budget-overrun'));
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (x) => x.kind === 'budget-overrun' || x.kind === 'budget-undershoot'), []);
+});
+
+test('a surface ONE byte under its entry is reported budget-undershoot (D-13)', () => {
+  // The falsifier for the flip from `bytes > budget` to an exact comparison.
+  // Under the old rule this fixture was clean, which is how DFC-03's one-byte
+  // shrink would have shipped with CI green and the published "total slack 0"
+  // quietly false.
+  const body = 'hello';
+  const root = fixtureWith({
+    agents: { 'ok.md': body },
+    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 1 },
+  });
+  const p = run(['--root', root]).problems.filter((x) => x.kind === 'budget-undershoot');
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, 'agents/ok.md');
+  assert.match(p[0].detail, /under budget 6B by 1B - re-pin the entry/);
 });
 
 test('a measured surface missing from the manifest is flagged unbudgeted', () => {

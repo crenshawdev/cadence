@@ -639,9 +639,19 @@ function run(root) {
 
   // 4. context-weight budgets: every measured prose surface (agents/skills/
   // workflows, via the SAME lib weight.mjs reports with, so enforced weight
-  // cannot diverge from reported weight) must have a budget entry and stay at
-  // or under it. The manifest is root-relative like config.schema.json, so a
-  // --root fixture can supply its own; an absent manifest skips the check.
+  // cannot diverge from reported weight) must have a budget entry and EQUAL it
+  // exactly - a shrink is as much a mismatch as a growth. The manifest is
+  // root-relative like config.schema.json, so a --root fixture can supply its
+  // own; an absent manifest skips the check.
+  //
+  // Exact, not "at or under", because there is no regeneration path: no
+  // `--write-budgets`, no derive-on-run, entries are hand-copied from
+  // weight.mjs. "93 surfaces at exactly their byte count, total slack 0" was
+  // therefore a maintenance CONVENTION that docs/EVIDENCE.md published as if it
+  // were enforced, and an overrun-only comparison let a surface shrink under
+  // its entry with CI fully green - burning the slack that the next growth then
+  // spends invisibly. DFC-03's own fix is the worked example: one byte smaller,
+  // silently under budget (D-13).
   const budgetPath = join(root, 'cadence-core', 'bin', 'weight-budgets.json');
   if (existsSync(budgetPath)) {
     // Same guard as INTERNALS.md above: unreadable OR malformed JSON here
@@ -659,9 +669,15 @@ function run(root) {
         continue;
       }
       const budget = budgets[surface];
+      // Two kinds rather than one, so triage reads the DIRECTION off the kind:
+      // an overrun is prose that grew, an undershoot is an entry that needs
+      // re-pinning to what the surface now measures.
       if (bytes > budget) {
         problems.push({ kind: 'budget-overrun', file: surface,
           detail: `${bytes}B exceeds budget ${budget}B by ${bytes - budget}B` });
+      } else if (bytes < budget) {
+        problems.push({ kind: 'budget-undershoot', file: surface,
+          detail: `${bytes}B is under budget ${budget}B by ${budget - bytes}B - re-pin the entry` });
       }
     }
   } else if (isFullTree) {

@@ -589,10 +589,13 @@ different mood, and is left alone.
 It also weighs five surface sets against a byte budget in
 `cadence-core/bin/weight-budgets.json` - every agent file, every SKILL.md,
 every workflow, and every file under `cadence-core/references/` and
-`cadence-core/templates/` - and fails when one outgrows its entry. That
-ratchet makes prose growth a conscious act rather than a drift: the budget is
-regenerated only when the growth is intentional and accepted, which is a
-deliberate step someone has to take rather than a number that quietly rises.
+`cadence-core/templates/` - and fails when one DIFFERS from its entry in either
+direction, growth or shrink. That ratchet makes prose growth a conscious act
+rather than a drift: the budget is regenerated only when the growth is
+intentional and accepted, which is a deliberate step someone has to take rather
+than a number that quietly rises. Shrink fails too because nothing regenerates
+these entries automatically - a surface allowed to sit under its number banks
+slack that the next growth then spends without ever tripping the check.
 
 The honest limit is worth stating. These checks catch claims that are *wrong*.
 They cannot catch a claim that is true but incomplete, and they cannot catch a
