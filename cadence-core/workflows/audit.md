@@ -35,8 +35,10 @@ an empty `unseeded` as proof the section is covered),
 `active_issues` (a line inside `## Active` outside the stated bullet grammar -
 `references/req-traceability.md`), `nonconforming_plans` (a `PLAN*.md`
 filename no seam and no executor reads, e.g. `PLAN-gaps.md`), `deferred` (rows
-whose Status is `Deferred` - the one pinned marker), and `counts` (whose
-`total` is Traceability rows PLUS unpicked ids, so
+whose Status is `Deferred` - the one pinned marker),
+`version_drift` (`{doc_version, published_as, cycle_state}` - OMITTED whenever
+there is nothing to report, so its absence is the normal state), and `counts`
+(whose `total` is Traceability rows PLUS unpicked ids, so
 `total = traced + broken + deferred`).
 
 If a milestone scope was given, filter the returned requirements to that
@@ -99,6 +101,14 @@ requirement id.
   `uat record --phase <N> --item <k> --result <its current status> --criterion AC<N>`,
   or re-run `/cad-verify <N>` if the phase never got a real checklist.
   `--origin criterion` is not a repair - it names no id.
+- `version_drift` - not a per-requirement break but a milestone-scoped signal,
+  and it moves the verdict all the same (§4): the planning docs name a version
+  this repo has ALREADY tagged while its cycle is still open. That is issue
+  #87's failure mode - a cycle planned, branched and worked under a number that
+  already shipped - and it is invisible to every other key here. `published_as`
+  is the tag spelling that carries it. Two exits: open the NEXT version in
+  `PROJECT.md ### Active` (and the ROADMAP title, if it names one), or - if the
+  cycle really is finished - complete the close so no phase is left open.
 
 ## 4. Verdict
 Arithmetic over both seam calls - in-scope `counts.broken` (after any milestone
@@ -108,7 +118,8 @@ filter) and coverage `breaks`:
   reached a UAT item. Deferred rows are allowed (list them; they are not
   counted as delivered).
 - **FAIL** - any requirement is untraced, unverified, dropped, or in drift, OR
-  the coverage arm returned ANY break, whatever its code. List each failing
+  the coverage arm returned ANY break, whatever its code, OR `version_drift` is
+  present. List each failing
   requirement with exactly where its chain breaks; each `uncovered` criterion BY
   ID with its phase and its next action (add the missing UAT item through
   `/cad-verify <N>`, or correct the criterion id in CONTEXT.md); and each
@@ -129,6 +140,35 @@ does nothing. `unseeded` is NOT additive:
 every id it names also carries an `unpicked` break and is already counted.
 Either way there is no third, softened state: a broken requirement still fails
 this gate.
+
+`version_drift` is NOT additive either, and for the same reason `unseeded`
+stopped being: an additive report would change nothing here. `/cad-health`
+already reports this in prose, and the requirement's own wording is
+"mechanically, rather than only reported" - a signal that never moves a verdict
+leaves the ship gate exactly as permeable as it was. Present -> FAIL, naming the
+doc version, the tag spelling that carries it, and the cycle state. It moves no
+count: it is milestone-scoped rather than per-requirement, and
+`total = traced + broken + deferred` stays an invariant.
+
+State what is NOT drift in the same breath, so this gate is not softened later
+by someone re-deriving it:
+
+- A doc version NO tag carries is the ordinary mid-cycle state - the docs are
+  supposed to run ahead of the last release. The key is absent, and that absence
+  is not a near-miss to report.
+- A tagged doc version with EVERY phase complete is exempt: that is exactly what
+  a close interrupted between `milestone.md` step 2 (the tag) and step 4 (the
+  PROJECT.md evolve) leaves on disk, and the user is already finishing it.
+- A version that merely sorts BELOW the newest tag was published by nothing. The
+  test is membership in the tag list, not order.
+
+The manifest is deliberately not a comparand. `pluginVersion()` resolves
+relative to the SCRIPT while the command above invokes the seam through
+`${CLAUDE_PLUGIN_ROOT}`, so reading it here would judge a downstream project
+against CADENCE's release number; and `skills/cad-health/SKILL.md` already
+settled that tags are the publication evidence, a manifest in the checkout is
+not. A manifest test could not have caught #87 anyway - at that tag the manifest
+agreed with the docs.
 
 On the coverage arm, `breaks` is the only verdict-moving key; `untraced`,
 `legacy`, `unknown_criterion` and `context_issues` are additive and change
