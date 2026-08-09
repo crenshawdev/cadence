@@ -5,13 +5,15 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v2.5.0` is the current release: a static-analysis path reaches
-execution and works unconfigured, one joined trace per phase explains what a run
-actually did, declared file leases are enforced at the commit step rather than
-compared once before dispatch, every provider failure path has a test proving
-what the caller sees, the two heaviest commands stop eagerly preloading
-references they read at one step, and the plan gates finally ask whether a plan
-is proportionate rather than only whether it reaches the goal. Earlier cycles:
+subsystem. `v2.6.1` is the current release: the four defects the `v2.6.0` doc
+sweep filed are closed at their source, each with a check watched to fail against
+the unpatched code first, and a budgeted surface that SHRINKS below its recorded
+byte count now fails self-verify exactly like one that grows. `v2.6.0` before it
+was the reconciliation cycle: the capture queue triaged from 213 open items to
+28, per-role token accounting with every phase dispatch bracketed, a
+runaway-loop bound on all 19 rung agents, and the first end-to-end doc sweep at
+547 claims with a committed ledger. Earlier cycles: `v2.5.0` static analysis
+reaching execution and plan gates that ask whether a plan is proportionate,
 `v2.4.0` the parallel path that could never engage, `v2.3.0` where the bytes
 live, `v2.2.0` the config read face and the deleted git-guard parser, `v2.1.0`
 coverage and triage gates, `v2.0.0` the
