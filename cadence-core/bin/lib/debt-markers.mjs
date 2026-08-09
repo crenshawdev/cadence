@@ -92,8 +92,12 @@ export function debtMarkersIn(text) {
 }
 
 /**
- * One line's marker bodies, in order: everything after each `CADENCE-DEBT:` up to
- * the next one's head, or the end of the line for the last.
+ * One line's marker bodies, in order: everything after each marker head (the
+ * token followed by a colon) up to the next one's head, or the end of the line
+ * for the last. The head is NOT spelled out here: this file is tracked source,
+ * the harvest walks tracked source, and a literal token-plus-colon in a comment
+ * is ingested as a real marker - which is what the note above `DEBT_TOKEN`
+ * already promised and this doc comment was quietly breaking.
  * @param {string} line @returns {string[]}
  */
 function markerSegments(line) {
