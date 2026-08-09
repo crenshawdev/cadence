@@ -6,6 +6,57 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-08-09
+
+The four defects `2.6.0`'s own doc sweep found and filed rather than reworded
+away. One phase, six commits. Every one of them ships with a check that was
+watched to fail against the unpatched code first, because a check nobody has
+seen fail is a guess wearing a verdict.
+
+### Fixed
+
+- **`cadence-core/bin/lib/trace.mjs` no longer contains two literal NUL bytes.**
+  They were typed into the worker key's template string instead of the `\0`
+  escape, so `file(1)` called the source `data` and every `grep` or `rg` over
+  `cadence-core/bin/**` silently skipped that whole file without `-a`. It cost me
+  a debugging detour during 2.6.0's UAT and it would have cost the next one too.
+  The separator is still U+0000 at runtime, only the source bytes changed.
+  `self-verify` gained check 15, `nul-byte-in-source`, over every regular file
+  under `cadence-core/bin` including the test files, so it cannot come back.
+
+- **The `phase_diff` gate row said `off / off / adjudicated` while the resolver
+  returned `off / advisory / adjudicated`.** Wrong in
+  `cadence-core/references/review-triggers.md` and in `docs/WORKFLOW.md`'s copy
+  of it, and four of 2.6.0's eighteen stale doc rows were that one row copied.
+  A new `prose-agreement.test.mjs` drives `route.mjs resolve` at all three stakes
+  levels and compares both prose sites to what actually comes back, so the copy
+  cannot drift from the code again.
+
+- **The plan checker's contract contradicted itself about its own size.** `:42`
+  said "Check six dimensions" and listed six, while `:113`'s success criterion
+  still said "All five dimensions checked." A checker whose completion
+  criterion names five of six can report success having skipped the
+  dimension 2.5.0 shipped a cycle early to bound plan size. The count is now
+  pinned three ways: the number in each block, and the number of dimensions
+  actually enumerated between them.
+
+- **The `risk_surface` wiring row admitted shape (c) only as "the flagged-diff
+  FILE path the checkpoint returned."** `/cad-task` is the one fire site with no
+  executor and no checkpoint, so it produced a shape-(c) path the row did not
+  describe. The qualifier is gone; `cadence-core/workflows/task.md` keeps its
+  named transient path, its never-stage rule and its delete-on-return cleanup.
+
+### Changed
+
+- **A budgeted surface now fails `self-verify` when it SHRINKS, not just when it
+  grows.** `docs/EVIDENCE.md` published "93 surfaces at exactly their byte count,
+  total slack 0" as if that were enforced. It was a maintenance convention: the
+  check read `bytes > budget`, so any deletion sailed through and the entry went
+  stale in silence. That is how `review-triggers.md` came to be quoted at
+  17,733 B in four places at once. The new `budget-undershoot` kind names the
+  direction, and the four sites quoting that file's size moved together to 17,714
+  with a `weighAll`-backed test over every row of the twelve-largest table.
+
 ## [2.6.0] - 2026-08-09
 
 The reconciliation cycle. `2.5.0` closed early and handed this release its
@@ -1693,6 +1744,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
 [2.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.0
 [2.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.5.0
 [2.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.4.0
