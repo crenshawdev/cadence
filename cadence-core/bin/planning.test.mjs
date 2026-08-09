@@ -4608,6 +4608,29 @@ test('trace ignore: a tracked run record is REPORTED, never quietly ignored', ()
   assert.equal(r.ignored, false);
 });
 
+test('trace ignore: a TRACKED record whose line is present reports ignored and writes nothing', () => {
+  // The regression the `--no-index` flag closes. `check-ignore` answers "would
+  // this path be ignored if it were untracked", so a path in the INDEX matched
+  // nothing at all: `ignored` came back false with the rule sitting right there
+  // in `.gitignore`, and the write arm - which keys off that value - appended the
+  // comment and the line again on EVERY run. Two runs left three copies.
+  const root = ignoreRoot({ gitignore: '.planning/trace.jsonl\n' });
+  writeFileSync(join(root, '.planning', 'trace.jsonl'), '{"phase":1}\n');
+  execFileSync('git', ['add', '-f', '--', '.planning/trace.jsonl'], { cwd: root });
+  const check = traceIgnore(root, ['--check']);
+  assert.equal(check.ignored, true, JSON.stringify(check));
+  assert.equal(check.tracked, true, JSON.stringify(check));
+  assert.equal(check.method, 'git');
+  assert.match(check.source, /\.gitignore$/);
+  // Both facts survive together: the rule is there AND the file is still indexed,
+  // which is the state whose remedy is `git rm --cached` and not another line.
+  const before = gitignoreOf(root);
+  assert.equal(traceIgnore(root).written, false);
+  assert.equal(traceIgnore(root).written, false);
+  assert.equal(gitignoreOf(root), before);
+  assert.equal(gitignoreOf(root).match(/^\.planning\/trace\.jsonl$/gm).length, 1);
+});
+
 test('trace ignore: a .git/info/exclude match does NOT satisfy the line', () => {
   // The reason `-v` is used instead of `-q`: neither `.git/info/exclude` nor
   // core.excludesFile is cloned, so a machine-local exclusion would report

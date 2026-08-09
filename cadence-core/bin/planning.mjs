@@ -2001,6 +2001,17 @@ function ignoreSourceTravels(source) {
  * `method: 'file'` when git cannot answer at all (not installed, or the root is
  * not a repository). Exit 1 from `check-ignore` is DATA - nothing matched - and
  * only a harder failure falls back.
+ *
+ * `--no-index` is load-bearing, not a tidy-up. Without it `check-ignore` reports
+ * nothing for a path that is in the INDEX, because git's own contract is "would
+ * this path be ignored if it were untracked" and a tracked path is already past
+ * that question. The two states then become indistinguishable: a project whose
+ * `.gitignore` carries the line AND has the record force-added answered
+ * `ignored:false`, so `cmdTraceIgnore` appended the line again on every run and
+ * `/cad-health` reported a missing rule that was right there. `--no-index` asks
+ * the question this seam actually has - does a rule cover this path - and leaves
+ * TRACKED to `traceTracked`, which is the separate fact and the one that needs
+ * `git rm --cached`.
  * @param {string} root
  * @returns {{method: 'git'|'file', travels: boolean, source: string|null}}
  */
@@ -2011,7 +2022,8 @@ function gitIgnoreState(root) {
   } catch { return noGit; }
   let out = '';
   try {
-    out = execFileSync('git', ['-C', root, 'check-ignore', '-v', '--', TRACE_IGNORE_LINE],
+    out = execFileSync('git',
+      ['-C', root, 'check-ignore', '--no-index', '-v', '--', TRACE_IGNORE_LINE],
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     if (e && e.status === 1) return { method: 'git', travels: false, source: null };
