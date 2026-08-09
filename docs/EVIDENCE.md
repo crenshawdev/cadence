@@ -1,10 +1,12 @@
 # Runtime evidence: what Cadence weighs
 
-Measured 2026-08-09 against the tree at commit `98be3d2`, by the commands
-printed beside each table. The commit that carries this file changes no figure
-in it: `docs/` holds no measured surface, so the numbers below are the ones
-`weight.mjs` reports at the tip of this phase. Check the tree out, run the
-command, compare. Nothing here is collected at runtime and nothing is reported
+Measured 2026-08-09, by the commands printed beside each table, against
+whatever tree you have checked out - not against a commit named here. Naming
+one was the older form and it went stale the moment a measured surface moved in
+a later commit, which is the exact drift this file is about. Every figure below
+is now asserted against the live measurement by
+`cadence-core/bin/prose-agreement.test.mjs`, so a stale number is a red test
+rather than a footnote: check the tree out, run the command, compare. Nothing here is collected at runtime and nothing is reported
 home — `weight.mjs` reads the prose files in the tree and counts bytes.
 
 Three terms are used throughout, and they are the definitions in
@@ -58,10 +60,10 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-plan-review` | 2,353 |
 | `/cad-progress` | 9,791 |
 | `/cad-spike` | 3,898 |
-| `/cad-task` | 6,268 |
+| `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 24,533 |
-| **23 user-invocable commands** | **280,111** |
+| **23 user-invocable commands** | **280,684** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -147,9 +149,9 @@ turn-one table above is the number that decides what a session pays.
 | `agents/` | 19 | 8,583 |
 | `cadence-core/references/` | 16 | 159,165 |
 | `cadence-core/templates/` | 8 | 16,861 |
-| `cadence-core/workflows/` | 21 | 201,097 |
+| `cadence-core/workflows/` | 21 | 201,670 |
 | `skills/` | 29 | 90,733 |
-| **total** | **93** | **476,439** |
+| **total** | **93** | **477,012** |
 
 The twelve largest individual surfaces:
 

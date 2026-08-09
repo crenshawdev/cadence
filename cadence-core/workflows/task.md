@@ -85,14 +85,24 @@ the trigger returns.
 by the INLINE path - `planned_path` step 1 is the only writer of
 `.planning/tasks/{slug}/`, and it declines to create even that when `.planning/`
 is absent, because a task plan does not justify project scaffolding. So derive
-the slug here when the inline path did not (kebab-case of the task description),
-and `mkdir -p` the directory immediately before the redirect. When `.planning/`
-does not exist at all, write the diff to
-`${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` instead and fire with THAT path:
-still shape (c), which since `v2.6.1` admits a flagged-diff file however it was
-produced. A redirect into a directory nothing created fails
-`No such file or directory`, and this trigger is `blocking` at every level, so
-that failure is a blocking gate that cannot fire rather than a gate that passes.
+the slug here when the inline path did not (kebab-case of the task description).
+A redirect into a directory nothing created fails `No such file or directory`,
+and this trigger is `blocking` at every level, so that failure is a blocking
+gate that cannot fire rather than a gate that passes.
+
+Which directory depends on whether this task already owns one, and the INLINE
+path never does:
+
+- The PLANNED path wrote `.planning/tasks/{slug}/PLAN.md`, so the directory
+  exists and the diff goes beside it at the named path above. Delete the
+  `.diff` on return and the directory stays, correctly - it holds the plan.
+- The INLINE path creates no directory and must not start now: `Zero planning
+  artifacts for inline tasks` is this workflow's own success criterion, and an
+  inline task that `mkdir -p`s a slug directory leaves it behind empty once the
+  transient diff is deleted, accreting one per risk-surface task. So write to
+  `${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` and fire with THAT path -
+  still shape (c), which since `v2.6.1` admits a flagged-diff file however it
+  was produced. The same applies when `.planning/` does not exist at all.
 
 This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
