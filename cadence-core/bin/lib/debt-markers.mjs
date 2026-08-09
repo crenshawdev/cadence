@@ -59,30 +59,50 @@ export function debtMarkersIn(text) {
   const out = [];
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const at = lines[i].indexOf(MARKER_HEAD);
-    if (at < 0) continue;
-    const parts = lines[i].slice(at + MARKER_HEAD.length).split('|');
-    let ceiling = null;
-    let trigger = null;
-    for (let j = 1; j < parts.length; j++) {
-      const field = parts[j].trim();
-      const c = field.match(/^ceiling\s*:\s*([\s\S]*)$/i);
-      if (c) { ceiling = stripTrailer(c[1]); continue; }
-      const t = field.match(/^trigger\s*:\s*([\s\S]*)$/i);
-      if (t) { trigger = stripTrailer(t[1]); }
+    // EVERY occurrence on the line, each bounded by the next one's head. A single
+    // `indexOf` was worse than dropping the second marker: the field loop ran to
+    // the end of the LINE, so a second marker's `| ceiling:` and `| trigger:`
+    // overwrote the first's, and one entry came back carrying another cut's
+    // ceiling. A wrong ceiling in the queue is a wrong answer; a missing bullet is
+    // only a gap.
+    for (const seg of markerSegments(lines[i])) {
+      const parts = seg.split('|');
+      let ceiling = null;
+      let trigger = null;
+      for (let j = 1; j < parts.length; j++) {
+        const field = parts[j].trim();
+        const c = field.match(/^ceiling\s*:\s*([\s\S]*)$/i);
+        if (c) { ceiling = stripTrailer(c[1]); continue; }
+        const t = field.match(/^trigger\s*:\s*([\s\S]*)$/i);
+        if (t) { trigger = stripTrailer(t[1]); }
+      }
+      const malformed = [];
+      if (ceiling === null || ceiling === '') malformed.push('ceiling');
+      if (trigger === null || trigger === '') malformed.push('trigger');
+      out.push({
+        line: i + 1,
+        text: parts.length > 1 ? parts[0].trim() : stripTrailer(parts[0]),
+        ceiling: ceiling === '' ? null : ceiling,
+        trigger: trigger === '' ? null : trigger,
+        ...(malformed.length ? { malformed } : {}),
+      });
     }
-    const malformed = [];
-    if (ceiling === null || ceiling === '') malformed.push('ceiling');
-    if (trigger === null || trigger === '') malformed.push('trigger');
-    out.push({
-      line: i + 1,
-      text: parts.length > 1 ? parts[0].trim() : stripTrailer(parts[0]),
-      ceiling: ceiling === '' ? null : ceiling,
-      trigger: trigger === '' ? null : trigger,
-      ...(malformed.length ? { malformed } : {}),
-    });
   }
   return out;
+}
+
+/**
+ * One line's marker bodies, in order: everything after each `CADENCE-DEBT:` up to
+ * the next one's head, or the end of the line for the last.
+ * @param {string} line @returns {string[]}
+ */
+function markerSegments(line) {
+  /** @type {number[]} */
+  const heads = [];
+  for (let at = line.indexOf(MARKER_HEAD); at >= 0;
+    at = line.indexOf(MARKER_HEAD, at + MARKER_HEAD.length)) heads.push(at);
+  return heads.map((at, k) => line.slice(at + MARKER_HEAD.length,
+    k + 1 < heads.length ? heads[k + 1] : line.length));
 }
 
 /** A field the marker never stated, rendered so the gap is visible in the queue. */

@@ -97,3 +97,35 @@ test('renderDebtSection: the same markers render byte-identically', () => {
   const entries = [{ path: 'a.js', line: 1, text: 'cut', ceiling: 'c', trigger: 't' }];
   assert.equal(renderDebtSection(entries), renderDebtSection(entries.slice()));
 });
+
+test('debtMarkersIn: TWO markers on one line are two entries, neither wearing the other\'s fields', () => {
+  // The regression a single `indexOf` caused, and the reason it was worse than a
+  // dropped bullet: the field loop ran to the end of the LINE, so the second
+  // marker's `ceiling`/`trigger` overwrote the first's and one entry came back
+  // reporting another cut's ceiling. A wrong ceiling in the queue is a wrong
+  // answer about real code.
+  const one = marker('first cut', 'c1', 't1');
+  const two = marker('second cut', 'c2', 't2');
+  const found = debtMarkersIn(`// ${one} ${two}\n`);
+  assert.equal(found.length, 2, JSON.stringify(found));
+  assert.deepEqual(found.map((m) => m.text), ['first cut', 'second cut']);
+  assert.deepEqual(found.map((m) => m.ceiling), ['c1', 'c2']);
+  assert.deepEqual(found.map((m) => m.trigger), ['t1', 't2']);
+  // Both are on the SAME source line, and both say so.
+  assert.deepEqual(found.map((m) => m.line), [1, 1]);
+});
+
+test('debtMarkersIn: a second marker on the line does not lend the first its fields', () => {
+  // The narrower shape: the first marker states nothing, so under the old parse
+  // it silently inherited the second's ceiling and trigger and reported COMPLETE.
+  const bare = `${DEBT_TOKEN}: bare cut`;
+  const full = marker('stated cut', 'c2', 't2');
+  const found = debtMarkersIn(`/* ${bare} ${full} */\n`);
+  assert.equal(found.length, 2, JSON.stringify(found));
+  assert.equal(found[0].text, 'bare cut');
+  assert.equal(found[0].ceiling, null);
+  assert.equal(found[0].trigger, null);
+  assert.deepEqual(found[0].malformed, ['ceiling', 'trigger']);
+  assert.equal(found[1].ceiling, 'c2');
+  assert.equal(found[1].trigger, 't2');
+});

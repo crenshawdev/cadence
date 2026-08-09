@@ -57,7 +57,7 @@
 //                                   .gitignore lives)
 'use strict';
 
-import { readFileSync, readdirSync, existsSync, lstatSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
 import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -2506,7 +2506,17 @@ function cmdDebtHarvest(root) {
     const abs = join(root, rel);
     let buf;
     try {
-      if (statSync(abs).size > DEBT_MAX_FILE_BYTES) continue;
+      // `lstatSync`, so a SYMLINK is classified as a link rather than as whatever
+      // it points at. `statSync` followed it and the read followed it too, so a
+      // tracked `src/link.js -> /tmp/outside.js` put the external file's marker in
+      // the queue under the in-tree path - the harvest reporting a corner-cut at a
+      // line that does not contain one, sourced from a file the project does not
+      // contain. A tracked symlink's TARGET is either in the tree (enumerated on
+      // its own path, and reported there) or outside it, so skipping links loses
+      // no marker that belongs here.
+      const st = lstatSync(abs);
+      if (st.isSymbolicLink()) continue;
+      if (st.size > DEBT_MAX_FILE_BYTES) continue;
       buf = readFileSync(abs);
     } catch { continue; } // deleted since ls-files, or unreadable
     if (buf.includes(0)) continue; // binary

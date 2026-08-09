@@ -4890,6 +4890,27 @@ test('debt-harvest: a malformed marker is reported, never dropped', () => {
   assert.match(captureOf(root), /trigger: \(unstated\)/);
 });
 
+test('debt-harvest: a tracked SYMLINK out of the tree contributes nothing', () => {
+  // `statSync`/`readFileSync` both follow a link, so the harvest read a file the
+  // project does not contain and filed its marker under the in-tree path - a
+  // corner-cut reported at a line that holds no marker. A tracked link's target is
+  // either in the tree (enumerated on its own path) or outside it, so skipping
+  // links loses nothing that belongs here.
+  const root = debtRepo();
+  const outside = join(mkdtempSync(join(tmpdir(), 'cad-debt-out-')), 'outside.js');
+  writeFileSync(outside, `// ${debtLine('external cut', 'cx', 'tx')}\n`);
+  mkdirSync(join(root, 'src'), { recursive: true });
+  symlinkSync(outside, join(root, 'src', 'link.js'));
+  execFileSync('git', ['add', '--', 'src/link.js'], { cwd: root });
+  debtAdd(root, 'src/real.js', `// ${debtLine('in-tree cut', 'c', 't')}\n`);
+  const r = harvest(root);
+  assert.equal(r.markers, 1, JSON.stringify(r));
+  const body = captureOf(root);
+  assert.match(body, /in-tree cut/);
+  assert.doesNotMatch(body, /external cut/, 'a symlink target outside the tree was read');
+  assert.doesNotMatch(body, /link\.js/);
+});
+
 test('debt-harvest: a non-git root is ok:false, never a zero-marker answer', () => {
   const root = mkdtempSync(join(tmpdir(), 'cad-debt-nogit-'));
   mkdirSync(join(root, '.planning'), { recursive: true });
