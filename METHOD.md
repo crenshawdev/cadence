@@ -279,9 +279,9 @@ rather than scattered across twenty workflows.
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | advisory |
 | `pre_ship` | `/cad-land` | before publishing | adjudicated |
 
-All five fire on their own at the default `shipped` level. `phase_diff` is the
-one that is off at `solo`, and it is the one that only ever fires on the
-parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
+All five fire on their own at the default `shipped` level. `phase_diff` and
+`diff` are the two that are off at `solo`, and `phase_diff` alone only ever fires
+on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
 `adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
 `adjudicated`) decides how multiple reviewers combine, and where they disagree the
 gate wins, because it is the stronger signal.
