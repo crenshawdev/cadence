@@ -63,6 +63,15 @@ import {
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
+// The audit's version_drift signal (FRI-03) reuses the readers that already
+// exist rather than growing second ones: the SAME prose version reader branch
+// naming uses (`### Active` -> ROADMAP title), the SAME membership test, and the
+// SAME tag reader the branch seam reads. `normalizeTargetVersion` is imported
+// for its `v`-stripping alone - the version compared here is REPORTED, never
+// derived into anything that ships (REL-03 stands).
+import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.mjs';
+import { normalizeTargetVersion } from './lib/release-decision.mjs';
+import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
@@ -850,6 +859,10 @@ function listPlanFiles(pdir) {
 // break codes: no-phase | phase-missing | no-plan | not-verified | drift |
 // unpicked (an `## Active` id no phase picked up - it has no Traceability row
 // at all, so it carries no `phase` key; see the D-01/D-04 block below).
+//
+// Also emits `version_drift` - milestone-scoped, present-or-absent, no break
+// code and no count - when the planning docs name a version this repo has
+// already TAGGED while its cycle is still open. See the block at its site.
 // ---------------------------------------------------------------------------
 function cmdAudit(dir) {
   const reqText = read(join(dir, 'REQUIREMENTS.md'));
@@ -953,6 +966,47 @@ function cmdAudit(dir) {
   }
 
   const broken = requirements.filter((r) => r.break).length;
+
+  // `version_drift` (FRI-03): the planning docs name a version this repo has
+  // ALREADY PUBLISHED while the cycle under that number is still open - issue
+  // #87, where v2.4.0 was planned, branched and worked under a number already
+  // tagged. The predicate is deliberately NOT `docs != manifest`:
+  //
+  // - The comparand is git TAGS (D-03). `pluginVersion()` is NOT read here, and
+  //   this is the whole reason: MANIFEST_PATH resolves relative to the SCRIPT
+  //   and audit.md invokes the seam through ${CLAUDE_PLUGIN_ROOT}, so in any
+  //   project that is not Cadence a manifest predicate would judge the user's
+  //   milestone against CADENCE's release number. Tags are the publication
+  //   evidence - the rule skills/cad-health/SKILL.md already states.
+  // - The manifest could not even detect #87. At tag v2.4.0 this repo had docs
+  //   Active `v2.4.0`, tag `v2.4.0` AND manifest `2.4.0`: byte-identical, on the
+  //   manifest test, to an interrupted close. The cycle's own completeness is
+  //   what separates them, and only the phase artifacts carry that.
+  //
+  // Two different omissions, both correct. A doc version NO tag carries is the
+  // ordinary ahead-of-manifest mid-cycle state (this repo is in it now). A
+  // tagged doc version with EVERY phase complete is a close interrupted between
+  // milestone.md's step 2 (the tag) and step 4 (the PROJECT.md evolve) - D-01's
+  // exemption, and a state the user is already finishing. Membership, not sort
+  // order (D-04): a version that merely sorts below the newest tag was published
+  // by nothing, and `tagCarrying` gets the WHOLE list to test against.
+  //
+  // Present-or-absent, top level, outside `counts` and `requirements`: this
+  // signal is milestone-scoped rather than per-requirement, and `total = traced
+  // + broken + deferred` is an asserted invariant. The FAIL is audit.md §4's
+  // arithmetic over the key - cmdAudit computes no verdict.
+  const docVersion = activeVersion(read(join(dir, 'PROJECT.md')) || '')
+    || titleVersion(roadmapText);
+  // `activeVersion` returns the prose token WITH its `v` (`v9.9.0`), while
+  // `tagCarrying` takes a bare comparand and `compareVersions` returns null -
+  // not 0 - for a `v`-prefixed operand, so the raw token would match no tag.
+  const publishedAs = docVersion
+    ? tagCarrying(readTags(dir), normalizeTargetVersion(docVersion)) : null;
+  // Derived phase status, not the roadmap checkbox: "finish the close" means the
+  // artifacts say complete. Same test cmdStatus uses to find the current phase.
+  const cycleOpen = publishedAs !== null
+    && derivePhases(dir, [...roadmap.values()]).some((p) => p.status !== 'complete');
+
   ok({
     requirements,
     ...(orphanPlans.length ? { orphans: { plan_ids: orphanPlans } } : {}),
@@ -968,6 +1022,9 @@ function cmdAudit(dir) {
     // bullet whose bold span is exactly the id.
     ...(active.issues.length ? { active_issues: active.issues } : {}),
     ...(unseeded ? { unseeded } : {}),
+    ...(cycleOpen ? { version_drift: {
+      doc_version: docVersion, published_as: publishedAs, cycle_state: 'open',
+    } } : {}),
     // total counts Traceability rows PLUS unpicked ids (D-02), which is what
     // keeps `requirements.length + deferred.length === rows.length +
     // unpicked.length` - i.e. total = traced + broken + deferred - true now that

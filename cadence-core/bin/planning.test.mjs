@@ -1986,6 +1986,124 @@ test('audit: a colon INSIDE the bold span reports, and is never normalized into 
   assert.deepEqual(r.counts, { total: 1, traced: 1, broken: 0, deferred: 0 });
 });
 
+// --- audit: version_drift (FRI-03) -------------------------------------------
+// The predicate is "the planning docs name a version this repo has ALREADY
+// TAGGED, while the cycle under that number is still open". Not `docs !=
+// manifest`: no manifest is read at all (D-03), and at tag v2.4.0 this repo's
+// manifest agreed with its docs, so a manifest test was silent on issue #87.
+
+/**
+ * `makeTree`'s output made a REAL git repo carrying `tags`, with a PROJECT.md
+ * whose `### Active` names `version`. Modelled on git-branch.test.mjs's
+ * `taggedFixture` and NOT on `leaseRepo`: identity and BOTH config scopes are
+ * neutralized in the env, so `git tag` cannot die with `fatal: no tag message?`
+ * on a machine carrying a global `tag.gpgsign` / `commit.gpgsign` - this one
+ * does. `dir` is the `.planning` dir, so the repo root is one level up.
+ * @param {any} spec @param {{version?: string|null, tags?: string[],
+ *   roadmapTitle?: string}} opts
+ */
+function taggedTree(spec, { version = 'v9.9.0', tags = [], roadmapTitle } = {}) {
+  const dir = makeTree(spec);
+  if (version !== null) {
+    writeFileSync(join(dir, 'PROJECT.md'),
+      `# Fixture\n\n## Requirements\n\n### Active\n\n\`${version}\` - the open cycle\n\n### Out of Scope\n`);
+  } else {
+    writeFileSync(join(dir, 'PROJECT.md'), '# Fixture\n\n## Requirements\n\n### Active\n\nNo version token here.\n\n### Out of Scope\n');
+  }
+  if (roadmapTitle !== undefined) {
+    const text = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    writeFileSync(join(dir, 'ROADMAP.md'), text.replace(/^# .*$/m, roadmapTitle));
+  }
+  const root = dirname(dir);
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+  };
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore', env });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  for (const t of tags) git('tag', t);
+  return dir;
+}
+
+/**
+ * One roadmap phase; `done` decides whether its artifacts read as complete.
+ * Both arms are a CLEAN audit - the plan declares the requirement, so the row
+ * traces either way - which is what makes `version_drift` the only key that
+ * varies between these fixtures.
+ */
+const cycleSpec = (done) => ({
+  roadmap: [{ n: 1, name: 'One', checked: done }],
+  phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: done,
+    uat: [{ status: done ? 'pass' : 'pending' }] } },
+  reqs: [['AUD-01', 1, done ? 'Complete' : 'Pending']],
+});
+
+test('audit: a doc version a tag already carries, with the cycle still open, emits version_drift', () => {
+  const dir = taggedTree(cycleSpec(false), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
+test('audit: the SAME tagged version with every phase complete is the interrupted close, not drift', () => {
+  // D-01's exemption: milestone.md tags at step 2 and evolves PROJECT.md at
+  // step 4, so a close interrupted between them leaves exactly this on disk.
+  // This case is what a tag-only predicate would get wrong.
+  const dir = taggedTree(cycleSpec(true), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+});
+
+test('audit: a doc version that merely SORTS BELOW the newest tag is not drift - membership, not order', () => {
+  // D-04: `v9.9.0` published by nothing while `v9.9.1` exists is a legitimate
+  // maintenance milestone, and the retired scalar comparand refused exactly it.
+  const dir = taggedTree(cycleSpec(false), { version: 'v9.9.0', tags: ['v9.9.1'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+});
+
+test('audit: no git repo at all leaves the envelope unchanged - no tags is no evidence, never a failure', () => {
+  const dir = makeTree(cycleSpec(false));
+  writeFileSync(join(dir, 'PROJECT.md'),
+    '# Fixture\n\n## Requirements\n\n### Active\n\n`v9.9.0` - the open cycle\n\n### Out of Scope\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+  // The ordinary open-cycle arithmetic still runs: an incomplete phase's row is
+  // `not-verified`, exactly as it is with a repo present. The absent repo costs
+  // the audit nothing but the tag question.
+  assert.equal(r.requirements[0].break, 'not-verified');
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+});
+
+test('audit: with no ### Active version, the ROADMAP title supplies the comparand', () => {
+  // The same `### Active` -> ROADMAP-title precedence branch naming uses - one
+  // prose reader, shared, so the two cannot disagree about the milestone.
+  const dir = taggedTree(cycleSpec(false),
+    { version: null, tags: ['v9.9.0'], roadmapTitle: '# Roadmap: Fixture v9.9.0' });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
+test('audit: the v2.4.0 state of this repo (issue #87) fires - the regression pin FRI-03 exists for', () => {
+  // Docs Active v2.4.0, tag v2.4.0 present, phases still open. The manifest
+  // ALSO read 2.4.0 at that moment, which is why a manifest predicate would
+  // have been silent here and the tag-plus-open-cycle one is not.
+  const dir = taggedTree(cycleSpec(false), { version: 'v2.4.0', tags: ['v2.3.0', 'v2.4.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v2.4.0', published_as: 'v2.4.0', cycle_state: 'open' });
+});
+
 test('seed-reqs: a v1.3.1-shaped ## Active table leaves its envelope unchanged - the delegation did not leak into the writer', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'One' }],

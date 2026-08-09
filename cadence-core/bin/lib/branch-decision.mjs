@@ -8,14 +8,23 @@
 // seam that wraps it: the seam and the rail-1 prose it drives share this one
 // source of truth, and it runs fully under `node --test` with no live git.
 //
-// Public surface: `integrationBranchName` and `decideBranch`, and nothing else.
-// `activeVersion` and `titleVersion` are module-private inputs to
-// `integrationBranchName`. They used to be exported for the release-bump
-// derivation to reuse; REL-03 removed that consumer, because a RELEASE number
-// read from prose no path keeps current is how the wrong version ships. Branch
-// naming keeps the `### Active` -> ROADMAP-title precedence exactly as it was
-// (D-11): a misnamed branch is visible and recoverable, a mis-shipped version
-// is not.
+// Public surface: `integrationBranchName` and `decideBranch`, plus the three
+// readers they are built from - `activeVersion`, `titleVersion` and
+// `tagCarrying` - exported for exactly ONE other consumer, `planning.mjs
+// cmdAudit`'s `version_drift` signal (FRI-03). That consumer asks this module's
+// own question at a second moment: branch naming asks it before a cycle starts,
+// the audit asks it at the ship gate, and both must read the SAME prose with the
+// SAME `### Active` -> ROADMAP-title precedence. A second reader beside this one
+// is the drift this module's single-reader discipline exists to prevent.
+//
+// FOR DRIFT DETECTION ONLY. `activeVersion` and `titleVersion` used to be
+// exported for the release-bump derivation to reuse; REL-03 removed that
+// consumer, because a RELEASE number read from prose no path keeps current is
+// how the wrong version ships, and that ban STANDS - re-exporting them here
+// licenses reading the planning docs to REPORT a mismatch, never to derive a
+// number anything ships under. Branch naming keeps the precedence exactly as it
+// was (D-11): a misnamed branch is visible and recoverable, a mis-shipped
+// version is not.
 //
 // The published-version comparison (QW-04) enters here as an ARGUMENT, never as
 // a read: the seam does the `git tag --list` and hands the answer down, so this
@@ -45,7 +54,7 @@ const VERSION_RE = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
  * heading) for the first version token.
  * @param {string} projectText
  */
-function activeVersion(projectText) {
+export function activeVersion(projectText) {
   if (!projectText) return null;
   const lines = String(projectText).split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
@@ -62,7 +71,7 @@ function activeVersion(projectText) {
  * The version named in the first `# ` (level-1) heading of ROADMAP.md, or null.
  * @param {string} roadmapText
  */
-function titleVersion(roadmapText) {
+export function titleVersion(roadmapText) {
   if (!roadmapText) return null;
   const title = String(roadmapText).split('\n').find((l) => /^#\s/.test(l));
   if (!title) return null;
@@ -99,7 +108,7 @@ function stripLeadingV(v) {
  * @param {any} publishedVersions @param {string} version
  * @returns {string|null}
  */
-function tagCarrying(publishedVersions, version) {
+export function tagCarrying(publishedVersions, version) {
   const tags = Array.isArray(publishedVersions) ? publishedVersions
     : (typeof publishedVersions === 'string' && publishedVersions ? [publishedVersions] : []);
   for (const tag of tags) {
