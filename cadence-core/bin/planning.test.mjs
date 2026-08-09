@@ -4293,3 +4293,110 @@ test('lease-check: a staged path that is not valid UTF-8 is refused BY NAME, nev
   assert.deepEqual(r.unrepresentable, ['"src/caf\\351.js"']);
   assert.equal(r._exit, 1);
 });
+
+// --- --phase carries the caller's spelling, at every shape site (D-02) -------
+//
+// `String(Number('1.10'))` is `'1.1'`, so every seam that built a phase
+// directory from the NUMBER read a different phase's files and said ok:true
+// about it. These rows are the falsifying fixtures: a tree where both
+// spellings exist as separate directories, and a tree where the padded one
+// does not exist at all.
+
+test('lease-check: --phase 1.10 leases against phases/1.10, not phases/1.1', () => {
+  const { repo, dir } = leaseRepo({ phase: '1.1', files: ['one-one.txt'] });
+  const pdir = join(dir, 'phases', '1.10');
+  mkdirSync(pdir, { recursive: true });
+  writeFileSync(join(pdir, 'PLAN.md'), '---\nphase: 1.10\nfiles:\n  - one-ten.txt\n---\n# Plan\n');
+  stage(repo, 'one-ten.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1.10', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.plan_file, '.planning/phases/1.10/PLAN.md');
+  // ...and phase 1.1's own lease does NOT license 1.10's file.
+  const other = leaseCheck(repo, dir, ['--phase', '1.1', '--plan', '1']);
+  assert.equal(other.ok, false);
+  assert.equal(other.plan_file, '.planning/phases/1.1/PLAN.md');
+  assert.deepEqual(other.undeclared, ['one-ten.txt']);
+});
+
+test('lease-check: --phase 08 names phases/08, never answering about phases/8', () => {
+  const { repo, dir } = leaseRepo({ phase: 8, files: ['a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '08', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-plan');
+  assert.match(r.detail, /phases[/\\]08$/);
+  assert.equal(r.hint, '/cad-plan 08');
+});
+
+test('plan-overlap: --phase 08 reports no-phase-dir naming phases/08', () => {
+  const dir = makeTree({ roadmap: [{ n: 8, name: 'Eight' }], phases: { 8: { plan: true } } });
+  const r = run(['plan-overlap', '--phase', '08'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.match(r.detail, /phases[/\\]08 not found$/);
+  // ...and the legal spelling still answers.
+  assert.equal(run(['plan-overlap', '--phase', '8'], dir).ok, true);
+});
+
+test('plan-overlap: --phase 1.10 intersects phases/1.10\'s plans', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  // phases/1.1 holds a SINGLE plan; phases/1.10 holds two that overlap. A
+  // normalizing reader answers "fewer than two plans - nothing to intersect".
+  const one = join(dir, 'phases', '1.1');
+  mkdirSync(one, { recursive: true });
+  writeFileSync(join(one, 'PLAN.md'), '---\nphase: 1.1\nfiles:\n  - a.txt\n---\n# Plan\n');
+  const ten = join(dir, 'phases', '1.10');
+  mkdirSync(ten, { recursive: true });
+  writeFileSync(join(ten, 'PLAN-1.md'), '---\nphase: 1.10\nfiles:\n  - shared.txt\n---\n# Plan 1\n');
+  writeFileSync(join(ten, 'PLAN-2.md'), '---\nphase: 1.10\nfiles:\n  - shared.txt\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1.10'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.note, undefined);
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['shared.txt'] }]);
+  // The echoed phase stays the NUMBER - arithmetic and comparisons keep it.
+  assert.equal(r.phase, 1.1);
+});
+
+test('uat: --phase 1.10 reads phases/1.10/UAT.md, never phase 1.1\'s checklist', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { '1.1': { uat: [{ status: 'pass' }] } } });
+  const r = run(['uat', 'status', '--phase', '1.10'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-uat');
+  assert.match(r.detail, /phases[/\\]1\.10[/\\]UAT\.md not found$/);
+  // ...and `uat init` on 1.10 writes ITS OWN file, leaving 1.1's untouched.
+  const before = readFileSync(join(dir, 'phases', '1.1', 'UAT.md'), 'utf8');
+  mkdirSync(join(dir, 'phases', '1.10'), { recursive: true });
+  const init = run(['uat', 'init', '--phase', '1.10'], dir,
+    JSON.stringify([{ name: 'ten', expected: 'ten' }]));
+  assert.equal(init.ok, true, JSON.stringify(init));
+  assert.match(init.file, /phases[/\\]1\.10[/\\]UAT\.md$/);
+  assert.equal(readFileSync(join(dir, 'phases', '1.1', 'UAT.md'), 'utf8'), before);
+  // The frontmatter LABEL is the caller's spelling too.
+  assert.match(readFileSync(join(dir, 'phases', '1.10', 'UAT.md'), 'utf8'), /^phase: 1\.10$/m);
+});
+
+test('uat: a malformed --phase is refused in the shared wording, before any read', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { uat: [{ status: 'pass' }] } } });
+  for (const bad of ['-1', '1e21', 'abc']) {
+    const r = run(['uat', 'status', '--phase', bad], dir);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+  }
+});
+
+test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 8, name: 'Eight' }],
+    phases: { 8: { plan: true, planReqs: ['FLD-01'] } },
+    reqs: [],
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements\n\n## Active\n\n- **FLD-01**: x\n\n## Traceability\n\n'
+    + '| Requirement | Phase | Status |\n|---|---|---|\n');
+  const r = run(['seed-reqs', '--phase', '08'], dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.match(r.detail, /phases[/\\]08 not found$/);
+  // ...and the legal spelling seeds.
+  assert.deepEqual(run(['seed-reqs', '--phase', '8'], dir).seeded, ['FLD-01']);
+});

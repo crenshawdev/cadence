@@ -75,7 +75,7 @@ import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { requireCursorNumber, requireInt } from './lib/require-int.mjs';
+import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -285,7 +285,14 @@ function cmdCursorGet(dir) {
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
-  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  // The shared reader, for the refusal WORDING - and it keeps writing the
+  // numeric value on purpose. `parseCursor` returns a Number that `renumber`'s
+  // shift arithmetic, `cmdStatus`'s `parsed.phase === current` agreement test
+  // and `phase-plans.mjs`' `cursorPhase` all consume, so a raw-spelled cursor
+  // is a wider change than the `--phase` directory fix, and a half-raw cursor
+  // would be worse than a numeric one. Stated cost: a cursor set at
+  // `--phase 1.10` still renders `Phase: 1.1`.
+  const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
   }
@@ -479,8 +486,14 @@ function writeUat(dir, n, uat) {
 const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending'];
 
 function cmdUat(dir, sub, opts) {
-  const n = Number(opts.phase);
-  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'uat needs --phase <N>');
+  // The shared reader, replacing a bare `Number()` + NaN test: a malformed
+  // `--phase` is now refused in the same words on every seam, and `n` is the
+  // caller's own SPELLING - every use of it here is a path (`uatFile`, the
+  // FINDINGS.json path) or a label (`fm.phase`), never arithmetic, so
+  // `--phase 1.10` reads `phases/1.10` instead of phase 1.1's checklist.
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'uat needs --phase <N>');
+  const n = parsedPhase.raw;
 
   if (sub === 'init' || sub === 'refresh') {
     // stdin only - `--payload` is merge's flag. A literal `null` on stdin now
@@ -1288,9 +1301,12 @@ function cmdCriteriaCoverage(dir) {
 // caller branches on overlaps.length, like drift in status.
 // ---------------------------------------------------------------------------
 function cmdPlanOverlap(dir, opts) {
-  const n = Number(opts.phase);
-  if (!opts.phase || Number.isNaN(n)) return fail('bad-args', 'plan-overlap needs --phase <N>');
-  const pdir = join(dir, 'phases', String(n));
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'plan-overlap needs --phase <N>');
+  const n = parsedPhase.value;
+  // The DIRECTORY is the caller's spelling; only the echoed `phase` below is
+  // the number (D-02).
+  const pdir = join(dir, 'phases', parsedPhase.raw);
   const { plans: planFiles, nonconforming, missing } = listPlanFiles(pdir);
   if (missing) return fail('no-phase-dir', `${pdir} not found`);
 
@@ -1340,20 +1356,30 @@ function cmdPlanOverlap(dir, opts) {
 // never had (git log -S Traceability shows status-flip-only since c34ec8a).
 // ---------------------------------------------------------------------------
 function cmdSeedReqs(dir, opts) {
-  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
   const n = parsedPhase.value;
+  // The caller's own spelling, for the directory and for every diagnostic that
+  // names one (D-02). The Traceability rows and the echoed `phase` below stay
+  // NUMERIC, and that is a KNOWN identity collision rather than an oversight:
+  // `parseRequirements` and `audit` compare that cell against ROADMAP phase
+  // NUMBERS, so `seed-reqs --phase 1.10` reads `phases/1.10` and writes
+  // `| <id> | Phase 1.1 | Pending |`, merging the two sub-phases in the audit.
+  // Closing it means carrying the raw spelling through `parseCursor`,
+  // `renumber` and `audit` - wider than this fix - and it is queued in
+  // `.planning/CAPTURE.md` naming both surviving sites.
+  const pname = parsedPhase.raw;
 
   // #42/#45 rail: the flag is validated before any read.
   const reqFile = join(dir, 'REQUIREMENTS.md');
   const reqText = read(reqFile);
   if (reqText === null) return fail('no-requirements', `${reqFile} not found`);
 
-  const pdir = join(dir, 'phases', String(n));
+  const pdir = join(dir, 'phases', pname);
   let planFiles = [];
   try { planFiles = readdirSync(pdir).filter((f) => /^PLAN(-\d+)?\.md$/.test(f)).sort(); }
   catch { return fail('no-phase-dir', `${pdir} not found`); }
-  if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${n}`);
+  if (!planFiles.length) return fail('no-plans', `no PLAN(-N).md under ${pdir}`, `/cad-plan ${pname}`);
 
   // Ids in plan-file order, union first-occurrence-wins across the phase's
   // plan(s); frontmatter issues carried in the same {file, issues} shape
@@ -1365,7 +1391,7 @@ function cmdSeedReqs(dir, opts) {
   for (const f of planFiles) {
     const { ids: fileIds, issues } = parsePlanRequirements(read(join(pdir, f)) || '');
     for (const id of fileIds) if (!seenIds.has(id)) { seenIds.add(id); ids.push(id); }
-    if (issues.length) frontmatterIssues.push({ file: `phases/${n}/${f}`, issues });
+    if (issues.length) frontmatterIssues.push({ file: `phases/${pname}/${f}`, issues });
   }
 
   // Bound by ## Active (D-06): an id with no bullet there is scope creep or
@@ -1633,7 +1659,7 @@ function parseStagedNameStatus(out) {
 }
 
 function cmdLeaseCheck(dir, opts) {
-  const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+  const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'lease-check needs --phase <N>');
   const parsedPlan = requireInt(opts.plan);
   if (!parsedPlan.ok) return fail('bad-args', 'lease-check needs --plan <k>');
@@ -1642,7 +1668,11 @@ function cmdLeaseCheck(dir, opts) {
 
   // `k` is the number in PLAN-<k>.md, and 1 for a bare PLAN.md - the same
   // convention the executor's report path follows.
-  const pdir = join(dir, 'phases', String(n));
+  //
+  // The phase DIRECTORY is the caller's own spelling (D-02): `--phase 1.10`
+  // leased against `phases/1.1/PLAN.md` and passed a gate the wrong plan file
+  // declared. `common.phase` below stays the number.
+  const pdir = join(dir, 'phases', parsedPhase.raw);
   let planFile = join(pdir, `PLAN-${k}.md`);
   let text = read(planFile);
   if (text === null && k === 1) {
@@ -1650,7 +1680,7 @@ function cmdLeaseCheck(dir, opts) {
     text = read(planFile);
   }
   if (text === null) {
-    return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${n}`);
+    return fail('no-plan', `no PLAN-${k}.md or PLAN.md under ${pdir}`, `/cad-plan ${parsedPhase.raw}`);
   }
   const { files: declared, issues } = parsePlanFiles(text);
 
@@ -1852,7 +1882,7 @@ function cmdDetectCommands(root) {
 // ---------------------------------------------------------------------------
 function cmdTrace(dir, sub, opts) {
   if (sub === 'append') {
-    const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+    const parsedPhase = requirePhaseArg(opts.phase);
     if (!parsedPhase.ok) return fail('bad-args', 'trace append needs --phase <N>');
     const family = typeof opts.family === 'string' ? opts.family : '';
     if (!FAMILIES.includes(family)) {
@@ -1861,7 +1891,14 @@ function cmdTrace(dir, sub, opts) {
     const event = typeof opts.event === 'string' && opts.event ? opts.event : '';
     if (!event) return fail('bad-args', 'trace append needs --event <name>');
     const res = appendEvent(dir, {
-      phase: parsedPhase.value,
+      // The caller's SPELLING, which is what separates `1.10` from `1.1`:
+      // normalized, both phases shared one trace key and one correlation id, so
+      // the record joined two phases into one story. `lib/trace.mjs`'s `key()`
+      // stringifies both sides of every comparison, so the derived id, the
+      // render filter and the dispatch/terminal pairing all keep working
+      // against traces written before this change and lib/trace.mjs needs no
+      // edit.
+      phase: parsedPhase.raw,
       family,
       event,
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
@@ -1877,9 +1914,9 @@ function cmdTrace(dir, sub, opts) {
   if (sub === 'render') {
     let phase;
     if (opts.phase !== undefined) {
-      const parsedPhase = requireCursorNumber(opts.phase, { decimal: true });
+      const parsedPhase = requirePhaseArg(opts.phase);
       if (!parsedPhase.ok) return fail('bad-args', 'trace render --phase must be a phase number');
-      phase = parsedPhase.value;
+      phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
     return ok({

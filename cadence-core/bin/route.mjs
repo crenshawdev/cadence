@@ -52,7 +52,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
-import { requireInt } from './lib/require-int.mjs';
+import { requireInt, requirePhaseArg } from './lib/require-int.mjs';
 import {
   matchSurfaces, raiseTo, riskOverridesIn, overrideShapeWarning, GLOBAL_LAYER,
 } from './lib/risk-surfaces.mjs';
@@ -79,9 +79,11 @@ const DEFAULTS = { stakes: 'shipped', escalate_on_failure: true };
 // intact on the very input shape the check exists to cover.
 const DEFAULT_GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
 
-// The shape a `--phase` value must have: an integer phase, or a decimal
-// insertion (`2.1`), which is the phase directory's own name.
-const PHASE_RE = /^\d+(\.\d+)?$/;
+// The `--phase` shape rule lives in ONE place (`lib/require-int.mjs`'s
+// `requirePhaseArg`, imported above), not in a local regex per script: three
+// independent copies is how the same input came to be refused in three
+// different wordings, and how the directory component came to be normalized on
+// some surfaces and not others.
 
 // D-09 by ROLE. These two dispatches happen BEFORE the phase they are about has
 // a PLAN, so there is no declared file list to floor them off - and the "no PLAN
@@ -225,12 +227,16 @@ function riskFloor(opts, cfg, reason, warnings) {
   // worse than the value the user typed. Only an ABSENT flag reaches the cursor.
   let phase = null;
   if (opts.phase !== undefined) {
-    if (!PHASE_RE.test(String(opts.phase))) {
+    const parsed = requirePhaseArg(opts.phase);
+    if (!parsed.ok) {
       warnings.push(`--phase "${opts.phase}" is not a phase number; no risk floor was `
         + `computed and this resolved at the ${baseline} baseline`);
       return { level: baseline, floorSurfaces: [] };
     }
-    phase = String(opts.phase);
+    // The caller's own spelling (D-02), never a normalized one: this is a
+    // DIRECTORY component two lines down, and a floor computed from a different
+    // phase's file list is not a safe-direction superset.
+    phase = parsed.raw;
   } else {
     const cursor = cursorPhase(root);
     // no phase in hand: no floor, silently
@@ -587,8 +593,9 @@ function resolve(opts) {
     // The same phase the floor used: `--phase` when it parses, the cursor
     // otherwise. With NEITHER in hand nothing is recorded - an event keyed to no
     // phase joins nothing, and the id it would derive is the empty string.
-    const tracePhase = opts.phase !== undefined && PHASE_RE.test(String(opts.phase))
-      ? Number(opts.phase)
+    const parsedTracePhase = requirePhaseArg(opts.phase);
+    const tracePhase = opts.phase !== undefined && parsedTracePhase.ok
+      ? parsedTracePhase.raw
       : cursorPhase(planningRoot);
     if (tracePhase !== null) {
       appendEvent(planningRoot, {

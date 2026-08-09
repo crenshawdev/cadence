@@ -301,6 +301,29 @@ test('seam: a malformed call is ok:false, an unwritten append is ok:true', () =>
   assert.equal(r.reason, 'ENOTDIR');
 });
 
+test('seam: 1.1 and 1.10 are two phases, not one trace key (D-02)', () => {
+  // The defect recalled from phase 1's queue: `--phase` was read as a NUMBER, so
+  // `1.10` normalized to `1.1` and both sub-phases shared one key and one
+  // correlation id - the record joined two phases into one story.
+  const dir = root();
+  const a = run(dir, ['trace', 'append', '--phase', '1.1', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'aaa1111']);
+  const b = run(dir, ['trace', 'append', '--phase', '1.10', '--family', 'lifecycle',
+    '--event', 'phase_start', '--sha', 'bbb2222']);
+  assert.equal(a.corr, '1.1-aaa1111');
+  assert.equal(b.corr, '1.10-bbb2222');
+
+  const ten = run(dir, ['trace', 'render', '--phase', '1.10']);
+  assert.equal(ten.corr, '1.10-bbb2222');
+  assert.equal(ten.events.length, 1, JSON.stringify(ten.events));
+  assert.equal(ten.events[0].phase, '1.10');
+
+  const one = run(dir, ['trace', 'render', '--phase', '1.1']);
+  assert.equal(one.corr, '1.1-aaa1111');
+  assert.equal(one.events.length, 1, JSON.stringify(one.events));
+  assert.equal(one.events[0].phase, '1.1');
+});
+
 test('seam: render on an absent trace file is ok:true with empty events', () => {
   const dir = root();
   const r = run(dir, ['trace', 'render', '--phase', '1']);

@@ -45,3 +45,28 @@ export function requireCursorNumber(raw, opts = {}) {
   if (!re.test(String(n))) return { ok: false };
   return { ok: true, value: n };
 }
+
+/**
+ * THE `--phase` reader (D-02). Same shape rule as `requireCursorNumber`'s
+ * decimal form, and one field more: the caller's OWN spelling, trimmed.
+ *
+ * A phase number is two different things at once - a directory component and an
+ * arithmetic value - and `String(Number(x))` is not a round trip for the first
+ * of them. `--phase 1.10` normalized to `1.1` READ A DIFFERENT PHASE'S
+ * DIRECTORY, silently and with an ok:true envelope, and `--phase 08` answered
+ * about `phases/8`. So `raw` is what every path and every directory-naming
+ * diagnostic is built from, and `value` is kept for arithmetic and comparisons
+ * ONLY (a `total`, an `=== current`, a ROADMAP phase number).
+ *
+ * The `String(n)` round trip inside `requireCursorNumber` is still doing work
+ * here even though the raw string is what gets used: it is what refuses a
+ * digits-only value large enough that `String()` yields `1e+21`, which stays
+ * arithmetic-poison for the `value` half no matter how the directory is spelled.
+ * @param {unknown} raw
+ * @returns {{ok: true, raw: string, value: number} | {ok: false}}
+ */
+export function requirePhaseArg(raw) {
+  const parsed = requireCursorNumber(raw, { decimal: true });
+  if (!parsed.ok) return { ok: false };
+  return { ok: true, raw: String(raw).trim(), value: parsed.value };
+}
