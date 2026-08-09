@@ -186,6 +186,10 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| DFC-01 | Phase 1 | Pending |
+| DFC-02 | Phase 1 | Pending |
+| DFC-03 | Phase 1 | Pending |
+| DFC-04 | Phase 1 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
