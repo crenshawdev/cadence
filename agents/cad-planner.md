@@ -4,6 +4,7 @@ description: The `high` rung of `cad-planner` (phase plan authoring); `bin/route
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: green
 effort: high
+maxTurns: 400
 skills:
   - cad-planner-contract
 ---

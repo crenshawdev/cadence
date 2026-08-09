@@ -4,6 +4,7 @@ description: The `xhigh` rung of `cad-planner`; `bin/route.mjs` picks it, not th
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: green
 effort: xhigh
+maxTurns: 400
 skills:
   - cad-planner-contract
 ---

@@ -5,6 +5,7 @@ tools: Read, Bash, Glob, Grep
 disallowedTools: Write, Edit, MultiEdit
 color: green
 effort: xhigh
+maxTurns: 400
 skills:
   - cad-plan-checker-contract
 ---

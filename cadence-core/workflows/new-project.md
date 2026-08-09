@@ -164,6 +164,13 @@ plus Sources and a confidence level per recommendation. Write the file
 first, then return a one-paragraph summary.
 ```
 
+This agent is the one Cadence dispatch path with NO `maxTurns` runaway bound,
+and it is excluded deliberately rather than overlooked: `maxTurns` is per-FILE
+frontmatter, this pass dispatches a generic host agent Cadence owns no file for,
+and minting a 20th rung file to bound one optional research pass would cost a
+`route-table.json` rung row plus both directions of self-verify's rung checks.
+Its bound is `workflow.subagent_timeout` alone - wall-clock, not turns.
+
 On return, verify `.planning/research/RESEARCH.md` exists and is non-empty.
 If the agent returned the document inline without writing it, write the file
 yourself from the returned content. If the pass failed outright, say so in
