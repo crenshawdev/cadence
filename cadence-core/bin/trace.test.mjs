@@ -760,6 +760,18 @@ test('census: every trace family has a producer, and every producer speaks the r
       `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${returned.length} `
       + '`--event return` close(s). Each dispatch moment writes its own; one of them is '
       + 'unclosed on its success path.');
+    // ...and the FAILURE arm counted the same way. The two assertions above
+    // both stay green when every `checkpoint` close is deleted - four
+    // dispatches, four returns, four terminals - so neither of them protects
+    // the arm that closes a dispatch which came back unusable. That arm is the
+    // load-bearing one for this phase's whole point: a worker that burned its
+    // budget and returned nothing parseable is exactly the cost that must
+    // still reach the record, and its `return` form never fires.
+    const checkpointed = own.filter((p) => String(p.event) === 'checkpoint');
+    assert.ok(checkpointed.length >= dispatched.length,
+      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${checkpointed.length} `
+      + '`--event checkpoint` close(s). Each dispatch moment writes its own; one of them is '
+      + 'unclosed on its FAILURE path, so a worker that came back unusable goes unbilled.');
   }
 
   // --- every bracket half is keyed, and every dispatch names what it caused ---
