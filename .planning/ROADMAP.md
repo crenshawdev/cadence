@@ -29,6 +29,18 @@ evidence", added earlier the same day from an external audit, was cut as a phase
 and demoted to one task in the doc sweep. The rule applied: a defect that is
 real but has never hit anyone waits behind one that is hitting someone now.
 
+**Phase 4 added 2026-08-08, after the rescope, and it is not a reversal of it.**
+Token accounting is an INSTRUMENT, not a fix: the cycle's direction turned toward
+reducing burn, and nothing in Cadence measures burn at all. `weight.mjs` counts
+static prose bytes, the trace's provider family records no cost, and the token
+figures that exist live in subagent return metadata that nothing consumes. It
+takes its own phase rather than joining phase 3 because phase 3 already holds
+four requirements and the resolved `workflow.max_plan_tasks` ceiling is 8 -
+saying so is the point of having a ceiling. It also gates the next cycle's plan,
+which is to run `v2.6.0` against `hindsight`: that project's three-doc planning
+set is 27,596 B against this repo's 85,413, so the exploration cost is visible
+there instead of swamped.
+
 **The rest of this Overview is the `v2.5.0` record and every phase number in it
 is a v2.5.0 number.** It is kept because the scoping arguments still bind the
 four phases below; read `phase 1`/`phase 2` there as the two that shipped, and
@@ -92,7 +104,8 @@ each release tag are their archive.
 - [x] **Phase 1: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 2: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
 - [ ] **Phase 3: Field friction** - what is broken for Cadence's users right now: named phase dirs the seams cannot address, a run record every project commits by default, and a shortcut marker that reaches the queue
-- [ ] **Phase 4: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
+- [ ] **Phase 4: Token accounting** - what a dispatch costs is recorded where it happens, and every dispatch site is bracketed, so efficiency work stops being guesswork
+- [ ] **Phase 5: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
 
@@ -149,10 +162,24 @@ survey found actually broken take the space.
 5. A deliberate corner-cut carries a marker at its location in the code naming the shortcut's ceiling and the trigger that should prompt revisiting it, and a harvest collects those markers into `.planning/CAPTURE.md`. The marker token is distinct from the 19 conventional markers already in the tree (14 `TODO`, 2 `NOTE`, 1 each `XXX`/`HACK`/`FIXME`, none of them linted), so the harvest's first run over this repo returns only planted markers and zero of those 19. The harvest is a seam with its `CONTRACTS` row, not a documented grep, because only a seam can be idempotent and carry a test - and it must be idempotent: `.planning/CAPTURE.md` is gitignored here and in `burnrate` but tracked in `hindsight` and `assistant`, so the marker in tracked code is the durable record and the queue is a regenerable view of it.
 6. A regression test proves the harvest finds a planted marker and does not invent one, and each fix in this phase lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
 
-### Phase 4: Doc sweep
+### Phase 4: Token accounting
+**Goal:** What a dispatch costs is recorded at the moment it returns, at every
+site that dispatches, and rendered per role - so a claim about Cadence's token
+burn can be checked instead of felt.
+**Depends on:** Phase 2
+**Requirements:** TOK-03, TOK-04
+**Success Criteria:**
+1. `trace append` accepts a numeric token count on a lifecycle `return` and stores it on the event. `renderEvent` already spreads unknown fields onto the line, so the field survives without a library schema change; what is new is the CLI flag, its numeric validation, and its `CONTRACTS` row in the same task.
+2. Every site that dispatches a worker brackets it. Today only `execute.md` and `verify-deep.md` do: `context.md` (1 dispatch), `plan.md` (3) and `review-triggers.md` (every reviewer, which records an adjudication outcome but no lifecycle bracket) have none. Measured on the session that scoped this phase, 71% of subagent spend happened at unbracketed sites - 206,901 tokens for the assumptions analyzer, 346,882 for planner plus checker plus revision, 219,068 for two reviewers, against 310,503 for the two that were bracketed. A token field alone would have measured the cheaper 29%.
+3. `trace render` reports per-role totals - tokens and dispatch count per worker key - beside the four family counts it already prints, so the expensive role in a phase is named rather than inferred.
+4. A phase run end to end produces a trace whose per-role totals are non-zero for every role that ran, and a role that ran with no token figure available is reported as `unrecorded` rather than as zero. The two are different claims and the render does not conflate them.
+5. The trace records the read-set each dispatch was told to consume - the planning-doc paths named in its prompt - so the duplicate-read fraction is computed from the record rather than estimated. Measured motivation: `PROJECT + REQUIREMENTS + ROADMAP + CONTEXT` is 85,413 B (~21.4K tokens) in this repo, five dispatches were told to read that same set for phase 2's planning, and whether that ~107K of identical bytes is 15% of the phase's spend or 40% is currently unanswerable.
+6. `node --test cadence-core/bin/*.test.mjs`, `npx tsc -p tsconfig.ci.json` and `self-verify --root .` are green with `weight-budgets.json` regenerated for every surface this phase edits.
+
+### Phase 5: Doc sweep
 **Goal:** What Cadence claims about itself matches what it does, and the next
 cycle starts from a diff rather than a fresh sweep.
-**Depends on:** Phases 2, 3 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
+**Depends on:** Phases 2, 3, 4 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
 **Requirements:** DOC-02, DOC-03, EVD-02
 **Success Criteria:**
 1. `/cad-docs-verify` runs across `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md`, and its output is committed in the phase record.
