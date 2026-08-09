@@ -2059,6 +2059,37 @@ test('audit: the SAME tagged version with every phase complete is the interrupte
   assert.equal(r.version_drift, undefined);
 });
 
+test('audit: a phase whose checklist holds only a blocked item does not hold the cycle open', () => {
+  // `blocked` is TERMINAL (verify.md) and `uatComplete` refuses it, so this
+  // phase can never derive complete. Under a complete-only exemption the gate
+  // would FAIL forever with "complete the close" unreachable as a remedy.
+  const dir = taggedTree({
+    roadmap: [{ n: 1, name: 'One', checked: true }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: true,
+      uat: [{ status: 'pass' }, { status: 'blocked', reason: 'needs the device' }] } },
+    reqs: [['AUD-01', 1, 'Complete']],
+  }, { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined);
+});
+
+test('audit: one still-answerable item beside a blocked one keeps the cycle open', () => {
+  // The complement of the case above: `pending` is what "still being worked
+  // under a published number" looks like, and the blocked item beside it
+  // changes nothing.
+  const dir = taggedTree({
+    roadmap: [{ n: 1, name: 'One', checked: false }],
+    phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: true,
+      uat: [{ status: 'pending' }, { status: 'blocked', reason: 'needs the device' }] } },
+    reqs: [['AUD-01', 1, 'Pending']],
+  }, { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
 test('audit: a doc version that merely SORTS BELOW the newest tag is not drift - membership, not order', () => {
   // D-04: `v9.9.0` published by nothing while `v9.9.1` exists is a legitimate
   // maintenance milestone, and the retired scalar comparand refused exactly it.

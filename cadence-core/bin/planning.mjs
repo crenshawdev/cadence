@@ -1004,8 +1004,23 @@ function cmdAudit(dir) {
     ? tagCarrying(readTags(dir), normalizeTargetVersion(docVersion)) : null;
   // Derived phase status, not the roadmap checkbox: "finish the close" means the
   // artifacts say complete. Same test cmdStatus uses to find the current phase.
+  //
+  // "Complete" alone is too narrow a test for the exemption, because one phase
+  // shape can never reach it: `uatComplete` refuses a `blocked` item and
+  // verify.md makes `blocked` TERMINAL - nothing returns an item to the walk
+  // from it. A phase parked there would hold the cycle open forever and pin the
+  // gate at FAIL with one of audit.md's two exits permanently unreachable. So a
+  // phase also stops holding the cycle open when its checklist has nothing left
+  // that can be ANSWERED: every item pass, skipped-with-reason, or blocked.
+  // That is the close's own definition of finished work, minus the arm the walk
+  // cannot revisit. It does not weaken #87: a cycle being worked under a
+  // published number has pending or failed items, or no checklist at all.
+  const settled = (p) => p.status === 'complete'
+    || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
+      i.status === 'pass' || i.status === 'blocked'
+      || (i.status === 'skipped' && i.reason)));
   const cycleOpen = publishedAs !== null
-    && derivePhases(dir, [...roadmap.values()]).some((p) => p.status !== 'complete');
+    && derivePhases(dir, [...roadmap.values()]).some((p) => !settled(p));
 
   ok({
     requirements,

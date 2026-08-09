@@ -107,8 +107,9 @@ requirement id.
   #87's failure mode - a cycle planned, branched and worked under a number that
   already shipped - and it is invisible to every other key here. `published_as`
   is the tag spelling that carries it. Two exits: open the NEXT version in
-  `PROJECT.md ### Active` (and the ROADMAP title, if it names one), or - if the
-  cycle really is finished - complete the close so no phase is left open.
+  `PROJECT.md ### Active` (and the ROADMAP title, if it names one) - the exit
+  that always exists, and the right one when the tag is already cut - or, if the
+  cycle really is finished, complete the close so no phase is left open.
 
 ## 4. Verdict
 Arithmetic over both seam calls - in-scope `counts.broken` (after any milestone
@@ -156,9 +157,13 @@ by someone re-deriving it:
 - A doc version NO tag carries is the ordinary mid-cycle state - the docs are
   supposed to run ahead of the last release. The key is absent, and that absence
   is not a near-miss to report.
-- A tagged doc version with EVERY phase complete is exempt: that is exactly what
+- A tagged doc version with no phase left OPEN is exempt: that is exactly what
   a close interrupted between `milestone.md` step 2 (the tag) and step 4 (the
-  PROJECT.md evolve) leaves on disk, and the user is already finishing it.
+  PROJECT.md evolve) leaves on disk, and the user is already finishing it. Open
+  means answerable, not merely un-Complete - a phase whose checklist holds only
+  passes, skipped-with-reason items and `blocked` ones has nothing left the walk
+  can return to, and `blocked` is terminal, so a Complete-only test would pin
+  such a repo at FAIL with the second exit above permanently out of reach.
 - A version that merely sorts BELOW the newest tag was published by nothing. The
   test is membership in the tag list, not order.
 
