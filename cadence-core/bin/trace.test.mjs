@@ -381,9 +381,23 @@ test('seam: --plan and --role are two separate fields on the same event', () => 
   assert.equal(e.role, 'cad-executor');
 });
 
+test('seam: --tokens accepts the comma grouping this plugin prints figures in', () => {
+  // context.md prints `cad-planner 146,405` three lines from the --tokens
+  // order that copies it, so the grouped form is the transcription the prose
+  // models. Refusing it dropped the whole append and stranded the worker
+  // unpaired, which is worse than the recording error it was refusing.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-planner', '--tokens', '146,405']);
+  assert.equal(r.ok, true);
+  const [e] = lines(dir);
+  assert.equal(e.tokens, 146405);
+  assert.equal(typeof e.tokens, 'number');
+});
+
 test('seam: a malformed --tokens appends NOTHING at all', () => {
   const dir = root();
-  for (const bad of ['abc', '-1', '1.5', '']) {
+  for (const bad of ['abc', '-1', '1.5', '', '1,2,3', '146,40']) {
     const before = traceBytes(dir);
     const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
       '--event', 'return', '--plan', '1', '--role', 'cad-executor', '--tokens', bad]);

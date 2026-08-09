@@ -2138,9 +2138,21 @@ function cmdTrace(dir, sub, opts) {
     // role `unrecorded` while the caller believes a figure was recorded, which
     // is exactly the zero/unrecorded/recorded conflation the per-role block
     // exists to prevent. So nothing at all is appended here.
+    // One exception to "malformed value, nothing appended": a COMMA-GROUPED
+    // integer. This plugin prints token figures grouped (context.md's measured
+    // block reads `cad-planner 146,405`) three lines from the `--tokens` order
+    // that copies them, so `--tokens 146,405` is the transcription the prose
+    // itself models. Refusing it drops the append, and the `dispatch` half is
+    // already written, so the worker is stranded in renderTrace's unpaired[]
+    // forever - escalating a recording error into loss of the bracket it was
+    // recording. Grouping is stripped only in the strict 3-digit shape, so
+    // `1,2,3` and `146,40` are still malformed CALLS and still refused.
     let tokens;
     if ('tokens' in opts) {
-      const parsed = requireInt(opts.tokens);
+      const raw = typeof opts.tokens === 'string' && /^\d{1,3}(?:,\d{3})+$/.test(opts.tokens.trim())
+        ? opts.tokens.trim().replace(/,/g, '')
+        : opts.tokens;
+      const parsed = requireInt(raw);
       if (!parsed.ok || parsed.value < 0) {
         return fail('bad-args', 'trace append --tokens needs a non-negative integer');
       }
