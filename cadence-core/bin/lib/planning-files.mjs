@@ -1021,6 +1021,42 @@ export function sectionBound(lines) {
 }
 
 /**
+ * BOTH ends of one `## ` section, as absolute indices into `lines`:
+ * `{start, end}`, where `start` is the heading's own line and `end` is the next
+ * `## ` heading after it (or `lines.length` when the section runs to the end).
+ * `start` is -1 when the heading does not occur outside a fence, and `end` is
+ * then -1 too.
+ *
+ * Both ends, one scanner, ONE walk - which is the whole point. `sectionBound`
+ * fixed the END only, so a caller still had to find the heading itself, and the
+ * obvious `lines.findIndex((l) => l.trim() === heading)` carries no fence state:
+ * a fenced EXAMPLE of the heading in an earlier section was taken as the real
+ * one, and the rewrite then started inside somebody's code block. Worse than the
+ * end-boundary bug it mirrors, because the scan that resumed at that false start
+ * read the block's CLOSING fence as an opener and swallowed every heading after
+ * it - `.planning/CAPTURE.md` lost `## Seeds` and `## Notes` outright. A start
+ * found by a fence-blind test cannot be repaired by a fence-aware end, so the
+ * two ends belong in one function and callers get them together.
+ * @param {string[]} lines @param {string} heading
+ * @returns {{start: number, end: number}}
+ */
+export function sectionSpan(lines, heading) {
+  const fenced = fenceScanner();
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    // The scanner is fed EVERY line in order and never restarted, so the fence
+    // state at `start` is the state a reader of the whole document would have.
+    if (fenced(lines[i])) continue;
+    if (start < 0) {
+      if (lines[i].trim() === heading) start = i;
+      continue;
+    }
+    if (/^## /.test(lines[i])) return { start, end: i };
+  }
+  return { start, end: start < 0 ? -1 : lines.length };
+}
+
+/**
  * Parse UAT: full frontmatter + items with their field lines. Counts are
  * always recomputed from the items, never read from Summary.
  *

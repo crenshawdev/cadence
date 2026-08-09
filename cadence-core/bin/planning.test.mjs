@@ -4837,6 +4837,36 @@ test('debt-harvest: the section bound reads a fence, so stale debris cannot surv
   assert.equal((body.match(/```/g) || []).length, 0, 'an unclosed fence was left behind');
 });
 
+test('debt-harvest: a FENCED example of the owned heading is not mistaken for it', () => {
+  // The START boundary, which `sectionBound` never covered: the two rows above
+  // both hand `replaceSection` a heading it finds in the right place, and a bare
+  // `lines.findIndex((l) => l.trim() === heading)` passes them. Here the document
+  // has NO real `## Debt markers` - only a fenced EXAMPLE of one inside a `##
+  // Todos` bullet - so a fence-blind search anchors the rewrite inside that code
+  // block. The scan then resumes mid-fence, reads the block's CLOSING fence as an
+  // opener, finds no boundary at all, and every later section is replaced by the
+  // new body: `## Seeds` and `## Notes` disappear outright. The correct answer is
+  // to leave the example alone and APPEND a real section at the end.
+  const root = debtRepo();
+  writeFileSync(join(root, '.planning', 'CAPTURE.md'),
+    '## Todos\n\n- [ ] document the marker grammar, like:\n\n```md\n## Debt markers\n'
+    + '- `src/x.js:1` an example bullet\n```\n\n'
+    + '## Seeds\n\n- [ ] a seed\n\n## Notes\n\n- keep me\n');
+  debtAdd(root, 'src/a.js', `// ${debtLine('a cut', 'c', 't')}\n`);
+  harvest(root);
+  const body = captureOf(root);
+  assert.match(body, /- \[ \] a seed/, '## Seeds was destroyed by a false start boundary');
+  assert.match(body, /- keep me/, '## Notes was destroyed by a false start boundary');
+  assert.match(body, /- \[ \] document the marker grammar/);
+  assert.match(body, /an example bullet/, 'the fenced example was rewritten');
+  assert.equal((body.match(/```/g) || []).length, 2, 'fence count must stay even');
+  // ...and the real section landed, appended after the document rather than into
+  // the example.
+  assert.match(body, /a cut/);
+  assert.ok(body.indexOf('- keep me') < body.lastIndexOf('## Debt markers'),
+    'the real section must be appended AFTER the existing content');
+});
+
 test('debt-harvest: a TRACKED CAPTURE.md already holding a section stays idempotent', () => {
   // The self-ingestion guard: `.planning/` is skipped, so the harvest's own
   // output is never read back as a marker even where the queue is tracked.

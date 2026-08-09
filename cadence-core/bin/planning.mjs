@@ -71,7 +71,7 @@ import {
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
-  sectionBound,
+  sectionBound, sectionSpan,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
@@ -2448,24 +2448,26 @@ const DEBT_HEADING = '## Debt markers';
 /**
  * Replace `heading`'s body wholesale, or append the section when it is absent.
  *
- * Bounded by the EXPORTED `sectionBound` rather than a second fence scanner
- * (D-12): a `## ` line inside a fenced block in someone's `## Todos` bullet must
- * not be read as the section boundary, or the rewrite truncates their bullet
- * mid-fence and leaves an odd fence count behind it.
+ * Bounded at BOTH ends by the EXPORTED `sectionSpan` rather than a second fence
+ * scanner (D-12): a `## ` line inside a fenced block in someone's `## Todos`
+ * bullet must not be read as the section boundary - nor as the section's START.
+ * Finding the heading with a bare `findIndex` was the second half of that same
+ * bug and the more destructive one: a fenced example of `## Debt markers` in an
+ * earlier section became the rewrite's anchor, and everything from inside that
+ * code block onward - `## Seeds`, `## Notes`, their bullets - was replaced by
+ * the new body.
  * @param {string} text @param {string} heading @param {string} body
  * @returns {string}
  */
 function replaceSection(text, heading, body) {
   const lines = text.split('\n');
-  const at = lines.findIndex((l) => l.trim() === heading);
-  if (at < 0) {
+  const { start, end } = sectionSpan(lines, heading);
+  if (start < 0) {
     const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
     return `${text}${sep}${heading}\n\n${body}`;
   }
-  const after = lines.slice(at + 1);
-  const bound = sectionBound(after);
-  const tail = bound < 0 ? [] : after.slice(bound);
-  return `${lines.slice(0, at + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
+  const tail = lines.slice(end);
+  return `${lines.slice(0, start + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
 }
 
 function cmdDebtHarvest(root) {
