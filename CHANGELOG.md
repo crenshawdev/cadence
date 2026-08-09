@@ -9,9 +9,17 @@ All notable changes to Cadence are recorded here. The format follows
 ## [2.6.1] - 2026-08-09
 
 The four defects `2.6.0`'s own doc sweep found and filed rather than reworded
-away. One phase, six commits. Every one of them ships with a check that was
-watched to fail against the unpatched code first, because a check nobody has
-seen fail is a guess wearing a verdict.
+away, plus what the pre-ship review caught on the way out. One phase and a
+review pass, 14 commits. Every fix here ships with a check that was watched to
+fail against the unpatched code first, because a check nobody has seen fail is
+a guess wearing a verdict.
+
+The review pass is why this is 14 commits and not six. A cross-model reviewer
+over the branch diff returned eight findings and every one of them held up
+against the tree, including a blocking review gate that could not fire at all
+and a harvester reporting itself as technical debt. Two of them were defects in
+the fixes for the other six, caught by re-firing the same gate against the tree
+that actually ships.
 
 ### Fixed
 
@@ -45,6 +53,51 @@ seen fail is a guess wearing a verdict.
   executor and no checkpoint, so it produced a shape-(c) path the row did not
   describe. The qualifier is gone; `cadence-core/workflows/task.md` keeps its
   named transient path, its never-stage rule and its delete-on-return cleanup.
+
+- **`/cad-task`'s `risk_surface` fire could not run at all on the inline path.**
+  The step told the model to write the flagged diff to
+  `.planning/tasks/{slug}/risk-task-{slug}.diff`, but `{slug}` and that
+  directory are created only by the PLANNED path, which itself declines to
+  create them when `.planning/` is absent. On an inline task, or in any repo
+  with no `.planning/`, the redirect failed `No such file or directory` and the
+  trigger is `blocking` at every level, so this was a blocking gate that could
+  not fire rather than one that passed. The planned path keeps the named path
+  it already owns; inline writes to `${TMPDIR:-/tmp}` and leaves no directory
+  behind.
+
+- **`trace append --tokens 146,405` no longer throws the whole append away.**
+  A malformed `--tokens` appends nothing by design, so that the caller cannot
+  believe a figure was recorded when it was dropped. But this plugin prints
+  token figures comma-grouped three lines above the order that copies them, so
+  the grouped form is the transcription its own prose models. Refusing it left
+  the `dispatch` half of the bracket open and the worker stranded `unpaired`
+  forever, which escalates a recording error into loss of the bracket it was
+  recording. Grouping is stripped only in the strict 3-digit shape, so `1,2,3`
+  and `146,40` are still refused.
+
+- **The technical-debt harvester stopped reporting itself as technical debt.**
+  `markerSegments`' doc comment spelled the marker token followed by a colon,
+  so `debt-harvest` found exactly one marker in the whole tree and it was the
+  file doing the finding: a corner-cut that does not exist, landing in the
+  queue a human triages. Both the note above `DEBT_TOKEN` and
+  `conventions.md` already stated that documentation never writes a literal
+  marker line.
+
+- **The four `docs/EVIDENCE.md` tables nothing was checking are now pinned.**
+  The byte checks above covered the twelve-largest table and the per-directory
+  subtotals. The turn-one table, eager-vs-reachable, zero-resident and dispatch
+  are measured by a different seam and were asserted against nothing, so adding
+  a sentence to any workflow and re-pinning its budget left `/cad-execute`'s
+  turn-one and reachable figures both silently wrong. The file also stops
+  naming a provenance commit, which is the same staleness one level up.
+
+- **The planning docs agree on which milestone is open.** The `v2.6.1` close
+  ran the manifest bump and the phase prune and stopped, leaving `DFC-01..04`
+  pointing at a phase the prune had removed: `/cad-audit` returned 4/4 broken,
+  a hard FAIL, so the next milestone would have halted at its own gate before
+  it could tag. `PROJECT.md` separately still called `v2.5.0` the current
+  release, two releases behind the manifest, and `CONTRIBUTING.md` still
+  described the byte-budget check as failing only on growth.
 
 ### Changed
 
