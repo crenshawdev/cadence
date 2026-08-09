@@ -199,6 +199,10 @@ section only, bounded at the next `## ` heading.
 | FRI-01 | Phase 2 | Complete |
 | FRI-02 | Phase 2 | Complete |
 | FRI-03 | Phase 2 | Complete |
+| FLD-01 | Phase 3 | Pending |
+| FLD-02 | Phase 3 | Pending |
+| PRS-02 | Phase 3 | Pending |
+| DBT-01 | Phase 3 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
