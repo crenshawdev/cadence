@@ -333,7 +333,7 @@ export function renderTrace(planningRoot, phase) {
     // string-concatenated onto the total.
     const tokens = typeof e.tokens === 'number' && Number.isFinite(e.tokens) ? e.tokens : null;
 
-    const worker = `${key(e.corr)} ${key(e.phase)} ${key(e.plan)}`;
+    const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
     if (e.event === DISPATCH) {
       const role = key(e.role);
       const row = roleRow(role);

@@ -232,6 +232,21 @@ test('renderTrace: a re-run never pairs across runs, and unpaired names the run'
   assert.deepEqual(r.unpaired.map((u) => u.corr).filter((c) => c === '1-bbb'), []);
 });
 
+test('renderTrace: the U+0000 worker separator keeps two SHIFTED brackets apart', () => {
+  // The source of that separator was two literal NUL bytes until DFC-01 turned
+  // them into `\0` escapes, and nothing pinned it: deleting the separator, or
+  // swapping it for a character a corr/phase/plan value may itself contain,
+  // changes the key only for inputs whose parts CONCATENATE alike. Both rows
+  // below join to "abcp", so an unseparated key pairs a dispatch with a foreign
+  // return and reports a clean run; a separated one leaves the dispatch open.
+  const dir = root();
+  appendFileSync(tracePath(dir),
+    `${JSON.stringify({ corr: 'a', phase: 'bc', plan: 'p', family: 'lifecycle', event: DISPATCH })}\n`
+    + `${JSON.stringify({ corr: 'ab', phase: 'c', plan: 'p', family: 'lifecycle', event: TERMINAL[0] })}\n`);
+  const r = renderTrace(dir);
+  assert.deepEqual(r.unpaired.map((u) => [u.corr, u.phase, u.plan]), [['a', 'bc', 'p']]);
+});
+
 test('renderTrace: a malformed line is skipped and counted, the rest still read', () => {
   const dir = root();
   appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });

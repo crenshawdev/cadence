@@ -1564,6 +1564,46 @@ test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an a
   assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);
 });
 
+// --- 15. no literal U+0000 under cadence-core/bin (DFC-01) --------------------
+
+const NUL_KIND = 'nul-byte-in-source';
+/** Problems of check 15's kind from a --root run. */
+const nulProblems = (root) =>
+  run(['--root', root]).problems.filter((p) => p.kind === NUL_KIND);
+
+const NUL = String.fromCharCode(0);
+
+test('check 15: a .mjs carrying a literal NUL is named with its byte offset', () => {
+  const src = `// @ts-check\nconst sep = '${NUL}';\n`;
+  const p = nulProblems(binFixture({ 'seam.mjs': src }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'bin', 'seam.mjs'));
+  assert.match(p[0].detail, new RegExp(`byte offset ${src.indexOf(NUL)}\\b`));
+  assert.match(p[0].detail, /\(1 in file\)/);
+});
+
+test('check 15: the two-character \\0 escape - the fix - is clean', () => {
+  // The escape is what DFC-01 replaced the raw bytes with, so a check that
+  // reported it would forbid its own remedy.
+  assert.deepEqual(nulProblems(binFixture({ 'seam.mjs': "const sep = '\\0';\n" })), []);
+});
+
+test('check 15: a NUL inside a *.test.mjs is reported too', () => {
+  // What the { every: true } arm buys over check 12's walk, which skips tests:
+  // `grep -rn` goes blind on a test file exactly as it does on a seam.
+  const p = nulProblems(binFixture({ 'seam.test.mjs': `const x = '${NUL}';\n` }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'bin', 'seam.test.mjs'));
+});
+
+test('check 15: a NUL inside a NON-.mjs file under bin is reported too', () => {
+  // What the extension-blind walk buys over a .mjs-only one: weight-budgets.json
+  // lives here, and a NUL in it would hide the budget table from every search.
+  const p = nulProblems(binFixture({ 'data.json': `{"sep":"${NUL}"}\n` }));
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.equal(p[0].file, join('cadence-core', 'bin', 'data.json'));
+});
+
 // --- check 13: deferred reads -------------------------------------------------
 
 /** One Read sentence for a register row's reference, in the shape the rule wants. */
