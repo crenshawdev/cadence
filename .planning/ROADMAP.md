@@ -16,6 +16,19 @@ v2.5.0 narrative that follows keeps its own numbering and says so. Old -> new:
 3 -> 1 (Queue triage), 4 -> 2 (Live friction), 5 -> 3 (Parser defects),
 6 -> 4 (Doc sweep).
 
+**Rescoped 2026-08-08, mid-cycle, against field evidence.** The cycle was
+audited against one question: is each phase here because something is broken for
+someone, or because a self-audit found it? Three changes followed. Phase 3 was
+"Parser defects", scoped from reading `planning-files.mjs`; running that parser
+over every plan file in five live projects produced ZERO issues, so `PRS-01` and
+most of `PRS-02` deferred and the phase became "Field friction" - named phase
+directories the seams cannot address (`tempest`, `atmos`) and a run record every
+Cadence project commits by default. `FRI-03` narrowed to the `/cad-audit` arm,
+because `QW-04` already ships two detectors for that drift. And "Runtime
+evidence", added earlier the same day from an external audit, was cut as a phase
+and demoted to one task in the doc sweep. The rule applied: a defect that is
+real but has never hit anyone waits behind one that is hitting someone now.
+
 **The rest of this Overview is the `v2.5.0` record and every phase number in it
 is a v2.5.0 number.** It is kept because the scoping arguments still bind the
 four phases below; read `phase 1`/`phase 2` there as the two that shipped, and
@@ -78,9 +91,8 @@ each release tag are their archive.
 
 - [x] **Phase 1: Queue triage** - every open CAPTURE item resolved against the live tree, and the moot ones moved out of the recall corpus
 - [ ] **Phase 2: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
-- [ ] **Phase 3: Parser defects** - the `planning-files.mjs` reads that drop, fabricate, or truncate data with no diagnostic
-- [ ] **Phase 4: Runtime evidence** - what Cadence does at runtime becomes a committed artifact, drawn from a project that is not Cadence, instead of a claim about the source
-- [ ] **Phase 5: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
+- [ ] **Phase 3: Field friction** - what is broken for Cadence's users right now: named phase dirs the seams cannot address, and a run record every project commits by default
+- [ ] **Phase 4: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
 
@@ -114,42 +126,36 @@ visible to the gates.
 4. Every dispatched agent carries an explicit runaway-loop bound (issue #72). The `maxTurns` frontmatter field is supported but its behaviour at the cap is undocumented, so a spike establishes what a capped run returns - partial work or a failed dispatch - before any value ships.
 5. A planning-doc version that disagrees with the shipped manifest is detected mechanically by `/cad-audit` and self-verify, not only reported by `/cad-health`'s prose rule from v2.5.0 phase 1, proved by a fixture whose docs claim a version the manifest does not (issue #87).
 
-### Phase 3: Parser defects
-**Goal:** `cadence-core/bin/lib/planning-files.mjs` stops silently dropping,
-fabricating or truncating the planning data every other seam reads. An
-out-of-grammar input produces a named diagnostic, never a plausible wrong
-answer.
+### Phase 3: Field friction
+**Goal:** The things that are broken for Cadence's users right now stop being
+broken. Every item here was found by Cadence failing on a real project, not by
+Cadence reading its own source.
+
+SCOPED 2026-08-08 from field evidence, replacing "Parser defects". The parser
+work was scoped from reading `planning-files.mjs`, and running that parser over
+every plan file in five live projects (`burnrate`, `hindsight`, `assistant`,
+`jcrenshaw.dev`, `placer`) produced ZERO frontmatter or undeclared issues. Those
+defects are real in the code and have never given anyone a wrong answer, so
+`PRS-01` and the unhit half of `PRS-02` are deferred. The one parser defect that
+did bite - the `REQ_ID_EXACT` regression - stays, and the two things the same
+survey found actually broken take the space.
 **Depends on:** Phase 1
-**Requirements:** PRS-01, PRS-02
+**Requirements:** FLD-01, FLD-02, PRS-02
 **Success Criteria:**
-1. A frontmatter block item with no active `currentKey` produces an `unknown-line` issue instead of vanishing, and `unwrap` never returns a value with retained quotes when text follows the closing quote - `parsePlanFiles`' `add()` cannot mint a fabricated value.
-2. `readFrontmatterList` reads a comment that is the whole remainder of a key line, and reads a CRLF-checked-out PLAN.md end to end.
-3. `promoteUnreleased`'s section bounding is fence-aware: a `## ` line inside a fenced code block in the Unreleased body does not truncate the section.
-4. `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the v1.4.0 phase-5 regression, and `unseeded` fires on a Traceability table that has rows but is missing the milestone's ids - not only on a zero-row table.
-5. Each of the above lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
+1. A phase directory named `08-meteogram-legend` is addressable by every seam that takes `--phase`. Today `planning.mjs plan-overlap --phase 08-meteogram-legend` returns `bad-args`, and `tempest` and `atmos` both use named directories, so those seams are unusable on two shipped projects. Either the seams accept the named form or Cadence states numeric-only as a grammar and `/cad-health` reports a violation - what is not acceptable is the current silence.
+2. Two phase directories whose numeric prefix collides (`atmos` has `14-data-depth-...` and `14-shared-derivation-extraction`) produce a named diagnostic rather than one silently shadowing the other.
+3. A project Cadence created keeps `.planning/trace.jsonl` out of git without the user having done anything by hand. `cadence-core/workflows/execute.md:226` asserts the record "is gitignored" as the reason a worktree's trace cannot ride a merge back, and nothing in Cadence writes that line - it holds in this repo only because it was added manually, so every other Cadence project commits its run record on the next `git add .planning`. Proved on a scratch project, not on this one.
+4. `REQ_ID_EXACT` accepts an id whose category does not start with `[A-Z]`, closing the v1.4.0 phase-5 regression - the one parser defect with a recorded field occurrence.
+5. Each fix lands with a regression test proved failing-capable against the unpatched code (a mutation or a patch-and-rerun recorded in the SUMMARY), so no vacuous assertion ships.
 
-### Phase 4: Runtime evidence
-**Goal:** What Cadence does when it runs stops being a claim about the source and
-becomes an artifact a stranger can regenerate: one real phase's joined trace and
-its measured byte figures, committed, with the command that reproduces them and
-a stated redaction rule that makes publishing a run record safe.
-**Depends on:** Phase 2
-**Requirements:** EVD-01, EVD-02
-**Success Criteria:**
-1. `planning.mjs trace export` emits a publishable form of a phase's joined run record from `.planning/trace.jsonl`, and its redaction rule is stated: what is dropped, what is preserved, and why the raw file stays out of the repo. A field the rule does not name is dropped rather than emitted, so a future event family cannot leak by default.
-2. Running the export against a trace containing an absolute path, a machine hostname and a provider identifier produces output carrying none of the three, proved by a test that fails against the unredacted record.
-3. A project that Cadence created keeps its raw run record out of git without the user having done anything by hand. `execute.md:226` already asserts the record "is gitignored" as the reason a worktree's trace cannot ride a merge back, and nothing in Cadence writes that line - it holds in this repo only because it was added manually, so every other Cadence project would commit the record on its next `git add .planning`. Proved on a scratch project, not on this one.
-4. One real phase of a project that is NOT Cadence is committed here as a runtime-evidence artifact: its exported trace, the `weight.mjs` resident and turn-one byte figures, its commit range, and the environment the run happened in (plugin version, Node version, host). The artifact names which project it came from and why that project was chosen.
-5. The artifact carries the exact command that regenerates it, and running that command reproduces the byte figures. The trace half is not reproducible by design - it records a run that happened - and the artifact says so rather than implying otherwise.
-6. `/cad-docs-verify` in phase 5 finds no claim in the artifact that the tree contradicts, and the artifact is linked from `README.md` so the evidence is reachable without reading `.planning/`.
-
-### Phase 5: Doc sweep
+### Phase 4: Doc sweep
 **Goal:** What Cadence claims about itself matches what it does, and the next
 cycle starts from a diff rather than a fresh sweep.
-**Depends on:** Phases 2, 3, 4 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
-**Requirements:** DOC-02, DOC-03
+**Depends on:** Phases 2, 3 (v2.5.0's phases 1 and 2, the other two inputs, already shipped)
+**Requirements:** DOC-02, DOC-03, EVD-02
 **Success Criteria:**
 1. `/cad-docs-verify` runs across `README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and `cadence-core/workflows/*.md`, and its output is committed in the phase record.
 2. Every claim reported stale is either corrected or recorded as a known divergence naming the reason it stands - no claim is left in the report unresolved.
 3. Any claim that turns out to describe a real defect rather than stale prose is filed as its own requirement or CAPTURE item rather than reworded away, and the SUMMARY names each one - the cycle cannot quietly convert a bug into a documentation edit.
 4. Re-running `/cad-docs-verify` after the corrections produces a smaller report than the first run, and the delta is stated.
+5. One runtime-evidence artifact is committed and linked from `README.md`: the `weight.mjs` resident and turn-one byte figures with the command that regenerates them, and - IF a non-Cadence project has run a phase by then - that project's phase trace, named with the project it came from. DEMOTED 2026-08-08 from its own phase to one task here, because the export-and-publish half was scoped from an external audit rather than from anything failing. The trace half is contingent by design: no non-Cadence project has a run record yet, none has run a phase since `QW-02` shipped in `v2.5.0`, and the byte half stands alone if none does. If the trace lands, the artifact states that it records a run that happened and is not reproducible.
