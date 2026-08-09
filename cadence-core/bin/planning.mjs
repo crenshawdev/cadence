@@ -60,7 +60,7 @@ import {
   shiftPhaseTokens, findProsePhaseRefs, cutPhaseDetail,
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
-  classifyAcceptanceCriteria, UAT_ORIGINS, UAT_FIELDS_VERSION,
+  classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
 } from './lib/planning-files.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
@@ -544,7 +544,19 @@ function cmdUat(dir, sub, opts) {
       return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`);
     }
     const source = opts.source || 'user';
+    // Validated BEFORE any write, same shape as the `--origin` guard below:
+    // `--source` used to accept any string and store nothing outside
+    // `verifier`, so a walk-executed pass recorded as a user answer and
+    // nothing reported the drop. An out-of-enum value must leave the file
+    // byte-unchanged rather than silently discard the provenance.
+    if (opts.source !== undefined && !UAT_SOURCES.includes(String(opts.source))) {
+      return fail('bad-args', `--source must be one of: ${UAT_SOURCES.join(' | ')}`);
+    }
     // Invariant: a verifier result only ever fills a pending item.
+    //
+    // Scoped to `verifier` ALONE, deliberately. A `model` result is a live
+    // answer at the item the walk is standing on, and widening the guard to it
+    // would refuse the retest re-record `route_failures` depends on.
     if (source === 'verifier' && item.status !== 'pending') {
       return fail('would-overwrite', `item ${k} is ${item.status}; verifier results only fill pending items`);
     }
@@ -571,7 +583,10 @@ function cmdUat(dir, sub, opts) {
       return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
     }
     item.status = opts.result;
-    if (source === 'verifier') item.source = 'verifier';
+    // `user` stays IMPLICIT - never written onto the item - so every existing
+    // checklist stays byte-identical; `verifier` and `model` are the two values
+    // that render.
+    if (source !== 'user') item.source = source;
     // `criterion` is already registered in UAT_FIELDS, so an accepted value
     // renders directly after `expected` and survives every later rewrite.
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
@@ -737,8 +752,17 @@ function cmdUat(dir, sub, opts) {
       // This path wrote NO provenance of any kind before this phase - observable
       // at .planning/phases/1/UAT.md items 12 and 14, which carry neither
       // `source` nor an origin.
+      //
+      // `why_human` rides the append spread-guarded: the verifier's per-item
+      // reason inspection cannot settle it, carried so the walk can tell an
+      // item ALREADY judged human-only from one it must judge itself against
+      // the stated bar. An omitted value writes no line and no default is
+      // invented - a fabricated reason would be indistinguishable from a
+      // judged one at exactly the moment the walk is trusting it.
       uat.items.push({ k: ++k, name, expected: h.expected || '',
-        origin: 'verifier', status: 'pending' });
+        origin: 'verifier',
+        ...(h.why_human ? { why_human: h.why_human } : {}),
+        status: 'pending' });
       added++;
     }
     writeUat(dir, n, uat);

@@ -850,6 +850,68 @@ test('uat record: verifier source cannot overwrite a recorded result', () => {
   assert.equal(r.reason, 'would-overwrite');
 });
 
+// The walk's own provenance. `source` accepted any string and stored nothing
+// outside `verifier`, so a check the MODEL ran and cited was written to disk as
+// a user answer with nothing reporting the drop - registration is what makes
+// the value survive, not merely writing it.
+test('uat record --source model: stores the provenance and it survives a later record', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--evidence', 'node --test x.test.mjs -> 12 pass 0 fail', '--source', 'model'], dir);
+  assert.equal(r.ok, true);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 1\. Login works\nexpected: [^\n]*\nstatus: pass\nfirst_pass: pass\nsource: model/);
+  // ...and the whole-file rewrite a record on a DIFFERENT item performs keeps it
+  run(['uat', 'record', '--phase', '1', '--item', '2', '--result', 'pass'], dir);
+  const after = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(after, /source: model/);
+  assert.equal(after.match(/source:/g).length, 1); // item 2's user answer wrote none
+});
+
+test('uat record: an out-of-enum --source is refused with the file byte-unchanged', () => {
+  const dir = uatTree();
+  const before = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--source', 'bogus'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /user \| verifier \| model/);
+  assert.equal(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), before);
+});
+
+test('uat record --source user: writes no source line - user stays implicit', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass',
+    '--source', 'user'], dir);
+  assert.equal(r.ok, true);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.equal(/source:/.test(text), false);
+});
+
+// `why_human` is the verifier's per-item reason the walk reads as already
+// judged. It reached UAT.md through no path at all before: `merge` appended the
+// human check without it, so the walk had to re-judge every item the deep pass
+// had already ruled on.
+test('uat merge: a human_checks why_human is carried onto the appended item and survives', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'merge', '--phase', '1'], dir, JSON.stringify({
+    human_checks: [
+      { name: 'Card charges', expected: 'receipt emailed', why_human: 'moves real money' },
+      { name: 'Prints on the label printer', expected: 'label ejects' }, // no reason given
+    ],
+  }));
+  assert.equal(r.ok, true);
+  assert.equal(r.added, 2);
+  const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(text, /### 3\. Card charges\nexpected: receipt emailed\norigin: verifier\nwhy_human: moves real money\nstatus: pending/);
+  // no default is invented for the entry that carried none
+  assert.match(text, /### 4\. Prints on the label printer\nexpected: label ejects\norigin: verifier\nstatus: pending/);
+  // ...and the first `record` rewrite preserves it - registration, not luck
+  run(['uat', 'record', '--phase', '1', '--item', '3', '--result', 'pass'], dir);
+  const after = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+  assert.match(after, /why_human: moves real money/);
+});
+
 test('uat refresh: appends only new names, never touches recorded results', () => {
   const dir = uatTree();
   run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);

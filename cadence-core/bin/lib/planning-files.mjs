@@ -939,8 +939,19 @@ export function classifyAcceptanceCriteria(text) {
 // survives `init` and is destroyed by the first `record` (D-05). `criterion`
 // and `origin` sit directly after `expected` because that is where a hand-added
 // line has to be for the first rewrite not to move it.
-const UAT_FIELDS = ['expected', 'criterion', 'origin', 'status', 'first_pass',
-  'source', 'evidence', 'reported', 'severity', 'cause', 'fix', 'reason'];
+const UAT_FIELDS = ['expected', 'criterion', 'origin', 'why_human', 'status',
+  'first_pass', 'source', 'evidence', 'reported', 'severity', 'cause', 'fix',
+  'reason'];
+
+// The one place the `source` enum lives - where a RESULT came from. `user` is
+// IMPLICIT and never written onto an item (an existing checklist stays
+// byte-identical), so the two values that ever render are `verifier` (a deep
+// pass merged the result) and `model` (the walk ran the check itself and cited
+// its command and output). Registration is not optional: `uat record` accepted
+// any string and silently stored nothing outside `verifier`, so a
+// walk-executed pass was indistinguishable from a user answer with nothing
+// reporting the drop.
+export const UAT_SOURCES = ['user', 'verifier', 'model'];
 
 // The one place the `origin` enum lives. `criterion` is the criterion-derived
 // marker by its own presence, so `origin: criterion` is only ever a repair for
