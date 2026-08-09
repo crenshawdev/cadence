@@ -41,7 +41,7 @@ rather than a schema default no layer wrote.
 
 3. **Fire `pre_ship`.** Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` at this
-   step first - this skill no longer preloads it. The reference is 17,733 B,
+   step first - this skill no longer preloads it. The reference is 17,714 B,
    larger than this whole skill, and it is consulted at exactly ONE step (this
    one), so preloading it puts those bytes on every remaining turn of the land
    for a single use; the read folds into the turn that fires the trigger as one
