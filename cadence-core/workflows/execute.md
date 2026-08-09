@@ -303,8 +303,9 @@ worktree and the fork point is the user's `worktree.baseRef` setting.
 After that remedy has failed twice, the plan falls back to the SEQUENTIAL path in
 the main tree, and an `escalation` lifecycle event records the worker that
 changed paths. A fallback and not a bounded re-dispatch loop: every failure arm
-in choose_path already resolves to sequential, and a loop here would put the
-unbounded re-arm filed against the review triggers onto the execute path too.
+in choose_path already resolves to sequential, and a loop here would put a second
+re-arm on the execute path beside the review triggers' own, which
+`references/triage-gate.md` caps at one round.
 
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
