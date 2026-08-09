@@ -75,6 +75,11 @@ If any commit's diff touched a risk surface, fire the `risk_surface` review
 trigger per references/review-triggers.md before reporting done. The commits
 already exist, so the artifact is refs - shape (a):
 `{base_ref: parent of the task's first commit, head_ref: HEAD}`.
+
+This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
+narrowed round - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
+FAIL, since this workflow does not preload it and the cap lives only there.
 </step>
 
 <step name="done">

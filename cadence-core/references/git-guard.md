@@ -120,4 +120,7 @@ enumerate.
 
 At commit time, if the diff matches a risk surface (list in
 references/review-triggers.md), fire the `risk_surface` review trigger before
-landing the commit.
+landing the commit. That gate is `blocking` at every level and the re-arm on
+the fix that clears it is CAPPED at ONE narrowed round - RE-READ
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before the fix
+lands. The cap lives only there, and no caller of this file preloads it.

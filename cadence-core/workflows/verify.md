@@ -266,7 +266,9 @@ For each item with `status: fail` and no recorded cause:
    references/git-guard.md (protected-branch guard, specific files, risk-surface
    trigger at commit time - the fix is staged in THIS tree, so that fire
    carries the staged-diff scope, shape (b): the reviewer runs
-   `git diff --cached` in the cwd it inherits). Then set the item back to
+   `git diff --cached` in the cwd it inherits; that gate is blocking and its
+   re-arm is capped at ONE narrowed round by the same triage-gate.md this step
+   already re-reads). Then set the item back to
    pending for retest:
    `uat record --item <k> --result pending --fix "{hash}, retest"` and offer
    to re-walk it immediately (first_pass keeps the original fail).

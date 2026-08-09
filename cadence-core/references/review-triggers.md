@@ -184,12 +184,14 @@ cross-model reviewer is only half of it. Name the set that RAN, never the set
 the trigger asked for.
 
 ### 6. Consequence (gate)
-`references/triage-gate.md` holds this step whole: all three arms
-(`advisory` / `blocking` / `adjudicated`), the multi-select triage the
-adjudicated arm asks, the `git.auto_close` carve-out scoped to `pre_ship`
-inside `/cad-land`, and the `cad-verify` fix-list rule. It is a separate file
-because three workflows re-read it at their triage sites without loading this
-one.
+RE-READ `references/triage-gate.md` before acting on ANY gate - `blocking`
+included, not only `adjudicated`. It holds this step whole: all three arms
+(`advisory` / `blocking` / `adjudicated`), the ONE-round cap on a blocking
+re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
+carve-out scoped to `pre_ship` inside `/cad-land`, and the `cad-verify`
+fix-list rule. It is a separate file because the fire sites re-read it at their
+gate step without loading this one - and a `blocking` site that treats the read
+as an adjudicated-only errand is exactly how an uncapped re-arm gets back in.
 
 ## Wiring (which skill fires what)
 

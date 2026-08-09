@@ -264,8 +264,9 @@ survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
 before presenting, since this workflow does not preload it. The
-`risk_surface` arm is untouched by any of that: a matched risk surface still
-halts, and triage is not an override for it.
+`risk_surface` arm is untouched by the TRIAGE rule specifically: a matched risk
+surface still halts, and triage is not an override for it. It is NOT exempt
+from the same file's ONE-round re-arm cap, which binds every blocking gate.
 </step>
 
 <step name="handle_checkpoint">
@@ -284,7 +285,10 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   returned - shape (c). It is a path and not refs because the diff is staged
   and uncommitted, and in worktree mode it is not in this tree at all.
   Blocking: on FAIL, findings are fixed or the user explicitly overrides -
-  never silently proceed.
+  never silently proceed. The re-arm on that fix is CAPPED at ONE narrowed
+  round, and the cap lives only in
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
+  before the fix lands, since this workflow does not preload it.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
