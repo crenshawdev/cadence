@@ -1,0 +1,74 @@
+{
+  "status": "delivered",
+  "score": "8/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "DFC-01 is closed at the source and a guard fires on a planted NUL anywhere under cadence-core/bin/**",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "file cadence-core/bin/lib/trace.mjs -> 'JavaScript source, ASCII text'; grep -rn \"const worker\" cadence-core/bin/ prints cadence-core/bin/lib/trace.mjs:336 with the two-char \\0 escapes and no -a; grep -rlP '\\x00' cadence-core/bin/ exits 1 (no NUL anywhere under bin). Check 15 implemented at cadence-core/bin/self-verify.mjs:1129-1155 over binFiles(root, { every: true }); self-verify header lists 'nul-bytes' among 20 checks and prints \"problems\":[] on the clean tree. End-to-end mutation proof run against an ISOLATED tar copy of the tree in scratchpad (user's tree never mutated): after `printf '\\0' >> <copy>/cadence-core/bin/lib/trace.mjs`, self-verify exits 1 with {'kind': 'nul-byte-in-source', 'file': 'cadence-core/bin/lib/trace.mjs', 'detail': 'literal U+0000 at byte offset 18118 (1 in file) - type \\0 instead'}. Named tests green: 'check 15: a .mjs carrying a literal NUL is named with its byte offset', '... a NUL inside a *.test.mjs is reported too', '... a NUL inside a NON-.mjs file under bin is reported too'."
+    },
+    {
+      "n": 2,
+      "truth": "trace behaviour is unchanged - the composite worker key still separates its parts with U+0000 at runtime",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/trace.mjs:336 `const worker = `${key(e.corr)}\\0${key(e.phase)}\\0${key(e.plan)}`;` (escapes, not literal bytes). node --test cadence-core/bin/trace.test.mjs: 50 tests, 0 fail, including the new runtime falsifier 'renderTrace: the U+0000 worker separator keeps two SHIFTED brackets apart' - a deleted or emptied separator fails it."
+    },
+    {
+      "n": 3,
+      "truth": "phase_diff's gate row matches the resolver in both prose sites, and no live site still claims off at shipped",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "node cadence-core/bin/route.mjs resolve --role cad-reviewer -> \"phase_diff\":\"advisory\" at stakes shipped. cadence-core/references/review-triggers.md:244 gate cell 'off / advisory / adjudicated'; docs/WORKFLOW.md:168 'off | advisory | adjudicated'. grep -rn \"off / off\" cadence-core docs skills METHOD.md README.md -> exactly two hits, dispatch-phrasing.test.mjs:254 (own literal fixture) and prose-agreement.test.mjs:126 (comment naming the defect); no live gate claim. Named test green: 'phase_diff gates: the wiring table and docs/WORKFLOW.md both match the resolver' - it drives route.mjs resolve at all three stakes levels rather than reading route-table.json."
+    },
+    {
+      "n": 4,
+      "truth": "The plan-checker contract states one dimension count in <dimensions> and <success_criteria>, equal to the enumerated items",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "skills/cad-plan-checker-contract/SKILL.md:42 'Check six dimensions:' and :113 '- [ ] All six dimensions checked'; sed -n '42,60p' | grep -c '^[0-9]\\. \\*\\*' -> 6. Named test green: 'cad-plan-checker-contract states one dimension count in all three places' (prose-agreement.test.mjs), which maps the count word through a word-to-number table so a rename fails loudly."
+    },
+    {
+      "n": 5,
+      "truth": "The risk_surface row admits the artifact /cad-task actually produces, and task.md keeps its path, never-stage rule and cleanup",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/references/review-triggers.md:243 payload cell '(c) the flagged-diff FILE path, or (b) the staged-diff scope in-context' - the 'the checkpoint returned' qualifier is gone. cadence-core/workflows/task.md:78 names .planning/tasks/{slug}/risk-task-{slug}.diff; :81 carries 'never stage it, and delete it once ...'; git diff --stat 234aeff..f50a8a0 shows workflows/task.md untouched by the phase. Named test green: 'risk_surface row: its shape (c) clause names no producer, and task.md still holds its rails' (prose-agreement.test.mjs:152-174), bounded to the parsed row and task.md so it cannot reach verify.md:262. Noted (SUMMARY open item, not a gap): the assertion bans the word 'checkpoint' in the shape-(c) clause rather than binding each producer to a shape it can emit, so a differently-worded re-narrowing would pass - it does catch this defect's own failure mode, which is what the goal asks."
+    },
+    {
+      "n": 6,
+      "truth": "A budgeted surface that shrinks below its entry fails self-verify exactly like one that grows, and all 93 surfaces sit exactly at budget",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/bin/self-verify.mjs:666-682 - check 4 now branches bytes > budget -> 'budget-overrun' and bytes < budget -> 'budget-undershoot' with the shortfall in the detail. Clean tree: self-verify prints \"problems\":[]; node cadence-core/bin/weight.mjs --root . reports 93 surfaces with no mismatch against weight-budgets.json. End-to-end proof in the isolated copy: `truncate -s -1 <copy>/cadence-core/references/git-guard.md` -> exit 1 with {'kind': 'budget-undershoot', 'file': 'cadence-core/references/git-guard.md', 'detail': '6720B is under budget 6721B by 1B - re-pin the entry'}. Named test green: 'a surface ONE byte under its entry is reported budget-undershoot (D-13)'. METHOD.md restated in the same commit (20c59b6)."
+    },
+    {
+      "n": 7,
+      "truth": "All four sites quoting review-triggers.md's size state the measured number, and EVIDENCE's aggregates equal the sums they tabulate",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "node cadence-core/bin/weight.mjs --root . reports cadence-core/references/review-triggers.md bytes 17714 / estTokens 4429; wc -c confirms 17714. weight-budgets.json:35 = 17714; skills/cad-land/SKILL.md:44 '17,714 B'; skills/cad-plan-review/SKILL.md:39 '17,714 B'; docs/EVIDENCE.md:165 '| 17,714 | 4,429 |'. No occurrence of 17,733 remains outside archives. Three named tests green in prose-agreement.test.mjs: 'every site copying a measured byte count states the measured number', 'docs/EVIDENCE.md: every twelve-largest row states measured bytes AND est tokens', 'docs/EVIDENCE.md: the per-directory subtotals and grand total are the measured sums' - all driven off weighAll from lib/surface-weight.mjs, the same lib self-verify enforces with. Noted (SUMMARY open item, not a gap): the two inline-skill assertions are whole-file text.includes(`${bytes} B`) rather than line-pinned (prose-agreement.test.mjs:198-202); each file contains the figure exactly once today, so the check is exact in practice and would have caught the original 17,733 defect."
+    },
+    {
+      "n": 8,
+      "truth": "The sweep ledger states each defect's real status and all three gates are green",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": ".planning/DOCS-CLAIMS.md:100-126 - DFC-01 CLOSED 1e949bc, DFC-02 CLOSED 98be3d2, DFC-03 CLOSED f6eed02, each naming what closed it; :50 restated; the suffix paragraph :128-131 retained and extended to carry status. Suffix rows: METHOD-01/02 '+ DFC-02 closed 98be3d2' (:188-189), METHOD-03 '+ DFC-03 closed f6eed02' (:190), EXECUTE-02/03 '+ DFC-02 closed 98be3d2' (:464-465), TASK-01 '+ DFC-04 closed 98be3d2' (:603). No bullet or suffix still reads as an open filing. Gates on the clean tree: node --test cadence-core/bin/*.test.mjs -> tests 1467, pass 1467, fail 0; node cadence-core/bin/self-verify.mjs --root . -> \"ok\":true, \"problems\":[] across 20 checks; npx tsc -p tsconfig.ci.json -> exit=0, no diagnostics. Anti-pattern scan of the phase diff (234aeff..f50a8a0, 14 files) found no added TODO/FIXME/XXX/HACK/placeholder marker."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "The NUL guard fires, and the source is text again", "evidence": "trace.mjs is 'JavaScript source, ASCII text', grep finds :336 without -a, no NUL under cadence-core/bin; self-verify check 15 (self-verify.mjs:1129-1155) reported nul-byte-in-source at offset 18118 against a planted NUL in an isolated tree copy, and three fixture tests (.mjs, *.test.mjs, non-.mjs) pass" },
+    { "k": 2, "name": "trace behaviour is unchanged, separator still U+0000", "evidence": "trace.mjs:336 uses \\0 escapes; node --test trace.test.mjs 50 pass / 0 fail including 'the U+0000 worker separator keeps two SHIFTED brackets apart'" },
+    { "k": 3, "name": "phase_diff's gate row matches the resolver everywhere", "evidence": "resolver returns advisory at shipped; review-triggers.md:244 and docs/WORKFLOW.md:168 both read off/advisory/adjudicated; the only 'off / off' hits are two test/comment fixtures; prose-agreement test drives resolve at all three levels" },
+    { "k": 4, "name": "The plan-checker contract agrees with itself on its dimension count", "evidence": "SKILL.md:42 'Check six dimensions', :113 'All six dimensions checked', 6 enumerated items; three-way agreement test passes" },
+    { "k": 5, "name": "The risk_surface row admits what /cad-task can produce", "evidence": "review-triggers.md:243 shape-(c) clause carries no producer qualifier; task.md:78 names the transient path and :81 the never-stage + delete-on-return rules; bounded prose-agreement test passes" },
+    { "k": 6, "name": "The weight budget is exact in both directions", "evidence": "self-verify.mjs:666-682 overrun/undershoot branches; clean tree \"problems\":[] with 93 surfaces at budget; a 1-byte truncation of git-guard.md in an isolated copy produced budget-undershoot with the 1B shortfall; named undershoot test passes" },
+    { "k": 7, "name": "All four sites quoting review-triggers.md's size agree with the measurement", "evidence": "weight.mjs and wc -c both give 17714; weight-budgets.json:35, cad-land/SKILL.md:44, cad-plan-review/SKILL.md:39, docs/EVIDENCE.md:165 all state 17,714 (4,429 est tokens); three weighAll-backed tests pass, covering all twelve-largest rows plus the directory subtotals and grand total" },
+    { "k": 8, "name": "The sweep ledger states each defect's real status, and all three gates are green", "evidence": "DOCS-CLAIMS.md bullets read CLOSED with commits and all six suffix rows carry a closed status incl. TASK-01 '+ DFC-04 closed 98be3d2'; 1467/1467 tests pass, self-verify \"problems\":[], tsc exit 0" }
+  ],
+  "gaps": [],
+  "human_checks": []
+}

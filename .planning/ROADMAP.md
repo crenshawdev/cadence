@@ -13,7 +13,7 @@ the phase records in `.planning/_archive-v2.6.0/`, and the narrative in
 
 ## Phases
 
-- [ ] **Phase 1: The filed defects** - close DFC-01..04, the four defects v2.6.0's doc sweep found and filed, each with the check that would have caught it
+- [x] **Phase 1: The filed defects** - close DFC-01..04, the four defects v2.6.0's doc sweep found and filed, each with the check that would have caught it
 
 ## Phase Details
 
