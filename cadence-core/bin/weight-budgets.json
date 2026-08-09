@@ -64,7 +64,7 @@
     "cadence-core/workflows/undo.md": 3103,
     "cadence-core/workflows/verify-deep.md": 3650,
     "cadence-core/workflows/verify-sweep.md": 1263,
-    "cadence-core/workflows/verify.md": 16959,
+    "cadence-core/workflows/verify.md": 17639,
     "skills/cad-assumptions-analyzer-contract/SKILL.md": 4106,
     "skills/cad-audit/SKILL.md": 1639,
     "skills/cad-capture/SKILL.md": 2345,
@@ -92,7 +92,7 @@
     "skills/cad-spike/SKILL.md": 1178,
     "skills/cad-task/SKILL.md": 737,
     "skills/cad-undo/SKILL.md": 1093,
-    "skills/cad-verifier-contract/SKILL.md": 9644,
+    "skills/cad-verifier-contract/SKILL.md": 10009,
     "skills/cad-verify/SKILL.md": 1102
   }
 }

@@ -145,15 +145,25 @@ can run itself is the defect this step exists to prevent.
 **The bar.** An item is a HUMAN check only when the model cannot execute it -
 it is irreversible against real data, or it is outside the model's reach
 (credentials it does not hold, a GUI, hardware, another machine). Everything
-else the model runs. Two kinds of item are ALREADY judged; their reason stands
-and is not re-litigated:
+else the model runs. ONE kind of item is ALREADY judged; its reason stands and
+is not re-litigated:
 
-- an item carrying `why_human` - the deep pass ruled on it and said why;
 - an item whose `expected` carries the CONTEXT-time
   `(human-verify: needs <tool/service>)` suffix, written precisely when that
   tool is known absent on THIS machine.
 
-Both go straight to pass 2, and pass 1 never runs their commands.
+A `why_human` item is NOT that kind, and the field is not the predicate. The
+deep pass writes `why_human` for every UNCERTAIN truth as well as every
+human-only check (`skills/cad-verifier-contract`), and a truth is UNCERTAIN
+whenever no probe was observed - which is precisely a check the model can settle
+by running one. So READ the reason and apply the bar to it: it goes to pass 2
+only when it names irreversibility against real data or a resource outside the
+model's reach. Anything else - "no probe ran", "not exercised by a named test" -
+goes to pass 1 and is executed. Taking the field's presence as the answer hands
+the user back exactly the commands this step exists to run.
+
+The suffix-tagged item, and a `why_human` item whose reason clears that reading,
+go straight to pass 2; pass 1 never runs their commands.
 
 `blocked` is TERMINAL - nothing returns an item to the walk from it (`next`
 offers only `pending`, `refresh` appends only unseen names, `route_failures`'

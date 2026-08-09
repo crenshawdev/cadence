@@ -191,7 +191,12 @@ writing that name would have its input destroyed by the merge it feeds.
 - `passes` - the VERIFIED truths that carry an item number.
 - `gaps` - `k` only when an item matches; omit it and the seam appends the gap
   as a new item.
-- `human_checks` - one per UNCERTAIN truth and per human-only check.
+- `human_checks` - one per UNCERTAIN truth and per human-only check. Those are
+  two different reasons, and `why_human` says WHICH: a truth no probe exercised
+  is not a truth the model cannot exercise. Write the real reason, because the
+  walk re-applies its own bar to that text (`workflows/verify.md` step `walk`)
+  and sends everything short of irreversibility or an out-of-reach resource
+  back to be executed rather than asked.
 
 The three list names and their fields are the `uat merge` payload's, on
 purpose: the seam consumes only `passes`, `gaps` and `human_checks` and ignores
