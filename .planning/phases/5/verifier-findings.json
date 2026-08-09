@@ -1,0 +1,88 @@
+{
+  "status": "gaps",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The run-1 report names all 25 AC1-surface files, each under its own `###` heading with a claim table, and the tables hold 547 claim rows.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`.planning/phases/5/docs-verify-run-1.md` has exactly 25 `### <file>` sections (:50 README.md .. :727 verify-sweep.md) covering the four root docs and all 21 `cadence-core/workflows/*.md` (`ls cadence-core/workflows/*.md | wc -l` = 21). Every section carries a 4-column table; smallest is `spike.md` (4 table lines = 2 claims). Total table lines 597 - 25*2 header/separator lines = 547 claims, matching the report's own headline at :8."
+    },
+    {
+      "n": 2,
+      "truth": "The ledger's row count equals the run-1 report's claim count, per-doc as well as in total, and every row's resolution is `accurate` / `corrected - <sha>` / `divergence - <reason>` with none pending and no empty cell.",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "`.planning/DOCS-CLAIMS.md` (committed at the `.planning/` root, 3a00092): 547 id rows; per-doc row counts diff clean against the run-1 report's per-section claim counts for all 25 docs. Resolution column: 509 `accurate`, 19 `corrected - <7-hex sha>` (5 of them carrying a `+ DFC-0k` suffix), 19 `divergence - <reason>`; `grep -cE '\\|\\s*pending\\s*\\|?\\s*$'` = 0 and `grep -cE '\\|\\s*\\|'` = 0. Verdict/resolution cross-tab is coherent: 509 accurate->accurate, 18 stale->corrected, 20 unverifiable-> (1 corrected + 19 divergence). Every corrected sha touched the doc its row names (`git show --name-only` on 1154790 / b2bad1a / 044806c)."
+    },
+    {
+      "n": 3,
+      "truth": "The run-2 record carries exactly one delta line of the mandated form with M < N, and its counts agree with the ledger at HEAD.",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`.planning/phases/5/docs-verify-run-2.md:6` = `**run-1 stale 18 -> run-2 stale 0 + 19 divergences**`, the only matching line. Its id set is byte-identical to the ledger's 547 ids (diff clean). Its run-2 verdict column tallies 527 accurate / 0 stale / 20 unverifiable, matching its own counts table (:56-61) and the ledger (509 accurate + 18 corrected-from-stale = 527; 19 divergences = the ledger's 19 `divergence` rows)."
+    },
+    {
+      "n": 4,
+      "truth": "Every defect the phase found is filed as its own id under `## Deferred`, named in SUMMARY.md, with no `unpicked` break from the audit.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`.planning/REQUIREMENTS.md:174-177` holds DFC-01..DFC-04, all between `## Deferred` (:153) and `## Out of Scope` (:179); no DFC id appears under `## Active`. `node cadence-core/bin/planning.mjs audit --dir .planning` returns `\"ok\":true` with the only breaks being three `not-verified` on phase 5's own DOC-02/DOC-03/EVD-02 (expected mid-cycle); zero `unpicked`. SUMMARY.md:32-37 describes all four in order (NUL bytes, `phase_diff` wiring row, plan-checker five-vs-six, `risk_surface` shape (a)) and :102 names DFC-04."
+    },
+    {
+      "n": 5,
+      "truth": "`docs/EVIDENCE.md`'s figures reproduce at HEAD from the commands printed beside them, its stated eager total matches, README links it, and every command and path it names exists.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "Ran `node cadence-core/bin/weight.mjs resident --root .` and `node cadence-core/bin/weight.mjs --root .` at HEAD and compared every printed figure programmatically: all 23 per-command eager figures match, the stated total 279,064 equals the summed column, all 10 reachable figures match, all 19 role agent/dispatch pairs match, zeroResident 26,306 and its three rows match, the five per-directory rows (93 surfaces / 475,412 B) and all 12 largest-surface byte+token rows match - 0 mismatches. No surface EVIDENCE.md counts changed after the sha it names (`eddf79c`): 33c1012/f8f22cf touched only `docs/EVIDENCE.md`, `CONTRIBUTING.md` and `.planning/**`. README.md:38 and :132 both link `./docs/EVIDENCE.md`, with `231,422` still present exactly once. `/cad-trace` occurs nowhere in `docs/`, `README.md` or the ledger; every `/cad-*` command it names has a `skills/<cmd>/` dir (23 of them) and every file path it names exists on disk. Its three definitions are transcribed from `cadence-core/bin/lib/resident-weight.mjs:9-33`. SUMMARY.md:124-126 states the trace half is closed with no non-Cadence `trace.jsonl`."
+    },
+    {
+      "n": 6,
+      "truth": "Both skills name the byte figure `weight.mjs` reports for `cadence-core/references/review-triggers.md`.",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`skills/cad-land/SKILL.md:44` and `skills/cad-plan-review/SKILL.md:39` both read `17,733 B`; no `15,376` remains anywhere under `skills/`. `weight.mjs --root .` reports 17733 bytes for that surface."
+    },
+    {
+      "n": 7,
+      "truth": "All three gates are green at HEAD and every budgeted surface sits at exactly the bytes weight.mjs reports.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Ran at HEAD: `node --test cadence-core/bin/*.test.mjs` -> tests 1455 / pass 1455 / fail 0; `node cadence-core/bin/self-verify.mjs --root .` -> `\"problems\":[]` across 19 checks; `npx tsc -p tsconfig.ci.json` -> exit 0, no output. Compared all 93 surfaces from `weight.mjs --root .` against `cadence-core/bin/weight-budgets.json`: 93 entries, 93 surfaces, 0 drift, 0 unbudgeted."
+    },
+    {
+      "n": 8,
+      "truth": "Every correction in b2bad1a and 044806c fixes the claim against the code rather than restating the code's defect, and introduces no new false statement.",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Six of the eight spot-checks hold against code: `audit.md`'s id-admission text now matches `cadence-core/bin/lib/planning-files.mjs:290` verbatim including the `14-01` / `2026-08` counterexamples; `config.md`'s `parallelization.enabled` default `true` matches `cadence-core/templates/config.json`; `new-project.md`'s defaults line matches that same template; `progress.md`'s trace-writer list matches `grep -rln 'trace append' cadence-core/{workflows,references}` exactly (context, plan, execute, verify, verify-deep + review-triggers.md); the DeepSeek split matches `review-provider.mjs:619` / `:655` / `:708`; README's 'six figures and the four tables' matches 6 files in `docs/figures/` and 4 `|---` tables in `docs/WORKFLOW.md`. The plan-checker five-vs-six contradiction was NOT smoothed - METHOD.md was corrected to six and the contract's own `:113` contradiction filed as DFC-03. Two blemishes remain, both introduced by this phase's own corrections: (1) METHOD.md:281, written in b2bad1a, asserts \"`phase_diff` is the one that is off at `solo`\" - false, `cadence-core/route-table.json:47` also has `diff: off` at solo, and METHOD.md:292 says so nine lines later in the same section; (2) `cadence-core/workflows/task.md:75-79`, rewritten in 044806c to conform to the wiring table, now instructs an unnamed transient diff file with no path, no never-stage rule and no cleanup, unlike the sibling site `execute.md:452` which names `plan-<k>-risk-task-<n>.diff` and forbids staging it - DFC-04 documents exactly this consequence, so it is filed, but the degraded instruction ships in the tree."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Run-1 report covers all 25 surface files", "evidence": "25 `###` sections in docs-verify-run-1.md covering the 4 root docs and all 21 workflow files, each with a 4-column claim table; 597 table lines - 50 header/separator lines = 547 claims, matching the report's headline at :8." },
+    { "k": 2, "name": "Ledger complete, every resolution stated", "evidence": "547 ledger rows vs 547 report claim rows, and per-doc counts diff clean for all 25 docs. Resolutions: 509 accurate, 19 `corrected - <sha>`, 19 `divergence - <reason>`; zero rows read `pending` in the resolution column, zero empty cells, and each corrected sha's commit touched the doc its row names." },
+    { "k": 3, "name": "Confirmation run states a real delta", "evidence": "docs-verify-run-2.md:6 carries the single line `run-1 stale 18 -> run-2 stale 0 + 19 divergences`; its 547 ids are identical to the ledger's, its verdict column tallies 527/0/20, and 19 divergences equals the ledger's divergence count at HEAD." },
+    { "k": 4, "name": "Code defects filed, not reworded", "evidence": "DFC-01..04 at REQUIREMENTS.md:174-177, all under `## Deferred` and none under `## Active`; `planning.mjs audit --dir .planning` returns ok:true with only the three expected `not-verified` breaks on DOC-02/DOC-03/EVD-02 and zero `unpicked`; all four are described in SUMMARY.md:32-37." },
+    { "k": 5, "name": "Evidence artifact reproduces and is linked", "evidence": "Re-ran both weight.mjs forms at HEAD: all 23 eager figures, the 279,064 total, 10 reachable figures, 19 dispatch rows, zeroResident 26,306, the 5 per-directory rows (93/475,412) and the 12 largest-surface rows all match docs/EVIDENCE.md with zero mismatches. README.md:38 and :132 both link it; every command and path the file names exists (no `/cad-trace` anywhere); SUMMARY.md:124-126 closes the trace half." },
+    { "k": 6, "name": "One byte figure for review-triggers.md", "evidence": "cad-land/SKILL.md:44 and cad-plan-review/SKILL.md:39 both read `17,733 B`, the figure `weight.mjs --root .` reports; no `15,376` remains under skills/." },
+    { "k": 7, "name": "Three gates green with budgets regenerated", "evidence": "tests 1455 / pass 1455 / fail 0; self-verify `\"problems\":[]`; `npx tsc -p tsconfig.ci.json` exit 0; all 93 weight-budgets.json entries equal the bytes weight.mjs reports (0 drift, 0 unbudgeted)." }
+  ],
+  "gaps": [
+    {
+      "name": "METHOD.md's corrected trigger paragraph states a false fact and contradicts itself",
+      "reason": "behavior wrong - the b2bad1a correction of METHOD-02 replaced a stale sentence with an inaccurate one",
+      "evidence": "METHOD.md:281 reads \"All five fire on their own at the default `shipped` level. `phase_diff` is the one that is off at `solo`\". `cadence-core/route-table.json:47` sets `\"diff\": \"off\"` at solo as well, so `phase_diff` is not the only one, and METHOD.md:292 in the same section says \"an ordinary `diff` is off at `solo`\" - the file now contradicts itself. Ledger row METHOD-02 records this as `corrected - b2bad1a + DFC-02` and run-2 re-verified it `accurate`, so both records carry the error forward.",
+      "severity": "minor",
+      "missing": "Reword METHOD.md:281 to the true statement (at `solo` both `diff` and `phase_diff` are off; `phase_diff` is the one that only ever fires on the parallel path), and re-check the METHOD-02 row against the edited text."
+    },
+    {
+      "name": "task.md's risk_surface instruction lost the diff-path, never-stage and cleanup rules its sibling site keeps",
+      "reason": "behavior wrong - 044806c rewrote a working instruction to conform to a wiring table the same phase filed as defective (DFC-04)",
+      "evidence": "`cadence-core/workflows/task.md:75-79` now says to \"capture the flagged range to a file and fire with its path - shape (c)\" while naming no path, no never-stage rule and no cleanup step. The other `risk_surface` fire site, `cadence-core/workflows/execute.md:452`, names `plan-<k>-risk-task-<n>.diff` and states it must never be staged and is deleted by the continuation. `.planning/REQUIREMENTS.md:177` (DFC-04) states this consequence explicitly, so it is filed rather than hidden - but the shipped workflow carries the degraded instruction now, and a `/cad-task` run following it can leave or commit an unnamed transient diff.",
+      "severity": "minor",
+      "missing": "Either revert task.md:75-79 to shape (a) refs and let DFC-04's table fix land, or give task.md the same named transient-diff path, never-stage rule and cleanup sentence execute.md:452 already has."
+    }
+  ],
+  "human_checks": []
+}

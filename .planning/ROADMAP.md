@@ -105,7 +105,7 @@ each release tag are their archive.
 - [x] **Phase 2: Live friction** - the defects that bite every session: the verify walk, the unbounded re-arm, and the version drift the gates cannot see
 - [x] **Phase 3: Field friction** - what is broken for Cadence's users right now: named phase dirs the seams cannot address, a run record every project commits by default, and a shortcut marker that reaches the queue
 - [x] **Phase 4: Token accounting** - what a dispatch costs is recorded where it happens, and every dispatch site is bracketed, so efficiency work stops being guesswork
-- [ ] **Phase 5: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
+- [x] **Phase 5: Doc sweep** - `/cad-docs-verify` across the whole doc surface, with a committed, re-runnable output
 
 ## Phase Details
 
