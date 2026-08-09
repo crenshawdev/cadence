@@ -23,6 +23,13 @@ Check, then report - do not fix without asking.
 1. **Presence.** `.planning/` exists with PROJECT.md, REQUIREMENTS.md,
    ROADMAP.md, STATE.md. A missing core doc is an issue (point at
    /cad-new-project if the dir itself is absent).
+   - The run record stays out of git. Run
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root . --check`
+     and report an issue when `ignored` is false or `tracked` is true, naming the
+     fix (the same command without `--check`). Silent when the record is ignored
+     and untracked. A project scaffolded before that seam existed has no line of
+     its own; `--check` writes nothing and this step never edits the user's
+     `.gitignore`.
 
 2. **STATE cursor.** Exactly the 4-line schema (Phase / Status / Next / Updated -
    references/conventions.md). `Status` is one of the lifecycle values

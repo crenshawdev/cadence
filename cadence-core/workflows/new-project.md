@@ -27,7 +27,19 @@ line):
 1. If `.planning/PROJECT.md` exists, stop: "Project already initialized.
    /cad-progress shows where you are."
 2. If not in a git repo (`git rev-parse --git-dir` fails), run `git init`.
-3. `mkdir -p .planning`
+3. `mkdir -p .planning`, then keep the run record out of git:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root .
+   ```
+
+   Append-if-absent: it creates `.gitignore` when there is none, and a
+   brownfield `.gitignore` keeps every line it had. A re-run adds no second
+   line (`written:false`, `reason:"already-ignored"`), and a project that
+   ignores `.planning/` wholesale is already correct and is left alone.
+   `.planning/trace.jsonl` is ONE MACHINE's routing/provider/worker record, so a
+   project must not commit it - and this seam is the only thing in Cadence that
+   writes that line.
 4. If `.planning/config.json` does not exist, copy the engine template
    verbatim:
 

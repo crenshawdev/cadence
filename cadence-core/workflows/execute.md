@@ -223,7 +223,10 @@ what `trace render` reports as unpaired. `--plan <k>` is the WORKER key - the
 plan number here, the role name for a role-dispatched worker.
 
 A worktree executor emits NO trace events of its own, and inner tool-level
-detail is deliberately not captured. `.planning/trace.jsonl` is gitignored, so
+detail is deliberately not captured. `.planning/trace.jsonl` is gitignored -
+`/cad-new-project` writes that line through `planning.mjs trace ignore` at
+scaffold time, and `/cad-health` REPORTS a project scaffolded before that seam
+existed rather than editing its `.gitignore` - so
 nothing a worktree wrote could ride the merge back, and the executor's return is
 a frozen five-field digest with no room for one. The orchestrator's brackets are
 what make every worker attributable; what happened INSIDE a worker is its report

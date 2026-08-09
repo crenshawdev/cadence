@@ -45,10 +45,16 @@
 //   trace render [--phase N]        the four families, the derived id, and
 //                                   every worker dispatch paired to its
 //                                   return/checkpoint/escalation
+//   trace ignore [--root <path>] [--check]
+//                                   keep .planning/trace.jsonl out of git:
+//                                   append-if-absent at scaffold time, or
+//                                   REPORT ONLY under --check (NOT --dir:
+//                                   --root is the PROJECT root, where
+//                                   .gitignore lives)
 'use strict';
 
 import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
-import { join, dirname, relative, resolve as resolvePath, sep } from 'node:path';
+import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { renameSync, rmSync } from 'node:fs';
@@ -1958,7 +1964,139 @@ function cmdDetectCommands(root) {
 // malformed CALL is ok:false. The trace records what a run did; it may never be
 // able to change what a run does.
 // ---------------------------------------------------------------------------
+// The ignore line a project needs so its run record stays out of git, and the
+// comment written above it so the next reader knows what it is.
+const TRACE_IGNORE_LINE = '.planning/trace.jsonl';
+const TRACE_IGNORE_COMMENT = "# Cadence's joined run record - local diagnostics"
+  + " only, one machine's routing/provider/worker events";
+
+/**
+ * Does a `check-ignore -v` match source TRAVEL with the repository?
+ *
+ * This is why `-v` is used instead of `-q`. `check-ignore` also consults
+ * `core.excludesFile` and `.git/info/exclude`, and NEITHER is cloned: a machine-
+ * local exclusion would answer `ignored:true` and leave the project with no
+ * ignore line of its own, so the collaborator who clones it commits the run
+ * record on the next `git add .planning` - exactly the failure this subcommand
+ * exists to close. Only a `.gitignore` file inside the root counts.
+ * @param {string|null} source the first field of `check-ignore -v` output
+ * @returns {boolean}
+ */
+function ignoreSourceTravels(source) {
+  if (!source) return false;
+  if (isAbsolute(source)) return false;            // core.excludesFile
+  const parts = source.split(/[/\\]/);
+  if (parts.includes('..') || parts.includes('.git')) return false; // outside, or info/exclude
+  return parts[parts.length - 1] === '.gitignore';
+}
+
+/**
+ * Git's own answer about the ignore line, with the matching SOURCE, or
+ * `method: 'file'` when git cannot answer at all (not installed, or the root is
+ * not a repository). Exit 1 from `check-ignore` is DATA - nothing matched - and
+ * only a harder failure falls back.
+ * @param {string} root
+ * @returns {{method: 'git'|'file', travels: boolean, source: string|null}}
+ */
+function gitIgnoreState(root) {
+  const noGit = { method: /** @type {'file'} */ ('file'), travels: false, source: null };
+  try {
+    execFileSync('git', ['-C', root, 'rev-parse', '--git-dir'], { stdio: 'pipe' });
+  } catch { return noGit; }
+  let out = '';
+  try {
+    out = execFileSync('git', ['-C', root, 'check-ignore', '-v', '--', TRACE_IGNORE_LINE],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    if (e && e.status === 1) return { method: 'git', travels: false, source: null };
+    return noGit;
+  }
+  // `<source>:<line>:<pattern>\t<pathname>`. The source is everything before
+  // the LAST two colons of the left half, so a source path containing a colon
+  // is not silently truncated into a different file name.
+  const left = out.split('\n')[0].split('\t')[0];
+  const last = left.lastIndexOf(':');
+  const prev = last > 0 ? left.lastIndexOf(':', last - 1) : -1;
+  const source = prev >= 0 ? left.slice(0, prev) : null;
+  return { method: 'git', travels: ignoreSourceTravels(source), source };
+}
+
+/** Is the run record TRACKED? A non-repo tracks nothing, so it is false there. */
+function traceTracked(root) {
+  try {
+    execFileSync('git', ['-C', root, 'ls-files', '--error-unmatch', '--', TRACE_IGNORE_LINE],
+      { stdio: 'pipe' });
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * The literal fallback: the line as a project would write it, in `<root>/.gitignore`.
+ * Comments and blank lines are skipped. Used only when git could not answer -
+ * it cannot see a `.planning/` wholesale ignore, which is why the git arm is
+ * tried first and is not decoration.
+ * @param {string} root
+ */
+function gitignoreCarriesLine(root) {
+  const text = read(join(root, '.gitignore'));
+  if (text === null) return false;
+  return text.split('\n').some((raw) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) return false;
+    return line === TRACE_IGNORE_LINE || line === `/${TRACE_IGNORE_LINE}`;
+  });
+}
+
+/**
+ * `trace ignore` - the scaffold-time writer of the ignore line, and the
+ * read-only reporter `/cad-health` runs (D-03).
+ *
+ * `ignored` and `tracked` are the state AS FOUND, before any write; `written`
+ * says what this call changed. `--check` writes nothing at all: /cad-health
+ * reports on a project it did not create and may not edit its `.gitignore`.
+ * @param {string} root @param {any} opts
+ */
+function cmdTraceIgnore(root, opts) {
+  if (!existsSync(root)) return fail('no-root', `${root} not found`);
+  const file = join(root, '.gitignore');
+  const git = gitIgnoreState(root);
+  const ignored = git.method === 'git' ? git.travels : gitignoreCarriesLine(root);
+  const common = {
+    root,
+    file,
+    line: TRACE_IGNORE_LINE,
+    ignored,
+    tracked: traceTracked(root),
+    method: git.method,
+    ...(git.source ? { source: git.source } : {}),
+  };
+  if ('check' in opts) return ok({ ...common, written: false });
+  // Already covered by a line that travels: the no-op that makes a re-run safe.
+  if (ignored) return ok({ ...common, written: false, reason: 'already-ignored' });
+
+  // Every existing byte survives. The newline is added only when the current
+  // contents lack a trailing one, so a brownfield `.gitignore` keeps every line
+  // it had and the new line still lands on a line of its own.
+  const existing = read(file);
+  const next = existing === null || existing === ''
+    ? `${TRACE_IGNORE_COMMENT}\n${TRACE_IGNORE_LINE}\n`
+    : `${existing}${existing.endsWith('\n') ? '' : '\n'}\n${TRACE_IGNORE_COMMENT}\n${TRACE_IGNORE_LINE}\n`;
+  atomicWrite(file, next);
+  return ok({ ...common, written: true });
+}
+
 function cmdTrace(dir, sub, opts) {
+  if (sub === 'ignore') {
+    // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
+    // there while the line it carries is `.planning/trace.jsonl`. A `--root`
+    // present with nothing usable after it is REFUSED rather than falling
+    // through to the cwd, which would edit a different tree than the caller
+    // named (the `#42/#45` rail).
+    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
+      return fail('bad-args', 'trace ignore --root needs a path after it: --root <project root>');
+    }
+    return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
+  }
   if (sub === 'append') {
     const parsedPhase = requirePhaseArg(opts.phase);
     if (!parsedPhase.ok) return fail('bad-args', 'trace append needs --phase <N>');
@@ -2007,7 +2145,7 @@ function cmdTrace(dir, sub, opts) {
       unpaired: r.unpaired,
     });
   }
-  return fail('usage', 'trace <append|render>');
+  return fail('usage', 'trace <append|render|ignore>');
 }
 
 // ---------------------------------------------------------------------------

@@ -149,6 +149,7 @@ const CONTRACTS = {
     recall: [],
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail'],
     'trace render': ['--phase'],
+    'trace ignore': ['--root', '--check'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
   },
