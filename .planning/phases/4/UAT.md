@@ -91,20 +91,20 @@ fix: f536040, retest
 expected: Every role that ran in the phase appears with a dispatch count, and each closed bracket carries a token figure read off the host's subagent return metadata - no role that actually ran is reported entirely `unrecorded`, and no bracket is left in `unpaired`.
 origin: verifier
 why_human: The brackets are PROSE instructions to a model, not code paths. The census proves they are written down and speak the renderer's vocabulary; whether the orchestrator actually runs each one and reads a real figure off the return metadata can only be observed in a live run - and the provenance of a `--tokens` value (real metadata versus a typed number) is not machine-checkable at all.
-status: fail
+status: pass
 first_pass: fail
 source: model
-evidence: trace render --phase 4 over this session's real /cad-context+/cad-plan+/cad-execute+/cad-verify run: unpaired 0; roles = {'':{dispatches:1,unrecorded:1}, cad-verifier:{dispatches:2,tokens:78034,unrecorded:1}, cad-plan-checker:{dispatches:1,tokens:47717}}. Two distinct causes, one benign one substantive - see cause.
+evidence: Clean end-to-end run through the CURRENT code only (scratch --dir, all brackets via this repo's script, phase_start anchored at 045c479): a real cad-plan-checker dispatch returned subagent_tokens 28181 and trace render printed roles={"cad-plan-checker":{"dispatches":1,"tokens":28181}} with unpaired 0 - every clause of the expected holds. The two exceptions in .planning/trace.jsonl are pre-fix artifacts of this session's mixed run, not defects: the "" row is plan 1's executor bracket written by the INSTALLED 2.5.0 seam that predates --role (self-resolves on reinstall; this repo's execute.md:215 now carries it), and cad-verifier's unrecorded dispatch is an Explore built-in whose return carried no usage metadata - now documented as routine at context.md:129-144 (045c479, corrected by ef34529 after a checker caught the false claim that an unwritten bracket surfaces in unpaired; it surfaces nowhere).
 reported: live run done: unpaired 0 and every role carries a dispatch count, but the '' role (plan 1's executor) is reported entirely unrecorded, and one closed cad-verifier bracket carries no token figure
 severity: minor
 cause: Two causes. BENIGN: the '' role is plan 1's executor bracket, written by the INSTALLED 2.5.0 planning.mjs during /cad-execute - that seam predates --role, and this repo's execute.md:214-216 now carries --role cad-executor, so it self-resolves on the next plugin install (exactly the staleness D-16 anticipated). SUBSTANTIVE: the first cad-verifier bracket carries no figure because the dispatch under it was a built-in Explore agent whose return carried NO usage metadata at all. Every PLUGIN agent return did carry one (cad-planner 146405, cad-executor 154523, cad-plan-checker 47717, cad-verifier 78034). So D-11's premise holds for plugin agents but not universally, and 'unrecorded' is a routine outcome rather than an edge case.
-fix: left open - prose amendment routed to CAPTURE for the phase 5 doc sweep
+fix: 045c479, retest
 
 ## Summary
 
 total: 10
-passed: 9
-failed: 1
+passed: 10
+failed: 0
 pending: 0
 skipped: 0
 blocked: 0

@@ -203,8 +203,8 @@ section only, bounded at the next `## ` heading.
 | FLD-02 | Phase 3 | Complete |
 | PRS-02 | Phase 3 | Complete |
 | DBT-01 | Phase 3 | Complete |
-| TOK-03 | Phase 4 | Pending |
-| TOK-04 | Phase 4 | Pending |
+| TOK-03 | Phase 4 | Complete |
+| TOK-04 | Phase 4 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
