@@ -93,7 +93,16 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase 
 ```
 
 Print the four family counts (`routing`, `provider`, `lifecycle`, `outcome`)
-under the record's one `corr`; then every `unpaired` entry, which names a worker
+under the record's one `corr`; then the `roles` block, one line per role key
+carrying its token total, its dispatch count, and its `unrecorded` count when
+present - what each worker in this phase COST. Read it by this rule, which is
+the distinction the block exists to protect: an absent token total means NO
+dispatch of that role reported a figure, and is printed as `unrecorded`, never
+as `0` - a role that was never measured and a role that spent nothing are
+different answers. An `unrecorded` count BESIDE a real total means that many of
+that role's dispatches came back without one, so the total is real but short. A
+render carrying no `roles` key prints nothing for it, exactly as an absent trace
+file already prints empty counts. Then every `unpaired` entry, which names a worker
 that was handed work and never came back with a return, checkpoint or
 escalation; then the `capped` flag when it is true, which means the record hit
 its size bound and what follows is missing rather than absent. An absent trace
