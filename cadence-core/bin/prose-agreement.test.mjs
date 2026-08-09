@@ -22,6 +22,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { weighAll } from './lib/surface-weight.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -170,4 +171,95 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
   assert.match(task, /\.planning\/tasks\/\{slug\}\/risk-task-\{slug\}\.diff/);
   assert.match(task, /never stage it/i);
   assert.match(task, /delete it once\s+the trigger returns/i);
+});
+
+// --- the measured byte count, wherever prose copies it -----------------------
+
+/** `NN,NNN` as prose writes a byte count. */
+const commas = (n) => n.toLocaleString('en-US');
+
+test('every site copying a measured byte count states the measured number', () => {
+  // The drift class that had no check at all. `references/seams.md:240-242` now
+  // requires every future deferral to quote its reference's measured bytes
+  // inline, and those inline figures were checked against nothing - which is how
+  // `review-triggers.md` came to be published at 17,733 B in four places at once.
+  // Measured through weighAll, the SAME lib self-verify enforces with and
+  // weight.mjs reports from, so the check cannot diverge from the enforced
+  // number.
+  const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
+
+  const REF = 'cadence-core/references/review-triggers.md';
+  const ref = measured.get(REF);
+  assert.ok(ref, `${REF} is not a measured surface`);
+
+  const budgets = JSON.parse(doc('cadence-core', 'bin', 'weight-budgets.json')).budgets;
+  assert.equal(budgets[REF], ref.bytes, 'weight-budgets.json entry');
+
+  for (const skill of ['cad-land', 'cad-plan-review']) {
+    const text = doc('skills', skill, 'SKILL.md');
+    assert.ok(text.includes(`${commas(ref.bytes)} B`),
+      `skills/${skill}/SKILL.md does not state ${commas(ref.bytes)} B for ${REF}`);
+  }
+});
+
+test('docs/EVIDENCE.md: every twelve-largest row states measured bytes AND est tokens', () => {
+  // Every row, not just review-triggers.md's: checking one of twelve leaves the
+  // other eleven and the whole est-token column free to stale in silence, which
+  // is the drift this check exists to close. Est tokens come from the seam's own
+  // measurement, never a recomputation of bytes/4 - `estTokens` counts
+  // CHARACTERS, which is why 17,714 B reads 4,429 rather than 4,428.
+  const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
+  const evidence = doc('docs', 'EVIDENCE.md');
+
+  // Scoped to the table under its own heading sentence, so the per-directory
+  // table above it - same three-column shape, `cadence-core/<dir>/` in cell one
+  // - cannot be swept in and read as a surface.
+  const section = evidence.split('The twelve largest individual surfaces:')[1];
+  assert.ok(section, 'the twelve-largest table lost its heading sentence');
+  const rows = section.split('\n')
+    .map((l) => l.match(/^\| `([^`]+[^/])` \| ([\d,]+) \| ([\d,]+) \|$/))
+    .filter(Boolean);
+  assert.equal(rows.length, 12, 'the twelve-largest table no longer has twelve parsed rows');
+
+  const num = (s) => Number(s.replace(/,/g, ''));
+  for (const [, surface, bytes, est] of rows) {
+    const m = measured.get(surface);
+    assert.ok(m, `EVIDENCE names ${surface}, which is not a measured surface`);
+    assert.equal(num(bytes), m.bytes, `${surface} bytes`);
+    assert.equal(num(est), m.estTokens, `${surface} est tokens`);
+  }
+
+  // And the table really is the twelve largest, so a row cannot quietly leave it.
+  const largest = [...measured.values()].sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 12).map((s) => s.surface);
+  assert.deepEqual(rows.map((r) => r[1]), largest);
+});
+
+test('docs/EVIDENCE.md: the per-directory subtotals and grand total are the measured sums', () => {
+  // The stale half this check was written for: `cadence-core/workflows/` and the
+  // grand total were 159 B light before this phase touched anything - exactly
+  // 716fb60's task.md growth, committed after f8f22cf last re-measured them.
+  const all = weighAll(REPO);
+  const evidence = doc('docs', 'EVIDENCE.md');
+  const num = (s) => Number(s.replace(/,/g, ''));
+
+  const prefixes = ['agents/', 'cadence-core/references/', 'cadence-core/templates/',
+    'cadence-core/workflows/', 'skills/'];
+  let seen = 0;
+  for (const prefix of prefixes) {
+    const under = all.filter((s) => s.surface.startsWith(prefix));
+    const row = evidence.split('\n').find((l) => l.startsWith(`| \`${prefix}\` |`));
+    assert.ok(row, `no per-directory row for ${prefix}`);
+    const [, count, bytes] = row.split('|').slice(1, -1).map((c) => c.trim());
+    assert.equal(num(count), under.length, `${prefix} surface count`);
+    assert.equal(num(bytes), under.reduce((t, s) => t + s.bytes, 0), `${prefix} bytes`);
+    seen += under.length;
+  }
+  assert.equal(seen, all.length, 'a measured surface falls under none of the five prefixes');
+
+  const total = evidence.split('\n').find((l) => l.startsWith('| **total** |'));
+  assert.ok(total, 'no grand-total row');
+  const [, count, bytes] = total.split('|').slice(1, -1).map((c) => c.trim().replace(/\*/g, ''));
+  assert.equal(num(count), all.length, 'grand-total surface count');
+  assert.equal(num(bytes), all.reduce((t, s) => t + s.bytes, 0), 'grand-total bytes');
 });

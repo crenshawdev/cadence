@@ -1,6 +1,6 @@
 # Runtime evidence: what Cadence weighs
 
-Measured 2026-08-09 against the tree at commit `eddf79c`, by the commands
+Measured 2026-08-09 against the tree at commit `98be3d2`, by the commands
 printed beside each table. The commit that carries this file changes no figure
 in it: `docs/` holds no measured surface, so the numbers below are the ones
 `weight.mjs` reports at the tip of this phase. Check the tree out, run the
@@ -58,10 +58,10 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-plan-review` | 2,353 |
 | `/cad-progress` | 9,791 |
 | `/cad-spike` | 3,898 |
-| `/cad-task` | 5,221 |
+| `/cad-task` | 5,380 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 24,533 |
-| **23 user-invocable commands** | **279,064** |
+| **23 user-invocable commands** | **279,223** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -79,16 +79,16 @@ may open at a step rather than what it starts holding.
 
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
-| `/cad-execute` | 28,682 | 100,312 |
-| `/cad-verify` | 24,533 | 100,117 |
-| `/cad-plan` | 22,662 | 78,093 |
-| `/cad-context` | 20,777 | 86,312 |
+| `/cad-execute` | 28,682 | 100,293 |
+| `/cad-verify` | 24,533 | 100,098 |
+| `/cad-plan` | 22,662 | 78,074 |
+| `/cad-context` | 20,777 | 86,293 |
 | `/cad-config` | 20,547 | 44,326 |
-| `/cad-land` | 18,209 | 63,369 |
+| `/cad-land` | 18,209 | 63,350 |
 | `/cad-new-project` | 16,708 | 64,002 |
-| `/cad-milestone` | 16,210 | 67,200 |
+| `/cad-milestone` | 16,210 | 67,181 |
 | `/cad-audit` | 14,551 | 64,736 |
-| `/cad-decision-review` | 12,213 | 29,946 |
+| `/cad-decision-review` | 12,213 | 29,927 |
 
 Three reference files are reachable from no command at all — budgeted bytes
 that enter no model context, so no context saving may ever claim them
@@ -117,10 +117,10 @@ setting — that invariant is what the spread in this table shows.
 | cad-assumptions-analyzer | `agents/cad-assumptions-analyzer.md` | 519 | 4,625 |
 | cad-executor | `agents/cad-executor-xhigh.md` | 425 | 13,050 |
 | cad-executor | `agents/cad-executor.md` | 438 | 13,063 |
-| cad-plan-checker | `agents/cad-plan-checker-high.md` | 458 | 5,802 |
-| cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 5,810 |
-| cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 5,806 |
-| cad-plan-checker | `agents/cad-plan-checker.md` | 476 | 5,820 |
+| cad-plan-checker | `agents/cad-plan-checker-high.md` | 458 | 5,801 |
+| cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 5,809 |
+| cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 5,805 |
+| cad-plan-checker | `agents/cad-plan-checker.md` | 476 | 5,819 |
 | cad-planner | `agents/cad-planner-max.md` | 407 | 9,061 |
 | cad-planner | `agents/cad-planner-xhigh.md` | 415 | 9,069 |
 | cad-planner | `agents/cad-planner.md` | 429 | 9,083 |
@@ -145,11 +145,11 @@ turn-one table above is the number that decides what a session pays.
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 16 | 159,184 |
+| `cadence-core/references/` | 16 | 159,165 |
 | `cadence-core/templates/` | 8 | 16,861 |
-| `cadence-core/workflows/` | 21 | 200,050 |
-| `skills/` | 29 | 90,734 |
-| **total** | **93** | **475,412** |
+| `cadence-core/workflows/` | 21 | 200,209 |
+| `skills/` | 29 | 90,733 |
+| **total** | **93** | **475,551** |
 
 The twelve largest individual surfaces:
 
@@ -162,15 +162,19 @@ The twelve largest individual surfaces:
 | `cadence-core/workflows/config.md` | 19,256 | 4,763 |
 | `cadence-core/references/config-reach.md` | 18,623 | 4,656 |
 | `cadence-core/references/seams.md` | 18,575 | 4,644 |
-| `cadence-core/references/review-triggers.md` | 17,733 | 4,433 |
+| `cadence-core/references/review-triggers.md` | 17,714 | 4,429 |
 | `cadence-core/workflows/verify.md` | 17,639 | 4,410 |
 | `cadence-core/workflows/new-project.md` | 15,872 | 3,968 |
 | `cadence-core/references/plan-frontmatter.md` | 13,954 | 3,489 |
 | `cadence-core/references/req-traceability.md` | 13,725 | 3,432 |
 
 Every one of those 93 surfaces sits at exactly its budgeted byte count in
-`cadence-core/bin/weight-budgets.json`, with total slack zero, so any added byte
-anywhere fails `self-verify` on the commit that introduces it.
+`cadence-core/bin/weight-budgets.json`, with total slack zero, and that is now
+enforced rather than merely maintained: `self-verify` fails on any DIFFERENCE
+between a surface and its entry, added bytes or removed, on the commit that
+introduces it. A shrink counts because nothing regenerates these entries — a
+surface left sitting under its number banks slack the next growth then spends
+in silence.
 
 ## What this file does not carry
 
