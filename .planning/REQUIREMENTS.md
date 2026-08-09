@@ -1,40 +1,20 @@
-# Requirements: Cadence (v2.6.0 shipped)
+# Requirements: Cadence (v2.6.1 shipped)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v2.6.1 — the defects the sweep found`. Opened 2026-08-09 when `v2.6.0` closed
-with all fourteen of its requirements delivered. The entire scope is the four
-defects that cycle's own doc sweep found and filed under `## Deferred` rather
-than rewording away, now promoted here.
+Empty. `v2.6.1 — the defects the sweep found` shipped on 2026-08-09 with all
+four of its requirements delivered and verified: the audit was green (4/4
+traced, 0 broken; 8/8 acceptance criteria covered), and `DFC-01` through
+`DFC-04` moved to `## Shipped` below as rows at their phase.
 
-Why they are a cycle rather than a backlog. Each is located to a file and a
-line, each is close to a one-line fix, and none is a design question, so the
-whole thing is small on purpose. Filing them was an explicit refusal to convert
-a bug into a documentation edit (that is `DOC-03`, which shipped in v2.6.0); a
-defect filed and then left for a convenient cycle just ages into the next
-sweep's findings, which is the failure the filing existed to prevent.
-
-What to plan for rather than discover: `DFC-02` and `DFC-04` both live in
-`cadence-core/references/review-triggers.md`, a file sitting at exactly its byte
-budget with zero slack, and that budget figure is quoted inline by
-`skills/cad-land/SKILL.md` and `skills/cad-plan-review/SKILL.md`. Either fix is
-three coordinated edits, not one. `cadence-core/references/**` was outside
-v2.6.0's swept surface, which is why both were filed instead of corrected in
-place.
-
-Guardrail, earned twice in v2.6.0: a correction is not free. Two independent
-review passes each caught that cycle's doc sweep breaking something while fixing
-something else, once shipping a command name that exists nowhere in the tree,
-once replacing a working artifact reference with an under-specified one. Every
-fix here lands with the check that would have caught its own failure mode.
-
-- **DFC-01**: `cadence-core/bin/lib/trace.mjs:336` builds the composite worker key with two literal U+0000 bytes typed into the template string rather than the `\0` escape sequence, so `file(1)` classifies the source as `data` and every `grep`/`rg` over `cadence-core/bin/**` silently skips that whole file unless the caller passes `-a`. The code computes the right key, which is why no test catches it — the defect is entirely in what the bytes do to every tool that reads the file afterwards, and a search that silently omits one file returns a wrong answer with no error. It is a one-character-per-byte fix (`^@` -> `\0`) that changes no behaviour. Filed rather than fixed inline because phase 5 edits documentation and this is a source change; filed rather than left as a note because it has already cost a debugging detour in phase 4's UAT, its only prior record was `.planning/CAPTURE.md`, which is gitignored in this repo and therefore exists on one machine only, and every pass that does not know about it rediscovers it and works around it. Named in advance by `phases/5/PLAN.md` task 3 and filed whether or not the sweep surfaced it; run 1 did not, because the file is outside the swept surface
-- **DFC-02**: The review-trigger wiring table at `cadence-core/references/review-triggers.md:244` states `phase_diff`'s gates as `off / off / adjudicated` across solo/shipped/critical, and `docs/WORKFLOW.md:168` carries the same row. The live `cadence-core/route-table.json` resolves `off / advisory / adjudicated`, and the `review.triggers.phase_diff.gate` schema default is `advisory`. Not a wording preference: `review-triggers.md` is the reference every other surface cites for this table, so four of run 1's eighteen stale rows — `METHOD.md:276`, `METHOD.md:279`, `cadence-core/workflows/execute.md:382-383`, `:387-388` — are one fact copied out of it, and correcting the four without correcting the source leaves the drift to be re-derived. Both files are outside AC1's swept surface (`cadence-core/references/**` and `docs/**` are excluded by `phases/5/CONTEXT.md`'s scope boundary and by the plan's file lease), and `review-triggers.md` sits at exactly its 17,733 B budget with zero slack, so `off` -> `advisory` also moves the budget and the two inline figures AC6 is fixing in the same phase. Filed rather than reworded away, and rather than widened into scope on an executor's own judgement
-- **DFC-03**: `skills/cad-plan-checker-contract/SKILL.md` contradicts itself about its own size: `:42` says "Check six dimensions" and lists Proportionality as the sixth, while `:113`'s `<success_criteria>` still says "All five dimensions checked". A checker whose completion criterion names five of the six it was told to check can report success having skipped the one added to bound plan size, which is the dimension `v2.5.0` shipped the whole cycle early to install. Same fact as run 1's `METHOD.md:91` row, one file over; that row is corrected in this phase, this one is filed because `skills/**` is outside AC1's surface and the file is not in the plan's lease
-- **DFC-04**: The `risk_surface` row of the wiring table at `cadence-core/references/review-triggers.md:243` admits shape (c) only as "the flagged-diff FILE path the checkpoint returned", and `/cad-task` is the one `risk_surface` fire site with no executor and no checkpoint: it can produce a shape-(c) path, but not the one the row describes. Section 2's own definition of shape (c) at `:59-63` is already broad enough ("a file artifact... or one the reviewer's tree cannot reach"), so the row's QUALIFIER is what is wrong, not its shape vocabulary. CORRECTED 2026-08-09 at /cad-context 1: the workflow half of this filing is already closed. This row originally also said `cadence-core/workflows/task.md`'s corrected text named no diff path, no never-stage rule and no cleanup, which described `044806c`'s state; `716fb60` superseded it during `/cad-verify 5` by taking the second exit named below, so `task.md:73-88` now carries all three. What remains is the table row alone. Whoever takes it decides one thing: broaden the row's qualifier so it admits a shape-(c) path however it was produced, or admit shape (a) for already-committed fire sites and revert `task.md` to refs - the second discards what `716fb60` restored
+The next cycle is not scoped yet. `## Deferred` holds the candidates and none of
+them has been promoted, deliberately: opening a milestone is its own decision
+and it has not been taken. `/cad-phase add` opens the first phase once it is,
+and `/cad-plan` seeds each requirement's Traceability row as its phase is
+planned - rows are never hand-populated here.
 
 ## Shipped
 
@@ -141,6 +121,10 @@ parses only the Traceability table).
 | QW-04 (a published version is never presented as current) | 1 | Complete | v2.5.0 |
 | QW-05 (every provider failure path exercised, drop-outs named loudly) | 1 | Complete | v2.5.0 |
 | CTX-01 (`weight.mjs resident` + the two heaviest commands stop eager-preloading) | 2 | Complete | v2.5.0 |
+| DFC-01 (two literal NUL bytes in `lib/trace.mjs`, plus a `nul-byte-in-source` guard over every file under `bin/`) | 1 | Complete | v2.6.1 |
+| DFC-02 (`phase_diff`s gate row states what the resolver returns, in both prose sites) | 1 | Complete | v2.6.1 |
+| DFC-03 (the plan-checker contract agrees with itself on its dimension count) | 1 | Complete | v2.6.1 |
+| DFC-04 (the `risk_surface` row admits the artifact `/cad-task` can produce) | 1 | Complete | v2.6.1 |
 
 ## Deferred
 
@@ -186,10 +170,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DFC-01 | Phase 1 | Complete |
-| DFC-02 | Phase 1 | Complete |
-| DFC-03 | Phase 1 | Complete |
-| DFC-04 | Phase 1 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
@@ -197,4 +177,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-09 v2.6.0 closed with all fourteen requirements delivered; they move to `## Shipped` as rows and `## Traceability` starts clean. `v2.6.1` opens on DFC-01..04, promoted out of `## Deferred`*
+*Last updated: 2026-08-09 v2.6.1 closed with all four requirements delivered and verified (4/4 traced, 8/8 acceptance criteria covered); DFC-01..04 move to `## Shipped` as rows and `## Traceability` starts clean. No next cycle scoped yet*

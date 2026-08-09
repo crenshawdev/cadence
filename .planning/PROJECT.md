@@ -104,46 +104,16 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-**`v2.6.1 — the defects the sweep found`**, opened 2026-08-09. The predecessor
-`v2.6.0 — the reconciliation cycle` closed the same day with all fourteen of its
-requirements delivered, the audit green (14/14 traced, 0 broken; 33/33
-acceptance criteria covered), and the manifest bumped to `2.6.0` unpushed and
-untagged.
+None. `v2.6.1 — the defects the sweep found` shipped on 2026-08-09: four
+requirements, one phase, six commits, the audit green (4/4 traced, 0 broken;
+8/8 acceptance criteria covered), the manifest at `2.6.1`. Its four DFC rows sit
+in `.planning/REQUIREMENTS.md` under `## Shipped`, its phase record in
+`.planning/_archive-v2.6.1/`, and its narrative in `CHANGELOG.md`.
 
-**A patch cycle, deliberately small.** Its whole scope is `DFC-01` through
-`DFC-04`, the four defects v2.6.0's own doc sweep found and filed rather than
-reworded away. Each is located to a file and a line, each is close to a one-line
-fix, and none of them is a design question. They are here as their own cycle
-instead of riding the next feature cycle because that is what filing them was
-for: a defect that gets filed and then waits for a convenient cycle is a defect
-that ages into the next sweep's findings.
-
-What they are. Two literal NUL bytes in `cadence-core/bin/lib/trace.mjs:336`
-that make every `grep` over `cadence-core/bin/**` silently skip that whole file
-without `-a`, which has already cost one debugging detour. A wiring-table row in
-`cadence-core/references/review-triggers.md:244` stating `phase_diff`'s gates as
-`off / off / adjudicated` when the live route table resolves
-`off / advisory / adjudicated`, which was the single source of four separate
-wrong claims across two documents. `skills/cad-plan-checker-contract/SKILL.md`
-telling itself to check six dimensions at `:42` and to report success on five at
-`:113`, so the checker can pass having skipped the one that bounds plan size.
-And the `risk_surface` row of that same wiring table admitting no shape for the
-one fire site whose commits already exist, which is why correcting `/cad-task`
-to match it produced a worse instruction than the one it replaced.
-
-Two of the four sit in `cadence-core/references/**`, which the v2.6.0 sweep
-excluded from its surface. Correcting `review-triggers.md` moves a file sitting
-at exactly its byte budget with zero slack, and that budget figure is quoted
-inline by two skills, so the fix is three coordinated edits rather than one. That
-is the whole reason it was filed instead of done in place, and it is the first
-thing this cycle should plan for rather than discover.
-
-Guardrail for the cycle, carried from v2.6.0 and earned twice in it: a
-correction is not free. Two independent review passes each caught v2.6.0's doc
-sweep breaking something while fixing something else, once shipping a command
-name that exists nowhere in the tree, once replacing a working artifact
-reference with an under-specified one. Every fix here lands with the check that
-would have caught its own failure mode.
+The next cycle is not scoped. That is a decision, not an oversight: the
+candidates are in `REQUIREMENTS.md`'s `## Deferred` and none has been promoted,
+and opening a milestone is its own call to make rather than something a close
+does on the way past. `/cad-phase add` opens the first phase when it is taken.
 
 ## Key Decisions
 

@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 1 (The filed defects)
-Status: phase complete
-Next: /cad-milestone
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-09
