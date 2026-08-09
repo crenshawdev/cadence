@@ -567,6 +567,59 @@ test('render: per-role grouping did not become a second pairing rule', () => {
   assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, tokens: 30 } });
 });
 
+test('render: a terminal is billed to the role that DISPATCHED, not its own', () => {
+  const dir = root();
+  // The two halves of a bracket are written by two separate prose lines, so
+  // they can disagree. Billing each half to whatever it names is the worst
+  // available answer: the worker that really ran reads as unmeasured while a
+  // role that never dispatched carries its bill.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-reviewer', tokens: 500 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 500 } },
+    'the dispatch role owns the figure, and the mistyped closing role invents no row');
+});
+
+test('render: an UNMATCHED terminal shows its tokens but funds no dispatch', () => {
+  const dir = root();
+  // No dispatch to speak for it, so it falls back to its own role - and must
+  // not drive any role's `unrecorded` below zero.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '7', role: 'cad-verifier', tokens: 42 });
+  assert.deepEqual(renderTrace(dir, 4).roles, { 'cad-verifier': { dispatches: 0, tokens: 42 } });
+});
+
+test('render: a duplicated terminal cannot fund a second dispatch', () => {
+  const dir = root();
+  // Two dispatches, one genuine close, then a replayed close for the SAME
+  // worker. Counting token-bearing EVENTS would report both workers funded and
+  // hide the one that never came back with a figure.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 100 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'checkpoint', plan: '1', role: 'cad-executor', tokens: 100 });
+  const r = renderTrace(dir, 4);
+  assert.equal(r.unpaired.length, 1, 'plan 2 never closed');
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, tokens: 200, unrecorded: 1 } },
+    'both figures are summed, but plan 2 stays unrecorded');
+});
+
+test('render: a role named __proto__ is an own row, not a prototype write', () => {
+  const dir = root();
+  // Plain assignment of this one key hits the prototype setter, so the row
+  // silently does not exist and the seam's omit-when-empty gate can drop the
+  // WHOLE block - one hostile role name erasing every other role's accounting.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: '__proto__' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: '__proto__', tokens: 5 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  const r = renderTrace(dir, 4);
+  assert.ok(Object.prototype.hasOwnProperty.call(r.roles, '__proto__'),
+    '__proto__ is an OWN property of roles');
+  assert.deepEqual(r.roles['__proto__'], { dispatches: 1, tokens: 5 });
+  assert.deepEqual(Object.keys(r.roles).sort(), ['__proto__', 'cad-executor'],
+    'the sibling role survives - the block is not dropped');
+});
+
 test('seam: trace render surfaces the roles block through the CLI', () => {
   const dir = root();
   const base = ['trace', 'append', '--phase', '4', '--family', 'lifecycle'];

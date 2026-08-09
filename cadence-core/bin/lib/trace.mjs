@@ -281,12 +281,17 @@ export function renderTrace(planningRoot, phase) {
   // is how many of a role's dispatches came back with a figure, which the
   // emitted shape carries only as its complement (`unrecorded`), so it must not
   // leak into the rendered object.
-  /** @type {Map<string, {dispatches: number, tokens: number, recorded: number}>} */
+  // `figures` is a SEPARATE count from `recorded`: it is how many token values
+  // landed on this role at all, and it alone decides whether a total is
+  // emitted. Gating the total on `recorded` instead would silently drop the
+  // figure carried by an UNMATCHED terminal - a real number, on an event that
+  // funds no dispatch.
+  /** @type {Map<string, {dispatches: number, tokens: number, recorded: number, figures: number}>} */
   const roleTotals = new Map();
   /** @param {string} k */
   const roleRow = (k) => {
     let row = roleTotals.get(k);
-    if (!row) { row = { dispatches: 0, tokens: 0, recorded: 0 }; roleTotals.set(k, row); }
+    if (!row) { row = { dispatches: 0, tokens: 0, recorded: 0, figures: 0 }; roleTotals.set(k, row); }
     return row;
   };
 
@@ -297,7 +302,10 @@ export function renderTrace(planningRoot, phase) {
   const lines = readLines(planningRoot);
   if (lines === null) return out;
 
-  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any}[]>} */
+  // Each pending entry carries the two accounting fields beyond the identity
+  // `unpaired` renders: `role` so a terminal bills the half that OPENED the
+  // worker, and `funded` so one dispatch can be funded exactly once.
+  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean}[]>} */
   const open = new Map();
   for (const raw of lines) {
     const line = raw.trim();
@@ -310,45 +318,81 @@ export function renderTrace(planningRoot, phase) {
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
     if (e.family !== 'lifecycle') continue;
 
-    // Per-role accounting, keyed on `role` and deliberately NOT on the pairing
-    // key below: a bracket that omitted `--role` keys the empty string exactly
-    // as `plan` already does, so a forgotten flag stays VISIBLE as an unkeyed
-    // row instead of vanishing from the totals. A token figure is summed from
-    // ANY lifecycle event carrying a finite number - prose writes it once, at
-    // the close, but a figure written at the wrong half of a bracket is then
-    // counted rather than silently dropped. A non-numeric `tokens` on a
+    // Per-role accounting rides the PAIRING below, not each event's own `role`.
+    // A bracket's two halves are written by two separate prose lines, so
+    // nothing stops them disagreeing - and billing each half to whatever it
+    // happens to name produces the worst available answer: the role that really
+    // ran reads as unmeasured while a role that never dispatched carries its
+    // bill. The DISPATCH is the authority, because it is the half that opened
+    // the worker.
+    //
+    // A bracket that omitted `--role` still keys the empty string exactly as
+    // `plan` already does, so a forgotten flag stays VISIBLE as an unkeyed row
+    // instead of vanishing from the totals. A non-numeric `tokens` on a
     // hand-edited or foreign-producer line contributes NOTHING and is never
     // string-concatenated onto the total.
-    if (typeof e.tokens === 'number' && Number.isFinite(e.tokens)) {
-      const row = roleRow(key(e.role));
-      row.tokens += e.tokens;
-      row.recorded++;
-    }
+    const tokens = typeof e.tokens === 'number' && Number.isFinite(e.tokens) ? e.tokens : null;
 
     const worker = `${key(e.corr)} ${key(e.phase)} ${key(e.plan)}`;
     if (e.event === DISPATCH) {
-      roleRow(key(e.role)).dispatches++;
+      const role = key(e.role);
+      const row = roleRow(role);
+      row.dispatches++;
+      // A figure on the OPEN half is unusual - prose writes it at the close -
+      // but it is counted rather than dropped, and it marks THIS dispatch
+      // funded so its own terminal cannot fund it a second time.
+      const entry = { corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role, funded: false };
+      if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; }
       const pending = open.get(worker) || [];
-      pending.push({ corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts });
+      pending.push(entry);
       open.set(worker, pending);
     } else if (TERMINAL.includes(e.event)) {
       const pending = open.get(worker);
-      if (pending && pending.length) pending.shift();
+      const matched = pending && pending.length ? pending.shift() : null;
+      if (tokens !== null) {
+        // Bill the DISPATCH's role. An unmatched terminal has no dispatch to
+        // speak for it, so it falls back to its own `role`: its tokens show,
+        // but it funds no dispatch and so cannot drive `unrecorded` negative.
+        const row = roleRow(matched ? matched.role : key(e.role));
+        row.tokens += tokens;
+        row.figures++;
+        // `recorded` counts funded DISPATCHES, never token-bearing EVENTS. A
+        // replayed or duplicated terminal adds its figure but must not mark a
+        // second dispatch funded, which is how a genuinely unrecorded worker
+        // would otherwise vanish from the `unrecorded` count.
+        if (matched && !matched.funded) { row.recorded++; matched.funded = true; }
+      }
     }
   }
-  for (const pending of open.values()) out.unpaired.push(...pending);
+  // `unpaired` carries the bracket's identity only - the accounting fields
+  // added above are internal and never reach the rendered shape.
+  for (const pending of open.values()) {
+    for (const p of pending) out.unpaired.push({ corr: p.corr, phase: p.phase, plan: p.plan, ts: p.ts });
+  }
 
   // The token total is OMITTED when nothing was recorded, so a role with no
   // figure never shows a zero it would be read as having spent; `unrecorded` is
   // a dispatch COUNT, omitted at zero, never the string `unrecorded` sitting in
   // a numeric field. The internal `recorded` counter is dropped here.
+  //
+  // Built through `Object.fromEntries` rather than by assigning `out.roles[k]`.
+  // Role names come out of the trace file, and plain assignment of the key
+  // `__proto__` hits the prototype setter instead of creating an own property:
+  // the row silently does not exist, `Object.keys` comes back short, and the
+  // seam's omit-when-empty gate can drop the WHOLE roles block - one hostile
+  // role name erasing every other role's accounting. `fromEntries` defines own
+  // properties, and unlike `Object.create(null)` it leaves the ordinary
+  // prototype every caller (and every deep-equal assertion) already expects.
+  /** @type {[string, {dispatches: number, tokens?: number, unrecorded?: number}][]} */
+  const rows = [];
   for (const [role, row] of roleTotals) {
     const unrecorded = Math.max(0, row.dispatches - row.recorded);
-    out.roles[role] = {
+    rows.push([role, {
       dispatches: row.dispatches,
-      ...(row.recorded ? { tokens: row.tokens } : {}),
+      ...(row.figures ? { tokens: row.tokens } : {}),
       ...(unrecorded ? { unrecorded } : {}),
-    };
+    }]);
   }
+  out.roles = Object.fromEntries(rows);
   return out;
 }
