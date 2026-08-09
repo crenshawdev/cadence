@@ -115,8 +115,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 
 | id | doc | line | claim | verdict | resolution |
 |---|---|---|---|---|---|
-| README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected (task 4) |
-| README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected (task 4) |
+| README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected - b2bad1a |
+| README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected - b2bad1a |
 | README-03 | README.md | 10-11 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate |
 | README-04 | README.md | 14 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate |
 | README-05 | README.md | 26 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate |
@@ -163,13 +163,13 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | README-46 | README.md | 142 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate |
 | README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves |
 | README-48 | README.md | 128 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
-| README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected (task 1) |
-| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | corrected (task 1) |
+| README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
+| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | corrected - 1154790 |
 | README-51 | README.md | 134 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
-| METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected (task 4) + DFC-02 |
-| METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected (task 4) + DFC-02 |
-| METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected (task 4) + DFC-03 |
-| METHOD-04 | METHOD.md | 301-303 | "Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema." | stale | corrected (task 4) |
+| METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 |
+| METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 |
+| METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 |
+| METHOD-04 | METHOD.md | 301-303 | "Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema." | stale | corrected - b2bad1a |
 | METHOD-05 | METHOD.md | 20 | `skills/cad-planner-contract/SKILL.md` is where planning lives. | accurate | accurate |
 | METHOD-06 | METHOD.md | 24-31 | The planner follows the five-step goal-backward order (goal, truths, artifacts, wiring, tasks). | accurate | accurate |
 | METHOD-07 | METHOD.md | 28 | 3 to 7 observable truths. | accurate | accurate |
@@ -248,7 +248,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | METHOD-80 | METHOD.md | 593 | `/cad-docs-verify` checks factual claims against the live codebase. | accurate | accurate |
 | METHOD-81 | METHOD.md | 600-614 | Every path in the "Where each rule lives" table. | accurate | accurate |
 | METHOD-82 | METHOD.md | 258 | "This is the largest subsystem and the one that most shapes the output quality." | unverifiable | divergence - a judgment about which subsystem most shapes output quality; no byte count settles it, and the subsystem spans several files |
-| INTERNALS-01 | INTERNALS.md | 55 | "The API enforces the output shape (OpenAI `response_format`, Gemini `responseSchema`)." | stale | corrected (task 4) |
+| INTERNALS-01 | INTERNALS.md | 55 | "The API enforces the output shape (OpenAI `response_format`, Gemini `responseSchema`)." | stale | corrected - b2bad1a |
 | INTERNALS-02 | INTERNALS.md | 11 | 19 files cover the six roles. | accurate | accurate |
 | INTERNALS-03 | INTERNALS.md | 11 | `cad-plan-checker-medium` and `cad-plan-checker-high` are the same contract at two depths. | accurate | accurate |
 | INTERNALS-04 | INTERNALS.md | 11 | `lib/rung-agent.mjs` states the rung->file map per role; the analyzer's unsuffixed file is its `xhigh` rung and `-high` is the lower one. | accurate | accurate |
@@ -285,7 +285,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | INTERNALS-35 | INTERNALS.md | 35 | The old scan was O(KxN), 3.1GB at 224KB input, V8 abort at 280KB. | unverifiable | divergence - a measurement of code that no longer exists in the tree |
 | INTERNALS-36 | INTERNALS.md | 37 | The 336KB input that aborted the old hook decides in milliseconds. | unverifiable | divergence - needs a benchmark run, not attempted in this sweep |
 | INTERNALS-37 | INTERNALS.md | 73 | "Before I cut it, `/cad-land` was the heaviest in the plugin by eager bytes and the second lightest of the five I measured by reachable." | unverifiable | divergence - explicitly a pre-cut measurement over the five commands measured then; current figures are published in `docs/EVIDENCE.md` |
-| CONTRIBUTING-01 | CONTRIBUTING.md | 13 | "Cadence has no build step and no dependencies. The scripts inside are zero-dependency Node, so there is no `npm install`." | stale | corrected (task 4) |
+| CONTRIBUTING-01 | CONTRIBUTING.md | 13 | "Cadence has no build step and no dependencies. The scripts inside are zero-dependency Node, so there is no `npm install`." | stale | corrected - b2bad1a |
 | CONTRIBUTING-02 | CONTRIBUTING.md | 13 | "The same three checks CI runs" - three checks, runnable locally. | accurate | accurate |
 | CONTRIBUTING-03 | CONTRIBUTING.md | 16 | `node --test cadence-core/bin/*.test.mjs` - unit tests for the seam cores. | accurate | accurate |
 | CONTRIBUTING-04 | CONTRIBUTING.md | 17 | `node cadence-core/bin/self-verify.mjs` - the prose<->code drift linter. | accurate | accurate |
@@ -302,8 +302,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | CONTRIBUTING-15 | CONTRIBUTING.md | 5,7,9 | "Bug reports are welcome... doc fixes land fast"; the feature-PR policy. | unverifiable | divergence - maintainer intent, no code surface to check it against |
 | CONTRIBUTING-16 | CONTRIBUTING.md | 21 | "The self-verify step is the one that catches most drift." | unverifiable | divergence - a relative-yield judgment across three checks; nothing measures it |
 | CONTRIBUTING-17 | CONTRIBUTING.md | 25 | What a good bug report contains (Claude Code version, `node --version`, the relevant `.planning/` slice). | unverifiable | divergence - process guidance rather than a code claim; `.github/ISSUE_TEMPLATE/bug_report.md` exists but enforces no field |
-| AUDIT-01 | cadence-core/workflows/audit.md | 31-34 | A digit-leading category like `2FA-01` is not admitted, so it appears in neither `unseeded` nor `counts` and is reported only in `active_issues`. | stale | corrected (task 5) |
-| AUDIT-02 | cadence-core/workflows/audit.md | 136-140 | On an `active-non-id-bullet`, a span holding nothing but the id that is still reported means the id failed the admission test (a digit-leading category), and no rewrite will count it. | stale | corrected (task 5) |
+| AUDIT-01 | cadence-core/workflows/audit.md | 31-34 | A digit-leading category like `2FA-01` is not admitted, so it appears in neither `unseeded` nor `counts` and is reported only in `active_issues`. | stale | corrected - 044806c |
+| AUDIT-02 | cadence-core/workflows/audit.md | 136-140 | On an `active-non-id-bullet`, a span holding nothing but the id that is still reported means the id failed the admission test (a digit-leading category), and no rewrite will count it. | stale | corrected - 044806c |
 | AUDIT-03 | cadence-core/workflows/audit.md | 19 | `planning.mjs audit` exists and returns one JSON line. | accurate | accurate |
 | AUDIT-04 | cadence-core/workflows/audit.md | 23-24 | Break codes are `no-phase \| phase-missing \| no-plan \| not-verified \| drift \| unpicked`. | accurate | accurate |
 | AUDIT-05 | cadence-core/workflows/audit.md | 25 | `orphans.plan_ids` holds plan frontmatter referencing unknown REQ-IDs. | accurate | accurate |
@@ -335,8 +335,8 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | AUDIT-31 | cadence-core/workflows/audit.md | 194-196 | An absent UAT.md under a present CONTEXT breaks every declared criterion as `missing-uat` on a checked box. | accurate | accurate |
 | AUDIT-32 | cadence-core/workflows/audit.md | 196-197 | `context_issues` can carry `criterion-duplicate-id` / `criterion-unidded`. | accurate | accurate |
 | AUDIT-33 | cadence-core/workflows/audit.md | 198-201 | First-occurrence-wins on a duplicate id, so a second bullet reusing one is dropped from the coverage domain. | accurate | accurate |
-| CONFIG-01 | cadence-core/workflows/config.md | 97 | `parallelization.enabled` default is `false`. | stale | corrected (task 5) |
-| CONFIG-02 | cadence-core/workflows/config.md | 126-128 | The `review.triggers.<t>.{gate,tier,effort}` defaults are "per DESIGN section 7". | stale | corrected (task 5) |
+| CONFIG-01 | cadence-core/workflows/config.md | 97 | `parallelization.enabled` default is `false`. | stale | corrected - 044806c |
+| CONFIG-02 | cadence-core/workflows/config.md | 126-128 | The `review.triggers.<t>.{gate,tier,effort}` defaults are "per DESIGN section 7". | stale | corrected - 044806c |
 | CONFIG-03 | cadence-core/workflows/config.md | 3-5 | Canonical shape lives in `cadence-core/config.schema.json`, enforced by `bin/config.mjs`. | accurate | accurate |
 | CONFIG-04 | cadence-core/workflows/config.md | 5 | `cadence-core/templates/config.json` is the scaffolded default. | accurate | accurate |
 | CONFIG-05 | cadence-core/workflows/config.md | 29 | `model.overrides` carries six role pins. | accurate | accurate |
@@ -441,9 +441,9 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | DOCS-VERIFY-02 | cadence-core/workflows/docs-verify.md | 10-11 | The default target set is `README.md` plus `docs/**`. | accurate | accurate |
 | DOCS-VERIFY-03 | cadence-core/workflows/docs-verify.md | 46 | The report table columns are `claim \| location \| verdict \| correct value (if stale)`. | accurate | accurate |
 | DOCS-VERIFY-04 | cadence-core/workflows/docs-verify.md | 40-44 | Verdicts are exactly `accurate \| stale \| unverifiable`. | accurate | accurate |
-| EXECUTE-01 | cadence-core/workflows/execute.md | 191-193 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected (task 5) |
-| EXECUTE-02 | cadence-core/workflows/execute.md | 382-383 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected (task 5) + DFC-02 |
-| EXECUTE-03 | cadence-core/workflows/execute.md | 387-388 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected (task 5) + DFC-02 |
+| EXECUTE-01 | cadence-core/workflows/execute.md | 191-193 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected - 044806c |
+| EXECUTE-02 | cadence-core/workflows/execute.md | 382-383 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 |
+| EXECUTE-03 | cadence-core/workflows/execute.md | 387-388 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 |
 | EXECUTE-04 | cadence-core/workflows/execute.md | 18-24 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate |
 | EXECUTE-05 | cadence-core/workflows/execute.md | 24-25 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate |
 | EXECUTE-06 | cadence-core/workflows/execute.md | 35-39 | The ten config keys in the single `config.mjs get` all exist. | accurate | accurate |
@@ -487,7 +487,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | MILESTONE-14 | cadence-core/workflows/milestone.md | 117-119 | `/cad-phase add` is the only workflow that appends a phase line to an existing roadmap. | accurate | accurate |
 | MILESTONE-15 | cadence-core/workflows/milestone.md | 128-131 | `git.auto_close` false is the default, so the tag stays unpushed and publishing is a separate `/cad-land`. | accurate | accurate |
 | MILESTONE-16 | cadence-core/workflows/milestone.md | 138-142 | The chain reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback (`resolveReapBranch`). | accurate | accurate |
-| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 51 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected (task 5) |
+| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 51 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected - 044806c |
 | NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 95 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` |
 | NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 29 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate |
 | NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 33 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate |
@@ -559,7 +559,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | PLAN-31 | cadence-core/workflows/plan.md | 367-372 | It reports `orphan_ids`, `no_active_section: true`, and always Pending status. | accurate | accurate |
 | PLAN-32 | cadence-core/workflows/plan.md | 379 | `cursor set --phase {N} --status planned --next "/cad-execute {N}"` is valid. | accurate | accurate |
 | PLAN-33 | cadence-core/workflows/plan.md | 383 | `references/git-guard.md` rail 1 is the protected-branch guard. | accurate | accurate |
-| PROGRESS-01 | cadence-core/workflows/progress.md | 172-173 | The trace file is written by the seams and by the execute and verify workflows. | stale | corrected (task 5) |
+| PROGRESS-01 | cadence-core/workflows/progress.md | 172-173 | The trace file is written by the seams and by the execute and verify workflows. | stale | corrected - 044806c |
 | PROGRESS-02 | cadence-core/workflows/progress.md | 18 | `planning.mjs status` is the derivation. | accurate | accurate |
 | PROGRESS-03 | cadence-core/workflows/progress.md | 23-25 | Derived statuses are unplanned -> planned -> executed -> complete, with UAT counts. | accurate | accurate |
 | PROGRESS-04 | cadence-core/workflows/progress.md | 26 | `current` is the lowest non-complete phase, null when all complete. | accurate | accurate |
@@ -581,7 +581,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | PROGRESS-20 | cadence-core/workflows/progress.md | 138 | `workflow.skip_discuss` selects /cad-plan over /cad-context. | accurate | accurate |
 | SPIKE-01 | cadence-core/workflows/spike.md | 20-21,45 | The spike record lives at `.planning/spikes/<slug>/SPIKE.md`. | accurate | accurate |
 | SPIKE-02 | cadence-core/workflows/spike.md | 51 | The SPIKE.md commit honors the protected-branch guard. | accurate | accurate |
-| TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | corrected (task 5) |
+| TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | corrected - 044806c |
 | TASK-02 | cadence-core/workflows/task.md | 2-4 | Rail 1 is the protected-branch check plus base-integrity plus the integration-branch decision, not a bare branch check. | accurate | accurate |
 | TASK-03 | cadence-core/workflows/task.md | 23 | `cadence-core/references/git-guard.md` exists. | accurate | accurate |
 | TASK-04 | cadence-core/workflows/task.md | 46 | `workflow.test_command` is a config key. | accurate | accurate |
