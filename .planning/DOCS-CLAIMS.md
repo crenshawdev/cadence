@@ -77,6 +77,33 @@ executing, so that no cell is ever empty; zero rows read `pending` at the phase'
 close. A row whose claim turned out to describe a code defect rather than stale
 prose carries the defect's `DFC-0k` id in its resolution.
 
+## Defects filed out of this sweep
+
+Run 1 found no claim describing a code defect: all 18 stale rows are stale
+PROSE, with the code correct in every one of them. So no ledger row carries a
+`divergence - code defect` resolution. Three ids were nonetheless filed under
+`## Deferred` in `.planning/REQUIREMENTS.md`, because each names something real
+that a correction inside this surface would otherwise bury (DOC-03):
+
+- **DFC-01** — `cadence-core/bin/lib/trace.mjs:336` carries two literal NUL
+  bytes, so every `grep`/`rg` over `cadence-core/bin/**` skips that file
+  without `-a`. A genuine code defect, named in advance by the plan and filed
+  whether or not the sweep surfaced it. It did not: the file is outside the
+  surface.
+- **DFC-02** — `cadence-core/references/review-triggers.md:244` (and
+  `docs/WORKFLOW.md:168`) state `phase_diff` as `off / off / adjudicated`
+  against a live `off / advisory / adjudicated`. Both files are outside this
+  surface, and that row is the shared source of the four stale rows `METHOD-01`,
+  `METHOD-02`, `EXECUTE-02` and `EXECUTE-03`. Those four are corrected here; the
+  source they were copied from is filed, not widened into scope.
+- **DFC-03** — `skills/cad-plan-checker-contract/SKILL.md:113` still says "All
+  five dimensions checked" while `:42` of the same file says six. Same fact as
+  `METHOD-03`, one file over and outside this surface.
+
+Where a row's correction has a filing behind it, the row's resolution names the
+id: `corrected - <sha> + DFC-0k`. The suffix is the row's only link to its
+filing, so a future diff can tell a corrected copy from a fixed source.
+
 ## Claims
 
 | id | doc | line | claim | verdict | resolution |
