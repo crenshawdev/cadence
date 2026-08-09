@@ -70,9 +70,13 @@ diff joined on the id alone would report a resolved claim as regressed and a
 newly drifted one as already corrected.
 
 **The `line` column is run 1's location**, read at `a6b8931`. Phase 5's own
-corrections moved some of them: `METHOD.md`'s six-dimensions fix at `:91` grew
-by three lines, so every `METHOD.md` row below it now sits three lines lower
-than its cell says. The column is provenance, not an address to seek to, and the
+corrections moved some of them, by varying amounts and in more than one file.
+`METHOD.md` took three edits in `b2bad1a` - `+3` at `:91`, `+1` at `:276`, `+2`
+at `:304`, 614 lines to 620 - so a `METHOD.md` row below `:91` sits 3, 4 or 6
+lines lower than its cell says depending on how many of those it is below; and
+`044806c` moved four workflow files (`audit.md` `+1`, `execute.md` `+2`,
+`progress.md` `+1`, `task.md` `+2`). Do not apply a single offset. The column is
+provenance, not an address to seek to, and the
 join rule above is on `doc` plus claim text precisely so a line that moved
 cannot break the diff.
 
@@ -164,7 +168,7 @@ filing, so a future diff can tell a corrected copy from a fixed source.
 | README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves |
 | README-48 | README.md | 128 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
 | README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
-| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | corrected - 1154790 |
+| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one |
 | README-51 | README.md | 134 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
 | METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 |
 | METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 |

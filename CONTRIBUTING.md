@@ -10,7 +10,7 @@ Fork freely. The license is MIT and it means it. If you want Cadence to hold som
 
 ## Running the checks
 
-Cadence has no build step and no runtime dependencies. The scripts inside are zero-dependency Node, nothing under `cadence-core/bin/` imports anything but `node:` builtins, and running Cadence never installs a package. The typecheck is the one exception, and it is a check rather than a dependency: CI installs it for the length of one job with `npm install --no-save --no-package-lock typescript @types/node` before it runs `npx tsc`, and locally `npx` fetches the same two packages on first use. The same three checks CI runs, you can run locally with `node` and `git` on your PATH:
+Cadence has no build step and no runtime dependencies. The scripts inside are zero-dependency Node, nothing under `cadence-core/bin/` imports anything but `node:` builtins, and running Cadence never installs a package. The typecheck is the one exception, and it is a check rather than a dependency: CI installs both packages for the length of one job with `npm install --no-save --no-package-lock typescript @types/node` before it runs `npx tsc`. Locally you need the same two — `npx` fetches `typescript` for you on first use, but not `@types/node`, and `tsconfig.ci.json` sets `"types": ["node"]`, so without it the check fails with `TS2688: Cannot find type definition file for 'node'`. Run the same install line once, or skip the third check. The first two need nothing but `node` and `git` on your PATH:
 
 ```
 node --test cadence-core/bin/*.test.mjs   # unit tests for the seam cores

@@ -174,8 +174,10 @@ anywhere fails `self-verify` on the commit that introduces it.
 
 ## What this file does not carry
 
-No phase-trace evidence. `/cad-trace` writes `.planning/trace.jsonl` per phase,
-and the intent was to publish one from a project that is not Cadence itself.
+No phase-trace evidence. `.planning/trace.jsonl` is written per phase by
+`planning.mjs trace append`, called from the workflows that dispatch workers,
+and rendered by `/cad-progress --trace`; the intent was to publish one from a
+project that is not Cadence itself.
 Checked 2026-08-09 across every project on this machine with a `.planning/`
 directory — `atmos`, `burnrate`, `hindsight`, `jcrenshaw.dev`, `placer`,
 `reflex`, `tempest`, `weathervane` — none has a `trace.jsonl`; only Cadence
