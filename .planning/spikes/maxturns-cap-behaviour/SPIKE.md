@@ -1,6 +1,6 @@
 # Spike: what does a `maxTurns`-capped dispatch actually return?
 
-**Status:** open 2026-08-08. Criteria written; experiment not yet run.
+**Status:** closed 2026-08-08. Experiment run; verdict below.
 
 ## Question
 
@@ -76,16 +76,83 @@ kept for any reason, its path is named here.
 
 ## Observation
 
-<!-- Filled after the experiment runs, per criterion, verbatim. Nothing here is
-     written before the dispatch: the criteria above are what the result is
-     judged against, and filling this in advance is the rationalization spike.md
-     step 2 exists to prevent. -->
+**The rig.** A throwaway agent file `spike-maxturns-throwaway` (frontmatter
+`tools: Bash`, `model: haiku`, `maxTurns: 2`) was written to the project's
+`.claude/agents/`, dispatched once, and deleted. Its body ordered three steps,
+each a SEPARATE Bash call (`echo STEP-<n>-DONE | tee <scratchpad>/spike-step-<n>.txt`),
+with one sentence of plain text before each call and a three-line `RESULT:`
+report at the end - so the run provably needs more than two rounds, and each
+completed round leaves a file behind that survives however the dispatch returns.
+
+The agent registry is loaded at session start, so a file written mid-session is
+not dispatchable from that session (`Agent type 'spike-maxturns-throwaway' not
+found`). The dispatch was therefore issued from a fresh headless session in the
+same cwd: `claude -p "<dispatch the agent, print the raw return verbatim>"
+--allowedTools "Agent" "Task" "Bash" --permission-mode acceptEdits`.
+
+### C1 - the kill test: a capped return IS usable. Validated.
+
+The dispatch returned, verbatim and complete:
+
+```
+Now running step 2.
+<usage>subagent_tokens: 8714 tool_uses: 2 duration_ms: 8582</usage>
+```
+
+That is the agent's OWN text - the last thing it said before the cap - not an
+error envelope. Nothing in the return announces the cap: there is no error, no
+status field, no "stopped at maxTurns" marker. The cap degrades a run rather
+than destroying it, so a value is safe to ship.
+
+The degradation has a specific shape worth recording, because it is what sizing
+must respect: what comes back is the last assistant TEXT, not the agent's
+contracted final message. A capped `cad-executor` would return its running
+commentary and NOT its five-field digest - while its commits and its rewritten
+`reports/plan-<k>.md` remain on disk. `execute.md`'s "timeout or no report" arm
+already handles exactly that state (read the report file, confirm against
+`git log`, ask the user), so a capped executor lands on an existing recovery
+path rather than an unhandled one.
+
+### C2 - the cap counts agentic turns, one per tool-using round. Confirmed.
+
+Two Bash calls completed against `maxTurns: 2`: `spike-step-1.txt`
+(`STEP-ONE-DONE`) and `spike-step-2.txt` (`STEP-TWO-DONE`) exist,
+`spike-step-3.txt` does not, and the return's own `tool_uses: 2` agrees. The
+count MATCHES the `maxTurns` number, which is C2's tool-use-round arm: the
+plain-text sentence the agent emitted before each call did not consume a turn of
+its own, so text bundled with a tool call rides the same round. A value must
+therefore be sized against a role's TOOL-CALL count, not its message count.
+
+The sizing evidence in hand: the `cad-executor` dispatch that halted this very
+plan at task 3 reported `tool_uses: 59` for 3 of 7 tasks (~20 calls per task,
+so a full 7-task plan extrapolates to ~140 rounds). That is the largest observed
+Cadence role and the one any uniform bound must clear.
+
+### C3 - no per-dispatch turn cap has appeared. D-12 stands.
+
+Re-enumerated 2026-08-08 against both surfaces:
+
+- The supported-frontmatter table at `code.claude.com/docs/en/sub-agents` still
+  lists the same sixteen fields recorded at
+  `.planning/spikes/xhigh-executor-truncation/SPIKE.md:53-77` - `name`,
+  `description`, `tools`, `disallowedTools`, `model`, `permissionMode`,
+  `maxTurns`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `effort`,
+  `isolation`, `color`, `initialPrompt` - with `maxTurns` described as "Maximum
+  number of agentic turns before the subagent stops". No field was added or
+  removed.
+- The Agent tool exposes the same six parameters and no turn cap: `description`,
+  `prompt`, `subagent_type`, `model`, `isolation`, `run_in_background`.
+
+`--agents <json>` accepts the same frontmatter fields including `maxTurns`, but
+that is a session-scoped agent DEFINITION, not a per-dispatch override, and it
+is a CLI flag Cadence does not control. So the bound belongs in the 19 agent
+FILES, exactly as D-12 says.
 
 ---
 
-VERDICT:
+VERDICT: validated
 
-RECOMMENDATION:
+RECOMMENDATION: Ship `maxTurns: 400` on all 19 files in `agents/` - one uniform value for every role family, clearing the largest observed Cadence run (`cad-executor` at 59 tool-use rounds for 3 of 7 tasks, ~140 extrapolated for a full plan) by roughly 3x, so it can only bind on a genuine runaway and never on a long legitimate run; no read-only role (planner, plan-checker, reviewer, verifier, assumptions-analyzer) has been observed anywhere near it, and a per-family split is not shipped because only the executor family has an observed turn count to size against.
 
 <!-- VERDICT is exactly one of: validated | invalidated | inconclusive.
      RECOMMENDATION is the single line phase 2 task 5 executes VERBATIM - either
