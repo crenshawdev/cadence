@@ -211,9 +211,9 @@ happened to the worker that caused it. Immediately before a plan goes to an
 executor, and again once that executor comes back, append one event each:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --detail "<one line>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k> --role cad-executor --read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k> --role cad-executor --tokens <the token count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
 ```
 
 The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
@@ -221,6 +221,22 @@ The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
 another path or rung. All three close a bracket; a worker with none of them is
 what `trace render` reports as unpaired. `--plan <k>` is the WORKER key - the
 plan number here, the role name for a role-dispatched worker.
+
+`--role` is a SEPARATE key from `--plan`, and both are load-bearing. `--plan` is
+what pairs a dispatch with its close; `--role` is what the per-role totals group
+on. Keyed on `--plan` alone, this workflow's executors would file under plan
+NUMBERS while every role-dispatched worker filed under a role NAME, and
+`cad-executor` - the single largest spender in a phase - is the one line the
+totals could never print. `--read` is what this site causes the executor to read:
+the shared set every plan in the phase re-reads, plus that plan's own file.
+`--tokens` is read off the HOST's subagent return metadata at the moment the
+executor returns; OMIT the flag when the return carries no figure, since
+`--tokens 0` would claim a dispatch that cost nothing. A worktree executor still
+emits nothing of its own - these are the ORCHESTRATOR's lines.
+
+The `phase_start` line in `start` is NOT one of these. It is the correlation-id
+ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:
+keying it into the role table would invent a role that never ran.
 
 A worktree executor emits NO trace events of its own, and inner tool-level
 detail is deliberately not captured. `.planning/trace.jsonl` is gitignored -
