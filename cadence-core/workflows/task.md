@@ -81,6 +81,19 @@ table admits for `risk_surface`. That file is transient exactly like
 `execute.md`'s `plan-<k>-risk-task-<n>.diff`: never stage it, and delete it once
 the trigger returns.
 
+`{slug}` is this task's own slug, and neither it nor that directory is created
+by the INLINE path - `planned_path` step 1 is the only writer of
+`.planning/tasks/{slug}/`, and it declines to create even that when `.planning/`
+is absent, because a task plan does not justify project scaffolding. So derive
+the slug here when the inline path did not (kebab-case of the task description),
+and `mkdir -p` the directory immediately before the redirect. When `.planning/`
+does not exist at all, write the diff to
+`${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` instead and fire with THAT path:
+still shape (c), which since `v2.6.1` admits a flagged-diff file however it was
+produced. A redirect into a directory nothing created fails
+`No such file or directory`, and this trigger is `blocking` at every level, so
+that failure is a blocking gate that cannot fire rather than a gate that passes.
+
 This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` before fixing a
