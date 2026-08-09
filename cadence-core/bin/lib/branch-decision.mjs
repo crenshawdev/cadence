@@ -48,10 +48,22 @@ import { compareVersions } from './release-decision.mjs';
 // (v1.1.0-rc.2). Matches the milestone-of-record Cadence names a branch after.
 const VERSION_RE = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
 
+// The milestone DECLARATION: a version token opening its line, past nothing but
+// markdown furniture (bullet, emphasis, backtick, blockquote). The shipped
+// PROJECT.md shape is ``**`v2.6.0 - name`**, opened <date>``, and the anchor is
+// what separates that declaration from prose in the same section that merely
+// MENTIONS a version - a "the predecessor `v2.5.0` closed" sentence is a
+// mention, and reading it as the milestone hard-FAILs the ship gate on correct
+// docs (`version_drift` compares this against the tag list).
+const DECLARED_VERSION_RE = new RegExp(`^[\\s>*_\`-]*(${VERSION_RE.source})`);
+
 /**
  * The version named in the `### Active` section of PROJECT.md, or null.
  * Scans the section body (from the `### Active` heading to the next level-1..3
- * heading) for the first version token.
+ * heading) for the milestone declaration - the first LINE-ANCHORED version
+ * token. Falls back to the first token anywhere in the body when no line
+ * declares one, so a section that only ever mentions its version in prose still
+ * answers rather than going silent.
  * @param {string} projectText
  */
 export function activeVersion(projectText) {
@@ -59,12 +71,17 @@ export function activeVersion(projectText) {
   const lines = String(projectText).split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
   if (start < 0) return null;
+  let loose = null;
   for (let i = start + 1; i < lines.length; i++) {
     if (/^#{1,3}\s/.test(lines[i])) break; // next section ends the Active body
-    const m = lines[i].match(VERSION_RE);
-    if (m) return m[0];
+    const declared = lines[i].match(DECLARED_VERSION_RE);
+    if (declared) return declared[1];
+    if (loose === null) {
+      const m = lines[i].match(VERSION_RE);
+      if (m) loose = m[0];
+    }
   }
-  return null;
+  return loose;
 }
 
 /**
