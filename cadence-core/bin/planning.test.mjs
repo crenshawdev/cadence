@@ -4400,3 +4400,65 @@ test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
   // ...and the legal spelling seeds.
   assert.deepEqual(run(['seed-reqs', '--phase', '8'], dir).seeded, ['FLD-01']);
 });
+
+// --- status: the phase-directory grammar, reported and never resolved --------
+//
+// D-01: Cadence states numeric-only as the grammar and REPORTS what violates it.
+// It does not learn to resolve `08-meteogram-legend`, ship a `<N>-<slug>` second
+// form, or migrate anything - so these rows assert a diagnostic, never a lookup.
+
+/** `phases/<name>/` directories on a tree, created empty. */
+function phaseDirs(dir, names) {
+  for (const name of names) mkdirSync(join(dir, 'phases', name), { recursive: true });
+  return dir;
+}
+
+const grammarDrift = (r) => (r.drift || []).filter((d) => d.kind === 'phase-dir-grammar');
+
+test('status: named and zero-padded phase dirs are reported, grouped by prefix', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { plan: true } } });
+  phaseDirs(dir, ['08-meteogram-legend', '08', '14-data-depth-x', '14-shared-derivation']);
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const g = grammarDrift(r);
+  assert.equal(g.length, 2, JSON.stringify(g));
+  assert.deepEqual(g[0].entries, ['08', '08-meteogram-legend']);
+  assert.match(g[0].detail, /share numeric prefix 8/);
+  assert.deepEqual(g[1].entries, ['14-data-depth-x', '14-shared-derivation']);
+  assert.match(g[1].detail, /share numeric prefix 14/);
+  // The legal directory is never itself an entry, and the kind carries no
+  // `phase` key - there is no phase number to report.
+  assert.equal(g.some((d) => d.entries.includes('1')), false);
+  assert.equal('phase' in g[0], false);
+});
+
+test('status: a tree of legal phase dirs reports no drift at all', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: 10, name: 'Ten' }],
+    phases: { 1: { plan: true }, 2: { plan: true }, 10: { plan: true } },
+  });
+  phaseDirs(dir, ['2.1']);
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.drift, undefined, JSON.stringify(r.drift));
+});
+
+test('status: a stray FILE under phases/ is not a phase directory and is not reported', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }], phases: { 1: { plan: true } } });
+  writeFileSync(join(dir, 'phases', '.DS_Store'), 'junk');
+  writeFileSync(join(dir, 'phases', 'notes.md'), '# scratch\n');
+  const r = run(['status'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(grammarDrift(r), []);
+});
+
+test('status: 08 beside a legal 8 names the phase it collides with', () => {
+  const dir = makeTree({ roadmap: [{ n: 8, name: 'Eight' }], phases: { 8: { plan: true } } });
+  phaseDirs(dir, ['08']);
+  const r = run(['status'], dir);
+  const g = grammarDrift(r);
+  assert.equal(g.length, 1, JSON.stringify(g));
+  assert.deepEqual(g[0].entries, ['08']);   // exactly the illegal one
+  assert.match(g[0].detail, /phases[/\\]?8 is the phase they collide with/);
+  assert.match(g[0].detail, /is not a phase directory name/);
+});

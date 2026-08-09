@@ -44,7 +44,12 @@ Check, then report - do not fix without asking.
    both clauses pass, and a surviving `phases/<N>/` dir there means the prune
    was interrupted (/cad-milestone finishes it).
    `.planning/phases/<N>/` dirs correspond to real phases (a planned
-   phase with no dir yet is fine; a dir with no phase is an issue). A phase
+   phase with no dir yet is fine; a dir with no phase is an issue). The
+   directory grammar is a bare integer or `N.M`, no zero-padding and no slug
+   (references/conventions.md): report every `phase-dir-grammar` entry
+   `planning.mjs status` returns as an issue naming the entries it lists -
+   Cadence resolves no other spelling, so those directories are unsupported, and
+   renaming them is the user's call and never an auto-fix. A phase
    marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all
    `Complete` (or a `Complete` requirement whose phase is still `- [ ]`) is a
    status-drift issue - flag it. This is the cheap structural check that a

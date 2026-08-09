@@ -33,7 +33,8 @@ Its one JSON line carries everything this workflow reads:
   When its status is `paused`, its `next` is the resume pointer /cad-pause
   wrote - the one-line "where I was".
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`,
-  `phase-dir` (a `phases/<N>/` dir surviving a milestone close).
+  `phase-dir` (a `phases/<N>/` dir surviving a milestone close),
+  `phase-dir-grammar` (a `phases/` entry outside the directory grammar).
 
 On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
 project here. /cad-new-project starts one.") and stop.

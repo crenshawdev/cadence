@@ -130,6 +130,79 @@ function derivePhases(dir, roadmapPhases) {
   });
 }
 
+// THE phase-directory grammar (references/conventions.md): a bare phase integer
+// or an `N.M` sub-phase, no zero-padding and no slug suffix. Checked here and
+// resolved NOWHERE - D-01 is that Cadence states the grammar and reports what
+// violates it, rather than teaching the seams to resolve `08-meteogram-legend`.
+//
+// Deliberately STRICTER than the two `phases/` LISTING filters (`:189` and the
+// recall corpus walk), and it does not replace them: `/^\d+(\.\d+)?$/` there
+// keeps a zero-padded directory out of the corpus and out of the
+// surviving-dir report exactly as it does today (D-09). The leading `[1-9]` is
+// what makes `08` a violation rather than a synonym for `8`.
+const PHASE_DIR_NAME = /^[1-9]\d*(?:\.\d+)?$/;
+
+/**
+ * Every `phases/` entry outside `PHASE_DIR_NAME`, as one drift entry per
+ * colliding group.
+ *
+ * ONE kind covers named, zero-padded and prefix-colliding entries (D-08). There
+ * is deliberately no second "shadowing" diagnostic: every writer builds its path
+ * as `join(dir, 'phases', <spelling>)`, which can never PRODUCE
+ * `14-data-depth-x`, so a shadowing rule would report a hazard no code path
+ * reaches. What is worth reporting instead is the collision the reader would
+ * otherwise have to notice for themselves - `08` beside a legal `8` - so
+ * entries sharing a leading numeric prefix are named together in one entry, and
+ * the legal directory of that prefix is named in the detail.
+ *
+ * An absent `phases/` is data, never a throw. A stray FILE is not a phase
+ * directory and is not reported: `.DS_Store` would only make the diagnostic
+ * noise. Entries that are entirely legal produce NOTHING, so `drift` stays
+ * absent on a clean tree and a legal name is never itself listed in `entries`.
+ * @param {string} dir @returns {Array<{kind: string, entries: string[], detail: string}>}
+ */
+function phaseDirGrammarDrift(dir) {
+  let listing = [];
+  try { listing = readdirSync(join(dir, 'phases'), { withFileTypes: true }); }
+  catch { return []; }
+  /** @type {Map<string, {n: number|null, bad: string[], legal: string[]}>} */
+  const groups = new Map();
+  for (const ent of listing) {
+    if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
+    const lead = ent.name.match(/^\d+/);
+    // The leading digit run READ AS A NUMBER, so `08`, `08-meteogram-legend` and
+    // `8-foo` all group with a legal `8`. A name with no leading digits at all
+    // collides with no phase and gets a group to itself.
+    const n = lead ? Number(lead[0]) : null;
+    const k = n === null ? `x:${ent.name}` : `n:${n}`;
+    const g = groups.get(k) || { n, bad: [], legal: [] };
+    (PHASE_DIR_NAME.test(ent.name) ? g.legal : g.bad).push(ent.name);
+    groups.set(k, g);
+  }
+  const ordered = [...groups.values()].sort((a, b) => {
+    if (a.n === null || b.n === null) return a.n === b.n ? 0 : (a.n === null ? 1 : -1);
+    return a.n - b.n;
+  });
+  const out = [];
+  for (const g of ordered) {
+    if (!g.bad.length) continue;
+    const entries = g.bad.slice().sort();
+    const legal = g.legal.slice().sort();
+    const verb = entries.length > 1 ? 'are not phase directory names' : 'is not a phase directory name';
+    let detail = `${entries.join(', ')} ${verb}`
+      + ' (bare integer or N.M, no zero-padding, no slug)';
+    if (entries.length > 1 && g.n !== null) detail += `; they share numeric prefix ${g.n}`;
+    if (legal.length) {
+      detail += `; ${legal.map((e) => `phases/${e}`).join(', ')} is the phase they collide with`;
+    }
+    // NO `phase` key, the same reason `unpicked` omits one: there is no phase
+    // number to report, and inventing one would make this indistinguishable from
+    // the drift kinds that legitimately have one.
+    out.push({ kind: 'phase-dir-grammar', entries, detail });
+  }
+  return out;
+}
+
 // Which cursor statuses are consistent with a derived phase status.
 const AGREE = {
   unplanned: ['ready to plan', 'context gathered'],
@@ -196,6 +269,11 @@ function cmdStatus(dir) {
       });
     }
   }
+
+  // The phase-directory grammar, checked in EVERY state and not only after a
+  // close: a directory Cadence cannot address is wrong while the cycle is open,
+  // which is when it can still be renamed cheaply.
+  drift.push(...phaseDirGrammarDrift(dir));
 
   // Requirements drift (optional file; Deferred rows and unmapped rows are
   // audit's concern, not drift).
