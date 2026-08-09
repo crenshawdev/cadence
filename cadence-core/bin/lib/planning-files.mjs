@@ -272,12 +272,28 @@ const REQ_ID_TOKEN_G = new RegExp(REQ_ID_TOKEN.source, 'g');
 // it. So the narrowing lives HERE instead, as a question `audit` asks before
 // letting an id break the verdict: a bold bullet whose span is not id-shaped is
 // REPORTED (`active-non-id-bullet`) and never counted.
-const REQ_ID_EXACT = /^(?:[A-Z][A-Z0-9]{1,7}-\d+|#\d+)$/;
+//
+// A letter is required SOMEWHERE in the category, not at its head (PRS-02): a
+// real project spells requirements `2FA-01`, `3DS-02` and `A11Y-01`, and the
+// head-anchored form refused all three. The 2-8 character length window is
+// preserved exactly as it was, by the lookahead rather than by counting inside
+// the alternation - `A11Y` carries digits at both of the positions a
+// `[A-Z0-9]{1,2}[A-Z][A-Z0-9]{0,6}` form would need the letter to fall in, so
+// the length has to be asserted separately from where the letter sits.
+//
+// A bare `[A-Z0-9]` lead - no letter required at all - stays REFUSED and must
+// not be reintroduced. `ACTIVE_BULLET` reads ANY bold span as an id and
+// narrowing it is off the table, so this is the ONLY filter standing between a
+// bolded date or plan reference (`- **2026-08**: ...`, `- **14-01**: ...`) and
+// `audit`'s counts, `unpicked`, and a phantom `orphans.plan_ids` break already
+// paid for once.
+const REQ_ID_EXACT = /^(?:(?=[A-Z0-9]{2,8}-)[A-Z0-9]*[A-Z][A-Z0-9]*-\d+|#\d+)$/;
 
 /**
  * Is `id` exactly a requirement id, the whole string and nothing else? The
  * admission test for anything that moves `audit`'s arithmetic: `AUTH-01` yes,
- * `AUTH-01:` no (the colon belongs outside the bold span), `Note` no.
+ * `2FA-01` yes, `AUTH-01:` no (the colon belongs outside the bold span), `Note`
+ * no, `2026-08` no (a category with no letter in it at all).
  * @param {string} id @returns {boolean}
  */
 export function isRequirementId(id) {

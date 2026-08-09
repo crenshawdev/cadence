@@ -1921,6 +1921,47 @@ test('audit: an ## Active id that is not id-shaped can never reach the arithmeti
   assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
 });
 
+test('audit: a digit-leading category with a letter in it reaches the arithmetic (PRS-02)', () => {
+  // `2FA-01` is how a real project spells this, and the head-anchored admission
+  // test held it out of `unpicked`, out of `unseeded.active_ids` and out of
+  // `counts` entirely - an `## Active` requirement no phase picked up, silently
+  // absolving the traceability gate.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **2FA-01**: two-factor auth\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.requirements, [{ id: '2FA-01', break: 'unpicked' }]);
+  assert.deepEqual(r.unseeded, { active_ids: ['2FA-01'] });
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+  assert.equal(r.counts.total, r.counts.traced + r.counts.broken + r.counts.deferred);
+  // ...and it is a DECLARATION, so nothing reports it as a non-id bullet.
+  assert.equal((r.active_issues || []).length, 0, JSON.stringify(r.active_issues));
+});
+
+test('audit: a category with NO letter at all is still a phantom, reported and never counted', () => {
+  // The same fixture spelled `2026-08`: a bolded date must not become an admitted
+  // requirement id feeding the counts - the phantom `orphans.plan_ids` break this
+  // project already paid for once.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: true } },
+  });
+  writeFileSync(join(dir, 'REQUIREMENTS.md'),
+    '# Requirements: Fixture\n\n## Active\n\n- **2026-08**: the August slice\n\n' +
+    '## Traceability\n\n| Requirement | Phase | Status |\n|---|---|---|\n\nEmpty.\n');
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements, []);
+  assert.deepEqual(r.unseeded, { active_ids: [] });
+  assert.equal(r.active_issues[0].code, 'active-non-id-bullet');
+  assert.deepEqual(r.counts, { total: 0, traced: 0, broken: 0, deferred: 0 });
+});
+
 test('audit: a v1.3.1-shaped ## Active table is reported in active_issues - and its ids stay invisible to the break', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'Done', checked: true }],
