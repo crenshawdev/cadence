@@ -73,10 +73,10 @@ region at all (D-02).)
 ### Phase 2: The free cuts
 **Goal:** ~17,400 B leaves the eager path without a single new file, register row
 or budget row, and the four drifts found alongside it are closed.
-**Depends on:** Phase 1 (criterion 4 must fire on the dead include before it is deleted, so the check is proved against a live instance rather than a synthetic one)
+**Depends on:** Phase 1 (criterion 4 must fire on the dead include before it is deleted, so the check is proved against a live instance rather than a synthetic one; and phase 1 shipped a one-row `WAIVED` register in `cadence-core/bin/lib/include-consumers.mjs` as a bridge that this phase's first commit must delete alongside the include itself)
 **Requirements:** CTW-03, CTW-05
 **Success Criteria:**
-1. `skills/cad-verify/SKILL.md:29` is deleted and `cadence-core/templates/UAT.md` stays on disk as the seam's spec, its 5,792 B budget row unchanged. `/cad-verify` eager falls 24,533 -> 18,741.
+1. `skills/cad-verify/SKILL.md:29` is deleted and `cadence-core/templates/UAT.md` stays on disk as the seam's spec, its 5,792 B budget row unchanged. `/cad-verify` eager falls 24,533 -> 18,741. The one-row `WAIVED` register in `cadence-core/bin/lib/include-consumers.mjs` is deleted in the same commit; leaving it turns `self-verify` red with `include-waiver-stale`. (Phase 1 shipped that row as a stated bridge, because check 16 must REPORT this include on a byte-copy fixture while the live tree stays green — the two are the same bytes until the include goes. Its second arm, `include-waiver-expired`, fires instead if this phase's box is checked while the row still stands, so the bridge cannot be left behind quietly either.)
 2. The `--tokens` provenance paragraph is stated once, in `lib/trace.mjs`'s header at zero context cost, with each of its five prose sites keeping one imperative sentence. The rules that must survive everywhere: omit the flag when no figure exists, never `--tokens 0`, and a return carrying no figure is ROUTINE rather than a defect.
 3. The remaining free-tier cuts land per surface, one commit each with its `weight-budgets.json` re-pin in the same commit: `cad-land` guardrails and deferral tails, `execute.md` and `context.md` and `verify.md` and `plan.md` duplication, three contract `<success_criteria>` checklists, and the `cad-health` regression anecdotes.
 4. Rationale that moves lands somewhere — a `.mjs` header or a design-note — and is not deleted. Rationale bound to a rule the model applies at runtime is not moved at all.

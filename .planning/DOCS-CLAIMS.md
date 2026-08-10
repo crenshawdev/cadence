@@ -681,3 +681,19 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-SWEEP-04 | cadence-core/workflows/verify-sweep.md | 20 | Open-failure phases are read from `.planning/phases/<N>/UAT.md`. | accurate | accurate |
 | VERIFY-SWEEP-05 | cadence-core/workflows/verify-sweep.md | 28 | The resume offer goes through the ask-user seam. | accurate | accurate |
 | VERIFY-SWEEP-06 | cadence-core/workflows/verify-sweep.md | 4,32 | verify.md has a `build_or_resume` step to return to. | accurate | accurate |
+
+## Claims added after run 1
+
+Run 1's positional ids and its 509/18/20 = 547 counts describe run 1's table
+ONLY, and nothing below is part of them. Rows here are claims made after that
+sweep closed, which the next sweep must re-verify on the same `doc` plus claim
+TEXT join rule the run-1 rows use.
+
+They are kept out of the run-1 table precisely so that count stays a true record
+of what was swept: folding a later claim into it would make 547 describe a
+surface no run ever read, and the shrink-versus-drift comparison the ledger
+exists for would be measured against a moving baseline.
+
+| id | doc | line | claim | verdict | resolution |
+|---|---|---|---|---|---|
+| SELFVERIFY-01 | cadence-core/bin/self-verify.mjs | 90-104 | Check 16 fails an `@`-included `cadence-core/references/*` or `cadence-core/templates/*` surface that no eager prose of the including command ever names, while `cadence-core/workflows/*` includes are exempt because the workflow IS the command's process. | accurate | accurate |
