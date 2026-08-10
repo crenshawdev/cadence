@@ -104,16 +104,28 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-None. `v2.6.1 — the defects the sweep found` shipped on 2026-08-09: four
-requirements, one phase, six commits, the audit green (4/4 traced, 0 broken;
-8/8 acceptance criteria covered), the manifest at `2.6.1`. Its four DFC rows sit
-in `.planning/REQUIREMENTS.md` under `## Shipped`, its phase record in
-`.planning/_archive-v2.6.1/`, and its narrative in `CHANGELOG.md`.
+`v2.6.2 — what the plugin carries`, opened 2026-08-10. Five requirements
+(`CTW-01`..`CTW-05`), scoped from a context-weight sweep of Cadence's own eager
+surfaces and filed as issues #98-#103.
 
-The next cycle is not scoped. That is a decision, not an oversight: the
-candidates are in `REQUIREMENTS.md`'s `## Deferred` and none has been promoted,
-and opening a milestone is its own call to make rather than something a close
-does on the way past. `/cad-phase add` opens the first phase when it is taken.
+The cycle before it — `v2.6.1 — the defects the sweep found` — shipped on
+2026-08-09: four requirements, one phase, six commits, the audit green (4/4
+traced, 0 broken; 8/8 acceptance criteria covered), the manifest at `2.6.1`. Its
+four DFC rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its phase
+record in `.planning/_archive-v2.6.1/`, and its narrative in `CHANGELOG.md`.
+
+What this cycle is about: the plugin's prose is 119,232 est tokens, and the part
+that matters is not the total but the eager set — the bytes an `@`-include puts
+in context on turn one and every turn after. `/cad-execute` carries 28,682 B
+before it reads a single project file. ~39,700 B of that is removable across six
+commands, and roughly half of it only becomes safe to remove once CI can watch a
+deferral made from a workflow file, which today it cannot.
+
+The sequencing is the design. `CTW-01` and `CTW-02` are checks, not cuts, and
+they come first: this tree shipped a 5,792 B eager include that nothing ever
+read, with a CHANGELOG entry defending it on a comparison that was false. Prose
+cut before the checks exist is prose cut on the same evidence that produced the
+defect.
 
 ## Key Decisions
 

@@ -5,16 +5,28 @@
 
 ## Active
 
-Empty. `v2.6.1 — the defects the sweep found` shipped on 2026-08-09 with all
-four of its requirements delivered and verified: the audit was green (4/4
-traced, 0 broken; 8/8 acceptance criteria covered), and `DFC-01` through
-`DFC-04` moved to `## Shipped` below as rows at their phase.
+`v2.6.2 — what the plugin carries` opened on 2026-08-10, scoped from a
+context-weight sweep of the plugin's own eager surfaces (four parallel
+read-only passes; the record is `design-notes/sweep-2026-08-10-context-weight.md`
+and the picks are issues #98-#103). Measured baseline: 119,232 est tokens of
+shipped prose, and an eager set per command of 28,682 B on `/cad-execute`,
+24,533 B on `/cad-verify`, 22,662 B on `/cad-plan`, 20,777 B on `/cad-context`,
+20,547 B on `/cad-config`, 18,209 B on `/cad-land` — bytes that ride turn one
+and every turn after. The itemized total available is ~39,700 B.
 
-The next cycle is not scoped yet. `## Deferred` holds the candidates and none of
-them has been promoted, deliberately: opening a milestone is its own decision
-and it has not been taken. `/cad-phase add` opens the first phase once it is,
-and `/cad-plan` seeds each requirement's Traceability row as its phase is
-planned - rows are never hand-populated here.
+The order is not arbitrary: `CTW-01` is what makes `CTW-04` safe to make, and
+`CTW-02` is what keeps `CTW-03`'s class from returning. Cutting prose before the
+checks exist is how this repo got a 5,792 B include that nothing read and a
+CHANGELOG entry defending it.
+
+- **CTW-01**: A deferral made from a workflow file or a contract skill is watched by CI. `lib/deferred-reads.mjs` (self-verify check 13) anchors only on `skills/<name>/SKILL.md` regions labelled by a top-level `^N. ` numbered step, and excludes contract skills outright at `:40-44`. Workflow files use `<step name="...">` tags and are themselves the `@`-include; `skills/cad-execute/SKILL.md` is a bare include with no numbered steps and `cad-verify`'s `<process>` is one line, so a register row for either can never satisfy its anchor — adding one fails CI forever, omitting one leaves the deferral unwatched. Rows gain a `file` field naming where the `Read` sentence must live, `regionLabels()` learns `<step name="...">`, and the contract-skill exclusion goes with its rationale, which prices main-thread residency in a tree that now dispatches most of its work. The SENTENCE stays the matching unit — the header documents why a block-level test passes when the real instruction is deleted. Tracked as #98
+- **CTW-02**: An `@`-included surface that nothing in the including command's reachable prose ever names fails CI. Same species as check 3 (paths exist) and check 6 (agent `skills:` resolve): the include claims a consumer and this checks the claim. The opposite direction from `CTW-01` — "included but never named" against "named but no longer included" — and both must hold. Reuses `lib/resident-weight.mjs`' eager/reachable split rather than re-walking. The case that must pass is the file whose workflow IS the surface (`cad-help`'s `COMMANDS.md`), which is the legitimate shape the defect in `CTW-03` was wrongly compared to. Tracked as #99
+- **CTW-03**: ~17,400 B leaves the eager path with no new files and no register rows. `skills/cad-verify/SKILL.md:29` eagerly includes `templates/UAT.md` (5,792 B) which nothing reads — `verify.md` never names it, and `verify.md:352` makes UAT.md seam-written with field order owned by `UAT_FIELDS`, so the template is a renderer spec a model that never renders cannot use. The remaining ~11,600 B is duplication inside a single context window: the `--tokens` provenance paragraph stated five times, `<success_criteria>` checklists restating their own contracts, purpose blocks duplicating the SKILL.md objective riding beside them, and regression anecdotes whose home is a `.mjs` header at zero token cost. Rationale bound to a rule the model applies at runtime stays. Tracked as #100 and #101
+- **CTW-04**: ~22,300 B of branch-local prose moves behind a `Read` at the step that needs it, each move tested against `references/seams.md:216-253` — only some branches reach it, one consult site, and the read folds into a turn already being taken. The config knob catalog (8,052 B, untouched by two of three routes) takes `/cad-config` from 20,547 to ~11,700; the plan BLOCKER-revision branch, the `execute_parallel` body, and `cad-executor-contract`'s `<worktree_mode>` (dead on a default install, paid by every executor dispatch) follow. Depends on `CTW-01`: without it these ship unguarded, which is the exact failure `lib/deferred-reads.mjs` exists to catch. Tracked as #102
+- **CTW-05**: Four prose/code drifts the sweep found in passing are closed: `execute.md:241` names a step `start` that does not exist, `execute.md:36` resolves `workflow.test_command` on a path that never reads it, `config-reach.md:136-138`' reach site for the three `parallelization.*` keys moves with `CTW-04`, and `seams.md:236-240` claims a git-guard consult in cad-land's guardrails that cites none. Tracked as #103
+
+`/cad-plan` seeds each requirement's Traceability row as its phase is planned -
+rows are never hand-populated here.
 
 ## Shipped
 
