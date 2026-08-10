@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 3 (The free cuts)
-Status: phase complete
-Next: /cad-context 3
+Phase: 3 of 3 (The deferrals)
+Status: context gathered
+Next: /cad-plan 3
 Updated: 2026-08-10
