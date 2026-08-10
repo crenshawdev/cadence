@@ -27,6 +27,9 @@
       "plan": {
         "gate": "advisory",
         "tier": "cheap"
+      },
+      "pre_ship": {
+        "gate": "off"
       }
     }
   }
