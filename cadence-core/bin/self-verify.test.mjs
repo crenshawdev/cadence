@@ -11,14 +11,18 @@ import { existsSync as existsSyncSafe } from 'node:fs';
 import { rungBody } from './lib/rung-agent.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
+import { WAIVED } from './lib/include-consumers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
 const REPO = join(HERE, '..', '..');
 
-function run(args = []) {
+/** @param {string[]} args @param {Record<string,string>} [env] extra environment */
+function run(args = [], env = undefined) {
+  const opts = { encoding: 'utf8' };
+  if (env) opts.env = { ...process.env, ...env };
   try {
-    return JSON.parse(execFileSync('node', [VERIFY, ...args], { encoding: 'utf8' }));
+    return JSON.parse(execFileSync('node', [VERIFY, ...args], opts));
   } catch (e) {
     return JSON.parse(e.stdout); // problems found -> exit 1, JSON still on stdout
   }
@@ -1812,6 +1816,136 @@ test('check 13: self-verify files the issue and names the check in `checked`', (
   assert.match(j.checked, /deferred-reads/);
   const kinds = j.problems.map((p) => p.kind);
   assert.equal(kinds.filter((k) => k === 'deferred-read-unread').length, 3);
+});
+
+// --- check 13 through the CLI, on a WORKFLOW-anchored row -------------------
+// Everything above exercises the pure rule with the shipped four rows, or
+// exercises a synthetic row in deferred-reads.test.mjs without going through
+// the CLI. Neither can see the disk half loading the wrong register, dropping a
+// row that carries a non-default `file`, or failing to surface the issue at
+// all. `CADENCE_DEFERRED_READS` is the seam that closes the gap - the same
+// path-override shape as `CADENCE_ROUTE_TABLE`.
+
+/** A root holding a real command SKILL.md, its real workflow, and a rows file. */
+function workflowAnchoredRoot({ withRead }) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-wfrow-'));
+  const rel = 'cadence-core/workflows/execute.md';
+  mkdirSync(join(root, 'skills', 'cad-execute'), { recursive: true });
+  mkdirSync(join(root, 'cadence-core', 'workflows'), { recursive: true });
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  cpSync(join(REPO, 'skills', 'cad-execute', 'SKILL.md'),
+    join(root, 'skills', 'cad-execute', 'SKILL.md'));
+  const open = '<step name="execute_parallel">';
+  const text = readFileSync(join(REPO, ...rel.split('/')), 'utf8');
+  writeFileSync(join(root, ...rel.split('/')), withRead
+    ? text.replace(open, `${open}\n${readSentence('references/seams.md')}`)
+    : text);
+  const rows = join(root, 'rows.json');
+  writeFileSync(rows, JSON.stringify([{
+    skill: 'cad-execute',
+    reference: 'references/seams.md',
+    anchors: ['execute_parallel'],
+    read_paragraphs: 1,
+    file: rel,
+  }]));
+  return { root, rows };
+}
+
+test('check 13: the CLI files a workflow-anchored row when its Read sentence goes', () => {
+  const { root, rows } = workflowAnchoredRoot({ withRead: false });
+  const p = run(['--root', root], { CADENCE_DEFERRED_READS: rows }).problems;
+  const unread = p.filter((x) => x.kind === 'deferred-read-unread');
+  assert.equal(unread.length, 1, JSON.stringify(p));
+  assert.equal(unread[0].file, 'cadence-core/workflows/execute.md');
+  assert.match(unread[0].detail, /execute_parallel/);
+});
+
+test('check 13: the CLI files nothing while that sentence stands', () => {
+  const { root, rows } = workflowAnchoredRoot({ withRead: true });
+  const p = run(['--root', root], { CADENCE_DEFERRED_READS: rows }).problems;
+  assert.deepEqual(p.filter((x) => x.kind.startsWith('deferred-read-')), []);
+});
+
+test('check 13: an unusable rows file is reported, never a silent fall back', () => {
+  // A fixture whose seam did not take must fail loudly. Falling back to the
+  // shipped register would make it pass on rows it never meant to test.
+  const { root } = workflowAnchoredRoot({ withRead: true });
+  const bad = join(root, 'not-a-file.json');
+  const p = run(['--root', root], { CADENCE_DEFERRED_READS: bad }).problems;
+  assert.ok(p.some((x) => x.kind === 'unreadable-surface'
+    && /CADENCE_DEFERRED_READS/.test(x.detail)), JSON.stringify(p));
+});
+
+// --- check 16: an `@`-include claims a consumer ------------------------------
+// The rule and its waiver bounds are pinned in include-consumers.test.mjs. This
+// side pins the WIRING: that the issues reach `problems`, that `checked` names
+// the check, and that the live tree is clean of all three of its codes. The
+// stale-waiver test is here for a specific reason - a wiring regression that
+// forwarded `include-never-named` while filtering or remapping the stale arm
+// would pass everything the lib test asserts, and that arm is the whole basis
+// of "the one waived include cannot outlive its `@`-include line".
+
+/** A root holding one command SKILL.md and the surfaces it includes. */
+function includeRoot(files) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-includes-'));
+  mkdirSync(join(root, 'cadence-core'), { recursive: true });
+  cpSync(join(REPO, 'cadence-core', 'config.schema.json'),
+    join(root, 'cadence-core', 'config.schema.json'));
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, ...rel.split('/'))), { recursive: true });
+    writeFileSync(join(root, ...rel.split('/')), body);
+  }
+  return root;
+}
+
+test('check 16: an include nothing names is filed, and `checked` says so', () => {
+  const root = includeRoot({
+    'skills/cad-rogue/SKILL.md': [
+      '---', 'name: cad-rogue', 'description: "fixture"', '---', '',
+      '<execution_context>',
+      '@${CLAUDE_PLUGIN_ROOT}/cadence-core/references/orphan.md',
+      '</execution_context>', '',
+      '<process>', 'Do the thing and never mention what was loaded.', '</process>', '',
+    ].join('\n'),
+    'cadence-core/references/orphan.md': '# Orphan\n\nBytes nobody spends.\n',
+  });
+  const j = run(['--root', root]);
+  assert.match(j.checked, /include-consumers/);
+  const named = j.problems.filter((p) => p.kind === 'include-never-named');
+  assert.equal(named.length, 1, JSON.stringify(j.problems));
+  assert.equal(named[0].file, 'skills/cad-rogue/SKILL.md');
+  assert.match(named[0].detail, /references\/orphan\.md/);
+});
+
+test('check 16: the live tree is clean of all three include-consumer codes', () => {
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'include-never-named'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'include-waiver-stale'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'include-waiver-expired'), []);
+  // The waiver register's SIZE, guarded from this side too and not only from
+  // its own lib test. It is a phase-2 bridge with a scheduled removal, so
+  // appending a row instead of fixing an include has to be a red build rather
+  // than a reviewer's judgement call.
+  assert.equal(WAIVED.length, 1);
+});
+
+test('check 16: the CLI files include-waiver-stale when the include line goes', () => {
+  // Phase 2 deletes `skills/cad-verify/SKILL.md:29`. Until the WAIVED row goes
+  // with it in that same commit, this is what CI shows.
+  const rel = 'skills/cad-verify/SKILL.md';
+  const text = readFileSync(join(REPO, ...rel.split('/')), 'utf8');
+  const line = '@${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/UAT.md\n';
+  assert.ok(text.includes(line), 'the waived include must still exist to be removed');
+  const root = includeRoot({
+    [rel]: text.replace(line, ''),
+    'cadence-core/workflows/verify.md':
+      readFileSync(join(REPO, 'cadence-core', 'workflows', 'verify.md'), 'utf8'),
+  });
+  const p = run(['--root', root]).problems;
+  const stale = p.filter((x) => x.kind === 'include-waiver-stale');
+  assert.equal(stale.length, 1, JSON.stringify(p.map((x) => x.kind)));
+  assert.equal(stale[0].file, rel);
 });
 
 // --- check 14: every shipped seam is contracted -----------------------------

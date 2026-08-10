@@ -87,6 +87,21 @@
 //                    the head of the blob), which is why the defect survived.
 //                    The walk here is extension-blind and exclusion-free -
 //                    tests and JSON data files go dark the same way sources do.
+//  16. include        every `@`-include of a cadence-core/references/* or
+//      consumers      cadence-core/templates/* surface must be NAMED somewhere
+//                    in the including command's own eager prose. An include
+//                    claims a consumer; this checks the claim. Same species as
+//                    check 3 (an included path exists) and check 6 (an agent's
+//                    `skills:` resolve), and the opposite direction from check
+//                    13, which watches a reference a skill still NAMES but no
+//                    longer includes. A `cadence-core/workflows/*` include is
+//                    exempt - the workflow IS the command's process, so naming
+//                    it would be a command citing its own body. The rule, its
+//                    branch exemption and its one-row phase-2 waiver register
+//                    live in lib/include-consumers.mjs; this side only decides
+//                    that it applies to the whole root. It takes no CONTRACTS
+//                    row, for the reason check 14 states: `lib/*.mjs` are
+//                    modules prose never invokes.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -107,9 +122,41 @@ import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
-import { deferredReadIssues } from './lib/deferred-reads.mjs';
+import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
+import { includeConsumerIssues } from './lib/include-consumers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Check 13's register, overridable by PATH - the same shape as
+ * `CADENCE_ROUTE_TABLE` and `CADENCE_CONFIG_SCHEMA`, and for the same kind of
+ * reason. The pure rule takes its rows as a parameter so a test can anchor a
+ * SYNTHETIC row at a real workflow file without adding one to the shipped
+ * register; without this seam the disk half is only ever exercised with the
+ * four shipped rows, so it could load the wrong register, drop a row carrying a
+ * non-default `file`, or fail to surface the issue at all, and every fixture
+ * that calls the rule directly would still be green.
+ *
+ * A file that is unreadable or is not an array is a REPORTED problem, never a
+ * silent fall back to the shipped rows: a fixture whose seam did not take must
+ * fail loudly rather than pass on the wrong register.
+ * @param {{kind: string, file: string, detail: string}[]} problems
+ * @returns {ReadonlyArray<{skill: string, reference: string,
+ *   anchors: readonly string[], read_paragraphs: number, file?: string}>}
+ */
+function deferredRows(problems) {
+  const path = process.env.CADENCE_DEFERRED_READS;
+  if (!path) return DEFERRED_READS;
+  try {
+    const rows = JSON.parse(readFileSync(path, 'utf8'));
+    if (!Array.isArray(rows)) throw new Error('not an array of register rows');
+    return rows;
+  } catch (e) {
+    problems.push({ kind: 'unreadable-surface', file: path,
+      detail: `CADENCE_DEFERRED_READS: ${e && e.message ? e.message : String(e)}` });
+    return [];
+  }
+}
 
 // The reach table (check 9), root-relative and platform-separated so it can be
 // compared against a `relative(root, file)` walk result.
@@ -1082,7 +1129,7 @@ function run(root) {
   // still Read by name at the step that needs it. The rule, its register and
   // the reason the unit is the SENTENCE live in lib/deferred-reads.mjs; this
   // side only decides that it applies to the whole root.
-  for (const issue of deferredReadIssues(root)) problems.push(issue);
+  for (const issue of deferredReadIssues(root, deferredRows(problems))) problems.push(issue);
 
   // 14. every shipped seam is contracted. Check 2 skips any script with no
   // CONTRACTS row (`if (!contract) continue`), which it must - prose names
@@ -1153,6 +1200,14 @@ function run(root) {
       detail: `literal U+0000 at byte offset ${at} (${count} in file) - type \\0 instead` });
   }
 
+  // 16. include consumers: an `@`-included references/* or templates/* surface
+  // must be NAMED in the including command's own eager prose. The rule, the
+  // `workflows/*` branch exemption, the two scan-text exclusions that stop an
+  // include naming itself, and the one-row phase-2 waiver register with both of
+  // its bounds live in lib/include-consumers.mjs; this side only decides that it
+  // applies to the whole root.
+  for (const issue of includeConsumerIssues(root)) problems.push(issue);
+
   return problems;
 }
 
@@ -1163,7 +1218,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
