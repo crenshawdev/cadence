@@ -110,6 +110,13 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/debug.md',
   }),
+  Object.freeze({
+    skill: 'cad-execute',
+    reference: 'references/execute-parallel.md',
+    anchors: Object.freeze(['execute_parallel']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/execute.md',
+  }),
 ]);`;
 
 test('register: the original four rows are byte-identical, and the register is exactly the rows the cuts made', () => {
@@ -123,7 +130,7 @@ test('register: the original four rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 7);
+  assert.equal(DEFERRED_READS.length, 8);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -237,12 +244,17 @@ test('grammar: every shipped row\'s Read line still carries that row\'s anchor',
 // --- AC1/AC4: a named step in a real workflow ---------------------------------
 
 const EXECUTE_WF = 'cadence-core/workflows/execute.md';
-const PARALLEL_OPEN = '<step name="execute_parallel">';
-const PARALLEL_ITEM_2 = '\n2. Wait for every executor in the batch (same timeout).';
+// `git_guard`, not `execute_parallel`: that step's numbered body moved to
+// `references/execute-parallel.md`, so its item needles no longer exist and a
+// fixture built on them would silently no-op against an unedited file. The
+// grammar under test is unchanged - a named step whose column-0 items take
+// nested labels - and `git_guard` is the surviving instance of it.
+const GUARD_OPEN = '<step name="git_guard">';
+const GUARD_ITEM_2 = "\n2. Commit it now as the user's own commit, message theirs, then continue";
 
 /**
  * `skills/cad-execute/SKILL.md` plus `workflows/execute.md`, with one Read
- * sentence placed either in the `execute_parallel` step body (before its first
+ * sentence placed either in the `git_guard` step body (before its first
  * numbered item), inside its item 1, or nowhere.
  * @param {'body'|'item1'|'none'} where
  */
@@ -251,10 +263,10 @@ function executeRoot(where) {
   copyReal(root, 'skills/cad-execute/SKILL.md');
   copyReal(root, EXECUTE_WF, (t) => {
     if (where === 'body') {
-      return t.replace(PARALLEL_OPEN, `${PARALLEL_OPEN}\n${readSentence(SEAMS)}`);
+      return t.replace(GUARD_OPEN, `${GUARD_OPEN}\n${readSentence(SEAMS)}`);
     }
     if (where === 'item1') {
-      return t.replace(PARALLEL_ITEM_2, `\n${readSentence(SEAMS)}${PARALLEL_ITEM_2}`);
+      return t.replace(GUARD_ITEM_2, `\n${readSentence(SEAMS)}${GUARD_ITEM_2}`);
     }
     return t;
   });
@@ -274,33 +286,33 @@ test('AC1: a <step name="..."> anchor is clean while its Read sentence stands', 
   const root = executeRoot('body');
   const text = readFileSync(join(root, ...EXECUTE_WF.split('/')), 'utf8');
   assert.ok(text.includes(readSentence(SEAMS)), 'fixture must carry the inserted sentence');
-  assert.deepEqual(deferredReadIssues(root, [executeRow(['execute_parallel'])]), []);
+  assert.deepEqual(deferredReadIssues(root, [executeRow(['git_guard'])]), []);
 });
 
 test('AC1: deleting that sentence reports exactly one deferred-read-unread', () => {
-  const issues = deferredReadIssues(executeRoot('none'), [executeRow(['execute_parallel'])]);
+  const issues = deferredReadIssues(executeRoot('none'), [executeRow(['git_guard'])]);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
   assert.equal(issues[0].file, EXECUTE_WF);
-  assert.match(issues[0].detail, /execute_parallel/);
+  assert.match(issues[0].detail, /git_guard/);
 });
 
-test('AC4: a Read in item 1 of a named step does not satisfy item 6 of the same step', () => {
-  // The nested-label precedence rule. `execute.md:343-402` puts `1.`-`6.` at
-  // column 0 INSIDE `execute_parallel`; bare numbers there would let this
-  // sentence answer for any `6` anywhere in the file.
+test('AC4: a Read in item 1 of a named step does not satisfy item 3 of the same step', () => {
+  // The nested-label precedence rule. `git_guard` puts `1.`-`3.` at column 0
+  // inside a named step; bare numbers there would let this sentence answer for
+  // any `3` anywhere in the file - and `cad-land` really does anchor at `3`.
   const root = executeRoot('item1');
-  const issues = deferredReadIssues(root, [executeRow(['execute_parallel(6)'])]);
+  const issues = deferredReadIssues(root, [executeRow(['git_guard(3)'])]);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
-  assert.match(issues[0].detail, /execute_parallel\(6\)/);
+  assert.match(issues[0].detail, /git_guard\(3\)/);
   // And the sentence really is where the fixture put it - otherwise the
   // falsifier above would be passing on a sentence that landed nowhere.
-  assert.deepEqual(deferredReadIssues(root, [executeRow(['execute_parallel(1)'])]), []);
+  assert.deepEqual(deferredReadIssues(root, [executeRow(['git_guard(1)'])]), []);
 });
 
 test('AC4: the named step is not a PREFIX match for its own numbered items', () => {
-  // `execute_parallel` and `execute_parallel(1)` are distinct regions, the same
-  // way `4` and `4(a)` always were.
-  const issues = deferredReadIssues(executeRoot('item1'), [executeRow(['execute_parallel'])]);
+  // `git_guard` and `git_guard(1)` are distinct regions, the same way `4` and
+  // `4(a)` always were.
+  const issues = deferredReadIssues(executeRoot('item1'), [executeRow(['git_guard'])]);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
 });
 
@@ -475,8 +487,8 @@ test('grammar: a nested close does not switch the enclosing frame off', () => {
   for (const name of ['locate', 'git_guard', 'choose_path', 'execute_parallel', 'done']) {
     assert.ok(labels.has(name), `${name} must be a labelled region`);
   }
-  assert.ok(labels.has('execute_parallel(6)'), 'nested items take nested labels');
-  assert.ok(!labels.has('6'), 'a nested item must never take a bare number');
+  assert.ok(labels.has('git_guard(3)'), 'nested items take nested labels');
+  assert.ok(!labels.has('3'), 'a nested item must never take a bare number');
 });
 
 test('grammar: a numbered item with an EMPTY frame stack stays regionless', () => {
@@ -563,6 +575,10 @@ test('AC4: cad-debug / references/recall.md is unread without its one sentence',
   // each command's anchor falsified on its own. If these were merged into one
   // row, deleting either sentence would still leave the other satisfying it.
   assertPromotedRow('cad-debug', 'references/recall.md', 'The method loop/1');
+});
+
+test('AC4: cad-execute / references/execute-parallel.md is unread without its one sentence', () => {
+  assertPromotedRow('cad-execute', 'references/execute-parallel.md', 'execute_parallel');
 });
 
 test('file: still-eager watches the SKILL.md even when the anchor is a workflow', () => {

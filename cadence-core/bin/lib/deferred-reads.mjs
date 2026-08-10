@@ -212,6 +212,13 @@ export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/debug.md',
   }),
+  Object.freeze({
+    skill: 'cad-execute',
+    reference: 'references/execute-parallel.md',
+    anchors: Object.freeze(['execute_parallel']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/execute.md',
+  }),
 ]);
 
 /** Split prose into sentences: a terminator followed by whitespace. */
@@ -268,10 +275,10 @@ const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
  *   frame label `null`, no item  -> `null` (regionless)
  *   frame label `null`, item n   -> `"n"`            (today's `3`, `2`)
  *   frame label F, no item       -> `"F"`            (`worktree_mode`)
- *   frame label F, item n        -> `"F(n)"`         (`execute_parallel(6)`)
+ *   frame label F, item n        -> `"F(n)"`         (`git_guard(3)`)
  *   no frame, heading path P     -> `"P"`            (`Direct set`)
  *   no frame, path P, item n     -> `"P/n"`          (`.../The walk/2`)
- *   ... and an arm appends `(x)`  -> `"3(a)"`, `"execute_parallel(6)(a)"`
+ *   ... and an arm appends `(x)`  -> `"3(a)"`, `"git_guard(3)(a)"`
  *
  * A bare `"n"` is emitted ONLY inside a frame whose own label is `null` - in
  * practice `<process>`. With an EMPTY stack a numbered item stays regionless,
@@ -282,11 +289,12 @@ const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
  * latent - and it stays latent only because the clause is written.
  *
  * A numbered item inside a NAMED step never gets a bare number, for the same
- * reason: `execute.md:343-402` puts `1.`-`6.` at column 0 inside
- * `execute_parallel`, and `verify.md` and `new-project.md` carry 15 more such
- * lines. Bare numbers there would let two regions of one file both label `"3"`,
- * and an anchor would be satisfied by a Read in an unrelated bullet - the
- * file-wide-quota defect this register already shipped once, in a new spelling.
+ * reason: `execute.md`'s `<step name="git_guard">` puts `1.`-`3.` at column 0
+ * inside the step, and `verify.md` and `new-project.md` carry more such lines.
+ * Bare numbers there would let two regions of one file both label `"3"` - and
+ * `cad-land` really does anchor at `3` - so an anchor would be satisfied by a
+ * Read in an unrelated bullet, the file-wide-quota defect this register already
+ * shipped once, in a new spelling.
  *
  * The protection is label EXACTNESS, not null-ness. `<guardrails>` now labels
  * `guardrails` rather than `null`, and the relocation attack still fails:

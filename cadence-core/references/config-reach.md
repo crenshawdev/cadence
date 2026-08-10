@@ -130,10 +130,10 @@ purpose test runs against the reach the author just replaced.
 | `workflow.subagent_timeout` | universal | `references/seams.md` spawn-agent - ms before a subagent is killed |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner; above it the planner returns `## PHASE TOO BIG`, and cad-plan-checker flags the overrun under Proportionality |
-| `workflow.test_command` | universal | `workflows/task.md`, `workflows/coverage.md` and the executor contract |
+| `workflow.test_command` | universal | `workflows/task.md`, `workflows/coverage.md`, `references/execute-parallel.md` (the post-batch run, at its only consumer) and the executor contract |
 | `workflow.lint_command` | universal | the executor contract's static-analysis step - the LINT command only; unset there means `bin/planning.mjs detect-commands` supplies both lint and typecheck from the project's own manifests |
 | `parallelization.enabled` | universal | `workflows/execute.md` - the parallel-path gate |
-| `parallelization.max_concurrent_agents` | universal | `workflows/execute.md`'s `execute_parallel` step - dispatch batch size |
+| `parallelization.max_concurrent_agents` | universal | `references/execute-parallel.md`, read at `workflows/execute.md`'s `execute_parallel` step - dispatch batch size |
 | `parallelization.min_plans_for_parallel` | universal | `workflows/execute.md` - the parallel-path gate |
 | `parallelization.use_worktrees` | universal | `workflows/execute.md` - worktree isolation for parallel writes |
 | `git.protected_branches` | universal | `bin/git-guard.mjs`, `bin/land-cleanup.mjs` and `bin/git-publish.mjs` |
