@@ -186,6 +186,13 @@ export const DEFERRED_READS = Object.freeze([
     anchors: Object.freeze(['2']),
     read_paragraphs: 1,
   }),
+  Object.freeze({
+    skill: 'cad-context',
+    reference: 'templates/CONTEXT.md',
+    anchors: Object.freeze(['write_context']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/context.md',
+  }),
 ]);
 
 /** Split prose into sentences: a terminator followed by whitespace. */

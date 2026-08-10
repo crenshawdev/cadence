@@ -84,16 +84,27 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     anchors: Object.freeze(['2']),
     read_paragraphs: 1,
   }),
+  Object.freeze({
+    skill: 'cad-context',
+    reference: 'templates/CONTEXT.md',
+    anchors: Object.freeze(['write_context']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/context.md',
+  }),
 ]);`;
 
-test('register: the four shipped rows are byte-identical in source', () => {
+test('register: the original four rows are byte-identical, and the register is exactly the rows the cuts made', () => {
+  // Two claims in one assertion, because the byte-exact literal carries both:
+  // the four rows the v2.5.0 cuts made are untouched, in order, and every row
+  // added since is one this repo's own prose moves account for. A length check
+  // alone passes an edited, reordered or retargeted row.
   const src = readFileSync(join(HERE, 'lib', 'deferred-reads.mjs'), 'utf8');
   const start = src.indexOf('export const DEFERRED_READS');
   assert.ok(start >= 0, 'the register export must be findable by name');
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 4);
+  assert.equal(DEFERRED_READS.length, 5);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -458,6 +469,70 @@ test('grammar: a numbered item with an EMPTY frame stack stays regionless', () =
   // Inside `<process>` the same line is the bare label the shipped rows use.
   const inProcess = regionLabels('<process>\n1. A step.\n</process>\n');
   assert.equal(inProcess(1), '1');
+});
+
+// --- AC4: every PROMOTED row, falsified against its real surface -------------
+// A promoted row (lib/deferred-reads.mjs, "TWO KINDS OF ROW") has no
+// `stillEager` arm to protect it - the anchor is all there is - so each one is
+// falsified here against the SHIPPED row and the REAL surface it anchors in,
+// never a synthetic copy. The fixture deletes the sentence by the reference PATH
+// rather than by a quoted literal, so a reworded Read cannot make the deletion
+// silently no-op and leave the falsifier passing against an unedited file.
+
+/** The shipped register row for a `{skill, reference}` pair. */
+function shippedRow(skill, reference) {
+  const row = DEFERRED_READS.find((r) => r.skill === skill && r.reference === reference);
+  assert.ok(row, `no shipped register row for ${skill} / ${reference}`);
+  return row;
+}
+
+/**
+ * `text` with the one sentence naming `full` removed, sentence-split exactly as
+ * the rule splits, separators preserved so the rest of the file is untouched.
+ * Asserts it removed exactly one: zero means the fixture no-op'd, more than one
+ * means the deletion is not the single-sentence falsifier it claims to be.
+ */
+function stripReadSentence(text, full) {
+  const parts = text.split(/((?<=[.!?])\s+)/);
+  const kept = [];
+  let removed = 0;
+  for (let i = 0; i < parts.length; i += 2) {
+    if (parts[i].includes(full)) { removed += 1; continue; }
+    kept.push(parts[i], parts[i + 1] ?? '');
+  }
+  assert.equal(removed, 1, `expected exactly one sentence naming ${full}`);
+  return kept.join('');
+}
+
+/** The real surfaces a shipped row needs, with its Read sentence kept or cut. */
+function rowRoot(row, { withRead }) {
+  const root = emptyRoot();
+  const skillRel = `skills/${row.skill}/SKILL.md`;
+  const rel = row.file || skillRel;
+  const full = `\${CLAUDE_PLUGIN_ROOT}/cadence-core/${row.reference}`;
+  const edit = (t) => (withRead ? t : stripReadSentence(t, full));
+  if (rel !== skillRel) copyReal(root, skillRel);
+  copyReal(root, rel, edit);
+  return root;
+}
+
+/**
+ * Both halves of one promoted row's falsifier: the real tree is clean, and the
+ * same tree minus that one sentence is exactly one `deferred-read-unread`.
+ */
+function assertPromotedRow(skill, reference, anchor) {
+  const row = shippedRow(skill, reference);
+  const rel = row.file || `skills/${row.skill}/SKILL.md`;
+  assert.deepEqual(deferredReadIssues(rowRoot(row, { withRead: true }), [row]), [],
+    `${rel} must satisfy ${reference} as shipped`);
+  const issues = deferredReadIssues(rowRoot(row, { withRead: false }), [row]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  assert.equal(issues[0].file, rel);
+  assert.match(issues[0].detail, new RegExp(anchor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+}
+
+test('AC4: cad-context / templates/CONTEXT.md is unread without its one sentence', () => {
+  assertPromotedRow('cad-context', 'templates/CONTEXT.md', 'write_context');
 });
 
 test('file: still-eager watches the SKILL.md even when the anchor is a workflow', () => {
