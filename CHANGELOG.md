@@ -6,6 +6,101 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.6.2] - 2026-08-10
+
+What the plugin carries on turn one, and what it can wait to read. Three
+phases, 21 commits, 269,045 B of eager prose down to 252,653 B summed across
+the 23 user-invocable commands. `/cad-config` alone falls from 20,547 B to
+12,770 B.
+
+The sweep that scoped this cycle also falsified the obvious hypothesis, and
+that is why the cycle looks the way it does. Skill frontmatter `description:`
+fields, the suspected bloat, total 3,730 B across all 29 skills, against
+27,940 B for `workflows/execute.md` alone. One command's eager include
+outweighed the entire description surface by 7x, and descriptions are what
+make the model select the right command at all. Nothing here touches them.
+
+The ordering was the design. This tree had shipped a 5,792 B eager include
+that nothing ever read, defended in a `CHANGELOG` entry by a comparison that
+was false on inspection. Cutting prose before closing the CI holes that let
+that happen would have meant cutting on exactly the evidence that produced the
+defect, so the checks came first and the cuts came second.
+
+### Added
+
+- **Two self-verify checks that make a deferral watchable.** Check 13 can now
+  anchor a deferral whose `Read` sentence lives in a `cadence-core/workflows/*.md`
+  `<step name="...">` region or inside a `skills/cad-*-contract/SKILL.md`, not
+  only in a top-level numbered step of a user-invocable skill. Check 16 fails an
+  `@`-include whose surface nothing in that command's reachable prose ever names,
+  which is the class the dead include belonged to. `cad-help`'s `COMMANDS.md`
+  include passes, because the workflow IS the surface there - the legitimate
+  shape the dead one was wrongly compared to.
+
+- **Six on-demand references, each read at the step that needs it.**
+  `references/config-catalog.md` (the knob catalog, read at the interactive
+  walk), `references/plan-revision.md` (read only when the plan checker returns
+  a BLOCKER), `references/execute-parallel.md` (read only on the opt-in parallel
+  path), `references/worktree-executor.md` (read only by a worktree executor),
+  `references/recall.md` (read from `context.md` and `debug.md`), and
+  `templates/CONTEXT.md`. Each carries a `weight-budgets.json` row and a register
+  row whose falsifier was watched to fail: delete the one `Read` sentence and
+  `self-verify` names that row.
+
+### Changed
+
+- **The register now covers promotion, not only re-deferral.** All four rows it
+  shipped with pointed at prose that had once been an `@`-include, so the
+  `stillEager` arm did the work. The seven rows added here anchor prose that was
+  never an include at all, and their protection is the anchor alone.
+
+- **`prose-agreement.test.mjs` scans instead of asserting one site.** The
+  measured-bytes check was a single hardcoded figure; it now scans every skill,
+  workflow and reference for a `\d{1,3}(,\d{3})* B` figure and holds each to
+  `weight-budgets.json`. A coverage arm additionally requires each register row's
+  `Read` sentence to state its reference's bytes and consult-site count, with the
+  three `cad-land` rows `seams.md` grandfathers named explicitly rather than
+  silently skipped.
+
+- **Rationale addressed to a human maintainer moved to `.mjs` headers and
+  design-notes; rationale bound to a rule the model applies at runtime stayed
+  put.** `self-verify` structurally cannot tell those apart, so each surface got
+  its own commit and its own UAT walk rather than one bulk edit.
+
+- **Decision fidelity in `cad-planner`'s contract now binds in both
+  directions.** Delivering MORE than a locked decision states is scope
+  invention, not thoroughness: one locked check licenses no second check beside
+  it, and a rule locked for new work is never widened to what already shipped.
+  Extra work that looks necessary goes in the return marker for the human.
+
+### Fixed
+
+- **Four drifts the sweep found in passing:** the nonexistent `start` step cited
+  in `execute.md`, `workflow.test_command` resolved on the sequential path but
+  read only on the parallel one, `config-reach.md`'s wrong reach site for the
+  three `parallelization.*` keys, and `seams.md`'s claim of a git-guard consult
+  in `cad-land` guardrails that cite none.
+
+- **The dead `@`-include is gone.** `skills/cad-verify/SKILL.md` no longer
+  includes `templates/UAT.md`; the template stays on disk as the seam's spec.
+  Check 16 was proved against that live instance before it was deleted, rather
+  than against a synthetic one.
+
+### Known gaps
+
+- The register anchors a `Read` in a skill, workflow or contract, never one
+  nested inside a reference. `references/execute-parallel.md` now holds the only
+  "re-read the triage gate" instruction for the parallel path's adjudicated
+  arms, and deleting those two sentences is invisible to CI. The sequential
+  path's copies are unaffected.
+
+- The new coverage arm requires the word `site` in a `Read` sentence but never
+  parses the count, so a wrong consult-site number would pass.
+
+- Five walk items proving each deferred reference is actually read at its step
+  need a live run against an installed build and were skipped at the verify
+  gate, not passed. They are recorded in `.planning/phases/3/UAT.md`.
+
 ## [2.6.1] - 2026-08-09
 
 The four defects `2.6.0`'s own doc sweep found and filed rather than reworded
@@ -1797,6 +1892,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[2.6.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.2
 [2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
 [2.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.0
 [2.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.5.0
