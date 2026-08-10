@@ -48,7 +48,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-debug` | 8,316 |
 | `/cad-decision-review` | 12,213 |
 | `/cad-docs-verify` | 3,960 |
-| `/cad-execute` | 23,980 |
+| `/cad-execute` | 24,026 |
 | `/cad-health` | 6,585 |
 | `/cad-help` | 4,889 |
 | `/cad-land` | 17,098 |
@@ -63,7 +63,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 17,872 |
-| **23 user-invocable commands** | **264,354** |
+| **23 user-invocable commands** | **264,400** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -81,7 +81,7 @@ may open at a step rather than what it starts holding.
 
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
-| `/cad-execute` | 23,980 | 99,746 |
+| `/cad-execute` | 24,026 | 102,830 |
 | `/cad-plan` | 22,413 | 77,920 |
 | `/cad-config` | 20,547 | 44,298 |
 | `/cad-verify` | 17,872 | 93,360 |
@@ -117,8 +117,8 @@ setting — that invariant is what the spread in this table shows.
 |---|---|---|---|
 | cad-assumptions-analyzer | `agents/cad-assumptions-analyzer-high.md` | 489 | 4,595 |
 | cad-assumptions-analyzer | `agents/cad-assumptions-analyzer.md` | 519 | 4,625 |
-| cad-executor | `agents/cad-executor-xhigh.md` | 425 | 13,050 |
-| cad-executor | `agents/cad-executor.md` | 438 | 13,063 |
+| cad-executor | `agents/cad-executor-xhigh.md` | 425 | 10,643 |
+| cad-executor | `agents/cad-executor.md` | 438 | 10,656 |
 | cad-plan-checker | `agents/cad-plan-checker-high.md` | 458 | 5,801 |
 | cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 5,809 |
 | cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 5,805 |
@@ -141,23 +141,23 @@ setting — that invariant is what the spread in this table shows.
 node cadence-core/bin/weight.mjs --root .
 ```
 
-96 budgeted surfaces. This is the repository's weight, not any context's — the
+97 budgeted surfaces. This is the repository's weight, not any context's — the
 turn-one table above is the number that decides what a session pays.
 
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 18 | 165,634 |
+| `cadence-core/references/` | 19 | 168,672 |
 | `cadence-core/templates/` | 9 | 18,253 |
-| `cadence-core/workflows/` | 21 | 192,545 |
-| `skills/` | 29 | 88,775 |
-| **total** | **96** | **473,790** |
+| `cadence-core/workflows/` | 21 | 192,591 |
+| `skills/` | 29 | 86,368 |
+| **total** | **97** | **474,467** |
 
 The twelve largest individual surfaces:
 
 | Surface | Bytes | Est. tokens |
 |---|---|---|
-| `cadence-core/workflows/execute.md` | 23,238 | 5,810 |
+| `cadence-core/workflows/execute.md` | 23,284 | 5,821 |
 | `cadence-core/references/acceptance-criteria.md` | 22,506 | 5,627 |
 | `cadence-core/workflows/plan.md` | 21,565 | 5,392 |
 | `cadence-core/workflows/config.md` | 19,256 | 4,763 |
@@ -170,7 +170,7 @@ The twelve largest individual surfaces:
 | `cadence-core/references/plan-frontmatter.md` | 13,954 | 3,489 |
 | `cadence-core/references/req-traceability.md` | 13,725 | 3,432 |
 
-Every one of those 96 surfaces sits at exactly its budgeted byte count in
+Every one of those 97 surfaces sits at exactly its budgeted byte count in
 `cadence-core/bin/weight-budgets.json`, with total slack zero, and that is now
 enforced rather than merely maintained: `self-verify` fails on any DIFFERENCE
 between a surface and its entry, added bytes or removed, on the commit that

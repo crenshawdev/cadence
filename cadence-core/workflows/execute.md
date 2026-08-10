@@ -297,7 +297,8 @@ base that does not carry this phase's plans. Reconcile that worktree from the
 main tree YOURSELF, in your own serialized turn - bring the branch up to the
 main tree's commit, or copy `.planning/phases/<N>/` in - and then re-dispatch
 that plan once. The executor contract is not touched by this and must not be:
-`<worktree_mode>` forbids `git merge`, `rebase`, `fetch` and `stash` outright,
+references/worktree-executor.md, which `<worktree_mode>` reads, forbids
+`git merge`, `rebase`, `fetch` and `stash` outright,
 and reconciliation is the orchestrator's serialized decision precisely because N
 executors each reconciling their own tree have no conflict policy at all.
 Cadence still issues no `git worktree add` of its own - the host creates the
