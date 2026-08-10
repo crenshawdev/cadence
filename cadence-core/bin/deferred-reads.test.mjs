@@ -130,6 +130,13 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/plan.md',
   }),
+  Object.freeze({
+    skill: 'cad-config',
+    reference: 'references/config-catalog.md',
+    anchors: Object.freeze(['Interactive menu (no args)/The walk/2']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/config.md',
+  }),
 ]);`;
 
 test('register: the original four rows are byte-identical, and the register is exactly the rows the cuts made', () => {
@@ -143,7 +150,7 @@ test('register: the original four rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 10);
+  assert.equal(DEFERRED_READS.length, 11);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -361,7 +368,7 @@ test('D-04: a <step name="..."> with NO <process> wrapper is still a region', ()
 
 const CONFIG_WF = 'cadence-core/workflows/config.md';
 const WALK_STEP_3 = '\n3. A page whose knobs the user leaves unchanged is a no-op;';
-const WALK_STEP_2 = '\n2. Walk the catalog below **in order, 4 knobs per';
+const WALK_STEP_2 = '\n2. Walk the catalog **in order, 4 knobs per';
 const DIRECT_SET = '## Direct set\n';
 const WALK_ANCHOR = 'Interactive menu (no args)/The walk/2';
 
@@ -605,6 +612,14 @@ test('AC4: cad-plan / references/plan-revision.md is unread without its one sent
   // indented four spaces and take no item label, so `check_gate(1)` names no
   // region at all. Coarse, and stated as such in the phase's D-08.
   assertPromotedRow('cad-plan', 'references/plan-revision.md', 'check_gate');
+});
+
+test('AC4: cad-config / references/config-catalog.md is unread without its one sentence', () => {
+  // The anchor is the VERBATIM heading path, parenthetical included:
+  // `regionLabels` takes heading text with no normalization, so the shorthand
+  // `Interactive menu/The walk/2` resolves to no region at all.
+  assertPromotedRow('cad-config', 'references/config-catalog.md',
+    'Interactive menu (no args)/The walk/2');
 });
 
 test('file: still-eager watches the SKILL.md even when the anchor is a workflow', () => {

@@ -81,7 +81,13 @@ lines lower than its cell says depending on how many of those it is below; and
 `progress.md` `+1`, `task.md` `+2`). Do not apply a single offset. The column is
 provenance, not an address to seek to, and the
 join rule above is on `doc` plus claim text precisely so a line that moved
-cannot break the diff.
+cannot break the diff. Phase 3 of `v2.6.2` went one step further and re-pointed
+rows' `doc` cells at files that did not exist at run 1 - the ~29 CONFIG rows now
+naming `cadence-core/references/config-catalog.md`, plus CONTEXT-05 / DEBUG-04
+(`references/recall.md`) and PLAN-26 (`references/plan-revision.md`) - because
+the prose those claims are about MOVED there whole. The join still reads: it
+matches on `doc` plus claim text, both cells were updated together, and the
+claim text is byte-identical to what run 1 read.
 
 **Resolution values.** `accurate` on every row the sweep confirmed;
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
@@ -355,41 +361,41 @@ fixed, which is what makes that link answer the only question it is asked.
 | AUDIT-32 | cadence-core/workflows/audit.md | 196-197 | `context_issues` can carry `criterion-duplicate-id` / `criterion-unidded`. | accurate | accurate |
 | AUDIT-33 | cadence-core/workflows/audit.md | 198-201 | First-occurrence-wins on a duplicate id, so a second bullet reusing one is dropped from the coverage domain. | accurate | accurate |
 | CONFIG-01 | cadence-core/workflows/config.md | 97 | `parallelization.enabled` default is `false`. | stale | corrected - 044806c |
-| CONFIG-02 | cadence-core/workflows/config.md | 126-128 | The `review.triggers.<t>.{gate,tier,effort}` defaults are "per DESIGN section 7". | stale | corrected - 044806c |
+| CONFIG-02 | cadence-core/references/config-catalog.md | 63-65 | The `review.triggers.<t>.{gate,tier,effort}` defaults are "per DESIGN section 7". | stale | corrected - 044806c |
 | CONFIG-03 | cadence-core/workflows/config.md | 3-5 | Canonical shape lives in `cadence-core/config.schema.json`, enforced by `bin/config.mjs`. | accurate | accurate |
 | CONFIG-04 | cadence-core/workflows/config.md | 5 | `cadence-core/templates/config.json` is the scaffolded default. | accurate | accurate |
 | CONFIG-05 | cadence-core/workflows/config.md | 29 | `model.overrides` carries six role pins. | accurate | accurate |
 | CONFIG-06 | cadence-core/workflows/config.md | 31 | `model.effort` carries six per-role start rungs. | accurate | accurate |
 | CONFIG-07 | cadence-core/workflows/config.md | 32 | `review.decision_review` has two keys. | accurate | accurate |
 | CONFIG-08 | cadence-core/workflows/config.md | 27-33 | The four edit-the-file-only sets have no catalog row. | accurate | accurate |
-| CONFIG-09 | cadence-core/workflows/config.md | 82 | `granularity` enum `fine\|standard\|coarse`, default `standard`, split sizes 8-12 / 5-8 / 3-5. | accurate | accurate |
-| CONFIG-10 | cadence-core/workflows/config.md | 84 | `stakes` enum `solo\|shipped\|critical`, default `shipped`. | accurate | accurate |
-| CONFIG-11 | cadence-core/workflows/config.md | 85 | `model.escalate_on_failure` bool, default `true`. | accurate | accurate |
-| CONFIG-12 | cadence-core/workflows/config.md | 87 | `workflow.research` bool, default `false`. | accurate | accurate |
-| CONFIG-13 | cadence-core/workflows/config.md | 88 | `workflow.plan_check` bool, default `true`. | accurate | accurate |
-| CONFIG-14 | cadence-core/workflows/config.md | 89 | `workflow.verifier` bool, default `true`; the stakes level decides and `--deep` forces. | accurate | accurate |
-| CONFIG-15 | cadence-core/workflows/config.md | 90 | `workflow.skip_discuss` bool, default `false`. | accurate | accurate |
-| CONFIG-16 | cadence-core/workflows/config.md | 91 | `workflow.subagent_timeout` int, default `300000`. | accurate | accurate |
-| CONFIG-17 | cadence-core/workflows/config.md | 92 | `workflow.inline_plan_threshold` int, default `3`. | accurate | accurate |
-| CONFIG-18 | cadence-core/workflows/config.md | 93 | `workflow.max_plan_tasks` int, default `8`; above it the plan must return `## PHASE TOO BIG`. | accurate | accurate |
-| CONFIG-19 | cadence-core/workflows/config.md | 94-95 | `workflow.test_command` / `workflow.lint_command` are `str\|null`, default `null`; there is no typecheck key. | accurate | accurate |
-| CONFIG-20 | cadence-core/workflows/config.md | 98-100 | `parallelization.max_concurrent_agents` 3, `min_plans_for_parallel` 2, `use_worktrees` true. | accurate | accurate |
-| CONFIG-21 | cadence-core/workflows/config.md | 102 | `git.protected_branches` default `main, master`. | accurate | accurate |
-| CONFIG-22 | cadence-core/workflows/config.md | 103 | `git.on_protected` enum `ask\|refuse\|allow`, default `ask`. | accurate | accurate |
-| CONFIG-23 | cadence-core/workflows/config.md | 104 | `git.integration_branch` enum `milestone\|trunk`, default `milestone`. | accurate | accurate |
-| CONFIG-24 | cadence-core/workflows/config.md | 105 | `git.auto_branch` enum `ask\|auto\|off`, default `ask`. | accurate | accurate |
-| CONFIG-25 | cadence-core/workflows/config.md | 106 | `git.base_branch` `str\|null`, default `null`. | accurate | accurate |
-| CONFIG-26 | cadence-core/workflows/config.md | 107-109 | `git.create_tag` true, `git.on_land_cleanup` true, `git.auto_close` false. | accurate | accurate |
-| CONFIG-27 | cadence-core/workflows/config.md | 111 | `planning.commit_docs` bool, default `true`. | accurate | accurate |
-| CONFIG-28 | cadence-core/workflows/config.md | 113 | `memory.backend` enum `builtin\|none`, default `builtin`. | accurate | accurate |
-| CONFIG-29 | cadence-core/workflows/config.md | 115 | `risk.override.<surface>` covers exactly the eight named surfaces, default `false`, repo-scoped with a global waiver named in `warnings`. | accurate | accurate |
-| CONFIG-30 | cadence-core/workflows/config.md | 117 | `review.reviewers` list(enum) of `claude-subagent\|openai\|gemini\|deepseek`, default `claude-subagent`. | accurate | accurate |
-| CONFIG-31 | cadence-core/workflows/config.md | 118 | `review.mode` enum `single\|panel\|adjudicated`, default `adjudicated`. | accurate | accurate |
-| CONFIG-32 | cadence-core/workflows/config.md | 119 | `review.key_file` `str\|null`, default `null`. | accurate | accurate |
-| CONFIG-33 | cadence-core/workflows/config.md | 120 | `review.request_timeout_ms` default `540000`, clamped to a 600000 host ceiling. | accurate | accurate |
-| CONFIG-34 | cadence-core/workflows/config.md | 121 | `review.max_prompt_tokens` default `120000`; over-cap refused before any request, cross-model only. | accurate | accurate |
-| CONFIG-35 | cadence-core/workflows/config.md | 122-125 | `review.consult.{enabled,tier,effort,attempt_threshold}` = false / flagship / high / 3. | accurate | accurate |
-| CONFIG-36 | cadence-core/workflows/config.md | 130 | Trigger set is `{plan, diff, risk_surface, phase_diff, pre_ship}`. | accurate | accurate |
+| CONFIG-09 | cadence-core/references/config-catalog.md | 19 | `granularity` enum `fine\|standard\|coarse`, default `standard`, split sizes 8-12 / 5-8 / 3-5. | accurate | accurate |
+| CONFIG-10 | cadence-core/references/config-catalog.md | 21 | `stakes` enum `solo\|shipped\|critical`, default `shipped`. | accurate | accurate |
+| CONFIG-11 | cadence-core/references/config-catalog.md | 22 | `model.escalate_on_failure` bool, default `true`. | accurate | accurate |
+| CONFIG-12 | cadence-core/references/config-catalog.md | 24 | `workflow.research` bool, default `false`. | accurate | accurate |
+| CONFIG-13 | cadence-core/references/config-catalog.md | 25 | `workflow.plan_check` bool, default `true`. | accurate | accurate |
+| CONFIG-14 | cadence-core/references/config-catalog.md | 26 | `workflow.verifier` bool, default `true`; the stakes level decides and `--deep` forces. | accurate | accurate |
+| CONFIG-15 | cadence-core/references/config-catalog.md | 27 | `workflow.skip_discuss` bool, default `false`. | accurate | accurate |
+| CONFIG-16 | cadence-core/references/config-catalog.md | 28 | `workflow.subagent_timeout` int, default `300000`. | accurate | accurate |
+| CONFIG-17 | cadence-core/references/config-catalog.md | 29 | `workflow.inline_plan_threshold` int, default `3`. | accurate | accurate |
+| CONFIG-18 | cadence-core/references/config-catalog.md | 30 | `workflow.max_plan_tasks` int, default `8`; above it the plan must return `## PHASE TOO BIG`. | accurate | accurate |
+| CONFIG-19 | cadence-core/references/config-catalog.md | 31-32 | `workflow.test_command` / `workflow.lint_command` are `str\|null`, default `null`; there is no typecheck key. | accurate | accurate |
+| CONFIG-20 | cadence-core/references/config-catalog.md | 35-37 | `parallelization.max_concurrent_agents` 3, `min_plans_for_parallel` 2, `use_worktrees` true. | accurate | accurate |
+| CONFIG-21 | cadence-core/references/config-catalog.md | 39 | `git.protected_branches` default `main, master`. | accurate | accurate |
+| CONFIG-22 | cadence-core/references/config-catalog.md | 40 | `git.on_protected` enum `ask\|refuse\|allow`, default `ask`. | accurate | accurate |
+| CONFIG-23 | cadence-core/references/config-catalog.md | 41 | `git.integration_branch` enum `milestone\|trunk`, default `milestone`. | accurate | accurate |
+| CONFIG-24 | cadence-core/references/config-catalog.md | 42 | `git.auto_branch` enum `ask\|auto\|off`, default `ask`. | accurate | accurate |
+| CONFIG-25 | cadence-core/references/config-catalog.md | 43 | `git.base_branch` `str\|null`, default `null`. | accurate | accurate |
+| CONFIG-26 | cadence-core/references/config-catalog.md | 44-46 | `git.create_tag` true, `git.on_land_cleanup` true, `git.auto_close` false. | accurate | accurate |
+| CONFIG-27 | cadence-core/references/config-catalog.md | 48 | `planning.commit_docs` bool, default `true`. | accurate | accurate |
+| CONFIG-28 | cadence-core/references/config-catalog.md | 50 | `memory.backend` enum `builtin\|none`, default `builtin`. | accurate | accurate |
+| CONFIG-29 | cadence-core/references/config-catalog.md | 52 | `risk.override.<surface>` covers exactly the eight named surfaces, default `false`, repo-scoped with a global waiver named in `warnings`. | accurate | accurate |
+| CONFIG-30 | cadence-core/references/config-catalog.md | 54 | `review.reviewers` list(enum) of `claude-subagent\|openai\|gemini\|deepseek`, default `claude-subagent`. | accurate | accurate |
+| CONFIG-31 | cadence-core/references/config-catalog.md | 55 | `review.mode` enum `single\|panel\|adjudicated`, default `adjudicated`. | accurate | accurate |
+| CONFIG-32 | cadence-core/references/config-catalog.md | 56 | `review.key_file` `str\|null`, default `null`. | accurate | accurate |
+| CONFIG-33 | cadence-core/references/config-catalog.md | 57 | `review.request_timeout_ms` default `540000`, clamped to a 600000 host ceiling. | accurate | accurate |
+| CONFIG-34 | cadence-core/references/config-catalog.md | 58 | `review.max_prompt_tokens` default `120000`; over-cap refused before any request, cross-model only. | accurate | accurate |
+| CONFIG-35 | cadence-core/references/config-catalog.md | 59-62 | `review.consult.{enabled,tier,effort,attempt_threshold}` = false / flagship / high / 3. | accurate | accurate |
+| CONFIG-36 | cadence-core/references/config-catalog.md | 67 | Trigger set is `{plan, diff, risk_surface, phase_diff, pre_ship}`. | accurate | accurate |
 | CONFIG-37 | cadence-core/workflows/config.md | 141-145 | `config.mjs` subcommands are `validate \| check \| set \| get \| keys`. | accurate | accurate |
 | CONFIG-38 | cadence-core/workflows/config.md | 154-157 | `--file <path>` overrides `.planning/config.json`; `--global` targets `~/.claude/cadence/config.json`, relocatable via `CADENCE_GLOBAL_CONFIG`, auto-created by `set`. | accurate | accurate |
 | CONFIG-39 | cadence-core/workflows/config.md | 160-163 | `route.mjs` deep-merges global under repo (repo > global > defaults); nested objects merge, arrays replace wholesale. | accurate | accurate |

@@ -232,6 +232,13 @@ export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/plan.md',
   }),
+  Object.freeze({
+    skill: 'cad-config',
+    reference: 'references/config-catalog.md',
+    anchors: Object.freeze(['Interactive menu (no args)/The walk/2']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/config.md',
+  }),
 ]);
 
 /** Split prose into sentences: a terminator followed by whitespace. */
