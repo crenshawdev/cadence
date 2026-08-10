@@ -1,0 +1,58 @@
+# Phase 1: The checks that make the cuts safe - Context
+
+Gathered: 2026-08-10
+Feeds: /cad-plan 1
+
+## Scope boundary
+
+In: Two CI capabilities, code and tests only. `lib/deferred-reads.mjs` learns to
+anchor a deferral whose `Read` sentence lives outside a numbered-step command
+SKILL.md — in a `<step name="...">` workflow region, a heading-scoped workflow
+region, or a contract skill. A new rule lib plus its `self-verify.mjs` half
+fails an `@`-included surface that nothing in the including command's reachable
+prose ever names.
+
+Out: Every prose cut. No workflow, reference, skill or contract loses a byte in
+this phase, and `weight-budgets.json` is not re-pinned. Deleting
+`skills/cad-verify/SKILL.md:29` belongs to phase 2 (D-13). Adding register rows
+for phase 3's deferrals belongs to phase 3 (D-14).
+
+Deferred: None.
+
+Plan shape: one plan.
+
+## Durable decisions
+
+- D-03 (Anchor grammar): A named step's label is its `name=` attribute value; column-0 numbered items INSIDE a named step take nested labels (`execute_parallel(6)`), reusing the existing arm-suffix shape, never bare `"1"`..`"6"`. Evidence: `cadence-core/workflows/execute.md:343-402` puts `1.`-`6.` at column 0 inside `execute_parallel`, and `verify.md` and `new-project.md` carry 15 more such lines. Without the precedence rule two regions in one file both label `"3"` and an anchor is satisfied by a `Read` sentence in an unrelated bullet — the file-wide-quota defect this register already shipped once, returning in a new spelling.
+- D-05 (Register shape): Rows gain `file`, OPTIONAL, defaulting to `skills/<skill>/SKILL.md`, so the four existing rows stay byte-identical. `skill` remains the target of the still-eager and missing-skill arms, because the `@`-include line always lives in the SKILL.md even when the `Read` sentence lives in a workflow. Evidence: `lib/deferred-reads.mjs:190-216` applies the `stillEager` regex to the SKILL.md text; all 21 include sites sit in a SKILL.md `<execution_context>`. A single `file` serving both arms would stop a workflow-anchored row watching for re-promotion to an `@`-include, which is half of what check 13 does.
+- D-08 (CTW-02 exemption): Branch-based. A `cadence-core/workflows/*` include IS the command's process and is exempt; every `references/*` and `templates/*` include must be named. Evidence: measured over the live tree, `workflows/<name>.md` is named nowhere in its own command's eager text for 15 of 16 commands (only `decision-review.md` self-names), so an unexempted check lands red on 19 correct includes. Position-based exemption (first include in `<execution_context>`) is NOT available: `lib/resident-weight.mjs:183-186` sorts `eagerFiles` by surface, so include order is not recoverable without re-reading the SKILL.md the requirement says to avoid.
+- D-10 (CTW-02 correctness): The naming scan excludes the `@`-include lines themselves, and cannot be derived from `reachableFiles` at all. Evidence: `lib/resident-weight.mjs:265-273` adds every eager file to the reachable set unconditionally, and `:77`'s `CITE_RE` matches `@${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/UAT.md` and yields `templates/UAT.md` — verified by running that regex against the literal line. Get this wrong and every include names itself, the check is `ok:true` forever, and the CI hole is reported closed while still open.
+- D-11 (CTW-02 placement): The rule lives in a new `cadence-core/bin/lib/` module with the disk half in `self-verify.mjs`, consuming an exported helper from `lib/resident-weight.mjs` rather than re-walking. It takes NO `CONTRACTS` row. Evidence: `self-verify.mjs:1095-1098` states check 14 is "TOP-LEVEL only, deliberately non-recursive: `lib/*.mjs` are modules that prose never invokes", and five rule libs are already imported this way (`:100-110`). **ROADMAP phase 1 criterion 5 asks for a CONTRACTS registration and is wrong on that point; this decision supersedes it.** The alternative — inventing a top-level script to justify a row — would also force `weight.mjs`'s `resident` envelope to grow a field, and `docs/EVIDENCE.md:36,75,97,108` prints that envelope verbatim as evidence.
+- D-12 (CTW-02 scope): User-invocable commands only, matching `residentWeight`'s own filter; no `*-contract/SKILL.md` carries an `@`-include today. Evidence: `lib/resident-weight.mjs:47-49,254-257` excludes `user-invocable: false` skills from `commands` and accounts them under `roles`, where includes are never scanned. This is deliberately asymmetric with D-07, which widens CTW-01 TO contracts in the same phase, and the asymmetry is stated in the new lib's header so the first contract-side include is a known uncovered case rather than a surprise.
+- D-13 (Sequencing): The live firing is proved by a fixture that `cpSync`s the real `skills/cad-verify/SKILL.md` and `cadence-core/workflows/verify.md`; there is no live-tree assertion and CI never goes red. Evidence: ROADMAP criterion 4 requires the check to fire on the live include while criterion 6 requires `ok:true` on a clean tree, and `.github/workflows/test.yml` runs `self-verify` on every push and PR, with exit driven by `problems.length` (`self-verify.mjs:1161-1166`). The deletion stays phase 2's. A fixture copy also survives that deletion, where a live-tree assertion would have to be inverted next phase.
+- D-14 (Sequencing): Phase 1 adds NO register rows. The four existing rows pass byte-for-byte and `DEFERRED_READS.length === 4` stays asserted until phase 3. Evidence: `self-verify.test.mjs:1681-1684`. A speculative row for a cut that has not landed fails CI immediately, because the `Read` sentence it anchors does not exist until phase 3.
+
+## Decisions
+
+- D-01 (Anchor grammar): `regionLabels()` must accept attributed open tags (`<step name="x">`) AND stop treating `</step>` as closing `<process>`. Evidence: `lib/deferred-reads.mjs:140-166` — the open regex `^<([a-z_]+)>\s*$` rejects attributes, and the close regex sets `inProcess = false`; `workflows/execute.md:13,15,47` opens `<process>`, then `<step name="locate">`, then closes at 47, while the first `^\d+\. ` line is 71 and already outside. Today that file produces zero labelled lines, so any anchor against it fails forever.
+- D-02 (Anchor grammar): Heading-scoped labels (a `##`/`###` path plus the numbered item, e.g. `Interactive menu/The walk/2`) join `<step name="...">` in the grammar. Evidence: `workflows/config.md:24,35,37-58` has zero `<process>` and zero `<step name=`, and `debug.md` and `phase.md` are the same style. Without this, phase 3's largest single move (`config.md:71-133`, 8,052 B) ships unwatchable — the precise dependency phase 3 declares on phase 1. A bare `"2"` is ambiguous across config.md's two numbered lists, which is why the label carries its heading path.
+- D-04 (Anchor grammar): `<step name="...">` regions are recognised whether or not a `<process>` wrapper encloses them. Evidence: `workflows/verify-deep.md` carries three `<step name=` tags and no `<process>`, against `execute.md:13` which has both. Requiring the wrapper would leave a second unwatchable file after the phase claims the hole is closed.
+- D-06 (Register shape): A register row whose `file` is absent or unreadable is a reported issue; a root missing the whole branch is a partial fixture that reports nothing. Evidence: `lib/deferred-reads.mjs:186-208` already degrades this way at the skills level (absent `skills/` returns `[]`, absent skill dir continues, an existing dir with no SKILL.md reports `missingSkill`), and `self-verify.test.mjs:1639-1647,1800-1806` builds fixtures with only a `skills/` arm.
+- D-07 (Contract scope): Covering contract skills needs no new code path. Evidence: the exclusion at `lib/deferred-reads.mjs:40-44` is a comment, not a branch — `deferredReadIssues` (`:186-246`) carries no `user-invocable` filter — and `skills/cad-executor-contract/SKILL.md:20-52` already presents `<process>` at column 0 with `1.`-`5.` steps the existing grammar labels correctly. The work is the header rationale rewrite plus a test. The real uncovered spot is a `Read` sentence in `<worktree_mode>`, which is regionless, and D-01/D-03's grammar is what reaches it.
+- D-09 (CTW-02 matching): Match on the `<branch>/<file>` path form, never the basename. Evidence: `workflows/verify.md:3,177,182,211,324,341,352,364` all say `UAT.md` as the runtime artifact `.planning/phases/<N>/UAT.md`, so basename matching would stop the check firing on the one instance it must catch. `lib/resident-weight.mjs:77`'s `CITE_RE` already carries both the full and bare-branch forms.
+- D-15 (Registration): The new check is check 16 in the `self-verify.mjs` header block and is appended to the flat `checked` string. Evidence: the header list at `:11-89` currently ends at 15 and `:1166` builds the string; nothing in `INTERNALS.md`, `README.md` or `CONTRIBUTING.md` enumerates the checks by number (`DOCS-CLAIMS.md:264,310,313` shows those claims are generic). A `DOCS-CLAIMS.md` row is added for the new check so the docs audit tracks it from the start rather than reporting drift after the merge.
+
+## Acceptance criteria
+
+- [ ] AC1: A register row anchored at `<step name="execute_parallel">` in `cadence-core/workflows/execute.md` reports no problem while its `Read` sentence exists, and reports exactly one `deferred-read-unread` when that sentence alone is deleted from the fixture.
+- [ ] AC2: The same pass/fail pair holds for a heading-scoped anchor at `workflows/config.md`'s Interactive-menu walk step 2.
+- [ ] AC3: The same pass/fail pair holds for an anchor inside `skills/cad-executor-contract/SKILL.md`.
+- [ ] AC4: A `Read` sentence sitting in an unrelated numbered bullet does not satisfy an anchor in a different region of the same file, proved on a fixture with column-0 numbered items inside a named step.
+- [ ] AC5: The include-consumer check reports exactly one problem, naming `cadence-core/templates/UAT.md`, on a fixture that is a byte-copy of the live `skills/cad-verify/SKILL.md` and `cadence-core/workflows/verify.md`; and reports zero problems on a byte-copy of `cad-help`, whose workflow is the included surface.
+- [ ] AC6: On a fixture whose only mention of an included surface is its own `@`-include line, the check still reports a problem.
+- [ ] AC7: `node cadence-core/bin/self-verify.mjs` returns `ok:true` with `problems:[]` on the live tree, its `checked` string names the new check, and the four existing register rows are unchanged byte-for-byte with `DEFERRED_READS.length === 4`.
+
+## Flagged assumptions
+
+- The heading-scoped label form (`Interactive menu/The walk/2`) is a shape this phase invents; no existing row uses one, so its ergonomics are unproven until phase 3 writes the first real row against `config.md`. If it reads badly there, the label form is a one-row change, not a grammar change.
+- D-12 leaves the first contract-side `@`-include uncovered by the include-consumer check. Zero instances exist today; if one appears before the scope is widened, it ships unchecked.
