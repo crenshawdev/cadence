@@ -43,7 +43,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-audit` | 14,551 |
 | `/cad-capture` | 2,345 |
 | `/cad-config` | 20,547 |
-| `/cad-context` | 19,459 |
+| `/cad-context` | 19,029 |
 | `/cad-coverage` | 5,162 |
 | `/cad-debug` | 8,397 |
 | `/cad-decision-review` | 12,213 |
@@ -63,7 +63,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 18,688 |
-| **23 user-invocable commands** | **270,950** |
+| **23 user-invocable commands** | **270,520** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -84,7 +84,7 @@ may open at a step rather than what it starts holding.
 | `/cad-execute` | 27,233 | 98,939 |
 | `/cad-plan` | 22,651 | 78,158 |
 | `/cad-config` | 20,547 | 44,298 |
-| `/cad-context` | 19,459 | 85,070 |
+| `/cad-context` | 19,029 | 84,640 |
 | `/cad-verify` | 18,688 | 94,176 |
 | `/cad-land` | 17,098 | 43,787 |
 | `/cad-new-project` | 16,708 | 63,974 |
@@ -149,9 +149,9 @@ turn-one table above is the number that decides what a session pays.
 | `agents/` | 19 | 8,583 |
 | `cadence-core/references/` | 16 | 159,286 |
 | `cadence-core/templates/` | 8 | 16,861 |
-| `cadence-core/workflows/` | 21 | 198,720 |
+| `cadence-core/workflows/` | 21 | 198,290 |
 | `skills/` | 29 | 89,569 |
-| **total** | **93** | **473,019** |
+| **total** | **93** | **472,589** |
 
 The twelve largest individual surfaces:
 
@@ -162,8 +162,8 @@ The twelve largest individual surfaces:
 | `cadence-core/workflows/plan.md` | 21,803 | 5,451 |
 | `cadence-core/workflows/config.md` | 19,256 | 4,763 |
 | `cadence-core/references/config-reach.md` | 18,649 | 4,663 |
-| `cadence-core/workflows/context.md` | 18,632 | 4,658 |
 | `cadence-core/references/seams.md` | 18,547 | 4,637 |
+| `cadence-core/workflows/context.md` | 18,202 | 4,551 |
 | `cadence-core/references/review-triggers.md` | 17,837 | 4,459 |
 | `cadence-core/workflows/verify.md` | 17,639 | 4,410 |
 | `cadence-core/workflows/new-project.md` | 15,872 | 3,968 |

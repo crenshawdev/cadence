@@ -6,12 +6,8 @@ assumptions, and explicit scope boundaries - in ONE conversational pass.
 The flow is codebase-first. A cad-assumptions-analyzer subagent reads the
 relevant source off the main context and returns evidence-cited assumptions;
 questioning is adaptive and covers only what the analyzer could not resolve.
-A clear codebase costs one confirmation tap; a murky one costs a few focused
-questions. The exit condition is judged, not scored: decisions closed,
-acceptance criteria falsifiable.
-
-WHAT and HOW live in one document, not separate pre-plan gates; the slicing
-instinct survives as exactly one "too big?" question near the end.
+The exit condition is judged, not scored: decisions closed, acceptance
+criteria falsifiable.
 
 Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 /cad-plan reads it when present and plans without it when not.
@@ -344,10 +340,7 @@ decisions this phase are durable" if empty}
 ```
 
 Five sections, nothing else: scope boundary, durable decisions, decisions
-(phase-local), acceptance criteria, flagged assumptions - the durability
-filter splits what used to be one Decisions section into two, nothing more.
-No discussion log, no interview transcript, no ambiguity report - git and
-the file itself are the record.
+(phase-local), acceptance criteria, flagged assumptions.
 </step>
 
 <step name="update_cursor">
