@@ -123,6 +123,13 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     anchors: Object.freeze(['worktree_mode']),
     read_paragraphs: 1,
   }),
+  Object.freeze({
+    skill: 'cad-plan',
+    reference: 'references/plan-revision.md',
+    anchors: Object.freeze(['check_gate']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/plan.md',
+  }),
 ]);`;
 
 test('register: the original four rows are byte-identical, and the register is exactly the rows the cuts made', () => {
@@ -136,7 +143,7 @@ test('register: the original four rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 9);
+  assert.equal(DEFERRED_READS.length, 10);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -591,6 +598,13 @@ test('AC4: cad-executor-contract / references/worktree-executor.md is unread wit
   // The first row on a `user-invocable: false` skill, anchored on the row's
   // DEFAULT `file` - the contract's own SKILL.md, no `file` field at all.
   assertPromotedRow('cad-executor-contract', 'references/worktree-executor.md', 'worktree_mode');
+});
+
+test('AC4: cad-plan / references/plan-revision.md is unread without its one sentence', () => {
+  // Anchored at the WHOLE step `check_gate`: the revision's `1.`/`2.`/`3.` are
+  // indented four spaces and take no item label, so `check_gate(1)` names no
+  // region at all. Coarse, and stated as such in the phase's D-08.
+  assertPromotedRow('cad-plan', 'references/plan-revision.md', 'check_gate');
 });
 
 test('file: still-eager watches the SKILL.md even when the anchor is a workflow', () => {

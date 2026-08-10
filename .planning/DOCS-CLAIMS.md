@@ -570,7 +570,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-23 | cadence-core/workflows/plan.md | 229 | The Task ceiling feeds the checker's dimension 6. | accurate | accurate |
 | PLAN-24 | cadence-core/workflows/plan.md | 237-238 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate |
 | PLAN-25 | cadence-core/workflows/plan.md | 260-261 | WARNING means quality is degraded but execution can proceed. | accurate | accurate |
-| PLAN-26 | cadence-core/workflows/plan.md | 269-271,309 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate |
+| PLAN-26 | cadence-core/references/plan-revision.md | 10-13,51-52 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate |
 | PLAN-27 | cadence-core/workflows/plan.md | 340-341 | The `plan` gate defaults to adjudicated. | accurate | accurate |
 | PLAN-28 | cadence-core/workflows/plan.md | 347 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate |
 | PLAN-29 | cadence-core/workflows/plan.md | 358 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate |

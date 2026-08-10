@@ -715,13 +715,20 @@ function proseSurfaces() {
  * per-file producer assertion "overfitting to today's file layout": the bracket
  * set stopped being an accident of layout the day it became a stated
  * requirement, so binding the test to it is now the point. A file dropping to
- * zero brackets, or `plan.md` quietly shedding three of its four, is a paid
+ * zero brackets, or `plan.md` quietly shedding one of its two, is a paid
  * dispatch whose cost never reaches the record - which a global "somebody
  * writes a dispatch somewhere" check cannot see.
+ *
+ * A moved dispatch moves its ROW. `plan.md` carried four until its BLOCKER
+ * revision - the revision-mode planner spawn and the narrowed checker
+ * re-dispatch - moved to `references/plan-revision.md`; it is 2 and 2 now, not
+ * 4 and unwatched. A file absent from this map is checked by nothing, so the
+ * row travels with the prose.
  */
 const BRACKETING = new Map([
   [join('cadence-core', 'workflows', 'context.md'), 1],
-  [join('cadence-core', 'workflows', 'plan.md'), 4],
+  [join('cadence-core', 'workflows', 'plan.md'), 2],
+  [join('cadence-core', 'references', 'plan-revision.md'), 2],
   [join('cadence-core', 'references', 'review-triggers.md'), 1],
   [join('cadence-core', 'workflows', 'execute.md'), 1],
   [join('cadence-core', 'workflows', 'verify-deep.md'), 1],
