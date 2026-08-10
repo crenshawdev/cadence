@@ -15,6 +15,24 @@
 // row and the deferral stops being watched, which is why a row is added in the
 // same commit that makes the cut.
 //
+// TWO KINDS OF ROW, one rule. Beside the REMOVAL above sits PROMOTION: prose
+// that was never an `@`-include at all - written inline in a workflow or in a
+// contract skill and then lifted out into a file of its own, so it is read at
+// the one step that needs it instead of riding every turn. Nothing was removed
+// from an include there, so the `stillEager` arm is VACUOUS for such a row by
+// construction: it cannot fire, because no include line ever existed to come
+// back. That is not a reason to leave the row out. A promoted row's entire
+// protection is its ANCHOR - the `unread` arm is the only thing standing
+// between "Read it at this step" and prose that quietly stops naming the file -
+// and a maintainer who reads the paragraph above, concludes "no include was
+// removed here, so this row describes nothing", and deletes it has unwatched
+// the deferral in precisely the way this register exists against. `skill` still
+// names the command (or contract) whose SKILL.md the `stillEager` and
+// `missingSkill` arms test even when `file` points at a workflow and even when,
+// on a promotion, those arms have nothing to find: they watch the INCLUDE, and
+// an include only ever lives in a SKILL.md. Both kinds are added in the commit
+// that makes the cut, and neither is deleted without deleting the deferral.
+//
 // `anchors` is NOT the same quantity as the consult-site count
 // `cadence-core/references/seams.md` (File round-trip) makes a deferring skill
 // state, and the two names are different on purpose. That rule counts distinct

@@ -17,13 +17,14 @@
 // *.test.mjs, so nothing here carries an @ts-check burden.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { weighAll } from './lib/surface-weight.mjs';
 import { residentWeight } from './lib/resident-weight.mjs';
+import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -179,28 +180,153 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
 /** `NN,NNN` as prose writes a byte count. */
 const commas = (n) => n.toLocaleString('en-US');
 
+/**
+ * A byte figure in the shape `commas()` above emits: `912 B`, `4,611 B`,
+ * `17,837 B`. The sub-1,000 arm is deliberate. A narrower `\d{1,3},\d{3} B`
+ * steps straight over every reference measuring under a kilobyte and leaves its
+ * figure unchecked, which is the drift this scan exists to close rather than a
+ * shape it is allowed to skip.
+ */
+const FIGURE_SRC = String.raw`\b\d{1,3}(?:,\d{3})* B\b`;
+/** Every byte figure in one sentence. Built per call: `g` regexes hold state. */
+const figuresIn = (text) => text.match(new RegExp(FIGURE_SRC, 'g')) || [];
+
+/** A `${CLAUDE_PLUGIN_ROOT}` path at a reference or a template, capturing the surface. */
+const PLUGIN_PATH_SRC = String.raw`\$\{CLAUDE_PLUGIN_ROOT\}/(cadence-core/(?:references|templates)/[A-Za-z0-9._-]+)`;
+/** The distinct surfaces one sentence names by `${CLAUDE_PLUGIN_ROOT}` path. */
+const pathsIn = (text) => [...new Set(
+  [...text.matchAll(new RegExp(PLUGIN_PATH_SRC, 'g'))].map((m) => m[1]))];
+
+/**
+ * Split prose into sentences exactly as `lib/deferred-reads.mjs` does - a
+ * terminator followed by whitespace - so a figure and the path it belongs to
+ * are grouped here the same way the register's own check groups them. Line
+ * granularity would be wrong: `skills/cad-plan-review/SKILL.md` puts the path
+ * on one line and `17,837 B` on the next.
+ */
+const sentencesOf = (text) => text.split(/(?<=[.!?])\s+/);
+
+/** Every prose surface a deferral's Read sentence can live in, root-relative. */
+function proseFiles() {
+  const out = [];
+  for (const skill of readdirSync(join(REPO, 'skills'), { withFileTypes: true })) {
+    if (skill.isDirectory()) out.push(`skills/${skill.name}/SKILL.md`);
+  }
+  for (const dir of ['workflows', 'references']) {
+    for (const f of readdirSync(join(REPO, 'cadence-core', dir))) {
+      if (f.endsWith('.md')) out.push(`cadence-core/${dir}/${f}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * The `skill|reference` keys the COVERAGE arm below does not hold to the
+ * inline-figure rule. `cadence-core/references/seams.md:239-243` binds that rule
+ * to any deferral made "from this point forward" and releases these three by
+ * name in the same sentence: "the deferrals already in `cad-land` predate this
+ * sentence and are not held to it".
+ *
+ * Not a convenience. The triage-gate Read at `skills/cad-land/SKILL.md:52-55`
+ * states no bytes and no site count at all, so an unexempted arm is red on an
+ * untouched tree; and holding the other two to a rule the reference explicitly
+ * exempts them from would make this test contradict the document it enforces.
+ * The SCAN arm still checks all three: seams.md releases them from HAVING to
+ * state a figure, never from stating a correct one.
+ */
+const GRANDFATHERED = new Set([
+  'cad-land|references/review-triggers.md',
+  'cad-land|references/git-publish.md',
+  'cad-land|references/triage-gate.md',
+]);
+
 test('every site copying a measured byte count states the measured number', () => {
-  // The drift class that had no check at all. `references/seams.md:240-242` now
+  // The drift class that had no check at all. `references/seams.md:239-243` now
   // requires every future deferral to quote its reference's measured bytes
   // inline, and those inline figures were checked against nothing - which is how
   // `review-triggers.md` came to be published at 17,733 B in four places at once.
-  // Measured through weighAll, the SAME lib self-verify enforces with and
-  // weight.mjs reports from, so the check cannot diverge from the enforced
-  // number.
+  //
+  // A SCAN rather than two named files, because that mandate expands by rule:
+  // every deferral added from here on ships another inline figure, and a check
+  // naming `review-triggers.md` and two skills leaves each new one unwatched on
+  // the day it lands. Measured through weighAll, the SAME lib self-verify
+  // enforces with and weight.mjs reports from, so the check cannot diverge from
+  // the enforced number.
   const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
-
-  const REF = 'cadence-core/references/review-triggers.md';
-  const ref = measured.get(REF);
-  assert.ok(ref, `${REF} is not a measured surface`);
-
   const budgets = JSON.parse(doc('cadence-core', 'bin', 'weight-budgets.json')).budgets;
-  assert.equal(budgets[REF], ref.bytes, 'weight-budgets.json entry');
 
-  for (const skill of ['cad-land', 'cad-plan-review']) {
-    const text = doc('skills', skill, 'SKILL.md');
-    assert.ok(text.includes(`${commas(ref.bytes)} B`),
-      `skills/${skill}/SKILL.md does not state ${commas(ref.bytes)} B for ${REF}`);
+  let checked = 0;
+  for (const rel of proseFiles()) {
+    for (const sentence of sentencesOf(doc(...rel.split('/')))) {
+      const figures = [...new Set(figuresIn(sentence))];
+      if (!figures.length) continue;
+      const paths = pathsIn(sentence);
+      if (!paths.length) continue;
+      assert.equal(paths.length, 1,
+        `${rel}: one sentence pairs a byte figure with ${paths.length} references `
+        + `(${paths.join(', ')}) - split it, or the figure names nothing checkable`);
+      const surface = paths[0];
+      const m = measured.get(surface);
+      assert.ok(m, `${rel} states a byte figure for ${surface}, which is not a measured surface`);
+      for (const figure of figures) {
+        assert.equal(figure, `${commas(m.bytes)} B`,
+          `${rel} states ${figure} for ${surface}, measured ${commas(m.bytes)} B`);
+      }
+      assert.equal(budgets[surface], m.bytes, `weight-budgets.json entry for ${surface}`);
+      checked += 1;
+    }
   }
+  assert.ok(checked > 0,
+    'the scan matched no sentence at all - the path or figure pattern has drifted');
+});
+
+test('every deferred-read row states its measured bytes and site count at each anchor', () => {
+  // The other half of seams.md:239-243. The scan above proves a figure that is
+  // WRITTEN is right; this proves it was written at all, and at the arm that
+  // performs the read rather than anywhere in the file. Driven off the register
+  // so it grows with it, and resolved through the register's own
+  // `regionLabels`, so an anchor reads here exactly as `deferredReadIssues`
+  // reads it - two different notions of "inside the anchor" would let a row
+  // satisfy one check and fail the other.
+  const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
+  let checked = 0;
+
+  for (const row of DEFERRED_READS) {
+    if (GRANDFATHERED.has(`${row.skill}|${row.reference}`)) continue;
+    const rel = row.file || `skills/${row.skill}/SKILL.md`;
+    const text = doc(...rel.split('/'));
+    const surface = `cadence-core/${row.reference}`;
+    const m = measured.get(surface);
+    assert.ok(m, `${rel} defers ${surface}, which is not a measured surface`);
+    const full = `\${CLAUDE_PLUGIN_ROOT}/${surface}`;
+
+    const labelOf = regionLabels(text);
+    /** @type {Map<string, string[]>} */
+    const byRegion = new Map();
+    text.split('\n').forEach((line, i) => {
+      const label = labelOf(i);
+      if (label === null) return;
+      const acc = byRegion.get(label);
+      if (acc) acc.push(line);
+      else byRegion.set(label, [line]);
+    });
+
+    for (const anchor of row.anchors) {
+      const lines = byRegion.get(anchor);
+      assert.ok(lines, `${rel} has no region labelled ${anchor} for ${row.reference}`);
+      const naming = sentencesOf(lines.join('\n')).filter((s) => s.includes(full));
+      assert.ok(naming.length,
+        `${rel} region ${anchor} carries no sentence naming ${full}`);
+      assert.ok(naming.some((s) => figuresIn(s).length > 0),
+        `${rel} region ${anchor} names ${row.reference} but states no measured byte figure `
+        + `- seams.md:239-243 requires ${commas(m.bytes)} B inline at the Read`);
+      assert.ok(naming.some((s) => figuresIn(s).length > 0 && /\bsite\b/.test(s)),
+        `${rel} region ${anchor} states bytes for ${row.reference} but no consult-site count `
+        + '- seams.md:239-243 requires both inline at the Read');
+      checked += 1;
+    }
+  }
+  assert.ok(checked > 0, 'no register row reached the coverage arm');
 });
 
 test('docs/EVIDENCE.md: every twelve-largest row states measured bytes AND est tokens', () => {
