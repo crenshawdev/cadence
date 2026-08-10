@@ -1287,6 +1287,12 @@ function cmdCriteriaCoverage(dir) {
       // writes `fields_version` unconditionally, so a file this seam produced
       // can never present as legacy however few links its items carry.
       //
+      // This is the ONLY statement of that reasoning in the tree (v2.6.2):
+      // `workflows/verify.md` states just the additive consequence - a CONTEXT
+      // with no `AC<N>` ids yields no `criterion` values and those items report
+      // `untraced` - and defers the not-legacy argument here, to the code that
+      // decides it.
+      //
       // DECLARED, not parsed - the fifth term asks the classifier
       // (`declaresIds`), never `criteria.length`. Those two are not the same
       // question, and reading the second as the first is what let this gate

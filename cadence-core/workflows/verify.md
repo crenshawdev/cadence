@@ -1,14 +1,6 @@
 <purpose>
-Conversational UAT for a completed phase, with persistent state. Builds or
-refreshes `.planning/phases/<N>/UAT.md` from the phase's acceptance
-criteria, then walks the user through untested items one at a time: show
-what SHOULD happen, ask whether it does. Results persist across sessions
-and /clear - re-running resumes at the first untested item.
-
 The user tests, Claude records. Plain-text answers. Severity is inferred,
-never asked. Failures are diagnosed and routed through the normal Cadence
-flow (user-approved atomic fix commit, or /cad-plan for phase-sized gaps) -
-there is no internal auto-fixer loop.
+never asked.
 
 All checklist persistence goes through the planning seam's `uat` subcommands
 - the model extracts and words items and infers results; the seam owns the
@@ -82,11 +74,7 @@ Item rules (the model's judgment, before the seam call):
   deliverable sends neither field - `/cad-audit` reports it as untraced
   without moving the verdict.
 - A CONTEXT whose criteria carry no `AC<N>` ids yields no `criterion` values
-  at all. Those items report as `untraced`, which is additive. They are NOT
-  legacy: `uat init` writes `fields_version` before it looks at an item, so a
-  checklist this seam writes always carries the marker, and legacy now also
-  requires a CONTEXT declaring no ids beside a checklist carrying none of the
-  fields - which no seam-written file can be.
+  at all. Those items report as `untraced`, which is additive.
 - Deduplicate: a PLAN verification restating a ROADMAP criterion is one
   item, worded as the ROADMAP criterion (the contract).
 - A criterion tagged `(human-verify: needs <tool/service>)` in CONTEXT

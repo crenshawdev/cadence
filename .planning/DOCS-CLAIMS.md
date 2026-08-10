@@ -631,50 +631,50 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-DEEP-10 | cadence-core/workflows/verify-deep.md | 59 | The seam's summary carries `auto_passed`, `gaps`, `added`, `skipped`, `rejected`. | accurate | accurate |
 | VERIFY-DEEP-11 | cadence-core/workflows/verify-deep.md | 62-68 | The seam writes `.planning/phases/<N>/FINDINGS.json` with those counters plus `rejected_entries` and `skipped_entries`, overwriting on every successful merge. | accurate | accurate |
 | VERIFY-DEEP-12 | cadence-core/workflows/verify-deep.md | 80 | The fall-through checkpoint call with `--tokens` and `--detail` is valid. | accurate | accurate |
-| VERIFY-01 | cadence-core/workflows/verify.md | 14-18 | The seam owns first_pass set-once, verifier-never-overwrites-user, counts recomputed every write. | accurate | accurate |
-| VERIFY-02 | cadence-core/workflows/verify.md | 19-20,27,136 | `--sweep` cold branch is `workflows/verify-sweep.md`; `--deep` is `workflows/verify-deep.md`. | accurate | accurate |
-| VERIFY-03 | cadence-core/workflows/verify.md | 31 | `planning.mjs cursor get` supplies the current phase. | accurate | accurate |
-| VERIFY-04 | cadence-core/workflows/verify.md | 38,41 | `uat status --phase <N>` is the state check and returns `counts`. | accurate | accurate |
-| VERIFY-05 | cadence-core/workflows/verify.md | 47-48 | `uat refresh --phase <N>` takes a stdin array of `{name, expected, criterion}`. | accurate | accurate |
-| VERIFY-06 | cadence-core/workflows/verify.md | 50-52 | Refresh appends only genuinely new names and never touches recorded results. | accurate | accurate |
-| VERIFY-07 | cadence-core/workflows/verify.md | 55 | A missing checklist reports `no-uat`. | accurate | accurate |
-| VERIFY-08 | cadence-core/workflows/verify.md | 73-76 | An item from a CONTEXT criterion carries `"criterion":"AC<N>"`. | accurate | accurate |
-| VERIFY-09 | cadence-core/workflows/verify.md | 77-78 | /cad-audit FAILs on a criterion no item names. | accurate | accurate |
-| VERIFY-10 | cadence-core/workflows/verify.md | 79-82 | Other-source items carry `"origin"`; the smoke item sends `"origin":"smoke"`. | accurate | accurate |
-| VERIFY-11 | cadence-core/workflows/verify.md | 85-87 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate |
-| VERIFY-12 | cadence-core/workflows/verify.md | 87-89 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate |
-| VERIFY-13 | cadence-core/workflows/verify.md | 92 | CONTEXT criteria may carry a `(human-verify: needs <tool/service>)` tag. | accurate | accurate |
-| VERIFY-14 | cadence-core/workflows/verify.md | 106-107 | `uat init --phase <N>` takes the item array on stdin. | accurate | accurate |
-| VERIFY-15 | cadence-core/workflows/verify.md | 114-115 | `workflow.verifier: false` always skips the deep pass. | accurate | accurate |
-| VERIFY-16 | cadence-core/workflows/verify.md | 120 | `route.mjs resolve --role cad-verifier` is the stakes probe. | accurate | accurate |
-| VERIFY-17 | cadence-core/workflows/verify.md | 123-124 | Every `warnings[]` entry must be relayed. | accurate | accurate |
-| VERIFY-18 | cadence-core/workflows/verify.md | 126 | `verify` on that line is `on` or `off`. | accurate | accurate |
-| VERIFY-19 | cadence-core/workflows/verify.md | 126-128 | The seam refuses a resolve with no role. | accurate | accurate |
-| VERIFY-20 | cadence-core/workflows/verify.md | 132-134 | At stakes solo the deep verify pass is off. | accurate | accurate |
-| VERIFY-21 | cadence-core/workflows/verify.md | 150-152,167 | A suffix-tagged `(human-verify: ...)` item goes straight to pass 2. | accurate | accurate |
-| VERIFY-22 | cadence-core/workflows/verify.md | 157-160 | The deep pass writes `why_human` for every UNCERTAIN truth as well as every human-only check. | accurate | accurate |
-| VERIFY-23 | cadence-core/workflows/verify.md | 169-170 | `blocked` is terminal: `next` offers only `pending`. | accurate | accurate |
-| VERIFY-24 | cadence-core/workflows/verify.md | 170 | `refresh` appends only unseen names. | accurate | accurate |
-| VERIFY-25 | cadence-core/workflows/verify.md | 171 | `route_failures`' reset is scoped to `status: fail`. | accurate | accurate |
-| VERIFY-26 | cadence-core/workflows/verify.md | 171-172 | Completion refuses a `blocked` item. | accurate | accurate |
-| VERIFY-27 | cadence-core/workflows/verify.md | 179-181 | `uat status` returns `status`, `counts`, `result` and `first_pending` alone. | accurate | accurate |
-| VERIFY-28 | cadence-core/workflows/verify.md | 188-190 | `uat record --phase <N> --item <k> --result <r> --evidence "..." --source model` is valid. | accurate | accurate |
-| VERIFY-29 | cadence-core/workflows/verify.md | 194-197 | `uat merge` atomically overwrites `phases/<N>/FINDINGS.json` on every success. | accurate | accurate |
-| VERIFY-30 | cadence-core/workflows/verify.md | 226-231 | The reply/result mapping uses only legal results (pass/skipped/blocked/fail). | accurate | accurate |
-| VERIFY-31 | cadence-core/workflows/verify.md | 241-243 | `uat record ... [--reported] [--severity] [--reason]` are recorded fields. | accurate | accurate |
-| VERIFY-32 | cadence-core/workflows/verify.md | 245 | The output's `next` field is the next pending item. | accurate | accurate |
-| VERIFY-33 | cadence-core/workflows/verify.md | 251-253 | A re-record with `--cause` adds the field and leaves first_pass safe. | accurate | accurate |
-| VERIFY-34 | cadence-core/workflows/verify.md | 257-262 | The verifier's gap carries `missing` and its human check carries `why_human`. | accurate | accurate |
-| VERIFY-35 | cadence-core/workflows/verify.md | 262-265 | The route_failures review fire uses shape (c), file paths. | accurate | accurate |
-| VERIFY-36 | cadence-core/workflows/verify.md | 268-270 | `cadence-core/references/triage-gate.md` exists and holds the triage rules. | accurate | accurate |
-| VERIFY-37 | cadence-core/workflows/verify.md | 276-282 | The commit-time `risk_surface` fire is shape (b), the staged-diff scope, blocking, re-arm capped at one narrowed round. | accurate | accurate |
-| VERIFY-38 | cadence-core/workflows/verify.md | 283 | `uat record --item <k> --result pending --fix "{hash}, retest"` is valid. | accurate | accurate |
-| VERIFY-39 | cadence-core/workflows/verify.md | 299-300 | `result: complete` means every item passed or was skipped with a reason. | accurate | accurate |
-| VERIFY-40 | cadence-core/workflows/verify.md | 306 | `trace append --phase <N> --family outcome --event uat_verdict --detail "..."` is valid. | accurate | accurate |
-| VERIFY-41 | cadence-core/workflows/verify.md | 314-316 | `phase-done --n <N>` checks the ROADMAP box and flips traceability rows to Complete, Deferred exempt. | accurate | accurate |
-| VERIFY-42 | cadence-core/workflows/verify.md | 317-319 | `cursor set --phase <N> --status "phase complete" --next ...` is valid. | accurate | accurate |
-| VERIFY-43 | cadence-core/workflows/verify.md | 323-327 | The commit stages UAT.md, `phases/<N>/FINDINGS.json` and `phases/<N>/verifier-findings.json`. | accurate | accurate |
-| VERIFY-44 | cadence-core/workflows/verify.md | 333 | The report distinguishes `{v} auto-verified` from `{m} model-executed`. | accurate | accurate |
+| VERIFY-01 | cadence-core/workflows/verify.md | 6-10 | The seam owns first_pass set-once, verifier-never-overwrites-user, counts recomputed every write. | accurate | accurate |
+| VERIFY-02 | cadence-core/workflows/verify.md | 11-12,19,124 | `--sweep` cold branch is `workflows/verify-sweep.md`; `--deep` is `workflows/verify-deep.md`. | accurate | accurate |
+| VERIFY-03 | cadence-core/workflows/verify.md | 23 | `planning.mjs cursor get` supplies the current phase. | accurate | accurate |
+| VERIFY-04 | cadence-core/workflows/verify.md | 30,33 | `uat status --phase <N>` is the state check and returns `counts`. | accurate | accurate |
+| VERIFY-05 | cadence-core/workflows/verify.md | 39-40 | `uat refresh --phase <N>` takes a stdin array of `{name, expected, criterion}`. | accurate | accurate |
+| VERIFY-06 | cadence-core/workflows/verify.md | 42-44 | Refresh appends only genuinely new names and never touches recorded results. | accurate | accurate |
+| VERIFY-07 | cadence-core/workflows/verify.md | 47 | A missing checklist reports `no-uat`. | accurate | accurate |
+| VERIFY-08 | cadence-core/workflows/verify.md | 65-68 | An item from a CONTEXT criterion carries `"criterion":"AC<N>"`. | accurate | accurate |
+| VERIFY-09 | cadence-core/workflows/verify.md | 69-70 | /cad-audit FAILs on a criterion no item names. | accurate | accurate |
+| VERIFY-10 | cadence-core/workflows/verify.md | 71-74 | Other-source items carry `"origin"`; the smoke item sends `"origin":"smoke"`. | accurate | accurate |
+| VERIFY-11 | cadence-core/bin/planning.mjs | 1282-1294 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate |
+| VERIFY-12 | cadence-core/bin/planning.mjs | 1282-1294 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate |
+| VERIFY-13 | cadence-core/workflows/verify.md | 80 | CONTEXT criteria may carry a `(human-verify: needs <tool/service>)` tag. | accurate | accurate |
+| VERIFY-14 | cadence-core/workflows/verify.md | 94-95 | `uat init --phase <N>` takes the item array on stdin. | accurate | accurate |
+| VERIFY-15 | cadence-core/workflows/verify.md | 102-103 | `workflow.verifier: false` always skips the deep pass. | accurate | accurate |
+| VERIFY-16 | cadence-core/workflows/verify.md | 108 | `route.mjs resolve --role cad-verifier` is the stakes probe. | accurate | accurate |
+| VERIFY-17 | cadence-core/workflows/verify.md | 111-112 | Every `warnings[]` entry must be relayed. | accurate | accurate |
+| VERIFY-18 | cadence-core/workflows/verify.md | 114 | `verify` on that line is `on` or `off`. | accurate | accurate |
+| VERIFY-19 | cadence-core/workflows/verify.md | 114-116 | The seam refuses a resolve with no role. | accurate | accurate |
+| VERIFY-20 | cadence-core/workflows/verify.md | 120-122 | At stakes solo the deep verify pass is off. | accurate | accurate |
+| VERIFY-21 | cadence-core/workflows/verify.md | 138-140,155 | A suffix-tagged `(human-verify: ...)` item goes straight to pass 2. | accurate | accurate |
+| VERIFY-22 | cadence-core/workflows/verify.md | 145-148 | The deep pass writes `why_human` for every UNCERTAIN truth as well as every human-only check. | accurate | accurate |
+| VERIFY-23 | cadence-core/workflows/verify.md | 157-158 | `blocked` is terminal: `next` offers only `pending`. | accurate | accurate |
+| VERIFY-24 | cadence-core/workflows/verify.md | 158 | `refresh` appends only unseen names. | accurate | accurate |
+| VERIFY-25 | cadence-core/workflows/verify.md | 159 | `route_failures`' reset is scoped to `status: fail`. | accurate | accurate |
+| VERIFY-26 | cadence-core/workflows/verify.md | 159-160 | Completion refuses a `blocked` item. | accurate | accurate |
+| VERIFY-27 | cadence-core/workflows/verify.md | 167-169 | `uat status` returns `status`, `counts`, `result` and `first_pending` alone. | accurate | accurate |
+| VERIFY-28 | cadence-core/workflows/verify.md | 176-178 | `uat record --phase <N> --item <k> --result <r> --evidence "..." --source model` is valid. | accurate | accurate |
+| VERIFY-29 | cadence-core/workflows/verify.md | 182-185 | `uat merge` atomically overwrites `phases/<N>/FINDINGS.json` on every success. | accurate | accurate |
+| VERIFY-30 | cadence-core/workflows/verify.md | 214-219 | The reply/result mapping uses only legal results (pass/skipped/blocked/fail). | accurate | accurate |
+| VERIFY-31 | cadence-core/workflows/verify.md | 229-231 | `uat record ... [--reported] [--severity] [--reason]` are recorded fields. | accurate | accurate |
+| VERIFY-32 | cadence-core/workflows/verify.md | 233 | The output's `next` field is the next pending item. | accurate | accurate |
+| VERIFY-33 | cadence-core/workflows/verify.md | 239-241 | A re-record with `--cause` adds the field and leaves first_pass safe. | accurate | accurate |
+| VERIFY-34 | cadence-core/workflows/verify.md | 245-250 | The verifier's gap carries `missing` and its human check carries `why_human`. | accurate | accurate |
+| VERIFY-35 | cadence-core/workflows/verify.md | 250-253 | The route_failures review fire uses shape (c), file paths. | accurate | accurate |
+| VERIFY-36 | cadence-core/workflows/verify.md | 256-258 | `cadence-core/references/triage-gate.md` exists and holds the triage rules. | accurate | accurate |
+| VERIFY-37 | cadence-core/workflows/verify.md | 264-270 | The commit-time `risk_surface` fire is shape (b), the staged-diff scope, blocking, re-arm capped at one narrowed round. | accurate | accurate |
+| VERIFY-38 | cadence-core/workflows/verify.md | 271 | `uat record --item <k> --result pending --fix "{hash}, retest"` is valid. | accurate | accurate |
+| VERIFY-39 | cadence-core/workflows/verify.md | 287-288 | `result: complete` means every item passed or was skipped with a reason. | accurate | accurate |
+| VERIFY-40 | cadence-core/workflows/verify.md | 294 | `trace append --phase <N> --family outcome --event uat_verdict --detail "..."` is valid. | accurate | accurate |
+| VERIFY-41 | cadence-core/workflows/verify.md | 302-304 | `phase-done --n <N>` checks the ROADMAP box and flips traceability rows to Complete, Deferred exempt. | accurate | accurate |
+| VERIFY-42 | cadence-core/workflows/verify.md | 305-307 | `cursor set --phase <N> --status "phase complete" --next ...` is valid. | accurate | accurate |
+| VERIFY-43 | cadence-core/workflows/verify.md | 311-315 | The commit stages UAT.md, `phases/<N>/FINDINGS.json` and `phases/<N>/verifier-findings.json`. | accurate | accurate |
+| VERIFY-44 | cadence-core/workflows/verify.md | 321 | The report distinguishes `{v} auto-verified` from `{m} model-executed`. | accurate | accurate |
 | VERIFY-SWEEP-01 | cadence-core/workflows/verify-sweep.md | 9 | `planning.mjs status` is the one seam call. | accurate | accurate |
 | VERIFY-SWEEP-02 | cadence-core/workflows/verify-sweep.md | 11-12 | `phases[]` already carries each phase's derived state and UAT counts. | accurate | accurate |
 | VERIFY-SWEEP-03 | cadence-core/workflows/verify-sweep.md | 12-14 | A phase with status `executed` and no `uat` field was built and never verified. | accurate | accurate |
