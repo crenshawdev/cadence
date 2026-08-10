@@ -51,7 +51,18 @@ commit and its own `/cad-verify` walk rather than one bulk edit.
 of defect that motivated the cycle cannot return silently.
 **Depends on:** Nothing
 **Requirements:** CTW-01, CTW-02
-**Success Criteria:**
+**Success Criteria:** (superseded 2026-08-10 by `phases/1/CONTEXT.md`'s AC1-AC7,
+which carry the locked decisions. Two below are REPLACED, not merely restated:
+criterion 4's live-tree firing is delivered as a byte-copy fixture instead
+(D-13), because firing on the live include and exiting 0 on a clean tree cannot
+both hold while CI runs self-verify on every push; and criterion 5's CONTRACTS
+registration is WRONG (D-11) — check 14 is top-level-only by design, since
+`lib/*.mjs` are modules prose never invokes, so the new rule lib takes no row.
+Criterion 1 also understates the work: `regionLabels()` additionally treats the
+first `</step>` as closing `<process>`, so `execute.md` yields zero labelled
+lines today and no row against it could ever pass (D-01), and heading-style
+workflows need their own label form or phase 3's largest move has no anchorable
+region at all (D-02).)
 1. A `lib/deferred-reads.mjs` register row can anchor a deferral whose `Read` sentence lives in a `cadence-core/workflows/*.md` `<step name="...">` region, and self-verify fails when that sentence is deleted. Rows gain a `file` field naming where the sentence must live; `regionLabels()` labels `<step name="...">` regions alongside the existing top-level `^N. ` numbered steps.
 2. A register row can anchor a deferral inside a `skills/cad-*-contract/SKILL.md`, with the same failure behaviour. The scope exclusion at `lib/deferred-reads.mjs:40-44` is removed together with its stated rationale, which prices main-thread residency only and does not price subagent context.
 3. The SENTENCE remains the matching unit, not the blank-line block. The existing header explains why and the reason still holds: `skills/cad-land/SKILL.md` step 4b is a single ~2,900 B paragraph, so a block-level test passes when the real instruction is deleted, and `do NOT Read <path>` passes a block-level test.
