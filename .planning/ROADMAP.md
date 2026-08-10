@@ -40,7 +40,7 @@ commit and its own `/cad-verify` walk rather than one bulk edit.
 
 ## Phases
 
-- [ ] **Phase 1: The checks that make the cuts safe** - CI learns to watch a deferral anchored in a workflow file or a contract skill, and to fail an `@`-include nothing reads
+- [x] **Phase 1: The checks that make the cuts safe** - CI learns to watch a deferral anchored in a workflow file or a contract skill, and to fail an `@`-include nothing reads
 - [ ] **Phase 2: The free cuts** - ~17,400 B off the eager path with no new files and no register rows, plus the four drifts the sweep found in passing
 - [ ] **Phase 3: The deferrals** - ~22,300 B of branch-local prose moves behind a `Read` at the step that needs it
 

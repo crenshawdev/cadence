@@ -1,0 +1,90 @@
+{
+  "status": "delivered",
+  "score": "10/10",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A register row can anchor a deferral whose Read sentence lives in a <step name=\"...\"> workflow region, and self-verify's rule reports exactly one deferred-read-unread when that one sentence is deleted from the fixture.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/deferred-reads.mjs:224-292 (regionLabels frame stack, OPEN_RE/NAME_ATTR_RE, nested-item composition at :287-289). Named tests pass: `node --test cadence-core/bin/deferred-reads.test.mjs` -> 'AC1: a <step name=\"...\"> anchor is clean while its Read sentence stands' and 'AC1: deleting that sentence reports exactly one deferred-read-unread', both on a cpSync byte-copy of the real cadence-core/workflows/execute.md (deferred-reads.test.mjs:243,250). 38/38 pass. End-to-end trace: a row's `file` enters deferredReadIssues at :348, is joined to root at :350, read at :357, and lands in regionLabels at :372, whose label is compared exactly at :383."
+    },
+    {
+      "n": 2,
+      "truth": "A heading-scoped anchor (config.md Interactive-menu walk step 2) shows the same pass/fail pair, and workflows carrying no tags gain an anchorable region.",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "deferred-reads.mjs:258-269 tracks a heading path only when the block stack is empty; :281-286 composes `<path>/<item>`. Tests 'AC2: a heading-scoped walk step is clean...' and 'AC2: deleting it reports exactly one deferred-read-unread naming the walk step' pass on a byte-copy of the real cadence-core/workflows/config.md (deferred-reads.test.mjs:341,348). Independently confirmed live: regionLabels over cadence-core/workflows/config.md labels lines 71-133 (phase 3's largest move) `Interactive menu (no args)/Catalog`."
+    },
+    {
+      "n": 3,
+      "truth": "A contract skill is in scope for check 13 with no new code path, and an anchor inside skills/cad-executor-contract/SKILL.md shows the same pass/fail pair - including the plain-tag <worktree_mode> block that D-07 names as the real uncovered spot.",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Tests pass on a cpSync of the REAL contract file (deferred-reads.test.mjs:103-141): 'AC3: a contract skill anchor is clean...', 'AC3: deleting that one sentence reports exactly one deferred-read-unread', plus the plain-tag pair 'D-07: a Read inside <worktree_mode> is anchorable at `worktree_mode`' / 'D-07: deleting it reports one deferred-read-unread naming worktree_mode' (:408,415). Live confirmation: regionLabels over skills/cad-executor-contract/SKILL.md labels lines 151-193 (ROADMAP phase 3 criterion 3's target) `worktree_mode`. The plan's Task-1 deviation (pair moved to Task 2) is real and the coverage landed."
+    },
+    {
+      "n": 4,
+      "truth": "A Read sentence in a different region of the same file never satisfies an anchor it does not belong to - another numbered item inside the same named step, another walk step, another heading - and matching is exact, never a prefix.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Exactness is structural: deferredReadIssues :383 does byRegion.get(anchor) on the full label string. Falsifiers pass: 'AC4: a Read in item 1 of a named step does not satisfy item 6 of the same step', 'AC4: the named step is not a PREFIX match for its own numbered items' (deferred-reads.test.mjs:257,270), 'AC2: the same sentence in walk step 1 does not answer for walk step 2', 'AC2: the same sentence under another `##` heading does not answer either' (:355,364), 'D-07: label EXACTNESS, not null-ness, is what blocks a relocation' (:423). Residual, disclosed in SUMMARY open item 2 and confirmed live by me: labels are not required UNIQUE. Running regionLabels over every skill and workflow, exactly one live file has two disjoint regions sharing a label - skills/cad-verifier-contract/SKILL.md, whose <process> block holds two column-0 lists both labelling 1/2/3. No register row targets that file, this is the pre-existing bare-number arm rather than anything this phase introduced, and all four phase-3 target regions I labelled (plan.md 267-336 = check_gate, execute.md 343-402 = execute_parallel(1..6), cad-executor-contract 151-193 = worktree_mode, config.md 71-133 = 'Interactive menu (no args)/Catalog') are uniquely labelled."
+    },
+    {
+      "n": 5,
+      "truth": "The include-consumer rule, with an empty waiver list, reports exactly one problem naming cadence-core/templates/UAT.md over a byte-copy of the live skills/cad-verify/SKILL.md plus cadence-core/workflows/verify.md; zero under the shipped WAIVED; and a byte-copy of cad-help reports zero.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/bin/lib/include-consumers.mjs:155-184. Three named tests pass on cpSync byte-copies of the real files, with a fixture guard asserting the include line survived the copy (include-consumers.test.mjs:76,88,94). The self-citation exclusion at :173 compares `s.surface !== include`, and resident-weight.mjs:232-241 documents `surface` as the root-relative POSIX field and `key` as the non-root-relative realpath key - review finding 6's vacuity risk is closed, and the test 'a self-citing INCLUDED file does not answer for the command that includes it' (:120) proves the comparison actually matches. Basename matching is excluded by test 'naming is the <branch>/<file> path form, never the basename' (:148)."
+    },
+    {
+      "n": 6,
+      "truth": "A fixture whose only mention of an included surface is its own @-include line still reports a problem, so the check cannot pass vacuously.",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "include-consumers.mjs:140-142 strips every `@${CLAUDE_PLUGIN_ROOT}/` line from the scan text before matching. Test 'AC6: an include named ONLY by its own `@`-include line still reports' passes (include-consumers.test.mjs:106)."
+    },
+    {
+      "n": 7,
+      "truth": "Check 16 is wired into self-verify and reachable from the CLI: the live tree returns ok:true with problems:[], `checked` names the new check, and the register is untouched at four byte-identical rows.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Ran `node cadence-core/bin/self-verify.mjs`: {\"ok\":true,\"checked\":\"...nul-bytes, include-consumers\",\"problems\":[]}. Wiring is real, not just imported: self-verify.mjs:126 imports includeConsumerIssues, :1209 pushes its issues into `problems`, :1221 appends the name; header entry at :90-104. CLI-level tests pass (self-verify.test.mjs:1914-1930): `checked` matches /include-consumers/, a fixture files include-never-named through the CLI, the live REPO run files zero of all three codes, and WAIVED.length === 1 is asserted through this path too. Register integrity: deferred-reads.test.mjs:89-97 compares the source text between `export const DEFERRED_READS` and its closing `]);` against a checked-in literal and asserts length === 4 - an edited or reordered row fails, which a length check alone would not."
+    },
+    {
+      "n": 8,
+      "truth": "The one waived include cannot outlive its @-include line, and cannot outlive its deadline either: deleting the line while keeping the row turns self-verify red with include-waiver-stale, and a ROADMAP showing phase 2 checked off while the row stands reports include-waiver-expired.",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "include-consumers.mjs:186-211 - the downward arm at :194-201 and the upward arm at :203-210, with the partial-fixture degradations (absent skill at :192, absent/unreadable ROADMAP at :203) matching lib/deferred-reads.mjs. Four lib tests pass: 'DOWNWARD bound: the waiver cannot outlive its `@`-include line', 'UPWARD bound: a checked-off phase 2 expires the waiver', 'UPWARD bound: an UNCHECKED phase 2, or no ROADMAP at all, reports nothing', 'a waiver row whose skill is absent from the root reports nothing' (include-consumers.test.mjs:196-233). The integration boundary is covered too, per review finding 5: 'check 16: the CLI files include-waiver-stale when the include line goes' (self-verify.test.mjs:1933-1946), so a wiring regression that forwarded only include-never-named would fail. The phase-2 coupling is written where phase 2 will read it: .planning/ROADMAP.md:76 (Depends on) and :79 (criterion 1) both name cadence-core/bin/lib/include-consumers.mjs. Residual, disclosed: the expired arm recognizes exactly one ROADMAP rendering (`^- [x] **Phase N:`), so only the deadline is soft - the stale arm still fires on deletion."
+    },
+    {
+      "n": 9,
+      "truth": "No measured prose surface moved and the resident-weight envelope is byte-identical across the phase, so the Task 4 extraction is a true refactor.",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "`git diff --exit-code --quiet 3cc4549..HEAD -- skills cadence-core/references cadence-core/templates cadence-core/workflows agents weight-budgets.json` exits 0 (no prose byte moved). Envelope identity verified against the PRE-phase code rather than by construction: reconstructed the 3cc4549 weight.mjs + lib/resident-weight.mjs in a scratch copy, ran both old and new `weight.mjs resident --root /data/code/cadence`, and `diff` reports no difference. residentWeight consumes commandEagerSets at resident-weight.mjs:313-316 in the same SKILL.md-then-includes order, so the realpath dedupe, byte totals and ordering are unchanged and docs/EVIDENCE.md's verbatim envelope still holds."
+    },
+    {
+      "n": 10,
+      "truth": "The whole tree stays green: the full bin test suite passes and the CI typecheck is clean.",
+      "status": "VERIFIED",
+      "uat_item": 10,
+      "evidence": "`node --test cadence-core/bin/*.test.mjs` -> tests 1516, pass 1516, fail 0. `./node_modules/.bin/tsc -p tsconfig.ci.json` exits clean. Anti-pattern scan over the six touched source files found no TODO/FIXME/XXX/HACK/unimplemented; the only 'placeholder' hits are pre-existing self-verify.mjs prose about config-schema key placeholders (:12,422,423,522), not debt markers. Ledger and coupling landed: SELFVERIFY-01 at .planning/DOCS-CLAIMS.md:699, outside the run-1 table."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Workflow step anchor pass/fail pair", "evidence": "regionLabels frame stack at cadence-core/bin/lib/deferred-reads.mjs:224-292; AC1 pair passes on a byte-copy of the real execute.md (deferred-reads.test.mjs:243,250)." },
+    { "k": 2, "name": "Heading-scoped anchor pass/fail pair", "evidence": "Heading path at deferred-reads.mjs:258-269,281-286; AC2 pair passes on a byte-copy of the real config.md (deferred-reads.test.mjs:341,348). Live config.md:71-133 labels 'Interactive menu (no args)/Catalog'." },
+    { "k": 3, "name": "Contract-skill anchor pass/fail pair", "evidence": "AC3 pair plus the <worktree_mode> plain-tag pair pass on a byte-copy of the real skills/cad-executor-contract/SKILL.md (deferred-reads.test.mjs:124,133,408,415); live 151-193 labels worktree_mode." },
+    { "k": 4, "name": "Wrong-region Read does not satisfy an anchor", "evidence": "Exact-label lookup at deferred-reads.mjs:383; five falsifier tests pass (deferred-reads.test.mjs:257,270,355,364,423). Label uniqueness is not enforced, but no live register row and no phase-3 target region is affected." },
+    { "k": 5, "name": "Include-consumer check catches the live dead include", "evidence": "includeConsumerIssues at include-consumers.mjs:155-184; three AC5 tests pass on byte-copies of the live cad-verify pair and cad-help (include-consumers.test.mjs:76,88,94)." },
+    { "k": 6, "name": "A self-naming include still reports", "evidence": "@-line stripping at include-consumers.mjs:140-142; test at include-consumers.test.mjs:106 passes." },
+    { "k": 7, "name": "Live tree stays green and the register is untouched", "evidence": "`node cadence-core/bin/self-verify.mjs` -> ok:true, problems:[], checked ends 'nul-bytes, include-consumers'; wiring at self-verify.mjs:126,1209,1221; register byte-identity asserted against a checked-in source literal at deferred-reads.test.mjs:89-97." },
+    { "k": 8, "name": "Waiver cannot outlive its include", "evidence": "Both arms at include-consumers.mjs:186-211; four lib tests plus the CLI-level stale test (self-verify.test.mjs:1933) pass; ROADMAP:76,79 carry the phase-2 coupling." },
+    { "k": 9, "name": "No prose surface moved and resident weight is unchanged", "evidence": "git diff --exit-code over skills/references/templates/workflows/agents/weight-budgets.json exits 0; the pre-phase weight.mjs run against the live tree diffs clean against the current one." },
+    { "k": 10, "name": "Full test suite passes", "evidence": "node --test cadence-core/bin/*.test.mjs -> 1516/1516, 0 fail; ./node_modules/.bin/tsc -p tsconfig.ci.json clean." }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
