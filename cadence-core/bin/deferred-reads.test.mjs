@@ -16,7 +16,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deferredReadIssues, DEFERRED_READS, CODES } from './lib/deferred-reads.mjs';
+import {
+  deferredReadIssues, regionLabels, DEFERRED_READS, CODES,
+} from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -176,6 +178,185 @@ test('file: a present parent with the file absent is one deferred-read-missing-f
   assert.equal(issues[0].file, 'cadence-core/workflows/execute.md');
   assert.match(issues[0].detail, /cad-executor-contract/);
   assert.match(issues[0].detail, /references\/seams\.md/);
+});
+
+// --- the four shipped rows still denote the regions they always denoted -------
+// A direct snapshot rather than an inference from absence. The "relocated
+// ELSEWHERE", "wrong STEP" and "deleting the ARM" tests in self-verify.test.mjs
+// only establish that SOME qualifying Read is still found; they cannot see an
+// old anchor starting to denote a DIFFERENT region while another sentence
+// happens to satisfy it. This rewrite turned plain tags from transparent into
+// labelled frames and resets item/arm state on every open AND close, so that is
+// exactly the drift worth pinning.
+
+test('grammar: every shipped row\'s Read line still carries that row\'s anchor', () => {
+  for (const row of DEFERRED_READS) {
+    const rel = row.file || `skills/${row.skill}/SKILL.md`;
+    const text = readFileSync(join(REPO, ...rel.split('/')), 'utf8');
+    const labelOf = regionLabels(text);
+    const full = `\${CLAUDE_PLUGIN_ROOT}/cadence-core/${row.reference}`;
+    const found = text.split('\n')
+      .map((line, i) => (line.includes(full) ? labelOf(i) : null))
+      .filter((l) => l !== null)
+      .sort();
+    assert.deepEqual(found, [...row.anchors].sort(),
+      `${rel} / ${row.reference}: every line naming the path must sit in one of the row's anchored regions`);
+  }
+});
+
+// --- AC1/AC4: a named step in a real workflow ---------------------------------
+
+const EXECUTE_WF = 'cadence-core/workflows/execute.md';
+const PARALLEL_OPEN = '<step name="execute_parallel">';
+const PARALLEL_ITEM_2 = '\n2. Wait for every executor in the batch (same timeout).';
+
+/**
+ * `skills/cad-execute/SKILL.md` plus `workflows/execute.md`, with one Read
+ * sentence placed either in the `execute_parallel` step body (before its first
+ * numbered item), inside its item 1, or nowhere.
+ * @param {'body'|'item1'|'none'} where
+ */
+function executeRoot(where) {
+  const root = emptyRoot();
+  copyReal(root, 'skills/cad-execute/SKILL.md');
+  copyReal(root, EXECUTE_WF, (t) => {
+    if (where === 'body') {
+      return t.replace(PARALLEL_OPEN, `${PARALLEL_OPEN}\n${readSentence(SEAMS)}`);
+    }
+    if (where === 'item1') {
+      return t.replace(PARALLEL_ITEM_2, `\n${readSentence(SEAMS)}${PARALLEL_ITEM_2}`);
+    }
+    return t;
+  });
+  return root;
+}
+
+/** A register row anchored in `workflows/execute.md`. */
+const executeRow = (anchors) => ({
+  skill: 'cad-execute',
+  reference: SEAMS,
+  anchors,
+  read_paragraphs: anchors.length,
+  file: EXECUTE_WF,
+});
+
+test('AC1: a <step name="..."> anchor is clean while its Read sentence stands', () => {
+  const root = executeRoot('body');
+  const text = readFileSync(join(root, ...EXECUTE_WF.split('/')), 'utf8');
+  assert.ok(text.includes(readSentence(SEAMS)), 'fixture must carry the inserted sentence');
+  assert.deepEqual(deferredReadIssues(root, [executeRow(['execute_parallel'])]), []);
+});
+
+test('AC1: deleting that sentence reports exactly one deferred-read-unread', () => {
+  const issues = deferredReadIssues(executeRoot('none'), [executeRow(['execute_parallel'])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  assert.equal(issues[0].file, EXECUTE_WF);
+  assert.match(issues[0].detail, /execute_parallel/);
+});
+
+test('AC4: a Read in item 1 of a named step does not satisfy item 6 of the same step', () => {
+  // The nested-label precedence rule. `execute.md:343-402` puts `1.`-`6.` at
+  // column 0 INSIDE `execute_parallel`; bare numbers there would let this
+  // sentence answer for any `6` anywhere in the file.
+  const root = executeRoot('item1');
+  const issues = deferredReadIssues(root, [executeRow(['execute_parallel(6)'])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  assert.match(issues[0].detail, /execute_parallel\(6\)/);
+  // And the sentence really is where the fixture put it - otherwise the
+  // falsifier above would be passing on a sentence that landed nowhere.
+  assert.deepEqual(deferredReadIssues(root, [executeRow(['execute_parallel(1)'])]), []);
+});
+
+test('AC4: the named step is not a PREFIX match for its own numbered items', () => {
+  // `execute_parallel` and `execute_parallel(1)` are distinct regions, the same
+  // way `4` and `4(a)` always were.
+  const issues = deferredReadIssues(executeRoot('item1'), [executeRow(['execute_parallel'])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+});
+
+test('D-04: a <step name="..."> with NO <process> wrapper is still a region', () => {
+  // `workflows/verify-deep.md` carries three `<step name=` tags and no wrapper.
+  // Requiring the wrapper would leave a second unwatchable file behind.
+  const wf = 'cadence-core/workflows/verify-deep.md';
+  const row = (anchors) => ({
+    skill: 'cad-verify', reference: SEAMS, anchors, read_paragraphs: 1, file: wf,
+  });
+  const mk = (withRead) => {
+    const root = emptyRoot();
+    copyReal(root, 'skills/cad-verify/SKILL.md');
+    copyReal(root, wf, (t) => (withRead
+      ? t.replace('<step name="merge">', `<step name="merge">\n${readSentence(SEAMS)}`)
+      : t));
+    return root;
+  };
+  assert.deepEqual(deferredReadIssues(mk(true), [row(['merge'])]), []);
+  const issues = deferredReadIssues(mk(false), [row(['merge'])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  assert.match(issues[0].detail, /merge/);
+  // A sibling step is a different region, not a looser one.
+  assert.deepEqual(deferredReadIssues(mk(true), [row(['dispatch'])]).map((i) => i.kind),
+    [CODES.unread]);
+});
+
+// --- D-07: the real uncovered spot is a plain tag block -----------------------
+// `<worktree_mode>` carries no numbered step and no `name=` attribute, so
+// nothing but a tag-name label reaches it - and ROADMAP phase 3 criterion 3
+// moves exactly that block. A `<process>`-step pair alone would pass against an
+// implementation that never grew the plain-tag branch at all.
+
+test('D-07: a Read inside <worktree_mode> is anchorable at `worktree_mode`', () => {
+  const root = emptyRoot();
+  copyReal(root, CONTRACT, (t) =>
+    t.replace('<worktree_mode>', `<worktree_mode>\n${readSentence(SEAMS)}`));
+  assert.deepEqual(deferredReadIssues(root, [contractRow(['worktree_mode'])]), []);
+});
+
+test('D-07: deleting it reports one deferred-read-unread naming worktree_mode', () => {
+  const root = emptyRoot();
+  copyReal(root, CONTRACT);
+  const issues = deferredReadIssues(root, [contractRow(['worktree_mode'])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  assert.match(issues[0].detail, /worktree_mode/);
+});
+
+test('D-07: label EXACTNESS, not null-ness, is what blocks a relocation', () => {
+  // The cost of labelling plain tags: `<guardrails>` stops being `null`. The
+  // relocation attack the shipped tests pin still fails, because `guardrails`
+  // is not `worktree_mode`.
+  const root = emptyRoot();
+  copyReal(root, CONTRACT, (t) =>
+    t.replace('<never>', `<never>\n${readSentence(SEAMS)}`));
+  const issues = deferredReadIssues(root, [contractRow(['worktree_mode'])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  // ... and the sentence is genuinely inside `<never>`, so the falsifier is
+  // about the REGION and not about a sentence that failed to land.
+  assert.deepEqual(deferredReadIssues(root, [contractRow(['never'])]), []);
+});
+
+test('grammar: a nested close does not switch the enclosing frame off', () => {
+  // `execute.md:13` opens `<process>`, `:15` opens `<step name="locate">` and
+  // `:47` closes the step. With the old scalars that close cleared `<process>`
+  // for the rest of the file, so every later step went regionless and the whole
+  // workflow yielded zero labelled lines.
+  const text = readFileSync(join(REPO, ...EXECUTE_WF.split('/')), 'utf8');
+  const labelOf = regionLabels(text);
+  const labels = new Set(text.split('\n').map((_, i) => labelOf(i)));
+  for (const name of ['locate', 'git_guard', 'choose_path', 'execute_parallel', 'done']) {
+    assert.ok(labels.has(name), `${name} must be a labelled region`);
+  }
+  assert.ok(labels.has('execute_parallel(6)'), 'nested items take nested labels');
+  assert.ok(!labels.has('6'), 'a nested item must never take a bare number');
+});
+
+test('grammar: a numbered item with an EMPTY frame stack stays regionless', () => {
+  // Without this clause a column-0 `1.` outside every block would newly label
+  // bare `1`, and a bare number outside `<process>` can collide with a live
+  // anchor - `cad-land` anchors at `3` and `4(a)`, `cad-plan-review` at `2`.
+  const labelOf = regionLabels('preamble\n\n1. A step with no block around it.\n');
+  assert.equal(labelOf(2), null);
+  // Inside `<process>` the same line is the bare label the shipped rows use.
+  const inProcess = regionLabels('<process>\n1. A step.\n</process>\n');
+  assert.equal(inProcess(1), '1');
 });
 
 test('file: still-eager watches the SKILL.md even when the anchor is a workflow', () => {

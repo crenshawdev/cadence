@@ -143,57 +143,107 @@ function sentences(text) {
   return text.split(/(?<=[.!?])\s+/);
 }
 
+/** A block tag on a line of its own: `<tag>` or `<tag key="value" ...>`. */
+const OPEN_RE = /^<([a-z_]+)((?:\s+[a-z_-]+="[^"]*")*)\s*>\s*$/;
+/** Its close: `</tag>`. `/` is outside `[a-z_]`, so OPEN_RE never matches one. */
+const CLOSE_RE = /^<\/([a-z_]+)>\s*$/;
+/** The `name=` attribute a `<step name="x">` carries, which becomes its label. */
+const NAME_ATTR_RE = /\bname="([^"]*)"/;
+
 /**
  * Label the region a line belongs to, walking the file top to bottom.
  *
- * Two markers, both structural rather than wording-dependent, so an editor can
+ * Three markers, all structural rather than wording-dependent, so an editor can
  * rewrite any sentence without moving an anchor:
- *   - `^<n>. ` at column 0 - a top-level numbered step, label `"<n>"`.
- *   - `**(<x>)` on its own indented line - a lettered arm of the current step,
- *     label `"<n>(<x>)"`.
- * Everything before the first step, and everything inside a tag block that is
- * not `<process>` (`<guardrails>`, `<objective>`, ...), gets `null` - a
- * REGIONLESS label that no anchor can match. That is what makes relocating an
- * arm's Read into `<guardrails>` fail instead of filling a quota: the sentence
- * is still in the file, but not in the arm that needs it.
+ *   - a BLOCK TAG on its own line opens a frame. Its label is its `name=`
+ *     attribute value when it has one (`<step name="execute_parallel">` ->
+ *     `execute_parallel`), `null` for `<process>`, and the TAG NAME itself for
+ *     every other tag (`<worktree_mode>` -> `worktree_mode`).
+ *   - `^<n>. ` at column 0 - a numbered step of the innermost frame.
+ *   - `**(<x>)` on its own indented line - a lettered arm of the current step.
+ *
+ * The frames are a STACK, and a close pops only a matching top. `execute.md:13`
+ * opens `<process>`, `:15` opens `<step name="locate">` and `:47` closes the
+ * step: with scalars, that close switched `<process>` off for the rest of the
+ * file and the whole workflow produced zero labelled lines, so no row against it
+ * could ever pass.
+ *
+ * Composition, in one table:
+ *   frame label `null`, no item  -> `null` (regionless)
+ *   frame label `null`, item n   -> `"n"`            (today's `3`, `2`)
+ *   frame label F, no item       -> `"F"`            (`worktree_mode`)
+ *   frame label F, item n        -> `"F(n)"`         (`execute_parallel(6)`)
+ *   ... and an arm appends `(x)`  -> `"3(a)"`, `"execute_parallel(6)(a)"`
+ *
+ * A bare `"n"` is emitted ONLY inside a frame whose own label is `null` - in
+ * practice `<process>`. With an EMPTY stack a numbered item stays regionless,
+ * exactly as today. Without that clause a column-0 `1.` sitting outside every
+ * block would newly label bare `1`, and a bare number outside `<process>` can
+ * collide with a live anchor: `cad-land` anchors at `3` and `4(a)`,
+ * `cad-plan-review` at `2`. No shipped skill has such a list today, so this is
+ * latent - and it stays latent only because the clause is written.
+ *
+ * A numbered item inside a NAMED step never gets a bare number, for the same
+ * reason: `execute.md:343-402` puts `1.`-`6.` at column 0 inside
+ * `execute_parallel`, and `verify.md` and `new-project.md` carry 15 more such
+ * lines. Bare numbers there would let two regions of one file both label `"3"`,
+ * and an anchor would be satisfied by a Read in an unrelated bullet - the
+ * file-wide-quota defect this register already shipped once, in a new spelling.
+ *
+ * The protection is label EXACTNESS, not null-ness. `<guardrails>` now labels
+ * `guardrails` rather than `null`, and the relocation attack still fails:
+ * `guardrails` is not `4(b)`. Matching is exact and never a prefix, so an anchor
+ * `execute_parallel` is not satisfied by a sentence inside `execute_parallel(6)`
+ * - the same way `4` and `4(a)` are distinct. Only the preamble before the first
+ * block or step stays regionless.
  * @param {string} text
  * @returns {(line: number) => string|null} region label per 0-based line index
  */
-function regionLabels(text) {
+export function regionLabels(text) {
   const lines = text.split('\n');
   /** @type {(string|null)[]} */
   const labels = [];
-  let step = null;
+  /** @type {{tag: string, label: string|null}[]} the open block frames */
+  const stack = [];
+  let item = null;
   let arm = null;
-  let inProcess = false;
   for (const line of lines) {
-    const open = /^<([a-z_]+)>\s*$/.exec(line);
-    const close = /^<\/([a-z_]+)>\s*$/.exec(line);
+    const open = OPEN_RE.exec(line);
+    const close = CLOSE_RE.exec(line);
     if (open) {
-      inProcess = open[1] === 'process';
+      const named = NAME_ATTR_RE.exec(open[2] || '');
+      stack.push({
+        tag: open[1],
+        label: named ? named[1] : (open[1] === 'process' ? null : open[1]),
+      });
       // A new block always ends the previous block's step numbering, so a
       // second `1.` in a later block cannot inherit the first block's arm.
-      step = null;
+      item = null;
       arm = null;
       labels.push(null);
       continue;
     }
     if (close) {
-      inProcess = false;
-      step = null;
+      if (stack.length && stack[stack.length - 1].tag === close[1]) stack.pop();
+      item = null;
       arm = null;
       labels.push(null);
       continue;
     }
-    const stepM = /^(\d+)\.\s/.exec(line);
-    if (stepM) {
-      step = stepM[1];
+    const itemM = /^(\d+)\.\s/.exec(line);
+    if (itemM) {
+      item = itemM[1];
       arm = null;
     } else {
       const armM = /^\s+\*\*\(([a-z])\)/.exec(line);
       if (armM) arm = armM[1];
     }
-    labels.push(inProcess && step ? (arm ? `${step}(${arm})` : step) : null);
+    const frame = stack.length ? stack[stack.length - 1] : null;
+    let label;
+    if (!frame) label = null;
+    else if (frame.label === null) label = item;
+    else label = item ? `${frame.label}(${item})` : frame.label;
+    labels.push(label && arm ? `${label}(${arm})` : (label ?? null));
   }
   return (i) => labels[i] ?? null;
 }
