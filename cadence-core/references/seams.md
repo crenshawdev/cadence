@@ -236,8 +236,8 @@ case stays eager whatever its size: a reference consulted at more than one
 distinct STEP, since no single deferred read covers them all - mutually
 exclusive arms of ONE step count as one site, which is exactly why `cad-land`
 can defer `references/git-publish.md` (step 4a or step 4b, never both) while
-`references/git-guard.md` stays eager at steps 1, 2 and 3 and in its guardrails
-block. Any deferral made from this point forward states, inline at the Read
+`references/git-guard.md` stays eager at steps 1, 2 and 3. Any deferral made
+from this point forward states, inline at the Read
 itself, the reference's measured bytes and its consult-site count, so it ships
 as a shown measurement rather than an assertion - the deferrals already in
 `cad-land` predate this sentence and are not held to it. That count is distinct

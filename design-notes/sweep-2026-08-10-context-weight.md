@@ -143,3 +143,24 @@ prefixes diverge, dispatches past TTL).
   the three `parallelization.*` keys; deferring `execute_parallel` moves it.
 - `seams.md:236-240` says `git-guard.md` is consulted "in its guardrails block",
   but cad-land's current guardrails cite no git-guard.
+
+## Where phase 2's moved rationale landed (2026-08-10)
+
+Every rationale block phase 2 removed from an eager surface is listed here with
+its git-tracked destination. `design-notes/dd-*.md` is gitignored and is never a
+destination (phase 2 D-21): a block that "moved" into one would satisfy the
+rule on the working tree and violate it in the published repo.
+
+| Removed from | What | Landed in |
+|---|---|---|
+| `workflows/context.md:122-144` | The `--tokens` provenance paragraph, the five measured per-agent figures, and the read-the-three-states-apart passage | `cadence-core/bin/lib/trace.mjs`, TOKEN PROVENANCE (the header's fourth named contract) |
+| `workflows/{execute,plan,verify-deep}.md`, `references/review-triggers.md` | The same provenance, restated per site | same header - stated once for all six sites |
+| `skills/cad-land/SKILL.md` steps 3, 4a, 4b | The per-arm turn-economics/cost-model tails behind each deferred Read | `cadence-core/bin/lib/deferred-reads.mjs`, THE BREAK-EVEN ARITHMETIC, beside the three rows that anchor those arms |
+| `skills/cad-land/SKILL.md` `<guardrails>` | The re-derivation of the git-publish seam mechanic (sanctioned single push, subprocess push git-guard does not intercept, code-guarded non-protected-branch condition, PR -> merge -> reset) | No copy made, deliberately: `cadence-core/bin/git-publish.mjs:3-12,31-34` already states it at the code that enforces it. The `deferred-reads.mjs` note records the pointer instead. |
+
+Also closed here: the `seams.md:236-240` drift above, by DELETING the "and in
+its guardrails block" clause rather than adding a `references/git-guard.md`
+citation to cad-land's guardrails. Adding one would grow the surface this cycle
+exists to shrink and insert a fourth consult site into a file whose deferral
+arithmetic three register rows depend on; git-guard's eager justification
+already survives on steps 1, 2 and 3 alone.

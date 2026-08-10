@@ -40,13 +40,10 @@ rather than a schema default no layer wrote.
    (references/git-guard.md) applies to any commit here.
 
 3. **Fire `pre_ship`.** Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` at this
-   step first - this skill no longer preloads it. The reference is 17,837 B,
-   larger than this whole skill, and it is consulted at exactly ONE step (this
-   one), so preloading it puts those bytes on every remaining turn of the land
-   for a single use; the read folds into the turn that fires the trigger as one
-   extra tool call rather than an extra turn (`references/seams.md`, File
-   round-trip). Then run the `pre_ship` review trigger with the refs
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (17,837 B,
+   one consult site - this step) at this step first, since this skill no longer
+   preloads it. Then run the `pre_ship` review
+   trigger with the refs
    `{base_ref: <base>, head_ref: HEAD}` as the artifact - shape (a), so the
    branch diff is never inlined here - honoring `review.triggers.pre_ship`
    (default adjudicated). Report the outcome; a blocking FAIL halts the land
@@ -88,13 +85,10 @@ rather than a schema default no layer wrote.
 
    **Read the publish rails before a publishing answer.** When the answer is
    direct push, open MR/PR, or a tag the user chose to push, Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` first: rail 3
-   and the `git.auto_close` policy govern all three, and this skill no longer
-   preloads them. The 4a ask ended the turn, so this is the first call of the
-   turn that starts with the user's answer - one extra tool call, not an extra
-   turn. Leave-local and a tag left unpushed never reach it, and that is what
-   makes deferring it pay rather than eager (`references/seams.md`, File
-   round-trip).
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (4,611 B, one
+   consult site - step 4a or 4b, never both) first: rail 3 and the
+   `git.auto_close` policy govern all three, and this skill no longer preloads
+   them.
 
    Then **execute exactly that, raw.** Run only the chosen action. Never push
    unless push (or push-tag) was chosen. No PR-body templating beyond a
@@ -108,14 +102,13 @@ rather than a schema default no layer wrote.
    (references/git-publish.md rail 3 never
    auto-pushes).
    - **Read the publish rails first.** Read
-     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` before the
+     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (4,611 B,
+     one consult site - step 4a or 4b, never both) before the
      first bullet below that publishes anything - the GitHub seam call and
      GitLab's `glab mr create`, which publishes the source branch itself, both
      count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
      `git.auto_close` policy govern from here on and this skill no longer
-     preloads them. This arm skips the 4a ask, so the read does not fold into a
-     turn an ask already ended - it is the unattended chain's own first call,
-     one extra tool call and no extra turn, on a path that always publishes.
+     preloads them.
    - **Publish the branch (GitHub arm).** On GitHub, `gh pr create --head
      <branch>` will NOT push a remoteless branch non-interactively, so publish
      it first through the git-publish seam. Run it on its own physical line:
@@ -175,13 +168,8 @@ rather than a schema default no layer wrote.
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. The one
   exception is `git.auto_close` (default off), the explicit opt-in that runs the
-  close unattended: on the GitHub arm it makes ONE sanctioned publish of the
-  local-only integration branch through the git-publish seam (a subprocess push
-  git-guard does not intercept, code-guarded to the current non-protected branch
-  under repo `git.auto_close`) BEFORE opening the PR, then PR -> merge -> reset.
-  Every Bash `git push` still asks unconditionally; the seam is the only
-  code-guarded unattended publish. It skips the 4a ask rather than preselecting a
-  default in it, and it still halts on a blocking `pre_ship` finding.
+  close unattended: it SKIPS the 4a ask rather than preselecting a default in it,
+  and it still halts on a blocking `pre_ship` finding.
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.
 - No survivor is acted on that the user did not pick: adjudicated `pre_ship`

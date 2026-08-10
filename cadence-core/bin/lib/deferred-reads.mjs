@@ -77,6 +77,38 @@
 // followed by markup (`.**`, `.md\``) does not split, which is why a bolded
 // lead-in and its following clause count as one sentence here.
 //
+// THE BREAK-EVEN ARITHMETIC for the three `cad-land` rows, recorded here rather
+// than in the skill. It is addressed to a maintainer deciding whether a row
+// still earns its deferral; the skill's own surviving Read sentences carry only
+// what the model needs at runtime - the path, the measured bytes and the
+// consult-site count that `references/seams.md` (File round-trip) mandates.
+//
+//   region `3`, `references/review-triggers.md` (17,837 B). Larger than the
+//     whole of `skills/cad-land/SKILL.md`, consulted at exactly one step, so
+//     preloading it would put those bytes on every remaining turn of the land
+//     for a single use. The read folds into the turn that fires the trigger as
+//     one extra tool call rather than an extra turn.
+//   region `4(a)`, `references/git-publish.md` (4,611 B). The 4a ask ENDS the
+//     turn, so the read is the first call of the turn that starts with the
+//     user's answer - one extra tool call, not an extra turn. Leave-local and a
+//     tag left unpushed never reach it at all, and that unreached fraction is
+//     what makes the deferral pay rather than eager.
+//   region `4(b)`, the same reference on the unattended arm. This arm skips the
+//     4a ask, so the read does not fold into a turn an ask already ended: it is
+//     the unattended chain's own first call, one extra tool call and no extra
+//     turn, on a path that ALWAYS publishes. Weakest of the three on paper and
+//     still worth it, because the alternative is eager bytes on every turn of
+//     every land including the ones that publish nothing.
+//
+// The `<guardrails>` block's seam re-derivation was cut in the same commit and
+// deliberately got no destination here: `cadence-core/bin/git-publish.mjs`
+// already states the sanctioned single push and the subprocess argv git-guard
+// does not intercept at `:3-12`, and the `git.auto_close`-plus-non-protected
+// condition at `:31-34`, right at the code that enforces them. Copying it would
+// create a second place to keep true. The step-4b runtime rule the model still
+// needs - what `ok:false` means and not to fall back to a raw `git push` - was
+// never in the guardrails and stays in the skill's step 4b.
+//
 // Pure rule: no emit, no exit, no Date, no randomness, node builtins only, and
 // every read guarded so an unreadable file is one reported issue rather than an
 // unwound run.
