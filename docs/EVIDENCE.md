@@ -62,8 +62,8 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-spike` | 3,898 |
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
-| `/cad-verify` | 24,533 |
-| **23 user-invocable commands** | **280,684** |
+| `/cad-verify` | 18,688 |
+| **23 user-invocable commands** | **274,839** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -82,10 +82,10 @@ may open at a step rather than what it starts holding.
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
 | `/cad-execute` | 28,682 | 100,293 |
-| `/cad-verify` | 24,533 | 100,098 |
 | `/cad-plan` | 22,662 | 78,074 |
 | `/cad-context` | 20,777 | 86,293 |
 | `/cad-config` | 20,547 | 44,326 |
+| `/cad-verify` | 18,688 | 94,253 |
 | `/cad-land` | 18,209 | 63,350 |
 | `/cad-new-project` | 16,708 | 64,002 |
 | `/cad-milestone` | 16,210 | 67,181 |
@@ -150,8 +150,8 @@ turn-one table above is the number that decides what a session pays.
 | `cadence-core/references/` | 16 | 159,165 |
 | `cadence-core/templates/` | 8 | 16,861 |
 | `cadence-core/workflows/` | 21 | 201,670 |
-| `skills/` | 29 | 90,733 |
-| **total** | **93** | **477,012** |
+| `skills/` | 29 | 90,680 |
+| **total** | **93** | **476,959** |
 
 The twelve largest individual surfaces:
 

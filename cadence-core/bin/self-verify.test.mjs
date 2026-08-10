@@ -1924,28 +1924,32 @@ test('check 16: the live tree is clean of all three include-consumer codes', () 
   assert.deepEqual(p.filter((x) => x.kind === 'include-waiver-stale'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'include-waiver-expired'), []);
   // The waiver register's SIZE, guarded from this side too and not only from
-  // its own lib test. It is a phase-2 bridge with a scheduled removal, so
-  // appending a row instead of fixing an include has to be a red build rather
-  // than a reviewer's judgement call.
-  assert.equal(WAIVED.length, 1);
+  // its own lib test. It ships EMPTY - phase 2 deleted the one row it carried
+  // along with the include that row waived - so ADDING a row instead of fixing
+  // an include has to be a red build rather than a reviewer's judgement call.
+  assert.equal(WAIVED.length, 0);
 });
 
-test('check 16: the CLI files include-waiver-stale when the include line goes', () => {
-  // Phase 2 deletes `skills/cad-verify/SKILL.md:29`. Until the WAIVED row goes
-  // with it in that same commit, this is what CI shows.
+test('check 16: the CLI reports the UAT include the day it is re-added', () => {
+  // The honest successor to the stale-waiver CLI test. With the register empty
+  // the stale arm has no live wiring to reach, and what CI must still catch is
+  // the include coming BACK: same bytes, same eager pair, re-inserted line.
   const rel = 'skills/cad-verify/SKILL.md';
   const text = readFileSync(join(REPO, ...rel.split('/')), 'utf8');
-  const line = '@${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/UAT.md\n';
-  assert.ok(text.includes(line), 'the waived include must still exist to be removed');
+  const wf = '@${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/verify.md\n';
+  const uat = '@${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/UAT.md\n';
+  assert.ok(!text.includes(uat), 'the dead include must stay deleted on the live tree');
+  assert.ok(text.includes(wf), 'the fixture re-inserts after the workflow include');
   const root = includeRoot({
-    [rel]: text.replace(line, ''),
+    [rel]: text.replace(wf, wf + uat),
     'cadence-core/workflows/verify.md':
       readFileSync(join(REPO, 'cadence-core', 'workflows', 'verify.md'), 'utf8'),
   });
   const p = run(['--root', root]).problems;
-  const stale = p.filter((x) => x.kind === 'include-waiver-stale');
-  assert.equal(stale.length, 1, JSON.stringify(p.map((x) => x.kind)));
-  assert.equal(stale[0].file, rel);
+  const named = p.filter((x) => x.kind === 'include-never-named');
+  assert.equal(named.length, 1, JSON.stringify(p.map((x) => x.kind)));
+  assert.equal(named[0].file, rel);
+  assert.match(named[0].detail, /templates\/UAT\.md/);
 });
 
 // --- check 14: every shipped seam is contracted -----------------------------

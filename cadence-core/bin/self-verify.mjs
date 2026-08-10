@@ -97,8 +97,8 @@
 //                    longer includes. A `cadence-core/workflows/*` include is
 //                    exempt - the workflow IS the command's process, so naming
 //                    it would be a command citing its own body. The rule, its
-//                    branch exemption and its one-row phase-2 waiver register
-//                    live in lib/include-consumers.mjs; this side only decides
+//                    branch exemption and its waiver register - which ships
+//                    EMPTY - live in lib/include-consumers.mjs; this side decides
 //                    that it applies to the whole root. It takes no CONTRACTS
 //                    row, for the reason check 14 states: `lib/*.mjs` are
 //                    modules prose never invokes.
@@ -1203,9 +1203,9 @@ function run(root) {
   // 16. include consumers: an `@`-included references/* or templates/* surface
   // must be NAMED in the including command's own eager prose. The rule, the
   // `workflows/*` branch exemption, the two scan-text exclusions that stop an
-  // include naming itself, and the one-row phase-2 waiver register with both of
-  // its bounds live in lib/include-consumers.mjs; this side only decides that it
-  // applies to the whole root.
+  // include naming itself, and the waiver register - which ships EMPTY, with
+  // both of its bounds still wired - live in lib/include-consumers.mjs; this
+  // side only decides that it applies to the whole root.
   for (const issue of includeConsumerIssues(root)) problems.push(issue);
 
   return problems;

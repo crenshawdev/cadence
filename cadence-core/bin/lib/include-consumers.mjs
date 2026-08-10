@@ -57,30 +57,25 @@
 // carries an `@`-include today, so the first one is a known uncovered case here
 // rather than a surprise.
 //
-// THE WAIVER REGISTER IS A PHASE-2 BRIDGE WITH A SCHEDULED REMOVAL, not a
-// general-purpose escape hatch. It carries exactly one row and must not grow a
-// second. Its size is asserted from this lib's test AND again through the
-// self-verify CLI, so appending a row is a red build rather than a reviewer's
-// judgement call. The row exists because the phase's own acceptance criteria are
-// mutually exclusive without it: the rule must REPORT `templates/UAT.md` on a
-// byte-copy of the live `skills/cad-verify/SKILL.md` plus
-// `cadence-core/workflows/verify.md`, and `self-verify` must return `problems:[]`
-// on the live tree, which contains those same bytes. Deleting the include
-// satisfies both, and that deletion is phase 2's work (CTW-03, ROADMAP phase 2
-// criterion 1) - the same commit that deletes `skills/cad-verify/SKILL.md:29`
-// deletes the row below. The row is not a defence of the include and cannot
-// become one, because it is bounded in BOTH directions:
+// THE WAIVER REGISTER SHIPS EMPTY. It held exactly one row - `cad-verify`'s
+// `templates/UAT.md` include - as a phase-1 bridge, and phase 2 deleted the
+// include and the row in the same commit, which is what the DOWNWARD bound
+// below demanded. Its size is asserted from this lib's test AND again through
+// the self-verify CLI, now at zero, so ADDING a row is a red build rather than
+// a reviewer's judgement call. Both bounds remain wired for a future row:
 //   DOWNWARD, `staleWaiver`: a waived row whose skill exists here and no longer
-//     carries that `@`-include line is itself a problem, so phase 2's deletion
-//     turns self-verify red until the row goes with it. The bridge cannot
-//     outlive the thing it bridges.
+//     carries that `@`-include line is itself a problem, so the deletion the
+//     waiver was written for turns self-verify red until the row goes with it. A
+//     bridge cannot outlive the thing it bridges.
 //   UPWARD, `expiredWaiver`: `removeInPhase` is an executable deadline, not a
 //     comment. Once `.planning/ROADMAP.md` shows that phase checked off while
-//     the row still exists, the row is a problem. Without it a phase 2 that
-//     slips or is dropped would leave the exact defect this check exists to
+//     the row still exists, the row is a problem. Without it a scheduled removal
+//     that slips or is dropped would leave the exact defect this check exists to
 //     catch suppressed indefinitely with CI green, since `staleWaiver` only ever
 //     fires on a deletion that by then has not happened - a hole with paperwork
 //     rather than a bridge.
+// The remedy for a future FALSE POSITIVE is a waiver row carrying its stated
+// reason and its `removeInPhase` deadline, never a widened scan (phase 1 D-16).
 //
 // Pure rule: no emit, no exit, no Date, no randomness, node builtins only, and
 // every read guarded. A waiver row whose skill is absent from this root reports
@@ -101,15 +96,13 @@ export const CODES = Object.freeze({
 });
 
 /**
- * The waiver register. ONE row, and it must stay one row - see the header: it is
- * a phase-2 bridge with a scheduled removal, deleted in the same commit that
- * deletes `skills/cad-verify/SKILL.md:29`, and both its arms are what stop it
- * becoming a permanent exemption.
+ * The waiver register. EMPTY, and it ships empty - see the header: the one row
+ * it carried died in the same commit that deleted `skills/cad-verify/SKILL.md`'s
+ * `templates/UAT.md` include, and both bounds stay wired so a future row cannot
+ * become a permanent exemption.
  * @type {ReadonlyArray<{skill: string, surface: string, removeInPhase: number}>}
  */
-export const WAIVED = Object.freeze([
-  Object.freeze({ skill: 'cad-verify', surface: 'templates/UAT.md', removeInPhase: 2 }),
-]);
+export const WAIVED = Object.freeze([]);
 
 /** An `@`-include path this rule judges: `cadence-core/<branch>/<file>`. */
 const INCLUDE_PATH_RE = /^cadence-core\/(references|templates|workflows)\/([A-Za-z0-9_\-./]+)$/;
@@ -144,10 +137,10 @@ function withoutIncludeLines(text) {
 /**
  * Every include-consumer issue under `root`.
  *
- * `waived` is a parameter for one reason: the acceptance criteria require the
- * rule to REPORT the live `templates/UAT.md` include on a byte-copy fixture,
- * which is only observable with an empty waiver list, while the shipped register
- * keeps CI green until phase 2 deletes that include.
+ * `waived` is a parameter, not a hard-wired read of `WAIVED`, so both arms stay
+ * testable while the shipped register is empty: a test drives the suppression
+ * path and both bounds from an EXPLICIT one-row list, and the reporting path
+ * from the default.
  * @param {string} root
  * @param {ReadonlyArray<{skill: string, surface: string, removeInPhase: number}>} [waived]
  * @returns {{kind: string, file: string, detail: string}[]}

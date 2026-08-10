@@ -26,7 +26,6 @@ cad-verifier for a goal-backward check of what the code actually delivers.
 
 <execution_context>
 @${CLAUDE_PLUGIN_ROOT}/cadence-core/workflows/verify.md
-@${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/UAT.md
 </execution_context>
 
 <process>

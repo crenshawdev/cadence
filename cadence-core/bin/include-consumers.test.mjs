@@ -5,7 +5,8 @@
 //
 // self-verify.test.mjs owns the CLI wiring and the live-tree assertion. This
 // file owns the rule: which includes are judged, what counts as naming one, and
-// both bounds on the one-row waiver register. The headline fixtures are `cpSync`
+// both bounds on the waiver register, which ships empty and is driven here from
+// an explicit one-row list. The headline fixtures are `cpSync`
 // byte-copies of REAL shipped surfaces, because the defect this rule exists to
 // catch is in those bytes and a synthetic file proves the rule against prose
 // nobody has to keep true.
@@ -55,20 +56,33 @@ const skillFile = (name, body) =>
 const includeLine = (rel) => `@\${CLAUDE_PLUGIN_ROOT}/${rel}`;
 
 // --- AC5, first half: the live defect, on the live bytes ----------------------
-// `skills/cad-verify/SKILL.md:29` includes 5,792 B of `templates/UAT.md` that no
-// prose in `/cad-verify` has ever named. The fixture is a byte copy, so what
-// fires here fires on the tree.
+// `skills/cad-verify/SKILL.md` used to include 5,792 B of `templates/UAT.md`
+// that no prose in `/cad-verify` had ever named. Phase 2 deleted that line, so
+// the fixture is now the live byte copy with the include RE-INSERTED: the
+// defect instance is reconstructed from shipped bytes rather than invented, and
+// what fires here is what fires the day someone re-adds the line.
 
 const VERIFY_SKILL = 'skills/cad-verify/SKILL.md';
 const VERIFY_WF = 'cadence-core/workflows/verify.md';
 const UAT_INCLUDE = 'cadence-core/templates/UAT.md';
+const WF_INCLUDE = 'cadence-core/workflows/verify.md';
 
-/** The real `/cad-verify` eager pair, optionally with its UAT include removed. */
+/** The one-row register the shipped `WAIVED` carried until phase 2 emptied it. */
+const ONE_ROW = Object.freeze([
+  Object.freeze({ skill: 'cad-verify', surface: 'templates/UAT.md', removeInPhase: 2 }),
+]);
+
+/**
+ * The real `/cad-verify` eager pair. `withInclude` RE-INSERTS the deleted UAT
+ * include after the workflow include; `false` is the plain byte copy of the
+ * shipped file.
+ */
 function verifyRoot({ withInclude = true } = {}) {
   const root = emptyRoot();
   copyReal(root, VERIFY_SKILL, (t) => (withInclude
-    ? t
-    : t.replace(`${includeLine(UAT_INCLUDE)}\n`, '')));
+    ? t.replace(`${includeLine(WF_INCLUDE)}\n`,
+      `${includeLine(WF_INCLUDE)}\n${includeLine(UAT_INCLUDE)}\n`)
+    : t));
   copyReal(root, VERIFY_WF);
   return root;
 }
@@ -85,10 +99,14 @@ test('AC5: the live cad-verify bytes report exactly one unnamed include', () => 
   assert.match(issues[0].detail, /cadence-core\/templates\/UAT\.md/);
 });
 
-test('AC5: the same bytes report nothing under the shipped one-row WAIVED', () => {
-  // The phase-2 bridge. AC5 needs the report, AC7 needs a green live tree, and
-  // they are the same bytes - see the lib header.
-  assert.deepEqual(includeConsumerIssues(verifyRoot()), []);
+test('AC5: the same bytes report nothing under a one-row WAIVED', () => {
+  // The suppression path, still exercised after the register emptied: the row
+  // is passed EXPLICITLY, because the shipped register no longer carries one.
+  assert.deepEqual(includeConsumerIssues(verifyRoot(), ONE_ROW), []);
+  // And with the shipped (empty) register, the same bytes report again - which
+  // is what makes re-adding the include a red build rather than a silent one.
+  assert.deepEqual(includeConsumerIssues(verifyRoot()).map((i) => i.kind),
+    [CODES.neverNamed]);
 });
 
 test('AC5: cad-help passes under both, because its objective names the include', () => {
@@ -182,53 +200,53 @@ test('an included surface named by the command WORKFLOW satisfies the check', ()
 
 // --- the waiver register, and both of its bounds ------------------------------
 
-test('WAIVED is exactly one frozen row, and the row is frozen too', () => {
-  // The size is the guarantee. A phase whose purpose is closing CI holes must
-  // not ship the mechanism that reopens them, so growing this register is a red
-  // build rather than a code-review judgement call.
-  assert.equal(WAIVED.length, 1);
+test('WAIVED ships EMPTY, and is frozen', () => {
+  // The size is the guarantee, now from the other direction. The one row this
+  // register carried died with the include it waived; a phase whose purpose is
+  // closing CI holes must not ship the mechanism that reopens them, so ADDING a
+  // row is a red build rather than a code-review judgement call.
+  assert.equal(WAIVED.length, 0);
   assert.ok(Object.isFrozen(WAIVED));
-  assert.ok(Object.isFrozen(WAIVED[0]));
-  assert.deepEqual({ ...WAIVED[0] },
-    { skill: 'cad-verify', surface: 'templates/UAT.md', removeInPhase: 2 });
 });
 
 test('DOWNWARD bound: the waiver cannot outlive its `@`-include line', () => {
-  // Phase 2 deletes `skills/cad-verify/SKILL.md:29`. Leaving the row behind is
-  // itself a problem, so the two die in one commit or CI goes red.
+  // The bound that forced this phase's shape: the include and the row died in
+  // one commit or CI went red. Driven from an explicit row, because the shipped
+  // register is empty and the MECHANISM is what survives.
   const root = verifyRoot({ withInclude: false });
-  const issues = includeConsumerIssues(root);
+  const issues = includeConsumerIssues(root, ONE_ROW);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.staleWaiver]);
   assert.equal(issues[0].file, VERIFY_SKILL);
   assert.match(issues[0].detail, /templates\/UAT\.md/);
 });
 
-test('UPWARD bound: a checked-off phase 2 expires the waiver', () => {
-  // `removeInPhase` is an executable deadline. Without it, a phase 2 that slips
-  // or is dropped leaves the defect suppressed indefinitely with CI green.
+test('UPWARD bound: a checked-off removeInPhase expires the waiver', () => {
+  // `removeInPhase` is an executable deadline. Without it, a scheduled removal
+  // that slips or is dropped leaves the defect suppressed indefinitely with CI
+  // green.
   const root = verifyRoot();
   put(root, '.planning/ROADMAP.md',
     '## Phases\n\n- [x] **Phase 1: The checks** - done\n- [x] **Phase 2: The free cuts** - done\n');
-  const issues = includeConsumerIssues(root);
+  const issues = includeConsumerIssues(root, ONE_ROW);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.expiredWaiver]);
   assert.equal(issues[0].file, VERIFY_SKILL);
   assert.match(issues[0].detail, /phase 2/);
 });
 
-test('UPWARD bound: an UNCHECKED phase 2, or no ROADMAP at all, reports nothing', () => {
+test('UPWARD bound: an UNCHECKED phase, or no ROADMAP at all, reports nothing', () => {
   const root = verifyRoot();
   put(root, '.planning/ROADMAP.md',
     '## Phases\n\n- [x] **Phase 1: The checks** - done\n- [ ] **Phase 2: The free cuts** - open\n');
-  assert.deepEqual(includeConsumerIssues(root), []);
+  assert.deepEqual(includeConsumerIssues(root, ONE_ROW), []);
   // The partial-fixture degradation: a root carrying no `.planning/` arm is not
   // a break, the same way lib/deferred-reads.mjs treats an absent `skills/`.
-  assert.deepEqual(includeConsumerIssues(verifyRoot()), []);
+  assert.deepEqual(includeConsumerIssues(verifyRoot(), ONE_ROW), []);
 });
 
 test('a waiver row whose skill is absent from the root reports nothing', () => {
   const root = emptyRoot();
   put(root, 'skills/cad-help/SKILL.md', skillFile('cad-help', '<process>\nNothing.\n</process>'));
-  assert.deepEqual(includeConsumerIssues(root), []);
+  assert.deepEqual(includeConsumerIssues(root, ONE_ROW), []);
 });
 
 test('an absent skills/ directory contributes nothing at all', () => {
