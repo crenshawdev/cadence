@@ -42,6 +42,17 @@
 // publication that never happened, while `readTags` had already returned the
 // list that answers it exactly. D-23's other half is kept intact: the seam
 // reads, this module stays pure.
+//
+// THE SAME QUESTION IS ASKED AT A SECOND MOMENT, and it must be answered the
+// same way. `skills/cad-health/SKILL.md` step 7 reports version drift when the
+// Active version equals an existing release TAG, and that test is MEMBERSHIP
+// there too: it must not drift back to "sorts above the newest tag", because
+// this module refuses an integration branch on exactly this test and the two
+// surfaces read the same repo. The concrete failure the health check exists
+// for: a `v2.4.0` shipped while that same section still described `v2.4.0` as
+// the open, unstarted milestone - nothing read the two numbers together. The
+// worked example stays in the SKILL rather than moving here, because it
+// decides a verdict the model issues at runtime.
 import { compareVersions } from './release-decision.mjs';
 
 // A semver-ish version token: v1.2.3 with an optional prerelease/build suffix

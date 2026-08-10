@@ -100,14 +100,8 @@ Check, then report - do not fix without asking.
    manifest equals the Active version and no tag does, report it as a
    distinct, lower note - "the manifest already names the active milestone;
    expected mid-close, stale otherwise" - never as drift.
-   This is the failure that let a `v2.4.0` ship while this same section still
-   described `v2.4.0` as the open, unstarted milestone - nothing read the two
-   numbers together.
 
-   Membership is deliberate and must not drift back to "sorts above the newest
-   tag". `lib/branch-decision.mjs` refuses an integration branch on exactly this
-   test, and the two surfaces have to answer the same question about the same
-   repo. Sort order refuses strictly more: an untagged maintenance milestone
+   Sort order refuses strictly more: an untagged maintenance milestone
    like `v1.9.1` in a repo tagged `v1.9.0` and `v2.0.0` is a legitimate open
    version the guard allows, and a health check calling it drift would push the
    user to renumber or abandon a valid patch release.

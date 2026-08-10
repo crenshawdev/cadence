@@ -49,7 +49,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-decision-review` | 12,213 |
 | `/cad-docs-verify` | 3,960 |
 | `/cad-execute` | 27,233 |
-| `/cad-health` | 7,006 |
+| `/cad-health` | 6,585 |
 | `/cad-help` | 4,889 |
 | `/cad-land` | 17,098 |
 | `/cad-milestone` | 16,210 |
@@ -63,7 +63,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 17,872 |
-| **23 user-invocable commands** | **269,466** |
+| **23 user-invocable commands** | **269,045** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -150,8 +150,8 @@ turn-one table above is the number that decides what a session pays.
 | `cadence-core/references/` | 16 | 159,286 |
 | `cadence-core/templates/` | 8 | 16,861 |
 | `cadence-core/workflows/` | 21 | 197,236 |
-| `skills/` | 29 | 88,861 |
-| **total** | **93** | **470,827** |
+| `skills/` | 29 | 88,440 |
+| **total** | **93** | **470,406** |
 
 The twelve largest individual surfaces:
 
