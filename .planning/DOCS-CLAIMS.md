@@ -545,39 +545,39 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-GAPS-02 | cadence-core/workflows/plan-gaps.md | 13 | A missing checklist returns `no-uat`. | accurate | accurate |
 | PLAN-GAPS-03 | cadence-core/workflows/plan-gaps.md | 15 | `.planning/phases/<N>/UAT.md` holds the item detail. | accurate | accurate |
 | PLAN-GAPS-04 | cadence-core/workflows/plan-gaps.md | 19 | plan.md has a `spawn_planner` step to rejoin. | accurate | accurate |
-| PLAN-01 | cadence-core/workflows/plan.md | 102 | `(D-03)` names the decision that recall's backend-off return is a backstop, not this workflow's gate. | unverifiable | divergence - a bare decision id naming no phase or file; the CONTEXT that held it is in neither the live `.planning/` tree nor any `_archive-*` milestone, so it cannot be resolved mechanically |
-| PLAN-02 | cadence-core/workflows/plan.md | 118 | `(D-01 / cache discipline)` names the decision that recall snippets ride the dispatch prompt. | unverifiable | divergence - same for the `D-01` half; the `cache discipline` half resolves at `references/seams.md:191` |
-| PLAN-03 | cadence-core/workflows/plan.md | 8 | 4 flags, not ~20. | accurate | accurate |
-| PLAN-04 | cadence-core/workflows/plan.md | 19-21 | `planning.mjs status` returns `current` and a `phases[]` showing which phases still need plans. | accurate | accurate |
-| PLAN-05 | cadence-core/workflows/plan.md | 22-24 | `ok:true` with `cycle: "none"` and an empty `phases[]` is a derived closed milestone. | accurate | accurate |
-| PLAN-06 | cadence-core/workflows/plan.md | 30 | `--gaps` loads `cadence-core/workflows/plan-gaps.md`. | accurate | accurate |
-| PLAN-07 | cadence-core/workflows/plan.md | 36-40 | The eight-key `config.mjs get` batch is valid. | accurate | accurate |
-| PLAN-08 | cadence-core/workflows/plan.md | 43-45 | `fire(trigger)` takes gates from the routing bundle (`route.mjs resolve`). | accurate | accurate |
-| PLAN-09 | cadence-core/workflows/plan.md | 46-47 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | accurate | accurate |
-| PLAN-10 | cadence-core/workflows/plan.md | 50-51 | `memory.backend` gates recall in spawn_planner and inline_plan. | accurate | accurate |
-| PLAN-11 | cadence-core/workflows/plan.md | 74 | `workflow.inline_plan_threshold` is the inline routing threshold. | accurate | accurate |
-| PLAN-12 | cadence-core/workflows/plan.md | 88 | `trace append --phase --family lifecycle --event dispatch --plan --role --read` is a valid call. | accurate | accurate |
-| PLAN-13 | cadence-core/workflows/plan.md | 110 | `planning.mjs recall "<terms>"` is the recall call. | accurate | accurate |
-| PLAN-14 | cadence-core/workflows/plan.md | 113 | Recall returns `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate |
-| PLAN-15 | cadence-core/workflows/plan.md | 119,155 | seams.md states a cache discipline for dispatch prompts. | accurate | accurate |
-| PLAN-16 | cadence-core/workflows/plan.md | 132 | `workflow.max_plan_tasks` is the ceiling and the planner returns `## PHASE TOO BIG` above it. | accurate | accurate |
-| PLAN-17 | cadence-core/workflows/plan.md | 143 | `cadence-core/templates/PLAN.md` exists. | accurate | accurate |
-| PLAN-18 | cadence-core/workflows/plan.md | 189 | `trace append ... --event return ... --tokens <n>` is valid, and `--tokens` may be omitted. | accurate | accurate |
-| PLAN-19 | cadence-core/workflows/plan.md | 197 | `trace append ... --event checkpoint ... --detail` is valid. | accurate | accurate |
-| PLAN-20 | cadence-core/workflows/plan.md | 200 | `## PLANNING COMPLETE` is a planner return marker. | accurate | accurate |
-| PLAN-21 | cadence-core/workflows/plan.md | 204-208 | `plan-overlap` means plans sharing a file cannot run concurrently. | accurate | accurate |
-| PLAN-22 | cadence-core/workflows/plan.md | 209 | `offer_consult` is defined in `references/consult.md`. | accurate | accurate |
-| PLAN-23 | cadence-core/workflows/plan.md | 231 | The Task ceiling feeds the checker's dimension 6. | accurate | accurate |
-| PLAN-24 | cadence-core/workflows/plan.md | 239-240 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate |
-| PLAN-25 | cadence-core/workflows/plan.md | 262-263 | WARNING means quality is degraded but execution can proceed. | accurate | accurate |
-| PLAN-26 | cadence-core/workflows/plan.md | 271-273,311 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate |
-| PLAN-27 | cadence-core/workflows/plan.md | 342-343 | The `plan` gate defaults to adjudicated. | accurate | accurate |
-| PLAN-28 | cadence-core/workflows/plan.md | 349 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate |
-| PLAN-29 | cadence-core/workflows/plan.md | 360 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate |
-| PLAN-30 | cadence-core/workflows/plan.md | 364-367 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate |
-| PLAN-31 | cadence-core/workflows/plan.md | 367-372 | It reports `orphan_ids`, `no_active_section: true`, and always Pending status. | accurate | accurate |
-| PLAN-32 | cadence-core/workflows/plan.md | 379 | `cursor set --phase {N} --status planned --next "/cad-execute {N}"` is valid. | accurate | accurate |
-| PLAN-33 | cadence-core/workflows/plan.md | 383 | `references/git-guard.md` rail 1 is the protected-branch guard. | accurate | accurate |
+| PLAN-01 | cadence-core/workflows/plan.md | 100 | `(D-03)` names the decision that recall's backend-off return is a backstop, not this workflow's gate. | unverifiable | divergence - a bare decision id naming no phase or file; the CONTEXT that held it is in neither the live `.planning/` tree nor any `_archive-*` milestone, so it cannot be resolved mechanically |
+| PLAN-02 | cadence-core/workflows/plan.md | 116 | `(D-01 / cache discipline)` names the decision that recall snippets ride the dispatch prompt. | unverifiable | divergence - same for the `D-01` half; the `cache discipline` half resolves at `references/seams.md:191` |
+| PLAN-03 | cadence-core/workflows/plan.md | — | 4 flags, not ~20. | accurate | RETIRED - the sentence was cut in v2.6.2 (phase 2, CTW-03) as design-history contrast; nothing left to re-verify |
+| PLAN-04 | cadence-core/workflows/plan.md | 17-19 | `planning.mjs status` returns `current` and a `phases[]` showing which phases still need plans. | accurate | accurate |
+| PLAN-05 | cadence-core/workflows/plan.md | 20-22 | `ok:true` with `cycle: "none"` and an empty `phases[]` is a derived closed milestone. | accurate | accurate |
+| PLAN-06 | cadence-core/workflows/plan.md | 28 | `--gaps` loads `cadence-core/workflows/plan-gaps.md`. | accurate | accurate |
+| PLAN-07 | cadence-core/workflows/plan.md | 34-38 | The eight-key `config.mjs get` batch is valid. | accurate | accurate |
+| PLAN-08 | cadence-core/workflows/plan.md | 41-43 | `fire(trigger)` takes gates from the routing bundle (`route.mjs resolve`). | accurate | accurate |
+| PLAN-09 | cadence-core/workflows/plan.md | 44-45 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | accurate | accurate |
+| PLAN-10 | cadence-core/workflows/plan.md | 48-49 | `memory.backend` gates recall in spawn_planner and inline_plan. | accurate | accurate |
+| PLAN-11 | cadence-core/workflows/plan.md | 72 | `workflow.inline_plan_threshold` is the inline routing threshold. | accurate | accurate |
+| PLAN-12 | cadence-core/workflows/plan.md | 86 | `trace append --phase --family lifecycle --event dispatch --plan --role --read` is a valid call. | accurate | accurate |
+| PLAN-13 | cadence-core/workflows/plan.md | 108 | `planning.mjs recall "<terms>"` is the recall call. | accurate | accurate |
+| PLAN-14 | cadence-core/workflows/plan.md | 111 | Recall returns `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate |
+| PLAN-15 | cadence-core/workflows/plan.md | 117,153 | seams.md states a cache discipline for dispatch prompts. | accurate | accurate |
+| PLAN-16 | cadence-core/workflows/plan.md | 130 | `workflow.max_plan_tasks` is the ceiling and the planner returns `## PHASE TOO BIG` above it. | accurate | accurate |
+| PLAN-17 | cadence-core/workflows/plan.md | 141 | `cadence-core/templates/PLAN.md` exists. | accurate | accurate |
+| PLAN-18 | cadence-core/workflows/plan.md | 187 | `trace append ... --event return ... --tokens <n>` is valid, and `--tokens` may be omitted. | accurate | accurate |
+| PLAN-19 | cadence-core/workflows/plan.md | 195 | `trace append ... --event checkpoint ... --detail` is valid. | accurate | accurate |
+| PLAN-20 | cadence-core/workflows/plan.md | 198 | `## PLANNING COMPLETE` is a planner return marker. | accurate | accurate |
+| PLAN-21 | cadence-core/workflows/plan.md | 202-206 | `plan-overlap` means plans sharing a file cannot run concurrently. | accurate | accurate |
+| PLAN-22 | cadence-core/workflows/plan.md | 207 | `offer_consult` is defined in `references/consult.md`. | accurate | accurate |
+| PLAN-23 | cadence-core/workflows/plan.md | 229 | The Task ceiling feeds the checker's dimension 6. | accurate | accurate |
+| PLAN-24 | cadence-core/workflows/plan.md | 237-238 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate |
+| PLAN-25 | cadence-core/workflows/plan.md | 260-261 | WARNING means quality is degraded but execution can proceed. | accurate | accurate |
+| PLAN-26 | cadence-core/workflows/plan.md | 269-271,309 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate |
+| PLAN-27 | cadence-core/workflows/plan.md | 340-341 | The `plan` gate defaults to adjudicated. | accurate | accurate |
+| PLAN-28 | cadence-core/workflows/plan.md | 347 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate |
+| PLAN-29 | cadence-core/workflows/plan.md | 358 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate |
+| PLAN-30 | cadence-core/workflows/plan.md | 362-365 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate |
+| PLAN-31 | cadence-core/workflows/plan.md | 365-370 | It reports `orphan_ids`, `no_active_section: true`, and always Pending status. | accurate | accurate |
+| PLAN-32 | cadence-core/workflows/plan.md | 377 | `cursor set --phase {N} --status planned --next "/cad-execute {N}"` is valid. | accurate | accurate |
+| PLAN-33 | cadence-core/workflows/plan.md | 381 | `references/git-guard.md` rail 1 is the protected-branch guard. | accurate | accurate |
 | PROGRESS-01 | cadence-core/workflows/progress.md | 172-173 | The trace file is written by the seams and by the execute and verify workflows. | stale | corrected - 044806c |
 | PROGRESS-02 | cadence-core/workflows/progress.md | 18 | `planning.mjs status` is the derivation. | accurate | accurate |
 | PROGRESS-03 | cadence-core/workflows/progress.md | 23-25 | Derived statuses are unplanned -> planned -> executed -> complete, with UAT counts. | accurate | accurate |

@@ -1,13 +1,11 @@
 <purpose>
-Turn one roadmap phase into an executable plan: .planning/phases/<N>/PLAN.md
-with numbered atomic tasks, each carrying files, action, and a falsifiable
-verification. Pipeline: read the phase goal (plus CONTEXT.md if /cad-context
-ran) -> spawn cad-planner -> optional cad-plan-checker gate -> fire the
-`plan` review trigger -> commit docs.
+The pipeline runs one step past where the skill's objective stops: read the
+phase goal (plus CONTEXT.md if /cad-context ran) -> spawn cad-planner ->
+optional cad-plan-checker gate -> fire the `plan` review trigger -> COMMIT
+DOCS.
 
-One planner plus one optional checker, not a four-agent fan-out; 4 flags, not
-~20; one bounded revision, not a convergence loop. Research is /cad-context's
-job; second opinions belong to the review subsystem.
+Research is /cad-context's job; second opinions belong to the review
+subsystem.
 </purpose>
 
 <process>
