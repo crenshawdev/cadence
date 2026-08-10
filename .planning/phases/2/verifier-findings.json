@@ -1,0 +1,177 @@
+{
+  "status": "gaps",
+  "score": "7/14",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The dead @-include of cadence-core/templates/UAT.md is gone from skills/cad-verify/SKILL.md, the template is still on disk with its 5,792 B budget row unchanged, /cad-verify eager measured 18,688 B at the commit that deleted it, and the WAIVED register is empty with the mechanism intact",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "grep -c 'templates/UAT.md' skills/cad-verify/SKILL.md -> 0; cadence-core/templates/UAT.md present and weight-budgets.json budgets['cadence-core/templates/UAT.md'] -> 5792 (unchanged between b3748a4 and HEAD - the key is absent from the 13-key changed set); scratch worktree at 75f4aac, `node cadence-core/bin/weight.mjs resident --root <wt>` -> cad-verify eagerBytes 18688 (and skills/cad-verify/SKILL.md 1102 -> 1049, workflows/verify.md still 17639 at that commit); WAIVED.length -> 0 and Object.isFrozen(WAIVED) true, asserted at cadence-core/bin/include-consumers.test.mjs:203-209 ('WAIVED ships EMPTY, and is frozen') and cadence-core/bin/self-verify.test.mjs:1930; the byte-copy fixture that proves check 16 fires on a real instance survives as a local one-row register at include-consumers.test.mjs:70,102 rather than being deleted (D-03 honoured). Baseline confirmed independently: at b3748a4 the same command reports cad-verify eager 24533."
+    },
+    {
+      "n": 2,
+      "truth": "self-verify returns ok:true with problems:[] at EVERY one of the nine commits this phase created, not only the last - each cut carried its own weight-budgets.json re-pin",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "Scratch git worktree checked out detached at each of 75f4aac b5a4143 064f49e a5ec70b f914dbe 0e9d24e 9ab56dd 49ba72e 366771b; `node cadence-core/bin/self-verify.mjs` in each -> ok=true problems=[] for all nine. Also ok=true problems=[] at HEAD 26638e8. The claim most likely to be false held: no commit lags its own re-pin, which is what self-verify's budget-undershoot arm at cadence-core/bin/self-verify.mjs:713-728 would have caught on any shrink. Worktree removed afterwards (`git worktree list` shows only /data/code/cadence)."
+    },
+    {
+      "n": 3,
+      "truth": "node --test cadence-core/bin/*.test.mjs passes at EVERY one of the nine commits, with prose-agreement.test.mjs among the files run so each commit's docs/EVIDENCE.md tables were asserted at the commit that changed them",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Same nine worktree checkouts: every commit reports `tests 1516 / pass 1516 / fail 0` - 75f4aac, b5a4143, 064f49e, a5ec70b, f914dbe, 0e9d24e, 9ab56dd, 49ba72e, 366771b. HEAD 26638e8 in the live tree also 1516/1516, fail 0. cadence-core/bin/prose-agreement.test.mjs exists at each commit and is inside the glob, so the EVIDENCE tables (D-04's five assertion blocks at :206-237, :239-266, :298-321, :323-339, :340-352, :354-371) were live at every commit."
+    },
+    {
+      "n": 4,
+      "truth": "The --tokens provenance paragraph is stated in full exactly once, in cadence-core/bin/lib/trace.mjs's header, and each of the six prose sites carries one sentence naming all three runtime rules",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "grep -rl 'read off the HOST' cadence-core/ skills/ agents/ docs/ -> exactly one path, cadence-core/bin/lib/trace.mjs; grep -c 'TOKEN PROVENANCE' cadence-core/bin/lib/trace.mjs -> 1, and the block sits as the header's fourth named contract ('Four contracts, each load-bearing') carrying the provenance and its evidence. All six sites read as one sentence carrying all three rules verbatim - workflows/context.md:118-121, workflows/execute.md:216-219, workflows/plan.md:181-184 and :243-247 (D-12's second site collapsed too), workflows/verify-deep.md:37-40, references/review-triggers.md:106-109: 'OMIT --tokens when the return carries no figure - never --tokens 0 ... because a figureless return is ROUTINE and the unrecorded it produces names a silent return, never a skipped bracket.' The operational pointer survives at each site as the `<the token count on the subagent return>` placeholder. D-11's ROUTINE clause was not centralised away."
+    },
+    {
+      "n": 5,
+      "truth": "All four CTW-05 drifts are closed and each is grep-checkable",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "(a) grep -c 'in `start`' cadence-core/workflows/execute.md -> 0, and no `start` step reference of any shape survives; a5ec70b replaced it with git_guard ('The `phase_start` line in `git_guard`'), and `<step name=` enumeration confirms git_guard at :42 with no start step. (b) grep -n workflow.test_command cadence-core/workflows/execute.md -> exactly one hit at :344, inside execute_parallel (:319-382); the :30-38 eager batch resolve no longer lists it (diff line `-  workflow.subagent_timeout workflow.test_command planning.commit_docs`), and D-17's no-behaviour-change constraint held - it was not made to run on the sequential path. (c) `git diff b3748a4..366771b -- config-reach.md | grep '^[+-][^+-]' | grep -c 'min_plans_for_parallel|use_worktrees'` -> 0; exactly one line changed, the max_concurrent_agents reach cell now naming execute.md's execute_parallel step. (d) grep -c 'guardrails block' cadence-core/references/seams.md -> 0; :237-239 now reads 'git-guard.md stays eager at steps 1, 2 and 3', which skills/cad-land/SKILL.md:33,:40,:57 substantiate. Caveat, not an AC5 failure: config-reach.md:133's workflow.test_command row still omits workflows/execute.md from its honouring sites, which the drift closure just made wrong - SUMMARY's open items already name this."
+    },
+    {
+      "n": 6,
+      "truth": "Every rationale block removed from an eager surface has a git-tracked destination or a recorded deliberate no-copy, and cad-plan-checker-contract's success_criteria block survives (D-18)",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "git ls-files lists design-notes/sweep-2026-08-10-context-weight.md; its single 'Where phase 2's moved rationale landed (2026-08-10)' table (header appears once) rows every removed block with a destination. grep -c returns 1 for 'BREAK-EVEN ARITHMETIC' in cadence-core/bin/lib/deferred-reads.mjs, 'TOKEN PROVENANCE' in lib/trace.mjs and 'sorts above the newest tag' in lib/branch-decision.mjs. git check-ignore -v over all five destinations exits 1 - no destination is a gitignored design-notes/dd-*.md, so D-21 holds. grep -c success_criteria skills/cad-plan-checker-contract/SKILL.md -> 2, and that file is absent from the phase's changed-file set entirely. Noted rather than counted against: seven table rows land 'Nowhere, deliberately' (verify.md/execute.md/context.md purpose blocks, the two context.md metaphors, plan.md's design-history contrast, cad-land's guardrails re-derivation). Each is argued as duplication of prose that stays eager or as a design never shipped, and the removed text is quoted verbatim in the tracked note itself, so ROADMAP criterion 4's 'rationale that MOVES lands somewhere' is not contradicted."
+    },
+    {
+      "n": 7,
+      "truth": "The cuts landed with no new file, no new register row and no new budget row",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "`git diff --diff-filter=A --name-only b3748a4..366771b` is empty across all nine code commits. weight-budgets.json holds 93 keys at b3748a4 and 93 at HEAD, key sets byte-identical (0 added, 0 removed); 13 values re-pinned, three of them UPWARD (config-reach.md 18623->18649, review-triggers.md 17714->17837, seams.md is a fall 18575->18547) - the growths are the drift/rule corrections the deviations disclose. lib/deferred-reads.mjs gained no register row (only a comment block). One correction to the SUMMARY's wording: its Goal check asserts 'git diff --diff-filter=A b3748a4..HEAD lists no added file', which was true when HEAD was 366771b but is now false at HEAD 26638e8 - that docs commit adds .planning/phases/2/SUMMARY.md and .planning/phases/2/reports/plan-1.md. Both are planning artifacts on no weighed surface, so the substance is intact; only the stated command is range-stale."
+    },
+    {
+      "n": 8,
+      "truth": "~17,400 B leaves the eager path (the phase goal's headline figure)",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Measured, not taken from SUMMARY: `weight.mjs resident` summed over the 23 user-invocable commands gives 280,684 B in a worktree at b3748a4 and 269,045 B at HEAD - a fall of 11,639 B, 67% of the ~17,400 B the ROADMAP goal names, short by 5,761 B. The b3748a4 baseline independently matches docs/EVIDENCE.md line 66 at that commit ('23 user-invocable commands | 280,684'). The shortfall is disclosed, not hidden: SUMMARY's open items name it, CONTEXT's flagged assumptions predicted two causes (D-11's ~200 B kept per --tokens site, D-18's uncuttable third checklist) and execution found a third (review-triggers.md and config-reach.md both grew to state a rule correctly). REQUIREMENTS.md's CTW-03 row was formally corrected at the phase-2 context gate to state per-surface measured re-pins instead of a total, but .planning/ROADMAP.md's phase-2 Goal line still reads '~17,400 B', so the goal as written on the contract is unmet and the two documents now disagree."
+    },
+    {
+      "n": 9,
+      "truth": "/cad-verify still writes a seam-conformant UAT.md now that templates/UAT.md is no longer @-included",
+      "status": "UNCERTAIN",
+      "uat_item": 7,
+      "evidence": "Static side only: the template is on disk, verify.md:352 makes UAT.md seam-written with field order owned by UAT_FIELDS, and 1516/1516 tests pass. Runtime walk behaviour cannot be exercised from this session."
+    },
+    {
+      "n": 10,
+      "truth": "/cad-land still refuses to publish without an explicit answer after the guardrails trim",
+      "status": "UNCERTAIN",
+      "uat_item": 8,
+      "evidence": "Static side only: the no-raw-push rule survives at skills/cad-land/SKILL.md:113-118, the blanket 'No auto-push' guardrail at :169-172, and the three deferred Reads keep measured bytes plus a 'consult site' count at :44, :89, :106 (D-07). Whether the model still asks with no preselected default is a live-session observation."
+    },
+    {
+      "n": 11,
+      "truth": "/cad-execute still guards and brackets before the first dispatch after the duplication cut",
+      "status": "UNCERTAIN",
+      "uat_item": 9,
+      "evidence": "Static side only: git_guard remains at execute.md:42, phase_start anchor and the dispatch/return brackets survive at :199-223. Runtime ordering is a live-session observation."
+    },
+    {
+      "n": 12,
+      "truth": "/cad-plan still caps revisions at one and covers every requirement after the planner contract's success_criteria block was dropped",
+      "status": "UNCERTAIN",
+      "uat_item": 10,
+      "evidence": "Static side only: the diff review adjudicated the dropped items as surviving imperatives at cad-planner-contract <decision_fidelity>:21-22, :27-31, :123-125. CONTEXT's own flagged assumption states D-19 has NO mechanical failure mode, so only a live walk can settle it."
+    },
+    {
+      "n": 13,
+      "truth": "/cad-context still writes five sections with AC ids after the purpose and output-contract cuts",
+      "status": "UNCERTAIN",
+      "uat_item": 11,
+      "evidence": "Static side only: the five-section contract and guardrail 2 remain in workflows/context.md per the design-note table's rationale for each deletion. Runtime output shape is a live-session observation."
+    },
+    {
+      "n": 14,
+      "truth": "/cad-health still reports the branch/tag relationship correctly after the maintainer cross-reference moved into lib/branch-decision.mjs",
+      "status": "UNCERTAIN",
+      "uat_item": 12,
+      "evidence": "Static side only: 'sorts above the newest tag' is present exactly once in lib/branch-decision.mjs and D-20's v1.9.1 worked example was kept eager in skills/cad-health/SKILL.md. Whether the verdict text is unchanged is a live-session observation."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Dead templates/UAT.md include deleted, template kept, waiver register empty",
+      "evidence": "grep -c 'templates/UAT.md' skills/cad-verify/SKILL.md -> 0; template on disk with budget row 5792 unchanged across the range; scratch worktree at 75f4aac reports /cad-verify eagerBytes 18688 (SKILL.md 1102 -> 1049); WAIVED.length -> 0 and frozen, asserted at include-consumers.test.mjs:203-209 and self-verify.test.mjs:1930; node --test on both files -> fail 0."
+    },
+    {
+      "k": 2,
+      "name": "self-verify clean at EVERY commit the phase created, not only the last",
+      "evidence": "All nine commits checked out detached in a scratch worktree: 75f4aac b5a4143 064f49e a5ec70b f914dbe 0e9d24e 9ab56dd 49ba72e 366771b each return ok=true problems=[]; HEAD 26638e8 likewise. No commit carries a lagging weight-budgets.json row. Worktree removed."
+    },
+    {
+      "k": 3,
+      "name": "Full test suite passes at EVERY commit the phase created",
+      "evidence": "node --test cadence-core/bin/*.test.mjs in the same nine worktree checkouts: tests 1516 / pass 1516 / fail 0 at every commit, and 1516/1516 at HEAD. prose-agreement.test.mjs is present at each commit and inside the glob, so each commit's own docs/EVIDENCE.md re-pin was asserted where it landed."
+    },
+    {
+      "k": 4,
+      "name": "--tokens provenance stated in full exactly once, in lib/trace.mjs's header",
+      "evidence": "grep -rl 'read off the HOST' over cadence-core/ skills/ agents/ docs/ -> one path, lib/trace.mjs; grep -c 'TOKEN PROVENANCE' -> 1 as the header's fourth named contract; all six sites (context.md:118, execute.md:216, plan.md:181 and :243, verify-deep.md:37, review-triggers.md:106) carry one sentence naming all three rules including the ROUTINE clause."
+    },
+    {
+      "k": 5,
+      "name": "All four CTW-05 drifts closed, each grep-checkable",
+      "evidence": "grep -c 'in `start`' execute.md -> 0 (replaced by git_guard, no start step exists); workflow.test_command appears once at execute.md:344, inside execute_parallel and removed from the :30-38 batch resolve; scoped diff of config-reach.md matches min_plans_for_parallel/use_worktrees 0 times, one cell changed; grep -c 'guardrails block' seams.md -> 0 with :237-239 now naming steps 1, 2 and 3."
+    },
+    {
+      "k": 6,
+      "name": "Every removed rationale block landed in a git-tracked destination",
+      "evidence": "git ls-files lists design-notes/sweep-2026-08-10-context-weight.md and its single destination table rows every removed block; 'BREAK-EVEN ARITHMETIC', 'TOKEN PROVENANCE' and 'sorts above the newest tag' each grep 1 in deferred-reads.mjs, trace.mjs and branch-decision.mjs; git check-ignore matches no destination (exit 1); grep -c success_criteria skills/cad-plan-checker-contract/SKILL.md -> 2, that file untouched by the phase."
+    }
+  ],
+  "gaps": [
+    {
+      "name": "The phase goal's ~17,400 B figure is not met - the measured eager fall is 11,639 B, and ROADMAP still states the old number",
+      "reason": "behavior wrong - the delivered saving is 67% of the figure the ROADMAP phase-2 Goal line names, and the contract document was never re-pinned to the corrected expectation the way REQUIREMENTS.md's CTW-03 row was",
+      "evidence": "Measured directly, not read off SUMMARY: weight.mjs resident summed over the 23 user-invocable commands gives 280,684 B in a scratch worktree at b3748a4 (matching docs/EVIDENCE.md:66 at that commit) and 269,045 B at HEAD - a 11,639 B fall against ~17,400 B, short by 5,761 B. .planning/ROADMAP.md phase 2 Goal: '~17,400 B leaves the eager path...'. .planning/REQUIREMENTS.md CTW-03 was corrected at the phase-2 context gate to drop the total in favour of per-surface measured re-pins, so requirement and roadmap now disagree with each other. None of success criteria 1-6 and none of AC1-AC7 pins a total, and all three causes of the shortfall are disclosed in CONTEXT's flagged assumptions and SUMMARY's open items.",
+      "severity": "minor",
+      "missing": "A decision recorded, not more work in this phase: either re-pin .planning/ROADMAP.md's phase-2 Goal line to the measured 11,639 B with a pointer to the three causes (mirroring the CTW-03 correction), or hold the phase open until phase 3's deferrals recover the remaining ~5,800 B. Also worth folding in while the ROADMAP is open: criterion 1's superseded 18,741 figure (actual 18,688) and criterion 3's 'three contract <success_criteria> checklists' (actual two), both corrected in CONTEXT but never on the ROADMAP."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "/cad-verify still behaves without the inlined UAT template (UAT item 7)",
+      "expected": "In a project with a completed phase N that has a CONTEXT.md and no UAT file, `/cad-verify N` writes .planning/phases/N/UAT.md with fields_version: 1, one `criterion:` line per AC<n> id declared in that phase's CONTEXT, and walks one item at a time with no pass/fail buttons.",
+      "why_human": "Out-of-reach resource, not an unexercised probe: this needs Cadence v2.6.2 running as the installed plugin, and the installed plugin here is v2.6.1. This project deliberately uses no dev-plugin symlink wiring (a standing decision), so there is nothing this session can install or point at to make the v2.6.2 prose the one the host loads. Every static half of the check is already verified under item 1."
+    },
+    {
+      "name": "/cad-land still refuses to publish without an explicit answer (UAT item 8)",
+      "expected": "With git.auto_close off, `/cad-land` on a branch carrying commits Reads references/review-triggers.md before firing pre_ship as one extra tool call, asks the publish mechanism with NO preselected default, Reads references/git-publish.md after the answer, never runs a bare git push unprompted and never chains push AND tag unless both were chosen.",
+      "why_human": "Needs v2.6.2 installed as the plugin (installed is v2.6.1, no dev-symlink wiring by project decision), AND it is an interactive publish path against a real repo - the prohibition being checked is precisely that nothing publishes without a human answer, so no probe can settle it without a human at the prompt. Static residue is verified: the no-raw-push rule at skills/cad-land/SKILL.md:113-118 and the No auto-push guardrail at :169-172 both survived the trim."
+    },
+    {
+      "name": "/cad-execute still guards and brackets before the first dispatch (UAT item 9)",
+      "expected": "`/cad-execute N` on a planned phase applies the protected-branch guard and the clean-starting-index check BEFORE the first executor dispatch, appends a lifecycle/phase_start anchor, brackets each executor with a dispatch and a closing return/checkpoint carrying --plan and --role, fires the diff trigger once per plan, and never refers to a step named start.",
+      "why_human": "Needs v2.6.2 installed as the plugin (installed is v2.6.1, no dev-symlink wiring by project decision), and it dispatches real executor subagents that write commits - a mutating run this pass may not start. The prose-level residue (git_guard at execute.md:42, brackets at :199-223, no start step anywhere) is already verified under item 5."
+    },
+    {
+      "name": "/cad-plan still caps revisions at one and covers every requirement (UAT item 10)",
+      "expected": "`/cad-plan N` dispatches cad-planner, runs the check gate, then fires the plan trigger; a check-gate FAIL produces at most ONE revision round; the written PLAN.md frontmatter requirements covers every requirement id the phase declares in ROADMAP; no task action carries v1/simplified/for now/placeholder phrasing.",
+      "why_human": "Needs v2.6.2 installed as the plugin (installed is v2.6.1, no dev-symlink wiring by project decision), and it is the one item with no mechanical failure mode by design - CONTEXT's own flagged assumption for D-19 states that a planner behaviour regression from the dropped <success_criteria> block surfaces only in this walk. A dispatched-role compliance judgement is not decidable from the file bytes."
+    },
+    {
+      "name": "/cad-context still writes five sections with AC ids (UAT item 11)",
+      "expected": "`/cad-context N` on an unplanned phase writes .planning/phases/N/CONTEXT.md with exactly the five sections and nothing else, every bullet under ## Acceptance criteria carrying an AC<n> id and falsifiable rather than aspirational, assumptions judged not scored, locked decisions recorded as D-NN rows.",
+      "why_human": "Needs v2.6.2 installed as the plugin (installed is v2.6.1, no dev-symlink wiring by project decision), and it is an interactive interview whose output quality (falsifiable vs aspirational, judged vs scored) is a human reading, not a grep."
+    },
+    {
+      "name": "/cad-health still reports the branch/tag relationship correctly (UAT item 12)",
+      "expected": "`/cad-health` on a branch that sorts above the newest tag (e.g. cadence/v2.6.2 against v2.6.1) reports the branch/tag relationship correctly and does not call it behind or untagged in error, reports .planning core docs present, STATE cursor parseable and ROADMAP/REQUIREMENTS consistent, and does not attempt a traceability audit.",
+      "why_human": "Needs v2.6.2 installed as the plugin (installed is v2.6.1, no dev-symlink wiring by project decision). The regression D-20 guards against is a verdict the model issues at runtime from the eager SKILL.md text, so only a live run on this exact branch/tag shape can show the moved cross-reference did not change it. The static half is verified: the cross-reference lands once in lib/branch-decision.mjs and the v1.9.1 worked example stayed eager."
+    }
+  ]
+}
