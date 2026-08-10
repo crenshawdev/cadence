@@ -48,6 +48,14 @@
 // `user-invocable: false`. That excludes exactly the `*-contract` skills, which
 // are dispatch prose and are accounted on the roles side instead.
 //
+// `commandEagerSets` is that EAGER definition as a shared builder, exported so
+// lib/include-consumers.mjs can ask whether a command's own eager prose ever
+// NAMES the surface it `@`-includes without re-walking the tree. It hands back
+// the raw include PATHS as well as the resolved surfaces, because that rule has
+// to judge an include line whose target is absent from the root it was given -
+// a fixture holding only a SKILL.md and its workflow - where the weighing side
+// here correctly drops it as zero bytes and it appears in no surface at all.
+//
 // Pure lib: no emit, no process.exit, no Date, no randomness, node builtins
 // only, reading nothing but the surface files it measures. Every read and stat
 // is guarded per ENTRY rather than per branch, so one unreadable or dangling
@@ -222,6 +230,64 @@ function citedSurfaces(root, text) {
 }
 
 /**
+ * Every user-invocable command's EAGER set, assembled once and shared.
+ *
+ * `residentWeight` consumes this, and so does lib/include-consumers.mjs - the
+ * rule that asks whether a command's own eager prose ever NAMES the surface it
+ * `@`-includes. That rule reuses the split rather than re-walking the tree, so
+ * the two can never disagree about what "eager" means.
+ *
+ * Which field is the ROOT-RELATIVE POSIX path matters at the callsite and is
+ * stated here rather than inferred: it is `surface`. `key` is a realpath dedupe
+ * key and is NOT root-relative - comparing against it would silently never
+ * match, and a self-citation exclusion that never matches is an
+ * include-consumer check that passes forever (D-10).
+ *
+ * `includes` carries the RAW relative paths off the `@${CLAUDE_PLUGIN_ROOT}/...`
+ * lines, in line order with duplicates preserved, alongside the resolved
+ * `surfaces`. The consumer rule must be able to judge an include line whose
+ * target is ABSENT from the root it is handed - a fixture copying only a
+ * SKILL.md and its workflow - where the weighing side correctly drops it as
+ * zero bytes and `surfaces` therefore never mentions it.
+ *
+ * The `user-invocable: false` filter is the same one `residentWeight` applies,
+ * which is what keeps contract skills accounted under `roles` (D-12).
+ * @param {string} root
+ * @returns {Array<{ command: string, skillFile: string, includes: string[],
+ *   surfaces: Array<{ key: string, surface: string, bytes: number, text: string }> }>}
+ */
+export function commandEagerSets(root) {
+  const out = [];
+  const skillsDir = join(root, 'skills');
+  if (!existsSync(skillsDir)) return out;
+  for (const d of dirents(skillsDir)) {
+    if (!d.isDirectory()) continue;
+    const skillFile = join(skillsDir, d.name, 'SKILL.md');
+    const skill = readSurface(root, skillFile);
+    if (!skill) continue;
+    const fm = FRONTMATTER_RE.exec(skill.text);
+    // A dispatch contract is not a command: its bytes are accounted under
+    // `roles`, and the two are never summed (D-05).
+    if (fm && NOT_INVOCABLE_RE.test(fm[1])) continue;
+
+    const includes = [];
+    const surfaces = [skill];
+    for (const m of skill.text.matchAll(INCLUDE_RE)) {
+      includes.push(m[1]);
+      const s = readSurface(root, join(root, m[1]));
+      if (s) surfaces.push(s);
+    }
+    out.push({
+      command: d.name,
+      skillFile: relative(root, skillFile).split(sep).join('/'),
+      includes,
+      surfaces,
+    });
+  }
+  return out;
+}
+
+/**
  * Weigh every command and every dispatch role under `root`.
  *
  * `zeroResident` is derived, never hardcoded (D-09): every file under
@@ -244,43 +310,32 @@ export function residentWeight(root) {
   /** every realpath key any command can reach, for the zero-resident derivation */
   const reached = new Set();
 
-  const skillsDir = join(root, 'skills');
-  if (existsSync(skillsDir)) {
-    for (const d of dirents(skillsDir)) {
-      if (!d.isDirectory()) continue;
-      const skillFile = join(skillsDir, d.name, 'SKILL.md');
-      const skill = readSurface(root, skillFile);
-      if (!skill) continue;
-      const fm = FRONTMATTER_RE.exec(skill.text);
-      // A dispatch contract is not a command: its bytes are accounted under
-      // `roles`, and the two are never summed (D-05).
-      if (fm && NOT_INVOCABLE_RE.test(fm[1])) continue;
+  // The eager assembly itself lives in `commandEagerSets`, shared with
+  // lib/include-consumers.mjs. Surfaces arrive in the same order they were
+  // added here before (SKILL.md first, then each include that resolved), so the
+  // realpath dedupe, the byte totals and the ordering are unchanged.
+  for (const entry of commandEagerSets(root)) {
+    const eager = surfaceSet();
+    for (const s of entry.surfaces) eager.add(s);
 
-      const eager = surfaceSet();
-      eager.add(skill);
-      for (const m of skill.text.matchAll(INCLUDE_RE)) {
-        eager.add(readSurface(root, join(root, m[1])));
-      }
-
-      const reachable = surfaceSet();
-      for (const s of eager.files()) {
-        reachable.add(readSurface(root, join(root, s.surface)));
-      }
-      // ONE hop: citations are read out of the EAGER texts only, never out of
-      // what those citations themselves name.
-      for (const text of eager.texts()) {
-        for (const f of citedSurfaces(root, text)) reachable.add(readSurface(root, f));
-      }
-      for (const k of reachable.keys()) reached.add(k);
-
-      commands.push({
-        command: d.name,
-        eagerBytes: eager.total(),
-        eagerFiles: eager.files(),
-        reachableBytes: reachable.total(),
-        reachableFiles: reachable.files(),
-      });
+    const reachable = surfaceSet();
+    for (const s of eager.files()) {
+      reachable.add(readSurface(root, join(root, s.surface)));
     }
+    // ONE hop: citations are read out of the EAGER texts only, never out of
+    // what those citations themselves name.
+    for (const text of eager.texts()) {
+      for (const f of citedSurfaces(root, text)) reachable.add(readSurface(root, f));
+    }
+    for (const k of reachable.keys()) reached.add(k);
+
+    commands.push({
+      command: entry.command,
+      eagerBytes: eager.total(),
+      eagerFiles: eager.files(),
+      reachableBytes: reachable.total(),
+      reachableFiles: reachable.files(),
+    });
   }
   commands.sort((a, b) => byString(a.command, b.command));
 
