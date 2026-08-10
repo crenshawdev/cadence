@@ -123,9 +123,9 @@ setting — that invariant is what the spread in this table shows.
 | cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 5,809 |
 | cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 5,805 |
 | cad-plan-checker | `agents/cad-plan-checker.md` | 476 | 5,819 |
-| cad-planner | `agents/cad-planner-max.md` | 407 | 8,630 |
-| cad-planner | `agents/cad-planner-xhigh.md` | 415 | 8,638 |
-| cad-planner | `agents/cad-planner.md` | 429 | 8,652 |
+| cad-planner | `agents/cad-planner-max.md` | 407 | 8,965 |
+| cad-planner | `agents/cad-planner-xhigh.md` | 415 | 8,973 |
+| cad-planner | `agents/cad-planner.md` | 429 | 8,987 |
 | cad-reviewer | `agents/cad-reviewer-max.md` | 436 | 3,767 |
 | cad-reviewer | `agents/cad-reviewer-medium.md` | 448 | 3,779 |
 | cad-reviewer | `agents/cad-reviewer-xhigh.md` | 444 | 3,775 |
@@ -150,8 +150,8 @@ turn-one table above is the number that decides what a session pays.
 | `cadence-core/references/` | 16 | 159,286 |
 | `cadence-core/templates/` | 8 | 16,861 |
 | `cadence-core/workflows/` | 21 | 197,236 |
-| `skills/` | 29 | 88,440 |
-| **total** | **93** | **470,406** |
+| `skills/` | 29 | 88,775 |
+| **total** | **93** | **470,741** |
 
 The twelve largest individual surfaces:
 

@@ -1,13 +1,14 @@
 {
   "model": {
-    "escalate_on_failure": true
+    "escalate_on_failure": false
   },
   "workflow": {
     "research": true,
     "subagent_timeout": 900000,
     "inline_plan_threshold": 2,
     "test_command": "node --test cadence-core/bin/*.test.mjs",
-    "max_plan_tasks": 9
+    "max_plan_tasks": 9,
+    "plan_check": false
   },
   "parallelization": {
     "max_concurrent_agents": 6
@@ -21,6 +22,12 @@
     "request_timeout_ms": 600000,
     "consult": {
       "enabled": true
+    },
+    "triggers": {
+      "plan": {
+        "gate": "advisory",
+        "tier": "cheap"
+      }
     }
   }
 }

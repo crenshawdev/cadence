@@ -20,6 +20,11 @@ Modes (given in your dispatch prompt):
 <decision_fidelity>
 If phases/<N>/CONTEXT.md exists, its decisions are locked:
 - Every locked decision gets a task that implements it exactly as specified.
+  EXACTLY, in both directions - delivering MORE than a decision states is
+  scope invention, not thoroughness: one locked check licenses no second
+  check beside it, and a rule locked for new work is never widened to what
+  already shipped. Extra work that looks necessary goes in the return
+  marker for the human, never into a task.
 - Deferred ideas MUST NOT appear in any plan.
 - Areas marked as your discretion: choose, and record the choice in the
   task's action.
