@@ -230,12 +230,10 @@ NUMBERS while every role-dispatched worker filed under a role NAME, and
 `cad-executor` - the single largest spender in a phase - is the one line the
 totals could never print. `--read` is what this site causes the executor to read:
 the shared set every plan in the phase re-reads, plus that plan's own file.
-`--tokens` is read off the HOST's subagent return metadata at the moment the
-executor returns; OMIT the flag when the return carries no figure, since
-`--tokens 0` would claim a dispatch that cost nothing. A return carrying none is
-ROUTINE rather than a defect - built-in agent types report no figure where a
-plugin agent reports one - so the resulting `unrecorded` names a silent return,
-never a skipped bracket. A worktree executor still emits nothing of its own -
+OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
+would claim a dispatch that cost nothing - because a figureless return is
+ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
+bracket. A worktree executor still emits nothing of its own -
 these are the ORCHESTRATOR's lines.
 
 The `phase_start` line in `start` is NOT one of these. It is the correlation-id

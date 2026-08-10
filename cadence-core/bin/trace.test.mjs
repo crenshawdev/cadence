@@ -382,8 +382,9 @@ test('seam: --plan and --role are two separate fields on the same event', () => 
 });
 
 test('seam: --tokens accepts the comma grouping this plugin prints figures in', () => {
-  // context.md prints `cad-planner 146,405` three lines from the --tokens
-  // order that copies it, so the grouped form is the transcription the prose
+  // lib/trace.mjs's TOKEN PROVENANCE contract prints `cad-planner 146,405` in
+  // the grouped form, and that header is the one surface stating what a real
+  // figure looks like, so the grouped form is the transcription the prose
   // models. Refusing it dropped the whole append and stranded the worker
   // unpaired, which is worse than the recording error it was refusing.
   const dir = root();

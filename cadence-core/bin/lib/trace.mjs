@@ -8,7 +8,7 @@
 // carries: the callers own their envelopes, this file owns the file format and
 // never speaks on any stream of its own.
 //
-// Three contracts, each load-bearing:
+// Four contracts, each load-bearing:
 //
 //   DERIVED id (D-06). `correlationId` computes `<phase>-<sha>` from data
 //     already on disk - the phase number and the phase's PHASE_START sha,
@@ -31,6 +31,42 @@
 //     and returns `{written:false, reason}` on any failure. Its callers'
 //     envelopes must not move by a byte because a trace could not be written -
 //     a record of a decision may not be able to change the decision.
+//
+//   TOKEN PROVENANCE. This is stated here ONCE, for every closing bracket in
+//     the plugin, because it is the same fact at all six prose sites and those
+//     sites are eager context while `cadence-core/bin/` is weighed by nothing.
+//     The prose keeps only the three rules the model applies at runtime; the
+//     provenance and the evidence behind it live here.
+//
+//     A closing event's `--tokens` figure is read off the HOST's subagent return
+//     metadata at the moment the worker returns. Cadence adds no hook, no seam
+//     and no capture mechanism to obtain it - if the host does not surface a
+//     number on that return, there is nowhere else to get one.
+//
+//     So the flag is OMITTED when the return carries no figure. An absent total
+//     means "no dispatch of this role reported one", and `--tokens 0` would
+//     claim a dispatch that cost nothing.
+//
+//     A missing figure is ROUTINE, not evidence of a skipped bracket. Measured
+//     on this repo: every PLUGIN agent's return carried one -
+//     `cad-assumptions-analyzer` 186,577, `cad-planner` 146,405, `cad-executor`
+//     154,523, `cad-plan-checker` 47,717, `cad-verifier` 78,034 - while a
+//     BUILT-IN agent type, `Explore`, returned none at all. So `unrecorded` in
+//     `trace render` reads as "this worker's return carried no number", never as
+//     "this bracket never fired": `unrecorded` can only be nonzero where a
+//     dispatch was counted, and the dispatch COUNT beside it records that the
+//     dispatch half was WRITTEN.
+//
+//     Read the three states apart, because only two of them are visible at all.
+//     A dispatch written and never closed is `unpaired`. A dispatch written,
+//     closed, and carrying no number is `unrecorded`. A bracket for which no
+//     event was appended AT ALL appears NOWHERE - not in `roles`, not in
+//     `unpaired` - which is exactly why the append is not optional and why the
+//     census in trace.test.mjs binds these lines per file.
+//
+//     Never substitute an estimate, a token count from a different worker, or a
+//     figure the host did not report. A fabricated number is worse than an
+//     absent one: `unrecorded` is readable as an absence, a wrong total is not.
 'use strict';
 
 import { appendFileSync, closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';

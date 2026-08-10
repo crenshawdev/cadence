@@ -102,9 +102,11 @@ set never does. Per backend:
   returned, through the spawn-agent seam, with the payload as its prompt. It
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
-  the JSON object it returns, and close the bracket the moment you have it -
-  `--tokens` read off the HOST's subagent return metadata, OMITTED when the
-  return carries no figure (never `--tokens 0`):
+  the JSON object it returns, and close the bracket the moment you have it.
+  OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
+  would claim a dispatch that cost nothing - because a figureless return is
+  ROUTINE and the `unrecorded` it produces names a silent return, never a
+  skipped bracket:
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>

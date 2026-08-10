@@ -34,12 +34,10 @@ The dispatch came back, so close its bracket before anything else:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-verifier --role cad-verifier --tokens <the token count on the subagent return>
 ```
 
-`--tokens` is read off the HOST's subagent return metadata at the moment the
-verifier returns; OMIT the flag when the return carries no figure, since
-`--tokens 0` would claim a dispatch that cost nothing. A return carrying none is
-ROUTINE rather than a defect - built-in agent types report no figure where a
-plugin agent reports one - so the resulting `unrecorded` names a silent return,
-never a skipped bracket.
+OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
+would claim a dispatch that cost nothing - because a figureless return is
+ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
+bracket.
 
 One call. The verifier's file goes in as it was written - nothing is
 transcribed, reshaped, or copied by hand:
