@@ -5,25 +5,15 @@
 
 ## Active
 
-`v2.6.2 — what the plugin carries` opened on 2026-08-10, scoped from a
-context-weight sweep of the plugin's own eager surfaces (four parallel
-read-only passes; the record is `design-notes/sweep-2026-08-10-context-weight.md`
-and the picks are issues #98-#103). Measured baseline: 119,232 est tokens of
-shipped prose, and an eager set per command of 28,682 B on `/cad-execute`,
-24,533 B on `/cad-verify`, 22,662 B on `/cad-plan`, 20,777 B on `/cad-context`,
-20,547 B on `/cad-config`, 18,209 B on `/cad-land` — bytes that ride turn one
-and every turn after. The itemized total available is ~39,700 B.
+No cycle open. `v2.6.2 — what the plugin carries` shipped on 2026-08-10: five
+requirements (`CTW-01`..`CTW-05`), three phases, 21 commits, the audit green
+(5/5 traced, 0 broken; 21/21 acceptance criteria covered). Its rows sit under
+`## Shipped` below, its phase record in `.planning/_archive-v2.6.2/`, and its
+narrative in `CHANGELOG.md`.
 
-The order is not arbitrary: `CTW-01` is what makes `CTW-04` safe to make, and
-`CTW-02` is what keeps `CTW-03`'s class from returning. Cutting prose before the
-checks exist is how this repo got a 5,792 B include that nothing read and a
-CHANGELOG entry defending it.
-
-- **CTW-01**: A deferral made from a workflow file or a contract skill is watched by CI. `lib/deferred-reads.mjs` (self-verify check 13) anchors only on `skills/<name>/SKILL.md` regions labelled by a top-level `^N. ` numbered step, and excludes contract skills outright at `:40-44`. Workflow files use `<step name="...">` tags and are themselves the `@`-include; `skills/cad-execute/SKILL.md` is a bare include with no numbered steps and `cad-verify`'s `<process>` is one line, so a register row for either can never satisfy its anchor — adding one fails CI forever, omitting one leaves the deferral unwatched. Rows gain a `file` field naming where the `Read` sentence must live, `regionLabels()` learns `<step name="...">`, and the contract-skill exclusion goes with its rationale, which prices main-thread residency in a tree that now dispatches most of its work. The SENTENCE stays the matching unit — the header documents why a block-level test passes when the real instruction is deleted. Tracked as #98
-- **CTW-02**: An `@`-included surface that nothing in the including command's own EAGER prose ever names fails CI. (Wording corrected 2026-08-10 at the plan-review gate: this row said "reachable prose", and the plan implements eager-only. The narrower predicate is the intended one — a one-hop citation is not the including command's own instruction, and the question the check asks is whether the command itself ever tells anyone to use the surface it paid to load. Correcting the row rather than widening the scan, so the requirement and the check state the same predicate; the cost, a false positive for a command whose include is named only in a cited-but-not-eager reference, has zero live instances and is handled by a waiver row with its reason.) Same species as check 3 (paths exist) and check 6 (agent `skills:` resolve): the include claims a consumer and this checks the claim. The opposite direction from `CTW-01` — "included but never named" against "named but no longer included" — and both must hold. Reuses `lib/resident-weight.mjs`' eager/reachable split rather than re-walking. The case that must pass is the file whose workflow IS the surface (`cad-help`'s `COMMANDS.md`), which is the legitimate shape the defect in `CTW-03` was wrongly compared to. Tracked as #99
-- **CTW-03**: Eager bytes leave the path with no new files and no register rows, measured per surface and re-pinned in `weight-budgets.json` in the same commit rather than judged against one total. (Total corrected 2026-08-10 at the phase-2 context gate. The sweep's ~17,400 B estimate assumed two things the gate falsified: that the `--tokens` paragraph could collapse to a single clause per site — it keeps one compressed sentence carrying all three rules, because a figureless return reading as ROUTINE is a rule the model applies at runtime — and that three contract `<success_criteria>` checklists could go, where `cad-plan-checker-contract`'s is asserted by `prose-agreement.test.mjs:69-95` as the DFC-03 fix and stays. The dead include alone is a measured 5,845 B off `/cad-verify`, 24,533 -> 18,688; the rest is whatever the per-surface re-pins record.) `skills/cad-verify/SKILL.md:29` eagerly includes `templates/UAT.md` (5,792 B on disk, 5,845 B of eager path with its own include line) which nothing reads — `verify.md` never names it, and `verify.md:352` makes UAT.md seam-written with field order owned by `UAT_FIELDS`, so the template is a renderer spec a model that never renders cannot use. The remaining ~11,600 B is duplication inside a single context window: the `--tokens` provenance paragraph stated across five files as six statements (`plan.md` carries two), `<success_criteria>` checklists restating their own contracts, purpose blocks duplicating the SKILL.md objective riding beside them, and regression anecdotes whose home is a `.mjs` header at zero token cost. Rationale bound to a rule the model applies at runtime stays. Tracked as #100 and #101
-- **CTW-04**: ~22,300 B of branch-local prose moves behind a `Read` at the step that needs it, each move tested against `references/seams.md:216-253` — only some branches reach it, one consult site, and the read folds into a turn already being taken. The config knob catalog (8,052 B, untouched by two of three routes) takes `/cad-config` from 20,547 to ~12,700 (figure corrected 2026-08-10 at the phase-3 context gate: the sweep applied a -43% factor to a span that is 39.2% of the eager set, where the arithmetic is 20,547 - 8,052 + ~200 B of surviving `Read` sentence); the plan BLOCKER-revision branch, the `execute_parallel` body, and `cad-executor-contract`'s `<worktree_mode>` (dead on a default install, paid by every executor dispatch) follow. Depends on `CTW-01`: without it these ship unguarded, which is the exact failure `lib/deferred-reads.mjs` exists to catch. Tracked as #102
-- **CTW-05**: Four prose/code drifts the sweep found in passing are closed: `execute.md:241` names a step `start` that does not exist, `execute.md:36` resolves `workflow.test_command` on a path that never reads it, `config-reach.md:136-138`' reach site for `parallelization.max_concurrent_agents` moves with `CTW-04` (corrected 2026-08-10 at the phase-2 context gate: this row said all three `parallelization.*` keys, but `min_plans_for_parallel` and `use_worktrees` are read in `execute.md`'s `choose_path`, which `CTW-04` keeps eager — only the `execute_parallel` key moves, and rewriting all three cells would put two of them wrong in both directions), and `seams.md:236-240` claims a git-guard consult in cad-land's guardrails that cites none. Tracked as #103
+The next milestone's requirements are seeded here when it opens. The candidate
+pool is `.planning/CAPTURE.md`, which holds 260 open todos - 18 tagged `[high]`
+and 21 sourced from review passes, clustering on gate correctness.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -137,6 +127,11 @@ parses only the Traceability table).
 | DFC-02 (`phase_diff`s gate row states what the resolver returns, in both prose sites) | 1 | Complete | v2.6.1 |
 | DFC-03 (the plan-checker contract agrees with itself on its dimension count) | 1 | Complete | v2.6.1 |
 | DFC-04 (the `risk_surface` row admits the artifact `/cad-task` can produce) | 1 | Complete | v2.6.1 |
+| CTW-01 (a deferral from a workflow file or contract skill is watched by CI) | 1 | Complete | v2.6.2 |
+| CTW-02 (an `@`-include nothing in the command's own eager prose names fails CI) | 1 | Complete | v2.6.2 |
+| CTW-03 (eager bytes leave the path with no new files or register rows) | 2 | Complete | v2.6.2 |
+| CTW-05 (four prose/code drifts the sweep found in passing) | 2 | Complete | v2.6.2 |
+| CTW-04 (~22,300 B of branch-local prose moves behind a `Read` at its step) | 3 | Complete | v2.6.2 |
 
 ## Deferred
 
@@ -182,11 +177,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CTW-01 | Phase 1 | Complete |
-| CTW-02 | Phase 1 | Complete |
-| CTW-03 | Phase 2 | Complete |
-| CTW-05 | Phase 2 | Complete |
-| CTW-04 | Phase 3 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
@@ -194,4 +184,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-09 v2.6.1 closed with all four requirements delivered and verified (4/4 traced, 8/8 acceptance criteria covered); DFC-01..04 move to `## Shipped` as rows and `## Traceability` starts clean. No next cycle scoped yet*
+*Last updated: 2026-08-10 v2.6.2 closed with all five requirements delivered and verified (5/5 traced, 21/21 acceptance criteria covered); CTW-01..05 move to `## Shipped` as rows and `## Traceability` starts clean. No next cycle scoped yet*
