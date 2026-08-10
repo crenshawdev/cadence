@@ -1683,7 +1683,7 @@ test('check 13: the live tree satisfies every register row', () => {
   assert.equal(gp.read_paragraphs, gp.anchors.length);
   // Every row's count agrees with its anchor list, so the two can never drift.
   for (const r of DEFERRED_READS) assert.equal(r.read_paragraphs, r.anchors.length);
-  assert.equal(DEFERRED_READS.length, 5);
+  assert.equal(DEFERRED_READS.length, 7);
   assert.throws(() => DEFERRED_READS.push({}));
   assert.throws(() => gp.anchors.push('4(c)'));
 });

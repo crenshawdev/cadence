@@ -414,7 +414,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONTEXT-02 | cadence-core/workflows/context.md | 12 | Output path `.planning/phases/{N}/CONTEXT.md`. | accurate | accurate |
 | CONTEXT-03 | cadence-core/workflows/context.md | 76 | `config.mjs get memory.backend workflow.subagent_timeout` reads both in one call. | accurate | accurate |
 | CONTEXT-04 | cadence-core/workflows/context.md | 79 | `builtin` is the schema default for `memory.backend`. | accurate | accurate |
-| CONTEXT-05 | cadence-core/workflows/context.md | 82, 92-94 | `planning.mjs recall "<terms>"` exists and returns `{ok, results:[{score, source, phase?, snippet}]}` with `phase` optional. | accurate | accurate |
+| CONTEXT-05 | cadence-core/references/recall.md | 15, 18, 25 | `planning.mjs recall "<terms>"` exists and returns `{ok, results:[{score, source, phase?, snippet}]}` with `phase` optional. | accurate | accurate |
 | CONTEXT-06 | cadence-core/workflows/context.md | 107 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate |
 | CONTEXT-07 | cadence-core/workflows/context.md | 107 | `--family lifecycle` is a valid family. | accurate | accurate |
 | CONTEXT-08 | cadence-core/workflows/context.md | 113 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate |
@@ -438,7 +438,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | DEBUG-01 | cadence-core/workflows/debug.md | 7 | State file lives at `.planning/debug/<slug>.md`. | accurate | accurate |
 | DEBUG-02 | cadence-core/workflows/debug.md | 59 | `config.mjs get memory.backend review.consult.attempt_threshold` reads both in one call. | accurate | accurate |
 | DEBUG-03 | cadence-core/workflows/debug.md | 70-72 | `references/bug-patterns.md` exists and is frequency-ordered. | accurate | accurate |
-| DEBUG-04 | cadence-core/workflows/debug.md | 83, 89-92 | `planning.mjs recall` exists; its JSON is `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate |
+| DEBUG-04 | cadence-core/references/recall.md | 15, 18 | `planning.mjs recall` exists; its JSON is `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate |
 | DEBUG-05 | cadence-core/workflows/debug.md | 85-87 | A `none` backend makes recall's own backend-off return a backstop, not this workflow's gate. | accurate | accurate |
 | DEBUG-06 | cadence-core/workflows/debug.md | 110-117 | The `risk_surface` trigger is `blocking` and its re-arm is capped at ONE narrowed round in `references/triage-gate.md`. | accurate | accurate |
 | DEBUG-07 | cadence-core/workflows/debug.md | 111-114 | The fix's artifact is shape (b), the staged-diff scope, and the reviewer runs `git diff --cached` in the inherited cwd. | accurate | accurate |

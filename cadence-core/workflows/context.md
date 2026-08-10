@@ -87,16 +87,9 @@ recall call at all. The gate precedes the call on purpose (D-03): recall's own
 backend-off return is a backstop for a direct caller, not this workflow's gate,
 so `none` means the call is never made and no recalled data reaches the pass.
 
-Parse recall's JSON line (`{ok, results:[{score, source, phase?, snippet}]}`)
-and render the top results into a `<recalled_memory>` block in the analyzer
-payload below (placed right after `<search_terms>`), one line per result
-carrying its `snippet`, `source` file, and `phase`. `phase` is optional - a
-phaseless CAPTURE.md item omits it; render it only when present, matching the
-omit-optionals convention. These snippets ride the dispatch prompt, never the
-cad-assumptions-analyzer definition (D-01 / cache discipline): they are
-volatile per-phase data, while the agent's stable instruction to consume and
-cite them lives in its cached file. On `none`, or when results are empty, omit
-the block.
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (2,169 B, one
+consult site - this step) for the result shape and how the top results render
+into the `<recalled_memory>` block of the payload below.
 
 Bracket this worker in the joined run record first - one lifecycle event before
 the spawn-agent seam call below, keyed `--plan cad-assumptions-analyzer`, which

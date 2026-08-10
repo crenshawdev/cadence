@@ -85,11 +85,10 @@ Repeat until a root cause is confirmed or a dead-end is reached:
 
    Skip this entirely when the backend is `none` - do not issue the call. The
    gate precedes the call on purpose (D-03): recall's own backend-off return is
-   a backstop for a direct caller, not this workflow's gate. Fold any matching
-   past deviations or UAT findings from recall's JSON
-   (`{ok, results:[{score, source, phase?, snippet}]}`) into the candidate
-   hypotheses, each noted in the Hypotheses list with its `source` file and
-   `phase` when present (optional - a phaseless CAPTURE item omits it).
+   a backstop for a direct caller, not this workflow's gate. Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (2,169 B, one
+   consult site - this step) for the result shape and how matching past
+   deviations and UAT findings fold into the Hypotheses list.
 2. **Predict + test.** For the top untested hypothesis, state what you would
    observe if it were true, then run the CHEAPEST discriminating check (Read,
    Grep, a targeted Bash run, a log line). One variable at a time.

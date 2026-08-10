@@ -91,6 +91,25 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
     file: 'cadence-core/workflows/context.md',
   }),
+  Object.freeze({
+    // TWO rows, one reference. seams.md's "consulted at more than one distinct
+    // STEP stays eager" rule is per COMMAND: \`/cad-context\` and \`/cad-debug\`
+    // each reach recall at exactly one step of their own, so these are two
+    // independent one-site deferrals rather than one two-site reference. A
+    // maintainer who merges them into a single row loses one command's anchor.
+    skill: 'cad-context',
+    reference: 'references/recall.md',
+    anchors: Object.freeze(['analyze']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/context.md',
+  }),
+  Object.freeze({
+    skill: 'cad-debug',
+    reference: 'references/recall.md',
+    anchors: Object.freeze(['The method loop/1']),
+    read_paragraphs: 1,
+    file: 'cadence-core/workflows/debug.md',
+  }),
 ]);`;
 
 test('register: the original four rows are byte-identical, and the register is exactly the rows the cuts made', () => {
@@ -104,7 +123,7 @@ test('register: the original four rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 5);
+  assert.equal(DEFERRED_READS.length, 7);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -533,6 +552,17 @@ function assertPromotedRow(skill, reference, anchor) {
 
 test('AC4: cad-context / templates/CONTEXT.md is unread without its one sentence', () => {
   assertPromotedRow('cad-context', 'templates/CONTEXT.md', 'write_context');
+});
+
+test('AC4: cad-context / references/recall.md is unread without its one sentence', () => {
+  assertPromotedRow('cad-context', 'references/recall.md', 'analyze');
+});
+
+test('AC4: cad-debug / references/recall.md is unread without its one sentence', () => {
+  // The other half of the per-COMMAND site rule: one reference, two rows, and
+  // each command's anchor falsified on its own. If these were merged into one
+  // row, deleting either sentence would still leave the other satisfying it.
+  assertPromotedRow('cad-debug', 'references/recall.md', 'The method loop/1');
 });
 
 test('file: still-eager watches the SKILL.md even when the anchor is a workflow', () => {
