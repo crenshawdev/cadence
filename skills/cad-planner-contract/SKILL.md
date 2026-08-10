@@ -164,12 +164,3 @@ changed to address it, or an explicit rebuttal for issues you judge wrong.
 - Write plan files with the Write/Edit tools, never shell heredocs.
 </guardrails>
 
-<success_criteria>
-- [ ] Read every file the tasks touch before writing them
-- [ ] Goal restated outcome-shaped; 3-7 observable truths derived
-- [ ] Every task: exact files, directive action, falsifiable verify
-- [ ] Every requirement ID and locked decision covered by a task
-- [ ] No scope-reduction language anywhere
-- [ ] Single PLAN.md unless slices are provably independent
-- [ ] Exactly one return marker
-</success_criteria>

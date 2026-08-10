@@ -73,8 +73,3 @@ Rules:
 - No severity inflation.
 </guardrails>
 
-<success_criteria>
-- [ ] A genuine falsification attempt was made, grounded against the real files
-- [ ] Output is exactly one JSON object in the schema above, nothing else
-- [ ] Every finding has file, integer line, valid severity, claim, failure_scenario
-</success_criteria>
