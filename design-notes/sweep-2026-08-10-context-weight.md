@@ -157,6 +157,9 @@ rule on the working tree and violate it in the published repo.
 | `workflows/{execute,plan,verify-deep}.md`, `references/review-triggers.md` | The same provenance, restated per site | same header - stated once for all six sites |
 | `skills/cad-land/SKILL.md` steps 3, 4a, 4b | The per-arm turn-economics/cost-model tails behind each deferred Read | `cadence-core/bin/lib/deferred-reads.mjs`, THE BREAK-EVEN ARITHMETIC, beside the three rows that anchor those arms |
 | `skills/cad-land/SKILL.md` `<guardrails>` | The re-derivation of the git-publish seam mechanic (sanctioned single push, subprocess push git-guard does not intercept, code-guarded non-protected-branch condition, PR -> merge -> reset) | No copy made, deliberately: `cadence-core/bin/git-publish.mjs:3-12,31-34` already states it at the code that enforces it. The `deferred-reads.mjs` note records the pointer instead. |
+| `workflows/execute.md:1-11` | The `<purpose>` block's restatement of `skills/cad-execute/SKILL.md`'s `<objective>`, and its contrast with an orchestration apparatus (waves, worktree manifests, an end-of-phase gate pipeline) this tree does not have | Nowhere, deliberately: the objective rides the same context and states the guarantees, and the contrast describes a design Cadence never shipped. The one clause the objective does not carry - all worktree ceremony lives inside the opt-in branch - stays eager. |
+| `workflows/execute.md:96-104` | Why the clean-starting-index check lives in the orchestrator and not in the executor's lease gate (`lease-check` has no provenance signal, so a gate placed there could only refuse the user's work or excuse an unknown path) | `cadence-core/bin/planning.mjs`, the `lease-check` header block, beside the D-01 hook-versus-seam reasoning it belongs with |
+| `workflows/execute.md:244-248` | That `.planning/trace.jsonl` is gitignored, that `/cad-new-project` writes the line through `planning.mjs trace ignore` at scaffold time, and that `/cad-health` REPORTS a pre-seam scaffold rather than editing its `.gitignore` | `cadence-core/bin/planning.mjs`, the `cmdTraceIgnore` header - the seam that owns both arms. The runtime rule that a worktree executor emits no trace events of its own stays eager. |
 
 Also closed here: the `seams.md:236-240` drift above, by DELETING the "and in
 its guardrails block" clause rather than adding a `references/git-guard.md`
@@ -164,3 +167,12 @@ citation to cad-land's guardrails. Adding one would grow the surface this cycle
 exists to shrink and insert a fourth consult site into a file whose deferral
 arithmetic three register rows depend on; git-guard's eager justification
 already survives on steps 1, 2 and 3 alone.
+
+The other three CTW-05 drifts closed with the `execute.md` cut: the nonexistent
+step `start` became `git_guard`; `workflow.test_command` left the `locate` batch
+resolve and is now read at its only consumer, `execute_parallel` step 5, WITHOUT
+being made to run on the sequential path (that is a behaviour change to the
+default route and needs its own criterion, phase 2 D-17); and exactly one
+`config-reach.md` reach cell moved, `parallelization.max_concurrent_agents`,
+because `min_plans_for_parallel` and `use_worktrees` are read in `choose_path`,
+which phase 3 keeps eager - rewriting all three would put two of them wrong.

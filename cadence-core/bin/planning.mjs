@@ -1623,6 +1623,17 @@ function cmdRecall(dir, query, opts) {
 // An unprovable lease is never a pass: a missing plan and an unreadable staged
 // set are both ok:false.
 //
+// Why the CLEAN-STARTING-INDEX check is not here either (moved out of
+// `workflows/execute.md`'s git_guard step, v2.6.2): the orchestrator is the only
+// actor that can see a clean starting index, because it runs once before
+// anything stages anything. This seam reads the whole staged index and has no
+// provenance signal - it cannot tell a path the user staged before the run from
+// a path this executor staged and did not declare - so a gate placed here could
+// only refuse the user's work (halting the phase on files no plan touched) or
+// excuse an unknown path (which is no gate). Start the index clean and both
+// readings collapse into one: every later `undeclared-files` refusal is provably
+// the executor's own doing.
+//
 // The staged set is read with `--name-status -z -M`, and each of those three is
 // load-bearing:
 //   -z          git emits paths VERBATIM and unquoted. Without it, at git's
@@ -2079,6 +2090,16 @@ function gitignoreCarriesLine(root) {
  * `ignored` and `tracked` are the state AS FOUND, before any write; `written`
  * says what this call changed. `--check` writes nothing at all: /cad-health
  * reports on a project it did not create and may not edit its `.gitignore`.
+ *
+ * WHO calls which arm, and what the ignore buys (moved out of
+ * `workflows/execute.md`, v2.6.2): `/cad-new-project` writes the line through
+ * `trace ignore` at scaffold time, and `/cad-health` runs the `--check` arm, so
+ * a project scaffolded before this seam existed is REPORTED rather than having
+ * its `.gitignore` edited underneath it. Because `.planning/trace.jsonl` is
+ * ignored, nothing a parallel worktree wrote to the run record could ride the
+ * merge back into phase history - which is half of why a worktree executor
+ * emits no trace events of its own; the other half is that its return is a
+ * frozen five-field digest with no room for one.
  * @param {string} root @param {any} opts
  */
 function cmdTraceIgnore(root, opts) {

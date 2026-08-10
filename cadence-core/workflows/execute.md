@@ -1,13 +1,6 @@
 <purpose>
-Execute every plan in a phase with Cadence's guarantees: one cad-executor
-per plan, one atomic conventional commit per task, deviations recorded, a
-slim per-phase SUMMARY.md at the end. Sequential is the default; parallel
-worktree execution is a short opt-in branch, and worktree ceremony exists
-only inside it.
-
-Keeps the executor discipline (atomic commits, deviation rules, checkpoints)
-without the orchestration apparatus - no waves, no worktree manifests, no
-end-of-phase gate pipeline.
+The skill's objective states the guarantees. What it does not: ALL worktree
+ceremony exists inside the parallel opt-in branch and nowhere else.
 </purpose>
 
 <process>
@@ -33,7 +26,7 @@ Config through the seam - one call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  workflow.subagent_timeout workflow.test_command planning.commit_docs \
+  workflow.subagent_timeout planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch
@@ -92,16 +85,6 @@ So the guarantee is "no staged work at phase start", and the executor's commits
 are only as attributable as the worktree was clean. When it matters that a
 phase's commits contain nothing but the phase's own work, start it from a clean
 worktree (`git status --porcelain` empty), not merely a clean index.
-
-This check lives HERE rather than in the executor's lease gate because the
-orchestrator is the only actor that can see a CLEAN starting index: it runs once,
-before anything stages anything. `lease-check` reads the whole staged index and
-has no provenance signal - it cannot tell a path the user staged before the run
-from a path this executor staged and did not declare - so a gate placed there can
-only refuse the user's work (halting the phase on files no plan touched) or
-excuse an unknown path (which is no gate). Start the index clean and both
-readings collapse into one: every later `undeclared-files` refusal is provably
-the executor's own doing.
 
 Record `git rev-parse --short HEAD` as PHASE_START for later diffs, then anchor
 this phase's joined run record with the same sha:
@@ -236,19 +219,14 @@ ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
 bracket. A worktree executor still emits nothing of its own -
 these are the ORCHESTRATOR's lines.
 
-The `phase_start` line in `start` is NOT one of these. It is the correlation-id
+The `phase_start` line in `git_guard` is NOT one of these. It is the correlation-id
 ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:
 keying it into the role table would invent a role that never ran.
 
 A worktree executor emits NO trace events of its own, and inner tool-level
-detail is deliberately not captured. `.planning/trace.jsonl` is gitignored -
-`/cad-new-project` writes that line through `planning.mjs trace ignore` at
-scaffold time, and `/cad-health` REPORTS a project scaffolded before that seam
-existed rather than editing its `.gitignore` - so
-nothing a worktree wrote could ride the merge back, and the executor's return is
-a frozen five-field digest with no room for one. The orchestrator's brackets are
-what make every worker attributable; what happened INSIDE a worker is its report
-file's job.
+detail is deliberately not captured. The orchestrator's brackets are what make
+every worker attributable; what happened INSIDE a worker is its report file's
+job.
 
 Handle the executor's return:
 - **complete** (`PLAN COMPLETE`) -> record the digest and the derived report
@@ -362,7 +340,9 @@ fork-point default.)
    not recoverable then, and pairing its pre-merge HEAD with the current HEAD
    would hand that plan's reviewer every later plan's work as well.
 4. Remove each merged worktree and delete its branch.
-5. After all batches: run `workflow.test_command` once if set; then fire the
+5. After all batches: read the key HERE, at its only consumer -
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
+   and run it once if set; then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
    (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
    that plan's post-merge HEAD from step 3}`) - the ranges are static and

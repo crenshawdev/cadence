@@ -460,36 +460,36 @@ fixed, which is what makes that link answer the only question it is asked.
 | DOCS-VERIFY-02 | cadence-core/workflows/docs-verify.md | 10-11 | The default target set is `README.md` plus `docs/**`. | accurate | accurate |
 | DOCS-VERIFY-03 | cadence-core/workflows/docs-verify.md | 46 | The report table columns are `claim \| location \| verdict \| correct value (if stale)`. | accurate | accurate |
 | DOCS-VERIFY-04 | cadence-core/workflows/docs-verify.md | 40-44 | Verdicts are exactly `accurate \| stale \| unverifiable`. | accurate | accurate |
-| EXECUTE-01 | cadence-core/workflows/execute.md | 191-193 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected - 044806c |
-| EXECUTE-02 | cadence-core/workflows/execute.md | 380-381 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 |
-| EXECUTE-03 | cadence-core/workflows/execute.md | 385-386 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 |
-| EXECUTE-04 | cadence-core/workflows/execute.md | 18-24 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate |
-| EXECUTE-05 | cadence-core/workflows/execute.md | 24-25 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate |
-| EXECUTE-06 | cadence-core/workflows/execute.md | 35-39 | The ten config keys in the single `config.mjs get` all exist. | accurate | accurate |
-| EXECUTE-07 | cadence-core/workflows/execute.md | 41-46 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | accurate | accurate |
-| EXECUTE-08 | cadence-core/workflows/execute.md | 50-51 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate |
-| EXECUTE-09 | cadence-core/workflows/execute.md | 68-73 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate |
-| EXECUTE-10 | cadence-core/workflows/execute.md | 97-104 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate |
-| EXECUTE-11 | cadence-core/workflows/execute.md | 110-114 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate |
-| EXECUTE-12 | cadence-core/workflows/execute.md | 115-117 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate |
-| EXECUTE-13 | cadence-core/workflows/execute.md | 129-138 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate |
-| EXECUTE-14 | cadence-core/workflows/execute.md | 146-153 | `worktree-base.mjs resolve` reports `parallelSafe`, with `baseRef:"fresh"` the default. | accurate | accurate |
-| EXECUTE-15 | cadence-core/workflows/execute.md | 196-198 | An executor writes its task table to `<plandir>/reports/plan-<k>.md` and returns a five-field digest. | accurate | accurate |
-| EXECUTE-16 | cadence-core/workflows/execute.md | 205-206 | `git worktree list --porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`. | accurate | accurate |
-| EXECUTE-17 | cadence-core/workflows/execute.md | 214-216 | The three `trace append` bracket lines and every flag on them exist. | accurate | accurate |
-| EXECUTE-18 | cadence-core/workflows/execute.md | 219-223 | The closing event is `return`, `checkpoint` or `escalation`; a worker with none is what `trace render` reports as unpaired. | accurate | accurate |
-| EXECUTE-19 | cadence-core/workflows/execute.md | 226-231 | `--role` is a separate key from `--plan`; `--plan` pairs the bracket, `--role` groups the per-role totals. | accurate | accurate |
-| EXECUTE-20 | cadence-core/workflows/execute.md | 233-236 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate |
-| EXECUTE-21 | cadence-core/workflows/execute.md | 239-241 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate |
-| EXECUTE-22 | cadence-core/workflows/execute.md | 244-248 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate |
-| EXECUTE-23 | cadence-core/workflows/execute.md | 270-273 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate |
-| EXECUTE-24 | cadence-core/workflows/execute.md | 285-291, 312-313 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate |
-| EXECUTE-25 | cadence-core/workflows/execute.md | 304-307 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate |
-| EXECUTE-26 | cadence-core/workflows/execute.md | 415-417 | `SUMMARY.md` is written from `cadence-core/templates/SUMMARY.md`. | accurate | accurate |
-| EXECUTE-27 | cadence-core/workflows/execute.md | 430-435 | `planning.mjs debt-harvest --root .` rewrites `.planning/CAPTURE.md`'s own `## Debt markers` section only. | accurate | accurate |
-| EXECUTE-28 | cadence-core/workflows/execute.md | 442 | `cursor set --phase <N> --status executed --next "/cad-verify <N>"`. | accurate | accurate |
-| EXECUTE-29 | cadence-core/workflows/execute.md | 448-450 | `plan-<k>-risk-task-<n>.diff` is the transient flagged diff and must never be staged. | accurate | accurate |
-| EXECUTE-30 | cadence-core/workflows/execute.md | 472-473, 488 | STATE.md is exactly the 4-line cursor, overwritten, and this workflow is its only writer. | accurate | accurate |
+| EXECUTE-01 | cadence-core/workflows/execute.md | 174-176 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected - 044806c |
+| EXECUTE-02 | cadence-core/workflows/execute.md | 360-361 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 |
+| EXECUTE-03 | cadence-core/workflows/execute.md | 365-366 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 |
+| EXECUTE-04 | cadence-core/workflows/execute.md | 11-17 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate |
+| EXECUTE-05 | cadence-core/workflows/execute.md | 17-18 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate |
+| EXECUTE-06 | cadence-core/workflows/execute.md | 28-32 | The nine config keys in the single `config.mjs get` all exist (`workflow.test_command` left the batch in v2.6.2 and is read at its only consumer, `execute_parallel` step 5). | accurate | accurate |
+| EXECUTE-07 | cadence-core/workflows/execute.md | 34-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | accurate | accurate |
+| EXECUTE-08 | cadence-core/workflows/execute.md | 43-44 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate |
+| EXECUTE-09 | cadence-core/workflows/execute.md | 61-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate |
+| EXECUTE-10 | cadence-core/bin/planning.mjs | 1626-1635 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate |
+| EXECUTE-11 | cadence-core/workflows/execute.md | 93-97 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate |
+| EXECUTE-12 | cadence-core/workflows/execute.md | 98-100 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate |
+| EXECUTE-13 | cadence-core/workflows/execute.md | 112-121 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate |
+| EXECUTE-14 | cadence-core/workflows/execute.md | 129-136 | `worktree-base.mjs resolve` reports `parallelSafe`, with `baseRef:"fresh"` the default. | accurate | accurate |
+| EXECUTE-15 | cadence-core/workflows/execute.md | 179-181 | An executor writes its task table to `<plandir>/reports/plan-<k>.md` and returns a five-field digest. | accurate | accurate |
+| EXECUTE-16 | cadence-core/workflows/execute.md | 188-189 | `git worktree list --porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`. | accurate | accurate |
+| EXECUTE-17 | cadence-core/workflows/execute.md | 197-199 | The three `trace append` bracket lines and every flag on them exist. | accurate | accurate |
+| EXECUTE-18 | cadence-core/workflows/execute.md | 202-206 | The closing event is `return`, `checkpoint` or `escalation`; a worker with none is what `trace render` reports as unpaired. | accurate | accurate |
+| EXECUTE-19 | cadence-core/workflows/execute.md | 209-214 | `--role` is a separate key from `--plan`; `--plan` pairs the bracket, `--role` groups the per-role totals. | accurate | accurate |
+| EXECUTE-20 | cadence-core/workflows/execute.md | 216-219 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate |
+| EXECUTE-21 | cadence-core/workflows/execute.md | 222-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate |
+| EXECUTE-22 | cadence-core/bin/planning.mjs | 2094-2102 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate |
+| EXECUTE-23 | cadence-core/workflows/execute.md | 248-251 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate |
+| EXECUTE-24 | cadence-core/workflows/execute.md | 263-269, 290-291 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate |
+| EXECUTE-25 | cadence-core/workflows/execute.md | 282-285 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate |
+| EXECUTE-26 | cadence-core/workflows/execute.md | 395-397 | `SUMMARY.md` is written from `cadence-core/templates/SUMMARY.md`. | accurate | accurate |
+| EXECUTE-27 | cadence-core/workflows/execute.md | 410-415 | `planning.mjs debt-harvest --root .` rewrites `.planning/CAPTURE.md`'s own `## Debt markers` section only. | accurate | accurate |
+| EXECUTE-28 | cadence-core/workflows/execute.md | 422 | `cursor set --phase <N> --status executed --next "/cad-verify <N>"`. | accurate | accurate |
+| EXECUTE-29 | cadence-core/workflows/execute.md | 428-430 | `plan-<k>-risk-task-<n>.diff` is the transient flagged diff and must never be staged. | accurate | accurate |
+| EXECUTE-30 | cadence-core/workflows/execute.md | 452-453, 468 | STATE.md is exactly the 4-line cursor, overwritten, and this workflow is its only writer. | accurate | accurate |
 | MILESTONE-01 | cadence-core/workflows/milestone.md | 7-8 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | accurate | accurate |
 | MILESTONE-02 | cadence-core/workflows/milestone.md | 13-16 | `/cad-audit` is the requirement/phase/plan/verified FAIL gate invoked here. | accurate | accurate |
 | MILESTONE-03 | cadence-core/workflows/milestone.md | 33-36 | `release-bump.mjs bump --dir <root> --version <version>`, with `--version` REQUIRED. | accurate | accurate |
