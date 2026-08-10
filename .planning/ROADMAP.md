@@ -41,7 +41,7 @@ commit and its own `/cad-verify` walk rather than one bulk edit.
 ## Phases
 
 - [x] **Phase 1: The checks that make the cuts safe** - CI learns to watch a deferral anchored in a workflow file or a contract skill, and to fail an `@`-include nothing reads
-- [ ] **Phase 2: The free cuts** - ~17,400 B off the eager path with no new files and no register rows, plus the four drifts the sweep found in passing
+- [ ] **Phase 2: The free cuts** - 11,639 B off the eager path with no new files and no register rows, plus the four drifts the sweep found in passing
 - [ ] **Phase 3: The deferrals** - ~22,300 B of branch-local prose moves behind a `Read` at the step that needs it
 
 ## Phase Details
@@ -71,14 +71,27 @@ region at all (D-02).)
 6. Every existing register row still passes unchanged, and `node cadence-core/bin/self-verify.mjs` returns `ok:true` on a clean tree.
 
 ### Phase 2: The free cuts
-**Goal:** ~17,400 B leaves the eager path without a single new file, register row
+**Goal:** 11,639 B leaves the eager path without a single new file, register row
 or budget row, and the four drifts found alongside it are closed.
+(Figure re-pinned 2026-08-10 at the phase-2 verify gate, from the sweep's
+~17,400 B estimate to the measured fall: `weight.mjs resident` summed over the 23
+user-invocable commands gives 280,684 B at `b3748a4` and 269,045 B at `366771b`.
+The shortfall sits entirely in the duplication half of `CTW-03`'s decomposition -
+the dead include delivered its 5,845 B exactly, the eight duplication commits
+delivered 5,794 B against ~11,600 predicted. Three causes: D-11 keeps one
+compressed sentence at each of six `--tokens` sites, D-18 makes one of three
+contract checklists uncuttable, and `review-triggers.md` and `config-reach.md`
+both GREW to state a rule correctly. `REQUIREMENTS.md`'s `CTW-03` row was
+corrected at the context gate for the same reason; this is that correction
+reaching the contract document. No criterion below pins a total, so no gate
+failed - the recoverable bytes are phase 3's deferrals, whose own estimate rests
+on the same sweep arithmetic and should be re-derived from measurement.)
 **Depends on:** Phase 1 (criterion 4 must fire on the dead include before it is deleted, so the check is proved against a live instance rather than a synthetic one; and phase 1 shipped a one-row `WAIVED` register in `cadence-core/bin/lib/include-consumers.mjs` as a bridge that this phase's first commit must delete alongside the include itself)
 **Requirements:** CTW-03, CTW-05
 **Success Criteria:**
-1. `skills/cad-verify/SKILL.md:29` is deleted and `cadence-core/templates/UAT.md` stays on disk as the seam's spec, its 5,792 B budget row unchanged. `/cad-verify` eager falls 24,533 -> 18,741. The one-row `WAIVED` register in `cadence-core/bin/lib/include-consumers.mjs` is deleted in the same commit; leaving it turns `self-verify` red with `include-waiver-stale`. (Phase 1 shipped that row as a stated bridge, because check 16 must REPORT this include on a byte-copy fixture while the live tree stays green — the two are the same bytes until the include goes. Its second arm, `include-waiver-expired`, fires instead if this phase's box is checked while the row still stands, so the bridge cannot be left behind quietly either.)
-2. The `--tokens` provenance paragraph is stated once, in `lib/trace.mjs`'s header at zero context cost, with each of its five prose sites keeping one imperative sentence. The rules that must survive everywhere: omit the flag when no figure exists, never `--tokens 0`, and a return carrying no figure is ROUTINE rather than a defect.
-3. The remaining free-tier cuts land per surface, one commit each with its `weight-budgets.json` re-pin in the same commit: `cad-land` guardrails and deferral tails, `execute.md` and `context.md` and `verify.md` and `plan.md` duplication, three contract `<success_criteria>` checklists, and the `cad-health` regression anecdotes.
+1. `skills/cad-verify/SKILL.md:29` is deleted and `cadence-core/templates/UAT.md` stays on disk as the seam's spec, its 5,792 B budget row unchanged. `/cad-verify` eager falls 24,533 -> 18,688 (measured at the commit that deleted the include; this line read 18,741 before the phase-2 verify gate). The one-row `WAIVED` register in `cadence-core/bin/lib/include-consumers.mjs` is deleted in the same commit; leaving it turns `self-verify` red with `include-waiver-stale`. (Phase 1 shipped that row as a stated bridge, because check 16 must REPORT this include on a byte-copy fixture while the live tree stays green — the two are the same bytes until the include goes. Its second arm, `include-waiver-expired`, fires instead if this phase's box is checked while the row still stands, so the bridge cannot be left behind quietly either.)
+2. The `--tokens` provenance paragraph is stated once, in `lib/trace.mjs`'s header at zero context cost, with each of its six prose sites keeping one imperative sentence (`context.md`, `execute.md`, `plan.md` twice, `verify-deep.md`, `review-triggers.md`; this line read "five" before the phase-2 verify gate). The rules that must survive everywhere: omit the flag when no figure exists, never `--tokens 0`, and a return carrying no figure is ROUTINE rather than a defect.
+3. The remaining free-tier cuts land per surface, one commit each with its `weight-budgets.json` re-pin in the same commit: `cad-land` guardrails and deferral tails, `execute.md` and `context.md` and `verify.md` and `plan.md` duplication, two contract `<success_criteria>` checklists, and the `cad-health` regression anecdotes. (This line read "three" before the phase-2 verify gate: `cad-plan-checker-contract`'s block is asserted by `prose-agreement.test.mjs:69-95` as the DFC-03 fix and stays, which D-18 locked at the context gate.)
 4. Rationale that moves lands somewhere — a `.mjs` header or a design-note — and is not deleted. Rationale bound to a rule the model applies at runtime is not moved at all.
 5. All four `CTW-05` drifts are closed: the nonexistent `start` step at `execute.md:241`, the `workflow.test_command` resolved at `execute.md:36` but read only on the parallel path, `config-reach.md:136-138`' reach site for the three `parallelization.*` keys, and `seams.md:236-240`' claim of a git-guard consult in cad-land guardrails that cite none.
 6. `/cad-verify` walks each affected command rather than one bulk check, because behavioural regression from removed rationale is what `self-verify` cannot catch.
