@@ -15,9 +15,12 @@ npm-debug.log*
 scratch/
 *.local
 
-# Working handoffs / design deep-dives (local only, not published)
+# Working handoffs (local only, not published)
 /RESUME.md
-/design-notes/
+
+# Candid design explorations stay local; the dated records beside them are tracked,
+# because a rejected option with its evidence is what stops the next sweep re-deriving it
+/design-notes/dd-*.md
 
 # Raw planning queue — local recall only, keeps candid working notes out of the public repo
 /.planning/CAPTURE.md
