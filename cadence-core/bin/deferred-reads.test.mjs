@@ -298,6 +298,107 @@ test('D-04: a <step name="..."> with NO <process> wrapper is still a region', ()
     [CODES.unread]);
 });
 
+// --- AC2: a heading-scoped walk step in a tagless workflow --------------------
+// `workflows/config.md` has zero `<process>` and zero `<step name=`, and
+// `debug.md` and `phase.md` are the same style. Without the heading family the
+// largest single move phase 3 declares - `config.md:71-133`, 8,052 B - would
+// ship with no anchorable region at all.
+
+const CONFIG_WF = 'cadence-core/workflows/config.md';
+const WALK_STEP_3 = '\n3. A page whose knobs the user leaves unchanged is a no-op;';
+const WALK_STEP_2 = '\n2. Walk the catalog below **in order, 4 knobs per';
+const DIRECT_SET = '## Direct set\n';
+const WALK_ANCHOR = 'Interactive menu (no args)/The walk/2';
+
+/**
+ * `skills/cad-config/SKILL.md` plus `workflows/config.md`, with one Read
+ * sentence placed at the end of the Interactive-menu walk's step 2, at the end
+ * of its step 1, under `## Direct set`, or nowhere.
+ * @param {'step2'|'step1'|'direct'|'none'} where
+ */
+function configRoot(where) {
+  const root = emptyRoot();
+  copyReal(root, 'skills/cad-config/SKILL.md');
+  copyReal(root, CONFIG_WF, (t) => {
+    const s = readSentence(SEAMS);
+    if (where === 'step2') return t.replace(WALK_STEP_3, `\n${s}${WALK_STEP_3}`);
+    if (where === 'step1') return t.replace(WALK_STEP_2, `\n${s}${WALK_STEP_2}`);
+    if (where === 'direct') return t.replace(DIRECT_SET, `${DIRECT_SET}\n${s}\n`);
+    return t;
+  });
+  return root;
+}
+
+/** A register row anchored in `workflows/config.md`. */
+const configRow = (anchors) => ({
+  skill: 'cad-config',
+  reference: SEAMS,
+  anchors,
+  read_paragraphs: anchors.length,
+  file: CONFIG_WF,
+});
+
+test('AC2: a heading-scoped walk step is clean while its Read sentence stands', () => {
+  const root = configRoot('step2');
+  const text = readFileSync(join(root, ...CONFIG_WF.split('/')), 'utf8');
+  assert.ok(text.includes(readSentence(SEAMS)), 'fixture must carry the inserted sentence');
+  assert.deepEqual(deferredReadIssues(root, [configRow([WALK_ANCHOR])]), []);
+});
+
+test('AC2: deleting it reports exactly one deferred-read-unread naming the walk step', () => {
+  const issues = deferredReadIssues(configRoot('none'), [configRow([WALK_ANCHOR])]);
+  assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
+  assert.equal(issues[0].file, CONFIG_WF);
+  assert.match(issues[0].detail, /Interactive menu \(no args\)\/The walk\/2/);
+});
+
+test('AC2: the same sentence in walk step 1 does not answer for walk step 2', () => {
+  const root = configRoot('step1');
+  assert.deepEqual(deferredReadIssues(root, [configRow([WALK_ANCHOR])]).map((i) => i.kind),
+    [CODES.unread]);
+  // ... and it really did land in step 1, so the falsifier is about the region.
+  assert.deepEqual(
+    deferredReadIssues(root, [configRow(['Interactive menu (no args)/The walk/1'])]), []);
+});
+
+test('AC2: the same sentence under another `##` heading does not answer either', () => {
+  const root = configRoot('direct');
+  assert.deepEqual(deferredReadIssues(root, [configRow([WALK_ANCHOR])]).map((i) => i.kind),
+    [CODES.unread]);
+  assert.deepEqual(deferredReadIssues(root, [configRow(['Direct set'])]), []);
+});
+
+test('grammar: a heading path truncates, and a new heading ends the old numbering', () => {
+  const labelOf = regionLabels([
+    '# Title',                 // 0 - H1, ignored
+    '## Alpha',                // 1
+    'under alpha',             // 2
+    '### Beta',                // 3
+    '1. first',                // 4
+    'still first',             // 5
+    '## Gamma',                // 6 - replaces the whole path
+    'under gamma',             // 7
+  ].join('\n'));
+  assert.equal(labelOf(0), null, 'an H1 is the document title, never a path segment');
+  assert.equal(labelOf(2), 'Alpha');
+  assert.equal(labelOf(4), 'Alpha/Beta/1');
+  assert.equal(labelOf(5), 'Alpha/Beta/1');
+  assert.equal(labelOf(7), 'Gamma', 'a level-2 replaces the path and clears the item');
+});
+
+test('grammar: a heading INSIDE an open block does not compete with the frame', () => {
+  const labelOf = regionLabels([
+    '## Alpha',        // 0
+    '<process>',       // 1
+    '## Beta',         // 2 - inside a block: ignored entirely
+    '3. third',        // 3
+    '</process>',      // 4
+    'after',           // 5
+  ].join('\n'));
+  assert.equal(labelOf(3), '3', 'block frames win over headings');
+  assert.equal(labelOf(5), 'Alpha', 'and the in-block heading never touched the path');
+});
+
 // --- D-07: the real uncovered spot is a plain tag block -----------------------
 // `<worktree_mode>` carries no numbered step and no `name=` attribute, so
 // nothing but a tag-name label reaches it - and ROADMAP phase 3 criterion 3

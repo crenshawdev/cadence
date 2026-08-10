@@ -149,6 +149,12 @@ const OPEN_RE = /^<([a-z_]+)((?:\s+[a-z_-]+="[^"]*")*)\s*>\s*$/;
 const CLOSE_RE = /^<\/([a-z_]+)>\s*$/;
 /** The `name=` attribute a `<step name="x">` carries, which becomes its label. */
 const NAME_ATTR_RE = /\bname="([^"]*)"/;
+/**
+ * A markdown heading, level 2 and deeper. An `#` H1 is deliberately NOT matched:
+ * `config.md:1` is the document title, and including it would prefix every label
+ * in that file with `cad-config workflow/`.
+ */
+const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
 /**
  * Label the region a line belongs to, walking the file top to bottom.
@@ -159,8 +165,22 @@ const NAME_ATTR_RE = /\bname="([^"]*)"/;
  *     attribute value when it has one (`<step name="execute_parallel">` ->
  *     `execute_parallel`), `null` for `<process>`, and the TAG NAME itself for
  *     every other tag (`<worktree_mode>` -> `worktree_mode`).
+ *   - a HEADING PATH, tracked only while the frame stack is EMPTY: a `##`
+ *     replaces the path, a deeper level extends or truncates it to that level,
+ *     and the label is the path joined with `/`
+ *     (`Interactive menu (no args)/The walk/2`). Heading text is taken VERBATIM
+ *     after the marker, trimmed, with no normalization - no parenthetical
+ *     stripping and no leading-ordinal stripping, because a normalization rule
+ *     nobody can predict by reading the file is worse than a long label.
  *   - `^<n>. ` at column 0 - a numbered step of the innermost frame.
  *   - `**(<x>)` on its own indented line - a lettered arm of the current step.
+ *
+ * Block frames WIN: a heading inside an open block neither labels nor updates
+ * the path, so a workflow mixing `<process>` with headings keeps its step labels
+ * and no file ever carries two competing label families at one line. Without the
+ * heading family, `workflows/config.md` - zero `<process>`, zero `<step name=`,
+ * and the same style in `debug.md` and `phase.md` - has no anchorable region at
+ * all.
  *
  * The frames are a STACK, and a close pops only a matching top. `execute.md:13`
  * opens `<process>`, `:15` opens `<step name="locate">` and `:47` closes the
@@ -173,6 +193,8 @@ const NAME_ATTR_RE = /\bname="([^"]*)"/;
  *   frame label `null`, item n   -> `"n"`            (today's `3`, `2`)
  *   frame label F, no item       -> `"F"`            (`worktree_mode`)
  *   frame label F, item n        -> `"F(n)"`         (`execute_parallel(6)`)
+ *   no frame, heading path P     -> `"P"`            (`Direct set`)
+ *   no frame, path P, item n     -> `"P/n"`          (`.../The walk/2`)
  *   ... and an arm appends `(x)`  -> `"3(a)"`, `"execute_parallel(6)(a)"`
  *
  * A bare `"n"` is emitted ONLY inside a frame whose own label is `null` - in
@@ -205,6 +227,8 @@ export function regionLabels(text) {
   const labels = [];
   /** @type {{tag: string, label: string|null}[]} the open block frames */
   const stack = [];
+  /** @type {string[]} the heading path, index 0 = level 2, index 1 = level 3, ... */
+  const path = [];
   let item = null;
   let arm = null;
   for (const line of lines) {
@@ -230,6 +254,20 @@ export function regionLabels(text) {
       labels.push(null);
       continue;
     }
+    // Headings are tracked ONLY outside every block, so block frames win.
+    const heading = stack.length ? null : HEADING_RE.exec(line);
+    if (heading) {
+      const level = heading[1].length;
+      path.length = level - 2;
+      path[level - 2] = heading[2];
+      // A new heading ends the previous heading's numbering, exactly as a new
+      // block ends the previous block's - otherwise the first lines under
+      // `## Worktree base ref` would inherit item 6 from the walk above it.
+      item = null;
+      arm = null;
+      labels.push(null);
+      continue;
+    }
     const itemM = /^(\d+)\.\s/.exec(line);
     if (itemM) {
       item = itemM[1];
@@ -240,8 +278,13 @@ export function regionLabels(text) {
     }
     const frame = stack.length ? stack[stack.length - 1] : null;
     let label;
-    if (!frame) label = null;
-    else if (frame.label === null) label = item;
+    if (!frame) {
+      // Filtered, not joined raw: a file that skips a level (`##` then `####`)
+      // leaves a hole, and a hole would render as an empty path segment.
+      const kept = path.filter((s) => s !== undefined);
+      const p = kept.length ? kept.join('/') : null;
+      label = p && item ? `${p}/${item}` : p;
+    } else if (frame.label === null) label = item;
     else label = item ? `${frame.label}(${item})` : frame.label;
     labels.push(label && arm ? `${label}(${arm})` : (label ?? null));
   }
