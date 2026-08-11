@@ -55,6 +55,14 @@ export const RETIRED_KEYS = Object.freeze({
     detail: 'removed with the `auto` mode - a role escalates to exactly one rung, '
       + "the retry rung its own routing cell names, so there is no second step to cap",
   }),
+  'workflow.subagent_timeout': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed because nothing could enforce it - no code read the key, '
+      + 'and the host spawn seam takes no timeout and offers no cancel, so a '
+      + 'dispatch runs until it returns; size plans with workflow.max_plan_tasks '
+      + 'instead, which is the real lever on what one dispatch costs',
+  }),
   'risk.override.auth': Object.freeze({
     replacement: null,
     since: 'v2.7.0',

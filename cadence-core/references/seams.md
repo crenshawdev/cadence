@@ -53,7 +53,11 @@ How a workflow dispatches work to a fresh-context subagent.
   stated per role rather than derived, because the unsuffixed `agents/<role>.md`
   is one rung among the others rather than the lowest. Self-verify fails in both
   directions: a rung with no file, and a rung file no cell reaches.
-- Timeout: `workflow.subagent_timeout` from config.
+- No timeout. This seam offers no bound and no cancel: a dispatch runs until it
+  returns. A config key claimed a wall-clock kill until v2.7.0, when it was
+  deleted for naming a control nothing could apply. Plan size is the only real
+  lever on what one dispatch costs, which is what `workflow.max_plan_tasks` is
+  for.
 - Every dispatch is fresh-context and self-contained; there is no resume or
   "continue the same agent". A re-dispatch (revision, continuation, escalation)
   is a NEW spawn that reads the prior artifact from disk - never a

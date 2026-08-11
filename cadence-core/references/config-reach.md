@@ -119,7 +119,6 @@ purpose test runs against the reach the author just replaced.
 | `workflow.plan_check` | universal | `workflows/plan.md` - whether the plan checker runs before code |
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
 | `workflow.skip_discuss` | progress next-step suggestion only | `workflows/progress.md`'s next-step table, for an unplanned current phase |
-| `workflow.subagent_timeout` | universal | `references/seams.md` spawn-agent - ms before a subagent is killed |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner; above it the planner returns `## PHASE TOO BIG`, and cad-plan-checker flags the overrun under Proportionality |
 | `workflow.test_command` | universal | `workflows/task.md`, `workflows/coverage.md`, `references/execute-parallel.md` (the post-batch run, at its only consumer) and the executor contract |

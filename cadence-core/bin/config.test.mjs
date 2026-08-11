@@ -436,7 +436,7 @@ test('check: an int key with a max rejects above it and accepts at it', () => {
   assert.equal(run(['check', 'review.request_timeout_ms=0']).ok, false);       // min still holds
 
   // a min-only int key is unaffected by the new max branch
-  assert.equal(run(['check', 'workflow.subagent_timeout=999999999999']).ok, true);
+  assert.equal(run(['check', 'workflow.max_plan_tasks=999999999999']).ok, true);
 });
 
 test('readLayer(""): an unresolvable layer path is a SILENT absence', () => {

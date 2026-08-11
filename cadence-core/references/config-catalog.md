@@ -25,7 +25,6 @@ selectable option and its `description`.
 | `workflow.plan_check` | bool | Gate plans through the checker before code | `true`→verify plan first · `false`→trust it | true |
 | `workflow.verifier` | bool | Off switch for goal-backward verification after a phase | `true`→the stakes level decides (`--deep` forces) · `false`→always skip | true |
 | `workflow.skip_discuss` | bool | Which command `/cad-progress` suggests for an unplanned phase - progress next-step suggestion only, it skips no step | `true`→suggest `/cad-plan` · `false`→suggest `/cad-context` | false |
-| `workflow.subagent_timeout` | int | ms before a subagent is killed | e.g. `300000` (5 min) | 300000 |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
 | `workflow.max_plan_tasks` | int | Task count above which a phase plan must return `## PHASE TOO BIG` rather than be written | e.g. `8` | 8 |
 | `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |

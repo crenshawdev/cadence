@@ -73,7 +73,7 @@ in ONE call - the recall gate and the dispatch timeout together, independent of
 each other, so nothing in this step is serialized behind a prior result:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend workflow.subagent_timeout
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
 ```
 
 When it is `builtin` (the schema default), run recall for the phase goal:
@@ -114,7 +114,7 @@ ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
 bracket.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
-(references/seams.md), timeout `workflow.subagent_timeout` (read above).
+(references/seams.md).
 This keeps raw file contents out of the main context. Prompt payload:
 
 ```

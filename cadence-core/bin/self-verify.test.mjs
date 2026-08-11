@@ -301,7 +301,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     // <role> placeholder).
     '`model.overrides` `model.effort`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
-    '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
+    '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +

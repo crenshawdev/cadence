@@ -26,7 +26,7 @@ Config through the seam - one call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  workflow.subagent_timeout planning.commit_docs \
+  planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch
@@ -156,8 +156,7 @@ Sequential (default) unless ALL of these hold:
 <step name="execute_sequential">
 For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
 (references/seams.md), in the normal working tree, no worktrees, and wait
-for it to finish before starting the next. Timeout:
-`workflow.subagent_timeout`.
+for it to finish before starting the next.
 
 Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context

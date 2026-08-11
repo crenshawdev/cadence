@@ -43,17 +43,17 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-audit` | 14,551 |
 | `/cad-capture` | 2,345 |
 | `/cad-config` | 12,761 |
-| `/cad-context` | 17,654 |
+| `/cad-context` | 17,578 |
 | `/cad-coverage` | 5,162 |
 | `/cad-debug` | 8,307 |
 | `/cad-decision-review` | 12,213 |
 | `/cad-docs-verify` | 3,960 |
-| `/cad-execute` | 24,406 |
+| `/cad-execute` | 24,342 |
 | `/cad-health` | 6,585 |
 | `/cad-help` | 4,889 |
 | `/cad-land` | 17,070 |
 | `/cad-milestone` | 16,210 |
-| `/cad-new-project` | 16,708 |
+| `/cad-new-project` | 16,934 |
 | `/cad-pause` | 8,752 |
 | `/cad-phase` | 11,281 |
 | `/cad-plan` | 18,434 |
@@ -63,7 +63,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 17,872 |
-| **23 user-invocable commands** | **252,950** |
+| **23 user-invocable commands** | **253,036** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -81,24 +81,24 @@ may open at a step rather than what it starts holding.
 
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
-| `/cad-execute` | 24,406 | 93,756 |
-| `/cad-plan` | 18,434 | 76,633 |
-| `/cad-verify` | 17,872 | 91,692 |
-| `/cad-context` | 17,654 | 85,158 |
+| `/cad-execute` | 24,342 | 93,961 |
+| `/cad-plan` | 18,434 | 76,874 |
+| `/cad-verify` | 17,872 | 91,961 |
+| `/cad-context` | 17,578 | 85,351 |
 | `/cad-land` | 17,070 | 43,256 |
-| `/cad-new-project` | 16,708 | 62,809 |
+| `/cad-new-project` | 16,934 | 63,276 |
 | `/cad-milestone` | 16,210 | 66,801 |
 | `/cad-audit` | 14,551 | 64,736 |
-| `/cad-config` | 12,761 | 43,270 |
+| `/cad-config` | 12,761 | 43,407 |
 | `/cad-decision-review` | 12,213 | 29,547 |
 
 Three reference files are reachable from no command at all — budgeted bytes
 that enter no model context, so no context saving may ever claim them
-(`zeroResident` in the same output, 23,758 B):
+(`zeroResident` in the same output, 23,645 B):
 
 | Surface | Bytes |
 |---|---|
-| `cadence-core/references/config-reach.md` | 16,075 |
+| `cadence-core/references/config-reach.md` | 15,962 |
 | `cadence-core/references/model-hints.json` | 2,635 |
 | `cadence-core/references/provider-api.md` | 5,048 |
 
@@ -147,25 +147,25 @@ turn-one table above is the number that decides what a session pays.
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 21 | 176,594 |
-| `cadence-core/templates/` | 9 | 18,253 |
-| `cadence-core/workflows/` | 21 | 181,179 |
+| `cadence-core/references/` | 21 | 176,646 |
+| `cadence-core/templates/` | 9 | 18,225 |
+| `cadence-core/workflows/` | 21 | 181,265 |
 | `skills/` | 29 | 86,321 |
-| **total** | **99** | **470,930** |
+| **total** | **99** | **471,040** |
 
 The twelve largest individual surfaces:
 
 | Surface | Bytes | Est. tokens |
 |---|---|---|
-| `cadence-core/workflows/execute.md` | 23,664 | 5,916 |
+| `cadence-core/workflows/execute.md` | 23,600 | 5,900 |
 | `cadence-core/references/acceptance-criteria.md` | 22,506 | 5,627 |
+| `cadence-core/references/seams.md` | 17,651 | 4,413 |
 | `cadence-core/workflows/plan.md` | 17,586 | 4,397 |
-| `cadence-core/references/seams.md` | 17,382 | 4,345 |
 | `cadence-core/references/review-triggers.md` | 17,334 | 4,334 |
-| `cadence-core/workflows/context.md` | 16,827 | 4,207 |
 | `cadence-core/workflows/verify.md` | 16,823 | 4,206 |
-| `cadence-core/references/config-reach.md` | 16,075 | 4,019 |
-| `cadence-core/workflows/new-project.md` | 15,872 | 3,968 |
+| `cadence-core/workflows/context.md` | 16,751 | 4,188 |
+| `cadence-core/workflows/new-project.md` | 16,098 | 4,025 |
+| `cadence-core/references/config-reach.md` | 15,962 | 3,991 |
 | `cadence-core/references/plan-frontmatter.md` | 13,954 | 3,489 |
 | `cadence-core/references/req-traceability.md` | 13,725 | 3,432 |
 | `cadence-core/workflows/audit.md` | 12,912 | 3,228 |
