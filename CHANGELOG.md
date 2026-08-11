@@ -6,6 +6,75 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-11
+
+The dispatch-time risk floor is gone, and with it three pieces of machinery
+that cost more to maintain than they caught.
+
+The floor read the paths a phase's PLAN declared, matched them against ~100
+common lowercase tokens, and raised the WHOLE phase to `critical` on one hit -
+all six roles to opus at `xhigh`, and `plan`, `phase_diff` and `pre_ship` all
+adjudicated at once. It judged a file by its name. Measured on a
+transcript-recall project: `src/store/session.rs` floored phase 1 on `auth`,
+`src/store/lock.rs` and `src/ingest/mod.rs` floored phase 2 on `concurrency`
+and `untrusted_input`, and no phase of that project could ever route below
+`critical`. 15 of 16 resolves ran opus, 9 of 16 at `xhigh`, against a README
+claim of ~27% routed down to Sonnet. `tests/ingest_concurrency.rs` - a test
+file - floored its phase on two surfaces at once.
+
+Cadence already had a better detector for the same question. The commit-time
+`risk_surface` check reads the actual staged diff, and it stays, blocking at
+every level. What the code does decides; what the file is called does not.
+
+### Removed
+
+- **The `surfaces` block, `lib/risk-surfaces.mjs`, and `riskFloor()`.** With
+  them: the `floor_surfaces` trace field, `PRE_PLAN_ROLES` (which existed only
+  to exempt the two pre-plan roles from a floor computed off the wrong phase),
+  `declaredPhaseFiles`, the repo-scope write guard and its `fsIdentity` helper,
+  and `route-cells.mjs`'s `floor-below-required` arm. `surfaceIssues` narrows
+  to `vocabularyIssues`: its two drift checks are about `stakes_order` and
+  `gates`, which outlive the block they were filed under. Net -2,260 lines.
+
+- **The eight `risk.override.<surface>` config keys**, moved to
+  `lib/retired-keys.mjs`, which grows a per-key `since` because the map now
+  spans two milestones. A config still carrying one resolves at its configured
+  stakes level and names the key in `warnings` - it warns, it does not break.
+
+- **`budget-undershoot`.** The weight budget is a CEILING now, not an equality.
+  Exactness was tried in 2.6.1 and taxed a cut at the rate it taxed growth:
+  every prose removal, however obviously good, turned CI red until its
+  `weight-budgets.json` row was re-pinned in the same commit. `budget-overrun`
+  catches the direction that is actually a risk and does the whole job.
+
+- **Byte figures restated in prose.** Eleven deferral sites across eight files
+  carried a hardcoded size that `prose-agreement.test.mjs` then verified against
+  the live tree, so editing one reference dragged four unrelated files and a
+  doc regeneration behind it. The consult-site count stays inline - that is the
+  number the deferral rule actually turns on. `weight.mjs` reports the size on
+  demand. `references/seams.md`'s mandate now says: cite the file, not its size.
+
+### Added
+
+- **`cadence-core/bin/test.mjs`, the suite by group.** 1,367 tests in one arm
+  meant a routing change re-ran the git-publish seams.
+  `node cadence-core/bin/test.mjs routing` is ~2.5s against ~11.5s for the
+  tree, and CI runs one job per group so a red arm names the seam that broke.
+  Groups are declared in the runner rather than a manifest beside it, because
+  nothing else reads them. There is deliberately no coverage check: a stem no
+  group names lands in `other`, which the default run and the CI matrix both
+  execute, so a new test file runs from the moment it exists.
+
+### Fixed
+
+- **`review-provider.test.mjs` wrote into Cadence's own run record.** The seam
+  resolves its trace root as the cwd-relative `.planning`, which is correct in
+  production, where cwd IS the project - but the test harness spawned without a
+  `cwd`, so it inherited the runner's. The live `.planning/trace.jsonl` held
+  1,443 fixture rows against 33 real ones, which is what made it useless for
+  reading real provider latency out of. Both spawn sites now run in the temp
+  dir the rest of the file already used.
+
 ## [2.6.2] - 2026-08-10
 
 What the plugin carries on turn one, and what it can wait to read. Three
