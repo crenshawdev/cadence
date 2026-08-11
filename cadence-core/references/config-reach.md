@@ -120,7 +120,7 @@ purpose test runs against the reach the author just replaced.
 | `workflow.verifier` | universal | `workflows/verify.md` - off switch for the goal-backward pass |
 | `workflow.skip_discuss` | progress next-step suggestion only | `workflows/progress.md`'s next-step table, for an unplanned current phase |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
-| `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner; above it the planner returns `## PHASE TOO BIG`, and cad-plan-checker flags the overrun under Proportionality |
+| `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner, PER PLAN; a phase needing more capacity gets more plans. `planning.mjs plan-size --max-tasks` counts the written plan against it at `check_size`, and cad-plan-checker flags compound tasks under Proportionality - the half a count cannot see |
 | `workflow.test_command` | universal | `workflows/task.md`, `workflows/coverage.md`, `references/execute-parallel.md` (the post-batch run, at its only consumer) and the executor contract |
 | `workflow.lint_command` | universal | the executor contract's static-analysis step - the LINT command only; unset there means `bin/planning.mjs detect-commands` supplies both lint and typecheck from the project's own manifests |
 | `parallelization.enabled` | universal | `workflows/execute.md` - the parallel-path gate |

@@ -56,14 +56,14 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-new-project` | 16,934 |
 | `/cad-pause` | 8,752 |
 | `/cad-phase` | 11,281 |
-| `/cad-plan` | 18,434 |
+| `/cad-plan` | 21,867 |
 | `/cad-plan-review` | 2,343 |
 | `/cad-progress` | 9,791 |
 | `/cad-spike` | 3,898 |
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 17,872 |
-| **23 user-invocable commands** | **253,036** |
+| **23 user-invocable commands** | **256,469** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -82,23 +82,23 @@ may open at a step rather than what it starts holding.
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
 | `/cad-execute` | 24,342 | 93,961 |
-| `/cad-plan` | 18,434 | 76,874 |
+| `/cad-plan` | 21,867 | 80,307 |
 | `/cad-verify` | 17,872 | 91,961 |
 | `/cad-context` | 17,578 | 85,351 |
 | `/cad-land` | 17,070 | 43,256 |
 | `/cad-new-project` | 16,934 | 63,276 |
 | `/cad-milestone` | 16,210 | 66,801 |
 | `/cad-audit` | 14,551 | 64,736 |
-| `/cad-config` | 12,761 | 43,407 |
+| `/cad-config` | 12,761 | 43,474 |
 | `/cad-decision-review` | 12,213 | 29,547 |
 
 Three reference files are reachable from no command at all — budgeted bytes
 that enter no model context, so no context saving may ever claim them
-(`zeroResident` in the same output, 23,645 B):
+(`zeroResident` in the same output, 23,775 B):
 
 | Surface | Bytes |
 |---|---|
-| `cadence-core/references/config-reach.md` | 15,962 |
+| `cadence-core/references/config-reach.md` | 16,092 |
 | `cadence-core/references/model-hints.json` | 2,635 |
 | `cadence-core/references/provider-api.md` | 5,048 |
 
@@ -119,13 +119,13 @@ setting — that invariant is what the spread in this table shows.
 | cad-assumptions-analyzer | `agents/cad-assumptions-analyzer.md` | 519 | 4,625 |
 | cad-executor | `agents/cad-executor-xhigh.md` | 425 | 10,634 |
 | cad-executor | `agents/cad-executor.md` | 438 | 10,647 |
-| cad-plan-checker | `agents/cad-plan-checker-high.md` | 458 | 5,801 |
-| cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 5,809 |
-| cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 5,805 |
-| cad-plan-checker | `agents/cad-plan-checker.md` | 476 | 5,819 |
-| cad-planner | `agents/cad-planner-max.md` | 407 | 8,965 |
-| cad-planner | `agents/cad-planner-xhigh.md` | 415 | 8,973 |
-| cad-planner | `agents/cad-planner.md` | 429 | 8,987 |
+| cad-plan-checker | `agents/cad-plan-checker-high.md` | 458 | 6,220 |
+| cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 6,228 |
+| cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 6,224 |
+| cad-plan-checker | `agents/cad-plan-checker.md` | 476 | 6,238 |
+| cad-planner | `agents/cad-planner-max.md` | 407 | 9,637 |
+| cad-planner | `agents/cad-planner-xhigh.md` | 415 | 9,645 |
+| cad-planner | `agents/cad-planner.md` | 429 | 9,659 |
 | cad-reviewer | `agents/cad-reviewer-max.md` | 436 | 3,767 |
 | cad-reviewer | `agents/cad-reviewer-medium.md` | 448 | 3,779 |
 | cad-reviewer | `agents/cad-reviewer-xhigh.md` | 444 | 3,775 |
@@ -147,11 +147,11 @@ turn-one table above is the number that decides what a session pays.
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 21 | 176,646 |
+| `cadence-core/references/` | 21 | 176,843 |
 | `cadence-core/templates/` | 9 | 18,225 |
-| `cadence-core/workflows/` | 21 | 181,265 |
-| `skills/` | 29 | 86,321 |
-| **total** | **99** | **471,040** |
+| `cadence-core/workflows/` | 21 | 184,698 |
+| `skills/` | 29 | 87,412 |
+| **total** | **99** | **475,761** |
 
 The twelve largest individual surfaces:
 
@@ -159,13 +159,13 @@ The twelve largest individual surfaces:
 |---|---|---|
 | `cadence-core/workflows/execute.md` | 23,600 | 5,900 |
 | `cadence-core/references/acceptance-criteria.md` | 22,506 | 5,627 |
+| `cadence-core/workflows/plan.md` | 21,019 | 5,255 |
 | `cadence-core/references/seams.md` | 17,651 | 4,413 |
-| `cadence-core/workflows/plan.md` | 17,586 | 4,397 |
 | `cadence-core/references/review-triggers.md` | 17,334 | 4,334 |
 | `cadence-core/workflows/verify.md` | 16,823 | 4,206 |
 | `cadence-core/workflows/context.md` | 16,751 | 4,188 |
 | `cadence-core/workflows/new-project.md` | 16,098 | 4,025 |
-| `cadence-core/references/config-reach.md` | 15,962 | 3,991 |
+| `cadence-core/references/config-reach.md` | 16,092 | 4,023 |
 | `cadence-core/references/plan-frontmatter.md` | 13,954 | 3,489 |
 | `cadence-core/references/req-traceability.md` | 13,725 | 3,432 |
 | `cadence-core/workflows/audit.md` | 12,912 | 3,228 |

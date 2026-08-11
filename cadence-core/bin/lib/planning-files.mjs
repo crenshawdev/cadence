@@ -300,6 +300,60 @@ export function isRequirementId(id) {
   return REQ_ID_EXACT.test(id);
 }
 
+/**
+ * The requirement ids a phase's ROADMAP detail block names, and its goal line.
+ *
+ * The grammar is the one `/cad-new-project` writes and `references/roadmap-phases.md`
+ * states: a `### Phase <N>: <name>` heading, then a `**Requirements:** ID, ID, ...`
+ * line inside that block. Reads the DETAIL section, never the `## Phases`
+ * checklist, because the checklist line carries a one-line description and no
+ * ids at all.
+ *
+ * Pure and total: no I/O, no throw. A phase with no detail block, or a block
+ * with no `**Requirements:**` line, yields `{found: false, ids: []}` - absence
+ * is not zero, and a caller that gated on a count would otherwise read an
+ * unwritten roadmap as a small phase.
+ *
+ * @param {string} text the ROADMAP.md bytes
+ * @param {string|number} phase the caller's own spelling (D-02)
+ * @returns {{found: boolean, ids: string[], goal: string}}
+ */
+export function phaseRequirements(text, phase) {
+  const body = normalizeCrlf(String(text || ''));
+  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
+  const at = body.search(head);
+  if (at < 0) return { found: false, ids: [], goal: '' };
+  const rest = body.slice(at);
+  // Search from AFTER this block's own heading line, never from `rest[1]`:
+  // `^` under /m matches at index 0, so slicing by one character finds the
+  // heading we just matched and yields a one-character block.
+  const afterHeading = rest.indexOf('\n') + 1;
+  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
+  const nextHeading = tail.search(/^#{1,3} /m);
+  const block = nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+
+  const reqLine = block.match(/^\*\*Requirements:\*\*(.*)$/m);
+  const goalLine = block.match(/^\*\*Goal:\*\*(.*)$/m);
+  if (!reqLine) return { found: false, ids: [], goal: goalLine ? goalLine[1].trim() : '' };
+  // Deduped: a block naming one id twice is one requirement, and a count that
+  // said two would push a phase over a ceiling for a typo.
+  const ids = [...new Set(idTokensIn(reqLine[1]).filter(isRequirementId))];
+  return { found: true, ids, goal: goalLine ? goalLine[1].trim() : '' };
+}
+
+/**
+ * The `### Task <n>: <name>` headings in one PLAN's bytes, in file order.
+ *
+ * Anchored to the heading level `templates/PLAN.md` writes, so a `## Tasks`
+ * section heading is not a task and a `#### ` sub-bullet under one is not
+ * either. Pure and total.
+ * @param {string} text @returns {string[]} the task titles
+ */
+export function planTaskTitles(text) {
+  return [...normalizeCrlf(String(text || '')).matchAll(/^### Task\s+[\d.]+\s*:?\s*(.*)$/gm)]
+    .map((m) => m[1].trim());
+}
+
 /** Every requirement-id token in `s`, its leading delimiter stripped. */
 function idTokensIn(s) {
   return [...s.matchAll(REQ_ID_TOKEN_G)].map((m) => m[0].slice(m[0].search(/[A-Z#]/)));

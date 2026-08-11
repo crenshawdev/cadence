@@ -1743,6 +1743,99 @@ test('audit: a quoted scalar requirements: value reads as the single id', () => 
   assert.equal(r.orphans, undefined);
 });
 
+// --- plan-size: the two counts that were soft until v2.7.0 --------------------
+
+/** A phase whose ROADMAP detail block names `ids`, plus `plans` of N tasks. */
+function sizeTree(ids, plans) {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  if (ids) {
+    const rm = readFileSync(join(dir, 'ROADMAP.md'), 'utf8')
+      .replace('**Goal:** goal 1\n', `**Goal:** goal 1\n**Requirements:** ${ids.join(', ')}\n`);
+    writeFileSync(join(dir, 'ROADMAP.md'), rm);
+  }
+  const pdir = join(dir, 'phases', '1');
+  mkdirSync(pdir, { recursive: true });
+  for (const [file, n] of Object.entries(plans || {})) {
+    const tasks = Array.from({ length: n }, (_, i) =>
+      `### Task ${i + 1}: do ${i + 1}\n\n- **Files:** src/a.rs\n`).join('\n');
+    writeFileSync(join(pdir, file), `# Plan\n\n## Tasks\n\n${tasks}`);
+  }
+  return dir;
+}
+
+test('plan-size: counts the requirements a ROADMAP detail block names, deduped', () => {
+  const dir = sizeTree(['STOR-01', 'STOR-02', 'STOR-02', 'IDENT-01'], {});
+  const r = run(['plan-size', '--phase', '1'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.requirements_found, true);
+  assert.equal(r.requirements, 3, JSON.stringify(r.requirement_ids));
+});
+
+test('plan-size: a phase over --max-reqs is phase-too-big, naming both numbers', () => {
+  const dir = sizeTree(['STOR-01', 'STOR-02', 'STOR-03', 'STOR-04'], {});
+  const r = run(['plan-size', '--phase', '1', '--max-reqs', '3'], dir);
+  assert.equal(r.within, false);
+  const hit = r.over.find((o) => o.kind === 'phase-too-big');
+  assert.ok(hit, JSON.stringify(r.over));
+  assert.equal(hit.measured, 4);
+  assert.equal(hit.ceiling, 3);
+});
+
+test('plan-size: NO detail block is unmeasured, never zero - it is not compared', () => {
+  // The whole point of `requirements_found`. A count of 0 is under every
+  // ceiling, so an unwritten roadmap would otherwise read as a small phase.
+  const dir = sizeTree(null, {});
+  const r = run(['plan-size', '--phase', '1', '--max-reqs', '3'], dir);
+  assert.equal(r.requirements_found, false);
+  assert.equal(r.requirements, 0);
+  assert.deepEqual(r.over, []);
+  assert.equal(r.within, true);
+});
+
+test('plan-size: the task ceiling is PER PLAN - 4+4+4 against a ceiling of 4 is within', () => {
+  // The ambiguity this seam settled: `max_plan_tasks` is named per plan while
+  // the workflow said "delivering this phase". A phase splitting into three
+  // conforming plans is the move the ceiling is meant to produce.
+  const dir = sizeTree(['STOR-01'], { 'PLAN-1.md': 4, 'PLAN-2.md': 4, 'PLAN-3.md': 4 });
+  const r = run(['plan-size', '--phase', '1', '--max-tasks', '4'], dir);
+  assert.equal(r.tasks, 12);
+  assert.deepEqual(r.over, []);
+  assert.equal(r.within, true);
+});
+
+test('plan-size: ONE plan over the ceiling is flagged, naming the plan file', () => {
+  const dir = sizeTree(['STOR-01'], { 'PLAN-1.md': 3, 'PLAN-2.md': 8 });
+  const r = run(['plan-size', '--phase', '1', '--max-tasks', '4'], dir);
+  const hit = r.over.find((o) => o.kind === 'plan-too-many-tasks');
+  assert.ok(hit, JSON.stringify(r.over));
+  assert.equal(hit.plan, 'PLAN-2.md');
+  assert.equal(hit.measured, 8);
+  assert.equal(r.over.filter((o) => o.kind === 'plan-too-many-tasks').length, 1);
+});
+
+test('plan-size: an unwritten plan is never over its ceiling', () => {
+  const dir = sizeTree(['STOR-01'], {});
+  const r = run(['plan-size', '--phase', '1', '--max-tasks', '1'], dir);
+  assert.equal(r.tasks, 0);
+  assert.deepEqual(r.plans, []);
+  assert.deepEqual(r.over, []);
+});
+
+test('plan-size: no ceiling flags nothing but still reports the counts', () => {
+  const dir = sizeTree(['STOR-01', 'STOR-02'], { 'PLAN.md': 9 });
+  const r = run(['plan-size', '--phase', '1'], dir);
+  assert.equal(r.requirements, 2);
+  assert.equal(r.tasks, 9);
+  assert.deepEqual(r.over, []);
+  assert.equal(r.max_tasks, undefined);
+});
+
+test('plan-size: a missing --phase is bad-args, never the cursor', () => {
+  const dir = sizeTree(['STOR-01'], {});
+  assert.equal(run(['plan-size'], dir).reason, 'bad-args');
+  assert.equal(run(['plan-size', '--phase', 'x'], dir).reason, 'bad-args');
+});
+
 test('plan-overlap: block-form files: lists intersect like inline ones (#48.1)', () => {
   const dir = makeTree({
     roadmap: [{ n: 1, name: 'One' }],

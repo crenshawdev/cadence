@@ -96,9 +96,19 @@ Every task has exactly three fields, all concrete:
   that later masquerades as a pass. A CONTEXT criterion already tagged
   `(human-verify: ...)` carries that intent forward.
 
-Atomic means: one concern, independently verifiable, leaves the repo
-committable. Target 3-10 tasks for a typical phase; a task touching more
-than ~5 files is usually two tasks.
+Atomic means: ONE concern, independently verifiable, leaves the repo
+committable. One concern is the binding half: a task whose title needs "and" or
+a comma to describe it - "scaffolding, license, typed errors and the CLI
+skeleton" - is that many tasks, however few files it touches. A task touching
+more than ~5 files is usually two tasks as well, but the file count is the
+weaker signal and it catches less.
+
+Task count comes from the `Task ceiling` in your dispatch, PER PLAN, and it
+replaces any remembered target: carry no "3-10 tasks" rule of your own. A phase
+needing more capacity than one plan's ceiling gets MORE PLANS, sequential where
+they share declared files. Splitting is the expected move. Compressing four
+concerns into one task to fit under a ceiling is the failure this ceiling
+exists to prevent, and it is worse than the overrun.
 </task_anatomy>
 
 <separation_of_concerns>

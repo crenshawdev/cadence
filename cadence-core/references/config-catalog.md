@@ -26,7 +26,7 @@ selectable option and its `description`.
 | `workflow.verifier` | bool | Off switch for goal-backward verification after a phase | `true`→the stakes level decides (`--deep` forces) · `false`→always skip | true |
 | `workflow.skip_discuss` | bool | Which command `/cad-progress` suggests for an unplanned phase - progress next-step suggestion only, it skips no step | `true`→suggest `/cad-plan` · `false`→suggest `/cad-context` | false |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
-| `workflow.max_plan_tasks` | int | Task count above which a phase plan must return `## PHASE TOO BIG` rather than be written | e.g. `8` | 8 |
+| `workflow.max_plan_tasks` | int | Task ceiling PER PLAN; a phase needing more capacity gets more plans, sequential where they share files. Counted at `check_size` by `planning.mjs plan-size` | e.g. `8` | 8 |
 | `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
 | `workflow.lint_command` | str\|null | Command an executor runs for static analysis before it commits - LINT only, there is no typecheck key | shell string, or `null` (none set; the executor detects instead) | null |
 | **Parallelization** |||||
