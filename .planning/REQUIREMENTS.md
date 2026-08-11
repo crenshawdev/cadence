@@ -38,7 +38,7 @@ parses only the Traceability table).
 | DBT-01 (CADENCE-DEBT markers plus an idempotent debt-harvest seam) | 3 | Complete | v2.6.0 |
 | TOK-03 (--tokens, --role and --read on trace append; per-role totals in render) | 4 | Complete | v2.6.0 |
 | TOK-04 (every phase-scoped dispatch site brackets its worker) | 4 | Complete | v2.6.0 |
-| EVD-02 (docs/EVIDENCE.md, measured byte figures linked from README) | 5 | Complete | v2.6.0 |
+| EVD-02 (docs/EVIDENCE.md, weight definitions + the commands that measure, linked from README) | 5 | Complete | v2.7.0 |
 | DOC-02 (/cad-docs-verify across the whole doc surface, output committed) | 5 | Complete | v2.6.0 |
 | DOC-03 (a real defect is filed as its own requirement, never reworded away) | 5 | Complete | v2.6.0 |
 | RCL-01 (BM25 recall over `.planning/`, one-line JSON, deterministic) | 1 | Complete | v1.1.0-rc.1 |

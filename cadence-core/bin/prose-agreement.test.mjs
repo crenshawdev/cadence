@@ -17,13 +17,12 @@
 // *.test.mjs, so nothing here carries an @ts-check burden.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { weighAll } from './lib/surface-weight.mjs';
-import { residentWeight } from './lib/resident-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -177,52 +176,11 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
 
 // --- the measured byte count, wherever prose copies it -----------------------
 
-/** `NN,NNN` as prose writes a byte count. */
-const commas = (n) => n.toLocaleString('en-US');
-
-/**
- * A byte figure in the shape `commas()` above emits: `912 B`, `4,611 B`,
- * `17,837 B`. The sub-1,000 arm is deliberate. A narrower `\d{1,3},\d{3} B`
- * steps straight over every reference measuring under a kilobyte and leaves its
- * figure unchecked, which is the drift this scan exists to close rather than a
- * shape it is allowed to skip.
- */
-const FIGURE_SRC = String.raw`\b\d{1,3}(?:,\d{3})* B\b`;
-/** Every byte figure in one sentence. Built per call: `g` regexes hold state. */
-const figuresIn = (text) => text.match(new RegExp(FIGURE_SRC, 'g')) || [];
-
-/** A `${CLAUDE_PLUGIN_ROOT}` path at a reference or a template, capturing the surface. */
-const PLUGIN_PATH_SRC = String.raw`\$\{CLAUDE_PLUGIN_ROOT\}/(cadence-core/(?:references|templates)/[A-Za-z0-9._-]+)`;
-/** The distinct surfaces one sentence names by `${CLAUDE_PLUGIN_ROOT}` path. */
-const pathsIn = (text) => [...new Set(
-  [...text.matchAll(new RegExp(PLUGIN_PATH_SRC, 'g'))].map((m) => m[1]))];
-
-/**
- * Split prose into sentences exactly as `lib/deferred-reads.mjs` does - a
- * terminator followed by whitespace - so a figure and the path it belongs to
- * are grouped here the same way the register's own check groups them. Line
- * granularity would be wrong: `skills/cad-plan-review/SKILL.md` puts the path
- * on one line and `17,837 B` on the next.
- */
 const sentencesOf = (text) => text.split(/(?<=[.!?])\s+/);
-
-/** Every prose surface a deferral's Read sentence can live in, root-relative. */
-function proseFiles() {
-  const out = [];
-  for (const skill of readdirSync(join(REPO, 'skills'), { withFileTypes: true })) {
-    if (skill.isDirectory()) out.push(`skills/${skill.name}/SKILL.md`);
-  }
-  for (const dir of ['workflows', 'references']) {
-    for (const f of readdirSync(join(REPO, 'cadence-core', dir))) {
-      if (f.endsWith('.md')) out.push(`cadence-core/${dir}/${f}`);
-    }
-  }
-  return out;
-}
 
 /**
  * The `skill|reference` keys the COVERAGE arm below does not hold to the
- * inline-figure rule. `cadence-core/references/seams.md:239-243` binds that rule
+ * inline consult-site rule. `cadence-core/references/seams.md` binds that rule
  * to any deferral made "from this point forward" and releases these three by
  * name in the same sentence: "the deferrals already in `cad-land` predate this
  * sentence and are not held to it".
@@ -285,171 +243,4 @@ test('every deferred-read row states its consult-site count at each anchor', () 
     }
   }
   assert.ok(checked > 0, 'no register row reached the coverage arm');
-});
-
-test('docs/EVIDENCE.md: every twelve-largest row states measured bytes AND est tokens', () => {
-  // Every row, not just review-triggers.md's: checking one of twelve leaves the
-  // other eleven and the whole est-token column free to stale in silence, which
-  // is the drift this check exists to close. Est tokens come from the seam's own
-  // measurement, never a recomputation of bytes/4 - `estTokens` counts
-  // CHARACTERS, which is why 17,714 B reads 4,429 rather than 4,428.
-  const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
-  const evidence = doc('docs', 'EVIDENCE.md');
-
-  // Scoped to the table under its own heading sentence, so the per-directory
-  // table above it - same three-column shape, `cadence-core/<dir>/` in cell one
-  // - cannot be swept in and read as a surface.
-  const section = evidence.split('The twelve largest individual surfaces:')[1];
-  assert.ok(section, 'the twelve-largest table lost its heading sentence');
-  const rows = section.split('\n')
-    .map((l) => l.match(/^\| `([^`]+[^/])` \| ([\d,]+) \| ([\d,]+) \|$/))
-    .filter(Boolean);
-  assert.equal(rows.length, 12, 'the twelve-largest table no longer has twelve parsed rows');
-
-  const num = (s) => Number(s.replace(/,/g, ''));
-  for (const [, surface, bytes, est] of rows) {
-    const m = measured.get(surface);
-    assert.ok(m, `EVIDENCE names ${surface}, which is not a measured surface`);
-    assert.equal(num(bytes), m.bytes, `${surface} bytes`);
-    assert.equal(num(est), m.estTokens, `${surface} est tokens`);
-  }
-
-  // And the table really is the twelve largest, so a row cannot quietly leave it.
-  const largest = [...measured.values()].sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 12).map((s) => s.surface);
-  assert.deepEqual(rows.map((r) => r[1]), largest);
-});
-
-test('docs/EVIDENCE.md: the per-directory subtotals and grand total are the measured sums', () => {
-  // The stale half this check was written for: `cadence-core/workflows/` and the
-  // grand total were 159 B light before this phase touched anything - exactly
-  // 716fb60's task.md growth, committed after f8f22cf last re-measured them.
-  const all = weighAll(REPO);
-  const evidence = doc('docs', 'EVIDENCE.md');
-  const num = (s) => Number(s.replace(/,/g, ''));
-
-  const prefixes = ['agents/', 'cadence-core/references/', 'cadence-core/templates/',
-    'cadence-core/workflows/', 'skills/'];
-  let seen = 0;
-  for (const prefix of prefixes) {
-    const under = all.filter((s) => s.surface.startsWith(prefix));
-    const row = evidence.split('\n').find((l) => l.startsWith(`| \`${prefix}\` |`));
-    assert.ok(row, `no per-directory row for ${prefix}`);
-    const [, count, bytes] = row.split('|').slice(1, -1).map((c) => c.trim());
-    assert.equal(num(count), under.length, `${prefix} surface count`);
-    assert.equal(num(bytes), under.reduce((t, s) => t + s.bytes, 0), `${prefix} bytes`);
-    seen += under.length;
-  }
-  assert.equal(seen, all.length, 'a measured surface falls under none of the five prefixes');
-
-  const total = evidence.split('\n').find((l) => l.startsWith('| **total** |'));
-  assert.ok(total, 'no grand-total row');
-  const [, count, bytes] = total.split('|').slice(1, -1).map((c) => c.trim().replace(/\*/g, ''));
-  assert.equal(num(count), all.length, 'grand-total surface count');
-  assert.equal(num(bytes), all.reduce((t, s) => t + s.bytes, 0), 'grand-total bytes');
-});
-
-// --- the four EVIDENCE tables the byte checks above did NOT reach -----------
-//
-// The twelve-largest and per-directory checks above pin `weighAll`'s output.
-// They leave four tables measured by `residentWeight` pinned by nothing, which
-// is the same failure class EVIDENCE.md:171-177 claims to have closed: add one
-// sentence to any workflow, re-pin its budget entry, and self-verify goes green
-// while the turn-one, eager/reachable and dispatch figures quietly go wrong.
-// The file's own promise at :6 is "check the tree out, run the command,
-// compare" - so every measured figure it prints is checked here, not four of
-// the six tables' worth.
-
-/** Rows of the markdown table that starts at the first line matching `head`. */
-const rowsUnder = (text, head) => {
-  const lines = text.split('\n');
-  const start = lines.findIndex((l) => l.startsWith(head));
-  assert.ok(start >= 0, `no table row starting ${head}`);
-  let i = start;
-  while (i > 0 && lines[i - 1].startsWith('|')) i -= 1;
-  const out = [];
-  for (; i < lines.length && lines[i].startsWith('|'); i += 1) {
-    const cells = lines[i].split('|').slice(1, -1).map((c) => c.trim().replace(/\*/g, ''));
-    if (cells.every((c) => /^-*:?-*$/.test(c) || c === '')) continue;
-    // Drop the header: a data row always ends in a byte figure, a header never
-    // does, and walking back to the table start necessarily picks the header up.
-    if (!/^[\d,]+$/.test(cells[cells.length - 1])) continue;
-    out.push(cells);
-  }
-  return out;
-};
-
-test('docs/EVIDENCE.md: every turn-one byte figure is what residentWeight measures', () => {
-  const r = residentWeight(REPO);
-  const evidence = doc('docs', 'EVIDENCE.md');
-  const num = (s) => Number(s.replace(/,/g, ''));
-
-  const rows = rowsUnder(evidence, '| Command | Turn-one bytes |')
-    .filter((c) => c[0].startsWith('`/'));
-  const byCommand = new Map(r.commands.map((c) => [c.command, c]));
-
-  let sum = 0;
-  for (const [name, bytes] of rows) {
-    const command = name.replace(/[`/]/g, '');
-    const measured = byCommand.get(command);
-    assert.ok(measured, `EVIDENCE names ${name}, residentWeight does not measure it`);
-    assert.equal(num(bytes), measured.eagerBytes, `${name} turn-one bytes`);
-    sum += measured.eagerBytes;
-  }
-  assert.equal(rows.length, r.commands.length, 'a measured command has no turn-one row');
-
-  const total = evidence.split('\n').find((l) => l.startsWith('| **23 user-invocable commands**'));
-  assert.ok(total, 'no turn-one total row');
-  assert.equal(num(total.split('|').slice(1, -1)[1].trim().replace(/\*/g, '')), sum,
-    'turn-one total is not the sum of the column above it');
-});
-
-test('docs/EVIDENCE.md: every eager-vs-reachable pair is what residentWeight measures', () => {
-  const r = residentWeight(REPO);
-  const evidence = doc('docs', 'EVIDENCE.md');
-  const num = (s) => Number(s.replace(/,/g, ''));
-  const byCommand = new Map(r.commands.map((c) => [c.command, c]));
-
-  const rows = rowsUnder(evidence, '| Command | Eager (turn one) |');
-  assert.ok(rows.length >= 10, 'the eager-vs-reachable table lost rows');
-  for (const [name, eager, reachable] of rows) {
-    const command = name.replace(/[`/]/g, '');
-    const measured = byCommand.get(command);
-    assert.ok(measured, `EVIDENCE names ${name}, residentWeight does not measure it`);
-    assert.equal(num(eager), measured.eagerBytes, `${name} eager bytes`);
-    assert.equal(num(reachable), measured.reachableBytes, `${name} reachable bytes`);
-  }
-});
-
-test('docs/EVIDENCE.md: the zero-resident surfaces and their total are measured', () => {
-  const r = residentWeight(REPO);
-  const evidence = doc('docs', 'EVIDENCE.md');
-  const num = (s) => Number(s.replace(/,/g, ''));
-
-  for (const s of r.zeroResident) {
-    const row = evidence.split('\n').find((l) => l.startsWith(`| \`${s.surface}\` |`));
-    assert.ok(row, `${s.surface} reaches no command but EVIDENCE does not list it`);
-    assert.equal(num(row.split('|').slice(1, -1)[1].trim()), s.bytes, `${s.surface} bytes`);
-  }
-  assert.ok(evidence.includes(r.zeroResidentBytes.toLocaleString('en-US')),
-    `EVIDENCE does not state the zero-resident total ${r.zeroResidentBytes}`);
-});
-
-test('docs/EVIDENCE.md: every dispatch row states the measured agent and dispatch bytes', () => {
-  const r = residentWeight(REPO);
-  const evidence = doc('docs', 'EVIDENCE.md');
-  const num = (s) => Number(s.replace(/,/g, ''));
-
-  const rows = rowsUnder(evidence, '| Role | Agent file |');
-  assert.equal(rows.length, r.roles.length, 'a measured rung agent has no dispatch row');
-
-  const byAgent = new Map(r.roles.map((x) => [x.agent, x]));
-  for (const [role, agent, agentBytes, dispatchBytes] of rows) {
-    const file = agent.replace(/`/g, '');
-    const measured = byAgent.get(file);
-    assert.ok(measured, `EVIDENCE names ${file}, residentWeight does not measure it`);
-    assert.equal(role, measured.role, `${file} role`);
-    assert.equal(num(agentBytes), measured.agentBytes, `${file} agent bytes`);
-    assert.equal(num(dispatchBytes), measured.dispatchBytes, `${file} dispatch bytes`);
-  }
 });
