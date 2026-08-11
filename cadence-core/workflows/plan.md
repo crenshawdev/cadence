@@ -38,6 +38,23 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
   git.base_branch memory.backend
 ```
 
+Then size the phase, BEFORE spending a planner dispatch on it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-size --phase {N} \
+  --max-reqs 12 --max-tasks {workflow.max_plan_tasks}
+```
+
+A `phase-too-big` entry in `over` means this phase names more requirements than
+one phase should carry. Present it with the offer at `too_big` below WITHOUT
+dispatching the planner: a ten-to-fourteen minute planner run to learn what a
+count already knows is the cost this check exists to remove. `--max-reqs 12` is
+a fixed rail rather than a config key, because it is a shape rule about
+roadmaps, not a per-project preference; a phase over it is one that will produce
+compound tasks whatever ceiling the planner is handed. `requirements_found:
+false` is NOT zero - a phase with no ROADMAP detail block is unmeasured, and it
+is never compared.
+
 The `plan` gate is NOT in that batch: fire(trigger) takes every gate from the
 routing bundle (`route.mjs resolve`), so the stakes level reaches this fire site
 rather than only the seam. `config.mjs get` returns the schema DEFAULT for a
@@ -127,7 +144,7 @@ Mode: {standard | gaps | revision}
 Goal: {goal line from ROADMAP.md}
 Requirements: {phase requirement IDs - every ID must appear in a plan}
 Plan shape (from CONTEXT, directive): {one plan | multiple plans | split - deferred slice | not specified}
-Task ceiling: {workflow.max_plan_tasks}. If delivering this phase needs MORE than that many tasks, return `## PHASE TOO BIG` instead of writing the plan. Reporting the overrun is not reducing scope - it is the one path that does not.
+Task ceiling: {workflow.max_plan_tasks} tasks PER PLAN, not per phase. A phase needing more capacity than that gets MORE PLANS, sequential if they share files - splitting is the expected move, not an escape hatch. Return `## PHASE TOO BIG` only when the phase cannot be delivered by any number of plans of that size, which is a statement about the PHASE's scope and not about task count. Reporting the overrun is not reducing scope - it is the one path that does not. This ceiling replaces any task-count target you carry: where your contract says "target 3-10 tasks", this number wins.
 
 Read before planning:
 - .planning/ROADMAP.md (this phase's entry and its dependencies)
@@ -196,18 +213,67 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 ```
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
-- `## PHASE TOO BIG` - present the planner's reason and proposed split, then
-  ask (ask-user seam): split into SMALL phases via `/cad-phase add` (stop;
-  re-run /cad-plan per phase after) or plan the full scope anyway (re-dispatch
-  ONCE with that instruction). Split into phases, not into more plans inside
-  this one: `plan-overlap` refuses two plans declaring the same path, so plans
-  sharing a file cannot run concurrently, while independent phases can (see
-  `parallelization.max_concurrent_agents`) and each verifies and lands on its
-  own. This is a consult dead-end: before that ask, run offer_consult per
-  references/consult.md with the split problem as the situation.
+- `## PHASE TOO BIG` - rejoin at `too_big` below.
+
+<step name="too_big">
+Reached two ways: a `phase-too-big` entry from `plan-size` at `parse` (before
+any planner ran), or a `## PHASE TOO BIG` return from the planner.
+
+State the measurement first, in one line - the requirement count and the
+ceiling, or the planner's own reason - then ask (ask-user seam) with these
+three options, the first marked `(recommended)`:
+
+1. **Split into plans inside this phase (recommended).** Re-dispatch the
+   planner ONCE, instructed to write `PLAN-1.md`, `PLAN-2.md`, ... each within
+   the task ceiling. Plans that share a declared path are SEQUENTIAL: mark each
+   one so, and `/cad-execute` runs them in order. This is the ordinary move.
+   The phase keeps one goal, one CONTEXT, one UAT, and one landing.
+2. **Split into phases via `/cad-phase add`.** For when the phase carries more
+   than one deliverable rather than one deliverable too large. Stops here; you
+   run `/cad-phase add`, then `/cad-plan` per phase. Independent phases can run
+   concurrently (see `parallelization.max_concurrent_agents`) and each verifies
+   and lands on its own.
+3. **Plan the full scope anyway.** Re-dispatch ONCE with that instruction. The
+   result is a plan over its ceiling, and `check_size` below will say so rather
+   than let it pass silently.
+
+Do NOT claim option 1 is unavailable because plans cannot share files.
+`plan-overlap` reports a shared path so the caller knows the plans are
+sequential rather than concurrent; it does not refuse the split, and a
+sequential multi-plan phase is a shape this workflow supports.
+
+This is a consult dead-end: before that ask, run offer_consult per
+references/consult.md with the split problem as the situation.
+</step>
 - Empty or unmarked return - if phases/<N>/PLAN*.md exists on disk, treat
   the files as authoritative and continue; otherwise report the failed
   spawn and stop.
+</step>
+
+<step name="check_size">
+The written plan against the ceiling the planner was handed. A COUNT, run after
+`handle_return` and before `check_gate`:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" plan-size --phase {N} \
+  --max-tasks {workflow.max_plan_tasks}
+```
+
+`plan-too-many-tasks` names the PLAN file and both numbers. It is per plan, so
+the remedy is the same one `too_big` recommends: re-dispatch ONCE instructed to
+split this plan's tasks across more plans, sequential where they share files.
+Say the numbers out loud when you do - "PLAN.md carries 8 tasks against a
+ceiling of 4" - because the point of this step is that the overrun stops being
+silent.
+
+Not a hard halt. The user may have chosen option 3 at `too_big` and asked for
+the full scope, and a check that refused what the user just authorized would be
+arguing with them. One re-dispatch, or the user's word, then continue.
+
+This exists because soft enforcement was measured and failed: a planner told
+the ceiling and a checker told to flag the overrun both passed an 8-task plan
+against a ceiling of 4. Two model-judgment gates missed a comparison a count
+makes exactly.
 </step>
 
 <step name="check_gate">
@@ -263,8 +329,8 @@ Handle the return:
     main context (or note why not) and continue. Do NOT spend the revision loop
     or a re-check on warnings alone.
   - Any BLOCKER -> ONE revision, maximum. Read
-    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-revision.md` (4,360 B,
-    one consult site - this step) and follow it: the fresh revision-mode planner
+    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-revision.md` (one
+    consult site - this step) and follow it: the fresh revision-mode planner
     spawn, the narrowed checker re-dispatch, both of their brackets, and the
     no-BLOCKER-left / still-a-BLOCKER ask that ends the arm.
 - Empty or unmarked return -> report it, ask whether to proceed unchecked.

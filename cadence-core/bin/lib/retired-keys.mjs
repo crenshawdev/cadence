@@ -23,12 +23,15 @@
  * @property {string|null} replacement the key that took its place, or null when
  *   the key was removed outright with nothing standing in for it
  * @property {string} detail one clause a user can act on without a lookup
+ * @property {string} [since] the version that retired it, default 'v2.0.0' -
+ *   the map spans more than one milestone now, and a message naming the wrong
+ *   one sends a user at the wrong changelog entry
  */
 
 /**
- * Every config key v2.0.0 retired, keyed by the exact dotted token a user
- * writes at the CLI - `checkPairs` looks a key up by that token, so the
- * spelling here IS the matched string.
+ * Every retired config key, keyed by the exact dotted token a user writes at
+ * the CLI - `checkPairs` looks a key up by that token, so the spelling here IS
+ * the matched string. `since` names the milestone that retired each one.
  * @type {Readonly<Record<string, RetiredKey>>}
  */
 export const RETIRED_KEYS = Object.freeze({
@@ -52,6 +55,70 @@ export const RETIRED_KEYS = Object.freeze({
     detail: 'removed with the `auto` mode - a role escalates to exactly one rung, '
       + "the retry rung its own routing cell names, so there is no second step to cap",
   }),
+  'workflow.subagent_timeout': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed because nothing could enforce it - no code read the key, '
+      + 'and the host spawn seam takes no timeout and offers no cancel, so a '
+      + 'dispatch runs until it returns; size plans with workflow.max_plan_tasks '
+      + 'instead, which is the real lever on what one dispatch costs',
+  }),
+  'risk.override.auth': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.migrations': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.billing': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.concurrency': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.destructive': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.secrets': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.api_contract': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
+  'risk.override.untrusted_input': Object.freeze({
+    replacement: null,
+    since: 'v2.7.0',
+    detail: 'removed with the dispatch-time risk floor - stakes is no longer '
+      + 'raised by a path token, so there is no floor for a waiver to lower; '
+      + 'the commit-time risk_surface review still judges the actual diff',
+  }),
 });
 
 /**
@@ -64,9 +131,10 @@ export const RETIRED_KEYS = Object.freeze({
 export function retiredKeyError(key) {
   const spec = typeof key === 'string' ? RETIRED_KEYS[key] : undefined;
   if (!spec) return null;
+  const since = spec.since || 'v2.0.0';
   return spec.replacement
-    ? `retired in v2.0.0: use "${spec.replacement}" instead (${spec.detail})`
-    : `retired in v2.0.0: ${spec.detail}`;
+    ? `retired in ${since}: use "${spec.replacement}" instead (${spec.detail})`
+    : `retired in ${since}: ${spec.detail}`;
 }
 
 /**
@@ -104,9 +172,10 @@ export function retiredKeysIn(config) {
   const out = [];
   for (const [key, spec] of Object.entries(RETIRED_KEYS)) {
     if (!hasPath(config, key)) continue;
+    const since = spec.since || 'v2.0.0';
     out.push(spec.replacement
-      ? `config key "${key}" was retired in v2.0.0 and is ignored: use "${spec.replacement}" instead (${spec.detail})`
-      : `config key "${key}" was retired in v2.0.0 and is ignored: ${spec.detail}`);
+      ? `config key "${key}" was retired in ${since} and is ignored: use "${spec.replacement}" instead (${spec.detail})`
+      : `config key "${key}" was retired in ${since} and is ignored: ${spec.detail}`);
   }
   return out;
 }

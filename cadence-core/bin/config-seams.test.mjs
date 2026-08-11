@@ -180,7 +180,6 @@ function planFiles(fx, phase, files) {
 }
 
 /** The `risk floor:` entries of a route bundle's reason list. */
-const floorEntries = (r) => (r.reason || []).filter((x) => /^risk floor:/.test(x));
 
 // --- route.mjs: the stakes level a layer set --------------------------------
 
@@ -197,7 +196,6 @@ test('route: the stakes it routes on is what config.mjs get reports (global laye
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  assert.deepEqual(floorEntries(r), [], 'no floor fired: the arm is about the config read');
   assert.equal(r.stakes, getValue('stakes', fx));
   // ...and the value came from the global layer, not from the schema default:
   // `shipped` is what an unset `stakes` resolves to.
@@ -210,7 +208,6 @@ test('route: the stakes it routes on is what config.mjs get reports (global laye
   const r2 = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', low.repoFile, '--phase', '9'], low);
   assert.equal(r2.ok, true);
-  assert.deepEqual(floorEntries(r2), []);
   assert.equal(r2.stakes, getValue('stakes', low));
   assert.equal(r2.stakes, 'solo');
 });
@@ -417,27 +414,24 @@ test('git-publish: the protected list it refuses on IS the merged one get report
   assert.equal(refExists(offList.bare, 'refs/heads/main'), true);
 });
 
-test('route: a global-layer risk.override is reported by get and ignored by the resolver', () => {
-  // route.mjs:142,171 read `risk.override.*` from layers.repo ALONE: the key is
-  // src: repo, and one line in one user-global file must not waive a risk floor
-  // in every repository on the machine.
+test('route: a retired risk.override is named by both faces, and routes nothing', () => {
+  // The eight `risk.override.*` keys were retired with the dispatch-time floor
+  // in v2.7.0. An existing config carrying one must WARN, not break, and must
+  // not move a single knob.
   const fx = layers({
-    global: { risk: { override: { auth: true } } },
-    repo: { stakes: 'solo' },
+    global: {},
+    repo: { stakes: 'solo', risk: { override: { auth: true } } },
   });
   planFiles(fx, 9, ['README.md', 'src/auth/session.rs']);
-  assert.equal(getValue('risk.override.auth', fx), true, 'get reports the MERGED value');
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  // The floor STANDS: the waiver the global layer names waived nothing.
-  assert.equal(r.stakes, 'critical');
-  assert.ok(floorEntries(r).some((x) => /auth/.test(x)), JSON.stringify(r.reason));
-  // Named, not merely dropped. Filtered by KEY, never by warning count: other
-  // diagnostics land on this same array.
+  // The configured level stands: an auth path in the plan raises nothing now.
+  assert.equal(r.stakes, 'solo');
+  assert.equal(r.model, 'sonnet');
   const named = (r.warnings || []).filter((w) => w.includes('risk.override.auth'));
   assert.ok(named.length >= 1, JSON.stringify(r.warnings));
-  assert.match(named[0], /IGNORED/);
+  assert.match(named[0], /retired in v2\.7\.0/);
 });
 
 // --- the last two seams -----------------------------------------------------
@@ -554,7 +548,6 @@ test('merge precedence: the repo layer wins the same key, on both read faces', (
   const r = seam('route.mjs',
     ['resolve', '--role', 'cad-executor', '--file', fx.repoFile, '--phase', '9'], fx);
   assert.equal(r.ok, true);
-  assert.deepEqual(floorEntries(r), [], 'no floor fired: the arm is about the merge');
   assert.equal(getValue('stakes', fx), 'solo', 'get: the repo layer wins');
   assert.equal(r.stakes, 'solo', 'route: the repo layer wins, on the same fixture');
 });

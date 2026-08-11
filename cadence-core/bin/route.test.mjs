@@ -186,7 +186,7 @@ test('each level resolves its whole review map and its verify value, literally',
 
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
-    plan: 'adjudicated', diff: 'advisory', risk_surface: 'blocking',
+    plan: 'advisory', diff: 'off', risk_surface: 'blocking',
     phase_diff: 'advisory', pre_ship: 'adjudicated',
   });
   assert.equal(shipped.verify, 'on');
@@ -206,10 +206,10 @@ test('risk_surface is blocking at every level - a detection match is never waved
 });
 
 test('a config gate that AGREES with the level is taken silently', () => {
-  const c = rawCfg({ stakes: 'shipped', review: { triggers: { diff: { gate: 'advisory' } } } },
+  const c = rawCfg({ stakes: 'shipped', review: { triggers: { phase_diff: { gate: 'advisory' } } } },
     'gate-agrees.json');
   const r = resolve('cad-planner', c);
-  assert.equal(r.review.diff, 'advisory');
+  assert.equal(r.review.phase_diff, 'advisory');
   assert.equal(r.warnings, undefined); // agreement is not news
 });
 
@@ -370,7 +370,7 @@ test('table dumps the routing table - the three grids and the declared roles', (
   // merely unread, and a new one cannot appear without a reader.
   assert.deepEqual(Object.keys(r.table).sort(),
     ['_meta', 'cells', 'gates', 'model_aliases', 'review', 'roles', 'rung_order',
-      'stakes_order', 'surfaces', 'verify']);
+      'stakes_order', 'verify']);
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
@@ -592,324 +592,6 @@ test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no
   assert.equal(r.reason, 'bad-table');
 });
 
-// --- the computed risk floor (STK-03) ----------------------------------------
-
-// Every floor fixture gets its OWN mkdtempSync directory, with its config
-// written INSIDE it. The planning root is dirname(--file), so a fixture dropping
-// a STATE.md or a phases/<N>/PLAN.md into the shared `dir` above would put every
-// other row in this file - including all 18 `cell <stakes>/<role>` cases -
-// behind a cursor pointing at an auth-declaring PLAN, resolving them `critical`
-// and failing assertions that have nothing to do with this phase.
-//
-// Every row also passes CADENCE_GLOBAL_CONFIG at the NO_GLOBAL path (via the
-// resolve() helper): this machine's real user-global layer sets
-// review.triggers.phase_diff.gate, so a non-hermetic row's warning-count
-// assertion would read a correct tree as a failure.
-
-/** A PLAN.md whose frontmatter `files:` declares exactly these paths. */
-const planText = (files) =>
-  `---\nphase: 9\nplan: 1\nrequirements:\n  - STK-03\nfiles:\n${
-    files.map((f) => `  - ${f}\n`).join('')}---\n\n# Plan\n`;
-
-/**
- * A fresh planning root per call: `<root>/config.json` (the --file), an optional
- * `<root>/phases/<phase>/PLAN.md` declaring `files`, and an optional
- * `<root>/STATE.md` cursor. Returns the config path.
- * @param {string[]|null} files null = create no PLAN file at all
- */
-function planningRoot(files, { phase = 9, cursor = null, config = { stakes: 'solo' },
-  emptyDir = false, text = null } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'cad-route-floor-'));
-  if (files || emptyDir) {
-    const pdir = join(root, 'phases', String(phase));
-    mkdirSync(pdir, { recursive: true });
-    if (files) writeFileSync(join(pdir, 'PLAN.md'), text ?? planText(files));
-  }
-  if (cursor !== null) {
-    writeFileSync(join(root, 'STATE.md'), renderCursor({
-      phase: cursor, total: 9, name: 'fixture', status: 'planned',
-      next: '/cad-execute', updated: '2026-07-29',
-    }));
-  }
-  writeFileSync(join(root, 'config.json'), JSON.stringify(config));
-  return join(root, 'config.json');
-}
-
-const floorEntries = (r) => (r.reason || []).filter((x) => /^risk floor:/.test(x));
-
-test('a solo phase whose PLAN declares an auth path resolves at the critical cell', () => {
-  const file = planningRoot(['README.md', 'src/auth/session.rs']);
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');   // raised off a solo baseline
-  assert.equal(r.model, 'opus');        // ...and every knob comes from that row
-  assert.equal(r.effort, 'xhigh');
-  assert.equal(r.agent, 'cad-executor-xhigh');
-  assert.equal(r.verify, 'on');
-  assert.equal(r.review.diff, 'blocking');
-  const floor = floorEntries(r);
-  assert.equal(floor.length, 1, JSON.stringify(r.reason));
-  assert.match(floor[0], /auth/);            // the surface
-  assert.match(floor[0], /session\.rs/);     // the path that matched
-  assert.match(floor[0], /pattern "auth"/);  // the pattern that matched
-  assert.match(floor[0], /solo -> critical/); // the baseline is still visible
-});
-
-// One fixture plan PER lockfile, never one plan declaring all of them (D-21):
-// matchSurfaces returns at most ONE match per surface - the first path that hits
-// - so a combined plan would prove only the first name in the list.
-for (const lockfile of ['package-lock.json', 'Cargo.lock', 'yarn.lock', 'poetry.lock',
-  'Gemfile.lock', 'pnpm-lock.yaml', 'packages.lock.json']) {
-  test(`a solo phase declaring ${lockfile} resolves SOLO, no floor entry`, () => {
-    const r = resolve('cad-executor', planningRoot(['README.md', lockfile]), ['--phase', '9']);
-    assert.equal(r.ok, true);
-    assert.equal(r.stakes, 'solo');
-    assert.deepEqual(floorEntries(r), [], JSON.stringify(r.reason));
-  });
-}
-
-// The other half of D-05: the `lock` and `locks` patterns are kept, so a real
-// concurrency path is still detected end to end. Removing them to close the
-// lockfile false positive would have deleted these rows with no test naming the
-// loss - and the exclusion's own header comment cites `internal/lock/manager.go`
-// and `db/locks.sql` as the detections it protects, so they are pinned here
-// rather than asserted in prose. The last two are the near misses that decided
-// the exclusion's shape: a lock RESOURCE a human wrote, spelled exactly the way
-// `pnpm-lock.yaml` and `packages.lock.json` are, and released by any rule that
-// reads the spelling instead of the name.
-for (const [path, pattern] of [
-  ['src/lock.rs', 'lock'],
-  ['src/redis-lock.go', 'lock'],
-  ['internal/lock/manager.go', 'lock'],
-  ['db/locks.sql', 'locks'],
-  ['deploy/redis-lock.yaml', 'lock'],
-  ['db/replica.lock.json', 'lock'],
-]) {
-  test(`a solo phase declaring ${path} STILL floors to critical on concurrency`, () => {
-    const r = resolve('cad-executor', planningRoot(['README.md', path]), ['--phase', '9']);
-    assert.equal(r.ok, true);
-    assert.equal(r.stakes, 'critical');
-    const floor = floorEntries(r);
-    assert.equal(floor.length, 1, JSON.stringify(r.reason));
-    assert.match(floor[0], /concurrency/);
-    assert.ok(floor[0].includes(path), floor[0]);
-    assert.ok(floor[0].includes(`pattern "${pattern}"`), floor[0]);
-  });
-}
-
-test('a lockfile declared BESIDE a real concurrency path still floors, naming that path', () => {
-  const r = resolve('cad-executor',
-    planningRoot(['package-lock.json', 'db/locks.sql']), ['--phase', '9']);
-  assert.equal(r.stakes, 'critical');
-  const floor = floorEntries(r);
-  assert.equal(floor.length, 1, JSON.stringify(r.reason));
-  assert.match(floor[0], /locks\.sql/);
-});
-
-test('the cursor fallback returns a bundle deep-equal to the --phase one (AC1)', () => {
-  const files = ['README.md', 'src/auth/session.rs'];
-  const explicit = resolve('cad-executor', planningRoot(files), ['--phase', '9']);
-  const viaCursor = resolve('cad-executor', planningRoot(files, { cursor: 9 }));
-  assert.equal(viaCursor.stakes, 'critical');
-  assert.deepEqual(viaCursor, explicit); // nothing names HOW the phase was found
-});
-
-test('a PLAN matching no surface row resolves at the baseline with no floor entry', () => {
-  const r = resolve('cad-executor', planningRoot(['README.md', 'src/main.rs']), ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.deepEqual(floorEntries(r), []);
-  assert.equal(r.warnings, undefined);
-});
-
-test('a phase directory with no PLAN file is the baseline, ok:true, and silent', () => {
-  const r = resolve('cad-executor', planningRoot(null, { emptyDir: true }), ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.deepEqual(floorEntries(r), []);
-  assert.equal(r.warnings, undefined); // the pre-plan state is not news
-});
-
-test('neither --phase nor a cursor is the baseline, ok:true, and silent', () => {
-  const r = resolve('cad-executor', planningRoot(['src/auth/session.rs']));
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.deepEqual(floorEntries(r), []);
-  assert.equal(r.warnings, undefined);
-});
-
-test('an unreadable PLAN is the baseline plus exactly one warning naming the file', {
-  skip: typeof process.getuid === 'function' && process.getuid() === 0
-    ? 'root bypasses mode bits' : false,
-}, () => {
-  const file = planningRoot(['src/auth/session.rs']);
-  const plan = join(dirname(file), 'phases', '9', 'PLAN.md');
-  chmodSync(plan, 0o000);
-  try {
-    const r = resolve('cad-executor', file, ['--phase', '9']);
-    assert.equal(r.ok, true);          // never {ok:false}: that routes LOWER
-    assert.equal(r.stakes, 'solo');
-    assert.deepEqual(floorEntries(r), []);
-    assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-    assert.match(r.warnings[0], /PLAN\.md/);
-  } finally {
-    chmodSync(plan, 0o644);
-  }
-});
-
-test('a --phase that is not a phase number does NOT fall through to the cursor', () => {
-  // The row that pins the no-fallthrough rule: answering a typo with a floor
-  // computed from a DIFFERENT phase is worse than the value the user typed.
-  const file = planningRoot(['src/auth/session.rs'], { cursor: 9 });
-  const r = resolve('cad-executor', file, ['--phase', 'notanumber']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.deepEqual(floorEntries(r), []);
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /notanumber/);
-  // ...and the same fixture DOES floor when the phase is named correctly.
-  assert.equal(resolve('cad-executor', file, ['--phase', '9']).stakes, 'critical');
-});
-
-test('--phase 1.10 floors off phases/1.10, never phases/1.1 (D-02)', () => {
-  // The third `--phase` shape site, now on the shared reader: the local
-  // PHASE_RE kept the raw string already, but the trace event below did not, and
-  // the rule has to be ONE rule. A sub-phase pair is the falsifying fixture -
-  // `1.10` and `1.1` are different directories and only one declares the auth
-  // path, so a normalizing reader resolves the wrong one's floor.
-  const file = planningRoot(['README.md'], { phase: '1.1' });
-  const pdir = join(dirname(file), 'phases', '1.10');
-  mkdirSync(pdir, { recursive: true });
-  writeFileSync(join(pdir, 'PLAN.md'), planText(['README.md', 'src/auth/session.rs']));
-  const r = resolve('cad-executor', file, ['--phase', '1.10']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(floorEntries(r).length, 1, JSON.stringify(r.reason));
-  // ...and 1.1, whose own PLAN declares nothing risky, still resolves solo.
-  assert.equal(resolve('cad-executor', file, ['--phase', '1.1']).stakes, 'solo');
-});
-
-test('D-09: cad-planner and cad-assumptions-analyzer resolve at the baseline', () => {
-  // Passing --phase explicitly, so the row proves the ROLE arm rather than an
-  // absent phase: the cursor lags /cad-context, so "no PLAN yet" alone would
-  // floor the analyzer off the PREVIOUS phase's file list.
-  const file = planningRoot(['src/auth/session.rs']);
-  for (const role of ['cad-planner', 'cad-assumptions-analyzer']) {
-    const r = resolve(role, file, ['--phase', '9']);
-    assert.equal(r.ok, true, role);
-    assert.equal(r.stakes, 'solo', role);
-    assert.deepEqual(floorEntries(r), [], role);
-  }
-  // the same fixture floors cad-executor, so the row is failing-capable
-  assert.equal(resolve('cad-executor', file, ['--phase', '9']).stakes, 'critical');
-});
-
-test('a floor BELOW the baseline raises nothing and caps nothing (AC3)', () => {
-  // The only way to exercise raiseTo's cap-never branch: every shipped row
-  // floors to the top rung (D-03), so the sub-top floor is injected.
-  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
-  t.surfaces.auth.floor = 'shipped';
-  const tablePath = join(dir, 'floor-shipped-table.json');
-  writeFileSync(tablePath, JSON.stringify(t));
-  const file = planningRoot(['src/auth/session.rs'], { config: { stakes: 'critical' } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { table: tablePath });
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');   // held, never capped down to shipped
-  assert.equal(r.model, 'opus');
-  assert.equal(r.effort, 'xhigh');
-  assert.equal(r.verify, 'on');
-  assert.equal(r.review.phase_diff, 'adjudicated');
-  const floor = floorEntries(r);
-  assert.equal(floor.length, 1, JSON.stringify(r.reason));
-  assert.match(floor[0], /already at or above it/);
-});
-
-test('a decimal phase addresses its own directory', () => {
-  const file = planningRoot(['src/auth/session.rs'], { phase: '2.1' });
-  assert.equal(resolve('cad-executor', file, ['--phase', '2.1']).stakes, 'critical');
-});
-
-// --- the per-surface waiver (D-05) -------------------------------------------
-
-/** A fixture PLAN declaring two paths that match two DIFFERENT surfaces. */
-const TWO_SURFACES = ['src/auth/login.rs', 'db/migrations/001.sql'];
-
-test('two detected surfaces with no override resolve at the floor', () => {
-  const r = resolve('cad-executor', planningRoot(TWO_SURFACES), ['--phase', '9']);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(floorEntries(r).length, 2, JSON.stringify(r.reason));
-});
-
-test('waiving ONE of two detected surfaces still floors, and names both', () => {
-  const file = planningRoot(TWO_SURFACES,
-    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.stakes, 'critical'); // migrations still stands
-  const floor = floorEntries(r).join(' ');
-  assert.match(floor, /risk\.override\.auth waives "auth"/);
-  assert.match(floor, /surface "migrations" matched/);
-  assert.equal(r.warnings, undefined);
-});
-
-test('waiving EVERY detected surface drops to the baseline, naming each waiver', () => {
-  const file = planningRoot(TWO_SURFACES,
-    { config: { stakes: 'solo', risk: { override: { auth: true, migrations: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.model, 'sonnet'); // the solo cell, whole
-  const floor = floorEntries(r);
-  assert.equal(floor.length, 1, JSON.stringify(r.reason));
-  assert.match(floor[0], /risk\.override\.auth/);
-  assert.match(floor[0], /risk\.override\.migrations/);
-  assert.doesNotMatch(floor[0], /matched/); // no raise entry survives
-});
-
-test('an override that is not strictly true does NOT waive, and says so', () => {
-  for (const value of ['true', 1, {}]) {
-    const file = planningRoot(['src/auth/login.rs'],
-      { config: { stakes: 'solo', risk: { override: { auth: value } } } });
-    const r = resolve('cad-executor', file, ['--phase', '9']);
-    assert.equal(r.stakes, 'critical', JSON.stringify(value));
-    assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-    assert.match(r.warnings[0], /risk\.override\.auth/);
-  }
-});
-
-test('an override set to false is the ordinary un-waived state, silently', () => {
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { auth: false } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.warnings, undefined);
-});
-
-test('an override naming a surface the table does not declare warns and waives nothing', () => {
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { frobnicate: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /frobnicate/);
-  assert.match(r.warnings[0], /auth/); // the accepted names
-});
-
-test('a waiver and a model pin coexist - two fields, not one', () => {
-  // The row that guards the readConfig field split: folding riskOverrides into
-  // `overrides` makes every model.overrides.<role> pin resolve undefined.
-  const file = planningRoot(['src/auth/login.rs'], {
-    config: {
-      stakes: 'solo',
-      risk: { override: { auth: true } },
-      model: { overrides: { 'cad-executor': 'haiku' } },
-    },
-  });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.pinned, true);
-  assert.equal(r.model, 'haiku');
-  assert.equal(r.stakes, 'solo'); // the waiver applied
-  assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
-});
-
 // --- the gate-enum hole (AC6) ------------------------------------------------
 
 test('a config gate outside the four values loses to the level gate, and says so', () => {
@@ -1014,139 +696,6 @@ test('the gate check FALLS BACK rather than skipping when the table declares no 
   assert.match(r.warnings[0], /blockign/);
 });
 
-// --- the risk waiver is repo-scoped in BOTH directions (CFG-01, D-06) --------
-
-// `risk.override.<surface>` is `src: repo` in config.schema.json. Read off the
-// MERGED config, one line in one user-global file disabled the risk floor in
-// every repository on the machine - the write face refused `--global` while
-// the resolver honoured whatever got there anyway. The repo layer is the only
-// one that waives now, and an ignored global waiver is named rather than
-// dropped silently.
-
-test('a waiver in the GLOBAL layer alone waives nothing and names itself', () => {
-  const g = rawCfg({ risk: { override: { auth: true } } }, 'g-waive-auth.json');
-  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.stakes, 'critical'); // the floor stands
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /risk\.override\.auth/);
-  assert.match(r.warnings[0], /src: repo/);            // the rule that ignored it
-  assert.match(r.warnings[0], /\.planning\/config\.json/); // and where it belongs
-  assert.deepEqual(floorEntries(r).filter((x) => /waive/.test(x)), []);
-});
-
-test('the SAME waiver in the repo file still waives - the regression guard', () => {
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.stakes, 'solo');
-  assert.equal(r.warnings, undefined);
-  assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
-});
-
-test('both layers naming it: the repo value waives, the global one is still named', () => {
-  const g = rawCfg({ risk: { override: { auth: true } } }, 'g-waive-auth2.json');
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.stakes, 'solo'); // waived, by the repo layer's own value
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /risk\.override\.auth/);
-});
-
-test('a global `risk.override` set to false warns about nothing', () => {
-  // A waiver the global layer only NAMES is not one it makes: warning here
-  // would put a "move your waiver" line on every dispatch in every repo.
-  const g = rawCfg({ risk: { override: { auth: false } } }, 'g-waive-false.json');
-  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.warnings, undefined);
-});
-
-test('a MISSPELLED surface in the global layer is not sent to a key `set` refuses', () => {
-  // The remediation the warning handed out was one the write face rejects
-  // outright ("athu" is not a risk surface), so following it produced a second
-  // refusal (.planning/CAPTURE.md:166). The shape diagnostic comes first now,
-  // from the same helper the repo layer uses, and it names the layer.
-  const g = rawCfg({ risk: { override: { athu: true } } }, 'g-waive-athu.json');
-  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.stakes, 'critical'); // the floor stands
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /athu/);
-  assert.match(r.warnings[0], /names no declared risk surface/);
-  assert.match(r.warnings[0], /auth/);                        // the accepted names
-  assert.match(r.warnings[0], /user-global config layer/);    // ...and which layer
-  assert.doesNotMatch(r.warnings[0], /\.planning\/config\.json/); // no dead-end remedy
-});
-
-test('a NON-BOOLEAN global waiver is told what the repo layer would also refuse', () => {
-  const g = rawCfg({ risk: { override: { auth: 'yes' } } }, 'g-waive-yes.json');
-  const file = planningRoot(['src/auth/login.rs'], { config: { stakes: 'solo' } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.warnings.length, 1, JSON.stringify(r.warnings));
-  assert.match(r.warnings[0], /is not true or false/);
-  assert.match(r.warnings[0], /user-global config layer/);
-  assert.doesNotMatch(r.warnings[0], /\.planning\/config\.json/);
-});
-
-test('the two layers report one malformed entry each, never deduped into one', () => {
-  // Both layers holding the identical bad entry is two findings in two files;
-  // without the layer name they render as the same sentence twice, with nothing
-  // saying which file to open.
-  const g = rawCfg({ risk: { override: { athu: true } } }, 'g-waive-athu2.json');
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { athu: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.warnings.length, 2, JSON.stringify(r.warnings));
-  assert.equal(r.warnings.filter((w) => /user-global config layer/.test(w)).length, 1);
-});
-
-test('the global env pointed AT the repo config: one layer, waiver honoured, nothing IGNORED', () => {
-  // CADENCE_GLOBAL_CONFIG aimed at the repo file is the case
-  // lib/config-merge.mjs contemplates: the waiver IS honoured (it reaches
-  // `layers.repo`), yet the resolver asserted it was ignored and waives
-  // nothing, and the routing reason named a `global+repo` pair of one file
-  // (.planning/CAPTURE.md:169, :46).
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: file });
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo'); // honoured through the repo layer, as before
-  assert.deepEqual((r.warnings || []).filter((w) => /IGNORED|waives nothing here/.test(w)), [],
-    JSON.stringify(r.warnings));
-  assert.match(r.reason.join(' '), /config:repo\b/);
-  assert.doesNotMatch(r.reason.join(' '), /global\+repo/);
-  assert.match(floorEntries(r).join(' '), /waived by risk\.override\.auth/);
-});
-
-test('the same through a SYMLINK: identity, not the spelling of the two paths', () => {
-  const file = planningRoot(['src/auth/login.rs'],
-    { config: { stakes: 'solo', risk: { override: { auth: true } } } });
-  const link = join(dirname(file), 'config-link.json');
-  symlinkSync(file, link);
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: link });
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'solo');
-  assert.deepEqual((r.warnings || []).filter((w) => /IGNORED|waives nothing here/.test(w)), [],
-    JSON.stringify(r.warnings));
-  assert.match(r.reason.join(' '), /config:repo\b/);
-  assert.doesNotMatch(r.reason.join(' '), /global\+repo/);
-});
-
-test('a global layer carrying only `stakes` merges exactly as before', () => {
-  // The additive `layers` field must change nothing about the ordinary merge.
-  const g = cfg({ stakes: 'critical' }, 'g-only-stakes.json');
-  const file = planningRoot(null, { config: {} });
-  const r = resolve('cad-executor', file, ['--phase', '9'], { global: g });
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.model, 'opus');
-  assert.match(r.reason.join(' '), /config:global\+repo/);
-  assert.equal(r.warnings, undefined);
-});
-
 // --- the configured START rung, model.effort.<role> (RNG-02) ------------------
 
 test('a configured start rung replaces the cell\'s, and picks that rung\'s file', () => {
@@ -1204,82 +753,6 @@ test('a hand-edited rung the role has no FILE for is refused, never fail-open di
   assert.match(named[0], /high, xhigh/);    // ...and the rungs this role does have
 });
 
-// --- the floor wins over the configured start rung (D-01) --------------------
-
-test('a start rung below a computed risk floor resolves AT the floor, surface named', () => {
-  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
-    config: { stakes: 'shipped', model: { effort: { 'cad-executor': 'high' } } },
-  });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.effort, 'xhigh');            // the floored cell's rung, not "high"
-  assert.equal(r.agent, 'cad-executor-xhigh');
-  const held = r.reason.filter((x) => /model\.effort\.cad-executor/.test(x));
-  assert.equal(held.length, 1, JSON.stringify(r.reason));
-  assert.match(held[0], /surface auth/);      // AC3: the surface is named in the output
-  assert.match(held[0], /risk\.override\.auth/); // ...along with the one way under it
-});
-
-test('risk.override.<surface> - and only that - is what lets the start rung sit lower', () => {
-  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
-    config: {
-      stakes: 'shipped',
-      model: { effort: { 'cad-executor': 'high' } },
-      risk: { override: { auth: true } },
-    },
-  });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'shipped');   // the waiver drops the level back
-  assert.equal(r.effort, 'high');      // ...and the configured rung stands
-  assert.equal(r.agent, 'cad-executor');
-});
-
-test('a project ALREADY at critical is floored too - the floor is not "what moved"', () => {
-  // The row that discriminates. Every surface in route-table.json declares
-  // floor "critical", so on a critical baseline a detected auth surface moves
-  // NOTHING: computing the floor as "the surfaces that raised the baseline"
-  // yields [] here, the hold never fires, and model.effort.cad-executor=high
-  // walks under the floor on an auth phase with no surface named - the second,
-  // unnamed way down D-01 rejects, handed to the population STK-03 protects.
-  // The two rows above pass either way, so neither can stand in for this one.
-  const authFloored = planningRoot(['README.md', 'src/auth/session.rs'], {
-    config: { stakes: 'critical', model: { effort: { 'cad-executor': 'high' } } },
-  });
-  const r = resolve('cad-executor', authFloored, ['--phase', '9']);
-  assert.equal(r.ok, true);
-  assert.equal(r.stakes, 'critical');
-  assert.equal(r.effort, 'xhigh');            // held AT the floor
-  assert.equal(r.agent, 'cad-executor-xhigh');
-  const held = r.reason.filter((x) => /model\.effort\.cad-executor/.test(x));
-  assert.equal(held.length, 1, JSON.stringify(r.reason));
-  assert.match(held[0], /surface auth/);
-
-  // ...and the named waiver is still what lets it sit lower, on that same tree
-  const waived = planningRoot(['README.md', 'src/auth/session.rs'], {
-    config: {
-      stakes: 'critical',
-      model: { effort: { 'cad-executor': 'high' } },
-      risk: { override: { auth: true } },
-    },
-  });
-  const w = resolve('cad-executor', waived, ['--phase', '9']);
-  assert.equal(w.stakes, 'critical');   // the baseline itself, not a floor
-  assert.equal(w.effort, 'high');
-  assert.equal(w.agent, 'cad-executor');
-});
-
-test('a start rung ABOVE the floored cell\'s rung still wins - raising is free', () => {
-  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
-    config: { stakes: 'solo', model: { effort: { 'cad-verifier': 'max' } } },
-  });
-  const r = resolve('cad-verifier', file, ['--phase', '9']);
-  assert.equal(r.stakes, 'critical');   // floored off a solo baseline
-  assert.equal(r.effort, 'max');        // above the critical cell's xhigh
-  assert.equal(r.agent, 'cad-verifier-max');
-});
-
 // --- a retry never resolves below the rung that failed (D-02) -----------------
 
 test('a configured start above the cell\'s retry HOLDS, and says what it out-ranked', () => {
@@ -1315,21 +788,6 @@ test('the equal-rungs no-op and the out-ranked hold are different messages', () 
   assert.equal(outranked.escalated, false);
   assert.match(outranked.reason.join(' '), /out-ranks the solo\/cad-plan-checker retry rung "high"/);
   assert.doesNotMatch(outranked.reason.join(' '), /retry rung is the same rung/);
-});
-
-test('a floor-held start rung rides warnings[] too - the relay surface, not just reason', () => {
-  // seams.md mandates relaying warnings[]; on a baseline already at the floor
-  // no raising `risk floor:` reason entry fires either, so without a warnings
-  // entry the user's key is silently dropped - the resolved-then-dropped shape.
-  const file = planningRoot(['README.md', 'src/auth/session.rs'], {
-    config: { stakes: 'critical', model: { effort: { 'cad-executor': 'high' } } },
-  });
-  const r = resolve('cad-executor', file, ['--phase', '9']);
-  assert.equal(r.effort, 'xhigh');
-  const held = (r.warnings || []).filter((w) => /model\.effort\.cad-executor/.test(w));
-  assert.equal(held.length, 1, JSON.stringify(r.warnings));
-  assert.match(held[0], /held at "xhigh" by the risk floor/);
-  assert.match(held[0], /auth/);
 });
 
 test('a torn rung_order never demotes a CONFIGURED start on retry - it holds and says why', () => {
@@ -1466,7 +924,7 @@ test('a resolve records ONE routing event carrying the decision, not the text', 
   assert.equal(e.escalated, false);
   assert.equal(e.pinned, false);
   assert.equal(e.attempt, 1);
-  assert.deepEqual(e.floor_surfaces, []);
+  assert.equal('floor_surfaces' in e, false);
   // The COUNT, never the strings: the envelope carries the text and a second
   // copy of it in the record would drift from the one the caller relays.
   assert.equal(e.warning_count, 0);

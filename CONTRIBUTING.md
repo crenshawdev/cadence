@@ -13,12 +13,14 @@ Fork freely. The license is MIT and it means it. If you want Cadence to hold som
 Cadence has no build step and no runtime dependencies. The scripts inside are zero-dependency Node, nothing under `cadence-core/bin/` imports anything but `node:` builtins, and running Cadence never installs a package. The typecheck is the one exception, and it is a check rather than a dependency: CI installs both packages for the length of one job with `npm install --no-save --no-package-lock typescript @types/node` before it runs `npx tsc`. Locally you need the same two — `npx` fetches `typescript` for you on first use, but not `@types/node`, and `tsconfig.ci.json` sets `"types": ["node"]`, so without it the check fails with `TS2688: Cannot find type definition file for 'node'`. Run the same install line once, or skip the third check. The first two need nothing but `node` and `git` on your PATH:
 
 ```
-node --test cadence-core/bin/*.test.mjs   # unit tests for the seam cores
+node --test cadence-core/bin/*.test.mjs   # unit tests for the seam cores (~11s)
+node cadence-core/bin/test.mjs routing    # just one group (~2.5s)
+node cadence-core/bin/test.mjs --list     # the groups and what each owns
 node cadence-core/bin/self-verify.mjs     # the prose<->code drift linter
 npx tsc -p tsconfig.ci.json               # honor the @ts-check pragmas
 ```
 
-The self-verify step is the one that catches most drift. It lints the prose against the code: every config key, script invocation, and file path named in the workflows has to actually exist, or the build fails. It also weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`, and fails when one DIFFERS from its recorded byte count in either direction, growth or shrink, or when an agent's prose reaches for a tool its frontmatter never declared. There is no regeneration path, so a surface you deliberately shrank needs its `cadence-core/bin/weight-budgets.json` entry re-pinned in the same commit. If you touch a command or a config key, run it before you push, because the build will run it for you either way.
+The self-verify step is the one that catches most drift. It lints the prose against the code: every config key, script invocation, and file path named in the workflows has to actually exist, or the build fails. It also weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`, and fails when one EXCEEDS its recorded byte count in `cadence-core/bin/weight-budgets.json`, or when an agent's prose reaches for a tool its frontmatter never declared. The budget is a ceiling, not an equality: a surface you shrank is green, and its entry can be re-pinned whenever it suits you. If you touch a command or a config key, run it before you push, because the build will run it for you either way.
 
 ## What a good bug report has
 

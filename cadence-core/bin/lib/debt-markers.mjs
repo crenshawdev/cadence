@@ -6,7 +6,7 @@
 // then the one-line description, then ` | ceiling: <what it does not handle> `
 // and ` | trigger: <what should prompt revisiting it> `.
 //
-// Pure by design, the same split lib/risk-surfaces.mjs carries against
+// Pure by design, the same split lib/phase-plans.mjs carries against
 // lib/phase-plans.mjs: no I/O, no throw, no stream of its own. The caller owns
 // the tree walk, the file reads and the envelope; this owns the grammar and the
 // rendering, so both are testable without a fixture directory.

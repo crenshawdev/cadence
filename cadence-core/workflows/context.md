@@ -73,7 +73,7 @@ in ONE call - the recall gate and the dispatch timeout together, independent of
 each other, so nothing in this step is serialized behind a prior result:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend workflow.subagent_timeout
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
 ```
 
 When it is `builtin` (the schema default), run recall for the phase goal:
@@ -87,7 +87,7 @@ recall call at all. The gate precedes the call on purpose (D-03): recall's own
 backend-off return is a backstop for a direct caller, not this workflow's gate,
 so `none` means the call is never made and no recalled data reaches the pass.
 
-Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (2,169 B, one
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
 into the `<recalled_memory>` block of the payload below.
 
@@ -114,7 +114,7 @@ ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
 bracket.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
-(references/seams.md), timeout `workflow.subagent_timeout` (read above).
+(references/seams.md).
 This keeps raw file contents out of the main context. Prompt payload:
 
 ```
@@ -290,7 +290,7 @@ Record the outcome as a one-line "Plan shape" note for CONTEXT.md.
 
 <step name="write_context">
 Write `{phase_dir}/CONTEXT.md` (create the directory if needed).
-Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/CONTEXT.md` (1,392 B, one
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/CONTEXT.md` (one
 consult site - this step) for its shape - five sections, nothing else, with the
 fill-in guidance for each.
 

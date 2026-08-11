@@ -301,7 +301,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     // <role> placeholder).
     '`model.overrides` `model.effort`\n' +
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
-    '`workflow.subagent_timeout` `workflow.inline_plan_threshold` `workflow.test_command`\n' +
+    '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
@@ -333,23 +333,20 @@ test('a surface EXACTLY at its budget yields no budget problem', () => {
     budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') },
   });
   assert.deepEqual(run(['--root', root]).problems.filter(
-    (x) => x.kind === 'budget-overrun' || x.kind === 'budget-undershoot'), []);
+    (x) => x.kind === 'budget-overrun'), []);
 });
 
-test('a surface ONE byte under its entry is reported budget-undershoot (D-13)', () => {
-  // The falsifier for the flip from `bytes > budget` to an exact comparison.
-  // Under the old rule this fixture was clean, which is how DFC-03's one-byte
-  // shrink would have shipped with CI green and the published "total slack 0"
-  // quietly false.
+test('a surface UNDER its entry is clean - the budget is a ceiling', () => {
+  // Shrinking is the direction a budget exists to encourage. Exactness was
+  // tried and made every prose cut red until its row was re-pinned in the same
+  // commit, taxing a cut at the rate it taxed growth.
   const body = 'hello';
   const root = fixtureWith({
     agents: { 'ok.md': body },
-    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 1 },
+    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 4096 },
   });
-  const p = run(['--root', root]).problems.filter((x) => x.kind === 'budget-undershoot');
-  assert.equal(p.length, 1, JSON.stringify(p));
-  assert.equal(p[0].file, 'agents/ok.md');
-  assert.match(p[0].detail, /under budget 6B by 1B - re-pin the entry/);
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (x) => String(x.kind).startsWith('budget-')), []);
 });
 
 test('a measured surface missing from the manifest is flagged unbudgeted', () => {
@@ -1057,86 +1054,25 @@ test('a minimal (non-full-tree) fixture omitting optional inputs stays free of m
   assert.ok(!r.problems.some((p) => p.kind === 'missing-input'), JSON.stringify(r.problems));
 });
 
-// --- check 8: the risk-surface block, both directions (STK-03) ---------------
-
-/** The eight shipped surface names, hand-written (never read off the schema). */
-const SURFACE_NAMES = ['auth', 'migrations', 'billing', 'concurrency',
-  'destructive', 'secrets', 'api_contract', 'untrusted_input'];
+// --- check 8: the table's shared vocabulary arrays ---------------------------
 
 /**
- * cellTable plus the floor's own vocabulary: `stakes_order`, `gates`, and one
- * `surfaces` row per shipped surface name, so every row below breaks exactly
- * one thing rather than accumulating seven unrelated direction problems.
+ * cellTable plus the table's own shared vocabulary: `stakes_order` and `gates`,
+ * the two arrays route.mjs compares against and refuses on.
  */
-function surfaceTable() {
+function vocabTable() {
   const t = cellTable('cad-verifier');
   t.stakes_order = ['solo', 'shipped', 'critical'];
   t.gates = ['off', 'advisory', 'blocking', 'adjudicated'];
-  t.surfaces = {};
-  for (const name of SURFACE_NAMES) {
-    t.surfaces[name] = { patterns: [name.replace(/_/g, '')], floor: 'critical' };
-  }
   return t;
 }
 
-const surfaceFixture = (t) => fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+const vocabFixture = (t) => fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
 
-test('check 8: a well-formed surfaces block yields no risk-surface problems', () => {
-  const r = run(['--root', surfaceFixture(surfaceTable())]);
-  const kinds = ['unknown-floor', 'floor-below-required', 'bad-pattern',
-    'missing-override-key', 'undeclared-risk-surface', 'stakes-order-drift',
-    'gate-vocabulary-drift'];
+test('check 8: a well-formed vocabulary block yields no vocabulary problems', () => {
+  const r = run(['--root', vocabFixture(vocabTable())]);
+  const kinds = ['stakes-order-drift', 'gate-vocabulary-drift'];
   assert.ok(!r.problems.some((p) => kinds.includes(p.kind)), JSON.stringify(r.problems));
-});
-
-test('check 8: a surface floor that is not a stakes level fails ok:false naming the row', () => {
-  const t = surfaceTable();
-  t.surfaces.auth.floor = 'ludicrous';
-  const r = run(['--root', surfaceFixture(t)]);
-  assert.equal(r.ok, false);
-  assert.ok(r.problems.some((p) => p.kind === 'unknown-floor'
-    && p.file === 'cadence-core/route-table.json'
-    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
-});
-
-test('check 8: a VALID but too-low surface floor fails ok:false naming the row', () => {
-  // `shipped` is a level the enum accepts, so this fails ONLY if requiredFloor
-  // actually reached the lib - the arm that enforces D-03's other half.
-  const t = surfaceTable();
-  t.surfaces.auth.floor = 'shipped';
-  const r = run(['--root', surfaceFixture(t)]);
-  assert.equal(r.ok, false);
-  assert.ok(r.problems.some((p) => p.kind === 'floor-below-required'
-    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
-});
-
-test('check 8: a surface row with an empty pattern list fails ok:false naming the row', () => {
-  const t = surfaceTable();
-  t.surfaces.auth.patterns = [];
-  const r = run(['--root', surfaceFixture(t)]);
-  assert.equal(r.ok, false);
-  assert.ok(r.problems.some((p) => p.kind === 'bad-pattern'
-    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
-});
-
-test('check 8: a surface with no risk.override schema key fails ok:false naming it', () => {
-  const t = surfaceTable();
-  t.surfaces.frobnicate = { patterns: ['frobnicate'], floor: 'critical' };
-  const r = run(['--root', surfaceFixture(t)]);
-  assert.equal(r.ok, false);
-  assert.ok(r.problems.some((p) => p.kind === 'missing-override-key'
-    && /^frobnicate: /.test(p.detail)), JSON.stringify(r.problems));
-});
-
-test('check 8: a risk.override schema key naming no surface row fails ok:false', () => {
-  // The other direction: deleting the `auth` row leaves risk.override.auth
-  // waiving nothing.
-  const t = surfaceTable();
-  delete t.surfaces.auth;
-  const r = run(['--root', surfaceFixture(t)]);
-  assert.equal(r.ok, false);
-  assert.ok(r.problems.some((p) => p.kind === 'undeclared-risk-surface'
-    && /^auth: /.test(p.detail)), JSON.stringify(r.problems));
 });
 
 test('check 8: a drifted stakes_order or gates list fails ok:false', () => {
@@ -1144,9 +1080,9 @@ test('check 8: a drifted stakes_order or gates list fails ok:false', () => {
     ['stakes_order', ['critical', 'shipped', 'solo'], 'stakes-order-drift'],
     ['gates', ['off', 'advisory', 'blocking'], 'gate-vocabulary-drift'],
   ]) {
-    const t = surfaceTable();
+    const t = vocabTable();
     t[key] = value;
-    const r = run(['--root', surfaceFixture(t)]);
+    const r = run(['--root', vocabFixture(t)]);
     assert.equal(r.ok, false, key);
     assert.ok(r.problems.some((p) => p.kind === kind), `${key}: ${JSON.stringify(r.problems)}`);
   }

@@ -25,9 +25,8 @@ selectable option and its `description`.
 | `workflow.plan_check` | bool | Gate plans through the checker before code | `true`→verify plan first · `false`→trust it | true |
 | `workflow.verifier` | bool | Off switch for goal-backward verification after a phase | `true`→the stakes level decides (`--deep` forces) · `false`→always skip | true |
 | `workflow.skip_discuss` | bool | Which command `/cad-progress` suggests for an unplanned phase - progress next-step suggestion only, it skips no step | `true`→suggest `/cad-plan` · `false`→suggest `/cad-context` | false |
-| `workflow.subagent_timeout` | int | ms before a subagent is killed | e.g. `300000` (5 min) | 300000 |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
-| `workflow.max_plan_tasks` | int | Task count above which a phase plan must return `## PHASE TOO BIG` rather than be written | e.g. `8` | 8 |
+| `workflow.max_plan_tasks` | int | Task ceiling PER PLAN; a phase needing more capacity gets more plans, sequential where they share files. Counted at `check_size` by `planning.mjs plan-size` | e.g. `8` | 8 |
 | `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
 | `workflow.lint_command` | str\|null | Command an executor runs for static analysis before it commits - LINT only, there is no typecheck key | shell string, or `null` (none set; the executor detects instead) | null |
 | **Parallelization** |||||
@@ -49,7 +48,6 @@ selectable option and its `description`.
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | Backend for recall over `.planning/` | `builtin`→zero-dep BM25 recall over `.planning/` · `none`→recall off | builtin |
 | **Risk** |||||
-| `risk.override.<surface>` `[repo]` | bool | Waive the detected risk floor for ONE surface | `<surface>` ∈ `{auth, migrations, billing, concurrency, destructive, secrets, api_contract, untrusted_input}`; `true`→that surface stops raising this phase's stakes level · `false`→the floor stands. Repo-scoped: `--global` is refused, and a waiver sitting in the global layer is ignored and named in the resolve's `warnings` - set it in the repo's own config | false |
 | **Review** (providers handled separately) |||||
 | `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model · `deepseek`→cross-model | claude-subagent |
 | `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |

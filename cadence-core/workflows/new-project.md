@@ -55,7 +55,7 @@ line):
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-     workflow.research workflow.subagent_timeout planning.commit_docs \
+     workflow.research planning.commit_docs \
      granularity git.protected_branches git.on_protected git.base_branch
    ```
 6. Brownfield check: if the repo already contains source code (anything
@@ -158,7 +158,7 @@ was passed. Otherwise skip silently - research is off by default, and a solo
 dev who knows the domain loses nothing by skipping a generic ecosystem survey.
 
 One pass, one agent, one file. Dispatch a single fresh-context agent via the
-spawn-agent seam (references/seams.md), timeout `workflow.subagent_timeout`:
+spawn-agent seam (references/seams.md):
 
 ```text
 Read .planning/PROJECT.md for project context.
@@ -181,7 +181,11 @@ and it is excluded deliberately rather than overlooked: `maxTurns` is per-FILE
 frontmatter, this pass dispatches a generic host agent Cadence owns no file for,
 and minting a 20th rung file to bound one optional research pass would cost a
 `route-table.json` rung row plus both directions of self-verify's rung checks.
-Its bound is `workflow.subagent_timeout` alone - wall-clock, not turns.
+It therefore has NO runaway bound at all. A wall-clock config key was named
+here as its bound until v2.7.0, when it was deleted for claiming a control
+nothing could apply. This pass is opt-in (`workflow.research`, default false)
+and advisory, never a gate, so an unbounded optional pass was judged the
+smaller cost against minting a 20th rung file to bound it.
 
 On return, verify `.planning/research/RESEARCH.md` exists and is non-empty.
 If the agent returned the document inline without writing it, write the file

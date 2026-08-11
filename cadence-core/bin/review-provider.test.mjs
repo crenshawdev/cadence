@@ -34,7 +34,15 @@ import { renderCursor } from './lib/planning-files.mjs';
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-provider-'));
 
-/** Run the CLI without provider keys in the environment; parse the JSON line. */
+/**
+ * Run the CLI without provider keys in the environment; parse the JSON line.
+ *
+ * `cwd` is the temp dir, never the repo. review-provider.mjs resolves its trace
+ * root as the cwd-relative `.planning` (correct in production, where cwd IS the
+ * project), so inheriting the runner's cwd wrote every fixture call into
+ * Cadence's own `.planning/trace.jsonl` - 1,443 `gpt-test` rows against 33 real
+ * ones, which is what made that file useless for reading real latency out of.
+ */
 function run(args, { env = {}, stdin } = {}) {
   const cleanEnv = { ...process.env, ...env };
   delete cleanEnv.OPENAI_API_KEY;
@@ -43,7 +51,7 @@ function run(args, { env = {}, stdin } = {}) {
   Object.assign(cleanEnv, env);
   try {
     return JSON.parse(execFileSync('node', [SCRIPT, ...args],
-      { encoding: 'utf8', env: cleanEnv, ...(stdin !== undefined ? { input: stdin } : {}) }));
+      { encoding: 'utf8', cwd: dir, env: cleanEnv, ...(stdin !== undefined ? { input: stdin } : {}) }));
   } catch (e) {
     return JSON.parse(e.stdout);
   }
@@ -369,7 +377,7 @@ test('cli: invoked through a symlink still runs (argv[1] vs import.meta.url dive
   let stdout;
   try {
     stdout = execFileSync('node', [linkPath, 'detect-models', '--provider', 'skynet'],
-      { encoding: 'utf8', env: cleanEnv });
+      { encoding: 'utf8', cwd: dir, env: cleanEnv });
   } catch (e) {
     stdout = e.stdout;
   }

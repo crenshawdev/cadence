@@ -6,6 +6,134 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-08-11
+
+The dispatch-time risk floor is gone, and with it several pieces of machinery
+that cost more to maintain than they caught. The pattern under most of this
+release is one thing: a mechanism firing on a measurable proxy instead of on
+the property it cares about. Filenames instead of what the code does. A number
+instead of a control that exists. Task count instead of task size, which is why
+a count ceiling pushed toward fatter tasks. Byte counts checked into the tree
+instead of measured on demand. Each was defensible alone; together they are why
+the tool got slow, because every proxy brings its own config key, CI check and
+prose surface.
+
+The floor read the paths a phase's PLAN declared, matched them against ~100
+common lowercase tokens, and raised the WHOLE phase to `critical` on one hit -
+all six roles to opus at `xhigh`, and `plan`, `phase_diff` and `pre_ship` all
+adjudicated at once. It judged a file by its name. Measured on a
+transcript-recall project: `src/store/session.rs` floored phase 1 on `auth`,
+`src/store/lock.rs` and `src/ingest/mod.rs` floored phase 2 on `concurrency`
+and `untrusted_input`, and no phase of that project could ever route below
+`critical`. 15 of 16 resolves ran opus, 9 of 16 at `xhigh`, against a README
+claim of ~27% routed down to Sonnet. `tests/ingest_concurrency.rs` - a test
+file - floored its phase on two surfaces at once.
+
+Cadence already had a better detector for the same question. The commit-time
+`risk_surface` check reads the actual staged diff, and it stays, blocking at
+every level. What the code does decides; what the file is called does not.
+
+### Changed
+
+- **The `shipped` review row: `plan` adjudicated -> advisory, `diff` advisory ->
+  off.** A plan at `shipped` has already passed `cad-plan-checker`, a blocking
+  gate on by default, so `fire(plan)` was a second adversarial pass over the
+  same artifact and adjudicated added a user-triage turn on top. Measured:
+  checker 8.8 min, reviewer 12.5 min, then a 13-survivor menu. And
+  `workflows/execute.md` states the `diff` cost itself - at advisory the fire is
+  overlapped with the next plan's dispatch and costs nothing, but "the last plan
+  has no next dispatch, so it fires and waits." On a single-plan phase every
+  fire is the last one: 32 minutes of serial tail for findings that gate
+  nothing. Coverage at `shipped` is now `risk_surface` blocking per risky commit
+  and `pre_ship` adjudicated over the whole branch. `critical` is untouched.
+  `phase_diff` was NOT changed: it fires on the parallel path only, so turning
+  it off would have saved a sequential phase nothing.
+
+- **The task ceiling is PER PLAN, and it is counted.** `max_plan_tasks` is named
+  per plan while `plan.md` said "delivering this PHASE"; one tree read it both
+  ways, shipping 8 tasks in one plan and then 4+4+4 across three. Per-plan is
+  the reading that makes the remedy obvious. `planning.mjs plan-size` counts the
+  written plan against it at a new `check_size` step, and counts the
+  requirements a phase's ROADMAP block names at `parse`, BEFORE a planner is
+  dispatched - learning a phase is too big cost 10-14 minutes of planner and now
+  costs a count. The measured case: a phase naming 25 of 46 requirements was
+  planned as 8 tasks against a ceiling of 4, by a planner handed the ceiling and
+  a checker told to flag the overrun. Both passed it.
+
+- **The PHASE TOO BIG prompt has three options, and the recommended one was
+  previously forbidden.** Splitting into sequential plans inside the phase was
+  ruled out on the grounds that `plan-overlap` refuses two plans declaring the
+  same path. It does not; it reports the shared path so the caller knows the
+  plans are sequential, and the tree that hit this had already shipped a
+  sequential three-plan phase.
+
+- **`docs/EVIDENCE.md` keeps the definitions and drops the numbers.** About two
+  hundred measured figures across six asserted tables were derived data carried
+  in the tree. One byte changed in any of 99 surfaces could stale five tables at
+  once. Falsified after the cut: one appended sentence now yields ONE
+  `budget-overrun` naming the file that grew, against six signals across four
+  untouched tables before. `prose-agreement.test.mjs` falls 455 -> 246 lines.
+  No check weakened - the byte ceiling and `unbudgeted-surface` both stand, and
+  `weight.mjs` still measures on demand.
+
+- **The weight budget is a ceiling, not an equality.** `budget-undershoot` fired
+  on any shrink, so every prose cut turned CI red until its row was re-pinned in
+  the same commit, taxing a removal at the rate it taxed growth.
+
+- **Prose no longer restates measured byte figures.** Eleven deferral sites
+  across eight files carried a hardcoded size that a test then verified against
+  the live tree. The consult-site count stays inline - that is what the deferral
+  rule turns on. Cite the file, not its size.
+
+### Removed
+
+- **The `surfaces` block, `lib/risk-surfaces.mjs`, and `riskFloor()`.** With
+  them: the `floor_surfaces` trace field, `PRE_PLAN_ROLES` (which existed only
+  to exempt the two pre-plan roles from a floor computed off the wrong phase),
+  `declaredPhaseFiles`, the repo-scope write guard and its `fsIdentity` helper,
+  and `route-cells.mjs`'s `floor-below-required` arm. `surfaceIssues` narrows
+  to `vocabularyIssues`: its two drift checks are about `stakes_order` and
+  `gates`, which outlive the block they were filed under. Net -2,260 lines.
+
+- **The eight `risk.override.<surface>` config keys**, moved to
+  `lib/retired-keys.mjs`, which grows a per-key `since` because the map now
+  spans two milestones. A config still carrying one resolves at its configured
+  stakes level and names the key in `warnings` - it warns, it does not break.
+
+- **`budget-undershoot`.** The weight budget is a CEILING now, not an equality.
+  Exactness was tried in 2.6.1 and taxed a cut at the rate it taxed growth:
+  every prose removal, however obviously good, turned CI red until its
+  `weight-budgets.json` row was re-pinned in the same commit. `budget-overrun`
+  catches the direction that is actually a risk and does the whole job.
+
+- **Byte figures restated in prose.** Eleven deferral sites across eight files
+  carried a hardcoded size that `prose-agreement.test.mjs` then verified against
+  the live tree, so editing one reference dragged four unrelated files and a
+  doc regeneration behind it. The consult-site count stays inline - that is the
+  number the deferral rule actually turns on. `weight.mjs` reports the size on
+  demand. `references/seams.md`'s mandate now says: cite the file, not its size.
+
+### Added
+
+- **`cadence-core/bin/test.mjs`, the suite by group.** 1,367 tests in one arm
+  meant a routing change re-ran the git-publish seams.
+  `node cadence-core/bin/test.mjs routing` is ~2.5s against ~11.5s for the
+  tree, and CI runs one job per group so a red arm names the seam that broke.
+  Groups are declared in the runner rather than a manifest beside it, because
+  nothing else reads them. There is deliberately no coverage check: a stem no
+  group names lands in `other`, which the default run and the CI matrix both
+  execute, so a new test file runs from the moment it exists.
+
+### Fixed
+
+- **`review-provider.test.mjs` wrote into Cadence's own run record.** The seam
+  resolves its trace root as the cwd-relative `.planning`, which is correct in
+  production, where cwd IS the project - but the test harness spawned without a
+  `cwd`, so it inherited the runner's. The live `.planning/trace.jsonl` held
+  1,443 fixture rows against 33 real ones, which is what made it useless for
+  reading real provider latency out of. Both spawn sites now run in the temp
+  dir the rest of the file already used.
+
 ## [2.6.2] - 2026-08-10
 
 What the plugin carries on turn one, and what it can wait to read. Three

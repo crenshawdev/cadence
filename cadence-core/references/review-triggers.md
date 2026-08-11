@@ -240,8 +240,8 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 
 | Trigger | Fired by | When | Payload artifact | Gate (solo/shipped/critical) |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / adjudicated / adjudicated |
-| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / advisory / blocking |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / advisory / adjudicated |
+| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / advisory / adjudicated |
 | `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |
@@ -259,21 +259,15 @@ secrets/crypto/keys - public API/wire contracts - untrusted-input parsing.
 
 This list is also the operative definition of the `critical` stakes value: a
 diff touching one of these surfaces is a break that does not come back as a bug
-report. A machine translation of it now lives in `cadence-core/route-table.json`
-as the `surfaces` block, where a path match against the phase's own PLAN
-`files:` list RAISES the resolved stakes level at dispatch time (see
-`references/seams.md` § Routing).
+report.
 
-So TWO detectors exist and neither replaces the other. The dispatch-time one is
-a path match: coarse, with no diff in hand, and it sets the stakes floor for the
-whole phase. This section's one is model judgment at commit time: it reads the
-actual diff and fires the trigger. A phase can be floored without this trigger
-firing, and this trigger can fire on a phase the floor never raised.
+This is the ONE detector, and it reads the diff. A path match against a
+phase's declared `files:` list was the other one until v2.7.0; it judged a file
+by its NAME, floored a whole phase on one token, and is gone. `tests/ingest_concurrency.rs`
+raising six roles to their top rung is what it cost.
 
 **Pre-filter before escalating (avoid a blocking panel on a non-risk).**
-These two drops are judgments about diff CONTENT, so they apply to the
-COMMIT-TIME detection only - the dispatch-time floor has no diff to judge, and
-the per-surface override is its escape hatch instead.
+These two drops are judgments about diff CONTENT.
 A heuristic match is dropped - it does NOT fire the trigger - when the match
 is provably harmless:
 

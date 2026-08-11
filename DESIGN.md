@@ -472,6 +472,24 @@ lever is trigger frequency (gating), never a weak reviewer.
   with the phrase in all eight schema `purpose` strings, which is what makes check 9 able to see the
   narrowing at all.
 
+- ⚠️ **DISPATCH-TIME FLOOR DELETED (2026-08-11):** the two markers above record two rounds of
+  closing holes in `risk.override.<surface>`, a key family whose only job was to switch OFF a
+  detector. The detector itself is what was wrong. It matched ~100 common lowercase tokens against
+  the paths a phase's PLAN declared and raised the WHOLE phase to `critical` on one hit, which put
+  all six roles on opus at `xhigh` and turned `plan`, `phase_diff` and `pre_ship` adjudicated at
+  once. Measured on a transcript-recall project: `src/store/session.rs` floored phase 1 on `auth`,
+  `src/store/lock.rs` and `src/ingest/mod.rs` floored phase 2 on `concurrency` and
+  `untrusted_input`, and no phase of that project could ever route below `critical` - 15 of 16
+  resolves ran opus, 9 of 16 at `xhigh`, against a README claim of ~27% routed down. The floor also
+  clamped `model.effort.<role>`, so the user's own dial lost to a filename. Cadence already had a
+  better detector for the same question: the commit-time `risk_surface` check reads the actual
+  staged diff. Deleted: the `surfaces` block, `lib/risk-surfaces.mjs`, `riskFloor()`, the
+  `floor_surfaces` trace field, the eight `risk.override.*` keys (now in `retired-keys.mjs`, so an
+  existing config warns rather than breaks), and the `floor-below-required` CI arm. Kept: the
+  commit-time trigger, its `blocking` gate at every level, `stakes`, the cells grid, escalation.
+  `lib/route-cells.mjs`'s `surfaceIssues` narrowed to `vocabularyIssues` - the two drift checks it
+  carried are about `stakes_order` and `gates`, which outlive the surfaces block.
+
 ### Name: Cadence (prefix `/cad-*`) — own identity, GSD lineage explicit
 - Standalone brand; NOT `gsd-*`. Attribution unmistakable: retain GSD LICENSE + copyright + lineage
   notice, README lead line crediting GSD, NOTICE/CREDITS + lineage note.

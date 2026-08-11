@@ -53,7 +53,11 @@ How a workflow dispatches work to a fresh-context subagent.
   stated per role rather than derived, because the unsuffixed `agents/<role>.md`
   is one rung among the others rather than the lowest. Self-verify fails in both
   directions: a rung with no file, and a rung file no cell reaches.
-- Timeout: `workflow.subagent_timeout` from config.
+- No timeout. This seam offers no bound and no cancel: a dispatch runs until it
+  returns. A config key claimed a wall-clock kill until v2.7.0, when it was
+  deleted for naming a control nothing could apply. Plan size is the only real
+  lever on what one dispatch costs, which is what `workflow.max_plan_tasks` is
+  for.
 - Every dispatch is fresh-context and self-contained; there is no resume or
   "continue the same agent". A re-dispatch (revision, continuation, escalation)
   is a NEW spawn that reads the prior artifact from disk - never a
@@ -109,14 +113,9 @@ dispatch, `review` (the whole trigger -> gate map for the level, which
 deep-verify pass runs, which `workflows/verify.md` reads). Quality is not one
 dial, and effort alone cannot express "fire a blocking cross-model review".
 
-The stakes level a config layer set is a FLOOR, not the last word. The resolve
-reads the phase's declared PLAN `files:` list and raises the level to the floor
-of any risk surface those paths match, so the whole bundle comes from the raised
-row. The phase comes from `--phase <N>` or, when the flag is absent, from the
-`.planning/STATE.md` cursor - an existing call site keeps working untouched. The
-floor RAISES and never caps: a baseline already at or above it changes no knob.
-It never blocks either - no phase, no PLAN, an unreadable PLAN and a `--phase`
-that is not a phase number all resolve at the baseline with `ok:true`.
+The stakes level a config layer set is the level, full stop. A `--phase <N>`
+or, when the flag is absent, the `.planning/STATE.md` cursor names the phase a
+resolve records against; neither changes the level.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
   run failed: the re-dispatch climbs to the retry rung the SAME cell names, and
@@ -158,27 +157,16 @@ that is not a phase number all resolve at the baseline with `ok:true`.
   (`model.effort.cad-verifier` and so on, six in all), and the accepted values
   are exactly that role's own rungs - the write face refuses any other by key,
   naming the set that role does have. The value lives in the config layers,
-  never in the shipped table. It raises freely and never lowers a floor: where a
-  risk surface fired, a configured rung below the floored cell's rung resolves AT
-  that rung, with the holding surface named in `reason`, and
-  `risk.override.<surface>` is the only way under it. A retry never resolves
-  below it either: `--attempt 2` takes whichever of the cell's retry rung and the
-  configured start rung sits higher, and says which one it out-ranked.
+  never in the shipped table. It raises and lowers freely, and it always wins
+  over the cell. A retry never resolves below it: `--attempt 2` takes whichever
+  of the cell's retry rung and the configured start rung sits higher, and says
+  which one it out-ranked.
 - **Tell the user when a pin fires.** A dispatch is approved through a UI that
   generally shows the agent name and not the model, so a pinned dispatch looks
   identical to a routed one at the moment of approval. When `pinned` is true,
   say so on its own line before spawning - "dispatching cad-planner on fable
   (pinned, routing would have picked opus)". Burying it in a preamble does not
   count; the user cannot verify what the dialog does not show.
-- **Tell the user when the risk floor raises the level.** Same reasoning, same
-  scope: the approval dialog shows neither the level nor the reason, so a floored
-  dispatch looks identical to a routed one. When `reason` carries a `risk floor:`
-  entry that RAISED the level, say so on its own line before spawning -
-  "dispatching cad-executor at critical (risk floor: auth)". A floor the user
-  never sees is the resolved-then-dropped shape this release exists to close.
-  `risk.override.<surface>` is the way back down and it waives ONE surface: the
-  level drops to the baseline only when every detected surface is named, and the
-  waived names stay in `reason`.
 
 **Concurrent dispatch.** Independent dispatches over disjoint payloads (the
 per-plan executors of a parallel phase, per-doc verifiers, the two reviewers of
@@ -237,11 +225,12 @@ distinct STEP, since no single deferred read covers them all - mutually
 exclusive arms of ONE step count as one site, which is exactly why `cad-land`
 can defer `references/git-publish.md` (step 4a or step 4b, never both) while
 `references/git-guard.md` stays eager at steps 1, 2 and 3. Any deferral made
-from this point forward states, inline at the Read
-itself, the reference's measured bytes and its consult-site count, so it ships
-as a shown measurement rather than an assertion - the deferrals already in
-`cad-land` predate this sentence and are not held to it. That count is distinct
-consult STEPS, found by grepping the reference name and then reading which step
+from this point forward states, inline at the Read itself, the reference's
+consult-site count - the number the eligibility rule above actually turns on.
+It does NOT state the reference's byte size: a figure copied into prose is a
+measurement that goes stale the next time the file is edited, and `weight.mjs`
+reports the live number on demand. Cite the file, not its size. That count is
+distinct consult STEPS, found by grepping the reference name and then reading which step
 each hit sits under, with mutually exclusive arms counted once: a raw grep total
 is NOT the number and will disagree, since both deferring skills return two
 prose hits against a stated count of one. "Folds into" admits an extra tool

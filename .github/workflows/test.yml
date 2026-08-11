@@ -14,17 +14,23 @@ concurrency:
 
 jobs:
   node-test:
+    # One job per GROUP, so a red arm names the seam that broke and the arms
+    # run in parallel. The groups are declared in cadence-core/bin/test.mjs;
+    # anything it does not name lands in `other`, which is in this matrix, so a
+    # new test file is never silently unrun.
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         node: ['22', '24']
+        group: [routing, git, planning, prose, review, other]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
       # Zero-dep repo: no install step, the built-in runner is the framework.
-      - run: node --test cadence-core/bin/*.test.mjs
+      - run: node cadence-core/bin/test.mjs ${{ matrix.group }}
 
   self-verify:
     # The prose<->code drift linter: every config key, script invocation, and

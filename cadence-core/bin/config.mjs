@@ -19,15 +19,11 @@
 // read time (precedence repo > global > defaults). Each file is validated on its
 // own - every layer must be independently valid.
 
-import { readFileSync, mkdirSync, realpathSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { basename, dirname, join, resolve as resolvePath } from 'node:path';
+import { dirname, join } from 'node:path';
 import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
-import {
-  surfaceKeyError, surfacesFromKeys, riskOverridesIn, overrideShapeWarning,
-  GLOBAL_LAYER, OVERRIDE_PREFIX,
-} from './lib/risk-surfaces.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 
@@ -118,11 +114,6 @@ function validate(file) {
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {
-    // Same message the write face gives, for the same reason the retired-key
-    // check states: a value refused at `set` with one message and named
-    // differently at `validate` is the drift this repo keeps closing.
-    const surfaceErr = surfaceKeyError(path, Object.keys(SCHEMA));
-    if (surfaceErr) { errors.push({ key: path, error: surfaceErr }); continue; }
     const spec = SCHEMA[path];
     if (!spec) { errors.push({ key: path, error: 'unknown key' }); continue; }
     const msg = checkValue(spec, v);
@@ -146,11 +137,6 @@ function checkPairs(tokens) {
     // read or write, so the refusal stays atomic.
     const retired = retiredKeyError(key);
     if (retired) { errors.push({ key, error: retired }); continue; }
-    // Same placement, same reason: `risk.override.athu` is a misspelled surface,
-    // and the generic `unknown key` arm below would answer it with nothing the
-    // user can act on. This names every accepted surface instead.
-    const surfaceErr = surfaceKeyError(key, Object.keys(SCHEMA));
-    if (surfaceErr) { errors.push({ key, error: surfaceErr }); continue; }
     const spec = SCHEMA[key];
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
@@ -200,66 +186,11 @@ function setInto(obj, dotted, value) {
   node[parts[parts.length - 1]] = value;
 }
 
-// The `risk.override.<surface>` family is the one key family whose whole purpose
-// is to LOWER a floor, and its schema `src` says `repo`. `src` is metadata
-// nothing in bin/ reads today (closing that generally is phase 6's shape), so
-// without this one narrow refusal a single
-// `config.mjs set risk.override.auth=true --global` would waive the auth floor
-// in every repository on the machine, forever, with nothing in any of those
-// repos recording it - the silent lowering this whole phase exists to prevent.
-/**
- * Filesystem identity for a path that may not exist yet. `--global` AUTO-CREATES
- * the global file, so absence is the ordinary case, not an error: fall back to
- * the realpath of the parent directory joined with the basename, and to a plain
- * absolute resolve when even the directory is absent. That is what lets the
- * comparison below see through a symlinked ~/.claude, a relative path and a
- * trailing-slash spelling alike.
- *
- * TOTAL: a non-string or empty path yields `null`, which equals nothing (not
- * even another `null`). The last fallback sits OUTSIDE the try blocks above and
- * `resolvePath(undefined)` throws a TypeError there, which escaped
- * repoScopedErrors and turned a diagnosable input into `reason:"internal"`
- * carrying a raw Node message.
- * @param {any} p
- * @returns {string|null}
- */
-function fsIdentity(p) {
-  if (typeof p !== 'string' || p === '') return null;
-  try { return realpathSync(p); } catch { /* not created yet - fall through */ }
-  try { return join(realpathSync(dirname(p)), basename(p)); } catch { /* dir absent too */ }
-  try { return resolvePath(p); } catch { return null; }
-}
-
-/** @param {string} file @param {boolean} create @param {{key:string}[]} pairs */
-function repoScopedErrors(file, create, pairs) {
-  // Identity, not string equality: `--file <global-dir>/./config.json` wrote
-  // straight through the refusal, and a symlink, a relative path or a trailing
-  // slash opened the same door. The GLOBAL_CONFIG guard stays non-empty-only -
-  // lib/config-merge.mjs deliberately yields '' where homedir() throws, and ''
-  // must never match a real target.
-  // An UNRESOLVABLE identity (null) equals nothing, including another null: a
-  // path that cannot be resolved must never land on the global layer by
-  // accident, which is what a `null === null` comparison would do.
-  const fileId = fsIdentity(file);
-  const targetsGlobal = create
-    || (Boolean(GLOBAL_CONFIG) && fileId !== null && fileId === fsIdentity(GLOBAL_CONFIG));
-  if (!targetsGlobal) return [];
-  return pairs.filter((p) => p.key.startsWith(OVERRIDE_PREFIX)).map((p) => ({
-    key: p.key,
-    error: `"${p.key}" is repo-scoped (src: repo): a risk-floor waiver applies to `
-      + 'ONE repository, so it cannot be written to the user-global layer - '
-      + 'set it with --file <repo config> instead',
-  }));
-}
-
 // `create` (the --global path) starts from an empty config and makes the parent
 // dir if the file does not exist yet; a corrupt existing file still fails.
 function set(file, tokens, create) {
   const { pairs, errors } = checkPairs(tokens);
-  // Both refusals land in ONE detail list, before any read or write, so a
-  // multi-pair set stays all-or-nothing.
-  const scoped = repoScopedErrors(file, create, pairs);
-  if (errors.length || scoped.length) fail('invalid', [...errors, ...scoped]);
+  if (errors.length) fail('invalid', errors);
   let cfg;
   try { cfg = JSON.parse(readFileSync(file, 'utf8')); }
   catch (e) {
@@ -277,57 +208,6 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
-/**
- * One warning per truthy `risk.override.<surface>` the USER-GLOBAL layer holds.
- *
- * `get` returns the MERGED value by contract, so a waiver only the global layer
- * carries reads here as an effective `true` while route.mjs honours the repo
- * layer alone and ignores it - two read faces describing one situation
- * differently, with nothing said. The divergence closes by becoming audible:
- * the value returned is unchanged, and the key is named.
- *
- * Scoped to `risk.override.*` deliberately, NOT to the schema's `src: repo`
- * generally - 42 of 73 keys carry `src: repo`, including `stakes`, whose
- * global-layer inheritance is ordinary and pinned by route.test.mjs.
- *
- * The SHAPE check and the traversal both come from lib/risk-surfaces.mjs, the
- * same ones route.mjs resolves through. That is the whole point: an entry
- * route.mjs calls malformed must not be an entry this face offers to relocate.
- * Telling a user to move `risk.override.athu` into their repo config sends them
- * at a key `config.mjs set` and `config.mjs check` both refuse, and a
- * non-boolean value would not waive anything in the repo layer either - so only
- * an entry the repo layer would actually honour earns the move-it remediation,
- * and everything else earns the diagnostic naming what is wrong with it.
- * @param {{global: any, repo: any}} layers
- * @param {boolean} [asGlobal] the read addressed the user-global layer itself
- */
-function globalScopeWarnings(layers, asGlobal) {
-  // The global slot is null on nearly every real invocation - no
-  // ~/.claude/cadence/config.json, an unparseable one, a non-object one -
-  // which `riskOverridesIn` answers for with an empty set. On a `--global` read
-  // the ONE file read is the user-global layer and mergeLayers collapsed it into
-  // the repo slot, so that is where to look instead.
-  const globalLayer = layers ? (asGlobal ? layers.repo : layers.global) : null;
-  // The accepted surface vocabulary, derived from the schema keys - route.mjs
-  // reads its own from route-table.json's `surfaces`, and self-verify's job is
-  // to prove the two files agree.
-  const declared = surfacesFromKeys(Object.keys(SCHEMA));
-  return Object.entries(riskOverridesIn(globalLayer))
-    .map(([surface, value]) => {
-      const shape = overrideShapeWarning(surface, value, declared, GLOBAL_LAYER);
-      if (shape) return shape;
-      // A waiver the global layer only NAMES is not one it makes: a global
-      // `risk.override.auth: false` is the ordinary not-waived case, and warning
-      // on it would put a line on every `get` in every repository.
-      if (value !== true) return null;
-      return `${OVERRIDE_PREFIX}${surface} is set in the user-global config layer, `
-        + `which is repo-scoped (src: repo): the value reported here is the MERGED `
-        + `one, while bin/route.mjs honours the repo layer alone - write it to this `
-        + `repo's own .planning/config.json for it to waive anything`;
-    })
-    .filter(Boolean);
-}
-
 // The effective value set: schema defaults, overlaid by the global then the
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
 // a flat dotted-key map, so callers read values without re-flattening.
@@ -339,11 +219,8 @@ function get(file, keys, asGlobal) {
   const { config, source, warnings, layers } = mergeLayers(file, { asGlobal });
   // A key the schema dropped is invisible to the read below - it resolves at
   // the default and looks configured. Naming it here is what keeps an upgraded
-  // repo from silently routing on a value nothing reads. A repo-scoped waiver
-  // sitting in the user-global layer is the same species: resolved here,
-  // ignored by the resolver, and until now said by neither.
-  const allWarnings = [...(warnings || []), ...retiredKeysIn(config),
-    ...globalScopeWarnings(layers, asGlobal)];
+  // repo from silently routing on a value nothing reads.
+  const allWarnings = [...(warnings || []), ...retiredKeysIn(config)];
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};

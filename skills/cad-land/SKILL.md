@@ -40,8 +40,8 @@ rather than a schema default no layer wrote.
    (references/git-guard.md) applies to any commit here.
 
 3. **Fire `pre_ship`.** Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (17,837 B,
-   one consult site - this step) at this step first, since this skill no longer
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (one
+   consult site - this step) at this step first, since this skill no longer
    preloads it. Then run the `pre_ship` review
    trigger with the refs
    `{base_ref: <base>, head_ref: HEAD}` as the artifact - shape (a), so the
@@ -85,7 +85,7 @@ rather than a schema default no layer wrote.
 
    **Read the publish rails before a publishing answer.** When the answer is
    direct push, open MR/PR, or a tag the user chose to push, Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (4,611 B, one
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
    consult site - step 4a or 4b, never both) first: rail 3 and the
    `git.auto_close` policy govern all three, and this skill no longer preloads
    them.
@@ -102,8 +102,8 @@ rather than a schema default no layer wrote.
    (references/git-publish.md rail 3 never
    auto-pushes).
    - **Read the publish rails first.** Read
-     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (4,611 B,
-     one consult site - step 4a or 4b, never both) before the
+     `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
+     consult site - step 4a or 4b, never both) before the
      first bullet below that publishes anything - the GitHub seam call and
      GitLab's `glab mr create`, which publishes the source branch itself, both
      count, so this read is NOT scoped to the GitHub arm. Rail 3 and the

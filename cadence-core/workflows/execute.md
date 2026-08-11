@@ -26,7 +26,7 @@ Config through the seam - one call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
-  workflow.subagent_timeout planning.commit_docs \
+  planning.commit_docs \
   parallelization.enabled parallelization.max_concurrent_agents \
   parallelization.min_plans_for_parallel parallelization.use_worktrees \
   git.protected_branches git.on_protected git.base_branch
@@ -156,8 +156,7 @@ Sequential (default) unless ALL of these hold:
 <step name="execute_sequential">
 For each plan in order: dispatch ONE cad-executor via the spawn-agent seam
 (references/seams.md), in the normal working tree, no worktrees, and wait
-for it to finish before starting the next. Timeout:
-`workflow.subagent_timeout`.
+for it to finish before starting the next.
 
 Record the pre-plan HEAD, then dispatch with a prompt ordered stable-first, so
 successive executors in the phase share a cached prefix: phase-level context
@@ -249,7 +248,12 @@ Handle the executor's return:
 After each plan completes, fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
-reviewer runs the diff itself. Default is advisory: report findings, continue.
+reviewer runs the diff itself. Default is `off` at `solo` and `shipped`: an
+advisory review gates nothing, and the LAST plan of a phase has no next
+dispatch to overlap it with, so it buys a wait for findings that stop nothing.
+`risk_surface` still halts per risky commit and `pre_ship` still adjudicates the
+whole branch at land. The arms below are what a user who sets
+`review.triggers.diff.gate` gets, and what `critical` resolves on its own.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
@@ -323,8 +327,8 @@ has already proven `worktree.baseRef` is `head`, so an executor halting
 `blocked` on a missing PLAN here is a real defect to report, not the
 fork-point default.)
 
-Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (4,060 B,
-one consult site - this step) and follow it: the batching key, the sequential
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
+consult site - this step) and follow it: the batching key, the sequential
 merge with both HEADs recorded, `workflow.test_command` at its only consumer,
 and which review triggers fire on this path alone. Only the opt-in path reaches
 this step, so a sequential run carries none of it.
@@ -413,8 +417,8 @@ verification runs in a fresh subagent.
 - [ ] Guard applied before the first executor dispatch
 - [ ] One cad-executor per plan; sequential unless every parallel condition held
 - [ ] Each task is one conventional commit of specific files
-- [ ] `diff` trigger per plan - overlapped at `advisory`, blocking at
-      `adjudicated`; `risk_surface` honored at commit time
+- [ ] `diff` trigger per plan - `off` at solo/shipped, overlapped at
+      `advisory`, blocking at `adjudicated`; `risk_surface` honored at commit time
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
 - [ ] STATE.md is exactly the 4-line cursor, overwritten
 </success_criteria>
