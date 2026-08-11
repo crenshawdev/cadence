@@ -42,28 +42,28 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 |---|---|
 | `/cad-audit` | 14,551 |
 | `/cad-capture` | 2,345 |
-| `/cad-config` | 12,770 |
-| `/cad-context` | 17,672 |
+| `/cad-config` | 12,761 |
+| `/cad-context` | 17,654 |
 | `/cad-coverage` | 5,162 |
-| `/cad-debug` | 8,316 |
+| `/cad-debug` | 8,307 |
 | `/cad-decision-review` | 12,213 |
 | `/cad-docs-verify` | 3,960 |
-| `/cad-execute` | 24,026 |
+| `/cad-execute` | 24,017 |
 | `/cad-health` | 6,585 |
 | `/cad-help` | 4,889 |
-| `/cad-land` | 17,098 |
+| `/cad-land` | 17,070 |
 | `/cad-milestone` | 16,210 |
 | `/cad-new-project` | 16,708 |
 | `/cad-pause` | 8,752 |
 | `/cad-phase` | 11,281 |
-| `/cad-plan` | 18,443 |
-| `/cad-plan-review` | 2,353 |
+| `/cad-plan` | 18,434 |
+| `/cad-plan-review` | 2,343 |
 | `/cad-progress` | 9,791 |
 | `/cad-spike` | 3,898 |
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 17,872 |
-| **23 user-invocable commands** | **252,653** |
+| **23 user-invocable commands** | **252,561** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -81,15 +81,15 @@ may open at a step rather than what it starts holding.
 
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
-| `/cad-execute` | 24,026 | 93,282 |
-| `/cad-plan` | 18,443 | 76,539 |
-| `/cad-verify` | 17,872 | 91,589 |
-| `/cad-context` | 17,672 | 85,073 |
-| `/cad-land` | 17,098 | 43,292 |
-| `/cad-new-project` | 16,708 | 62,698 |
+| `/cad-execute` | 24,017 | 93,375 |
+| `/cad-plan` | 18,434 | 76,641 |
+| `/cad-verify` | 17,872 | 91,700 |
+| `/cad-context` | 17,654 | 85,166 |
+| `/cad-land` | 17,070 | 43,264 |
+| `/cad-new-project` | 16,708 | 62,809 |
 | `/cad-milestone` | 16,210 | 66,809 |
 | `/cad-audit` | 14,551 | 64,736 |
-| `/cad-config` | 12,770 | 43,168 |
+| `/cad-config` | 12,761 | 43,270 |
 | `/cad-decision-review` | 12,213 | 29,555 |
 
 Three reference files are reachable from no command at all — budgeted bytes
@@ -117,8 +117,8 @@ setting — that invariant is what the spread in this table shows.
 |---|---|---|---|
 | cad-assumptions-analyzer | `agents/cad-assumptions-analyzer-high.md` | 489 | 4,595 |
 | cad-assumptions-analyzer | `agents/cad-assumptions-analyzer.md` | 519 | 4,625 |
-| cad-executor | `agents/cad-executor-xhigh.md` | 425 | 10,643 |
-| cad-executor | `agents/cad-executor.md` | 438 | 10,656 |
+| cad-executor | `agents/cad-executor-xhigh.md` | 425 | 10,634 |
+| cad-executor | `agents/cad-executor.md` | 438 | 10,647 |
 | cad-plan-checker | `agents/cad-plan-checker-high.md` | 458 | 5,801 |
 | cad-plan-checker | `agents/cad-plan-checker-medium.md` | 466 | 5,809 |
 | cad-plan-checker | `agents/cad-plan-checker-xhigh.md` | 462 | 5,805 |
@@ -147,22 +147,22 @@ turn-one table above is the number that decides what a session pays.
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 21 | 176,491 |
+| `cadence-core/references/` | 21 | 176,602 |
 | `cadence-core/templates/` | 9 | 18,253 |
-| `cadence-core/workflows/` | 21 | 180,844 |
-| `skills/` | 29 | 86,368 |
-| **total** | **99** | **470,539** |
+| `cadence-core/workflows/` | 21 | 180,790 |
+| `skills/` | 29 | 86,321 |
+| **total** | **99** | **470,549** |
 
 The twelve largest individual surfaces:
 
 | Surface | Bytes | Est. tokens |
 |---|---|---|
-| `cadence-core/workflows/execute.md` | 23,284 | 5,821 |
+| `cadence-core/workflows/execute.md` | 23,275 | 5,819 |
 | `cadence-core/references/acceptance-criteria.md` | 22,506 | 5,627 |
-| `cadence-core/workflows/plan.md` | 17,595 | 4,399 |
+| `cadence-core/workflows/plan.md` | 17,586 | 4,397 |
+| `cadence-core/references/seams.md` | 17,382 | 4,345 |
 | `cadence-core/references/review-triggers.md` | 17,342 | 4,336 |
-| `cadence-core/references/seams.md` | 17,271 | 4,318 |
-| `cadence-core/workflows/context.md` | 16,845 | 4,212 |
+| `cadence-core/workflows/context.md` | 16,827 | 4,207 |
 | `cadence-core/workflows/verify.md` | 16,823 | 4,206 |
 | `cadence-core/references/config-reach.md` | 16,075 | 4,019 |
 | `cadence-core/workflows/new-project.md` | 15,872 | 3,968 |
@@ -170,13 +170,11 @@ The twelve largest individual surfaces:
 | `cadence-core/references/req-traceability.md` | 13,725 | 3,432 |
 | `cadence-core/workflows/audit.md` | 12,912 | 3,228 |
 
-Every one of those 99 surfaces sits at exactly its budgeted byte count in
-`cadence-core/bin/weight-budgets.json`, with total slack zero, and that is now
-enforced rather than merely maintained: `self-verify` fails on any DIFFERENCE
-between a surface and its entry, added bytes or removed, on the commit that
-introduces it. A shrink counts because nothing regenerates these entries — a
-surface left sitting under its number banks slack the next growth then spends
-in silence.
+Every one of those surfaces carries an entry in
+`cadence-core/bin/weight-budgets.json`, and `self-verify` fails any surface
+that EXCEEDS its entry on the commit that introduces the growth. The entry is a
+ceiling, not an equality: a surface under its number is green, because
+shrinking is the direction this measurement exists to encourage.
 
 ## What this file does not carry
 

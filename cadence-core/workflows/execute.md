@@ -323,8 +323,8 @@ has already proven `worktree.baseRef` is `head`, so an executor halting
 `blocked` on a missing PLAN here is a real defect to report, not the
 fork-point default.)
 
-Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (4,060 B,
-one consult site - this step) and follow it: the batching key, the sequential
+Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/execute-parallel.md` (one
+consult site - this step) and follow it: the batching key, the sequential
 merge with both HEADs recorded, `workflow.test_command` at its only consumer,
 and which review triggers fire on this path alone. Only the opt-in path reaches
 this step, so a sequential run carries none of it.

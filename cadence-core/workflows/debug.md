@@ -86,7 +86,7 @@ Repeat until a root cause is confirmed or a dead-end is reached:
    Skip this entirely when the backend is `none` - do not issue the call. The
    gate precedes the call on purpose (D-03): recall's own backend-off return is
    a backstop for a direct caller, not this workflow's gate. Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (2,169 B, one
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
    consult site - this step) for the result shape and how matching past
    deviations and UAT findings fold into the Hypotheses list.
 2. **Predict + test.** For the top untested hypothesis, state what you would

@@ -221,11 +221,12 @@ distinct STEP, since no single deferred read covers them all - mutually
 exclusive arms of ONE step count as one site, which is exactly why `cad-land`
 can defer `references/git-publish.md` (step 4a or step 4b, never both) while
 `references/git-guard.md` stays eager at steps 1, 2 and 3. Any deferral made
-from this point forward states, inline at the Read
-itself, the reference's measured bytes and its consult-site count, so it ships
-as a shown measurement rather than an assertion - the deferrals already in
-`cad-land` predate this sentence and are not held to it. That count is distinct
-consult STEPS, found by grepping the reference name and then reading which step
+from this point forward states, inline at the Read itself, the reference's
+consult-site count - the number the eligibility rule above actually turns on.
+It does NOT state the reference's byte size: a figure copied into prose is a
+measurement that goes stale the next time the file is edited, and `weight.mjs`
+reports the live number on demand. Cite the file, not its size. That count is
+distinct consult STEPS, found by grepping the reference name and then reading which step
 each hit sits under, with mutually exclusive arms counted once: a raw grep total
 is NOT the number and will disagree, since both deferring skills return two
 prose hits against a stated count of one. "Folds into" admits an extra tool

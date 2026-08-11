@@ -150,8 +150,8 @@ names without redoing committed work.
 
 <worktree_mode>
 Only when your dispatch prompt says worktree mode: Read
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/worktree-executor.md` (3,038 B,
-one consult site - this step) before task 1 and hold every rule in it for the
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/worktree-executor.md` (one
+consult site - this step) before task 1 and hold every rule in it for the
 whole dispatch - the PLAN assertion, the per-commit branch check, the
 stay-inside rule, how the report is committed, and the git verbs you may never
 run. A sequential dispatch never reads it.

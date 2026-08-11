@@ -333,23 +333,20 @@ test('a surface EXACTLY at its budget yields no budget problem', () => {
     budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') },
   });
   assert.deepEqual(run(['--root', root]).problems.filter(
-    (x) => x.kind === 'budget-overrun' || x.kind === 'budget-undershoot'), []);
+    (x) => x.kind === 'budget-overrun'), []);
 });
 
-test('a surface ONE byte under its entry is reported budget-undershoot (D-13)', () => {
-  // The falsifier for the flip from `bytes > budget` to an exact comparison.
-  // Under the old rule this fixture was clean, which is how DFC-03's one-byte
-  // shrink would have shipped with CI green and the published "total slack 0"
-  // quietly false.
+test('a surface UNDER its entry is clean - the budget is a ceiling', () => {
+  // Shrinking is the direction a budget exists to encourage. Exactness was
+  // tried and made every prose cut red until its row was re-pinned in the same
+  // commit, taxing a cut at the rate it taxed growth.
   const body = 'hello';
   const root = fixtureWith({
     agents: { 'ok.md': body },
-    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 1 },
+    budgets: { 'agents/ok.md': Buffer.byteLength(body, 'utf8') + 4096 },
   });
-  const p = run(['--root', root]).problems.filter((x) => x.kind === 'budget-undershoot');
-  assert.equal(p.length, 1, JSON.stringify(p));
-  assert.equal(p[0].file, 'agents/ok.md');
-  assert.match(p[0].detail, /under budget 6B by 1B - re-pin the entry/);
+  assert.deepEqual(run(['--root', root]).problems.filter(
+    (x) => String(x.kind).startsWith('budget-')), []);
 });
 
 test('a measured surface missing from the manifest is flagged unbudgeted', () => {

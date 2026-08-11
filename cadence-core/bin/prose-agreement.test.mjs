@@ -240,50 +240,12 @@ const GRANDFATHERED = new Set([
   'cad-land|references/triage-gate.md',
 ]);
 
-test('every site copying a measured byte count states the measured number', () => {
-  // The drift class that had no check at all. `references/seams.md:239-243` now
-  // requires every future deferral to quote its reference's measured bytes
-  // inline, and those inline figures were checked against nothing - which is how
-  // `review-triggers.md` came to be published at 17,733 B in four places at once.
-  //
-  // A SCAN rather than two named files, because that mandate expands by rule:
-  // every deferral added from here on ships another inline figure, and a check
-  // naming `review-triggers.md` and two skills leaves each new one unwatched on
-  // the day it lands. Measured through weighAll, the SAME lib self-verify
-  // enforces with and weight.mjs reports from, so the check cannot diverge from
-  // the enforced number.
-  const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
-  const budgets = JSON.parse(doc('cadence-core', 'bin', 'weight-budgets.json')).budgets;
-
-  let checked = 0;
-  for (const rel of proseFiles()) {
-    for (const sentence of sentencesOf(doc(...rel.split('/')))) {
-      const figures = [...new Set(figuresIn(sentence))];
-      if (!figures.length) continue;
-      const paths = pathsIn(sentence);
-      if (!paths.length) continue;
-      assert.equal(paths.length, 1,
-        `${rel}: one sentence pairs a byte figure with ${paths.length} references `
-        + `(${paths.join(', ')}) - split it, or the figure names nothing checkable`);
-      const surface = paths[0];
-      const m = measured.get(surface);
-      assert.ok(m, `${rel} states a byte figure for ${surface}, which is not a measured surface`);
-      for (const figure of figures) {
-        assert.equal(figure, `${commas(m.bytes)} B`,
-          `${rel} states ${figure} for ${surface}, measured ${commas(m.bytes)} B`);
-      }
-      assert.equal(budgets[surface], m.bytes, `weight-budgets.json entry for ${surface}`);
-      checked += 1;
-    }
-  }
-  assert.ok(checked > 0,
-    'the scan matched no sentence at all - the path or figure pattern has drifted');
-});
-
-test('every deferred-read row states its measured bytes and site count at each anchor', () => {
-  // The other half of seams.md:239-243. The scan above proves a figure that is
-  // WRITTEN is right; this proves it was written at all, and at the arm that
-  // performs the read rather than anywhere in the file. Driven off the register
+test('every deferred-read row states its consult-site count at each anchor', () => {
+  // seams.md's deferral mandate: the consult-site count rides inline at the arm
+  // that performs the read, rather than anywhere in the file, because that
+  // count is what the eligibility rule turns on. Byte figures are deliberately
+  // NOT required - a size copied into prose goes stale on the next edit, and
+  // weight.mjs reports the live number. Driven off the register
   // so it grows with it, and resolved through the register's own
   // `regionLabels`, so an anchor reads here exactly as `deferredReadIssues`
   // reads it - two different notions of "inside the anchor" would let a row
@@ -296,8 +258,7 @@ test('every deferred-read row states its measured bytes and site count at each a
     const rel = row.file || `skills/${row.skill}/SKILL.md`;
     const text = doc(...rel.split('/'));
     const surface = `cadence-core/${row.reference}`;
-    const m = measured.get(surface);
-    assert.ok(m, `${rel} defers ${surface}, which is not a measured surface`);
+    assert.ok(measured.has(surface), `${rel} defers ${surface}, which is not a measured surface`);
     const full = `\${CLAUDE_PLUGIN_ROOT}/${surface}`;
 
     const labelOf = regionLabels(text);
@@ -317,12 +278,9 @@ test('every deferred-read row states its measured bytes and site count at each a
       const naming = sentencesOf(lines.join('\n')).filter((s) => s.includes(full));
       assert.ok(naming.length,
         `${rel} region ${anchor} carries no sentence naming ${full}`);
-      assert.ok(naming.some((s) => figuresIn(s).length > 0),
-        `${rel} region ${anchor} names ${row.reference} but states no measured byte figure `
-        + `- seams.md:239-243 requires ${commas(m.bytes)} B inline at the Read`);
-      assert.ok(naming.some((s) => figuresIn(s).length > 0 && /\bsite\b/.test(s)),
-        `${rel} region ${anchor} states bytes for ${row.reference} but no consult-site count `
-        + '- seams.md:239-243 requires both inline at the Read');
+      assert.ok(naming.some((s) => /\bsite\b/.test(s)),
+        `${rel} region ${anchor} names ${row.reference} but states no consult-site count `
+        + '- seams.md requires it inline at the Read');
       checked += 1;
     }
   }

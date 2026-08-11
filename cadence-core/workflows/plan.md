@@ -263,8 +263,8 @@ Handle the return:
     main context (or note why not) and continue. Do NOT spend the revision loop
     or a re-check on warnings alone.
   - Any BLOCKER -> ONE revision, maximum. Read
-    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-revision.md` (4,360 B,
-    one consult site - this step) and follow it: the fresh revision-mode planner
+    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/plan-revision.md` (one
+    consult site - this step) and follow it: the fresh revision-mode planner
     spawn, the narrowed checker re-dispatch, both of their brackets, and the
     no-BLOCKER-left / still-a-BLOCKER ask that ends the arm.
 - Empty or unmarked return -> report it, ask whether to proceed unchecked.

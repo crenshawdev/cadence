@@ -51,7 +51,7 @@ belong to an on-demand command rather than the phase loop.
    - `Other` (auto-added) is the free-type entry for numbers, strings, and lists.
 
    Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/config-catalog.md`
-   (7,923 B, one consult site - this step) for the rows themselves, in walk
+   (one consult site - this step) for the rows themselves, in walk
    order, each carrying its Purpose, Values and Explanations.
 3. A page whose knobs the user leaves unchanged is a no-op; only diffs are applied.
 4. After the last page, show the changed keys as a diff and write once via the
