@@ -186,7 +186,7 @@ test('each level resolves its whole review map and its verify value, literally',
 
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
-    plan: 'adjudicated', diff: 'advisory', risk_surface: 'blocking',
+    plan: 'advisory', diff: 'off', risk_surface: 'blocking',
     phase_diff: 'advisory', pre_ship: 'adjudicated',
   });
   assert.equal(shipped.verify, 'on');
@@ -206,10 +206,10 @@ test('risk_surface is blocking at every level - a detection match is never waved
 });
 
 test('a config gate that AGREES with the level is taken silently', () => {
-  const c = rawCfg({ stakes: 'shipped', review: { triggers: { diff: { gate: 'advisory' } } } },
+  const c = rawCfg({ stakes: 'shipped', review: { triggers: { phase_diff: { gate: 'advisory' } } } },
     'gate-agrees.json');
   const r = resolve('cad-planner', c);
-  assert.equal(r.review.diff, 'advisory');
+  assert.equal(r.review.phase_diff, 'advisory');
   assert.equal(r.warnings, undefined); // agreement is not news
 });
 

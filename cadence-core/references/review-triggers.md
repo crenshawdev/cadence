@@ -240,8 +240,8 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 
 | Trigger | Fired by | When | Payload artifact | Gate (solo/shipped/critical) |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / adjudicated / adjudicated |
-| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / advisory / blocking |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / advisory / adjudicated |
+| `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / advisory / adjudicated |
 | `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |

@@ -145,8 +145,8 @@ not a convenience.*
 
 | Trigger | Fired by | What gets reviewed | solo | shipped | critical |
 |---|---|---|---|---|---|
-| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | adjudicated | adjudicated |
-| `diff` | `/cad-execute` | the diff for one completed plan | off | advisory | blocking |
+| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | advisory | adjudicated |
+| `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
 | `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the flagged diff, at commit time | blocking | blocking | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | advisory | adjudicated |
 | `pre_ship` | `/cad-land` | the full branch diff | advisory | adjudicated | adjudicated |

@@ -249,7 +249,12 @@ Handle the executor's return:
 After each plan completes, fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
-reviewer runs the diff itself. Default is advisory: report findings, continue.
+reviewer runs the diff itself. Default is `off` at `solo` and `shipped`: an
+advisory review gates nothing, and the LAST plan of a phase has no next
+dispatch to overlap it with, so it buys a wait for findings that stop nothing.
+`risk_surface` still halts per risky commit and `pre_ship` still adjudicates the
+whole branch at land. The arms below are what a user who sets
+`review.triggers.diff.gate` gets, and what `critical` resolves on its own.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
@@ -413,8 +418,8 @@ verification runs in a fresh subagent.
 - [ ] Guard applied before the first executor dispatch
 - [ ] One cad-executor per plan; sequential unless every parallel condition held
 - [ ] Each task is one conventional commit of specific files
-- [ ] `diff` trigger per plan - overlapped at `advisory`, blocking at
-      `adjudicated`; `risk_surface` honored at commit time
+- [ ] `diff` trigger per plan - `off` at solo/shipped, overlapped at
+      `advisory`, blocking at `adjudicated`; `risk_surface` honored at commit time
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
 - [ ] STATE.md is exactly the 4-line cursor, overwritten
 </success_criteria>

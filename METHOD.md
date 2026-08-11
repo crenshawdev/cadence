@@ -273,15 +273,18 @@ rather than scattered across twenty workflows.
 
 | Trigger | Fired by | On | Gate at `shipped` |
 |---|---|---|---|
-| `plan` | `/cad-plan` | after PLAN.md is written | adjudicated |
-| `diff` | `/cad-execute` | at plan completion | advisory |
+| `plan` | `/cad-plan` | after PLAN.md is written | advisory |
+| `diff` | `/cad-execute` | at plan completion | off |
 | `risk_surface` | execute, debug, task, verify | on detection match, at commit time | blocking |
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | advisory |
 | `pre_ship` | `/cad-land` | before publishing | adjudicated |
 
-All five fire on their own at the default `shipped` level. `phase_diff` and
-`diff` are the two that are off at `solo`, and `phase_diff` alone only ever fires
-on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
+Three of the five fire on their own at the default `shipped` level. `diff` is
+off there and at `solo`, because an advisory review gates nothing and the last
+plan of a phase has no next dispatch to overlap it with, so it is a wait bought
+for findings that stop nothing - `risk_surface` still halts per risky commit and
+`pre_ship` still adjudicates the whole branch at land. `phase_diff` only ever
+fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
 `adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
 `adjudicated`) decides how multiple reviewers combine, and where they disagree the
 gate wins, because it is the stronger signal.
@@ -350,12 +353,13 @@ in this system for paying for more voices.
 What survives is not a work order. The survivors are presented as a numbered
 list and the session asks which of them to act on, with none as the default, so
 the model that just spent four voices on the artifact does not also get to
-decide what happens next. Three gates end this way as shipped: the plan review
-in `/cad-plan` and the pre-ship review in `/cad-land`, both adjudicated from
-`shipped` upward, and the fix list in `/cad-verify`, which has no resolved gate
-and is always triaged. Two more end this way wherever their gate resolves
-adjudicated: `/cad-execute`'s per-plan diff review, advisory by default, and
-its `phase_diff` review, adjudicated at `critical`. The one exception is the
+decide what happens next. Two gates end this way as shipped: the pre-ship review
+in `/cad-land`, adjudicated from `shipped` upward, and the fix list in
+`/cad-verify`, which has no resolved gate and is always triaged. Three more end
+this way wherever their gate resolves adjudicated: the plan review in
+`/cad-plan`, advisory at `shipped` and adjudicated at `critical`;
+`/cad-execute`'s per-plan diff review, `off` below `critical`; and its
+`phase_diff` review, adjudicated at `critical`. The one exception is the
 opt-in unattended close at pre-ship, where nothing is acted on at all - its
 triage is none by construction, and a surviving blocker or high finding halts
 the merge instead.

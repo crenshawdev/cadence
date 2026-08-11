@@ -48,7 +48,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-debug` | 8,307 |
 | `/cad-decision-review` | 12,213 |
 | `/cad-docs-verify` | 3,960 |
-| `/cad-execute` | 24,017 |
+| `/cad-execute` | 24,406 |
 | `/cad-health` | 6,585 |
 | `/cad-help` | 4,889 |
 | `/cad-land` | 17,070 |
@@ -63,7 +63,7 @@ Eager bytes are the `eagerBytes` field of each entry in `commands`.
 | `/cad-task` | 6,841 |
 | `/cad-undo` | 10,917 |
 | `/cad-verify` | 17,872 |
-| **23 user-invocable commands** | **252,561** |
+| **23 user-invocable commands** | **252,950** |
 
 That total is the sum of the column, not a quantity any single session pays.
 One command's turn-one bytes are what that run carries; you never run all 23 in
@@ -81,16 +81,16 @@ may open at a step rather than what it starts holding.
 
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
-| `/cad-execute` | 24,017 | 93,375 |
-| `/cad-plan` | 18,434 | 76,641 |
-| `/cad-verify` | 17,872 | 91,700 |
-| `/cad-context` | 17,654 | 85,166 |
-| `/cad-land` | 17,070 | 43,264 |
+| `/cad-execute` | 24,406 | 93,756 |
+| `/cad-plan` | 18,434 | 76,633 |
+| `/cad-verify` | 17,872 | 91,692 |
+| `/cad-context` | 17,654 | 85,158 |
+| `/cad-land` | 17,070 | 43,256 |
 | `/cad-new-project` | 16,708 | 62,809 |
-| `/cad-milestone` | 16,210 | 66,809 |
+| `/cad-milestone` | 16,210 | 66,801 |
 | `/cad-audit` | 14,551 | 64,736 |
 | `/cad-config` | 12,761 | 43,270 |
-| `/cad-decision-review` | 12,213 | 29,555 |
+| `/cad-decision-review` | 12,213 | 29,547 |
 
 Three reference files are reachable from no command at all — budgeted bytes
 that enter no model context, so no context saving may ever claim them
@@ -147,21 +147,21 @@ turn-one table above is the number that decides what a session pays.
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 21 | 176,602 |
+| `cadence-core/references/` | 21 | 176,594 |
 | `cadence-core/templates/` | 9 | 18,253 |
-| `cadence-core/workflows/` | 21 | 180,790 |
+| `cadence-core/workflows/` | 21 | 181,179 |
 | `skills/` | 29 | 86,321 |
-| **total** | **99** | **470,549** |
+| **total** | **99** | **470,930** |
 
 The twelve largest individual surfaces:
 
 | Surface | Bytes | Est. tokens |
 |---|---|---|
-| `cadence-core/workflows/execute.md` | 23,275 | 5,819 |
+| `cadence-core/workflows/execute.md` | 23,664 | 5,916 |
 | `cadence-core/references/acceptance-criteria.md` | 22,506 | 5,627 |
 | `cadence-core/workflows/plan.md` | 17,586 | 4,397 |
 | `cadence-core/references/seams.md` | 17,382 | 4,345 |
-| `cadence-core/references/review-triggers.md` | 17,342 | 4,336 |
+| `cadence-core/references/review-triggers.md` | 17,334 | 4,334 |
 | `cadence-core/workflows/context.md` | 16,827 | 4,207 |
 | `cadence-core/workflows/verify.md` | 16,823 | 4,206 |
 | `cadence-core/references/config-reach.md` | 16,075 | 4,019 |
