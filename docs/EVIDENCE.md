@@ -81,24 +81,24 @@ may open at a step rather than what it starts holding.
 
 | Command | Eager (turn one) | Reachable (one hop) |
 |---|---|---|
-| `/cad-execute` | 24,026 | 95,053 |
-| `/cad-plan` | 18,443 | 78,310 |
-| `/cad-verify` | 17,872 | 93,360 |
-| `/cad-context` | 17,672 | 86,844 |
-| `/cad-land` | 17,098 | 43,787 |
-| `/cad-new-project` | 16,708 | 63,974 |
-| `/cad-milestone` | 16,210 | 67,304 |
+| `/cad-execute` | 24,026 | 93,282 |
+| `/cad-plan` | 18,443 | 76,539 |
+| `/cad-verify` | 17,872 | 91,589 |
+| `/cad-context` | 17,672 | 85,073 |
+| `/cad-land` | 17,098 | 43,292 |
+| `/cad-new-project` | 16,708 | 62,698 |
+| `/cad-milestone` | 16,210 | 66,809 |
 | `/cad-audit` | 14,551 | 64,736 |
-| `/cad-config` | 12,770 | 44,914 |
-| `/cad-decision-review` | 12,213 | 30,050 |
+| `/cad-config` | 12,770 | 43,168 |
+| `/cad-decision-review` | 12,213 | 29,555 |
 
 Three reference files are reachable from no command at all — budgeted bytes
 that enter no model context, so no context saving may ever claim them
-(`zeroResident` in the same output, 26,451 B):
+(`zeroResident` in the same output, 23,758 B):
 
 | Surface | Bytes |
 |---|---|
-| `cadence-core/references/config-reach.md` | 18,768 |
+| `cadence-core/references/config-reach.md` | 16,075 |
 | `cadence-core/references/model-hints.json` | 2,635 |
 | `cadence-core/references/provider-api.md` | 5,048 |
 
@@ -147,11 +147,11 @@ turn-one table above is the number that decides what a session pays.
 | Directory | Surfaces | Bytes |
 |---|---|---|
 | `agents/` | 19 | 8,583 |
-| `cadence-core/references/` | 21 | 181,425 |
+| `cadence-core/references/` | 21 | 176,491 |
 | `cadence-core/templates/` | 9 | 18,253 |
 | `cadence-core/workflows/` | 21 | 180,844 |
 | `skills/` | 29 | 86,368 |
-| **total** | **99** | **475,473** |
+| **total** | **99** | **470,539** |
 
 The twelve largest individual surfaces:
 
@@ -159,12 +159,12 @@ The twelve largest individual surfaces:
 |---|---|---|
 | `cadence-core/workflows/execute.md` | 23,284 | 5,821 |
 | `cadence-core/references/acceptance-criteria.md` | 22,506 | 5,627 |
-| `cadence-core/references/config-reach.md` | 18,768 | 4,692 |
-| `cadence-core/references/seams.md` | 18,547 | 4,637 |
-| `cadence-core/references/review-triggers.md` | 17,837 | 4,459 |
 | `cadence-core/workflows/plan.md` | 17,595 | 4,399 |
+| `cadence-core/references/review-triggers.md` | 17,342 | 4,336 |
+| `cadence-core/references/seams.md` | 17,271 | 4,318 |
 | `cadence-core/workflows/context.md` | 16,845 | 4,212 |
 | `cadence-core/workflows/verify.md` | 16,823 | 4,206 |
+| `cadence-core/references/config-reach.md` | 16,075 | 4,019 |
 | `cadence-core/workflows/new-project.md` | 15,872 | 3,968 |
 | `cadence-core/references/plan-frontmatter.md` | 13,954 | 3,489 |
 | `cadence-core/references/req-traceability.md` | 13,725 | 3,432 |

@@ -116,23 +116,6 @@ treated as a torn table: routing returns not-ok and the caller falls back to the
 base agent at the session default rather than dispatching a half-resolved
 bundle.
 
-### The risk floor
-
-Stakes is a project setting, but some phases are riskier than the project they
-live in. Before routing looks up a cell, it reads the phase's own declared file
-list and checks it against eight named risk surfaces.
-
-![The risk floor: the phase plan's declared file list is matched against eight risk surfaces; a match raises the stakes level to critical for that phase, no match leaves the project baseline, and either way the result feeds the cell lookup.](figures/risk-floor.svg)
-
-*The floor only ever raises. A configured start rung is held* at *the floor
-rather than allowed under it, and the holding surfaces are named out loud. The
-single way back under a floor is `risk.override.<surface>: true`, per surface,
-in the repo config, a waiver written in the user-global config is ignored and
-reported. Planning roles are exempt, because they run before the phase has a
-plan to read.*
-
----
-
 ## 5. Who spawns what
 
 Six routable roles, each with a contract that lives in exactly one place and is
@@ -168,14 +151,12 @@ not a convenience.*
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | advisory | adjudicated |
 | `pre_ship` | `/cad-land` | the full branch diff | advisory | adjudicated | adjudicated |
 
-> **Two risk detectors, and neither replaces the other**
+> **One risk detector, and it reads the diff**
 >
-> **At dispatch time**, the phase's declared paths are matched against the eight
-> surfaces and the result raises the stakes floor for the whole phase. Coarse,
-> with no diff in hand. **At commit time**, the model reads the actual diff and
-> fires `risk_surface` on what it sees. A phase can be floored without the
-> trigger ever firing, and the trigger can fire on a phase the floor never
-> touched.
+> **At commit time**, the model reads the actual diff and fires `risk_surface`
+> on what it sees. A dispatch-time path match against the phase's declared
+> `files:` list was a second detector until v2.7.0: it judged a file by its
+> NAME, so one token floored a whole phase to `critical`, and it is gone.
 >
 > The commit-time filter drops exactly two things, and only on evidence: a
 > destructive target proven ephemeral by both `git check-ignore` and an empty

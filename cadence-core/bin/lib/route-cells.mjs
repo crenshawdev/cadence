@@ -1,6 +1,6 @@
 // @ts-check
 // route-cells.mjs - the ONE statement of what makes cadence-core/route-table.json's
-// three grids AND its `surfaces` block well-formed, imported by self-verify.mjs
+// three grids AND its shared vocabulary arrays well-formed, imported by self-verify.mjs
 // (which files each issue as a CI problem). Same shape and same reasons as lib/rung-agent.mjs: route.mjs
 // reads these grids and fails OPEN on anything wrong with them, so CI is the only
 // place a bad cell can die, and the rule it dies by has to be written once.
@@ -69,118 +69,42 @@ function sameList(a, b) {
 }
 
 /**
- * Everything wrong with the `surfaces` block - the risk floor's own vocabulary -
- * as the same `{code, detail}` entries, every detail NAMING THE ROW.
+ * Everything wrong with the table's shared VOCABULARY arrays, as the same
+ * `{code, detail}` entries.
  *
  * Codes:
- *   `unknown-floor`            a surface whose `floor` is missing, not a string,
- *                              or outside the caller's `levels`
- *   `floor-below-required`     a surface whose `floor` is not the caller's
- *                              OPTIONAL `requiredFloor` (checked only when one
- *                              is passed)
- *   `bad-pattern`              `patterns` absent, not an array, empty, or holding
- *                              an entry that is not a non-empty `[a-z0-9]+` token
- *   `missing-override-key`     a surface the table declares with no
- *                              `risk.override.<surface>` schema key to waive it
- *   `undeclared-risk-surface`  a `risk.override.<surface>` schema key naming no
- *                              surface row
  *   `stakes-order-drift`       `stakes_order` is not the caller's `levels`
  *   `gate-vocabulary-drift`    `gates` is not the caller's `gates`
  *
- * `bad-pattern`'s token rule is the sharp end: a pattern carrying a slash, a dot
- * or an uppercase letter can never EQUAL a token the path tokenizer produces, so
- * it is an inert pattern - a silently unfloored surface, the same defect class as
- * the gate hole route.mjs closes.
- *
- * `requiredFloor` is an option rather than a fixed rule because the lib must
- * still tolerate the sub-top floor route.test.mjs injects through
- * CADENCE_ROUTE_TABLE to exercise the cap-never branch; only self-verify, which
- * reads the shipped tree, passes it. It is what enforces D-03's other half -
- * every shipped row floors to the top level - which nothing else checks:
- * `unknown-floor` accepts any value in `levels`, so editing a shipped row to
- * `shipped` would otherwise pass every check in the tree.
- *
- * The two drift codes are the ones no acceptance criterion asked for, mandatory
- * for the reason `rung-demotion` was: a vocabulary duplicated across two files
- * with no guard drifts silently. route.mjs compares floors by INDEX in
- * `stakes_order`, so a drifted order reorders the whole ladder, and it refuses a
- * user-set gate against `gates`, so a drifted list would refuse a gate
+ * Both are mandatory for the reason `rung-demotion` is: a vocabulary duplicated
+ * across two files with no guard drifts silently. route.mjs compares levels by
+ * INDEX in `stakes_order`, so a drifted order reorders the whole ladder, and it
+ * refuses a user-set gate against `gates`, so a drifted list would refuse a gate
  * `config.mjs set` accepts.
- *
- * A table with no `surfaces` block yields NO issues at all - the same tolerance
- * `cellIssues` gives an absent vocabulary, so a fixture table need not carry one.
- * On the shipped tree the block's PRESENCE is pinned by route.test.mjs's
- * top-level key-set row instead.
  *
  * Vocabulary from the CALLER, never off the table, so this lib never grows a
  * second opinion about the accepted names.
  * @param {any} table the parsed route-table.json, trusted for nothing
- * @param {{levels?: string[], overrideSurfaces?: string[], gates?: string[],
- *          requiredFloor?: string}} [vocab]
+ * @param {{levels?: string[], gates?: string[]}} [vocab]
  * @returns {Array<{code: string, detail: string}>}
  */
-export function surfaceIssues(table, vocab = {}) {
+export function vocabularyIssues(table, vocab = {}) {
   /** @type {Array<{code: string, detail: string}>} */
   const issues = [];
   const t = obj(table) || {};
-  const surfaces = obj(t.surfaces);
-  if (!surfaces) return issues;
   const levels = strs(vocab.levels);
   const gateNames = strs(vocab.gates);
-  const overrideSurfaces = strs(vocab.overrideSurfaces);
-  const requiredFloor = typeof vocab.requiredFloor === 'string' ? vocab.requiredFloor : null;
   const show = (/** @type {any} */ v) => JSON.stringify(v === undefined ? null : v);
 
   if (levels.length && !sameList(strs(t.stakes_order), levels)) {
     issues.push({ code: 'stakes-order-drift',
       detail: `stakes_order ${show(t.stakes_order)} is not the accepted stakes order `
-        + `[${levels.join(', ')}] - the floor compares levels by their index in that array` });
+        + `[${levels.join(', ')}] - the ladder compares levels by their index in that array` });
   }
   if (gateNames.length && !sameList(strs(t.gates), gateNames)) {
     issues.push({ code: 'gate-vocabulary-drift',
       detail: `gates ${show(t.gates)} is not the accepted gate vocabulary `
         + `[${gateNames.join(', ')}] - a drifted list refuses a gate config.mjs accepts` });
-  }
-
-  for (const [name, row] of Object.entries(surfaces)) {
-    const surface = obj(row) || {};
-    const floor = surface.floor;
-    if (levels.length && !(typeof floor === 'string' && levels.includes(floor))) {
-      issues.push({ code: 'unknown-floor',
-        detail: `${name}: floor ${show(floor)} is not one of [${levels.join(', ')}]` });
-    } else if (requiredFloor && floor !== requiredFloor) {
-      issues.push({ code: 'floor-below-required',
-        detail: `${name}: floor ${show(floor)} is not "${requiredFloor}" - every declared `
-          + 'risk surface floors to the top stakes level' });
-    }
-
-    const patterns = Array.isArray(surface.patterns) ? surface.patterns : null;
-    if (!patterns || !patterns.length) {
-      issues.push({ code: 'bad-pattern',
-        detail: `${name}: patterns ${show(surface.patterns)} is absent, not an array, or empty, `
-          + 'so this surface can never be detected' });
-    } else {
-      for (const p of patterns) {
-        if (typeof p === 'string' && /^[a-z0-9]+$/.test(p)) continue;
-        issues.push({ code: 'bad-pattern',
-          detail: `${name}: pattern ${show(p)} is not a lowercase alphanumeric token, so it can `
-            + 'never equal a path token - an inert pattern is a silently unfloored surface' });
-      }
-    }
-
-    if (overrideSurfaces.length && !overrideSurfaces.includes(name)) {
-      issues.push({ code: 'missing-override-key',
-        detail: `${name}: no risk.override.${name} key in config.schema.json, so a detected `
-          + `${name} floor could never be waived` });
-    }
-  }
-
-  for (const name of overrideSurfaces) {
-    if (surfaces[name] === undefined) {
-      issues.push({ code: 'undeclared-risk-surface',
-        detail: `${name}: config.schema.json declares risk.override.${name}, but the surfaces `
-          + 'block has no such row - the key waives nothing' });
-    }
   }
 
   return issues;

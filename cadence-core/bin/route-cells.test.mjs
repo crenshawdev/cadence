@@ -7,7 +7,7 @@
 // Only node: builtins, no subprocess - the lib is pure.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cellIssues, declaredRoles, routableAgents, surfaceIssues } from './lib/route-cells.mjs';
+import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
 
 const LEVELS = ['solo', 'shipped', 'critical'];
 const TRIGGERS = ['plan', 'diff', 'risk_surface', 'phase_diff', 'pre_ship'];
@@ -281,161 +281,51 @@ test('routableAgents on a malformed table is empty, never a throw', () => {
   assert.equal(routableAgents({ cells: { solo: null } }).size, 0);
 });
 
-// --- surfaceIssues: the risk-surface vocabulary (STK-03) ---------------------
+// --- vocabularyIssues: the table's shared vocabulary arrays -------------------
 
-const SURFACE_VOCAB = {
-  levels: LEVELS,
-  gates: GATES,
-  overrideSurfaces: ['auth', 'migrations'],
-  requiredFloor: 'critical',
-};
+const VOCAB_ARRAYS = { levels: LEVELS, gates: GATES };
 
-/** A well-formed two-surface table, deep-cloned per row. */
-function surfaceTable() {
-  return {
-    stakes_order: LEVELS,
-    gates: GATES,
-    surfaces: {
-      auth: { patterns: ['auth', 'session'], floor: 'critical' },
-      migrations: { patterns: ['migration', 'migrations'], floor: 'critical' },
-    },
-  };
+/** A well-formed vocabulary table, deep-cloned per row. */
+function vocabTable() {
+  return { stakes_order: LEVELS, gates: GATES };
 }
 
-const sCodes = (t, v = SURFACE_VOCAB) => surfaceIssues(t, v).map((i) => i.code);
-const sFind = (t, code, v = SURFACE_VOCAB) => surfaceIssues(t, v).find((i) => i.code === code);
+const vFind = (t, code, v = VOCAB_ARRAYS) => vocabularyIssues(t, v).find((i) => i.code === code);
 
-test('a well-formed surfaces block has no issues', () => {
-  assert.deepEqual(surfaceIssues(surfaceTable(), SURFACE_VOCAB), []);
+test('a well-formed vocabulary block has no issues', () => {
+  assert.deepEqual(vocabularyIssues(vocabTable(), VOCAB_ARRAYS), []);
 });
 
-test('a table with NO surfaces block yields no issues at all', () => {
-  // The same tolerance cellIssues gives an absent vocabulary: a fixture table
-  // need not carry one.
-  assert.deepEqual(surfaceIssues(table(), SURFACE_VOCAB), []);
-  assert.deepEqual(surfaceIssues({}, SURFACE_VOCAB), []);
-  assert.deepEqual(surfaceIssues(null, SURFACE_VOCAB), []);
-});
-
-test('a floor outside the stakes levels is unknown-floor naming the surface', () => {
-  const t = surfaceTable();
-  t.surfaces.auth.floor = 'ludicrous';
-  const hit = sFind(t, 'unknown-floor');
-  assert.ok(hit, JSON.stringify(surfaceIssues(t, SURFACE_VOCAB)));
-  assert.match(hit.detail, /^auth: /);
-  assert.match(hit.detail, /\[solo, shipped, critical\]/);
-});
-
-test('a missing or non-string floor is unknown-floor, never a throw', () => {
-  for (const floor of [undefined, null, 7, {}]) {
-    const t = surfaceTable();
-    t.surfaces.auth.floor = floor;
-    const hit = sFind(t, 'unknown-floor');
-    assert.ok(hit, JSON.stringify(floor));
-    assert.match(hit.detail, /^auth: /);
+test('a malformed table reports rather than throwing', () => {
+  for (const t of [null, 'nope', 7, []]) {
+    assert.doesNotThrow(() => vocabularyIssues(t, VOCAB_ARRAYS), JSON.stringify(t));
   }
-});
-
-test('a VALID but too-low floor is floor-below-required naming the surface', () => {
-  // `shipped` passes every membership check, so only requiredFloor can see that
-  // a declared risk surface would floor one rung below the level D-03 locked.
-  const t = surfaceTable();
-  t.surfaces.auth.floor = 'shipped';
-  assert.deepEqual(sCodes(t), ['floor-below-required']);
-  assert.match(sFind(t, 'floor-below-required').detail, /^auth: /);
-});
-
-test('without requiredFloor a sub-top floor is accepted - the injected-table case', () => {
-  const t = surfaceTable();
-  t.surfaces.auth.floor = 'shipped';
-  assert.deepEqual(surfaceIssues(t, { ...SURFACE_VOCAB, requiredFloor: undefined }), []);
-});
-
-test('an empty or absent pattern list is bad-pattern naming the surface', () => {
-  for (const patterns of [[], undefined, null, 'auth', {}]) {
-    const t = surfaceTable();
-    t.surfaces.auth.patterns = patterns;
-    const hit = sFind(t, 'bad-pattern');
-    assert.ok(hit, JSON.stringify(patterns));
-    assert.match(hit.detail, /^auth: /);
-  }
-});
-
-test('a pattern that can never equal a path token is bad-pattern naming it', () => {
-  // A slash, a dot or an uppercase letter makes the pattern INERT - a silently
-  // unfloored surface.
-  for (const p of ['src/auth', 'auth.rs', 'Auth', '', 7, null]) {
-    const t = surfaceTable();
-    t.surfaces.auth.patterns = ['session', p];
-    const hit = sFind(t, 'bad-pattern');
-    assert.ok(hit, JSON.stringify(p));
-    assert.match(hit.detail, /^auth: /);
-  }
-});
-
-test('a surface with no risk.override key is missing-override-key naming it', () => {
-  const t = surfaceTable();
-  t.surfaces.frobnicate = { patterns: ['frobnicate'], floor: 'critical' };
-  const hit = sFind(t, 'missing-override-key');
-  assert.ok(hit, JSON.stringify(surfaceIssues(t, SURFACE_VOCAB)));
-  assert.match(hit.detail, /^frobnicate: /);
-});
-
-test('a risk.override key naming no surface row is undeclared-risk-surface', () => {
-  const t = surfaceTable();
-  delete t.surfaces.auth;
-  const hit = sFind(t, 'undeclared-risk-surface');
-  assert.ok(hit, JSON.stringify(surfaceIssues(t, SURFACE_VOCAB)));
-  assert.match(hit.detail, /^auth: /);
 });
 
 test('a drifted stakes_order is stakes-order-drift naming both lists', () => {
-  const t = surfaceTable();
-  t.stakes_order = ['critical', 'shipped', 'solo'];
-  const hit = sFind(t, 'stakes-order-drift');
-  assert.ok(hit, JSON.stringify(surfaceIssues(t, SURFACE_VOCAB)));
+  const t = vocabTable();
+  t.stakes_order = ['solo', 'critical', 'shipped'];
+  const hit = vFind(t, 'stakes-order-drift');
+  assert.ok(hit, JSON.stringify(vocabularyIssues(t, VOCAB_ARRAYS)));
   assert.match(hit.detail, /solo, shipped, critical/);
 });
 
-test('an absent stakes_order is stakes-order-drift too - the floor compares by index', () => {
-  const t = surfaceTable();
+test('an absent stakes_order is stakes-order-drift too - the ladder compares by index', () => {
+  const t = vocabTable();
   delete t.stakes_order;
-  assert.ok(sFind(t, 'stakes-order-drift'));
+  assert.ok(vFind(t, 'stakes-order-drift'));
 });
 
 test('a drifted gates list is gate-vocabulary-drift naming both lists', () => {
-  const t = surfaceTable();
+  const t = vocabTable();
   t.gates = ['off', 'advisory', 'blocking'];
-  const hit = sFind(t, 'gate-vocabulary-drift');
-  assert.ok(hit, JSON.stringify(surfaceIssues(t, SURFACE_VOCAB)));
+  const hit = vFind(t, 'gate-vocabulary-drift');
+  assert.ok(hit, JSON.stringify(vocabularyIssues(t, VOCAB_ARRAYS)));
   assert.match(hit.detail, /off, advisory, blocking, adjudicated/);
-});
-
-test('two faults in DIFFERENT surface rows report twice, not the first one', () => {
-  const t = surfaceTable();
-  t.surfaces.auth.floor = 'ludicrous';
-  t.surfaces.migrations.patterns = [];
-  const c = sCodes(t);
-  assert.ok(c.includes('unknown-floor'), JSON.stringify(surfaceIssues(t, SURFACE_VOCAB)));
-  assert.ok(c.includes('bad-pattern'));
-  assert.match(sFind(t, 'unknown-floor').detail, /^auth: /);
-  assert.match(sFind(t, 'bad-pattern').detail, /^migrations: /);
-});
-
-test('a surface row that is null or a scalar reports rather than throwing', () => {
-  for (const row of [null, 'nope', 7, []]) {
-    const t = surfaceTable();
-    t.surfaces.auth = row;
-    assert.doesNotThrow(() => surfaceIssues(t, SURFACE_VOCAB), JSON.stringify(row));
-    const c = sCodes(t);
-    assert.ok(c.includes('unknown-floor'), JSON.stringify(row));
-    assert.ok(c.includes('bad-pattern'), JSON.stringify(row));
-  }
 });
 
 test('an empty vocabulary checks nothing rather than failing everything', () => {
   // The caller supplies the accepted names; a schema that failed to yield them
-  // must not turn into eight phantom problems. Only `bad-pattern` survives -
-  // it is checked against the tokenizer's own shape, not against a vocabulary.
-  assert.deepEqual(surfaceIssues(surfaceTable(), {}), []);
+  // must not turn into phantom problems.
+  assert.deepEqual(vocabularyIssues(vocabTable(), {}), []);
 });

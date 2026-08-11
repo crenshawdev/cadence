@@ -40,7 +40,7 @@ rather than a schema default no layer wrote.
    (references/git-guard.md) applies to any commit here.
 
 3. **Fire `pre_ship`.** Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (17,837 B,
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (17,342 B,
    one consult site - this step) at this step first, since this skill no longer
    preloads it. Then run the `pre_ship` review
    trigger with the refs

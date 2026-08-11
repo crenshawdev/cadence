@@ -29,8 +29,8 @@
 //                    grows behaviour, the ladder is N divergent variants
 //                    instead of one contract at N efforts.
 //   8. routing cells the three grids in route-table.json, cell by cell (every
-//                    problem NAMES the cell), the `surfaces` block against the
-//                    `risk.override.<surface>` schema keys in both directions,
+//                    problem NAMES the cell), the shared vocabulary arrays
+//                    against the schema's own enums,
 //                    plus both directions between the grids and agents/: every
 //                    rung a cell names must have an agent file, and every
 //                    rung-suffixed agent file must be a rung some cell reaches. route.mjs returns an agent name it
@@ -115,8 +115,7 @@ import { weighAll } from './lib/surface-weight.mjs';
 import {
   rungBodyIssue, rungEffortIssue, rungFile, effortEnumIssues,
 } from './lib/rung-agent.mjs';
-import { cellIssues, declaredRoles, routableAgents, surfaceIssues } from './lib/route-cells.mjs';
-import { surfacesFromKeys } from './lib/risk-surfaces.mjs';
+import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
@@ -424,15 +423,13 @@ function* binFiles(root, opts = {}) {
  * would under-cover the reverse check: prose that says
  * `review.triggers.<t>.tier` covers ALL triggers' tier keys, not just plan's.
  * @param {string} token @param {string[]} triggers @param {string[]} providers
- * @param {string[]} [surfaces] the risk surfaces `risk.override.<surface>` stands for
  */
-function expand(token, triggers, providers, surfaces = []) {
+function expand(token, triggers, providers) {
   let out = [token];
   const subst = (list, re, values) =>
     list.flatMap((t) => re.test(t) ? values.map((v) => t.replace(re, v)) : [t]);
   out = subst(out, /<t(?:rigger)?>?/g, triggers);
   out = subst(out, /<(?:name|provider)>?/g, providers);
-  out = subst(out, /<surface>?/g, surfaces);
   return out;
 }
 
@@ -455,11 +452,6 @@ function run(root) {
     .filter((k) => k.startsWith('review.triggers.')).map((k) => k.split('.')[2]))];
   const PROVIDERS = [...new Set(schemaKeys
     .filter((k) => k.startsWith('review.providers.')).map((k) => k.split('.')[2]))];
-  // The risk-surface vocabulary, derived from the schema exactly as TRIGGERS and
-  // PROVIDERS are: prose writing `risk.override.<surface>` covers all eight keys
-  // in both directions of check 1, and check 8 walks the same list against
-  // route-table.json's `surfaces` block.
-  const SURFACES = surfacesFromKeys(schemaKeys);
   // Keys with no dot can never match the dotted-token regex; they are covered
   // by a bare-word mention instead.
   const BARE_KEYS = schemaKeys.filter((k) => !k.includes('.'));
@@ -524,7 +516,7 @@ function run(root) {
       const family = raw.split('.')[0];
       if (!FAMILIES.has(family)) continue;
       if (raw.split('.').some((seg) => NON_KEY_SEGMENT.has(seg))) continue;
-      const expansions = expand(raw, TRIGGERS, PROVIDERS, SURFACES);
+      const expansions = expand(raw, TRIGGERS, PROVIDERS);
       // The reach table (check 9) names all 72 keys by construction, so
       // letting it feed seenTokens would make 1b's inert-config-key
       // unreachable forever - a key nothing but the table mentions would
@@ -983,17 +975,14 @@ function run(root) {
         problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
       }
 
-      // The `surfaces` block, in BOTH directions against config.schema.json's
-      // `risk.override.<surface>` keys. `requiredFloor` is the LAST level of the
-      // schema's stakes enum, never the literal "critical": the level names come
-      // from the schema everywhere else in this check, and a hardcoded copy here
-      // would be the vocabulary drift this walk exists to catch.
+      // The shared vocabulary arrays against config.schema.json's own enums.
+      // route.mjs compares levels by index in `stakes_order` and refuses a
+      // user-set gate against `gates`, so either list drifting silently
+      // reorders the ladder or refuses a gate `config.mjs set` accepts.
       const stakesValues = Array.isArray(stakesSpec.values) ? stakesSpec.values : [];
-      for (const { code, detail } of surfaceIssues(table, {
+      for (const { code, detail } of vocabularyIssues(table, {
         levels: stakesValues,
         gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
-        overrideSurfaces: SURFACES,
-        requiredFloor: stakesValues[stakesValues.length - 1],
       })) {
         problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
       }
@@ -1218,7 +1207,7 @@ try {
   const ri = argv.indexOf('--root');
   const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, risk-surfaces, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers', problems });
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
