@@ -54,6 +54,10 @@ Check six dimensions:
    for code the task has yet to write is a BLOCKER - the planner cannot know
    those, and each guess reaches the executor as an instruction that reality
    then contradicts. Naming symbols that already exist is correct and expected.
+   The file list is a LEASE: a dependency-adding task without its lockfile
+   (`Cargo.lock`, `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`)
+   declared is a BLOCKER - `lease-check` refuses that commit as
+   `undeclared-files` and the executor halts mid-plan.
 3. **Sequencing** - tasks are ordered so each depends only on prior
    completed work. For split plans (PLAN-1, PLAN-2 ...): slices share no
    files and have no cross-slice ordering; if they do, the split is a

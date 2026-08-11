@@ -79,7 +79,10 @@ evidence to weigh, never a mandate to widen scope.
 Every task has exactly three fields, all concrete:
 
 - **Files:** exact paths created or modified. "src/auth/login.rs", never
-  "the auth files".
+  "the auth files". It is a LEASE: a path the executor must write but no plan
+  declared, `lease-check` refuses as `undeclared-files`, halting the task at its
+  commit. A dependency change writes the lockfile too (`Cargo.lock`,
+  `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`).
 - **Action:** what must become true, the constraints that bind it, and what
   to avoid with WHY. Directive prose, no fenced code blocks. Name symbols that
   ALREADY EXIST - you read them, so they are facts. Never invent an identifier,

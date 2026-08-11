@@ -323,3 +323,39 @@ test('every deferred-read row states its consult-site count at each anchor', () 
   }
   assert.ok(checked > 0, 'no register row reached the coverage arm');
 });
+
+test('the lockfile lease: both contracts name the same lockfiles and the reason lease-check emits', () => {
+  // The planner declares a task's files and the checker blocks on the gap, but
+  // the thing that actually halts an executor is planning.mjs's own refusal.
+  // Both documents quote that seam by name and by reason code, so this pins
+  // the quote to the emitter: rename the reason and the prose goes red rather
+  // than telling a planner to avoid a code the seam no longer returns.
+  const planner = doc('skills', 'cad-planner-contract', 'SKILL.md');
+  const checker = doc('skills', 'cad-plan-checker-contract', 'SKILL.md');
+  const seam = doc('cadence-core', 'bin', 'planning.mjs');
+
+  assert.match(seam, /reason: 'undeclared-files'/,
+    'lease-check no longer emits undeclared-files - both contracts quote that reason');
+
+  for (const [label, text] of [['planner', planner], ['plan-checker', checker]]) {
+    assert.ok(text.includes('lease-check'),
+      `cad-${label}-contract states the lockfile rule without naming the seam that enforces it`);
+    assert.ok(text.includes('undeclared-files'),
+      `cad-${label}-contract names lease-check but not the reason it returns`);
+  }
+
+  // The lockfile set is the half a planner acts on, so the two documents must
+  // list the SAME one. A rule that names Cargo.lock in one contract and a
+  // different set in the other is two rules, and the checker would block work
+  // the planner was never told to declare.
+  const lockfiles = (text) =>
+    [...text.matchAll(/`([A-Za-z.]+\.lock|package-lock\.json|go\.sum)`/g)]
+      .map((m) => m[1]).sort();
+  const fromPlanner = [...new Set(lockfiles(planner))];
+  const fromChecker = [...new Set(lockfiles(checker))];
+
+  assert.ok(fromPlanner.length >= 3,
+    `cad-planner-contract names too few lockfiles to be the rule: ${fromPlanner.join(', ')}`);
+  assert.deepEqual(fromChecker, fromPlanner,
+    'the planner and the plan-checker state different lockfile sets');
+});
