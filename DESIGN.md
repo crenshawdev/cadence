@@ -228,7 +228,7 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   separate on/off is redundant.
 - **Trigger wiring (which skill fires what):** `plan` → `cad-plan`, after PLAN.md is written;
   `diff` → `cad-execute`, at plan completion (advisory by default — low-ceremony solo flow);
-  `risk_surface` → `cad-execute`, at commit time when the diff matches a risk surface;
+  `risk_surface` → `cad-execute`, once per plan on the committed range when it matches a risk surface;
   `pre_ship` → `cad-land`, before executing the chosen publish mechanism. `cad-verify` routes
   fix requests through the subsystem rather than spawning its own fixer loop.
 - **`risk_surface` detection — shipped defaults** (path/diff heuristics, configurable list):
@@ -482,8 +482,8 @@ lever is trigger frequency (gating), never a weak reviewer.
   `untrusted_input`, and no phase of that project could ever route below `critical` - 15 of 16
   resolves ran opus, 9 of 16 at `xhigh`, against a README claim of ~27% routed down. The floor also
   clamped `model.effort.<role>`, so the user's own dial lost to a filename. Cadence already had a
-  better detector for the same question: the commit-time `risk_surface` check reads the actual
-  staged diff. Deleted: the `surfaces` block, `lib/risk-surfaces.mjs`, `riskFloor()`, the
+  better detector for the same question: the `risk_surface` check reads the actual
+  diff. Deleted: the `surfaces` block, `lib/risk-surfaces.mjs`, `riskFloor()`, the
   `floor_surfaces` trace field, the eight `risk.override.*` keys (now in `retired-keys.mjs`, so an
   existing config warns rather than breaks), and the `floor-below-required` CI arm. Kept: the
   commit-time trigger, its `blocking` gate at every level, `stakes`, the cells grid, escalation.

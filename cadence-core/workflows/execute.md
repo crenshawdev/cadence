@@ -245,14 +245,33 @@ Handle the executor's return:
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
-After each plan completes, fire the `diff` review trigger
+After each plan completes, first fire `risk_surface` if the plan's committed
+range touched one. Check `git diff {pre-plan HEAD}..HEAD` against the
+risk-surface list in references/review-triggers.md; on a match write that same
+diff to `<plandir>/reports/plan-<k>-risk.diff` and fire the trigger with that
+path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
+shape (a) refs is not one of the shapes the wiring table admits for
+`risk_surface`. The file is transient: never stage it, delete it once the
+trigger returns. Blocking: on FAIL the findings are fixed or the user explicitly
+overrides, and the re-arm on that fix is CAPPED at ONE narrowed round per
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
+before the fix lands, since this workflow does not preload it.
+
+Firing ONCE here rather than per risky commit is the point. Halting the executor
+mid-plan cost a fresh-context re-dispatch per match, and a continuation whose
+only job was writing code no task authorized - which is itself new risk surface,
+and the next halt. The range is committed and complete when this reads it, so
+the reviewer judges what the plan actually built instead of a half-finished
+staged index.
+
+Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
 reviewer runs the diff itself. Default is `off` at `solo` and `shipped`: an
 advisory review gates nothing, and the LAST plan of a phase has no next
 dispatch to overlap it with, so it buys a wait for findings that stop nothing.
-`risk_surface` still halts per risky commit and `pre_ship` still adjudicates the
-whole branch at land. The arms below are what a user who sets
+`risk_surface` above already blocked on this same range, and `pre_ship` still
+adjudicates the whole branch at land. The arms below are what a user who sets
 `review.triggers.diff.gate` gets, and what `critical` resolves on its own.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
@@ -267,9 +286,10 @@ survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
 before presenting, since this workflow does not preload it. The
-`risk_surface` arm is untouched by the TRIAGE rule specifically: a matched risk
-surface still halts, and triage is not an override for it. It is NOT exempt
-from the same file's ONE-round re-arm cap, which binds every blocking gate.
+`risk_surface` fire above is untouched by the TRIAGE rule specifically: a matched
+risk surface still blocks, and triage is not an override for it. It is NOT
+exempt from the same file's ONE-round re-arm cap, which binds every blocking
+gate.
 </step>
 
 <step name="handle_checkpoint">
@@ -283,15 +303,6 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   adjust it / stop the phase. This is a consult dead-end: before that ask, run
   offer_consult per references/consult.md with the deviation as the
   situation.
-- **risk_surface** (staged diff matches a risk surface) -> fire the
-  `risk_surface` review trigger with the flagged-diff FILE path the checkpoint
-  returned - shape (c). It is a path and not refs because the diff is staged
-  and uncommitted, and in worktree mode it is not in this tree at all.
-  Blocking: on FAIL, findings are fixed or the user explicitly overrides -
-  never silently proceed. The re-arm on that fix is CAPPED at ONE narrowed
-  round, and the cap lives only in
-  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
-  before the fix lands, since this workflow does not preload it.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
@@ -418,7 +429,8 @@ verification runs in a fresh subagent.
 - [ ] One cad-executor per plan; sequential unless every parallel condition held
 - [ ] Each task is one conventional commit of specific files
 - [ ] `diff` trigger per plan - `off` at solo/shipped, overlapped at
-      `advisory`, blocking at `adjudicated`; `risk_surface` honored at commit time
+      `advisory`, blocking at `adjudicated`; `risk_surface` fired ONCE per plan
+      on the committed range, never mid-plan
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
 - [ ] STATE.md is exactly the 4-line cursor, overwritten
 </success_criteria>

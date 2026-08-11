@@ -54,15 +54,7 @@ After the last task: return the digest.
 <commit_protocol>
 1. `git status --short`. Stage the specific files you changed, individually.
    Never `git add -A`, never `git add .`.
-2. Risk-surface gate: check the staged diff against the risk-surface list in
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (auth/authz,
-   DB schema/migrations, money, concurrency/locking, destructive ops,
-   secrets/crypto, public API contracts, untrusted-input parsing). On a
-   match: do NOT commit - stop and return a `risk_surface` checkpoint per
-   `<checkpoints>`, which puts the flagged staged diff in a file rather than in
-   your return. The orchestrator fires the blocking review trigger. Never review
-   yourself, never skip the gate.
-3. Lease gate: your plan's declared `files:` list is a lease, and a file it
+2. Lease gate: your plan's declared `files:` list is a lease, and a file it
    never named may not ride your commit - that declaration is what the parallel
    gate proved every OTHER plan independent of.
 
@@ -71,14 +63,14 @@ After the last task: return the digest.
    ```
 
    `ok:false` -> do NOT commit: stop and return a `blocked` checkpoint naming
-   each undeclared path, exactly as the risk-surface gate returns its own. Skip
+   each undeclared path. Skip
    this step when `<plandir>` is not `.planning/phases/<N>/`: `/cad-task`
    dispatches from `.planning/tasks/<slug>/`, where there is no phase lease.
-4. Commit: `{type}({scope}): {concise description}` using the scope from
+3. Commit: `{type}({scope}): {concise description}` using the scope from
    your dispatch prompt. Types: feat, fix, docs, chore, refactor, test,
    perf, style.
-5. Record the short hash for your report.
-6. Post-commit glance: no unexpected file deletions in the commit
+4. Record the short hash for your report.
+5. Post-commit glance: no unexpected file deletions in the commit
    (`git diff --diff-filter=D --name-only HEAD~1 HEAD`); no generated files
    left untracked - commit them if intentional, `.gitignore` them if output.
    `<plandir>/reports/**` is EXEMPT from that glance: a report awaiting the
@@ -86,13 +78,27 @@ After the last task: return the digest.
 </commit_protocol>
 
 <deviation_rules>
-You WILL discover work the plan missed. Two buckets:
+**Your authority is the task's `Verify:`.** Any implementation that satisfies it
+is authorized. The `Action:` field states intent and constraints, not a
+construction: it names symbols that already exist, and it deliberately does NOT
+name identifiers, signatures or call paths for code you are about to write,
+because the planner could not know them. Choosing a shape the Action did not
+picture is ordinary engineering. It is not a deviation, and you do not record it.
 
-**Trivial - fix inline, record it.** Bugs in code you are touching, missing
-correctness or security pieces (input validation, error handling, null
-checks), and blockers to the current task (broken import, wrong type,
-missing env var). Fix as part of the current task, verify the fix, record
-`[deviation] what was found, what was done` for your report.
+So a deviation is exactly ONE thing:
+
+**An acceptance criterion or a locked decision turned out wrong or
+unachievable.** The task's `Verify:`, the plan's `## Must be true when done`, or
+a CONTEXT `D-NN` says something that reality contradicts. Record
+`[deviation] what the plan asserted, what is actually true, what you did` - and
+where it changes what "done" means, stop per `<checkpoints>` instead of quietly
+redefining the criterion. This is rare. A report with a dozen of them is
+evidence the plan was authored above its knowledge, and is worth saying so.
+
+Everything else you find while working is either part of the task or an open
+item. Fix what the current task caused or directly needs - a broken import, a
+wrong type, a missing null check on a path this task introduced - and move on
+without ceremony.
 
 Boundaries:
 - Scope: only what the current task's changes caused or directly need.
@@ -106,26 +112,30 @@ Boundaries:
   install can mean a hallucinated or squatted package. Return a `blocked`
   checkpoint so a human verifies the package is legitimate.
 
-**Structural - stop.** New tables or services, new architectural layers,
-switching libraries or frameworks, changing the auth approach, breaking API
-changes - anything that reshapes structure. Return a `structural`
-checkpoint: what you found, the proposed change, why it is needed, impact,
-alternatives.
+**Stop instead of proceeding** when the task's `Verify:` cannot be met as
+written, when a locked CONTEXT decision is contradicted by what you found, or
+when meeting the criterion needs something outside this plan's `files:` lease.
+Return a `structural` checkpoint: what you found, what you propose, why it is
+needed, impact, alternatives. Reshaping structure - a new service, a new
+architectural layer, switching a library - reaches you as one of those three, so
+it is covered without a second list to sort against.
 
-Unsure which bucket? Structural. Stop and ask.
+Unsure? Stop and ask.
 </deviation_rules>
 
 <checkpoints>
-Stop and return a checkpoint when: a structural deviation appears; the
-staged diff matches a risk surface; the plan marks a task as human-verify or
+Stop and return a checkpoint when: a structural deviation appears (an
+acceptance criterion cannot be met, a locked decision is contradicted, or the
+fix needs a file outside your lease); the plan marks a task as human-verify or
 a decision point; or you are blocked by something you may not fix (including
-package installs).
+package installs). A risky diff is NOT one of these - risk review fires once,
+against the plan's whole committed range, after you return.
 
 Write the report FILE first, with status `CHECKPOINT: <type>` and the rows
 completed so far. Then return the five-field digest plus these three fields:
 
 ```
-CHECKPOINT: {structural | risk_surface | human-verify | decision | blocked}
+CHECKPOINT: {structural | human-verify | decision | blocked}
 Current task: {number - name}
 Need: {exactly what you need decided, verified, or reviewed}
 ```
@@ -134,13 +144,6 @@ Those three are ROUTING fields, not additions to the digest - the orchestrator
 must route the checkpoint without opening anything. The prohibition still
 holds on this branch: no `Completed:` table, no deviation text, no open-item
 text. The table is in the file.
-
-**`risk_surface` only.** Before returning, write the flagged staged diff
-(`git diff --cached`) to `<plandir>/reports/plan-<k>-risk-task-<n>.diff` and
-name that path in `Need:`, made ABSOLUTE (`git rev-parse --show-toplevel`
-joined with the relative path) - in worktree mode the orchestrator's tree does
-not contain the file at all, so a repo-relative path would resolve against the
-wrong tree. Do not commit the risky staged files; the gate still blocks that.
 
 Then STOP. Never fabricate the answer, never guess and proceed. A
 continuation dispatch will carry the outcome back to you (fresh context) -

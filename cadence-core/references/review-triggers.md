@@ -57,10 +57,10 @@ Assemble `{ instruction, artifact }` from the wiring table:
     command: a Task-dispatched subagent inherits the parent's cwd, so it reads
     the same index.
   - **(c) a path** - a file artifact (a PLAN), or one the reviewer's tree cannot
-    reach. An executor's flagged staged diff is the latter: no ref pair names an
-    uncommitted change, and in worktree mode it is not in this tree at all, so
-    the executor writes it to a file and its checkpoint returns the absolute
-    path.
+    reach. A plan's committed range is the latter for `risk_surface`: shape (a)
+    refs is not one of the shapes this trigger admits, so the orchestrator
+    writes `git diff <pre-plan HEAD>..HEAD` to a file and fires with that path,
+    which also survives worktree mode, where the range is not in this tree.
 
 ### 3. Resolve the reviewer set
 Start from `review.reviewers[]`. For each entry, keep only if available:
@@ -242,13 +242,20 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 |---|---|---|---|---|
 | `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / advisory / adjudicated |
 | `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
-| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking / blocking / blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / advisory / adjudicated |
 | `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |
 
 `risk_surface` is `blocking` at every level on purpose: it fires only on a
 detection match, and there is no level at which a matched risk surface is worth
 waving through.
+
+It fires on a COMPLETED range, never on a staged index mid-plan. Halting an
+executor at each risky commit bought nothing the range-level fire does not:
+the reviewer saw a half-built change, and every halt cost a fresh-context
+re-dispatch whose only job was writing code no plan task authorized - itself
+new risk surface, and the next halt. Blocking on the finished range keeps the
+gate and drops the loop.
 
 ## risk_surface detection (shipped defaults, configurable)
 

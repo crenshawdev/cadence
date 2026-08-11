@@ -48,10 +48,13 @@ once rather than re-reading it.
 ### Every task has exactly three fields
 
 - **Files** — exact paths. `src/auth/login.rs`, never "the auth files".
-- **Action** — identifiers, signatures, config keys, behavior, and what to avoid
-  with the reason. Directive prose, no code blocks.
+- **Action** — what must become true, the constraints that bind it, and what to
+  avoid with the reason. Directive prose, no code blocks. It names symbols that
+  already exist and never invents an identifier, signature or call path for code
+  the task has yet to write, because the planner cannot know those.
 - **Verify** — how to prove it is done. A command whose output settles it, or an
-  observable behavior check. "Running X shows Y", never "X works".
+  observable behavior check. "Running X shows Y", never "X works". This is the
+  task's authority: any implementation that satisfies it is authorized.
 
 Atomic means one concern, independently verifiable, leaving the repo
 committable. A task touching more than about five files is usually two tasks.
@@ -115,19 +118,27 @@ This is generalized from Andrej Karpathy's "A Recipe for Training Neural
 Networks" — make no assumptions, failures are silent, verify, don't trust. There
 is no switch for it.
 
-### Deviations split two ways, with a circuit breaker
+### A deviation is one thing, with a circuit breaker
 
-**Trivial — fix inline and record it.** Bugs in code you are already touching,
-missing correctness or security pieces, blockers to the current task. Bounded to
-what the current task caused or directly needs; pre-existing problems elsewhere
-are open items, not your job.
+The executor's authority is the task's Verify. Any implementation that satisfies
+it is authorized, so choosing a shape the Action did not picture is ordinary
+engineering — not a deviation, and not recorded. Sorting departures by how
+architectural they looked was the older rule, and it asked the wrong question:
+it let an invented parsing pass through as "trivial" while a plan's guessed
+field name became a finding someone had to defend.
 
-**Structural — stop.** New tables or services, new architectural layers,
-switching libraries, changing the auth approach, breaking API changes. Return a
-checkpoint naming what was found, the proposed change, why, impact, and
-alternatives.
+So a deviation is exactly one thing: **an acceptance criterion or a locked
+decision turned out wrong or unachievable.** The task's Verify, the plan's
+`## Must be true when done`, or a CONTEXT `D-NN` says something reality
+contradicts. That is rare, and a report carrying a dozen is evidence the plan
+was authored above its knowledge.
 
-Unsure which bucket? Structural. Stop and ask.
+The executor stops instead of proceeding when the Verify cannot be met as
+written, when a locked decision is contradicted, or when meeting it needs a file
+outside the plan's lease. Everything else found along the way is either part of
+the task or an open item.
+
+Unsure? Stop and ask.
 
 The circuit breaker is three fix attempts per task, then record it as an open
 item and move on, or checkpoint if it blocks the task. Thrashing is a failure
@@ -275,15 +286,15 @@ rather than scattered across twenty workflows.
 |---|---|---|---|
 | `plan` | `/cad-plan` | after PLAN.md is written | advisory |
 | `diff` | `/cad-execute` | at plan completion | off |
-| `risk_surface` | execute, debug, task, verify | on detection match, at commit time | blocking |
+| `risk_surface` | execute, debug, task, verify | on detection match, once per plan on the committed range | blocking |
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | advisory |
 | `pre_ship` | `/cad-land` | before publishing | adjudicated |
 
 Three of the five fire on their own at the default `shipped` level. `diff` is
 off there and at `solo`, because an advisory review gates nothing and the last
 plan of a phase has no next dispatch to overlap it with, so it is a wait bought
-for findings that stop nothing - `risk_surface` still halts per risky commit and
-`pre_ship` still adjudicates the whole branch at land. `phase_diff` only ever
+for findings that stop nothing - `risk_surface` already blocked on that same
+range and `pre_ship` still adjudicates the whole branch at land. `phase_diff` only ever
 fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
 `adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
 `adjudicated`) decides how multiple reviewers combine, and where they disagree the
@@ -396,6 +407,12 @@ A match on any of these fires the blocking `risk_surface` trigger: auth and
 authorization and sessions, DB schema and migrations, money and billing and
 pricing, concurrency and async and locking, destructive operations, secrets and
 crypto and keys, public API and wire contracts, and untrusted-input parsing.
+
+It fires once, against the plan's completed commit range, never against a staged
+index mid-plan. Halting the executor at each risky commit showed the reviewer a
+half-built change and cost a fresh-context re-dispatch per match, whose only job
+was writing code no plan task authorized - itself new risk surface, and the next
+halt. Blocking on the finished range keeps the gate and drops the loop.
 
 Detection also sets a floor. When a phase's own plan declares a path on one of
 those surfaces, that phase's `stakes` level is raised for the phase, the reason
@@ -617,7 +634,7 @@ codebase; omissions still need a human.
 |---|---|
 | Goal-backward derivation, skeleton-first ordering | `skills/cad-planner-contract/SKILL.md` |
 | Independent derivation before reading the plan | `skills/cad-plan-checker-contract/SKILL.md` |
-| Prediction-first verification, deviation buckets | `skills/cad-executor-contract/SKILL.md` |
+| Prediction-first verification, the deviation rule | `skills/cad-executor-contract/SKILL.md` |
 | Four-level verification, anti-pattern scan | `skills/cad-verifier-contract/SKILL.md` |
 | Refute-don't-bless, finding schema | `skills/cad-reviewer-contract/SKILL.md` |
 | Gates, adjudication, risk detection | `cadence-core/references/review-triggers.md` |

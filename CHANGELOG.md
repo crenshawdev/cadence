@@ -6,6 +6,49 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A plan no longer asserts what it cannot know.** A task's `Action` stated
+  "identifiers, signatures, config keys, behavior" for code that did not exist
+  yet. The planner cannot know those, so each guess reached the executor as an
+  instruction that reality then contradicted. Measured on this repo's own
+  history: one archived plan report carries 36 deviations, another 19, and a
+  downstream project's 9 - a guessed field name (`warnings`, really
+  `warning_count`), a construction that cannot work (`ENOTDIR` is not
+  `ENOENT`), a call path that is not reachable, line numbers moved by earlier
+  tasks in the same plan. `Action` now states what must become true and its
+  constraints, names symbols that ALREADY EXIST, and never invents an
+  identifier, signature, field name or call path for code the task has yet to
+  write. `Verify` carries the task's authority: any implementation that
+  satisfies it is authorized.
+- **A deviation is one thing, not two buckets.** Departures were sorted by how
+  architectural they looked - "trivial" fixed inline, "structural" stopped -
+  and the trivial bucket explicitly licensed "input validation, error handling,
+  security pieces". That is the clause an invented pre-parse repair pass was
+  written under, in a phase where the executor's own report said no task
+  described it. A deviation is now exactly one thing: an acceptance criterion
+  or a locked decision turned out wrong or unachievable. Choosing a shape the
+  `Action` did not picture is ordinary engineering, and is not recorded.
+- **`risk_surface` fires once per plan, on the committed range.** It fired per
+  risky commit, mid-plan, against a staged index. Every match halted the
+  executor and cost a fresh-context continuation whose only job was writing
+  code no task authorized - itself new risk surface, and the next halt. One
+  measured phase spent three executor dispatches (198K, 492K, 337K tokens) on
+  a single plan that way. The gate is unchanged and still blocking at every
+  level; only its timing moved, so the reviewer now judges a complete change
+  instead of a half-built index. `/cad-debug` and `/cad-verify` keep shape (b)
+  for their single staged fix.
+- The executor's `<commit_protocol>` drops its per-commit risk gate, and
+  `risk_surface` is no longer one of its checkpoint types. It stops for a
+  structural reason only: a `Verify` that cannot be met, a contradicted locked
+  decision, or a fix needing a file outside the plan's lease.
+- `cad-plan-checker` weighs `Verify` hardest, since it is now the task's whole
+  authority, and treats an invented identifier in `Action` as a BLOCKER.
+- `cad-assumptions-analyzer` measures an out-of-repo assumption with the
+  operation the code will actually perform, and records the command, date and
+  sample size beside the claim. Counting a field across a corpus is not parsing
+  it, and the parse is what fails.
+
 ## [2.7.0] - 2026-08-11
 
 The dispatch-time risk floor is gone, and with it several pieces of machinery

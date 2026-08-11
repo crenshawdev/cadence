@@ -32,10 +32,13 @@ committable after each. Typical phase: 3-10 tasks.}
 ### Task 1: {action-oriented name}
 
 - **Files:** {exact/paths, comma-separated}
-- **Action:** {directive prose - identifiers, signatures, behavior, what to
-  avoid and why. No fenced code blocks.}
+- **Action:** {directive prose - what must become true, the constraints that
+  bind it, what to avoid and why. Name symbols that ALREADY EXIST; never
+  invent an identifier, signature, field name or call path for code this task
+  has yet to write. No fenced code blocks.}
 - **Verify:** {falsifiable check - "running X shows Y", a test command, an
-  observable behavior. Never "it works".}
+  observable behavior. Never "it works". This is the task's AUTHORITY: any
+  implementation satisfying it is authorized.}
 
 ### Task 2: {name}
 

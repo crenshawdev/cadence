@@ -55,7 +55,7 @@ Escalation is one key, `model.escalate_on_failure`, on by default. A failed atte
 
 Reviews resolve off the same level. Each trigger gets a gate, `off`, `advisory`, `blocking`, or `adjudicated`, so a plan review is advisory at `solo` and adjudicated at `shipped` and `critical`. The `risk_surface` trigger is blocking at every level including `solo`, on purpose, because the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input, and none of those care how casual your project is.
 
-Cadence checks that list at commit time, against the diff itself, and fires a blocking review when the code actually touches one of them. It used to also check it at dispatch time against the file NAMES a plan declared, and raise the whole phase on a match. A test file called `ingest_concurrency.rs` was enough to put six roles on their top rung for the rest of the phase, so that detector is gone as of v2.7.0. What the code does decides; what the file is called does not.
+Cadence checks that list against the diff itself - once per plan, on the completed commit range - and fires a blocking review when the code actually touches one of them. It used to also check it at dispatch time against the file NAMES a plan declared, and raise the whole phase on a match. A test file called `ingest_concurrency.rs` was enough to put six roles on their top rung for the rest of the phase, so that detector is gone as of v2.7.0. What the code does decides; what the file is called does not.
 
 Deep verification follows the level too, off at `solo` and on at `shipped` and `critical`.
 

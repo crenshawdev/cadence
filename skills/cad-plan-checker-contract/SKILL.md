@@ -47,7 +47,13 @@ Check six dimensions:
    deferred idea appears anywhere, discretion areas are not flagged.
 2. **Task completeness** - each task names exact files, a directive action
    (not "implement X"), and a falsifiable verification ("running X shows
-   Y"). "It works" is not a verification.
+   Y"). "It works" is not a verification. Verify carries the task's whole
+   authority, so weigh it hardest: it must pin the property the task exists
+   for, since anything Action left open is a choice only this field checks.
+   An Action that invents an identifier, signature, field name or call path
+   for code the task has yet to write is a BLOCKER - the planner cannot know
+   those, and each guess reaches the executor as an instruction that reality
+   then contradicts. Naming symbols that already exist is correct and expected.
 3. **Sequencing** - tasks are ordered so each depends only on prior
    completed work. For split plans (PLAN-1, PLAN-2 ...): slices share no
    files and have no cross-slice ordering; if they do, the split is a
