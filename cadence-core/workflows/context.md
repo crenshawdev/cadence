@@ -326,8 +326,9 @@ machine-checkable box.
 </step>
 
 <step name="size_check">
-Exactly ONE size question, now that the criteria make size visible
-(ask-user seam, structured):
+Exactly ONE size question - and exactly one spend question, which was the one
+`spend_gate` already asked - now that the criteria make size visible (ask-user
+seam, structured):
 
 - header: "Size"
 - question: "Can one plan deliver all of these criteria, or is this phase
@@ -401,8 +402,9 @@ context loses nothing.
   correction (requirement-wording drift, above). Nothing else.
 - No audit artifacts: no DISCUSSION-LOG, no checkpoint JSON, no interview
   log, no ambiguity scores. Git history is the log.
-- Exactly one size question, near the end. No SPIDR, no story formats, no
-  splitting frameworks.
+- Exactly one size question, near the end, and exactly one spend question,
+  before the analyzer - two asks, never merged into one and never re-asked.
+  No SPIDR, no story formats, no splitting frameworks, for either of them.
 - Question budget is earned by the analyzer: Confident items cost zero
   questions. Never interview area-by-area through things the codebase
   already answers.
@@ -418,8 +420,8 @@ context loses nothing.
 - [ ] Every decision traces to a user confirmation or correction, with
       evidence cited
 - [ ] Every acceptance criterion is pass/fail observable behavior
-- [ ] Exactly one size question was asked, and its outcome is recorded as
-      Plan shape
+- [ ] Exactly one size question and exactly one spend question were asked -
+      the size outcome recorded as Plan shape, the spend arm stated plainly
 - [ ] CONTEXT.md contains exactly: scope boundary, durable decisions,
       decisions (phase-local), acceptance criteria, flagged assumptions -
       each decision classified against the durability filter
