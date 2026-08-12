@@ -104,27 +104,32 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `v2.6.2 — what the plugin carries` shipped on 2026-08-10: five
-requirements (`CTW-01`..`CTW-05`), three phases, 21 commits, the audit green
-(5/5 traced, 0 broken; 21/21 acceptance criteria covered), the manifest at
-`2.6.2`. Its five CTW rows sit in `.planning/REQUIREMENTS.md` under
-`## Shipped`, its phase record in `.planning/_archive-v2.6.2/`, and its
-narrative in `CHANGELOG.md`.
+`v3.1.0 — Cadence meets outside work` opened on 2026-08-12: seven requirements
+(`ADP-01`, `BRF-01`, `TRC-01`, `SIZ-01`, `MIN-01`, `XCP-01`, `CTW-06`), three
+phases, tracked as issues #95, #96, #101, #106-#109 on the `v3.1.0` milestone.
 
-What it delivered: turn-one prose across the 23 user-invocable commands fell
-269,045 B to 252,653 B, with `/cad-config` going 20,547 B to 12,770 B. Six
-spans moved behind a `Read` at the step that needs them, each anchored by a
-register row whose falsifier was watched to fail. Two new self-verify checks
-came first, deliberately: this tree had shipped a 5,792 B eager include nothing
-read, and cutting prose before CI could watch a deferral would have meant
-cutting on the same evidence that produced the defect.
+Scoped from the v3.0.0 backlog and its dogfood evidence. `v3.0.0 — review depth
+is bought, and the trace reads the bill` shipped on 2026-08-12: the defaults
+retune (reviewer starts `high`, `pre_ship` advisory, escalation and
+`plan_check` off), the pipeline-tax cuts, tag-after-merge with a Forgejo arm,
+advisory reviews that persist their own findings and brackets, and two receipts
+surfaces - `planning.mjs trace suggest` with a milestone retune check, and
+`/cad-report`. It was validated on the first EXTERNAL project run rather than
+on Cadence itself: verbatim, a Rust archive tool with no Cadence history, taken
+from init through a verified phase 1 (17 commits, UAT 8/8) at ~968k recorded
+subagent tokens across seven dispatches, a 73% cut on the plan step against the
+old measured run, three reproduced defects caught by gates that fired, and one
+blocking loop that capped itself at a single re-arm.
 
-The next milestone is unscoped. The candidate pool is `.planning/CAPTURE.md` —
-260 open todos, 18 tagged `[high]`, 21 from review passes, clustering on gate
-correctness: the one-round re-arm cap living only in `triage-gate.md` which the
-`risk_surface` fire sites never load, `version_drift`'s comparand being a prose
-scan, `why_human` read as a human-only predicate, and the deferred-reads
-register being unable to anchor a `Read` nested inside a reference.
+That run is why this cycle looks the way it does. Two gaps it exposed could not
+have surfaced from Cadence auditing Cadence: the front door assumes a blank
+page (verbatim arrived with a design brief and got re-interrogated; a
+brownfield repo has no entrance at all), and the receipts price the workers but
+not the coordinator, and never ask whether the spine's most expensive dispatch
+was worth buying for a given phase. Phase 1 closes the accounting, phase 2
+builds the door, phase 3 carries the minimalism lens back in - its resident-prose
+objection now answered by the deferral machinery v2.6.2 shipped - plus the
+Cadence-directed capture and the last of the v2.6.2 byte work.
 
 ## Key Decisions
 
