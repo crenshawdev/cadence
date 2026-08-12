@@ -966,3 +966,124 @@ test('fixture: the committed verbatim trace renders exactly as it did before thi
     { corr: '1', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T12:24:57.907Z' },
   ]);
 });
+
+// --- the coordinator's own time (D-01) ---------------------------------------
+//
+// The residue is what is LEFT of a step's wall span after the worker brackets
+// inside it are subtracted. Every case below fixes one rule of that arithmetic
+// against a hand-built trace with known durations, because a residue is a
+// derived number and a derived number that nothing pins drifts silently.
+
+const MIN = 60000;
+/** An ISO timestamp `m` minutes after a fixed origin. */
+const at = (m) => new Date(Date.UTC(2026, 7, 12, 10, 0, 0) + m * MIN).toISOString();
+/** One coordinator marker. */
+const mark = (dir, step, m, phase = 1) =>
+  appendEvent(dir, { phase, family: 'lifecycle', event: COORDINATOR, step, ts: at(m) });
+/** One worker bracket, opened at `a` minutes and closed at `b`. */
+function bracket(dir, plan, a, b, phase = 1) {
+  appendEvent(dir, { phase, family: 'lifecycle', event: DISPATCH, plan, role: plan, ts: at(a) });
+  appendEvent(dir, { phase, family: 'lifecycle', event: 'return', plan, ts: at(b) });
+}
+
+test('coordinator: a step\'s residue is its wall span minus the bracket inside it', () => {
+  const dir = root();
+  mark(dir, 'analyze', 0);
+  bracket(dir, 'cad-planner', 2, 6);          // 4 minutes of worker time
+  mark(dir, 'write_plan', 10);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(12) });
+  const c = renderTrace(dir, 1).coordinator;
+  // Ten minutes of wall on the first step, four of them a worker's: 360000 ms
+  // belong to the coordinator, and the second step runs to the phase's last
+  // event with nothing dispatched inside it.
+  assert.deepEqual(c.steps, [
+    { phase: 1, step: 'analyze', ts: at(0), residue_ms: 6 * MIN },
+    { phase: 1, step: 'write_plan', ts: at(10), residue_ms: 2 * MIN },
+  ]);
+  assert.equal(c.steps[0].residue_ms, 360000);
+  assert.deepEqual(
+    { wall_ms: c.wall_ms, bracket_ms: c.bracket_ms, residue_ms: c.residue_ms },
+    { wall_ms: 12 * MIN, bracket_ms: 4 * MIN, residue_ms: 8 * MIN },
+  );
+});
+
+test('coordinator: a marker before phase_start joins the same phase across both corr ids', () => {
+  const dir = root();
+  // Every /cad-context marker fires before any anchor, so it takes the
+  // phase-only id while everything after the anchor takes `1-<sha>` (D-04). One
+  // stream, or the coordinator gets counted twice.
+  mark(dir, 'load_priors', 0);
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'abc1234', ts: at(4) });
+  mark(dir, 'git_guard', 6);
+  appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', ts: at(9) });
+  const r = renderTrace(dir, 1);
+  const corrs = new Set(r.events.map((e) => e.corr));
+  assert.deepEqual([...corrs].sort(), ['1', '1-abc1234']);
+  assert.deepEqual(r.coordinator.steps.map((s) => s.step), ['load_priors', 'git_guard']);
+  assert.equal(r.coordinator.residue_ms, 9 * MIN);
+});
+
+test('coordinator: two workers running at once subtract their overlap ONCE', () => {
+  const dir = root();
+  mark(dir, 'dispatch_plans', 0);
+  bracket(dir, '1', 1, 7);
+  bracket(dir, '2', 3, 9);   // overlaps the first from 3 to 7
+  mark(dir, 'collect', 10);
+  const c = renderTrace(dir, 1).coordinator;
+  // The union is 1..9, eight minutes, not the twelve the two spans sum to.
+  assert.equal(c.steps[0].residue_ms, 2 * MIN);
+  assert.equal(c.bracket_ms, 8 * MIN);
+  assert.equal(c.residue_ms, 2 * MIN);
+});
+
+test('coordinator: an UNPAIRED dispatch subtracts nothing', () => {
+  const dir = root();
+  mark(dir, 'review', 0);
+  appendEvent(dir, {
+    phase: 1, family: 'lifecycle', event: DISPATCH, plan: 'cad-reviewer', role: 'cad-reviewer', ts: at(2),
+  });
+  mark(dir, 'triage', 10);
+  const r = renderTrace(dir, 1);
+  assert.equal(r.unpaired.length, 1);
+  // A worker that never came back has no known end, so the whole ten minutes
+  // stay on the coordinator's bill rather than being written off against a
+  // bracket nobody closed.
+  assert.equal(r.coordinator.steps[0].residue_ms, 10 * MIN);
+  assert.equal(r.coordinator.bracket_ms, 0);
+});
+
+test('coordinator: a marker with an unparseable ts contributes nothing, never NaN', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: COORDINATOR, step: 'broken', ts: 'not-a-date' });
+  mark(dir, 'analyze', 0);
+  bracket(dir, 'cad-planner', 1, 3);
+  mark(dir, 'write_plan', 5);
+  const c = renderTrace(dir, 1).coordinator;
+  assert.deepEqual(c.steps.map((s) => s.step), ['analyze', 'write_plan']);
+  for (const n of [c.wall_ms, c.bracket_ms, c.residue_ms]) assert.equal(Number.isFinite(n), true);
+  assert.equal(c.residue_ms, 3 * MIN);
+});
+
+test('coordinator: a trace with no marker renders no coordinator block at all', () => {
+  const dir = root();
+  bracket(dir, 'cad-planner', 0, 4);
+  const r = renderTrace(dir, 1);
+  assert.equal('coordinator' in r, false);
+  // And the committed fixture, which is what AC1 actually rides on.
+  assert.equal('coordinator' in renderTrace(fixtureRoot(), '1'), false);
+  assert.equal('coordinator' in renderTrace(fixtureRoot()), false);
+});
+
+test('seam: trace render emits the coordinator block only where markers were written', () => {
+  const dir = root();
+  mark(dir, 'analyze', 0);
+  bracket(dir, 'cad-planner', 2, 6);
+  mark(dir, 'write_plan', 10);
+  const shown = run(dir, ['trace', 'render', '--phase', '1']);
+  assert.equal(shown.ok, true);
+  assert.equal(shown.coordinator.residue_ms, 6 * MIN);
+  assert.deepEqual(shown.coordinator.steps.map((s) => s.step), ['analyze', 'write_plan']);
+  const bare = run(fixtureRoot(), ['trace', 'render', '--phase', '1']);
+  assert.equal(bare.ok, true);
+  assert.equal('coordinator' in bare, false);
+});

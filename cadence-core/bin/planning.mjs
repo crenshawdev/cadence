@@ -52,8 +52,10 @@
 //                                   workflow step a coordinator marker names
 //   trace render [--phase N]        the four families, the derived id, every
 //                                   worker dispatch paired to its
-//                                   return/checkpoint/escalation, and the
-//                                   per-role dispatch/token totals
+//                                   return/checkpoint/escalation, the per-role
+//                                   dispatch/token totals, and - where markers
+//                                   were written - the coordinator's own
+//                                   per-step residue between those brackets
 //   debt-harvest [--root <path>]    every CADENCE-DEBT marker in the tracked
 //                                   tree, collected into .planning/CAPTURE.md's
 //                                   own `## Debt markers` section (NOT --dir:
@@ -2394,6 +2396,10 @@ function cmdTrace(dir, sub, opts) {
       capped: r.capped,
       counts: r.counts,
       ...(Object.keys(r.roles).length ? { roles: r.roles } : {}),
+      // Emitted the way `roles` is: only when there is something to say. A
+      // trace carrying no coordinator marker has no residue to report, and a
+      // zeroed block would read as a coordinator that spent nothing.
+      ...(r.coordinator ? { coordinator: r.coordinator } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       events: r.events,
       unpaired: r.unpaired,
