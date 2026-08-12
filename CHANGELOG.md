@@ -21,6 +21,15 @@ All notable changes to Cadence are recorded here. The format follows
   never as a clean pass. The trade is explicit: advisory reviewer returns
   carry no token figure - findings durability over pricing fidelity.
 
+- **A deviation that refutes a D-NN corrects the CONTEXT record.** An executor
+  deviation can prove a numbered context decision's claim false against ground
+  truth, but the correction lived only in the plan report while later phases
+  inherit prior decisions summarized from CONTEXT.md - the falsified claim
+  propagated to every planner after it. The execute summary step now appends a
+  one-line `[corrected by plan-<k> deviation: <the true fact>]` annotation to
+  the refuted decision's line, and the docs commit stages CONTEXT.md when it
+  does.
+
 - **The release tag moves to `/cad-land`, after the merge.** `/cad-milestone`
   cut the annotated tag at HEAD on the integration branch, before any merge -
   so a non-fast-forward land left the milestone tag naming a commit base does

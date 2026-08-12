@@ -366,6 +366,15 @@ this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
 
+A deviation that REFUTES a numbered context decision - it cites a D-NN and
+shows that decision's claim false against ground truth - also corrects the
+record it refuted: append ` [corrected by plan-<k> deviation: <the true fact,
+one clause>]` to that decision's line in `.planning/phases/<N>/CONTEXT.md`.
+Later phases receive prior decisions as a summary drawn from these files, so a
+falsified claim left standing is inherited by every planner after this one -
+the report alone corrects nobody downstream. A deviation that merely adjusts
+scope or adds work touches nothing here; only a refuted D-NN does.
+
 For each open item, also append it to `.planning/CAPTURE.md` as
 `- [ ] (phase <N>) <text>` under `## Todos` (create the file with headings
 `## Todos`, `## Seeds`, `## Notes` if absent, same format as /cad-capture).
@@ -390,8 +399,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 ```
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
-`<plandir>/reports/plan-<k>.md`, and `.planning/CAPTURE.md` if the summary step
-appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
+`<plandir>/reports/plan-<k>.md`, `.planning/phases/<N>/CONTEXT.md` if the
+summary step annotated a corrected decision, and `.planning/CAPTURE.md` if the
+summary step appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
 those files. Never stage a `plan-<k>-risk-task-<n>.diff`: it is the transient
 flagged diff and the continuation deletes it. With the key false the reports
 stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
