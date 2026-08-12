@@ -6,6 +6,8 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-12
+
 ### Added
 
 - **`/cad-report` - the run record as receipts.** Renders a phase's
@@ -2201,6 +2203,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.0.0
 [2.6.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.2
 [2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
 [2.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.0
