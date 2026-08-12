@@ -7,6 +7,7 @@ files:
   - cadence-core/workflows/context.md
   - skills/cad-context/SKILL.md
   - cadence-core/bin/lib/deferred-reads.mjs
+  - cadence-core/bin/deferred-reads.test.mjs
   - cadence-core/bin/prose-agreement.test.mjs
   - cadence-core/bin/weight-budgets.json
   - .planning/DOCS-CLAIMS.md
