@@ -22,7 +22,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase
 ```
 
 Everything below reads from its return: `events`, `roles` (per-role dispatch
-and token totals), `unpaired`, `capped`, `malformed`. Then open the scoped
+and token totals), `coordinator` (the coordinator's own per-step residue,
+present only where markers were written), `unpaired`, `capped`, `malformed`.
+Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
 `.planning/phases/<N>/REVIEW-*.md` (persisted advisory findings), and
@@ -40,13 +42,21 @@ Dispatches: <table: role | rung | tokens | minutes, one row per dispatch/return 
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from outcome events and REVIEW files>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Spend: <total recorded tokens; top role and its share; unrecorded dispatch count>
-Record health: <only when present: unpaired brackets, malformed lines, capped file - each named, never silently dropped>
+Record health: <only when present: unpaired brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
 ```
 
 Rules, all load-bearing:
 - Every number is FROM the record. A dispatch with no token figure reports
   `unrecorded`, never an estimate; minutes come from the bracket's own
   dispatch/return timestamps.
+- The coordinator residue is `coordinator.residue_ms` and the `steps[]` row
+  carrying the most of it, reported AS GIVEN - the renderer computes it once so
+  this line and `trace suggest` cannot disagree, and prose recomputing it is how
+  they start to. No `coordinator` block means say nothing about residue at all:
+  not a zero, not an absence.
+- That residue is TIME the coordinator spent between worker brackets, never
+  tokens. A marker carries no token figure, because a figure is read off a
+  subagent's return metadata and the coordinator has no such return.
 - An advisory fire whose findings file is absent AND whose return is missing
   reports as `lost before persistence shipped` when the dispatch predates the
   findings-file convention, else as `in flight`.
