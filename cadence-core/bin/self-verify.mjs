@@ -198,6 +198,7 @@ const CONTRACTS = {
     'criteria-coverage': [],
     'plan-overlap': ['--phase'],
     'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
+    'milestone-prune': ['--label', '--mode'],
     'seed-reqs': ['--phase'],
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],

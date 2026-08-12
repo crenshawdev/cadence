@@ -1,8 +1,10 @@
 # cad-milestone workflow
 
 Close a finished milestone and set up the next one. A thin close-out: audit,
-tag (release projects only), prune, evolve, refresh. Git is the archive -
+bump (release projects only), prune, evolve, refresh. Git is the archive -
 pruning removes completed work from the LIVE planning docs, not from history.
+The release tag is NOT cut here: /cad-land cuts it on the pulled base after
+the merge confirms (tag-after-merge).
 
 Read the config keys this close needs in ONE `config.mjs get` up front -
 `git.create_tag git.auto_close` - and reuse them at steps 2 and 7 rather than
@@ -17,13 +19,13 @@ requirement->phase->plan->verified FAIL gate), mirroring step 7's chained
 report it and STOP, unless the user explicitly overrides (a milestone must not
 ship with silent gaps). On PASS, continue.
 
-## 2. Tag the release (release projects only)
+## 2. Version bump (release projects only)
 Detect release mode first: read `git.create_tag` from config and probe for any
 existing tag (`git tag`). It is a non-release milestone when `git.create_tag`
 is false, or the project has never tagged and the user is not cutting a named
-version - then skip this step, note "no tag (non-release milestone)", and do
-not frame the close as a version cut. Do not press the user toward a tag they
-did not ask for.
+version - then skip this step, note "no version bump (non-release milestone)",
+and do not frame the close as a version cut. Do not press the user toward a
+release they did not ask for.
 
 Otherwise confirm the version (`$ARGUMENTS`, else propose the next from
 PROJECT.md's current).
@@ -45,12 +47,12 @@ Then YOU author bullet prose only for what the promotion did NOT already move -
 re-authoring what it moved lists one change twice. The seam owns the
 deterministic scaffold, prose owns the judgment.
 
-Three halts, each BEFORE the tag and before the bump commit:
+Three halts, each before the bump commit:
 
 - `ok:false` (exit 1). The seam wrote NOTHING and named a `reason`:
   `no-target-version`, `unparseable-version`, `unreadable-manifest`,
-  `downgrade` or `not-an-upgrade`. Report that reason and STOP the close. A tag
-  cut after a refused bump names a commit whose manifest still carries the
+  `downgrade` or `not-an-upgrade`. Report that reason and STOP the close. A
+  close continued past a refused bump ships a manifest still carrying the
   previous version.
 - a `siblings[]` entry with `action:"refuse"`. Top-level `ok` stays true (the
   primary manifest already wrote), but that sibling still ships the old
@@ -60,29 +62,41 @@ Three halts, each BEFORE the tag and before the bump commit:
   a heading over silence.
 
 Commit the manifest + changelog as
-`chore: bump manifest to <version> + changelog` BEFORE the tag, so the tag
-captures the bumped manifest. The `git.auto_close` chain (step 7) inherits the
-bump because step 2 always runs pre-tag.
+`chore: bump manifest to <version> + changelog`, so the merge - and the tag
+cut after it - carries the bumped manifest.
 
-Then create an annotated tag at HEAD (`git tag -a <version> -m ...`), and do
-NOT push it - publishing the tag is /cad-land's decision.
+**No tag is cut here - tag-after-merge.** A tag cut at close names a pre-merge
+commit on the integration branch, and any non-fast-forward land leaves that
+commit off base entirely: the release tag then points at history main does not
+contain. `/cad-land` cuts the tag in its cleanup step, on the pulled base,
+after the merge is confirmed - this close's job ends at the bump commit.
 
 ## 3. Prune completed phases + cleanup
-- Remove the completed phases (`- [x]`) from ROADMAP.md's live `## Phases` list,
-  AND each one's `### Phase N: ...` detail section under `## Phase Details`
-  (leave that heading itself standing - it carries no phase token). A surviving
-  detail section is the signature of an INTERRUPTED close and the phase-list
-  grammar reports it as one (`references/roadmap-phases.md`), so a finished
-  close must leave none. The tag + git history are their archive.
-- Archive the completed phases' `.planning/phases/<N>/` directories out of the
-  live tree. Tagged (release) milestone: delete them - recoverable from the tag.
-  Untagged (non-release) milestone: there is no tag to name them by, so MOVE
-  them into an on-disk `_archive-<label>/` (label = the shipped milestone's
-  name from PROJECT.md) rather than delete, so git history is not the only copy.
-- Leave any unfinished phase and its dir in place - a milestone can close with
-  deferred work that rolls to the next.
+One seam call does the mechanical half of the close - checked phases leave
+ROADMAP.md (their `- [x]` line AND their `### Phase N:` detail section, since
+a surviving detail section is the signature of an INTERRUPTED close per
+`references/roadmap-phases.md`), their `.planning/phases/<N>/` directories
+leave the live tree, and their requirements move from `## Active` and
+`## Traceability` into `## Shipped` rows carrying the label:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" milestone-prune \
+  --label <label> --mode <delete|archive>
+```
+
+`<label>` = the version on a release, else the milestone name from PROJECT.md.
+`--mode delete` on a release milestone (the tag cut at land is their archive);
+`--mode archive` on an untagged one - there is no tag to name them by, so the
+dirs MOVE to `_archive-<label>/` rather than delete, and git history is not
+the only copy. Relay `warnings[]` (a missing detail section, an unreadable
+REQUIREMENTS.md). `action:"skip"` means no checked phase existed - an
+interrupted close or the wrong milestone; stop and look rather than continue.
+Unfinished phases, their dirs and their requirements are untouched by
+construction - a milestone can close with deferred work that rolls to the next.
+
 Commit this as `chore: prune <label> completed phases` (label = the version on
-a release, else the milestone name).
+a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md and
+any `_archive-<label>/` move.
 
 ## 4. Evolve PROJECT.md
 Bump the version/milestone and set the next cycle's goal and scope. Ask the user
@@ -91,12 +105,9 @@ deferred work. Keep it to what changed - PROJECT.md is the north star, not a
 changelog.
 
 ## 5. Refresh REQUIREMENTS
-- Mark the shipped milestone's requirements Complete (they already are, per the
-  audit) and move them under a shipped/archived heading - keep each REQ-ID as a
-  row with its phase and `Complete` status. Do NOT collapse them into a prose
-  bullet or drop them from the file: the archived rows are what keeps
-  /cad-audit able to trace shipped scope after phase dirs are pruned. Git holds
-  the detail; the live file keeps the trace.
+The shipped rows already moved under `## Shipped` (step 3's seam call - that
+archival is what keeps /cad-audit able to trace shipped scope after the phase
+dirs are pruned). What remains is judgment, not surgery:
 - Carry forward any deferred/unmet requirement into the new milestone.
 - Seed the next milestone's headline requirements from the PROJECT.md evolution
   and the user's intent, as `## Active` bullets in the `- **<ID>**: <one line>`
@@ -126,11 +137,11 @@ Commit the doc changes (`docs:`), cursor included, per references/git-guard.md -
 never leave the tree dirty.
 
 ## 7. Autonomous close (`git.auto_close` only)
-When `git.auto_close` is `false` (default), stop here: the tag stays unpushed
-and publishing is the user's separate `/cad-land` call (step 8's note). When
+When `git.auto_close` is `false` (default), stop here: merging, tagging and
+publishing are the user's separate `/cad-land` call (step 8's note). When
 `git.auto_close` is `true`, chain the publish end-to-end - invoke `/cad-land`
-via the SlashCommand tool so it runs PR -> merge -> reset with no per-step
-prompts (audit -> tag already ran above). The `pre_ship` gate-halt inside
+via the SlashCommand tool so it runs PR -> merge -> tag -> reset with no
+per-step prompts (audit -> bump already ran above). The `pre_ship` gate-halt inside
 cad-land still applies: a surviving blocker/high finding stops the chain before
 merge (nothing is force-merged).
 
@@ -142,8 +153,9 @@ re-derive the just-shipped branch name by version. It reaps via the
 `cadence/<this-version>`, so it is still reaped correctly.
 
 ## 8. Report
-Tag created (unpushed) - or "no tag (non-release)" - phases pruned,
-PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next action: with
-the roadmap pruned empty that action is `/cad-phase add`, which opens the next
-cycle's first phase entry. Note that publishing the tag is /cad-land (already
-chained when `git.auto_close` is on).
+Version bumped and committed - or "no version bump (non-release)" - phases
+pruned, PROJECT/REQUIREMENTS refreshed, cursor reset. One line on the next
+action: with the roadmap pruned empty that action is `/cad-phase add`, which
+opens the next cycle's first phase entry. Note that the merge AND the release
+tag are /cad-land's - the tag is cut there on the pulled base after the merge
+confirms (already chained when `git.auto_close` is on).

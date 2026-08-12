@@ -23,8 +23,8 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 <process>
 Read every config key this run needs in ONE `config.mjs get` up front
 (conventions.md Parallel work) - `git.base_branch git.protected_branches
-git.auto_close git.on_land_cleanup` - and reuse the values across the steps
-below rather than re-reading per step. The `pre_ship` gate is not among them:
+git.auto_close git.on_land_cleanup git.create_tag` - and reuse the values
+across the steps below rather than re-reading per step. The `pre_ship` gate is not among them:
 fire(trigger) takes it from the routing bundle, so the stakes level decides it
 rather than a schema default no layer wrote.
 
@@ -32,7 +32,9 @@ rather than a schema default no layer wrote.
    `git.base_branch`, else the first `git.protected_branches` entry that
    exists here (references/git-guard.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
    changes; and the remote host detected from the origin URL (gitlab -> MR,
-   github -> PR, none -> local only). Show this plainly before doing anything.
+   github -> PR, any other host where the `tea` CLI has a matching login ->
+   Forgejo/Gitea PR via `tea` (`tea login list` names the host), none of those
+   -> local only). Show this plainly before doing anything.
 
 2. **Uncommitted changes.** If the tree is dirty, do NOT auto-commit. Ask
    (ask-user seam): commit them first (then continue), leave them out of this
@@ -78,7 +80,11 @@ rather than a schema default no layer wrote.
    preselected default):**
    - **Direct push** - push the current branch to its remote.
    - **Open MR / PR** - the detected host's mechanism (`glab mr create` on
-     GitLab, `gh pr create` on GitHub). If no remote, this option is absent.
+     GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
+     <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
+     branch itself, so push it first as part of this same chosen action). If
+     no remote, or an unrecognized host with no `tea` login, this option is
+     absent.
    - **Tag** - create an annotated tag (ask the name); ask separately
      whether to push it.
    - **Leave local** - do nothing further.
@@ -109,9 +115,11 @@ rather than a schema default no layer wrote.
      count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
      `git.auto_close` policy govern from here on and this skill no longer
      preloads them.
-   - **Publish the branch (GitHub arm).** On GitHub, `gh pr create --head
-     <branch>` will NOT push a remoteless branch non-interactively, so publish
-     it first through the git-publish seam. Run it on its own physical line:
+   - **Publish the branch (GitHub and Forgejo arms).** On GitHub, `gh pr
+     create --head <branch>` will NOT push a remoteless branch
+     non-interactively, and `tea pr create` never pushes at all, so on either
+     host publish the branch first through the git-publish seam. Run it on its
+     own physical line:
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" publish --dir <root>`
      It does ONE sanctioned `git push` of the current non-protected branch as a
      subprocess (execFileSync argv) that git-guard's Bash push hook never sees,
@@ -124,9 +132,12 @@ rather than a schema default no layer wrote.
      branch was checked against the DEFAULT list - fix the file, never retry
      past it.
    - **Open (or reuse) the PR/MR.** Reuse an existing open one when
-     `gh pr view <branch>` / `glab mr view <branch>` finds it, else create:
+     `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
+     open` (filtered by head branch) finds it, else create:
      GitHub `gh pr create --base <base> --head <branch> --fill`, GitLab
-     `glab mr create --source-branch <branch> --target-branch <base> --fill`.
+     `glab mr create --source-branch <branch> --target-branch <base> --fill`,
+     Forgejo `tea pr create --base <base> --head <branch>` (record the index
+     it prints - tea addresses PRs by index, not branch).
      On GitLab `glab mr create` publishes the source branch itself, so no seam
      call is needed there.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
@@ -134,19 +145,37 @@ rather than a schema default no layer wrote.
      errors/prompts; `--delete-branch` removes the remote+local source). GitLab
      `glab mr merge <branch> --yes --remove-source-branch --auto-merge=false`
      (`--yes` skips the confirm prompt; `--auto-merge=false` merges immediately
-     rather than deferring behind a running pipeline).
+     rather than deferring behind a running pipeline). Forgejo
+     `tea pr merge --style merge <index>` (tea deletes no local branch; the
+     reap in step 5 owns that).
    - **Confirm it landed before any cleanup.** `gh pr view <branch> --json
-     state,mergedAt` must show MERGED, or `glab mr view <branch>` must show
-     merged. A non-zero exit (protected-branch / not-mergeable) or a still-open
+     state,mergedAt` must show MERGED, `glab mr view <branch>` must show
+     merged, or `tea pr <index>` must show state merged. A non-zero exit
+     (protected-branch / not-mergeable) or a still-open
      PR/MR (auto-merge only enabled, CI pending) means the merge did NOT land:
      stop, surface the reason, and do NOT reap.
 
 5. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
    default on).** Run this ONLY when a merge actually landed on this machine
-   (skip it after an open-PR-only or leave-local land). The auto_close merge
+   (skip it after an open-PR-only or leave-local land; when that PR merges
+   later outside this session, this cleanup - pull, tag, reap - is the piece
+   to come back for). The auto_close merge
    lands on the platform, so the LOCAL base is stale - pull FIRST:
-   `git checkout <base>` then `git pull`, then compute the reap decision
-   against the now-current base:
+   `git checkout <base>` then `git pull`.
+
+   **Release tag on the pulled base (tag-after-merge), before the reap.** When
+   `git.create_tag` is true and the shipped version - the manifest's `version`
+   (`.claude-plugin/plugin.json` or the project's own manifest), else the
+   version PROJECT.md says just shipped - has no tag yet (`git tag`
+   membership), cut it HERE: `git tag -a <version> -m "<milestone label>"` on
+   the now-current base, then ask separately whether to push it
+   (references/git-publish.md rails; never auto-push a tag). This is
+   deliberately NOT done at /cad-milestone: a tag cut at close names a
+   pre-merge commit on the integration branch, and a non-fast-forward merge
+   leaves that commit off base entirely. Skip silently when `git.create_tag`
+   is false or the tag already exists.
+
+   Then compute the reap decision against the now-current base:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup`.
    In the auto_close path append `--merged true` (step 4b confirmed the PR/MR
    MERGED) so the reap never hinges on local-base freshness; a manual land

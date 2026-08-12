@@ -56,6 +56,14 @@
 //                                   tree, collected into .planning/CAPTURE.md's
 //                                   own `## Debt markers` section (NOT --dir:
 //                                   it scans source and writes into .planning)
+//   milestone-prune --label <l> --mode <delete|archive>
+//                                   the mechanical half of a milestone close:
+//                                   checked phases leave ROADMAP (line +
+//                                   detail section), their dirs delete
+//                                   (tagged release) or move to
+//                                   _archive-<label>/ (untagged), and their
+//                                   requirements move from Active/Traceability
+//                                   into ## Shipped rows carrying the label
 //   trace ignore [--root <path>] [--check]
 //                                   keep .planning/trace.jsonl out of git:
 //                                   append-if-absent at scaffold time, or
@@ -68,7 +76,8 @@ import { readFileSync, readdirSync, existsSync, lstatSync } from 'node:fs';
 import { join, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { renameSync, rmSync } from 'node:fs';
+import { renameSync, rmSync, mkdirSync } from 'node:fs';
+import { pruneRoadmap, archiveRequirements, completedPhases } from './lib/milestone-prune.mjs';
 import {
   CURSOR_STATUSES, parseCursor, renderCursor, parseRoadmapPhases,
   classifyPhaseList, CLOSED_CYCLE_NAME,
@@ -2742,6 +2751,85 @@ function cmdDebtHarvest(root) {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// milestone-prune - the mechanical half of a milestone close, in one call.
+// `/cad-milestone` steps 3+5 were three orchestrator hand-surgeries with a
+// recorded failure mode (a close that left the tree failing its own audit);
+// the text transforms live in lib/milestone-prune.mjs, this wrapper owns the
+// I/O: read both docs, prune, move/delete the phase directories, write back.
+// The judgment halves of the close (PROJECT.md evolution, carrying deferred
+// requirements forward, seeding the next milestone) stay prose - this seam
+// touches only what is mechanical.
+// ---------------------------------------------------------------------------
+function cmdMilestonePrune(dir, opts) {
+  const label = typeof opts.label === 'string' ? opts.label.trim() : '';
+  if (!label) return fail('bad-args', 'milestone-prune needs --label <version or milestone name>');
+  const mode = opts.mode;
+  if (mode !== 'delete' && mode !== 'archive') {
+    return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)');
+  }
+  const roadmapFile = join(dir, 'ROADMAP.md');
+  let roadmapText;
+  try { roadmapText = readFileSync(roadmapFile, 'utf8'); } catch {
+    return fail('no-roadmap', `${roadmapFile} is missing or unreadable`);
+  }
+  const completed = completedPhases(roadmapText);
+  if (!completed.length) {
+    return ok({ action: 'skip', reason: 'no completed (checked) phases to prune' });
+  }
+  const warnings = [];
+
+  const pruned = pruneRoadmap(roadmapText, completed);
+  for (const n of pruned.missingSections) {
+    warnings.push(`phase ${n}: no "### Phase ${n}:" detail section found to remove`);
+  }
+
+  // REQUIREMENTS.md is optional at this seam: a project without the file gets
+  // the roadmap+dirs half and a warning, never a refusal - the close must not
+  // stall on a doc the project never kept.
+  const reqFile = join(dir, 'REQUIREMENTS.md');
+  let reqResult = null;
+  try {
+    const reqText = readFileSync(reqFile, 'utf8');
+    reqResult = archiveRequirements(reqText, completed, label);
+  } catch { warnings.push(`${reqFile} is missing or unreadable; requirements were not archived`); }
+
+  // Directories third, writes last: a rename that throws leaves both docs
+  // untouched on disk rather than half a close.
+  const dirs = { archived: [], deleted: [], missing: [] };
+  const archiveRoot = join(dir, `_archive-${label}`);
+  for (const n of completed) {
+    const src = join(dir, 'phases', String(n));
+    if (!existsSync(src)) { dirs.missing.push(n); continue; }
+    try {
+      if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); }
+      else {
+        mkdirSync(archiveRoot, { recursive: true });
+        renameSync(src, join(archiveRoot, String(n)));
+        dirs.archived.push(n);
+      }
+    } catch (e) {
+      warnings.push(`phase ${n}: directory ${mode} failed: ${e && e.message ? e.message : e}`);
+    }
+  }
+
+  atomicWrite(roadmapFile, pruned.text);
+  if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
+
+  return ok({
+    action: 'pruned',
+    label,
+    mode,
+    phases: completed,
+    roadmap: { removed_lines: pruned.removedLines, removed_sections: pruned.removedSections },
+    requirements: reqResult
+      ? { moved: reqResult.moved, created_shipped: reqResult.createdSection }
+      : { moved: [], created_shipped: false },
+    dirs,
+    ...(warnings.length ? { warnings } : {}),
+  });
+}
+
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
 function parseArgs(argv) {
@@ -2800,6 +2888,7 @@ const COMMANDS = {
     return cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd());
   },
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
+  'milestone-prune': (dir, _sub, opts) => cmdMilestonePrune(dir, opts),
 };
 
 try {

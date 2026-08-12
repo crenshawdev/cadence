@@ -8,6 +8,28 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **The release tag moves to `/cad-land`, after the merge.** `/cad-milestone`
+  cut the annotated tag at HEAD on the integration branch, before any merge -
+  so a non-fast-forward land left the milestone tag naming a commit base does
+  not contain, which is why this repo ran `create_tag: false` and tagged by
+  hand. The close now ends at the bump commit; land cuts the tag in its
+  cleanup step, on the pulled base, after the merge confirms, and still asks
+  before pushing it.
+
+- **`/cad-land` learns Forgejo/Gitea.** Host detection knew gitlab and github;
+  any other remote silently lost the PR option and the unattended close.
+  A remote where the `tea` CLI has a matching login now gets the full arm:
+  create (via the git-publish seam first - `tea pr create` never pushes),
+  merge by index, confirm merged before any cleanup.
+
+- **The mechanical half of a milestone close is a seam.** Pruning completed
+  phases from ROADMAP.md, archiving their directories, and moving shipped
+  requirements into `## Shipped` rows were three orchestrator hand-surgeries
+  with a recorded failure (a close that left the tree failing its own audit).
+  `planning.mjs milestone-prune --label <l> --mode <delete|archive>` now does
+  all three deterministically, tested, leaving PROJECT.md evolution and
+  next-milestone seeding - the judgment - as prose.
+
 - **`workflow.plan_check` defaults to false.** The checker loop and the `plan`
   review trigger are the same question asked twice - this repo's own measured
   run said so when it turned the key off for itself (~25 minutes across two

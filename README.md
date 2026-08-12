@@ -90,7 +90,7 @@ Then you work one phase at a time:
 
 Between phases you `/clear`. The window empties and you lose nothing, because the next command reads `.planning/` and git back into context. Run `/cad-progress` after a clear and it tells you that phase 1 is verified and phase 2 is next, then you plan phase 2 the same way. When you hit a wall mid-build, `/cad-debug` runs the scientific method with hypotheses that survive a clear, and `/cad-capture` parks a stray todo or idea without derailing the phase you're in.
 
-When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, tags the release, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that.
+When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, bumps the version, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that.
 
 That's the whole shape of it: define once, then loop `context -> plan -> execute -> verify` per phase, clearing aggressively, until the milestone is ready to cut.
 
@@ -107,7 +107,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-debug`** — systematic debugging with hypotheses that survive `/clear`.
 
 **Lifecycle & git**
-- **`/cad-milestone`** — cut a release: audit nothing was dropped, tag, prune completed phases, evolve the docs.
+- **`/cad-milestone`** — close a release: audit nothing was dropped, bump the version, prune completed phases, evolve the docs (the tag is cut by `/cad-land` after the merge).
 - **`/cad-land`** — publish finished work, asking how (push / MR or PR / tag / leave local) with no preselected default.
 - **`/cad-phase`** — add, insert, remove, or renumber phases, fixing every reference in one pass.
 - **`/cad-undo`** — safely roll back a phase's commits from its summary manifest.
