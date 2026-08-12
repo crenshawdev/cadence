@@ -108,7 +108,14 @@ under `## The commands`, so every claim below line 70 moved. All 19 affected
 rows now name their LIVE location, joining CONTEXT's ten as cells that are no
 longer run-1 provenance; the ten tail rows from README-41 on (README-47 excepted,
 it cites the install block) were already off by one before this phase and are
-re-pinned to the live file too. No
+re-pinned to the live file too. The same phase then did it for all 22
+`cadence-core/workflows/new-project.md` rows, which `--brief` moved twice over -
+once in the `setup` step where the flag is parsed and once in `questioning`
+where what a brief settles stops being asked. Eight of those 22 were already
+stale before the phase opened - NEW-PROJECT-15 through -22 cited lines their
+claim's text had drifted off, by three to five lines - so every row is pinned to
+where the live file states its claim rather than to its old cite plus this
+phase's shift. No
 `claim`, `verdict` or `resolution` cell changed - nothing here changes what any
 claim says, and the join is still `doc` plus claim text.
 
@@ -535,28 +542,28 @@ fixed, which is what makes that link answer the only question it is asked.
 | MILESTONE-14 | cadence-core/workflows/milestone.md | 117-119 | `/cad-phase add` is the only workflow that appends a phase line to an existing roadmap. | accurate | accurate |
 | MILESTONE-15 | cadence-core/workflows/milestone.md | 128-131 | `git.auto_close` false is the default, so the tag stays unpushed and publishing is a separate `/cad-land`. | accurate | accurate |
 | MILESTONE-16 | cadence-core/workflows/milestone.md | 138-142 | The chain reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback (`resolveReapBranch`). | accurate | accurate |
-| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 51 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected - 044806c |
-| NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 95 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` |
-| NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 29 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate |
-| NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 33 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate |
-| NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 38 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate |
-| NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 39 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate |
-| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 47 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate |
-| NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 51 | Defaults are research off, plan check on, verifier on. | accurate | accurate |
-| NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 57-60 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate |
-| NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 134 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate |
-| NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 146 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate |
-| NEW-PROJECT-12 | cadence-core/workflows/new-project.md | 161 | Dispatch via the spawn-agent seam with timeout `workflow.subagent_timeout`. | accurate | accurate |
-| NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 179-181 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate |
-| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 182-184 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate |
-| NEW-PROJECT-15 | cadence-core/workflows/new-project.md | 213 | Category questions batch up to 4 per AskUserQuestion call. | accurate | accurate |
-| NEW-PROJECT-16 | cadence-core/workflows/new-project.md | 237 | `cadence-core/templates/REQUIREMENTS.md` exists. | accurate | accurate |
-| NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 240,269 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate |
-| NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 256-257 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate |
-| NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 266 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate |
-| NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 293-294 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate |
-| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 297-301 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate |
-| NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 358 | STATE.md is a 4-line cursor. | accurate | accurate |
+| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 60 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected - 044806c |
+| NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 121-122 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` |
+| NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 38 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate |
+| NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 42 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate |
+| NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 47 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate |
+| NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 48 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate |
+| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate |
+| NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | accurate | accurate |
+| NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-69 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate |
+| NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 161 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate |
+| NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 173 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate |
+| NEW-PROJECT-12 | cadence-core/workflows/new-project.md | 188 | Dispatch via the spawn-agent seam with timeout `workflow.subagent_timeout`. | accurate | accurate |
+| NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 206-208 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate |
+| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 209-210 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate |
+| NEW-PROJECT-15 | cadence-core/workflows/new-project.md | 244-245 | Category questions batch up to 4 per AskUserQuestion call. | accurate | accurate |
+| NEW-PROJECT-16 | cadence-core/workflows/new-project.md | 268 | `cadence-core/templates/REQUIREMENTS.md` exists. | accurate | accurate |
+| NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 271,298 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate |
+| NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 286-287 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate |
+| NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 297 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate |
+| NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 324-325 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate |
+| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 328-330 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate |
+| NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 389 | STATE.md is a 4-line cursor. | accurate | accurate |
 | PHASE-01 | cadence-core/workflows/phase.md | 4-6 | A phase number appears in four places: ROADMAP list, `.planning/phases/<N>/`, the REQUIREMENTS Phase column, the STATE cursor. | accurate | accurate |
 | PHASE-02 | cadence-core/workflows/phase.md | 7 | The renumber mechanics live in the planning seam's `renumber` subcommand. | accurate | accurate |
 | PHASE-03 | cadence-core/workflows/phase.md | 18-20 | `cursor set` requires `--phase` and does not preserve the prior one, so `cursor get` first is not optional. | accurate | accurate |
