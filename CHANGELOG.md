@@ -6,6 +6,18 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Self-tuning suggestions at the milestone close.** `planning.mjs trace
+  suggest` reads the joined run record and returns evidence-backed config
+  suggestions - a review trigger whose adjudicated fires kept coming back
+  empty names its gate key, escalation pressure on a role names its effort
+  key, repeated executor checkpoints name `workflow.max_plan_tasks`, a
+  re-armed gate becomes a keep-it receipt, and the top spend gets a one-line
+  receipt. Every rule has an evidence floor below which it stays silent, and
+  `/cad-milestone`'s new retune check presents the list and applies nothing -
+  the user names what changes, same discipline as review triage.
+
 ### Changed
 
 - **The execute report leads with its verdict.** The done step ordered its

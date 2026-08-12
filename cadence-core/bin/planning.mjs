@@ -101,6 +101,7 @@ import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.
 import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
+import { suggestFromRender } from './lib/trace-suggest.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
@@ -2339,6 +2340,27 @@ function cmdTrace(dir, sub, opts) {
       ...(res.reason ? { reason: res.reason } : {}),
     });
   }
+  if (sub === 'suggest') {
+    // Evidence-backed config suggestions off the record - the pure rules live
+    // in lib/trace-suggest.mjs, this arm owns only scope and envelope. No
+    // `--phase` means the WHOLE record on purpose: the caller is the milestone
+    // close, and a milestone's evidence spans every phase it shipped.
+    let phase;
+    if (opts.phase !== undefined) {
+      const parsedPhase = requirePhaseArg(opts.phase);
+      if (!parsedPhase.ok) return fail('bad-args', 'trace suggest --phase must be a phase number');
+      phase = parsedPhase.raw;
+    }
+    const r = renderTrace(dir, phase);
+    const suggestions = suggestFromRender(r);
+    return ok({
+      scope: phase === undefined ? 'all' : String(phase),
+      events_read: r.events.length,
+      ...(r.capped ? { capped: true } : {}),
+      ...(r.malformed ? { malformed: r.malformed } : {}),
+      suggestions,
+    });
+  }
   if (sub === 'render') {
     let phase;
     if (opts.phase !== undefined) {
@@ -2358,7 +2380,7 @@ function cmdTrace(dir, sub, opts) {
       unpaired: r.unpaired,
     });
   }
-  return fail('usage', 'trace <append|render|ignore>');
+  return fail('usage', 'trace <append|render|suggest|ignore>');
 }
 
 // ---------------------------------------------------------------------------

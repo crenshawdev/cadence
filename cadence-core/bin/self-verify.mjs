@@ -211,6 +211,7 @@ const CONTRACTS = {
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
       '--role', '--tokens', '--read'],
     'trace render': ['--phase'],
+    'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],
     'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
