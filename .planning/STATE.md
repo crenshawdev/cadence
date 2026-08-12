@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 3 (The accounting the trace still misses)
-Status: phase complete
-Next: /cad-context 2 - the audit gate precedes any ship
+Phase: 2 of 3 (The front door)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-12
