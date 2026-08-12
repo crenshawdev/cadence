@@ -108,7 +108,10 @@ under `## The commands`, so every claim below line 70 moved. All 19 affected
 rows now name their LIVE location, joining CONTEXT's ten as cells that are no
 longer run-1 provenance; the ten tail rows from README-41 on (README-47 excepted,
 it cites the install block) were already off by one before this phase and are
-re-pinned to the live file too. The same phase then did it for all 22
+re-pinned to the live file too. A second insert in the same phase - the
+`--brief` sentence, two lines under the same `## The loop` heading - moved the
+19 rows from README-32 down again, and they are re-pinned with it. The same
+phase then did it for all 22
 `cadence-core/workflows/new-project.md` rows, which `--brief` moved twice over -
 once in the `setup` step where the flag is parsed and once in `questioning`
 where what a brief settles stops being asked. Eight of those 22 were already
@@ -201,26 +204,26 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-29 | README.md | 60 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate |
 | README-30 | README.md | 64 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate |
 | README-31 | README.md | 66-70 | The five loop commands exist as named. | accurate | accurate |
-| README-32 | README.md | 74 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate |
-| README-33 | README.md | 76 | `docs/figures/phase-loop.svg` exists. | accurate | accurate |
-| README-34 | README.md | 78 | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | accurate |
-| README-35 | README.md | 82 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate |
-| README-36 | README.md | 90 | `/cad-verify` records in UAT.md. | accurate | accurate |
-| README-37 | README.md | 95 | `/cad-milestone` tags the release. | accurate | accurate |
-| README-38 | README.md | 95,113 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate |
-| README-39 | README.md | 103-126 | Every command in the three command lists exists. | accurate | accurate |
-| README-40 | README.md | 120 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate |
-| README-41 | README.md | 132 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate |
-| README-42 | README.md | 142 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | accurate | accurate |
-| README-43 | README.md | 142 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate |
-| README-44 | README.md | 142 | Today it is 23 skills and 6 agent roles across 19 rung files. | accurate | accurate |
-| README-45 | README.md | 144 | CI fails the build when the prose drifts from the code. | accurate | accurate |
-| README-46 | README.md | 146 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate |
+| README-32 | README.md | 76 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate |
+| README-33 | README.md | 78 | `docs/figures/phase-loop.svg` exists. | accurate | accurate |
+| README-34 | README.md | 80 | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | accurate |
+| README-35 | README.md | 84 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate |
+| README-36 | README.md | 92 | `/cad-verify` records in UAT.md. | accurate | accurate |
+| README-37 | README.md | 97 | `/cad-milestone` tags the release. | accurate | accurate |
+| README-38 | README.md | 97,115 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate |
+| README-39 | README.md | 105-128 | Every command in the three command lists exists. | accurate | accurate |
+| README-40 | README.md | 122 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate |
+| README-41 | README.md | 134 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate |
+| README-42 | README.md | 144 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | accurate | accurate |
+| README-43 | README.md | 144 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate |
+| README-44 | README.md | 144 | Today it is 23 skills and 6 agent roles across 19 rung files. | accurate | accurate |
+| README-45 | README.md | 146 | CI fails the build when the prose drifts from the code. | accurate | accurate |
+| README-46 | README.md | 148 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate |
 | README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves |
-| README-48 | README.md | 132 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
-| README-49 | README.md | 136 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
-| README-50 | README.md | 136 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one |
-| README-51 | README.md | 138 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
+| README-48 | README.md | 134 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
+| README-49 | README.md | 138 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
+| README-50 | README.md | 138 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one |
+| README-51 | README.md | 140 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
 | METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 |
 | METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 |
 | METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 closed f6eed02 |
