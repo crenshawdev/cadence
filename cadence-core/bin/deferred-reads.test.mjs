@@ -99,7 +99,10 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     // maintainer who merges them into a single row loses one command's anchor.
     skill: 'cad-context',
     reference: 'references/recall.md',
-    anchors: Object.freeze(['analyze']),
+    // Anchored at \`spend_gate\`, not \`analyze\`: the recall substep moved ahead of
+    // the analyzer buy/skip decision because BOTH of its arms consume recalled
+    // memory, and the skip arm never enters \`analyze\` at all.
+    anchors: Object.freeze(['spend_gate']),
     read_paragraphs: 1,
     file: 'cadence-core/workflows/context.md',
   }),
@@ -587,7 +590,7 @@ test('AC4: cad-context / templates/CONTEXT.md is unread without its one sentence
 });
 
 test('AC4: cad-context / references/recall.md is unread without its one sentence', () => {
-  assertPromotedRow('cad-context', 'references/recall.md', 'analyze');
+  assertPromotedRow('cad-context', 'references/recall.md', 'spend_gate');
 });
 
 test('AC4: cad-debug / references/recall.md is unread without its one sentence', () => {
