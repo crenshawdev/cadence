@@ -83,17 +83,15 @@ corrected - for the spend gate below, for the analyzer prompt, and for
 annotating questions ("you chose X in phase 2").
 </step>
 
-<step name="analyze">
-Before dispatching, settle any user-only foundational fork the analyzer cannot
-resolve from code - where new code lives (which repo / path), the target
-platform, whether a referenced repo is even in scope this milestone. Surface
-the blocking ones via the ask-user seam first, and do NOT bake an unverified
-scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
-wastes the whole pass and forces a mid-analysis interruption.
+<step name="spend_gate">
+The analyzer pass is the single most expensive dispatch in this spine, and no
+phase buys it unasked. Decide here, BEFORE `analyze`: that step's `route.mjs
+resolve` writes the lifecycle dispatch half unconditionally, so a gate placed
+after it strands an unpaired bracket on every skipped phase and inverts the
+record-health signal /cad-report reads.
 
-Recall prior-project memory before dispatching. Read the config this step needs
-in ONE call - the recall gate and the dispatch timeout together, independent of
-each other, so nothing in this step is serialized behind a prior result:
+Load prior-project memory first - BOTH arms need it. The buy arm feeds it to
+the analyzer payload; the skip arm reasons with it directly:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
@@ -106,13 +104,61 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms fr
 ```
 
 Skip this substep entirely when the backend is `none` - do not issue the
-recall call at all. The gate precedes the call on purpose (D-03): recall's own
+recall call at all. The gate precedes the call on purpose: recall's own
 backend-off return is a backstop for a direct caller, not this workflow's gate,
 so `none` means the call is never made and no recalled data reaches the pass.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
-into the `<recalled_memory>` block of the payload below.
+into the `<recalled_memory>` block of the analyzer payload below, and into your
+own reasoning on the skip arm.
+
+Then ask (ask-user seam, structured) - a SPEND question, not a second size
+question:
+
+- header: "Analyzer"
+- question: "Buy the codebase analyzer pass for this phase?"
+- options:
+  1. "Dispatch it - read the code first"
+  2. "Skip it - go straight to the gray areas"
+
+Order the two by your recommendation, recommended first, the way every other
+ask in this workflow presents its options. Annotate the question with evidence
+you have ALREADY read - never with a fresh measurement, and never with a
+number you invent for the occasion:
+
+- how many requirements this phase carries
+- the surfaces its ROADMAP entry names, by path
+- whether prior phases' SUMMARY deviations (load_priors) already settled the
+  ground this phase reopens
+
+Recommend DISPATCH unless all three point the other way: the phase's whole
+surface is already named in its roadmap entry, those files are ones this
+session has already read, and prior deviations have already settled how they
+behave. That is a judgment on evidence, and it is the whole gate. Compute no
+score, hold no threshold, and run no seam to rank the phase - measured on the
+committed verbatim fixture, a requirement-count threshold orders its two
+phases backwards, and this workflow's guardrails already ban splitting
+frameworks for the same reason.
+
+On "Dispatch it", continue into `analyze` below, unchanged.
+
+On "Skip it", do NOT enter `analyze` at all - no resolve, no dispatch, no
+bracket, and so no analyzer cost in this phase's run record. Say plainly that
+the pass was skipped and on which evidence, then take the same plain
+conversational pass `analyze`'s failure arm describes: derive 2-4 gray areas
+from the phase goal and the priors yourself, treat each as Unclear, and
+continue at `close_gray_areas`. Skipping is a stated choice, never a silent
+degradation.
+</step>
+
+<step name="analyze">
+Before dispatching, settle any user-only foundational fork the analyzer cannot
+resolve from code - where new code lives (which repo / path), the target
+platform, whether a referenced repo is even in scope this milestone. Surface
+the blocking ones via the ask-user seam first, and do NOT bake an unverified
+scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
+wastes the whole pass and forces a mid-analysis interruption.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), the bracket on its resolve:
