@@ -24,7 +24,7 @@
     "model.effort.cad-plan-checker":            { "type": "enum", "values": ["low", "medium", "high", "xhigh", null], "default": null, "purpose": "The rung the plan checker STARTS at, replacing the one its routing cell names (null = route normally off the cell). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set." },
 
     "workflow.research":                    { "type": "bool", "default": false, "purpose": "Run a research pass - new-project research step only; no other workflow reads it" },
-    "workflow.plan_check":                  { "type": "bool", "default": true, "purpose": "Gate plans through the checker before code" },
+    "workflow.plan_check":                  { "type": "bool", "default": false, "purpose": "Gate plans through the checker before code - opt-in; the plan review trigger remains the default second opinion" },
     "workflow.verifier":                    { "type": "bool", "default": true, "purpose": "The off switch for goal-backward verification after a phase: false always skips the deep pass. When true the stakes level decides whether it runs (--deep forces it either way)" },
     "workflow.skip_discuss":                { "type": "bool", "default": false, "purpose": "Select which command /cad-progress suggests for an unplanned phase - progress next-step suggestion only; it skips no step" },
     "workflow.inline_plan_threshold":       { "type": "int", "min": 0, "default": 3, "purpose": "Task count at/below which a plan runs inline vs its own doc" },

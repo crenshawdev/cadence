@@ -89,7 +89,10 @@ set never does. Per backend:
   in-context artifact. Never empty: resolving that reference is step one of the
   reviewer's own contract (`skills/cad-reviewer-contract`), so it is exactly what
   this site causes it to read, and the read-set grammar admits a non-path
-  reference as readily as a path.
+  reference as readily as a path. (The bracket stays a standalone append HERE,
+  not `--bracket-read` on the step-1 resolve: that resolve fires for every
+  backend, and a cross-model-only fire dispatches no claude-subagent - the flag
+  there would record a worker that never ran.)
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<the payload reference>"
@@ -103,10 +106,7 @@ set never does. Per backend:
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
   the JSON object it returns, and close the bracket the moment you have it.
-  OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-  would claim a dispatch that cost nothing - because a figureless return is
-  ROUTINE and the `unrecorded` it produces names a silent return, never a
-  skipped bracket:
+  OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>

@@ -93,24 +93,16 @@ that consumes a prior call's output is serialized.
 </step>
 
 <step name="spawn_planner">
-Bracket this worker in the joined run record first - one lifecycle event before
-the spawn-agent seam call below, keyed `--plan cad-planner` (the WORKER key the
-trace's pairing rule takes for a role-dispatched worker) and `--role
-cad-planner` (the key the per-role totals group on), carrying the read-set this
-site causes the planner to read:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-planner --role cad-planner --read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
-```
-
-In gaps mode append `.planning/phases/{N}/UAT.md` and the existing PLAN* and
-SUMMARY* files to that value, matching the read list the prompt below carries -
-one comma-separated value, never a repeated flag.
-
 Dispatch cad-planner via the spawn-agent seam (references/seams.md) - resolve
 its model + agent file through the seam's routing step (first dispatch is
-`--attempt 1`). Then wait - do not read, edit, or plan anything else while the
-subagent runs.
+`--attempt 1`), and put the dispatch bracket ON that resolve:
+`--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`
+- the read-set this site causes the planner to read, one comma-separated value,
+never a repeated flag. In gaps mode append `.planning/phases/{N}/UAT.md` and
+the existing PLAN* and SUMMARY* files to that value, matching the read list the
+prompt below carries. The resolve writes the lifecycle dispatch event itself;
+only the CLOSE in handle_return stays here. Then wait - do not read, edit, or
+plan anything else while the subagent runs.
 
 Before assembling the prompt, recall prior-project memory when the effective
 `memory.backend` read in `parse` is `builtin` (skip this entirely when `none` -
@@ -194,11 +186,9 @@ plan's truths and tasks, citing each recalled item's `source` file and `phase`
 </step>
 
 <step name="handle_return">
-The dispatch came back, so close its bracket before anything else.
-OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-would claim a dispatch that cost nothing - because a figureless return is
-ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
-bracket:
+The dispatch came back, so close its bracket before anything else. OMIT
+`--tokens` on a figureless return (seams.md's bracket rule - the one statement
+of why):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
@@ -279,14 +269,9 @@ makes exactly.
 <step name="check_gate">
 Skip when workflow.plan_check is false or `--skip-check` was passed.
 
-Bracket it first, same shape and same rule - `--plan` and `--role` both the role
-name, `--read` the set this site causes the checker to read:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-plan-checker --role cad-plan-checker --read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"
-```
-
-Dispatch cad-plan-checker via the spawn-agent seam. Prompt:
+Dispatch cad-plan-checker via the spawn-agent seam, the bracket on its resolve:
+`--bracket-read ".planning/phases/{N}/PLAN*.md,.planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/phases/{N}/CONTEXT.md"`.
+Prompt:
 
 ```markdown
 <verification_context>
@@ -306,10 +291,7 @@ Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
 ```
 
 Close its bracket the moment the return is in hand, before reading a single
-severity. OMIT `--tokens` when the return carries no figure - never
-`--tokens 0`, which would claim a dispatch that cost nothing - because a
-figureless return is ROUTINE and the `unrecorded` it produces names a silent
-return, never a skipped bracket:
+severity. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
@@ -338,17 +320,28 @@ Handle the return:
 
 <step name="review">
 Fire the `plan` review trigger per references/review-triggers.md, payload =
-the PLAN file(s). Act on the configured gating level (default adjudicated):
-advisory -> report findings and continue; blocking -> halt on FAIL until
-findings are fixed or the user overrides; adjudicated -> triage the
-survivors, then apply ONLY the ones the user picked to the plan file(s) and
-leave the rest recorded in this step's report. The survivors are a numbered
-list the user triages, NONE is the default, and only what the user names is
-acted on - RE-READ
-`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
-before presenting, since this workflow does not preload it. Do
-not re-enter the checker loop afterward - this trigger is the second opinion,
-not another iteration.
+the PLAN file(s). The gate comes from the routing bundle; act on it:
+
+- **advisory** (the `shipped` default) -> fire in the SAME message as the
+  `commit` step's seam calls rather than waiting. The payload is the PLAN
+  file(s) already on disk and the commit alters none of them, so the reviewer
+  reads nothing the commit writes, and advisory findings gate nothing
+  downstream - serializing them buys a wait for findings that stop nothing
+  (the same overlap the per-plan `diff` review runs at advisory). Collect the
+  return when it lands and fold the findings into `done`'s report line.
+- **blocking** -> fire and WAIT; halt on FAIL until findings are fixed or the
+  user overrides.
+- **adjudicated** -> fire and WAIT - triage precedes the commit because an
+  applied survivor EDITS the plan files the commit stages. Triage the
+  survivors, then apply ONLY the ones the user picked to the plan file(s) and
+  leave the rest recorded in this step's report. The survivors are a numbered
+  list the user triages, NONE is the default, and only what the user names is
+  acted on - RE-READ
+  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
+  before presenting, since this workflow does not preload it.
+
+Do not re-enter the checker loop afterward - this trigger is the second
+opinion, not another iteration.
 </step>
 
 <step name="commit">

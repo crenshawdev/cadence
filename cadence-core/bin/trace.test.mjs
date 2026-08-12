@@ -829,14 +829,21 @@ test('census: every trace family has a producer, and every producer speaks the r
   // the dispatch whose cost never reaches the record.
   for (const [file, minDispatch] of BRACKETING) {
     const own = lifecycle.filter((p) => p.where === file);
-    const dispatched = own.filter((p) => String(p.event) === DISPATCH);
+    // The open half of a bracket has two spellings: a prose `--event dispatch`
+    // append, and the `--bracket-read` flag riding a site's route.mjs resolve
+    // (seams.md's spawn-agent routing step), which writes the same lifecycle
+    // event from code. Both count as opens, or folding a site onto the resolve
+    // would read here as a paid worker whose cost never reaches the record.
+    const folded = (readFileSync(join(REPO, file), 'utf8')
+      .match(/--bracket-read\s/g) || []).length;
+    const dispatched = own.filter((p) => String(p.event) === DISPATCH).length + folded;
     const closed = own.filter((p) => TERMINAL.includes(String(p.event)));
-    assert.ok(dispatched.length >= minDispatch,
+    assert.ok(dispatched >= minDispatch,
       `${file}: expected at least ${minDispatch} written \`--event ${DISPATCH}\` bracket(s), `
-      + `found ${dispatched.length}. A dispatch site with no bracket is a paid worker whose `
+      + `found ${dispatched}. A dispatch site with no bracket is a paid worker whose `
       + 'cost never reaches the run record.');
-    assert.ok(closed.length >= dispatched.length,
-      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${closed.length} closing `
+    assert.ok(closed.length >= dispatched,
+      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but only ${closed.length} closing `
       + `event(s) (${TERMINAL.join(' / ')}). At least one bracket is left open.`);
     // ...and the PRIMARY close counted on its own. A site writes its arms as
     // alternatives - a `return` form AND a `checkpoint` form for the same one
@@ -846,8 +853,8 @@ test('census: every trace family has a producer, and every producer speaks the r
     // `return` form, so counting that form is what actually says "no bracket
     // here is left open".
     const returned = own.filter((p) => String(p.event) === 'return');
-    assert.ok(returned.length >= dispatched.length,
-      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${returned.length} `
+    assert.ok(returned.length >= dispatched,
+      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but only ${returned.length} `
       + '`--event return` close(s). Each dispatch moment writes its own; one of them is '
       + 'unclosed on its success path.');
     // ...and the FAILURE arm counted the same way. The two assertions above
@@ -858,8 +865,8 @@ test('census: every trace family has a producer, and every producer speaks the r
     // budget and returned nothing parseable is exactly the cost that must
     // still reach the record, and its `return` form never fires.
     const checkpointed = own.filter((p) => String(p.event) === 'checkpoint');
-    assert.ok(checkpointed.length >= dispatched.length,
-      `${file}: ${dispatched.length} \`${DISPATCH}\` bracket(s) but only ${checkpointed.length} `
+    assert.ok(checkpointed.length >= dispatched,
+      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but only ${checkpointed.length} `
       + '`--event checkpoint` close(s). Each dispatch moment writes its own; one of them is '
       + 'unclosed on its FAILURE path, so a worker that came back unusable goes unbilled.');
   }

@@ -91,30 +91,19 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
 into the `<recalled_memory>` block of the payload below.
 
-Bracket this worker in the joined run record first - one lifecycle event before
-the spawn-agent seam call below, keyed `--plan cad-assumptions-analyzer`, which
-is the WORKER key the trace's pairing rule takes for a role-dispatched worker,
-and `--role` the same, which is the key the per-role totals group on:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --read ".planning/ROADMAP.md,.planning/phases/<each prior N>/CONTEXT.md"
-```
-
-`--read` is what this SITE causes the worker to read, which is not the same as
-what the prompt below names. The prompt names no planning path at all; the
-analyzer's contract (`skills/cad-assumptions-analyzer-contract`) is what sends
-it to the roadmap entry and the prior phases' context files, and this is the
-single most expensive dispatch in the whole spine. Record the contract-prescribed
-set, or the record under-reports what this dispatch costs by a full copy of the
-planning set.
-
-OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-would claim a dispatch that cost nothing - because a figureless return is
-ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
-bracket.
-
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
-(references/seams.md).
+(references/seams.md), the bracket on its resolve:
+`--bracket-read ".planning/ROADMAP.md"`. That read-set is what this SITE causes
+the worker to read, which is not the same as what the prompt below names. The
+prompt names no planning path at all; the analyzer's contract
+(`skills/cad-assumptions-analyzer-contract`) is what sends it to the roadmap
+entry, and this is the single most expensive dispatch in the whole spine. Prior
+phases' decisions reach it as the `<prior_decisions>` summary in the payload,
+distilled from the (at most 3) files load_priors read - the contract opens a
+prior CONTEXT.md itself only when the code contradicts a cited decision, so the
+sweep of every prior phase's file that used to grow with N is gone from both
+the contract and this record.
+
 This keeps raw file contents out of the main context. Prompt payload:
 
 ```

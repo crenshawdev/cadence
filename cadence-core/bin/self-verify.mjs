@@ -243,7 +243,7 @@ const CONTRACTS = {
   },
   'route.mjs': {
     '*': [],
-    resolve: ['--role', '--attempt', '--file', '--phase'],
+    resolve: ['--role', '--attempt', '--file', '--phase', '--bracket-read', '--bracket-plan'],
     table: [],
   },
   'worktree-base.mjs': {

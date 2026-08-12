@@ -83,7 +83,7 @@ than lazy.
 
 ### The plan is checked before any code exists
 
-`skills/cad-plan-checker-contract/SKILL.md`, on by default via `workflow.plan_check`
+`skills/cad-plan-checker-contract/SKILL.md`, opt-in via `workflow.plan_check`
 
 The checker derives the must-be-true statements from the goal *itself, first,
 before it is allowed to open the plan*, then checks the plan against its own

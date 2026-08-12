@@ -976,3 +976,70 @@ test('the cursor supplies the phase when --phase is absent', () => {
   assert.equal(resolve('cad-executor', join(planning, 'config.json')).ok, true);
   assert.equal(traceLines(planning)[0].phase, 2);
 });
+
+// --- the dispatch bracket riding resolve (--bracket-read / --bracket-plan) ----
+
+test('--bracket-read writes the lifecycle dispatch event beside the routing event', () => {
+  const planning = traceRoot('bracket-basic', false);
+  const r = resolve('cad-executor', join(planning, 'config.json'),
+    ['--phase', '3', '--bracket-read', 'CLAUDE.md, .planning/PROJECT.md,']);
+  assert.equal(r.ok, true);
+  const events = traceLines(planning);
+  const dispatch = events.find((e) => e.family === 'lifecycle');
+  assert.ok(dispatch, JSON.stringify(events));
+  assert.equal(dispatch.event, 'dispatch');
+  assert.equal(dispatch.plan, 'cad-executor');   // worker key defaults to the role
+  assert.equal(dispatch.role, 'cad-executor');
+  assert.equal(dispatch.phase, '3');  // the caller's SPELLING, like trace append
+  // The csv is split and trimmed like `trace append --read`, empties dropped.
+  assert.deepEqual(dispatch.read, ['CLAUDE.md', '.planning/PROJECT.md']);
+  // The routing event still rides the same resolve, after the bracket.
+  assert.equal(events.filter((e) => e.family === 'routing').length, 1);
+});
+
+test('--bracket-plan overrides the worker key without touching the role', () => {
+  const planning = traceRoot('bracket-plan', false);
+  resolve('cad-executor', join(planning, 'config.json'),
+    ['--phase', '3', '--bracket-read', 'PLAN-2.md', '--bracket-plan', '2']);
+  const dispatch = traceLines(planning).find((e) => e.family === 'lifecycle');
+  assert.equal(dispatch.plan, '2');
+  assert.equal(dispatch.role, 'cad-executor');
+});
+
+test('a degraded resolve still writes the bracket - the caller dispatches on every arm', () => {
+  const planning = traceRoot('bracket-degraded', false);
+  const r = resolve('cad-nonesuch', join(planning, 'config.json'),
+    ['--phase', '3', '--bracket-read', 'PLAN.md']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unknown-role');
+  const dispatch = traceLines(planning).find((e) => e.family === 'lifecycle');
+  assert.ok(dispatch);
+  assert.equal(dispatch.role, 'cad-nonesuch');
+});
+
+test('no --bracket-read means no lifecycle event - the switch is the flag', () => {
+  const planning = traceRoot('bracket-off', false);
+  resolve('cad-executor', join(planning, 'config.json'), ['--phase', '3']);
+  const events = traceLines(planning);
+  assert.equal(events.filter((e) => e.family === 'lifecycle').length, 0);
+  assert.equal(events.filter((e) => e.family === 'routing').length, 1);
+});
+
+test('an unwritable trace leaves the bracketed envelope byte-identical', () => {
+  const broken = traceRoot('bracket-broken', true);
+  const clean = traceRoot('bracket-clean', false);
+  const flags = ['--phase', '3', '--bracket-read', 'PLAN.md'];
+  const a = resolveRaw(join(broken, 'config.json'), flags);
+  const b = resolveRaw(join(clean, 'config.json'), flags);
+  assert.equal(a, b);
+});
+
+test('a valueless --bracket-read is refused, not recorded as an empty read-set', () => {
+  const planning = traceRoot('bracket-bare', false);
+  const r = resolve('cad-executor', join(planning, 'config.json'),
+    ['--phase', '3', '--bracket-read']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+  assert.match(r.detail, /--bracket-read/);
+  assert.equal(existsSync(join(planning, 'trace.jsonl')), false);
+});

@@ -190,11 +190,15 @@ merged its report lives in the worktree, not here: `git worktree list
 
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
 is bracketed in the joined run record, so a phase's trace attributes what
-happened to the worker that caused it. Immediately before a plan goes to an
-executor, and again once that executor comes back, append one event each:
+happened to the worker that caused it. The DISPATCH half rides each executor's
+own resolve on the spawn-agent seam's routing step:
+`--bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
+- the worker key is the plan NUMBER here, not the role name, and `--read` is
+what this site causes the executor to read: the shared set every plan in the
+phase re-reads, plus that plan's own file. Once that executor comes back,
+append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k> --role cad-executor --read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k> --role cad-executor --tokens <the token count on the subagent return>
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
 ```
@@ -202,21 +206,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
 `checkpoint` for any checkpoint return, and `escalation` when a plan is moved to
 another path or rung. All three close a bracket; a worker with none of them is
-what `trace render` reports as unpaired. `--plan <k>` is the WORKER key - the
-plan number here, the role name for a role-dispatched worker.
-
-`--role` is a SEPARATE key from `--plan`, and both are load-bearing. `--plan` is
-what pairs a dispatch with its close; `--role` is what the per-role totals group
-on. Keyed on `--plan` alone, this workflow's executors would file under plan
-NUMBERS while every role-dispatched worker filed under a role NAME, and
-`cad-executor` - the single largest spender in a phase - is the one line the
-totals could never print. `--read` is what this site causes the executor to read:
-the shared set every plan in the phase re-reads, plus that plan's own file.
-OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-would claim a dispatch that cost nothing - because a figureless return is
-ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
-bracket. A worktree executor still emits nothing of its own -
-these are the ORCHESTRATOR's lines.
+what `trace render` reports as unpaired. `--plan`/`--bracket-plan` is the
+WORKER key that pairs a dispatch with its close; `--role` is what the per-role
+totals group on, and keyed on the plan number alone `cad-executor` - the single
+largest spender in a phase - is the one line the totals could never print.
+OMIT `--tokens` on a figureless return (seams.md's bracket rule). A worktree
+executor still emits nothing of its own - these are the ORCHESTRATOR's lines.
 
 The `phase_start` line in `git_guard` is NOT one of these. It is the correlation-id
 ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:

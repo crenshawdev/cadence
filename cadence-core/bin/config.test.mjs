@@ -287,7 +287,7 @@ test('get: repo > global > schema defaults, with source named', () => {
   assert.equal(r.ok, true);
   assert.equal(r.values['stakes'], 'solo');               // repo wins
   assert.equal(r.values['workflow.research'], true);      // global fills
-  assert.equal(r.values['workflow.plan_check'], true);    // schema default
+  assert.equal(r.values['workflow.plan_check'], false);   // schema default
   assert.equal(r.source, 'global+repo');
 });
 

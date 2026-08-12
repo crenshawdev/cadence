@@ -3,7 +3,7 @@
   "stakes": "shipped",
   "model": { "escalate_on_failure": false },
   "workflow": {
-    "research": false, "plan_check": true, "verifier": true, "skip_discuss": false,
+    "research": false, "plan_check": false, "verifier": true, "skip_discuss": false,
     "inline_plan_threshold": 3, "max_plan_tasks": 8,
     "test_command": null, "lint_command": null
   },

@@ -8,6 +8,38 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **`workflow.plan_check` defaults to false.** The checker loop and the `plan`
+  review trigger are the same question asked twice - this repo's own measured
+  run said so when it turned the key off for itself (~25 minutes across two
+  review pipelines for one `/cad-plan`), and the shipped default never
+  followed. The checker remains one key away; the `plan` trigger stays the
+  standing second opinion.
+
+- **The assumptions analyzer stops re-reading every prior phase.** Its contract
+  sent it to "any context files left by prior phases", which is N-1 files by
+  phase N, on the most expensive dispatch in the spine (~150k tokens each,
+  measured). Prior decisions now reach it as the `<prior_decisions>` summary
+  the coordinator already builds from the 3 most recent CONTEXT files; it opens
+  a prior file itself only when the code contradicts a cited decision.
+
+- **The advisory plan review overlaps the docs commit.** `/cad-plan` fired the
+  `plan` trigger and waited before committing; at `advisory` the findings gate
+  nothing and the commit alters no PLAN file, so the fire now rides the same
+  message as the commit step and folds into the final report - the same
+  overlap the per-plan `diff` review already runs. Blocking and adjudicated
+  still fire-and-wait, because applied survivors edit the files the commit
+  stages.
+
+- **The dispatch bracket rides `route.mjs resolve`.** Every dispatch site paid
+  a separate `trace append` Bash call to open its worker's lifecycle bracket,
+  plus a copy of the omit-tokens rule; `resolve --bracket-read <csv>
+  [--bracket-plan <key>]` now writes the dispatch event itself - before
+  resolution, so a degraded resolve's base-agent fallback is still billed -
+  and the rule is stated once in seams.md. Five sites fold; the reviewer's
+  stays a standalone append because its resolve fires for backends that
+  dispatch no subagent. The census counts both spellings, so a folded site
+  cannot read as an unbracketed worker.
+
 - **The shipped reviewer starts at `high`, not `xhigh`.** Four days of trace on
   this repo show 14 reviewer dispatches, every one at the top opus rung, on a
   role that fires more often than any other; several of those fires adjudicated

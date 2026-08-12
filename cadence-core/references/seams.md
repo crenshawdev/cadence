@@ -104,8 +104,23 @@ the session default when the project has stated its stakes:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role <agent_name> \
-  [--attempt <N>] [--phase <N>]
+  [--attempt <N>] [--phase <N>] --bracket-read "<csv>" [--bracket-plan <key>]
 ```
+
+**The bracket rides the resolve.** `--bracket-read` (the read-set this SITE
+causes the worker to read, one comma-separated value) makes the resolve write
+the worker's lifecycle `dispatch` event itself - one seam call where dispatch
+sites used to pay two. `--bracket-plan` is the worker key when it is not the
+role name (an executor's plan number). The CLOSE half stays with the caller,
+which alone sees the return: a lifecycle `return` event through the trace seam
+(`checkpoint` on an empty/unmarked return, `escalation` on a path change),
+carrying `--tokens <the figure on the subagent return>` - each dispatch site
+states its own close command. OMIT `--tokens` when the return carries no
+figure - never `--tokens 0`, which would claim a dispatch that cost nothing. A
+figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
+`unrecorded` it produces names a silent return, never a skipped bracket. This
+paragraph is the ONE statement of that rule; dispatch sites point here rather
+than restating it.
 
 One resolve returns FOUR knobs, not a model: `model` and `effort` for this
 dispatch, `review` (the whole trigger -> gate map for the level, which
@@ -118,9 +133,10 @@ or, when the flag is absent, the `.planning/STATE.md` cursor names the phase a
 resolve records against; neither changes the level.
 
 - Pass `--attempt 2` (3, ...) when re-dispatching the SAME role after its prior
-  run failed: the re-dispatch climbs to the retry rung the SAME cell names, and
-  swaps to that rung's file. That happens at EVERY stakes level, and
-  `model.escalate_on_failure: false` is the off switch. Where the retry rung
+  run failed: with `model.escalate_on_failure: true` (an opt-in - the default
+  holds the rung, because a retry is usually a narrower job than the pass that
+  failed it) the re-dispatch climbs to the retry rung the SAME cell names, and
+  swaps to that rung's file. Where the retry rung
   equals the starting rung, `reason` says the rung was held and `escalated`
   stays false - a held retry is never reported as an escalation.
 - Use the returned `agent` and `model` in the dispatch. `escalated`/`reason` are
