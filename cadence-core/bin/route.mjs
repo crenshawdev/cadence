@@ -16,6 +16,11 @@
 //
 // Subcommands (one JSON line on stdout):
 //   resolve --role <name> [--attempt N] [--file <config>] [--phase N]
+//           [--bracket-read <csv> [--bracket-plan <key>]]
+//     With --bracket-read, resolve also writes the worker's lifecycle DISPATCH
+//     event (family lifecycle, event dispatch, plan/role/read) before resolving,
+//     so a dispatch site pays one seam call instead of two. The CLOSE half
+//     (return/checkpoint, --tokens) stays with the caller, which alone sees it.
 //   table                                  dump the routing table
 //
 // Config is layered: a global file (see GLOBAL_CONFIG below) provides defaults,
@@ -66,7 +71,7 @@ const TABLE_PATH = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-ta
 const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
-const DEFAULTS = { stakes: 'shipped', escalate_on_failure: true };
+const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false };
 
 // The accepted `review.triggers.<t>.gate` vocabulary, used ONLY when the table
 // carries no usable `gates` array. Never skip the check on an absent list:
@@ -128,6 +133,44 @@ function triggerGatesIn(c) {
 }
 
 function resolve(opts) {
+  // The planning root and the trace phase, derived ONCE for both events this
+  // resolve may write: `--phase` when it parses, the cursor otherwise, and with
+  // neither in hand nothing is recorded - an event keyed to no phase joins
+  // nothing, and the id it would derive is the empty string.
+  const planningRoot = dirname(opts.file);
+  let tracePhase = null;
+  try {
+    const parsed = requirePhaseArg(opts.phase);
+    tracePhase = opts.phase !== undefined && parsed.ok
+      ? parsed.raw
+      : cursorPhase(planningRoot);
+  } catch { /* a record of a decision may never change the decision */ }
+
+  // The dispatch half of the worker's lifecycle bracket (`--bracket-read` is
+  // the switch; `--bracket-plan` the worker key, defaulting to the role). It is
+  // written HERE, before any resolution, because the caller dispatches on every
+  // arm of this command - a degraded resolve falls back to the base agent, and
+  // a bracket gated on ok:true would leave exactly those dispatches unpaired.
+  // The close half stays with the caller: only it sees the return and its token
+  // figure. Best effort like the routing event below - `appendEvent` never
+  // throws, and a bracket that could not be written changes no envelope byte.
+  // (The one unbracketed arm is a route-table that failed to PARSE: that fails
+  // before argument dispatch, so the caller's close then shows as unpaired in
+  // `trace render` - which is signal, not noise, on an arm that rare.)
+  if (opts.bracketRead && tracePhase !== null) {
+    try {
+      const read = opts.bracketRead.split(',').map((s) => s.trim()).filter(Boolean);
+      appendEvent(planningRoot, {
+        phase: tracePhase,
+        family: 'lifecycle',
+        event: 'dispatch',
+        plan: opts.bracketPlan || opts.role,
+        role: opts.role,
+        ...(read.length ? { read } : {}),
+      });
+    } catch { /* same rule */ }
+  }
+
   // Read the config BEFORE the role check, not after (D-04). `unknown-role`
   // used to return without any layer being read, so a config holding a retired
   // key answered a mistyped role with nothing about the key that is redirecting
@@ -370,14 +413,6 @@ function resolve(opts) {
   // cannot be written leaves the envelope below byte-identical - a record of a
   // decision may never be able to change the decision.
   try {
-    const planningRoot = dirname(opts.file);
-    // The same phase the floor used: `--phase` when it parses, the cursor
-    // otherwise. With NEITHER in hand nothing is recorded - an event keyed to no
-    // phase joins nothing, and the id it would derive is the empty string.
-    const parsedTracePhase = requirePhaseArg(opts.phase);
-    const tracePhase = opts.phase !== undefined && parsedTracePhase.ok
-      ? parsedTracePhase.raw
-      : cursorPhase(planningRoot);
     if (tracePhase !== null) {
       appendEvent(planningRoot, {
         phase: tracePhase,
@@ -427,6 +462,14 @@ function parseArgs(a) {
     // token, quoted `"$VAR"` passes an empty one, and defaulting either to
     // .planning/config.json would answer about a file the caller never named.
     else if (k === '--file') { o.file = a[++i]; if (!o.file) o.fileMissing = true; }
+    // The bracket pair: `--bracket-read` switches the lifecycle dispatch event
+    // on and carries the site's read-set (ONE comma-separated value, like
+    // `trace append --read`); `--bracket-plan` is the worker key when it is not
+    // the role name (an executor's plan number). Valueless forms are refused
+    // like `--file`: recording a bracket for a read-set the caller never named
+    // would claim a site read nothing when the token merely went missing.
+    else if (k === '--bracket-read') { o.bracketRead = a[++i]; if (!o.bracketRead) o.bracketReadMissing = true; }
+    else if (k === '--bracket-plan') { o.bracketPlan = a[++i]; if (!o.bracketPlan) o.bracketPlanMissing = true; }
   }
   return o;
 }
@@ -445,9 +488,11 @@ try {
     // whose diagnostics could ride along. Every other ok:false return does carry
     // them (D-04).
     const o = parseArgs(argv.slice(1));
-    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]' }); }
+    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--file <config>] [--phase N] [--bracket-read <csv> [--bracket-plan <key>]]' }); }
     else if (o.attemptInvalid) { out({ ok: false, reason: 'usage', detail: 'resolve --attempt must be an integer' }); }
     else if (o.fileMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --file needs a path after it: --file <config file>' }); }
+    else if (o.bracketReadMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --bracket-read needs a comma-separated path list after it' }); }
+    else if (o.bracketPlanMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --bracket-plan needs a worker key after it' }); }
     else resolve(o);
   } else if (cmd === 'table') {
     out({ ok: true, table: TABLE });

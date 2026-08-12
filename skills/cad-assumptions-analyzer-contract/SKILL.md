@@ -24,9 +24,13 @@ Your prompt supplies:
 </input>
 
 <process>
-1. Read the roadmap entry for this phase. Read any context files left by prior phases.
+1. Read the roadmap entry for this phase. The dispatch's `<prior_decisions>` block already carries the locked decisions from the most recent prior phases; open a prior phase's own CONTEXT.md only when that summary cites a decision this phase's code contradicts and you need its full text. Never sweep every prior phase's file - by phase N that is N-1 files whose decisions the summary already distilled.
 2. Glob and grep for files the phase will touch. Read the 5-15 most relevant to learn the patterns already in place.
 3. Derive the assumptions the code actually supports. Each is a decision statement grounded in what you read.
+   Where an assumption rests on data OUTSIDE the repo - a corpus this phase will parse, a file format, a live
+   response shape - measure it with a bounded read-only command rather than reasoning about it, and record the
+   command, the date and the sample size beside the claim. Measure with the operation the code will actually
+   perform: counting a field across a corpus is not the same as parsing it, and the parse is what will fail.
 4. Rate each assumption's certainty: Confident, Likely, or Unclear.
 5. Separately, note any question the codebase alone cannot answer - third-party library compatibility, ecosystem conventions, and the like. Flag these; do not research them.
 6. Emit the report in the format below.

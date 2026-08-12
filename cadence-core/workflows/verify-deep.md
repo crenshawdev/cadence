@@ -4,19 +4,9 @@ The goal-backward cad-verifier pass. Loaded from verify.md `deep_check` when
 it actually runs; return to verify.md `walk` afterward.
 
 <step name="dispatch">
-Bracket this worker in the joined run record first - one lifecycle event before
-the spawn-agent seam call below, keyed `--plan cad-verifier`, which is the WORKER
-key the trace's pairing rule takes for a role-dispatched worker, and `--role
-cad-verifier`, which is the separate key the per-role totals group on:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-verifier --role cad-verifier --read ".planning/phases/<N>/PLAN*.md,.planning/phases/<N>/SUMMARY*.md,.planning/ROADMAP.md,.planning/phases/<N>/UAT.md"
-```
-
-`--read` is the set this site causes the verifier to read - the same paths the
-dispatch instruction below hands it.
-
-Dispatch cad-verifier via the spawn-agent seam with the phase number, goal,
+Dispatch cad-verifier via the spawn-agent seam, the bracket on its resolve:
+`--bracket-read ".planning/phases/<N>/PLAN*.md,.planning/phases/<N>/SUMMARY*.md,.planning/ROADMAP.md,.planning/phases/<N>/UAT.md"`
+- the same paths the dispatch instruction below hands it. Hand it the phase number, goal,
 the current UAT items, the PLAN/SUMMARY/ROADMAP paths, and the path it must
 write: `.planning/phases/<N>/verifier-findings.json`. It writes exactly that
 one file and returns a digest plus that path. Its contract is its own
@@ -34,10 +24,7 @@ The dispatch came back, so close its bracket before anything else:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-verifier --role cad-verifier --tokens <the token count on the subagent return>
 ```
 
-OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-would claim a dispatch that cost nothing - because a figureless return is
-ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
-bracket.
+OMIT `--tokens` on a figureless return (seams.md's bracket rule).
 
 One call. The verifier's file goes in as it was written - nothing is
 transcribed, reshaped, or copied by hand:

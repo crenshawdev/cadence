@@ -38,17 +38,17 @@ pick the convenient branch.
 | `/cad-context` | How big is this phase? | Asked once, as one structured question. **Right-sized**, one plan. **Big**, `/cad-plan` splits it into PLAN-1, PLAN-2 in the same phase. **Too big**, the split is captured in the same exchange and the deferred slice is recorded under `Deferred`, for you to add later with `/cad-phase`. |
 | `/cad-context` | Did the analyzer come back? | A failed or timed-out assumptions analyzer falls back to a plain conversational pass, and says so out loud. There is no silent degradation. |
 | `/cad-plan` | What did the planner return? | `PLANNING COMPLETE`, on to the check. `PHASE TOO BIG`, a consult is offered, then you pick: restructure the roadmap with `/cad-phase` and re-plan, or plan the full scope anyway with one more dispatch. Nothing returned, plans on disk win, otherwise it stops. |
-| `/cad-plan` | Does the plan survive `plan_check`? | On by default (`workflow.plan_check`; `--skip-check` bypasses). **Passed**, continue. **Warnings only**, fold the worthwhile ones in and continue; warnings never buy a re-check. **Any blocker**, exactly one revision: a *fresh* planner at `--attempt 2`, then one re-check. Still blocked, and it goes to you. There is no third round. |
+| `/cad-plan` | Does the plan survive `plan_check`? | Opt-in (`workflow.plan_check`, off by default - the `plan` review trigger is the standing second opinion; `--skip-check` bypasses). **Passed**, continue. **Warnings only**, fold the worthwhile ones in and continue; warnings never buy a re-check. **Any blocker**, exactly one revision: a *fresh* planner at `--attempt 2`, then one re-check. Still blocked, and it goes to you. There is no third round. |
 | `/cad-plan` | The `plan` review trigger | Fires once the plan is written. **advisory**, report and carry on. **blocking**, a FAIL halts. **adjudicated**, a numbered survivor list where **NONE is the default**. It never re-enters the checker loop; this is the second opinion, not another iteration. |
 | `/cad-execute` | Parallel or sequential? | Parallel only when *all* of these hold: parallelization enabled, enough plans, no plan consuming another's output, declared `files:` lists that provably do not overlap, worktrees on, and a worktree base that reports itself parallel-safe. Any overlap, any undeclared file, any seam returning not-ok: sequential. Unproven never parallelizes. |
 | `/cad-execute` | What did the executor return? | `PLAN COMPLETE`, collect the report. **Checkpoint**, route it, then dispatch a fresh continuation. `PLAN PARTIAL`, hashes confirmed against the git log, then you choose: continue from task *k*, or stop and let the rest become open items. **Silence**, inspect the log and ask. A plan is never re-run on top of its own partial commits. |
-| `/cad-execute` | What kind of checkpoint? | **Structural**, a consult is offered, then you approve, adjust, or stop the phase. **Risk surface**, the `risk_surface` trigger fires on the flagged diff, blocking; a FAIL needs a fix or your explicit override. **Human-verify, decision, blocked**: relayed to you verbatim. Every continuation is a new executor. |
+| `/cad-execute` | What kind of checkpoint? | **Structural**, a consult is offered, then you approve, adjust, or stop the phase - it fires when a task's Verify cannot be met, a locked decision is contradicted, or a fix needs a file outside the plan's lease. **Human-verify, decision, blocked**: relayed to you verbatim. Every continuation is a new executor. A risky diff is not a checkpoint: `risk_surface` fires once per plan on the committed range. |
 | `/cad-execute` | The goal check | Deliberately *not* a gate. It runs inline, every claim carrying a `file:line` or command output, and any gap it finds becomes an open item in the phase SUMMARY rather than a fix loop. |
 | `/cad-verify` | Run the deep pass? | Yes on `--deep`, or on the first UAT session for the phase when routing says `verify: on`. `workflow.verifier: false` is the off switch, and an off state is stated in one line rather than skipped quietly. A failed deep pass never blocks the human walk; it is an accelerator, not a gate. |
 | `/cad-verify` | Did this item pass? | Inferred from your own words: pass, skipped, blocked or fail, with severity inferred too (crash reads as blocker, "wrong" as major, "a bit slow" as minor). You are never shown pass/fail buttons and never asked to rate severity. |
 | `/cad-verify` | What to do with a failure | Diagnosed inline, fix proposed, then your call. **Apply now**, one atomic commit, guard and `risk_surface` fire at commit time, item back to pending for a retest. **Re-plan**, the item stays failed and you take it to `/cad-plan` yourself; it is never auto-run. **Leave open**, recorded, move on. No silent batch-fixing, no fix-retest-fix without you between rounds. |
 | `/cad-audit` | PASS or FAIL | **PASS** only with zero broken traces and zero coverage breaks. **FAIL** on any requirement untraced, unplanned, unverified, dropped or drifted, or on any coverage break at all. Frontmatter noise and scope-creep orphans are reported but do not move the verdict. There is no PASS-with-warnings. |
-| `/cad-milestone` | The audit gate | Runs `/cad-audit` first. FAIL stops the milestone unless you explicitly override. The version bump has its own halts, a downgrade or a non-upgrade stops before any tag is cut. |
+| `/cad-milestone` | The audit gate | Runs `/cad-audit` first. FAIL stops the milestone unless you explicitly override. The version bump has its own halts - a downgrade or a non-upgrade stops the close - and the release tag is not cut here at all: /cad-land cuts it on the pulled base after the merge confirms. |
 | `/cad-land` | `pre_ship`, then how to publish | A blocking FAIL halts the land; an adjudicated result gives you a survivor list with NONE as the default, and `pre_ship` re-fires *at most once* after your fixes. Then the publish question, with **no option preselected**: push, open an MR or PR, tag, or leave it local. With `git.auto_close: true` the ask is skipped and a surviving blocker or high severity is a hard halt instead. |
 
 > **The loop that was deliberately not built**
@@ -107,7 +107,7 @@ where the first attempt starts, and the floor a second attempt climbs to.
 | `cad-assumptions-analyzer` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → xhigh |
 | `cad-plan-checker` | sonnet · low → high | sonnet · medium → high | opus · xhigh → xhigh |
 | `cad-executor` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → xhigh |
-| `cad-reviewer` | sonnet · medium → high | opus · xhigh → xhigh | opus · xhigh → max |
+| `cad-reviewer` | sonnet · medium → high | opus · high → xhigh | opus · xhigh → max |
 | `cad-verifier` | sonnet · high → xhigh | opus · medium → high | opus · xhigh → max |
 
 The routed vocabulary is only `sonnet` and `opus`. Haiku and Fable are reachable
@@ -147,14 +147,14 @@ not a convenience.*
 |---|---|---|---|---|---|
 | `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | advisory | adjudicated |
 | `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
-| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the flagged diff, at commit time | blocking | blocking | blocking |
+| `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff, once per plan on the committed range | blocking | blocking | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | advisory | adjudicated |
-| `pre_ship` | `/cad-land` | the full branch diff | advisory | adjudicated | adjudicated |
+| `pre_ship` | `/cad-land` | the full branch diff | advisory | advisory | adjudicated |
 
 > **One risk detector, and it reads the diff**
 >
-> **At commit time**, the model reads the actual diff and fires `risk_surface`
-> on what it sees. A dispatch-time path match against the phase's declared
+> **At plan completion**, the model reads the plan's whole committed range and
+> fires `risk_surface` on what it sees - once, never per commit mid-plan. A dispatch-time path match against the phase's declared
 > `files:` list was a second detector until v2.7.0: it judged a file by its
 > NAME, so one token floored a whole phase to `critical`, and it is gone.
 >

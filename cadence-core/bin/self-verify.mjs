@@ -198,6 +198,7 @@ const CONTRACTS = {
     'criteria-coverage': [],
     'plan-overlap': ['--phase'],
     'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
+    'milestone-prune': ['--label', '--mode'],
     'seed-reqs': ['--phase'],
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],
@@ -210,6 +211,7 @@ const CONTRACTS = {
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
       '--role', '--tokens', '--read'],
     'trace render': ['--phase'],
+    'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],
     'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
@@ -243,7 +245,7 @@ const CONTRACTS = {
   },
   'route.mjs': {
     '*': [],
-    resolve: ['--role', '--attempt', '--file', '--phase'],
+    resolve: ['--role', '--attempt', '--file', '--phase', '--bracket-read', '--bracket-plan'],
     table: [],
   },
   'worktree-base.mjs': {

@@ -6,6 +6,189 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-12
+
+### Added
+
+- **`/cad-report` - the run record as receipts.** Renders a phase's
+  trace.jsonl and artifacts as the story of what the tokens bought: every
+  dispatch priced from its own bracket (role, rung, tokens, minutes), every
+  gate's outcome named, every deviation that refuted a D-NN cited, plus
+  record health (unpaired brackets, malformed lines). Read-only, no subagent,
+  and a number absent from the record is reported absent, never estimated.
+  `--all` gives the milestone view.
+
+- **Self-tuning suggestions at the milestone close.** `planning.mjs trace
+  suggest` reads the joined run record and returns evidence-backed config
+  suggestions - a review trigger whose adjudicated fires kept coming back
+  empty names its gate key, escalation pressure on a role names its effort
+  key, repeated executor checkpoints name `workflow.max_plan_tasks`, a
+  re-armed gate becomes a keep-it receipt, and the top spend gets a one-line
+  receipt. Every rule has an evidence floor below which it stays silent, and
+  `/cad-milestone`'s new retune check presents the list and applies nothing -
+  the user names what changes, same discipline as review triage.
+
+### Changed
+
+- **The execute report leads with its verdict.** The done step ordered its
+  report by production sequence with the goal-check verdict last - the one
+  line the reader came for. Verdict first now. Taken from declined issue #69,
+  whose second observation this was.
+
+- **`/cad-decision-review` joins the run record.** Its `cad-reviewer` dispatch
+  was the one paid worker in the spine with no lifecycle bracket - the cost
+  never reached the trace. It now brackets like every other site (dispatch /
+  return / checkpoint), keyed to the decision's phase, or the STATE cursor's
+  phase for a PROJECT.md row. The reviewer contract also now admits this
+  caller's inlined artifact: decision text arrives in the prompt, and the
+  resolve-or-blocker rule binds only when the artifact is a reference - a
+  literal reading could previously bail with a bogus "reference does not
+  resolve" blocker instead of reviewing.
+
+- **An advisory review persists its own findings.** The advisory arms fire
+  overlapped - the `plan` trigger beside the docs commit, per-plan `diff`
+  beside the next dispatch - and nothing waits for the return, so a session
+  that ends first lost the findings and the trace return entirely: a full
+  reviewer dispatch reporting to nobody (the first external dogfood run
+  recorded exactly that). On an advisory gate the dispatch prompt now carries
+  a persistence tail: the reviewer writes its findings JSON to
+  `.planning/phases/<N>/REVIEW-<trigger>.md` and appends its own figureless
+  return before returning, and the fire site stops closing that bracket. The
+  reporting step reads the file; not-yet-on-disk is reported as in flight,
+  never as a clean pass. The trade is explicit: advisory reviewer returns
+  carry no token figure - findings durability over pricing fidelity.
+
+- **A deviation that refutes a D-NN corrects the CONTEXT record.** An executor
+  deviation can prove a numbered context decision's claim false against ground
+  truth, but the correction lived only in the plan report while later phases
+  inherit prior decisions summarized from CONTEXT.md - the falsified claim
+  propagated to every planner after it. The execute summary step now appends a
+  one-line `[corrected by plan-<k> deviation: <the true fact>]` annotation to
+  the refuted decision's line, and the docs commit stages CONTEXT.md when it
+  does.
+
+- **The release tag moves to `/cad-land`, after the merge.** `/cad-milestone`
+  cut the annotated tag at HEAD on the integration branch, before any merge -
+  so a non-fast-forward land left the milestone tag naming a commit base does
+  not contain, which is why this repo ran `create_tag: false` and tagged by
+  hand. The close now ends at the bump commit; land cuts the tag in its
+  cleanup step, on the pulled base, after the merge confirms, and still asks
+  before pushing it.
+
+- **`/cad-land` learns Forgejo/Gitea.** Host detection knew gitlab and github;
+  any other remote silently lost the PR option and the unattended close.
+  A remote where the `tea` CLI has a matching login now gets the full arm:
+  create (via the git-publish seam first - `tea pr create` never pushes),
+  merge by index, confirm merged before any cleanup.
+
+- **The mechanical half of a milestone close is a seam.** Pruning completed
+  phases from ROADMAP.md, archiving their directories, and moving shipped
+  requirements into `## Shipped` rows were three orchestrator hand-surgeries
+  with a recorded failure (a close that left the tree failing its own audit).
+  `planning.mjs milestone-prune --label <l> --mode <delete|archive>` now does
+  all three deterministically, tested, leaving PROJECT.md evolution and
+  next-milestone seeding - the judgment - as prose.
+
+- **`workflow.plan_check` defaults to false.** The checker loop and the `plan`
+  review trigger are the same question asked twice - this repo's own measured
+  run said so when it turned the key off for itself (~25 minutes across two
+  review pipelines for one `/cad-plan`), and the shipped default never
+  followed. The checker remains one key away; the `plan` trigger stays the
+  standing second opinion.
+
+- **The assumptions analyzer stops re-reading every prior phase.** Its contract
+  sent it to "any context files left by prior phases", which is N-1 files by
+  phase N, on the most expensive dispatch in the spine (~150k tokens each,
+  measured). Prior decisions now reach it as the `<prior_decisions>` summary
+  the coordinator already builds from the 3 most recent CONTEXT files; it opens
+  a prior file itself only when the code contradicts a cited decision.
+
+- **The advisory plan review overlaps the docs commit.** `/cad-plan` fired the
+  `plan` trigger and waited before committing; at `advisory` the findings gate
+  nothing and the commit alters no PLAN file, so the fire now rides the same
+  message as the commit step and folds into the final report - the same
+  overlap the per-plan `diff` review already runs. Blocking and adjudicated
+  still fire-and-wait, because applied survivors edit the files the commit
+  stages.
+
+- **The dispatch bracket rides `route.mjs resolve`.** Every dispatch site paid
+  a separate `trace append` Bash call to open its worker's lifecycle bracket,
+  plus a copy of the omit-tokens rule; `resolve --bracket-read <csv>
+  [--bracket-plan <key>]` now writes the dispatch event itself - before
+  resolution, so a degraded resolve's base-agent fallback is still billed -
+  and the rule is stated once in seams.md. Five sites fold; the reviewer's
+  stays a standalone append because its resolve fires for backends that
+  dispatch no subagent. The census counts both spellings, so a folded site
+  cannot read as an unbracketed worker.
+
+- **The shipped reviewer starts at `high`, not `xhigh`.** Four days of trace on
+  this repo show 14 reviewer dispatches, every one at the top opus rung, on a
+  role that fires more often than any other; several of those fires adjudicated
+  to zero survivors. The top rung is what a RETRY climbs to now, which is what
+  a retry rung is for. `critical` still starts at `xhigh` and retries at `max`.
+
+- **`pre_ship` is advisory at `shipped`.** Adjudicated pre-ship at flagship
+  tier was the most expensive gate in the table, firing on every land, and this
+  repo had already switched it off by hand to stay usable. A break at `shipped`
+  is a bug report; the branch-wide adversarial adjudication belongs at
+  `critical`, where it remains.
+
+- **`model.escalate_on_failure` defaults to false.** Both retries a measured
+  `/cad-plan` run paid for were narrower jobs than the pass they followed - a
+  minimal-edit revision (opus/high -> opus/xhigh) and a diff-only re-check
+  (sonnet/medium -> sonnet/high). Escalation is for a dispatch that failed, not
+  a scoped follow-up with less to do; it is one key away for projects that want
+  it back.
+
+- **The blocking re-arm count survives a `/clear`.** The one-round cap was
+  orchestrator-context state, so a compaction between rounds handed the next
+  fix a fresh re-arm - the unbounded loop, back through the window it was
+  capped to close. The round is now recorded as a `rearm` outcome in the trace
+  and checked against the current correlation id before the narrowed round
+  fires; a genuine re-run derives a new id and gets a fresh round, and an
+  unwritable trace falls back to in-context counting rather than blocking.
+
+- **A plan no longer asserts what it cannot know.** A task's `Action` stated
+  "identifiers, signatures, config keys, behavior" for code that did not exist
+  yet. The planner cannot know those, so each guess reached the executor as an
+  instruction that reality then contradicted. Measured on this repo's own
+  history: one archived plan report carries 36 deviations, another 19, and a
+  downstream project's 9 - a guessed field name (`warnings`, really
+  `warning_count`), a construction that cannot work (`ENOTDIR` is not
+  `ENOENT`), a call path that is not reachable, line numbers moved by earlier
+  tasks in the same plan. `Action` now states what must become true and its
+  constraints, names symbols that ALREADY EXIST, and never invents an
+  identifier, signature, field name or call path for code the task has yet to
+  write. `Verify` carries the task's authority: any implementation that
+  satisfies it is authorized.
+- **A deviation is one thing, not two buckets.** Departures were sorted by how
+  architectural they looked - "trivial" fixed inline, "structural" stopped -
+  and the trivial bucket explicitly licensed "input validation, error handling,
+  security pieces". That is the clause an invented pre-parse repair pass was
+  written under, in a phase where the executor's own report said no task
+  described it. A deviation is now exactly one thing: an acceptance criterion
+  or a locked decision turned out wrong or unachievable. Choosing a shape the
+  `Action` did not picture is ordinary engineering, and is not recorded.
+- **`risk_surface` fires once per plan, on the committed range.** It fired per
+  risky commit, mid-plan, against a staged index. Every match halted the
+  executor and cost a fresh-context continuation whose only job was writing
+  code no task authorized - itself new risk surface, and the next halt. One
+  measured phase spent three executor dispatches (198K, 492K, 337K tokens) on
+  a single plan that way. The gate is unchanged and still blocking at every
+  level; only its timing moved, so the reviewer now judges a complete change
+  instead of a half-built index. `/cad-debug` and `/cad-verify` keep shape (b)
+  for their single staged fix.
+- The executor's `<commit_protocol>` drops its per-commit risk gate, and
+  `risk_surface` is no longer one of its checkpoint types. It stops for a
+  structural reason only: a `Verify` that cannot be met, a contradicted locked
+  decision, or a fix needing a file outside the plan's lease.
+- `cad-plan-checker` weighs `Verify` hardest, since it is now the task's whole
+  authority, and treats an invented identifier in `Action` as a BLOCKER.
+- `cad-assumptions-analyzer` measures an out-of-repo assumption with the
+  operation the code will actually perform, and records the command, date and
+  sample size beside the claim. Counting a field across a corpus is not parsing
+  it, and the parse is what fails.
+
 ## [2.7.0] - 2026-08-11
 
 The dispatch-time risk floor is gone, and with it several pieces of machinery
@@ -2020,6 +2203,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.0.0
 [2.6.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.2
 [2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
 [2.6.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.0

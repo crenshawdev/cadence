@@ -174,6 +174,85 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
   assert.match(task, /delete it once\s+the trigger returns/i);
 });
 
+test('plan authority: Action never invents, Verify decides, in all five documents', () => {
+  // The defect this pins. templates/PLAN.md and the planner contract both used
+  // to require Action to carry "identifiers, signatures" for code that did not
+  // exist yet. The planner cannot know those, so every guess reached the
+  // executor as an instruction reality then contradicted: one archived report
+  // carries 36 deviations, among them a field named `warnings` that is really
+  // `warning_count` and a `run()` helper the plan routed through that is not
+  // reachable. The executor contract then sorted those departures by how
+  // ARCHITECTURAL they looked, which let an invented parsing pass through as
+  // "trivial". Authority moved to Verify; these five documents must say so
+  // together, because a planner reading one and an executor reading another is
+  // exactly how the old split survived three releases.
+  const template = doc('cadence-core', 'templates', 'PLAN.md');
+  const planner = doc('skills', 'cad-planner-contract', 'SKILL.md');
+  const executor = doc('skills', 'cad-executor-contract', 'SKILL.md');
+  const checker = doc('skills', 'cad-plan-checker-contract', 'SKILL.md');
+  const method = doc('METHOD.md');
+
+  // Nothing may re-acquire the demand that produced the guesses.
+  for (const [name, text] of [['templates/PLAN.md', template],
+    ['cad-planner-contract', planner], ['METHOD.md', method]]) {
+    assert.doesNotMatch(text, /identifiers,\s*signatures/,
+      `${name} asks for identifiers and signatures again - the planner cannot know them`);
+  }
+
+  // Both authoring documents state the prohibition and the permission together:
+  // inventing is out, naming what already exists is in.
+  for (const [name, text] of [['templates/PLAN.md', template], ['cad-planner-contract', planner]]) {
+    assert.match(text, /ALREADY EXIST/, `${name} dropped the name-what-exists permission`);
+    assert.match(text, /(never|Never|NOT)\s+invent/, `${name} dropped the invent prohibition`);
+  }
+
+  // Verify is named as the authority on both sides of the dispatch, so the
+  // executor's licence and the planner's obligation cannot drift apart.
+  assert.match(planner, /AUTHORITY/, 'the planner contract no longer calls Verify the authority');
+  assert.match(template, /AUTHORITY/, 'the template no longer calls Verify the authority');
+  assert.match(executor, /[Yy]our authority is the task's `Verify:`/,
+    'the executor contract no longer takes its authority from Verify');
+  assert.match(checker, /whole\s+authority/,
+    'the plan checker no longer weighs Verify as the task authority');
+
+  // The taxonomy that let unplanned code through as "trivial" stays deleted.
+  for (const [name, text] of [['cad-executor-contract', executor], ['METHOD.md', method]]) {
+    assert.doesNotMatch(text, /\*\*Trivial\b/,
+      `${name} re-grew the trivial bucket, which sorted departures by shape rather than authorization`);
+    assert.doesNotMatch(text, /input validation, error handling/,
+      `${name} re-licensed inline security writes - the clause unplanned parsing passes were written under`);
+  }
+});
+
+test('risk_surface fires on a completed range, and both fire sites carry the transient-file rails', () => {
+  // The defect: risk_surface fired per risky COMMIT, mid-plan, against a staged
+  // index. Each match halted the executor and cost a fresh-context continuation
+  // whose only job was writing code no task authorized - itself new risk
+  // surface, and the next halt. One measured phase spent three executor
+  // dispatches (198K, 492K, 337K tokens) on one plan that way. The fire moved
+  // to plan completion; the executor must no longer own a risk checkpoint, and
+  // cad-execute must carry the same rails cad-task already had.
+  const executor = doc('skills', 'cad-executor-contract', 'SKILL.md');
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+
+  // The executor stops for structural reasons only - a risky diff is not one.
+  assert.doesNotMatch(executor, /CHECKPOINT: \{[^}]*risk_surface/,
+    'risk_surface is a checkpoint type again, which puts the halt back mid-plan');
+  assert.doesNotMatch(executor, /git diff --cached/,
+    'the executor writes a staged risk diff again');
+
+  // It moved rather than vanished: the wiring table still names cad-execute.
+  const row = tableRow(doc('cadence-core', 'references', 'review-triggers.md'), 'risk_surface');
+  assert.ok(row[1].includes('cad-execute'), 'cad-execute stopped firing risk_surface entirely');
+  assert.match(row[2], /never mid-plan/, 'the row no longer states the once-per-plan timing');
+
+  // The same three rails task.md carries, so the range diff cannot be committed
+  // or left behind as a stray artifact.
+  assert.match(execute, /plan-<k>-risk\.diff/, 'execute.md names no range-diff file');
+  assert.match(execute, /never stage it/i, 'execute.md dropped the never-stage rail');
+  assert.match(execute, /delete it once the\s+trigger returns/i, 'execute.md dropped the delete rail');
+});
+
 // --- the measured byte count, wherever prose copies it -----------------------
 
 const sentencesOf = (text) => text.split(/(?<=[.!?])\s+/);
@@ -243,4 +322,40 @@ test('every deferred-read row states its consult-site count at each anchor', () 
     }
   }
   assert.ok(checked > 0, 'no register row reached the coverage arm');
+});
+
+test('the lockfile lease: both contracts name the same lockfiles and the reason lease-check emits', () => {
+  // The planner declares a task's files and the checker blocks on the gap, but
+  // the thing that actually halts an executor is planning.mjs's own refusal.
+  // Both documents quote that seam by name and by reason code, so this pins
+  // the quote to the emitter: rename the reason and the prose goes red rather
+  // than telling a planner to avoid a code the seam no longer returns.
+  const planner = doc('skills', 'cad-planner-contract', 'SKILL.md');
+  const checker = doc('skills', 'cad-plan-checker-contract', 'SKILL.md');
+  const seam = doc('cadence-core', 'bin', 'planning.mjs');
+
+  assert.match(seam, /reason: 'undeclared-files'/,
+    'lease-check no longer emits undeclared-files - both contracts quote that reason');
+
+  for (const [label, text] of [['planner', planner], ['plan-checker', checker]]) {
+    assert.ok(text.includes('lease-check'),
+      `cad-${label}-contract states the lockfile rule without naming the seam that enforces it`);
+    assert.ok(text.includes('undeclared-files'),
+      `cad-${label}-contract names lease-check but not the reason it returns`);
+  }
+
+  // The lockfile set is the half a planner acts on, so the two documents must
+  // list the SAME one. A rule that names Cargo.lock in one contract and a
+  // different set in the other is two rules, and the checker would block work
+  // the planner was never told to declare.
+  const lockfiles = (text) =>
+    [...text.matchAll(/`([A-Za-z.]+\.lock|package-lock\.json|go\.sum)`/g)]
+      .map((m) => m[1]).sort();
+  const fromPlanner = [...new Set(lockfiles(planner))];
+  const fromChecker = [...new Set(lockfiles(checker))];
+
+  assert.ok(fromPlanner.length >= 3,
+    `cad-planner-contract names too few lockfiles to be the rule: ${fromPlanner.join(', ')}`);
+  assert.deepEqual(fromChecker, fromPlanner,
+    'the planner and the plan-checker state different lockfile sets');
 });

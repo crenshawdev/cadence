@@ -79,7 +79,8 @@ and needs no re-pin.
 ## What this file does not carry
 
 No phase-trace evidence. `.planning/trace.jsonl` is written per phase by
-`planning.mjs trace append`, called from the workflows that dispatch workers,
+`planning.mjs trace append` and the seam scripts (`route.mjs` writes the
+routing event and, per dispatch site, the bracket's dispatch half),
 and rendered by `/cad-progress --trace`; the intent was to publish one from a
 project that is not Cadence itself.
 Checked 2026-08-09 across every project on this machine with a `.planning/`

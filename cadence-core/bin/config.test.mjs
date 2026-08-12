@@ -262,7 +262,7 @@ test('keys: dumps the live schema - pruned keys are really gone', () => {
   // the spend vocabulary (and the `auto` mode that gated it) is gone, not aliased.
   assert.deepEqual(r.keys['stakes'].values, ['solo', 'shipped', 'critical']);
   assert.equal(r.keys['stakes'].default, 'shipped');
-  assert.equal(r.keys['model.escalate_on_failure'].default, true);
+  assert.equal(r.keys['model.escalate_on_failure'].default, false);
   assert.ok(r.keys['review.consult.attempt_threshold']);   // added this cycle
   assert.ok(r.keys['review.triggers.phase_diff.gate']);    // added this cycle
   assert.deepEqual(r.keys['git.integration_branch'].values, ['milestone', 'trunk']); // added this round
@@ -287,7 +287,7 @@ test('get: repo > global > schema defaults, with source named', () => {
   assert.equal(r.ok, true);
   assert.equal(r.values['stakes'], 'solo');               // repo wins
   assert.equal(r.values['workflow.research'], true);      // global fills
-  assert.equal(r.values['workflow.plan_check'], true);    // schema default
+  assert.equal(r.values['workflow.plan_check'], false);   // schema default
   assert.equal(r.source, 'global+repo');
 });
 

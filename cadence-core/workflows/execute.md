@@ -190,11 +190,15 @@ merged its report lives in the worktree, not here: `git worktree list
 
 **The lifecycle bracket (both paths).** Every worker this workflow hands work to
 is bracketed in the joined run record, so a phase's trace attributes what
-happened to the worker that caused it. Immediately before a plan goes to an
-executor, and again once that executor comes back, append one event each:
+happened to the worker that caused it. The DISPATCH half rides each executor's
+own resolve on the spawn-agent seam's routing step:
+`--bracket-plan <k> --bracket-read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"`
+- the worker key is the plan NUMBER here, not the role name, and `--read` is
+what this site causes the executor to read: the shared set every plan in the
+phase re-reads, plus that plan's own file. Once that executor comes back,
+append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan <k> --role cad-executor --read "CLAUDE.md,.planning/PROJECT.md,.planning/phases/<N>/CONTEXT.md,<the plan file>"
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k> --role cad-executor --tokens <the token count on the subagent return>
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
 ```
@@ -202,21 +206,12 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase 
 The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
 `checkpoint` for any checkpoint return, and `escalation` when a plan is moved to
 another path or rung. All three close a bracket; a worker with none of them is
-what `trace render` reports as unpaired. `--plan <k>` is the WORKER key - the
-plan number here, the role name for a role-dispatched worker.
-
-`--role` is a SEPARATE key from `--plan`, and both are load-bearing. `--plan` is
-what pairs a dispatch with its close; `--role` is what the per-role totals group
-on. Keyed on `--plan` alone, this workflow's executors would file under plan
-NUMBERS while every role-dispatched worker filed under a role NAME, and
-`cad-executor` - the single largest spender in a phase - is the one line the
-totals could never print. `--read` is what this site causes the executor to read:
-the shared set every plan in the phase re-reads, plus that plan's own file.
-OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-would claim a dispatch that cost nothing - because a figureless return is
-ROUTINE and the `unrecorded` it produces names a silent return, never a skipped
-bracket. A worktree executor still emits nothing of its own -
-these are the ORCHESTRATOR's lines.
+what `trace render` reports as unpaired. `--plan`/`--bracket-plan` is the
+WORKER key that pairs a dispatch with its close; `--role` is what the per-role
+totals group on, and keyed on the plan number alone `cad-executor` - the single
+largest spender in a phase - is the one line the totals could never print.
+OMIT `--tokens` on a figureless return (seams.md's bracket rule). A worktree
+executor still emits nothing of its own - these are the ORCHESTRATOR's lines.
 
 The `phase_start` line in `git_guard` is NOT one of these. It is the correlation-id
 ANCHOR, not a worker bracket, and it takes no `--role`, `--tokens` or `--read`:
@@ -245,21 +240,44 @@ Handle the executor's return:
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
-After each plan completes, fire the `diff` review trigger
+After each plan completes, first fire `risk_surface` if the plan's committed
+range touched one. Check `git diff {pre-plan HEAD}..HEAD` against the
+risk-surface list in references/review-triggers.md; on a match write that same
+diff to `<plandir>/reports/plan-<k>-risk.diff` and fire the trigger with that
+path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
+shape (a) refs is not one of the shapes the wiring table admits for
+`risk_surface`. The file is transient: never stage it, delete it once the
+trigger returns. Blocking: on FAIL the findings are fixed or the user explicitly
+overrides, and the re-arm on that fix is CAPPED at ONE narrowed round per
+`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
+before the fix lands, since this workflow does not preload it.
+
+Firing ONCE here rather than per risky commit is the point. Halting the executor
+mid-plan cost a fresh-context re-dispatch per match, and a continuation whose
+only job was writing code no task authorized - which is itself new risk surface,
+and the next halt. The range is committed and complete when this reads it, so
+the reviewer judges what the plan actually built instead of a half-finished
+staged index.
+
+Then fire the `diff` review trigger
 (references/review-triggers.md) with the refs
 `{base_ref: {pre-plan HEAD}, head_ref: HEAD}` as the artifact - shape (a), the
 reviewer runs the diff itself. Default is `off` at `solo` and `shipped`: an
 advisory review gates nothing, and the LAST plan of a phase has no next
 dispatch to overlap it with, so it buys a wait for findings that stop nothing.
-`risk_surface` still halts per risky commit and `pre_ship` still adjudicates the
-whole branch at land. The arms below are what a user who sets
+`risk_surface` above already blocked on this same range, and `pre_ship` still
+adjudicates the whole branch at land. The arms below are what a user who sets
 `review.triggers.diff.gate` gets, and what `critical` resolves on its own.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
-that executor writes, and nothing downstream waits on the answer. Collect each
-review as it lands and fold it into `summary`. The last plan has no next
-dispatch, so it fires and waits. When
+that executor writes, and nothing downstream waits on the answer. Each fire
+carries the advisory persistence tail (review-triggers.md step 4): findings
+land at `.planning/phases/<N>/REVIEW-diff-plan-<k>.md` whether or not this
+session survives to the return, and `summary` folds the files on disk, naming
+any still in flight. The last plan has no next dispatch, so it fires without
+waiting on the same tail - the gate, not the overlap, picks the bracket's
+writer. When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
 BLOCKS before the next dispatch - triage can change what ships, and answering
 about plan 1 while plan 2 commits is answering about a tree that is gone. The
@@ -267,9 +285,10 @@ survivors are a numbered list the user triages, NONE is the default, and only
 what the user names is acted on - RE-READ
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
 before presenting, since this workflow does not preload it. The
-`risk_surface` arm is untouched by the TRIAGE rule specifically: a matched risk
-surface still halts, and triage is not an override for it. It is NOT exempt
-from the same file's ONE-round re-arm cap, which binds every blocking gate.
+`risk_surface` fire above is untouched by the TRIAGE rule specifically: a matched
+risk surface still blocks, and triage is not an override for it. It is NOT
+exempt from the same file's ONE-round re-arm cap, which binds every blocking
+gate.
 </step>
 
 <step name="handle_checkpoint">
@@ -283,15 +302,6 @@ tasks are in `<plandir>/reports/plan-<k>.md`, which the executor rewrote with a
   adjust it / stop the phase. This is a consult dead-end: before that ask, run
   offer_consult per references/consult.md with the deviation as the
   situation.
-- **risk_surface** (staged diff matches a risk surface) -> fire the
-  `risk_surface` review trigger with the flagged-diff FILE path the checkpoint
-  returned - shape (c). It is a path and not refs because the diff is staged
-  and uncommitted, and in worktree mode it is not in this tree at all.
-  Blocking: on FAIL, findings are fixed or the user explicitly overrides -
-  never silently proceed. The re-arm on that fix is CAPPED at ONE narrowed
-  round, and the cap lives only in
-  `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
-  before the fix lands, since this workflow does not preload it.
 - **human-verify / decision / blocked** (the plan or a blocker forced a
   pause) -> relay to the user, collect the answer.
 
@@ -356,6 +366,15 @@ this step: what shipped, commits per task with hashes, deviations, open items,
 and the goal-check paragraph. Do not commit yet - the cursor lands in the
 same docs commit (state step).
 
+A deviation that REFUTES a numbered context decision - it cites a D-NN and
+shows that decision's claim false against ground truth - also corrects the
+record it refuted: append ` [corrected by plan-<k> deviation: <the true fact,
+one clause>]` to that decision's line in `.planning/phases/<N>/CONTEXT.md`.
+Later phases receive prior decisions as a summary drawn from these files, so a
+falsified claim left standing is inherited by every planner after this one -
+the report alone corrects nobody downstream. A deviation that merely adjusts
+scope or adds work touches nothing here; only a refuted D-NN does.
+
 For each open item, also append it to `.planning/CAPTURE.md` as
 `- [ ] (phase <N>) <text>` under `## Todos` (create the file with headings
 `## Todos`, `## Seeds`, `## Notes` if absent, same format as /cad-capture).
@@ -380,8 +399,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 ```
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
-`<plandir>/reports/plan-<k>.md`, and `.planning/CAPTURE.md` if the summary step
-appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
+`<plandir>/reports/plan-<k>.md`, `.planning/phases/<N>/CONTEXT.md` if the
+summary step annotated a corrected decision, and `.planning/CAPTURE.md` if the
+summary step appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
 those files. Never stage a `plan-<k>-risk-task-<n>.diff`: it is the transient
 flagged diff and the continuation deletes it. With the key false the reports
 stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
@@ -391,8 +411,9 @@ transport across the merge. The cursor is never left uncommitted.
 </step>
 
 <step name="done">
-Report tersely: plans executed, commits (count and range), deviations count,
-open items, goal-check verdict. One suggestion max: `/cad-verify <N>` - safe
+Report tersely: the goal-check verdict FIRST - it is the one thing the
+reader came for - then plans executed, commits (count and range), deviations
+count, open items. One suggestion max: `/cad-verify <N>` - safe
 to `/clear` first: SUMMARY.md and the STATE cursor are committed and
 verification runs in a fresh subagent.
 </step>
@@ -418,7 +439,8 @@ verification runs in a fresh subagent.
 - [ ] One cad-executor per plan; sequential unless every parallel condition held
 - [ ] Each task is one conventional commit of specific files
 - [ ] `diff` trigger per plan - `off` at solo/shipped, overlapped at
-      `advisory`, blocking at `adjudicated`; `risk_surface` honored at commit time
+      `advisory`, blocking at `adjudicated`; `risk_surface` fired ONCE per plan
+      on the committed range, never mid-plan
 - [ ] SUMMARY.md written: what shipped, commits, deviations, open items, goal check
 - [ ] STATE.md is exactly the 4-line cursor, overwritten
 </success_criteria>

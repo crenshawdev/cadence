@@ -26,10 +26,21 @@ blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
    and still reports N blocker/high findings" - and never fire that trigger again
    in this loop.
 
-The round count is orchestrator-context state expressed in prose, not persisted
-state: nothing on disk counts fires, so a `/clear` between rounds resets the
-count and the next fix gets a fresh re-arm. That limit is stated rather than
-assumed.
+The round count PERSISTS in the trace, so a `/clear` between rounds cannot
+reset it. Before firing the narrowed round, run
+`planning.mjs trace render --phase <N>`: the envelope's `corr` is the current
+run's id, and a `rearm` outcome for this trigger already recorded under that
+same id means the one round is SPENT - do not fire again, go straight to the
+STOP-and-ask arm above. No such event -> record the round as you fire it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --detail "<trigger>"
+```
+
+A fresh `phase_start` (a genuine re-run) derives a new id and gets a fresh
+round. The append is best-effort by the trace seam's own contract: when the
+record cannot be written or read, the count falls back to what this context
+remembers - the pre-persistence behavior, not a new failure mode.
 - **adjudicated** - the survivors are already grounded, so what remains is the
   USER's choice, not the model's. Present them as a NUMBERED list, one line per
   survivor: severity, `file:line`, claim. Then ask which to act on through

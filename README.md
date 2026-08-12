@@ -51,11 +51,11 @@ That one word lands in a grid of 18 cells, one per level and role pair, and the 
 
 The rungs are `low`, `medium`, `high`, `xhigh`, `max`. Effort is not a per-dispatch parameter, it is fixed in an agent file's frontmatter, so a rung is a real file on disk and self-verify fails in both directions, on a cell naming a rung with no file and on a rung file no cell reaches.
 
-Escalation is one key, `model.escalate_on_failure`, on by default. A failed attempt gets re-dispatched at the retry rung its own cell names rather than retried at the rung that just failed it. Set it false and the retry holds where it started.
+Escalation is one key, `model.escalate_on_failure`, off by default: a retry holds the rung it started on, because a retry is usually a narrower job than the pass that failed it. Set it true and a failed attempt gets re-dispatched at the retry rung its own cell names.
 
-Reviews resolve off the same level. Each trigger gets a gate, `off`, `advisory`, `blocking`, or `adjudicated`, so a plan review is advisory at `solo` and adjudicated at `shipped` and `critical`. The `risk_surface` trigger is blocking at every level including `solo`, on purpose, because the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input, and none of those care how casual your project is.
+Reviews resolve off the same level. Each trigger gets a gate, `off`, `advisory`, `blocking`, or `adjudicated`, so a plan review is advisory at `solo` and `shipped`, adjudicated at `critical`. The `risk_surface` trigger is blocking at every level including `solo`, on purpose, because the eight surfaces it watches are auth, billing, secrets, migrations, destructive operations, concurrency, API contracts, and untrusted input, and none of those care how casual your project is.
 
-Cadence checks that list at commit time, against the diff itself, and fires a blocking review when the code actually touches one of them. It used to also check it at dispatch time against the file NAMES a plan declared, and raise the whole phase on a match. A test file called `ingest_concurrency.rs` was enough to put six roles on their top rung for the rest of the phase, so that detector is gone as of v2.7.0. What the code does decides; what the file is called does not.
+Cadence checks that list against the diff itself - once per plan, on the completed commit range - and fires a blocking review when the code actually touches one of them. It used to also check it at dispatch time against the file NAMES a plan declared, and raise the whole phase on a match. A test file called `ingest_concurrency.rs` was enough to put six roles on their top rung for the rest of the phase, so that detector is gone as of v2.7.0. What the code does decides; what the file is called does not.
 
 Deep verification follows the level too, off at `solo` and on at `shipped` and `critical`.
 
@@ -88,9 +88,9 @@ Then you work one phase at a time:
 /cad-verify 1      # confirm phase 1 delivered what it promised, recorded in UAT.md
 ```
 
-Between phases you `/clear`. The window empties and you lose nothing, because the next command reads `.planning/` and git back into context. Run `/cad-progress` after a clear and it tells you that phase 1 is verified and phase 2 is next, then you plan phase 2 the same way. When you hit a wall mid-build, `/cad-debug` runs the scientific method with hypotheses that survive a clear, and `/cad-capture` parks a stray todo or idea without derailing the phase you're in.
+Between commands you `/clear`, every one, not just the phase boundaries. The window empties and you lose nothing, because each command reads `.planning/` and git back into context, and a window carried across commands is spend without information. Even a review still in flight survives the cut: an advisory reviewer writes its own findings file and its own trace line, so the session that fired it can end freely. The first external project run went through the whole cycle one command per session. Run `/cad-progress` after a clear and it tells you that phase 1 is verified and phase 2 is next, then you plan phase 2 the same way. When you hit a wall mid-build, `/cad-debug` runs the scientific method with hypotheses that survive a clear, and `/cad-capture` parks a stray todo or idea without derailing the phase you're in.
 
-When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, tags the release, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that.
+When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, bumps the version, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. It also reads the run record back at you: `trace suggest` turns the milestone's own trace into evidence-backed retune suggestions, a gate whose fires kept coming back empty, a role that never needed its escalation, each named with its config key and its receipts, and applies none of them without your say. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that.
 
 That's the whole shape of it: define once, then loop `context -> plan -> execute -> verify` per phase, clearing aggressively, until the milestone is ready to cut.
 
@@ -107,7 +107,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-debug`** — systematic debugging with hypotheses that survive `/clear`.
 
 **Lifecycle & git**
-- **`/cad-milestone`** — cut a release: audit nothing was dropped, tag, prune completed phases, evolve the docs.
+- **`/cad-milestone`** — close a release: audit nothing was dropped, bump the version, prune completed phases, evolve the docs (the tag is cut by `/cad-land` after the merge).
 - **`/cad-land`** — publish finished work, asking how (push / MR or PR / tag / leave local) with no preselected default.
 - **`/cad-phase`** — add, insert, remove, or renumber phases, fixing every reference in one pass.
 - **`/cad-undo`** — safely roll back a phase's commits from its summary manifest.
@@ -118,6 +118,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
+- **`/cad-report`** — the run record as receipts: what each dispatch cost, what the gates caught, what got refuted. The trace prices every subagent Cadence runs; this is where you read the bill.
 - **`/cad-health`** — a quick planning-health check.
 - **`/cad-help`** — the command reference.
 

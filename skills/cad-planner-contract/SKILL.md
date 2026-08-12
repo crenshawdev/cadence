@@ -79,15 +79,27 @@ evidence to weigh, never a mandate to widen scope.
 Every task has exactly three fields, all concrete:
 
 - **Files:** exact paths created or modified. "src/auth/login.rs", never
-  "the auth files".
-- **Action:** specific implementation instructions - identifiers,
-  signatures, config keys, behavior, and what to avoid with WHY. Directive
-  prose, no fenced code blocks. "Add POST /login validating {email,password}
-  against User via bcrypt, returning a 15-min JWT cookie" - never "make
-  login work".
+  "the auth files". It is a LEASE: a path the executor must write but no plan
+  declared, `lease-check` refuses as `undeclared-files`, halting the task at its
+  commit. A dependency change writes the lockfile too (`Cargo.lock`,
+  `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`).
+- **Action:** what must become true, the constraints that bind it, and what
+  to avoid with WHY. Directive prose, no fenced code blocks. Name symbols that
+  ALREADY EXIST - you read them, so they are facts. Never invent an identifier,
+  signature, field name, line number or call path for code this task has yet to
+  write: you cannot know it, and the guess reaches the executor as an
+  instruction, meets a codebase that disagrees, and becomes a deviation someone
+  must log, defend or work around. "Add a POST /login route validating the
+  credential pair against the existing user store with the password hash this
+  tree already uses, issuing a short-lived session cookie" - never "make login
+  work", and never a signature you have not read.
 - **Verify:** how to prove the task is done - a command whose output settles
   it ("cargo test auth:: passes", "curl -X POST /login with bad creds
-  returns 401") or an observable behavior check. "Running X shows Y", never
+  returns 401") or an observable behavior check. THIS FIELD IS THE TASK'S
+  AUTHORITY: any implementation satisfying it is authorized, and the executor
+  owes no deviation for building it differently than you pictured. So it must
+  be falsifiable and must pin the property the task exists for - everything you
+  left unspecified in Action is a choice this field is the only check on. "Running X shows Y", never
   "X works" or "looks good". If proving the task needs a tool or service not
   available in the execution environment (probe with `command -v`; e.g.
   docker, a cloud CLI, a live endpoint), write the Verify as a `human-verify`

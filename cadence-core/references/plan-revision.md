@@ -12,11 +12,8 @@ is where that bound is enforced.
    cad-planner cell names, and dispatches that rung's file. Plans were
    written inline: apply the fixes in the main context.
    This re-dispatch is a paid dispatch like any other, so it carries its OWN
-   bracket - the same keys and the same read-set spawn_planner uses:
-
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-planner --role cad-planner --read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"
-   ```
+   bracket - on the `--attempt 2` resolve, the same read-set spawn_planner uses:
+   `--bracket-read ".planning/ROADMAP.md,.planning/REQUIREMENTS.md,.planning/PROJECT.md,.planning/phases/{N}/CONTEXT.md"`.
 
    Close it HERE, at the end of this step, where its `## REVISION COMPLETE`
    return is read - not at the end of the revision, and not folded into the
@@ -32,13 +29,9 @@ is where that bound is enforced.
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-planner --role cad-planner --detail "<empty or unmarked revision return>"
    ```
-2. Re-dispatch the checker once, NARROWED. It gets its own bracket too, and
-   a NARROWER read-set than check_gate's - the plan files whose diff is its
-   whole artifact:
-
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-plan-checker --role cad-plan-checker --read ".planning/phases/{N}/PLAN*.md"
-   ```
+2. Re-dispatch the checker once, NARROWED. Its bracket rides its own resolve
+   with a NARROWER read-set than check_gate's - the plan files whose diff is
+   its whole artifact: `--bracket-read ".planning/phases/{N}/PLAN*.md"`.
 
    Its artifact is the revision's
    own diff (`git diff -- .planning/phases/{N}/PLAN*.md`, or the before/after

@@ -57,10 +57,10 @@ Assemble `{ instruction, artifact }` from the wiring table:
     command: a Task-dispatched subagent inherits the parent's cwd, so it reads
     the same index.
   - **(c) a path** - a file artifact (a PLAN), or one the reviewer's tree cannot
-    reach. An executor's flagged staged diff is the latter: no ref pair names an
-    uncommitted change, and in worktree mode it is not in this tree at all, so
-    the executor writes it to a file and its checkpoint returns the absolute
-    path.
+    reach. A plan's committed range is the latter for `risk_surface`: shape (a)
+    refs is not one of the shapes this trigger admits, so the orchestrator
+    writes `git diff <pre-plan HEAD>..HEAD` to a file and fires with that path,
+    which also survives worktree mode, where the range is not in this tree.
 
 ### 3. Resolve the reviewer set
 Start from `review.reviewers[]`. For each entry, keep only if available:
@@ -89,7 +89,10 @@ set never does. Per backend:
   in-context artifact. Never empty: resolving that reference is step one of the
   reviewer's own contract (`skills/cad-reviewer-contract`), so it is exactly what
   this site causes it to read, and the read-set grammar admits a non-path
-  reference as readily as a path.
+  reference as readily as a path. (The bracket stays a standalone append HERE,
+  not `--bracket-read` on the step-1 resolve: that resolve fires for every
+  backend, and a cross-model-only fire dispatches no claude-subagent - the flag
+  there would record a worker that never ran.)
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<the payload reference>"
@@ -103,10 +106,7 @@ set never does. Per backend:
   gets the refs, the scope, or the path and PRODUCES the artifact itself - it
   holds Read, Bash, Grep and Glob, and its cwd is this one. Parse
   the JSON object it returns, and close the bracket the moment you have it.
-  OMIT `--tokens` when the return carries no figure - never `--tokens 0`, which
-  would claim a dispatch that cost nothing - because a figureless return is
-  ROUTINE and the `unrecorded` it produces names a silent return, never a
-  skipped bracket:
+  OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
@@ -121,11 +121,33 @@ set never does. Per backend:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --detail "<what failed>"
   ```
 
+  **An `advisory` gate inverts the bracket's writer.** No fire site halts on an
+  advisory return, and the overlapped fires (`plan`'s advisory arm, `diff`'s
+  advisory arm on a non-final plan) can end their session before it lands - a
+  dispatch recorded with findings and return lost is a review that burned a
+  full dispatch to report to nobody. So when step 1 resolved the gate
+  `advisory`, the DISPATCH PROMPT carries a persistence tail and the REVIEWER,
+  not this site, closes the bracket:
+  - the findings path `.planning/phases/<N>/REVIEW-<trigger>.md` (a per-plan
+    fire suffixes it: `REVIEW-diff-plan-<k>.md`), where the reviewer writes
+    the same JSON object it returns, and
+  - the return-append command above with `${CLAUDE_PLUGIN_ROOT}` already
+    expanded to its absolute path (the subagent does not inherit the variable)
+    and NO `--tokens` - a subagent never sees its own figure.
+  This site then appends NO return and no checkpoint for an advisory fire,
+  even when the return does land in-session - two writers on one bracket is a
+  double-close. The step that reports advisory findings reads the FILE; a path
+  not yet on disk is reported as "review in flight - findings land at <path>",
+  never as a clean pass. The trade is stated, not hidden: advisory reviewer
+  returns carry no token figure in the trace (figureless by construction) -
+  durability of findings over pricing fidelity, and the overlapped fire was
+  already losing both.
+
   That agent is the reviewer rung the LEVEL names -
-  `cad-reviewer-medium` at solo, `cad-reviewer-xhigh` at shipped AND critical,
-  and `cad-reviewer-max` when a critical-level
-  fire is re-dispatched with `--attempt 2`. The unsuffixed `cad-reviewer` is
-  this role's `high` rung, reachable only through solo's retry. That
+  `cad-reviewer-medium` at solo, the unsuffixed `cad-reviewer` (this role's
+  `high` rung) at shipped and on a solo retry, `cad-reviewer-xhigh` at
+  critical and on a shipped retry, and `cad-reviewer-max` when a critical-level
+  fire is re-dispatched with `--attempt 2`. That
   enumeration is the DEFAULT table's: a configured `model.effort.cad-reviewer`
   start rung replaces the level's rung, so the resolve's own `agent` field,
   never this list, is what dispatches and what any mismatch line names. The per-trigger
@@ -134,8 +156,8 @@ set never does. Per backend:
   so the reviewer runs at the `effort:` its own rung file pins.
   **When the per-trigger `effort` differs from the rung actually dispatched, say
   so in one line before dispatching**, e.g. "`diff` is configured at effort
-  `medium`; the shipped level dispatches `cad-reviewer-xhigh`, pinned at `xhigh`, so it
-  runs `xhigh` - per-trigger effort reaches cross-model reviewers only". One line
+  `medium`; the shipped level dispatches `cad-reviewer`, pinned at `high`, so it
+  runs `high` - per-trigger effort reaches cross-model reviewers only". One line
   per fire, not per reviewer, and nothing when the two agree. A resolved value
   the backend cannot deliver is a degradation like any other: name it. Do not
   "fix" it by editing the config or by pretending the effort applied.
@@ -242,13 +264,20 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 |---|---|---|---|---|
 | `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s) | advisory / advisory / adjudicated |
 | `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
-| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | at commit/fix time, on detection match | (c) the flagged-diff FILE path, or (b) the staged-diff scope in-context | blocking / blocking / blocking |
+| `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking / blocking / blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / advisory / adjudicated |
-| `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |
+| `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / advisory / adjudicated |
 
 `risk_surface` is `blocking` at every level on purpose: it fires only on a
 detection match, and there is no level at which a matched risk surface is worth
 waving through.
+
+It fires on a COMPLETED range, never on a staged index mid-plan. Halting an
+executor at each risky commit bought nothing the range-level fire does not:
+the reviewer saw a half-built change, and every halt cost a fresh-context
+re-dispatch whose only job was writing code no plan task authorized - itself
+new risk surface, and the next halt. Blocking on the finished range keeps the
+gate and drops the loop.
 
 ## risk_surface detection (shipped defaults, configurable)
 
