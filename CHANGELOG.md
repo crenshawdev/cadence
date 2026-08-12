@@ -8,6 +8,11 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **The execute report leads with its verdict.** The done step ordered its
+  report by production sequence with the goal-check verdict last - the one
+  line the reader came for. Verdict first now. Taken from declined issue #69,
+  whose second observation this was.
+
 - **`/cad-decision-review` joins the run record.** Its `cad-reviewer` dispatch
   was the one paid worker in the spine with no lifecycle bracket - the cost
   never reached the trace. It now brackets like every other site (dispatch /

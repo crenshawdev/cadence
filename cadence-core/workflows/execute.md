@@ -411,8 +411,9 @@ transport across the merge. The cursor is never left uncommitted.
 </step>
 
 <step name="done">
-Report tersely: plans executed, commits (count and range), deviations count,
-open items, goal-check verdict. One suggestion max: `/cad-verify <N>` - safe
+Report tersely: the goal-check verdict FIRST - it is the one thing the
+reader came for - then plans executed, commits (count and range), deviations
+count, open items. One suggestion max: `/cad-verify <N>` - safe
 to `/clear` first: SUMMARY.md and the STATE cursor are committed and
 verification runs in a fresh subagent.
 </step>
