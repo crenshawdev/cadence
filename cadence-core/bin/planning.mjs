@@ -42,12 +42,14 @@
 //                                   is the PROJECT root, one level deep only)
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
-//               [--read "<a,b,c>"]  one line onto .planning/trace.jsonl.
+//               [--read "<a,b,c>"] [--step <name>]
+//                                   one line onto .planning/trace.jsonl.
 //                                   --role groups the per-role totals (--plan
 //                                   stays the pairing key), --tokens is what
 //                                   the dispatch cost as a non-negative
 //                                   integer, --read is ONE comma-separated
-//                                   read-set stored verbatim
+//                                   read-set stored verbatim, --step is the
+//                                   workflow step a coordinator marker names
 //   trace render [--phase N]        the four families, the derived id, every
 //                                   worker dispatch paired to its
 //                                   return/checkpoint/escalation, and the
@@ -2311,9 +2313,25 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
+    // --step: the workflow step a COORDINATOR marker names, stored verbatim as
+    // one non-empty string. Refused when the flag is present but bare or blank,
+    // the same refusal `--read` makes at its own site and for the same reason: a
+    // marker naming no step is a complete-looking event that defeats the
+    // per-step attribution the marker exists for, and a bare `--step` parses as
+    // boolean `true`, which would store the literal `true` as a step name.
+    let step;
+    if ('step' in opts) {
+      const raw = typeof opts.step === 'string' ? opts.step.trim() : '';
+      if (!raw) return fail('bad-args', 'trace append --step needs a step name after it: --step <name>');
+      step = raw;
+    }
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
-    // `escalation` store tokens identically.
+    // `escalation` store tokens identically. `--step` does not change that: the
+    // rule that a coordinator marker carries no `--role` and no `--tokens` is
+    // held by the prose that writes it and by the census assertion in
+    // trace.test.mjs, never by a runtime refusal keyed to an event name.
     const res = appendEvent(dir, {
       // The caller's SPELLING, which is what separates `1.10` from `1.1`:
       // normalized, both phases shared one trace key and one correlation id, so
@@ -2333,6 +2351,7 @@ function cmdTrace(dir, sub, opts) {
       ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
       ...(tokens === undefined ? {} : { tokens }),
       ...(read === undefined ? {} : { read }),
+      ...(step === undefined ? {} : { step }),
     });
     return ok({
       written: res.written,

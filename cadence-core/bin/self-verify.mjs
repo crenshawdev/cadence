@@ -208,8 +208,11 @@ const CONTRACTS = {
     // element is any verbatim string naming something the site caused the
     // worker to read - a path, a glob, or a non-path reference (a
     // `<base>..<head>` ref range) the worker resolves for itself.
+    // `--step` names the workflow step a COORDINATOR marker marks. It rides the
+    // same event-agnostic seam as every other flag here; what keeps it off a
+    // worker bracket is the prose and the census, not this table.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
-      '--role', '--tokens', '--read'],
+      '--role', '--tokens', '--read', '--step'],
     'trace render': ['--phase'],
     'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],

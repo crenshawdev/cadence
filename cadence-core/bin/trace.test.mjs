@@ -16,7 +16,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
-  ANCHOR, DISPATCH, TERMINAL,
+  ANCHOR, DISPATCH, TERMINAL, COORDINATOR,
 } from './lib/trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -737,9 +737,9 @@ const BRACKETING = new Map([
 
 /**
  * Every `trace append` invocation in one text, as
- * `{family, event, plan, role, read}`. Shell line continuations are joined
- * first so a wrapped invocation is read whole rather than read as a flagless
- * fragment.
+ * `{family, event, plan, role, read, tokens, step}`. Shell line continuations
+ * are joined first so a wrapped invocation is read whole rather than read as a
+ * flagless fragment.
  * @param {string} text
  */
 function traceAppends(text) {
@@ -765,6 +765,8 @@ function traceAppends(text) {
       plan: flag(line, 'plan', false),
       role: flag(line, 'role', false),
       read: flag(line, 'read', true),
+      tokens: flag(line, 'tokens', false),
+      step: flag(line, 'step', true),
     });
   }
   return out;
@@ -805,7 +807,7 @@ test('census: every trace family has a producer, and every producer speaks the r
   }
 
   // A lifecycle event the renderer does not know is a bracket that never pairs.
-  const known = [ANCHOR, DISPATCH, ...TERMINAL];
+  const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR];
   const lifecycle = prose.filter((p) => p.family === 'lifecycle');
   for (const p of lifecycle) {
     assert.ok(known.includes(String(p.event)),
@@ -882,6 +884,7 @@ test('census: every trace family has a producer, and every producer speaks the r
   for (const p of lifecycle) {
     const event = String(p.event);
     if (event === ANCHOR) continue;   // the correlation-id anchor is not a worker
+    if (event === COORDINATOR) continue;   // ...and neither is the coordinator
     if (event !== DISPATCH && !TERMINAL.includes(event)) continue;
     assert.ok(p.role && p.role.trim(),
       `${p.where}: \`--event ${event}\` with no \`--role\` - its worker cannot be grouped `
@@ -890,5 +893,26 @@ test('census: every trace family has a producer, and every producer speaks the r
     assert.ok(p.read && p.read.trim(),
       `${p.where}: \`--event ${DISPATCH}\` with an empty or absent \`--read\` - the record `
       + 'would show a dispatch that caused no reads.');
+  }
+
+  // --- the coordinator marker carries the step and nothing else ---------------
+  //
+  // The `--tokens` half is the static half of "no marker anywhere in this tree
+  // carries a token figure": a coordinator has no subagent return to read a
+  // figure off, so any number on one of these lines was invented, and an
+  // invented figure lands in trace suggest's share denominator. The `--role`
+  // half keeps the marker out of the per-role totals, where it would either bill
+  // a worker that never ran or render a nameless row. Both are prose rules, so
+  // this is where they are enforced.
+  for (const p of lifecycle.filter((x) => String(x.event) === COORDINATOR)) {
+    assert.ok(!p.tokens,
+      `${p.where}: \`--event ${COORDINATOR}\` carrying \`--tokens ${p.tokens}\` - a coordinator `
+      + 'has no subagent return to read a figure off, so that number was invented.');
+    assert.ok(!p.role,
+      `${p.where}: \`--event ${COORDINATOR}\` carrying \`--role ${p.role}\` - the marker is not a `
+      + 'worker and must never reach the per-role totals.');
+    assert.ok(p.step && p.step.trim(),
+      `${p.where}: \`--event ${COORDINATOR}\` with an empty or absent \`--step\` - a marker naming `
+      + 'no step defeats the per-step attribution it exists for.');
   }
 });

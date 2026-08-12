@@ -85,7 +85,7 @@ export const MAX_TRACE_BYTES = 1048576;
 /** The four event families. A family outside this list is refused by the seam. */
 export const FAMILIES = ['routing', 'provider', 'lifecycle', 'outcome'];
 
-// The three lifecycle names below are EXPORTED so the producer census in
+// The four lifecycle names below are EXPORTED so the producer census in
 // trace.test.mjs reads the renderer's real vocabulary rather than a copy of it:
 // a test holding its own list would go green on the day a prose surface and the
 // renderer stopped agreeing, which is the whole failure it exists to catch.
@@ -102,6 +102,27 @@ export const TERMINAL = ['return', 'checkpoint', 'escalation'];
 
 /** The lifecycle event that ANCHORS a phase's correlation id. */
 export const ANCHOR = 'phase_start';
+
+/**
+ * The lifecycle event the COORDINATOR writes at the start of a workflow step it
+ * can name. It is a fifth lifecycle NAME, not a fifth family: `FAMILIES` is
+ * validated at the seam while `renderTrace`'s `counts` is a fixed four-key
+ * literal, so a fifth family would write fine and count nowhere.
+ *
+ * It opens nothing, closes nothing and pairs with nothing - the same shape
+ * `ANCHOR` already has. It carries the step's name and its timestamp and
+ * NOTHING else: never `--role`, because per-role accounting bills the worker
+ * that a DISPATCH opened and an empty-string role would render a nameless
+ * worker row; and never `--tokens`, because a token figure is read off a
+ * SUBAGENT's return metadata and the coordinator has no such return to read (see
+ * TOKEN PROVENANCE above - a fabricated figure is worse than an absent one).
+ *
+ * What the coordinator cost is therefore DERIVED, never reported: the residue
+ * of a step's wall span after the paired bracket spans inside it are subtracted.
+ * A marker carrying its own elapsed field would give one quantity two sources,
+ * and they disagree the first time a bracket is left unpaired.
+ */
+export const COORDINATOR = 'coordinator';
 
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
