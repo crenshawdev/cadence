@@ -1,0 +1,114 @@
+{
+  "status": "needs_human",
+  "score": "4/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "/cad-adopt run in a git repo with no .planning/ writes PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and config.json, and /cad-health reports zero problems",
+      "status": "UNCERTAIN",
+      "uat_item": 1,
+      "evidence": "All five writes are present as workflow steps and the seams they call exist: cadence-core/workflows/adopt.md:38-45 (mkdir .planning, `planning.mjs trace ignore --root .`, verbatim templates/config.json copy, config.mjs get), :134-156 write_project, :158-176 write_requirements, :178-210 write_roadmap, :212-224 `planning.mjs cursor set --phase 1`. Backing seams exist: planning.mjs:2243 (`sub === 'ignore'`), planning.mjs:2101 TRACE_IGNORE_LINE. `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true,...,\"problems\":[]} includes the invocations/paths checks over adopt.md. Health-rule falsifiers are explicitly guarded in prose (rule 5 at :183-187, rule 7 at :149-155). No run has been executed, so zero-problem /cad-health is unobserved."
+    },
+    {
+      "n": 2,
+      "truth": "The adopted .planning/ carries remaining work only: no - [x] phase, bare Traceability headers, Active version not in git tag --list, cursor at phase 1",
+      "status": "UNCERTAIN",
+      "uat_item": 2,
+      "evidence": "Each of the four is a stated rule with its falsifier named: adopt.md:183-187 (every ## Phases entry is `- [ ]`, /cad-health rule 5 cited), :170-175 (## Traceability left as BARE HEADERS, seed-reqs no-phase-dir/no-plans cited), :149-155 (Active version is a PROPOSED NEXT version, never the repo's current tag, /cad-health rule 7 cited), :216-219 (`cursor set --phase 1`). Also restated in success_criteria :290-294. Nothing computes or enforces them at runtime, so only a walked run settles them."
+    },
+    {
+      "n": 3,
+      "truth": "Adopt's questioning asks only what the repo cannot answer, with no scored or checklist-driven suppression",
+      "status": "UNCERTAIN",
+      "uat_item": 3,
+      "evidence": "The `questioning` step exists and is substantive: adopt.md:82-132. The suppression rule is stated as judgment with the naming test (\"a question is legitimate only when it names something the repo does not state\", :89-92), the four-item checklist is marked \"mental, never a conversation structure\" (:94-95), and :125-131 forbids score, coverage percentage, threshold, rubric and per-item walk (D-06). `grep -nE 'score|threshold|rubric|percent' cadence-core/workflows/adopt.md` matches only that prohibition block. Whether a real run actually suppresses the three answered topics is behavior no probe here can exercise."
+    },
+    {
+      "n": 4,
+      "truth": "node --test over the brief test passes against a committed fixture copy of verbatim's DESIGN-BRIEF.md, asserting its ## 17. Open items rows",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`node --test cadence-core/bin/design-brief.test.mjs` -> tests 5, pass 5, fail 0, including \"the brief carries a `## 17. Open items` heading\", \"the open-items table has exactly five data rows\", \"the five open items are the ones the suppression rule was measured against\", \"every open item states its status in PROSE\", \"exactly two `OPEN` occurrences\". Fixture is committed at cadence-core/bin/fixtures/verbatim.design-brief.md (29447 B) and `cmp` against /data/code/verbatim/DESIGN-BRIEF.md is silent (byte-identical)."
+    },
+    {
+      "n": 5,
+      "truth": "/cad-new-project --brief reads the brief whole and does not re-ask the problem, users, non-goals, stack or constraints",
+      "status": "UNCERTAIN",
+      "uat_item": 5,
+      "evidence": "The flag is parsed in the existing setup step (cadence-core/workflows/new-project.md:19-27: `--brief <file>`, `Read` that file WHOLE, no parser/schema, and an explicit stop with \"No brief at `<path>`.\" on an unresolved path so it never falls through to the blank page). The suppression is wired into the questioning opener at :88-100 - the opening question is replaced by a read-back plus correction invitation, then \"question only what the brief leaves OPEN\", keyed off what the brief SAYS with an explicit ban on the `**OPEN**` marker convention (D-08). Surfaced on the skill too: skills/cad-new-project/SKILL.md:4 argument-hint and :22. No run has been watched declining a settled question."
+    },
+    {
+      "n": 6,
+      "truth": "A docs/ page states the conversation -> brief -> --brief sequence and what a good brief answers, linked by path from README's getting-started path",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "docs/DISCOVERY.md (4310 B) has the numbered three-step sequence at :13-20, \"## What a good brief answers\" at :25-44 (problem, user, non-goals, constraints, plus what is still open), \"## This is guidance, not a form\" at :46-59 (no template, no schema, no parsing seam - satisfies the ROADMAP criterion 4 'never a scripted interview'), and a worked example over the committed fixture at :61-78. README.md:74 links it by path inside `## The loop` (README headings: `## The loop` at :62, `## A worked example` at :82): \"[`docs/DISCOVERY.md`](./docs/DISCOVERY.md) is how you get there from a freeform conversation.\""
+    },
+    {
+      "n": 7,
+      "truth": "self-verify is green with no unbudgeted-surface / budget-overrun, and /cad-adopt is registered in COMMANDS.md, cad-help, README and the five D-15 refusal surfaces",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/self-verify.mjs` -> {\"ok\":true,\"checked\":\"config-keys, invocations, paths, ..., include-consumers\",\"problems\":[]} (so neither unbudgeted-surface nor budget-overrun fired). cadence-core/bin/weight-budgets.json:53 `cadence-core/workflows/adopt.md: 14966` and :75 `skills/cad-adopt/SKILL.md: 923`, both matching measured size. Registration: cadence-core/references/COMMANDS.md:13 (row under `## Build spine (the core loop)`); README.md:72 and :121. The five D-15 surfaces all name it: cadence-core/workflows/progress.md:40, skills/cad-health/SKILL.md:25, cadence-core/workflows/context.md:40, cadence-core/workflows/config.md:13, cadence-core/references/git-guard.md:42. Nuance, not a gap: `grep -n cad-adopt skills/cad-help/SKILL.md` returns nothing, but that file names NO command - it is a pure relay that `@`-includes references/COMMANDS.md (skills/cad-help/SKILL.md:15), so the COMMANDS.md row is exactly what /cad-help renders."
+    },
+    {
+      "n": 8,
+      "truth": "Adopt refuses a subdirectory of a git repo rather than answering from the parent's log and tags",
+      "status": "UNCERTAIN",
+      "uat_item": 8,
+      "evidence": "The gate is present and specific: adopt.md:21-32 requires `git rev-parse --show-toplevel` to both succeed AND equal the working directory, with a distinct refusal line per arm (\"This is a subdirectory of {root}. Run /cad-adopt in {root}.\"), and `git rev-parse --git-dir` is named on exactly one line - the one forbidding its substitution (:28-32). Restated at guardrails :266-268 and success_criteria :279-281. `grep -n 'git-dir' cadence-core/workflows/adopt.md` -> only :28. It is model-followed prose with no executable enforcement, so the refusal has never been observed firing."
+    },
+    {
+      "n": 9,
+      "truth": "Adopt dispatches nothing and mints no route (D-01, D-03): no Task grant, no route-table cell, no BRACKETING row",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "`grep -c Task skills/cad-adopt/SKILL.md` -> 0 (allowed-tools at SKILL.md:5-12 lists Read/Write/Edit/Bash/Grep/Glob/AskUserQuestion only); `grep -c adopt cadence-core/route-table.json` -> 0; self-verify check 8 (routing-cells, fails in both directions between cells and agents/) is green. adopt.md:262-265 states the no-subagent guardrail. `node cadence-core/bin/test.mjs prose` -> fail 0."
+    }
+  ],
+  "passes": [
+    {
+      "k": 4,
+      "name": "Brief fixture test passes",
+      "evidence": "`node --test cadence-core/bin/design-brief.test.mjs` -> tests 5, pass 5, fail 0, asserting the `## 17. Open items` heading, exactly five data rows, their identities, prose statuses and the two-`OPEN` count. Fixture cadence-core/bin/fixtures/verbatim.design-brief.md is byte-identical (`cmp` silent) to /data/code/verbatim/DESIGN-BRIEF.md at 29447 B."
+    },
+    {
+      "k": 6,
+      "name": "Discovery docs page linked from README",
+      "evidence": "docs/DISCOVERY.md:13-20 (conversation -> brief -> `--brief` sequence), :25-44 (what a good brief answers), :46-59 (guidance not a form - no template, schema or parsing seam); README.md:74 links `docs/DISCOVERY.md` by path inside `## The loop` (README.md:62-81)."
+    },
+    {
+      "k": 7,
+      "name": "Self-verify green and /cad-adopt registered everywhere",
+      "evidence": "self-verify.mjs -> ok:true, problems:[] (no unbudgeted-surface, no budget-overrun); weight-budgets.json:53,75 carry both new surfaces; /cad-adopt at COMMANDS.md:13, README.md:72,121, and all five D-15 sites (progress.md:40, cad-health/SKILL.md:25, context.md:40, config.md:13, git-guard.md:42). cad-help names no command literally - it `@`-includes COMMANDS.md at skills/cad-help/SKILL.md:15, so the new row is what it renders."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "Run /cad-adopt in a brownfield git repo with no .planning/ (PLAN-1 names /code/axel as the cheapest target), then run /cad-health there",
+      "expected": ".planning/ holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and config.json, and /cad-health reports zero problems",
+      "why_human": "Out of reach rather than unexercised: the run mutates a real repo outside this working tree (creates files, appends a .gitignore line and makes a `docs:` commit) and passes through the AskUserQuestion approval gate, and the contract forbids mutating state. No probe can stand in for it."
+    },
+    {
+      "name": "In that same adopted .planning/, check ROADMAP.md's ## Phases for any `- [x]`, REQUIREMENTS.md's ## Traceability row count, whether the ### Active version appears in `git tag --list`, and the STATE cursor's phase",
+      "expected": "Zero `- [x]` entries, headers with zero Traceability rows, an Active version absent from `git tag --list`, cursor naming phase 1",
+      "why_human": "Depends on the artifacts the walk above produces; the rules are stated in adopt.md but nothing computes them, so only inspecting a real adopted directory settles it."
+    },
+    {
+      "name": "During that /cad-adopt run, note every question it asks on a repo whose README and manifest already state its goal, stack and build commands",
+      "expected": "None of the three is re-asked, and every question asked names something absent from the repo",
+      "why_human": "Live model behavior against a stated judgment rule (D-05 accepted that AC3 is walked, not CI-checkable); there is no runnable probe of what a coordinator chooses to ask."
+    },
+    {
+      "name": "Run /cad-new-project --brief cadence-core/bin/fixtures/verbatim.design-brief.md in a scratch directory and watch the questioning",
+      "expected": "A read-back of the settled material instead of the opening question, no re-asking of the problem, users, non-goals, stack or constraints, and every question tracing to one of the brief's five open items",
+      "why_human": "Out of reach: it initializes a project (writes files and commits) and is live model behavior with no schema or seam to assert against - D-07 deliberately took the no-parser trade, so no CI falsifier exists."
+    },
+    {
+      "name": "Run /cad-adopt from a subdirectory of a git repo (e.g. /code/axel/src)",
+      "expected": "It refuses with \"This is a subdirectory of {root}. Run /cad-adopt in {root}.\" and writes no .planning/ in the subdirectory",
+      "why_human": "The gate at adopt.md:21-32 is model-followed prose with no executable enforcement; observing the refusal requires invoking the command, which this pass may not do."
+    }
+  ]
+}
