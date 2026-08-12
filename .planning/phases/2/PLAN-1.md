@@ -80,13 +80,19 @@ Out: composing `--brief` with `/cad-adopt`, and everything PLAN-2 owns.
   `<step name="...">` / `<guardrails>` / `<success_criteria>` structure
   `cadence-core/workflows/new-project.md` and `report.md` share, carrying these
   steps. `setup`: stop when `.planning/PROJECT.md` exists, with the message shape
-  at `new-project.md:27-28`; stop when `git rev-parse --git-dir` fails, pointing
-  at `/cad-new-project` (which runs `git init`) - adopt's inputs are the code AND
-  the history, and git discovers a repo UPWARD from the working directory, so a
-  non-repo directory nested under one would answer this whole workflow from an
-  enclosing project's history and tags (the diff-review note recorded in
-  `.planning/CAPTURE.md` for this phase found the same upward-discovery hazard in
-  `readTags`); then, as ONE Bash step the way `new-project.md:22-26` requires,
+  at `new-project.md:27-28`; stop, pointing at `/cad-new-project` (which runs
+  `git init`), unless `git rev-parse --show-toplevel` both SUCCEEDS and equals
+  the working directory. `git rev-parse --git-dir` is NOT the check and must not
+  be used: it succeeds in any subdirectory of an enclosing repo, which is the
+  precise case this stop exists to refuse. Adopt's inputs are the code AND the
+  history, and git discovers a repo UPWARD from the working directory, so
+  `/repo/subdir` - not itself a project root - would otherwise answer this whole
+  workflow from `/repo`'s log and tags while writing `.planning/` into `subdir`
+  (the diff-review note recorded in `.planning/CAPTURE.md` for this phase found
+  the same upward-discovery hazard in `readTags`). The two failing arms get
+  distinct messages: no repo at all points at `/cad-new-project`; a repo whose
+  root is elsewhere names that root and says to run adopt there. Then, as ONE
+  Bash step the way `new-project.md:22-26` requires,
   `mkdir -p .planning`, `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root .`,
   a verbatim `cp` of `cadence-core/templates/config.json` to `.planning/config.json`
   when it is absent, and one
@@ -131,7 +137,12 @@ Out: composing `--brief` with `/cad-adopt`, and everything PLAN-2 owns.
   `node cadence-core/bin/weight.mjs` lists both new surfaces and each is at or
   under its new budget row; `grep -n "Task" skills/cad-adopt/SKILL.md` returns
   nothing; `grep -rn "adopt" cadence-core/route-table.json cadence-core/bin/trace.test.mjs`
-  returns nothing. human-verify (AC1, AC2): in a git checkout that has source and
+  returns nothing; `grep -n "show-toplevel" cadence-core/workflows/adopt.md` hits
+  in the `setup` step and `grep -n '\-\-git-dir' cadence-core/workflows/adopt.md`
+  returns only the line that FORBIDS it, never one that runs it. human-verify: from
+  a SUBDIRECTORY of a git repo that has no `.planning/` (e.g. `cd /code/axel/src`),
+  `/cad-adopt` refuses, names `/code/axel` as the root to run it from, and writes
+  no `.planning/` in the subdirectory. human-verify (AC1, AC2): in a git checkout that has source and
   no `.planning/` (see Notes for candidates), run `/cad-adopt`; afterwards
   `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
   config.json, `/cad-health` reports zero problems, ROADMAP's `## Phases` shows no
