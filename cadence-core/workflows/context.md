@@ -36,8 +36,9 @@ use its phase; if there is no cursor either (`no-cursor`), ask:
 "Which phase? (number from ROADMAP.md)"
 
 Read `.planning/ROADMAP.md` and extract the phase's name and goal. If
-ROADMAP.md does not exist, stop: "No roadmap found. Run /cad-new-project
-first." If the phase number is not in the roadmap, stop and say so.
+ROADMAP.md does not exist, stop: "No roadmap found. Run /cad-new-project first
+for a blank page, or /cad-adopt if this repo already has code and history."
+If the phase number is not in the roadmap, stop and say so.
 
 Phase directory: `.planning/phases/{N}/` (match the existing directory
 naming if phase directories already exist; create it at write time).

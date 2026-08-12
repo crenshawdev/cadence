@@ -38,7 +38,9 @@ bare name would also match a tag):
 - No configured or protected base resolves at all -> treat the base as
   unknown: note the possible no-main drift and ask whether to set
   `git.base_branch` / `git.protected_branches` or continue.
-  `/cad-new-project` on a fresh repo is the expected exception.
+  `/cad-new-project` on a fresh repo is the expected exception, and so is
+  `/cad-adopt`: it commits its scaffolding under this same guard, so a repo
+  whose base does not resolve reaches this clause the same way.
 
 A `base` that resolves and shares a merge-base with HEAD -> silent pass.
 

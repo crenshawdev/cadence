@@ -10,7 +10,8 @@ a plain edit.
 ## 0. Locate config
 
 Read `.planning/config.json`. If it is absent, this project has no config yet
-(`cad-new-project` writes one). Offer to copy the template into place; stop if
+(`cad-new-project` writes one for a blank page, `cad-adopt` for a repo that
+already has code and history). Offer to copy the template into place; stop if
 the user declines.
 
 ## 1. Route

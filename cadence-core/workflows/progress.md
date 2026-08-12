@@ -37,7 +37,8 @@ Its one JSON line carries everything this workflow reads:
   `phase-dir-grammar` (a `phases/` entry outside the directory grammar).
 
 On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
-project here. /cad-new-project starts one.") and stop.
+project here. /cad-new-project starts one from a blank page; /cad-adopt starts
+one from a repo that already has code and history.") and stop.
 
 On `--stats`, branch straight to the stats step now - it derives its own commit
 timeline and needs nothing else; do NOT walk reconcile, which writes STATE.md,
