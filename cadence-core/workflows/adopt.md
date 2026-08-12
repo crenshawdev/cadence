@@ -79,6 +79,58 @@ release state. This is the input to every step below; it is not a report, so do
 not narrate the reading.
 </step>
 
+<step name="questioning">
+Adopt asks only what the repo cannot answer. Whatever the survey READ is
+ANSWERED: the goal a README states, the stack and the build commands a manifest
+states, the shape the tree states, the direction the log states. Re-asking any
+of it is the blank-page interview this door exists to avoid, and it tells the
+user their project was not read.
+
+So a question is legitimate only when it names something the repo does not
+state, and asking it that way out loud is the test: "the README says what this
+does but never who it is for"; "the log stops at the parser - what comes after
+it?" A question that cannot name its gap is one the survey already answered.
+
+**Background checklist** (mental, never a conversation structure), the same four
+items /cad-new-project carries:
+
+- [ ] What this is (concrete enough to explain to a stranger)
+- [ ] Why it needs to exist (the problem or desire driving it)
+- [ ] Who it is for (even if just themselves)
+- [ ] What "done" looks like (observable outcomes)
+
+A repo with history usually answers the first two by itself and rarely answers
+the last two. Weave in what is left naturally; do not switch to checklist mode.
+And the REMAINING work - what the user wants next - is the one thing no repo
+states, so it is where the questioning belongs: it is what ROADMAP.md is about
+to be made of.
+
+**Structured questions** go through the ask-user seam (references/seams.md):
+2-4 options that are interpretations, concrete examples, or choices that reveal
+priorities - never generic categories or leading options. Headers max 12
+characters. Include a "Let me explain" style escape when the space of answers is
+open.
+
+**Freeform rule:** the moment the user signals they want to explain in their own
+words ("let me describe it", an open-ended reply, picking the escape option),
+STOP structured questions. Ask the follow-up as plain text, let them type, and
+resume structured questions only after processing what they said.
+
+**Anti-patterns:** checklist walking, canned questions ("what's your core
+value?"), corporate speak ("stakeholders"), firing questions without building on
+answers, accepting a vague answer you would have to interpret later, asking
+about the tech stack the manifest already states, and asking about the user's
+skill level (never do this - Claude builds).
+
+**No mechanism decides any of this.** No score, no coverage percentage, no
+threshold, no rubric, and no per-item walk of the repo's own documents against a
+list of things a project ought to state - each of those is forbidden here, and
+the reason is measured rather than stylistic: the first computed discriminator
+this tree tried ordered its fixture's phases backwards, and the standing
+requirement on this door is that it never become a scripted interview.
+Suppression is judgment. You read the repo, so you already know what it said.
+</step>
+
 <step name="write_project">
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/PROJECT.md` and write
 `.planning/PROJECT.md` from the survey.
@@ -139,8 +191,8 @@ no roadmapper agent.
    end to end - and order by dependency, stating each phase's `Depends on`.
 4. 2-5 falsifiable success criteria per phase: observable statements that could
    be shown false. Never "X works".
-5. Map every `## Active` id to exactly one phase. 100% coverage, no orphans, no
-   double-mapping.
+5. Map every `## Active` id to exactly one phase - full coverage, no orphans,
+   no double-mapping.
 
 Present the roadmap inline (a table of phase, goal, REQ-IDs and criteria count,
 then the per-phase criteria) and take it through the approval gate (ask-user
@@ -229,6 +281,8 @@ on disk in `.planning/`.
 - [ ] `.planning/` holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and
       config.json, with config.json copied verbatim from the engine template
 - [ ] The trace ignore line is present and `.planning/trace.jsonl` is untracked
+- [ ] Nothing the README, the manifests, the tree or the log already answered
+      was re-asked, and every question asked named the gap it was filling
 - [ ] PROJECT.md's Validated section carries what the code already does; its
       `### Active` milestone version is not a member of `git tag --list`
 - [ ] REQUIREMENTS.md `## Active` uses the `- **[CAT]-01**:` grammar and
