@@ -262,7 +262,7 @@ test('keys: dumps the live schema - pruned keys are really gone', () => {
   // the spend vocabulary (and the `auto` mode that gated it) is gone, not aliased.
   assert.deepEqual(r.keys['stakes'].values, ['solo', 'shipped', 'critical']);
   assert.equal(r.keys['stakes'].default, 'shipped');
-  assert.equal(r.keys['model.escalate_on_failure'].default, true);
+  assert.equal(r.keys['model.escalate_on_failure'].default, false);
   assert.ok(r.keys['review.consult.attempt_threshold']);   // added this cycle
   assert.ok(r.keys['review.triggers.phase_diff.gate']);    // added this cycle
   assert.deepEqual(r.keys['git.integration_branch'].values, ['milestone', 'trunk']); // added this round

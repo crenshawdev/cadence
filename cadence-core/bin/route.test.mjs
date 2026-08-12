@@ -91,7 +91,7 @@ const CELLS = [
   { stakes: 'shipped', role: 'cad-planner', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-planner', retryAgent: 'cad-planner-xhigh' },
   { stakes: 'shipped', role: 'cad-assumptions-analyzer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-assumptions-analyzer-high', retryAgent: 'cad-assumptions-analyzer' },
   { stakes: 'shipped', role: 'cad-verifier', model: 'opus', effort: 'medium', retry: 'high', agent: 'cad-verifier-medium', retryAgent: 'cad-verifier' },
-  { stakes: 'shipped', role: 'cad-reviewer', model: 'opus', effort: 'xhigh', retry: 'xhigh', agent: 'cad-reviewer-xhigh', retryAgent: 'cad-reviewer-xhigh' },
+  { stakes: 'shipped', role: 'cad-reviewer', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-reviewer', retryAgent: 'cad-reviewer-xhigh' },
   { stakes: 'shipped', role: 'cad-executor', model: 'opus', effort: 'high', retry: 'xhigh', agent: 'cad-executor', retryAgent: 'cad-executor-xhigh' },
   { stakes: 'shipped', role: 'cad-plan-checker', model: 'sonnet', effort: 'medium', retry: 'high', agent: 'cad-plan-checker-medium', retryAgent: 'cad-plan-checker-high' },
 
@@ -109,7 +109,9 @@ const CELLS = [
 // section exists to guarantee would go unproven.
 for (const c of CELLS) {
   test(`cell ${c.stakes}/${c.role}`, () => {
-    const file = cfg({ stakes: c.stakes }, `cell-${c.stakes}.json`);
+    // escalate_on_failure defaults false now; the retry half of every cell is
+    // still pinned here, so the fixture turns the mechanism on explicitly.
+    const file = cfg({ stakes: c.stakes, escalate_on_failure: true }, `cell-${c.stakes}.json`);
     const first = resolve(c.role, file);
     assert.equal(first.ok, true);
     assert.equal(first.model, c.model, 'model');
@@ -124,20 +126,19 @@ for (const c of CELLS) {
   });
 }
 
-test('the four held retries say the rung was held, not that it escalated', () => {
-  // A (stakes, role) pair list, not one config: after the retune the held cells
-  // span two levels - critical/cad-plan-checker and shipped/cad-reviewer now
-  // START at their retry rung, which is the whole point of the retune (winning
-  // on attempt one is cheaper than a re-dispatch that rewrites the entire
-  // subagent prompt at the cache-write tier).
+test('the three held retries say the rung was held, not that it escalated', () => {
+  // A (stakes, role) pair list, not one config: the held cells all sit at
+  // critical, where xhigh START rungs leave the retry nothing to climb to.
+  // (shipped/cad-reviewer left this list when its start dropped to high -
+  // an every-fire reviewer starting at the top rung was the cost, not the
+  // safety.)
   const held = [
     ['critical', 'cad-assumptions-analyzer'],
     ['critical', 'cad-executor'],
     ['critical', 'cad-plan-checker'],
-    ['shipped', 'cad-reviewer'],
   ];
   for (const [stakes, role] of held) {
-    const file = cfg({ stakes }, `cell-${stakes}.json`);
+    const file = cfg({ stakes, escalate_on_failure: true }, `cell-${stakes}.json`);
     const r = resolve(role, file, ['--attempt', '2']);
     assert.equal(r.escalated, false, `${stakes}/${role}`);
     assert.match(r.reason.join(' '), /rung held at xhigh/, `${stakes}/${role}`);
@@ -187,7 +188,7 @@ test('each level resolves its whole review map and its verify value, literally',
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
     plan: 'advisory', diff: 'off', risk_surface: 'blocking',
-    phase_diff: 'advisory', pre_ship: 'adjudicated',
+    phase_diff: 'advisory', pre_ship: 'advisory',
   });
   assert.equal(shipped.verify, 'on');
 
@@ -251,11 +252,12 @@ test('a level with no review row or no verify value degrades to unresolved', () 
 
 // --- escalation, now unconditional -------------------------------------------
 
-test('escalation fires at the shipped DEFAULT, with no stakes key set anywhere', () => {
-  // The whole point of the axis change: phase 1's rung ladder was unreachable
-  // out of the box because escalation was gated behind a routing mode nobody
-  // had set. With no config file and no global layer, a second attempt must
-  // climb.
+test('the shipped DEFAULT holds a retry - escalation is opt-in, and the hold is diagnosable', () => {
+  // Reversed from the axis change that made escalation unconditional: both
+  // retries a measured /cad-plan run paid for were NARROWER jobs than the pass
+  // they followed (a minimal-edit revision, a diff-only re-check), so climbing
+  // by default bought cost, not quality. With no config file and no global
+  // layer, a second attempt now holds its rung and says which key holds it.
   const missing = join(dir, 'no-config-at-all.json');
   const first = resolve('cad-plan-checker', missing);
   assert.equal(first.escalated, false);            // a clean run never escalates
@@ -264,11 +266,11 @@ test('escalation fires at the shipped DEFAULT, with no stakes key set anywhere',
 
   const retry = resolve('cad-plan-checker', missing, ['--attempt', '2']);
   assert.equal(retry.ok, true);
-  assert.equal(retry.agent, 'cad-plan-checker-high');
-  assert.equal(retry.effort, 'high');
-  assert.equal(retry.escalated, true);
+  assert.equal(retry.agent, 'cad-plan-checker-medium'); // held, not climbed
+  assert.equal(retry.effort, 'medium');
+  assert.equal(retry.escalated, false);
   assert.equal(retry.stakes, 'shipped');
-  assert.equal(retry.model, 'sonnet');             // the rung climbs, the model holds
+  assert.match(retry.reason.join(' '), /model\.escalate_on_failure/);
 });
 
 test('escalation fires at every stakes level, not just the default', () => {
@@ -279,7 +281,7 @@ test('escalation fires at every stakes level, not just the default', () => {
   // would have kept the row green while it stopped proving anything.
   const expected = { solo: 'cad-planner-xhigh', shipped: 'cad-planner-xhigh', critical: 'cad-planner-max' };
   for (const [stakes, agent] of Object.entries(expected)) {
-    const r = resolve('cad-planner', cfg({ stakes }), ['--attempt', '2']);
+    const r = resolve('cad-planner', cfg({ stakes, escalate_on_failure: true }), ['--attempt', '2']);
     assert.equal(r.agent, agent, stakes);
     assert.equal(r.escalated, true, stakes);
   }
@@ -436,7 +438,7 @@ test('an override pins one role and leaves the others routed', () => {
 });
 
 test('a pin beats the routed model but keeps the rung swap', () => {
-  const c = cfg({ stakes: 'shipped', overrides: { 'cad-plan-checker': 'fable' } }, 'ovr-checker.json');
+  const c = cfg({ stakes: 'shipped', escalate_on_failure: true, overrides: { 'cad-plan-checker': 'fable' } }, 'ovr-checker.json');
   const r = resolve('cad-plan-checker', c, ['--attempt', '2']);
   assert.equal(r.model, 'fable');                 // pin wins over the matrix
   assert.equal(r.agent, 'cad-plan-checker-high'); // ...but harder reasoning still applies
@@ -554,7 +556,7 @@ test('the cell retry is the SOURCE of the swap - repointing it moves the resolve
   const tablePath = join(dir, 'retry-xhigh.json');
   writeFileSync(tablePath, JSON.stringify(t));
 
-  const c = cfg({ stakes: 'shipped' });
+  const c = cfg({ stakes: 'shipped', escalate_on_failure: true });
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: tablePath };
   const args = ['resolve', '--role', 'cad-plan-checker', '--file', c, '--attempt', '2'];
   const r = (() => {
@@ -570,7 +572,7 @@ test('a cell whose retry IS its starting rung reports the rung held, not an esca
   // critical/cad-executor already runs at `xhigh` and its retry names the same
   // rung, so the arm is a no-op. Saying "held" beats reporting an escalation
   // that never happened - and beats resolving a file for a rung nothing named.
-  const c = cfg({ stakes: 'critical' });
+  const c = cfg({ stakes: 'critical', escalate_on_failure: true });
   const r = resolve('cad-executor', c, ['--attempt', '2']);
   assert.equal(r.agent, 'cad-executor-xhigh');
   assert.equal(r.effort, 'xhigh');
@@ -759,7 +761,7 @@ test('a configured start above the cell\'s retry HOLDS, and says what it out-ran
   // shipped/cad-verifier retries at `high`. A start rung of xhigh would step
   // DOWN to high on attempt 2 - a retry thinking less than the attempt that
   // failed, which is exactly what lib/route-cells.mjs refuses inside the table.
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'xhigh' } }, 'eff-retry-hold.json');
+  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'xhigh' } }, 'eff-retry-hold.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2']);
   assert.equal(r.ok, true);
   assert.equal(r.effort, 'xhigh');            // held, not demoted to the cell's high
@@ -770,7 +772,7 @@ test('a configured start above the cell\'s retry HOLDS, and says what it out-ran
 });
 
 test('a configured start BELOW the cell\'s retry climbs exactly as it does today', () => {
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'medium' } }, 'eff-retry-climb.json');
+  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'medium' } }, 'eff-retry-climb.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2']);
   assert.equal(r.effort, 'high');             // the cell's retry rung
   assert.equal(r.agent, 'cad-verifier');
@@ -782,7 +784,7 @@ test('the equal-rungs no-op and the out-ranked hold are different messages', () 
   // Both hold at the same rung; conflating them would make an out-ranked retry
   // read as a cell whose retry rung is simply the same rung.
   const outranked = resolve('cad-plan-checker',
-    cfg({ stakes: 'solo', effort: { 'cad-plan-checker': 'xhigh' } }, 'eff-outrank.json'),
+    cfg({ stakes: 'solo', escalate_on_failure: true, effort: { 'cad-plan-checker': 'xhigh' } }, 'eff-outrank.json'),
     ['--attempt', '2']);
   assert.equal(outranked.effort, 'xhigh');
   assert.equal(outranked.escalated, false);
@@ -799,7 +801,7 @@ test('a torn rung_order never demotes a CONFIGURED start on retry - it holds and
   delete t.rung_order;
   const tablePath = join(dir, 'no-rung-order-table.json');
   writeFileSync(tablePath, JSON.stringify(t));
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'max' } }, 'eff-torn-retry.json');
+  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'max' } }, 'eff-torn-retry.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2'], { table: tablePath });
   assert.equal(r.ok, true);
   assert.equal(r.effort, 'max');              // the configured start stands
@@ -816,7 +818,7 @@ test('a config start that LANDS ON the retry rung is attributed to the config, n
   // shipped/cad-verifier is medium start / high retry: a configured high start
   // holds at high on attempt 2, but "retry rung is the same rung" would claim
   // the CELL was designed that way - the conflation the messages exist to avoid.
-  const file = cfg({ stakes: 'shipped', effort: { 'cad-verifier': 'high' } }, 'eff-retry-equal.json');
+  const file = cfg({ stakes: 'shipped', escalate_on_failure: true, effort: { 'cad-verifier': 'high' } }, 'eff-retry-equal.json');
   const r = resolve('cad-verifier', file, ['--attempt', '2']);
   assert.equal(r.effort, 'high');
   assert.equal(r.escalated, false);

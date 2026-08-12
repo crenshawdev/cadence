@@ -66,7 +66,7 @@ const TABLE_PATH = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-ta
 const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
-const DEFAULTS = { stakes: 'shipped', escalate_on_failure: true };
+const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false };
 
 // The accepted `review.triggers.<t>.gate` vocabulary, used ONLY when the table
 // carries no usable `gates` array. Never skip the check on an absent list:

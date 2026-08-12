@@ -107,7 +107,7 @@ where the first attempt starts, and the floor a second attempt climbs to.
 | `cad-assumptions-analyzer` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → xhigh |
 | `cad-plan-checker` | sonnet · low → high | sonnet · medium → high | opus · xhigh → xhigh |
 | `cad-executor` | sonnet · high → xhigh | opus · high → xhigh | opus · xhigh → xhigh |
-| `cad-reviewer` | sonnet · medium → high | opus · xhigh → xhigh | opus · xhigh → max |
+| `cad-reviewer` | sonnet · medium → high | opus · high → xhigh | opus · xhigh → max |
 | `cad-verifier` | sonnet · high → xhigh | opus · medium → high | opus · xhigh → max |
 
 The routed vocabulary is only `sonnet` and `opus`. Haiku and Fable are reachable
@@ -149,7 +149,7 @@ not a convenience.*
 | `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
 | `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff, once per plan on the committed range | blocking | blocking | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | advisory | adjudicated |
-| `pre_ship` | `/cad-land` | the full branch diff | advisory | adjudicated | adjudicated |
+| `pre_ship` | `/cad-land` | the full branch diff | advisory | advisory | adjudicated |
 
 > **One risk detector, and it reads the diff**
 >

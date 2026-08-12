@@ -8,6 +8,33 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **The shipped reviewer starts at `high`, not `xhigh`.** Four days of trace on
+  this repo show 14 reviewer dispatches, every one at the top opus rung, on a
+  role that fires more often than any other; several of those fires adjudicated
+  to zero survivors. The top rung is what a RETRY climbs to now, which is what
+  a retry rung is for. `critical` still starts at `xhigh` and retries at `max`.
+
+- **`pre_ship` is advisory at `shipped`.** Adjudicated pre-ship at flagship
+  tier was the most expensive gate in the table, firing on every land, and this
+  repo had already switched it off by hand to stay usable. A break at `shipped`
+  is a bug report; the branch-wide adversarial adjudication belongs at
+  `critical`, where it remains.
+
+- **`model.escalate_on_failure` defaults to false.** Both retries a measured
+  `/cad-plan` run paid for were narrower jobs than the pass they followed - a
+  minimal-edit revision (opus/high -> opus/xhigh) and a diff-only re-check
+  (sonnet/medium -> sonnet/high). Escalation is for a dispatch that failed, not
+  a scoped follow-up with less to do; it is one key away for projects that want
+  it back.
+
+- **The blocking re-arm count survives a `/clear`.** The one-round cap was
+  orchestrator-context state, so a compaction between rounds handed the next
+  fix a fresh re-arm - the unbounded loop, back through the window it was
+  capped to close. The round is now recorded as a `rearm` outcome in the trace
+  and checked against the current correlation id before the narrowed round
+  fires; a genuine re-run derives a new id and gets a fresh round, and an
+  unwritable trace falls back to in-context counting rather than blocking.
+
 - **A plan no longer asserts what it cannot know.** A task's `Action` stated
   "identifiers, signatures, config keys, behavior" for code that did not exist
   yet. The planner cannot know those, so each guess reached the executor as an

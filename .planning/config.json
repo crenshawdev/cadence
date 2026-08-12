@@ -6,7 +6,6 @@
     "research": true,
     "inline_plan_threshold": 2,
     "test_command": "node --test cadence-core/bin/*.test.mjs",
-    "max_plan_tasks": 9,
     "plan_check": false
   },
   "parallelization": {

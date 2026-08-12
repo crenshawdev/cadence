@@ -122,10 +122,10 @@ set never does. Per backend:
   ```
 
   That agent is the reviewer rung the LEVEL names -
-  `cad-reviewer-medium` at solo, `cad-reviewer-xhigh` at shipped AND critical,
-  and `cad-reviewer-max` when a critical-level
-  fire is re-dispatched with `--attempt 2`. The unsuffixed `cad-reviewer` is
-  this role's `high` rung, reachable only through solo's retry. That
+  `cad-reviewer-medium` at solo, the unsuffixed `cad-reviewer` (this role's
+  `high` rung) at shipped and on a solo retry, `cad-reviewer-xhigh` at
+  critical and on a shipped retry, and `cad-reviewer-max` when a critical-level
+  fire is re-dispatched with `--attempt 2`. That
   enumeration is the DEFAULT table's: a configured `model.effort.cad-reviewer`
   start rung replaces the level's rung, so the resolve's own `agent` field,
   never this list, is what dispatches and what any mismatch line names. The per-trigger
@@ -134,8 +134,8 @@ set never does. Per backend:
   so the reviewer runs at the `effort:` its own rung file pins.
   **When the per-trigger `effort` differs from the rung actually dispatched, say
   so in one line before dispatching**, e.g. "`diff` is configured at effort
-  `medium`; the shipped level dispatches `cad-reviewer-xhigh`, pinned at `xhigh`, so it
-  runs `xhigh` - per-trigger effort reaches cross-model reviewers only". One line
+  `medium`; the shipped level dispatches `cad-reviewer`, pinned at `high`, so it
+  runs `high` - per-trigger effort reaches cross-model reviewers only". One line
   per fire, not per reviewer, and nothing when the two agree. A resolved value
   the backend cannot deliver is a degradation like any other: name it. Do not
   "fix" it by editing the config or by pretending the effort applied.
@@ -244,7 +244,7 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 | `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking / blocking / blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / advisory / adjudicated |
-| `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / adjudicated / adjudicated |
+| `pre_ship` | `cad-land` | before executing the publish mechanism | (a) refs `<base>..HEAD` | advisory / advisory / adjudicated |
 
 `risk_surface` is `blocking` at every level on purpose: it fires only on a
 detection match, and there is no level at which a matched risk surface is worth

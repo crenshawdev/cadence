@@ -288,13 +288,13 @@ rather than scattered across twenty workflows.
 | `diff` | `/cad-execute` | at plan completion | off |
 | `risk_surface` | execute, debug, task, verify | on detection match, once per plan on the committed range | blocking |
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | advisory |
-| `pre_ship` | `/cad-land` | before publishing | adjudicated |
+| `pre_ship` | `/cad-land` | before publishing | advisory |
 
 Three of the five fire on their own at the default `shipped` level. `diff` is
 off there and at `solo`, because an advisory review gates nothing and the last
 plan of a phase has no next dispatch to overlap it with, so it is a wait bought
 for findings that stop nothing - `risk_surface` already blocked on that same
-range and `pre_ship` still adjudicates the whole branch at land. `phase_diff` only ever
+range and `pre_ship` still reviews the whole branch at land. `phase_diff` only ever
 fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
 `adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
 `adjudicated`) decides how multiple reviewers combine, and where they disagree the
@@ -303,8 +303,8 @@ gate wins, because it is the stronger signal.
 That gate column is the `shipped` level, not a fixed default. Every gate is
 resolved from the project's `stakes` level, so the same trigger fires differently
 depending on what a break costs you: a `plan` review is advisory at `solo` and
-adjudicated at `shipped` and `critical`, an ordinary `diff` is off at `solo`,
-advisory at `shipped`, and blocking at `critical`. `risk_surface` is the one that
+`shipped` and adjudicated at `critical`, an ordinary `diff` is off at `solo` and
+`shipped`, and blocking at `critical`. `risk_surface` is the one that
 does not move, blocking at all three levels. An explicit gate you set in config
 beats the level's, as long as it is one of the four values above; a typo loses to
 the level's gate and is named in the warnings rather than silently disabling a
@@ -364,10 +364,10 @@ in this system for paying for more voices.
 What survives is not a work order. The survivors are presented as a numbered
 list and the session asks which of them to act on, with none as the default, so
 the model that just spent four voices on the artifact does not also get to
-decide what happens next. Two gates end this way as shipped: the pre-ship review
-in `/cad-land`, adjudicated from `shipped` upward, and the fix list in
-`/cad-verify`, which has no resolved gate and is always triaged. Three more end
-this way wherever their gate resolves adjudicated: the plan review in
+decide what happens next. One gate ends this way at every level: the fix list in
+`/cad-verify`, which has no resolved gate and is always triaged. Four more end
+this way wherever their gate resolves adjudicated: the pre-ship review in
+`/cad-land`, adjudicated at `critical`; the plan review in
 `/cad-plan`, advisory at `shipped` and adjudicated at `critical`;
 `/cad-execute`'s per-plan diff review, `off` below `critical`; and its
 `phase_diff` review, adjudicated at `critical`. The one exception is the

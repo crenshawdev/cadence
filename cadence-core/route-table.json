@@ -28,7 +28,7 @@
       "cad-planner":              { "model": "opus",   "effort": "high",   "retry": "xhigh" },
       "cad-assumptions-analyzer": { "model": "opus",   "effort": "high",   "retry": "xhigh" },
       "cad-verifier":             { "model": "opus",   "effort": "medium", "retry": "high" },
-      "cad-reviewer":             { "model": "opus",   "effort": "xhigh",  "retry": "xhigh" },
+      "cad-reviewer":             { "model": "opus",   "effort": "high",   "retry": "xhigh" },
       "cad-executor":             { "model": "opus",   "effort": "high",   "retry": "xhigh" },
       "cad-plan-checker":         { "model": "sonnet", "effort": "medium", "retry": "high" }
     },
@@ -44,7 +44,7 @@
 
   "review": {
     "solo":     { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off",         "pre_ship": "advisory" },
-    "shipped":  { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "advisory",    "pre_ship": "adjudicated" },
+    "shipped":  { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "advisory",    "pre_ship": "advisory" },
     "critical": { "plan": "adjudicated", "diff": "blocking", "risk_surface": "blocking", "phase_diff": "adjudicated", "pre_ship": "adjudicated" }
   },
 
