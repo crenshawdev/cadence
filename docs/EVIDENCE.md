@@ -78,14 +78,25 @@ and needs no re-pin.
 
 ## What this file does not carry
 
-No phase-trace evidence. `.planning/trace.jsonl` is written per phase by
-`planning.mjs trace append` and the seam scripts (`route.mjs` writes the
+No published phase-trace evidence. `.planning/trace.jsonl` is written per phase
+by `planning.mjs trace append` and the seam scripts (`route.mjs` writes the
 routing event and, per dispatch site, the bracket's dispatch half),
 and rendered by `/cad-progress --trace`; the intent was to publish one from a
 project that is not Cadence itself.
+
 Checked 2026-08-09 across every project on this machine with a `.planning/`
 directory — `atmos`, `burnrate`, `hindsight`, `jcrenshaw.dev`, `placer`,
-`reflex`, `tempest`, `weathervane` — none has a `trace.jsonl`; only Cadence
-does. Publishing Cadence's own trace as evidence that Cadence works elsewhere
-would prove nothing, so that half is closed as not-fired rather than filled with
-the wrong input.
+`reflex`, `tempest`, `weathervane` — only Cadence had one. That is no longer
+true. `verbatim`, a Rust archive tool with no Cadence history, was taken from
+init through a verified phase 1 and on into phase 2, and its two-phase record is
+committed in this repo at `cadence-core/bin/fixtures/verbatim.trace.jsonl` —
+byte-for-byte and unredacted, as the calibration input the trace readers are
+pinned against. It is a TEST fixture rather than published evidence, and it is
+unredacted for the same reason it is useful: the figures in it are the measured
+ones only because nothing was dropped.
+
+Publishing Cadence's own trace as evidence that Cadence works elsewhere would
+still prove nothing, so that half stays closed as not-fired rather than filled
+with the wrong input. The fixture settles nothing about `EVD-01` either: a
+publishable export under a stated redaction rule is still deferred, and a
+project's own raw `trace.jsonl` still stays out of that project's git.

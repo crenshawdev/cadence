@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
+  copyFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -915,4 +916,53 @@ test('census: every trace family has a producer, and every producer speaks the r
       `${p.where}: \`--event ${COORDINATOR}\` with an empty or absent \`--step\` - a marker naming `
       + 'no step defeats the per-step attribution it exists for.');
   }
+});
+
+// --- the committed fixture: what the readers say about it TODAY -------------
+//
+// `fixtures/verbatim.trace.jsonl` is verbatim's own run record, copied
+// byte-for-byte out of a Rust project with no Cadence history and committed
+// unredacted (D-12). It is the calibration input for every reader change in
+// this phase, and this test is what makes "a trace written before this phase is
+// unchanged in both readers" falsifiable rather than hopeful.
+//
+// The values are LITERALS, measured before the coordinator work landed. Deriving
+// them from the fixture would be a self-comparison: it would go green on the day
+// the renderer started reading the file differently, which is the one day it
+// exists to fail. Scoped to phase 1 because that is the phase every acceptance
+// criterion in this phase names.
+//
+// Two of these values are load-bearing beyond their arithmetic. The unpaired
+// `cad-reviewer` dispatch carries `corr: "1"` while the phase renders as
+// `1-573f325`: a marker written before the phase's anchor takes the phase-only
+// id (D-04), which is why no rollup here may group on `corr` alone. And the one
+// `unrecorded` reviewer dispatch is the bracket that contributes no span at all
+// to any residue, because it never closed.
+
+const FIXTURE = join(HERE, 'fixtures', 'verbatim.trace.jsonl');
+
+/** The committed fixture, in a scratch planning root of its own. */
+function fixtureRoot() {
+  const dir = root();
+  copyFileSync(FIXTURE, tracePath(dir));
+  return dir;
+}
+
+test('fixture: the committed verbatim trace renders exactly as it did before this phase', () => {
+  const r = renderTrace(fixtureRoot(), '1');
+  assert.equal(r.corr, '1-573f325');
+  assert.equal(r.capped, false);
+  assert.equal(r.malformed, 0);
+  assert.equal(r.events.length, 28);
+  assert.deepEqual(r.counts, { routing: 8, provider: 0, lifecycle: 18, outcome: 2 });
+  assert.deepEqual(r.roles, {
+    'cad-assumptions-analyzer': { dispatches: 1, tokens: 75100 },
+    'cad-planner': { dispatches: 1, tokens: 93882 },
+    'cad-reviewer': { dispatches: 4, tokens: 297506, unrecorded: 1 },
+    'cad-executor': { dispatches: 2, tokens: 423846 },
+    'cad-verifier': { dispatches: 1, tokens: 78371 },
+  });
+  assert.deepEqual(r.unpaired, [
+    { corr: '1', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T12:24:57.907Z' },
+  ]);
 });

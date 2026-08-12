@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,6 +189,44 @@ test('seam: a real trace written through appendEvent reads back through `trace s
     assert.equal(scoped.ok, true);
     assert.equal(scoped.events_read, 0);
     assert.deepEqual(scoped.suggestions, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- the committed fixture: the suggestion list TODAY ------------------------
+//
+// The other half of AC1's guard (the render half lives in trace.test.mjs):
+// verbatim's own run record, read through the REAL renderer rather than a
+// hand-built `render()` helper, so this test sees exactly what `trace suggest`
+// sees. The list is a literal, measured before the coordinator work - a list
+// recomputed from the fixture would agree with itself no matter what the rules
+// did. Any new rule that speaks on a trace carrying no coordinator markers
+// fails here, which is D-06 made falsifiable.
+
+const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'verbatim.trace.jsonl');
+
+test('fixture: the committed verbatim trace suggests exactly what it did before this phase', async () => {
+  const { renderTrace, tracePath } = await import('./lib/trace.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'cad-suggest-fx-'));
+  try {
+    const planning = join(dir, '.planning');
+    mkdirSync(planning, { recursive: true });
+    copyFileSync(FIXTURE, tracePath(planning));
+    assert.deepEqual(suggestFromRender(renderTrace(planning, '1')), [
+      {
+        kind: 'info',
+        subject: 'cad-executor',
+        evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)',
+        action: null,
+      },
+      {
+        kind: 'info',
+        subject: 'risk_surface',
+        evidence: 'a fire FAILed and re-armed on its own fix - the gate caught real work; keep it',
+        action: null,
+      },
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
