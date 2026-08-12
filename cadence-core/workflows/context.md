@@ -61,6 +61,14 @@ Read what already constrains this phase - never re-ask a settled question:
   decisions and requirement IDs this phase serves)
 - up to 3 most recent prior `phases/*/CONTEXT.md` files (locked decisions
   that carry forward)
+- the `## Deviations` bullets of up to 3 most recent prior
+  `phases/*/SUMMARY.md` files - bounded most-recent-first exactly as the
+  CONTEXT reads above are, so this read set cannot grow with N. Those
+  deviations are the evidence the spend gate's "already grounded by a prior
+  phase" arm turns on; without them that arm never fires and the gate
+  collapses to its size arm alone. `workflows/report.md` already reads
+  deviations out of SUMMARY for its `Refuted:` line, so this is the same
+  source, not a new artifact.
 
 Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
 carry the latest decisions, while a prior CONTEXT can be stale - a scope change
@@ -70,8 +78,9 @@ current docs as authoritative: drop or re-open that decision rather than
 feeding it forward as settled.
 
 Missing files are fine - continue without. Build an internal prior-decisions
-summary for the analyzer prompt and for annotating questions ("you chose X
-in phase 2").
+summary - what earlier phases locked, plus what their deviations later
+corrected - for the spend gate below, for the analyzer prompt, and for
+annotating questions ("you chose X in phase 2").
 </step>
 
 <step name="analyze">
