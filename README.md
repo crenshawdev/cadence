@@ -69,6 +69,8 @@ Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadenc
 4. **`/cad-execute <phase>`** — build it, one atomic commit per task.
 5. **`/cad-verify <phase>`** — confirm the phase delivered what it promised.
 
+Step 1 has a second door. **`/cad-adopt`** is the entrance for a project that already exists: it reads the repo, the manifests and the git history, writes what the code already does into `PROJECT.md` as shipped work and what is left into a remaining-work `ROADMAP.md`, and asks only what the repo cannot answer. Same `.planning/` on disk either way, so step 2 onward is identical.
+
 `/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
 
 [![The Cadence phase loop: new-project feeds context, plan, execute and verify in sequence; a decision gate sits under each command, and verify loops back to context for the next phase or exits to milestone.](./docs/figures/phase-loop.svg)](./docs/WORKFLOW.md)
@@ -114,6 +116,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
+- **`/cad-adopt`** — bring a repo that already has code and history into Cadence, deriving `PROJECT.md`, `REQUIREMENTS.md` and a remaining-work `ROADMAP.md` from what is already there.
 - **`/cad-config`** — the `stakes` level, workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly, as in `/cad-config stakes=shipped`.
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
