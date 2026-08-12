@@ -121,6 +121,28 @@ set never does. Per backend:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --detail "<what failed>"
   ```
 
+  **An `advisory` gate inverts the bracket's writer.** No fire site halts on an
+  advisory return, and the overlapped fires (`plan`'s advisory arm, `diff`'s
+  advisory arm on a non-final plan) can end their session before it lands - a
+  dispatch recorded with findings and return lost is a review that burned a
+  full dispatch to report to nobody. So when step 1 resolved the gate
+  `advisory`, the DISPATCH PROMPT carries a persistence tail and the REVIEWER,
+  not this site, closes the bracket:
+  - the findings path `.planning/phases/<N>/REVIEW-<trigger>.md` (a per-plan
+    fire suffixes it: `REVIEW-diff-plan-<k>.md`), where the reviewer writes
+    the same JSON object it returns, and
+  - the return-append command above with `${CLAUDE_PLUGIN_ROOT}` already
+    expanded to its absolute path (the subagent does not inherit the variable)
+    and NO `--tokens` - a subagent never sees its own figure.
+  This site then appends NO return and no checkpoint for an advisory fire,
+  even when the return does land in-session - two writers on one bracket is a
+  double-close. The step that reports advisory findings reads the FILE; a path
+  not yet on disk is reported as "review in flight - findings land at <path>",
+  never as a clean pass. The trade is stated, not hidden: advisory reviewer
+  returns carry no token figure in the trace (figureless by construction) -
+  durability of findings over pricing fidelity, and the overlapped fire was
+  already losing both.
+
   That agent is the reviewer rung the LEVEL names -
   `cad-reviewer-medium` at solo, the unsuffixed `cad-reviewer` (this role's
   `high` rung) at shipped and on a solo retry, `cad-reviewer-xhigh` at

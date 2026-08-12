@@ -8,6 +8,19 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **An advisory review persists its own findings.** The advisory arms fire
+  overlapped - the `plan` trigger beside the docs commit, per-plan `diff`
+  beside the next dispatch - and nothing waits for the return, so a session
+  that ends first lost the findings and the trace return entirely: a full
+  reviewer dispatch reporting to nobody (the first external dogfood run
+  recorded exactly that). On an advisory gate the dispatch prompt now carries
+  a persistence tail: the reviewer writes its findings JSON to
+  `.planning/phases/<N>/REVIEW-<trigger>.md` and appends its own figureless
+  return before returning, and the fire site stops closing that bracket. The
+  reporting step reads the file; not-yet-on-disk is reported as in flight,
+  never as a clean pass. The trade is explicit: advisory reviewer returns
+  carry no token figure - findings durability over pricing fidelity.
+
 - **The release tag moves to `/cad-land`, after the merge.** `/cad-milestone`
   cut the annotated tag at HEAD on the integration branch, before any merge -
   so a non-fast-forward land left the milestone tag naming a commit base does

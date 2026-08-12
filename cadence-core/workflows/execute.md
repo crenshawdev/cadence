@@ -271,9 +271,13 @@ adjudicates the whole branch at land. The arms below are what a user who sets
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather
 than waiting: the artifact is two immutable refs, so the reviewer reads nothing
-that executor writes, and nothing downstream waits on the answer. Collect each
-review as it lands and fold it into `summary`. The last plan has no next
-dispatch, so it fires and waits. When
+that executor writes, and nothing downstream waits on the answer. Each fire
+carries the advisory persistence tail (review-triggers.md step 4): findings
+land at `.planning/phases/<N>/REVIEW-diff-plan-<k>.md` whether or not this
+session survives to the return, and `summary` folds the files on disk, naming
+any still in flight. The last plan has no next dispatch, so it fires without
+waiting on the same tail - the gate, not the overlap, picks the bracket's
+writer. When
 `review.triggers.diff.gate` resolves it to `adjudicated` instead, the fire
 BLOCKS before the next dispatch - triage can change what ships, and answering
 about plan 1 while plan 2 commits is answering about a tree that is gone. The

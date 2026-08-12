@@ -327,8 +327,12 @@ the PLAN file(s). The gate comes from the routing bundle; act on it:
   file(s) already on disk and the commit alters none of them, so the reviewer
   reads nothing the commit writes, and advisory findings gate nothing
   downstream - serializing them buys a wait for findings that stop nothing
-  (the same overlap the per-plan `diff` review runs at advisory). Collect the
-  return when it lands and fold the findings into `done`'s report line.
+  (the same overlap the per-plan `diff` review runs at advisory). The dispatch
+  carries the advisory persistence tail (review-triggers.md step 4): the
+  reviewer writes its findings to `.planning/phases/<N>/REVIEW-plan.md` and
+  closes its own bracket, so this session ending before the return lands
+  loses nothing. `done` reads that file if it is on disk by then; otherwise
+  its Review line names the path as in flight - never a clean pass.
 - **blocking** -> fire and WAIT; halt on FAIL until findings are fixed or the
   user overrides.
 - **adjudicated** -> fire and WAIT - triage precedes the commit because an
