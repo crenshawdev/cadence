@@ -89,6 +89,19 @@ the prose those claims are about MOVED there whole. The join still reads: it
 matches on `doc` plus claim text, both cells were updated together, and the
 claim text is byte-identical to what run 1 read.
 
+Phase 1 of `v3.1.0` re-pinned the ten `cadence-core/workflows/context.md` rows
+to their locations in the LIVE file rather than at `a6b8931`, so those cells are
+no longer run-1 provenance and are the only ones that are not. Four of them
+(CONTEXT-03, CONTEXT-06, CONTEXT-07, CONTEXT-15) were already stale before that
+phase opened; the rest moved because the phase inserted a coordinator-marker
+preamble and a new `spend_gate` step above them. Left alone, the next sweep
+would have reported a wave of `stale` verdicts produced by line SHIFTS rather
+than by any claim changing, which is the signal this ledger exists to keep
+readable. The join is unaffected - it is on `doc` plus claim text - and only
+CONTEXT-03's TEXT changed, because that claim itself had become false
+(`workflow.subagent_timeout` was deleted from the seam, so the call no longer
+reads two keys).
+
 **Resolution values.** `accurate` on every row the sweep confirmed;
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
 the commit that edited it; `divergence - <reason>` on one deliberately left
@@ -416,23 +429,23 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-REVIEW-08 | cadence-core/workflows/config-review.md | 72-76 | `config.mjs set 'review.providers.<name>.tiers.<pos>=<id>'` is the write path. | accurate | accurate |
 | CONFIG-REVIEW-09 | cadence-core/workflows/config-review.md | 80-82 | Adding a provider to `review.reviewers` via `set 'review.reviewers=["claude-subagent","openai"]'` is what enrolls it. | accurate | accurate |
 | CONFIG-REVIEW-10 | cadence-core/workflows/config-review.md | 78-80 | `claude-subagent` is the always-available fallback when a tier is `null`. | accurate | accurate |
-| CONTEXT-01 | cadence-core/workflows/context.md | 20-22 | `planning.mjs cursor get` returns `no-cursor` when STATE.md is absent. | accurate | accurate |
+| CONTEXT-01 | cadence-core/workflows/context.md | 34-35 | `planning.mjs cursor get` returns `no-cursor` when STATE.md is absent. | accurate | accurate |
 | CONTEXT-02 | cadence-core/workflows/context.md | 12 | Output path `.planning/phases/{N}/CONTEXT.md`. | accurate | accurate |
-| CONTEXT-03 | cadence-core/workflows/context.md | 76 | `config.mjs get memory.backend workflow.subagent_timeout` reads both in one call. | accurate | accurate |
-| CONTEXT-04 | cadence-core/workflows/context.md | 79 | `builtin` is the schema default for `memory.backend`. | accurate | accurate |
+| CONTEXT-03 | cadence-core/workflows/context.md | 97 | `config.mjs get memory.backend` reads the recall gate in one call. | accurate | accurate |
+| CONTEXT-04 | cadence-core/workflows/context.md | 100 | `builtin` is the schema default for `memory.backend`. | accurate | accurate |
 | CONTEXT-05 | cadence-core/references/recall.md | 15, 18, 25 | `planning.mjs recall "<terms>"` exists and returns `{ok, results:[{score, source, phase?, snippet}]}` with `phase` optional. | accurate | accurate |
-| CONTEXT-06 | cadence-core/workflows/context.md | 107 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate |
-| CONTEXT-07 | cadence-core/workflows/context.md | 107 | `--family lifecycle` is a valid family. | accurate | accurate |
-| CONTEXT-08 | cadence-core/workflows/context.md | 113 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate |
+| CONTEXT-06 | cadence-core/workflows/context.md | 163-165 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate |
+| CONTEXT-07 | cadence-core/workflows/context.md | 163-165 | `--family lifecycle` is a valid family. | accurate | accurate |
+| CONTEXT-08 | cadence-core/workflows/context.md | 168 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate |
 | CONTEXT-09 | cadence-core/bin/lib/trace.mjs | 51-54 | Measured token figures: analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034. | accurate | accurate |
 | CONTEXT-10 | cadence-core/bin/lib/trace.mjs | 54-55 | A built-in agent type (`Explore`) returned no token figure at all. | accurate | accurate |
 | CONTEXT-11 | cadence-core/bin/lib/trace.mjs | 56-59 | `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT. | accurate | accurate |
 | CONTEXT-12 | cadence-core/bin/lib/trace.mjs | 60-64 | A dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere. | accurate | accurate |
 | CONTEXT-13 | cadence-core/bin/lib/trace.mjs | 64-65 | The census in `trace.test.mjs` binds these lines per file. | accurate | accurate |
-| CONTEXT-14 | cadence-core/workflows/context.md | 155 | The failure arm closes with `--event checkpoint`. | accurate | accurate |
-| CONTEXT-15 | cadence-core/workflows/context.md | 351 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate |
-| CONTEXT-16 | cadence-core/workflows/context.md | 254-256 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate |
-| CONTEXT-17 | cadence-core/workflows/context.md | 396-397 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate |
+| CONTEXT-14 | cadence-core/workflows/context.md | 206 | The failure arm closes with `--event checkpoint`. | accurate | accurate |
+| CONTEXT-15 | cadence-core/workflows/context.md | 367 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate |
+| CONTEXT-16 | cadence-core/workflows/context.md | 304-306 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate |
+| CONTEXT-17 | cadence-core/workflows/context.md | 413-414 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate |
 | COVERAGE-01 | cadence-core/workflows/coverage.md | 12-13 | `planning.mjs status` reports per-phase status. | accurate | accurate |
 | COVERAGE-02 | cadence-core/workflows/coverage.md | 13-19 | Statuses include `complete` and `executed` (and `unplanned` / `planned`). | accurate | accurate |
 | COVERAGE-03 | cadence-core/workflows/coverage.md | 14-15 | `ok:false` reasons include `no-planning-dir` and `no-roadmap`, each carrying a `hint`. | accurate | accurate |
