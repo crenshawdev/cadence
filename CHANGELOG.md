@@ -8,6 +8,16 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Changed
 
+- **`/cad-decision-review` joins the run record.** Its `cad-reviewer` dispatch
+  was the one paid worker in the spine with no lifecycle bracket - the cost
+  never reached the trace. It now brackets like every other site (dispatch /
+  return / checkpoint), keyed to the decision's phase, or the STATE cursor's
+  phase for a PROJECT.md row. The reviewer contract also now admits this
+  caller's inlined artifact: decision text arrives in the prompt, and the
+  resolve-or-blocker rule binds only when the artifact is a reference - a
+  literal reading could previously bail with a bogus "reference does not
+  resolve" blocker instead of reviewing.
+
 - **An advisory review persists its own findings.** The advisory arms fire
   overlapped - the `plan` trigger beside the docs commit, per-plan `diff`
   beside the next dispatch - and nothing waits for the return, so a session

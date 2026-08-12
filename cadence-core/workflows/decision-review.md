@@ -42,9 +42,31 @@ Assemble `{ instruction, artifact }`:
 
 Resolve the reviewer set exactly as references/review-triggers.md step 3
 does, from `review.reviewers[]`:
-- **claude-subagent** (always available): dispatch `cad-reviewer` through the
+- **claude-subagent** (always available): bracket this worker in the joined
+  run record first - it was the one paid dispatch in the spine that never
+  reached the record. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
+  a PROJECT.md row it is the STATE cursor's phase (the rule review-triggers.md
+  step 4 already states for a milestone-scoped trigger):
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<the decision doc path>"
+  ```
+
+  Then dispatch `cad-reviewer` through the
   spawn-agent seam with the payload above as its prompt. Parse the returned
-  `{findings:[...]}`. No routing cell resolves a model for this arm - it is the
+  `{findings:[...]}` and close the bracket the moment you have it. OMIT
+  `--tokens` on a figureless return (seams.md's bracket rule):
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
+  ```
+
+  A dispatch that failed or returned nothing parseable closes as a checkpoint
+  instead, so the burned budget still reaches the record:
+
+  ```
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --detail "<what failed>"
+  ``` No routing cell resolves a model for this arm - it is the
   base `cad-reviewer` at the session default, at every stakes level - and
   `review.decision_review.tier` and `.effort` reach the cross-model arm below
   only, whatever the stakes level is (D-04).
