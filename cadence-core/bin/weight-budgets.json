@@ -20,7 +20,7 @@
   "agents/cad-verifier-medium.md": 450,
   "agents/cad-verifier-xhigh.md": 446,
   "agents/cad-verifier.md": 472,
-  "cadence-core/references/COMMANDS.md": 4027,
+  "cadence-core/references/COMMANDS.md": 4190,
   "cadence-core/references/acceptance-criteria.md": 22506,
   "cadence-core/references/bug-patterns.md": 4247,
   "cadence-core/references/config-catalog.md": 7923,
@@ -99,6 +99,8 @@
   "skills/cad-task/SKILL.md": 737,
   "skills/cad-undo/SKILL.md": 1093,
   "skills/cad-verifier-contract/SKILL.md": 10201,
-  "skills/cad-verify/SKILL.md": 1049
+  "skills/cad-verify/SKILL.md": 1049,
+  "skills/cad-report/SKILL.md": 755,
+  "cadence-core/workflows/report.md": 3065
  }
 }

@@ -118,6 +118,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
+- **`/cad-report`** — the run record as receipts: what each dispatch cost, what the gates caught, what got refuted. The trace prices every subagent Cadence runs; this is where you read the bill.
 - **`/cad-health`** — a quick planning-health check.
 - **`/cad-help`** — the command reference.
 

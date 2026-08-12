@@ -8,6 +8,14 @@ All notable changes to Cadence are recorded here. The format follows
 
 ### Added
 
+- **`/cad-report` - the run record as receipts.** Renders a phase's
+  trace.jsonl and artifacts as the story of what the tokens bought: every
+  dispatch priced from its own bracket (role, rung, tokens, minutes), every
+  gate's outcome named, every deviation that refuted a D-NN cited, plus
+  record health (unpaired brackets, malformed lines). Read-only, no subagent,
+  and a number absent from the record is reported absent, never estimated.
+  `--all` gives the milestone view.
+
 - **Self-tuning suggestions at the milestone close.** `planning.mjs trace
   suggest` reads the joined run record and returns evidence-backed config
   suggestions - a review trigger whose adjudicated fires kept coming back
