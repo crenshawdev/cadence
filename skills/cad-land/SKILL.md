@@ -197,8 +197,8 @@ rather than a schema default no layer wrote.
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. The one
   exception is `git.auto_close` (default off), the explicit opt-in that runs the
-  close unattended: it SKIPS the 4a ask rather than preselecting a default in it,
-  and it still halts on a blocking `pre_ship` finding.
+  close unattended; its mechanic is stated once, at steps 3 and 4(b), beside the
+  code that runs it.
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.
 - No survivor is acted on that the user did not pick: adjudicated `pre_ship`
