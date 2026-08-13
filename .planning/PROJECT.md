@@ -104,32 +104,40 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-`v3.1.0 — Cadence meets outside work` opened on 2026-08-12: seven requirements
-(`ADP-01`, `BRF-01`, `TRC-01`, `SIZ-01`, `MIN-01`, `XCP-01`, `CTW-06`), three
-phases, tracked as issues #95, #96, #101, #106-#109 on the `v3.1.0` milestone.
+No cycle open. `v3.1.0 — Cadence meets outside work` closed on 2026-08-13: eight
+requirements (`ADP-01`, `BRF-01`, `TRC-01`, `SIZ-01`, `MIN-01`, `XCP-01`,
+`CTW-06`, `TUN-01`), three phases, 59 commits, the audit green (8/8 traced, 0
+broken; 21/21 acceptance criteria covered), the manifest at `3.1.0`. Its eight
+rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in
+`CHANGELOG.md`, and its phase record in git history at the pruning commit -
+this close ran `--mode delete`, so there is no `_archive-v3.1.0/`. The merge and
+the release tag are still outstanding: `/cad-land` on `cadence/v3.1.0`, and the
+tag cut by hand on the pulled base, since `git.create_tag` is false at both
+config layers.
 
-Scoped from the v3.0.0 backlog and its dogfood evidence. `v3.0.0 — review depth
-is bought, and the trace reads the bill` shipped on 2026-08-12: the defaults
-retune (reviewer starts `high`, `pre_ship` advisory, escalation and
-`plan_check` off), the pipeline-tax cuts, tag-after-merge with a Forgejo arm,
-advisory reviews that persist their own findings and brackets, and two receipts
-surfaces - `planning.mjs trace suggest` with a milestone retune check, and
-`/cad-report`. It was validated on the first EXTERNAL project run rather than
-on Cadence itself: verbatim, a Rust archive tool with no Cadence history, taken
-from init through a verified phase 1 (17 commits, UAT 8/8) at ~968k recorded
-subagent tokens across seven dispatches, a 73% cut on the plan step against the
-old measured run, three reproduced defects caught by gates that fired, and one
-blocking loop that capped itself at a single re-arm.
+What it delivered: the two gaps the first external run exposed, neither of which
+could have surfaced from Cadence auditing Cadence. `/cad-adopt` gives a
+brownfield repo an entrance - it derives the planning docs from code, manifest
+and history and asks only what the repo cannot answer - and `--brief <file>`
+stops re-interrogating a project that arrived with a design brief. The receipts
+now price the coordinator as well as the workers, and `/cad-context` has a spend
+gate that asks whether the spine's most expensive dispatch is worth buying for a
+given phase. Over-building is named at both points it can be caught: at build
+time by a lean-first posture the executor reads behind a deferred `Read`, at
+review time by `/cad-minimalism-review`, whose apply-nothing posture is
+structural - the skill grants neither `Write` nor `Edit`. `/cad-suggest` gives
+the tuner a front door, and `/cad-capture --cadence` closes the loop that ten
+projects of field use never closed: friction found on somebody else's project
+now leaves that project and reaches Cadence's own queue.
 
-That run is why this cycle looks the way it does. Two gaps it exposed could not
-have surfaced from Cadence auditing Cadence: the front door assumes a blank
-page (verbatim arrived with a design brief and got re-interrogated; a
-brownfield repo has no entrance at all), and the receipts price the workers but
-not the coordinator, and never ask whether the spine's most expensive dispatch
-was worth buying for a given phase. Phase 1 closes the accounting, phase 2
-builds the door, phase 3 carries the minimalism lens back in - its resident-prose
-objection now answered by the deferral machinery v2.6.2 shipped - plus the
-Cadence-directed capture and the last of the v2.6.2 byte work.
+The next milestone is unscoped. The candidate pool is `.planning/CAPTURE.md` —
+283 open todos, 18 tagged `[high]`, 21 from review passes — plus the delete-list
+`/cad-minimalism-review` returned over this cycle's own range, whose blocker is
+`cadence-core/references/lean-build.md`: a 3,089 B deferred file with one consult
+site that already states both of its load-bearing sentences. The process items
+that have now been hand-written twice are still open too: `/cad-milestone` has no
+close-only arm (this close was the third to write one by hand), and `pre_ship`
+is gated off rather than removed.
 
 ## Key Decisions
 

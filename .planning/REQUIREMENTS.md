@@ -1,29 +1,21 @@
-# Requirements: Cadence (v2.6.1 shipped)
+# Requirements: Cadence (v3.1.0 closed)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.1.0 — Cadence meets outside work` opened on 2026-08-12, scoped from the
-v3.0.0 backlog: the first external-project dogfood run (verbatim, phase 1
-end-to-end at ~968k recorded subagent tokens under the retuned defaults) plus
-the tracker picks #95, #96, #101, #106-#110. Two themes: work that started
-outside Cadence (a brownfield repo, a freeform discovery session, friction
-noticed on a host project), and the accounting the trace still misses (the
-coordinator itself, the one dispatch bought without a sizing question, and the
-tuner that reads the finished record having no front door to reach it by).
-
-
-`/cad-plan` seeds each requirement's Traceability row as its phase is planned -
-rows are never hand-populated here.
-
-## Shipped` below, its phase record in `.planning/_archive-v2.6.2/`, and its
-narrative in `CHANGELOG.md`.
+No cycle open. `v3.1.0 — Cadence meets outside work` closed on 2026-08-13: eight
+requirements (`ADP-01`, `BRF-01`, `TRC-01`, `SIZ-01`, `MIN-01`, `XCP-01`,
+`CTW-06`, `TUN-01`), three phases, 59 commits, the audit green (8/8 traced, 0
+broken; 21/21 acceptance criteria covered). Its rows sit under `## Shipped`
+below, its narrative in `CHANGELOG.md`, and its phase record in git history -
+this close ran `--mode delete`, so there is no `_archive-v3.1.0/`.
 
 The next milestone's requirements are seeded here when it opens. The candidate
-pool is `.planning/CAPTURE.md`, which holds 260 open todos - 18 tagged `[high]`
-and 21 sourced from review passes, clustering on gate correctness.
+pool is `.planning/CAPTURE.md`, which holds 283 open todos - 18 tagged `[high]`
+and 21 sourced from review passes, clustering on gate correctness - plus the
+three ids already in `## Deferred` below (`PRS-01`, `EVD-01`, `CTX-02`).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
