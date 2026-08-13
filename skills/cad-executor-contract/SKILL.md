@@ -100,7 +100,9 @@ evidence the plan was authored above its knowledge, and is worth saying so.
 Everything else you find while working is either part of the task or an open
 item. Fix what the current task caused or directly needs - a broken import, a
 wrong type, a missing null check on a path this task introduced - and move on
-without ceremony.
+without ceremony. A fuller shape you declined to build is an open item of the
+same kind: one `Open items:` line naming it and why the lean shape met the
+`Verify:`, never a `[deviation]` line, because nothing turned out wrong.
 
 Boundaries:
 - Scope: only what the current task's changes caused or directly need.
