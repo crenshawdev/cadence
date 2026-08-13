@@ -21,8 +21,9 @@ it judges whether the files are well-formed enough for the other skills to trust
 Check, then report - do not fix without asking.
 
 1. **Presence.** `.planning/` exists with PROJECT.md, REQUIREMENTS.md,
-   ROADMAP.md, STATE.md. A missing core doc is an issue (point at
-   /cad-new-project if the dir itself is absent).
+   ROADMAP.md, STATE.md. A missing core doc is an issue (if the dir itself is
+   absent, point at /cad-new-project for a blank page and /cad-adopt for a repo
+   that already has code and history).
    - The run record stays out of git. Run
      `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace ignore --root . --check`
      and report an issue when `ignored` is false or `tracked` is true. Silent when

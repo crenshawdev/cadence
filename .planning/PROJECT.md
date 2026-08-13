@@ -104,27 +104,40 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `v2.6.2 — what the plugin carries` shipped on 2026-08-10: five
-requirements (`CTW-01`..`CTW-05`), three phases, 21 commits, the audit green
-(5/5 traced, 0 broken; 21/21 acceptance criteria covered), the manifest at
-`2.6.2`. Its five CTW rows sit in `.planning/REQUIREMENTS.md` under
-`## Shipped`, its phase record in `.planning/_archive-v2.6.2/`, and its
-narrative in `CHANGELOG.md`.
+No cycle open. `v3.1.0 — Cadence meets outside work` closed on 2026-08-13: eight
+requirements (`ADP-01`, `BRF-01`, `TRC-01`, `SIZ-01`, `MIN-01`, `XCP-01`,
+`CTW-06`, `TUN-01`), three phases, 59 commits, the audit green (8/8 traced, 0
+broken; 21/21 acceptance criteria covered), the manifest at `3.1.0`. Its eight
+rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in
+`CHANGELOG.md`, and its phase record in git history at the pruning commit -
+this close ran `--mode delete`, so there is no `_archive-v3.1.0/`. The merge and
+the release tag are still outstanding: `/cad-land` on `cadence/v3.1.0`, and the
+tag cut by hand on the pulled base, since `git.create_tag` is false at both
+config layers.
 
-What it delivered: turn-one prose across the 23 user-invocable commands fell
-269,045 B to 252,653 B, with `/cad-config` going 20,547 B to 12,770 B. Six
-spans moved behind a `Read` at the step that needs them, each anchored by a
-register row whose falsifier was watched to fail. Two new self-verify checks
-came first, deliberately: this tree had shipped a 5,792 B eager include nothing
-read, and cutting prose before CI could watch a deferral would have meant
-cutting on the same evidence that produced the defect.
+What it delivered: the two gaps the first external run exposed, neither of which
+could have surfaced from Cadence auditing Cadence. `/cad-adopt` gives a
+brownfield repo an entrance - it derives the planning docs from code, manifest
+and history and asks only what the repo cannot answer - and `--brief <file>`
+stops re-interrogating a project that arrived with a design brief. The receipts
+now price the coordinator as well as the workers, and `/cad-context` has a spend
+gate that asks whether the spine's most expensive dispatch is worth buying for a
+given phase. Over-building is named at both points it can be caught: at build
+time by a lean-first posture the executor reads behind a deferred `Read`, at
+review time by `/cad-minimalism-review`, whose apply-nothing posture is
+structural - the skill grants neither `Write` nor `Edit`. `/cad-suggest` gives
+the tuner a front door, and `/cad-capture --cadence` closes the loop that ten
+projects of field use never closed: friction found on somebody else's project
+now leaves that project and reaches Cadence's own queue.
 
 The next milestone is unscoped. The candidate pool is `.planning/CAPTURE.md` —
-260 open todos, 18 tagged `[high]`, 21 from review passes, clustering on gate
-correctness: the one-round re-arm cap living only in `triage-gate.md` which the
-`risk_surface` fire sites never load, `version_drift`'s comparand being a prose
-scan, `why_human` read as a human-only predicate, and the deferred-reads
-register being unable to anchor a `Read` nested inside a reference.
+283 open todos, 18 tagged `[high]`, 21 from review passes — plus the delete-list
+`/cad-minimalism-review` returned over this cycle's own range, whose blocker is
+`cadence-core/references/lean-build.md`: a 3,089 B deferred file with one consult
+site that already states both of its load-bearing sentences. The process items
+that have now been hand-written twice are still open too: `/cad-milestone` has no
+close-only arm (this close was the third to write one by hand), and `pre_ship`
+is gated off rather than removed.
 
 ## Key Decisions
 

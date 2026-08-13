@@ -85,7 +85,7 @@ export const MAX_TRACE_BYTES = 1048576;
 /** The four event families. A family outside this list is refused by the seam. */
 export const FAMILIES = ['routing', 'provider', 'lifecycle', 'outcome'];
 
-// The three lifecycle names below are EXPORTED so the producer census in
+// The four lifecycle names below are EXPORTED so the producer census in
 // trace.test.mjs reads the renderer's real vocabulary rather than a copy of it:
 // a test holding its own list would go green on the day a prose surface and the
 // renderer stopped agreeing, which is the whole failure it exists to catch.
@@ -102,6 +102,27 @@ export const TERMINAL = ['return', 'checkpoint', 'escalation'];
 
 /** The lifecycle event that ANCHORS a phase's correlation id. */
 export const ANCHOR = 'phase_start';
+
+/**
+ * The lifecycle event the COORDINATOR writes at the start of a workflow step it
+ * can name. It is a fifth lifecycle NAME, not a fifth family: `FAMILIES` is
+ * validated at the seam while `renderTrace`'s `counts` is a fixed four-key
+ * literal, so a fifth family would write fine and count nowhere.
+ *
+ * It opens nothing, closes nothing and pairs with nothing - the same shape
+ * `ANCHOR` already has. It carries the step's name and its timestamp and
+ * NOTHING else: never `--role`, because per-role accounting bills the worker
+ * that a DISPATCH opened and an empty-string role would render a nameless
+ * worker row; and never `--tokens`, because a token figure is read off a
+ * SUBAGENT's return metadata and the coordinator has no such return to read (see
+ * TOKEN PROVENANCE above - a fabricated figure is worse than an absent one).
+ *
+ * What the coordinator cost is therefore DERIVED, never reported: the residue
+ * of a step's wall span after the paired bracket spans inside it are subtracted.
+ * A marker carrying its own elapsed field would give one quantity two sources,
+ * and they disagree the first time a bracket is left unpaired.
+ */
+export const COORDINATOR = 'coordinator';
 
 /** @param {string} planningRoot */
 export function tracePath(planningRoot) {
@@ -262,6 +283,15 @@ export function appendEvent(planningRoot, event) {
 }
 
 /**
+ * @typedef {object} CoordinatorResidue
+ * @property {number} wall_ms the summed span of every step window
+ * @property {number} bracket_ms how much of that span a worker bracket held
+ * @property {number} residue_ms what is left: the coordinator's own time
+ * @property {{phase: any, step: any, ts: any, residue_ms: number}[]} steps
+ *   one row per marker, in time order
+ */
+
+/**
  * @typedef {object} TraceRender
  * @property {string} file the trace file's path
  * @property {string|null} corr the phase's derived id, or null with no `--phase`
@@ -272,7 +302,46 @@ export function appendEvent(planningRoot, event) {
  *   what each role COST, keyed by the lifecycle events' `role` field
  * @property {Record<string, any>[]} events
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
+ * @property {CoordinatorResidue} [coordinator] present ONLY when the scoped events
+ *   carry at least one usable COORDINATOR marker, so a trace written before that
+ *   marker existed renders byte-identically to the way it always did
  */
+
+/**
+ * A timestamp as milliseconds, or null when there is nothing to read. Every
+ * arithmetic path below goes through this: an event whose `ts` is absent,
+ * non-string or unparseable contributes NOTHING rather than putting a NaN into
+ * a total, because one NaN poisons every sum it reaches and the render would
+ * report `null` for a residue the rest of the record could still describe.
+ * @param {any} v
+ * @returns {number|null}
+ */
+function millis(v) {
+  if (typeof v !== 'string' || !v) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * The union of a set of half-open intervals, merged and in order.
+ *
+ * Merging BEFORE subtraction is what stops two workers running at once from
+ * subtracting the same wall time twice - the parallel execute path dispatches a
+ * worker per plan, so overlapping brackets are the normal case there, and
+ * summing their lengths would drive a real coordinator gap to zero.
+ * @param {{a: number, b: number}[]} spans
+ * @returns {{a: number, b: number}[]}
+ */
+function mergeSpans(spans) {
+  const sorted = spans.slice().sort((x, y) => x.a - y.a);
+  /** @type {{a: number, b: number}[]} */
+  const out = [];
+  for (const s of sorted) {
+    const last = out[out.length - 1];
+    if (last && s.a <= last.b) { if (s.b > last.b) last.b = s.b; } else out.push({ a: s.a, b: s.b });
+  }
+  return out;
+}
 
 /**
  * Read the trace in line order, group by family, and pair every worker bracket.
@@ -294,6 +363,10 @@ export function appendEvent(planningRoot, event) {
  *
  * An absent file is an empty render, never an error: the same
  * never-blocks-the-spine contract `recall` follows.
+ *
+ * The `coordinator` block is the one part of the shape that is CONDITIONAL: it
+ * appears only where a COORDINATOR marker did, so every trace written before
+ * that marker existed renders exactly as it always did.
  * @param {string} planningRoot
  * @param {any} [phase] restrict to one phase
  * @returns {TraceRender}
@@ -331,6 +404,23 @@ export function renderTrace(planningRoot, phase) {
     return row;
   };
 
+  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. A
+  // marker written before that phase's `phase_start` takes the phase-only id
+  // while everything after the anchor takes the derived one (D-04), so a
+  // corr-keyed rollup would split ONE coordinator's record into two and report
+  // its time twice. `last` is the phase's newest timestamp across every family,
+  // because the final marker's window has no next marker to close it and the
+  // phase's own last event is the only honest end for it.
+  /** @type {Map<string, {phase: any, markers: {step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
+  const coord = new Map();
+  /** @param {any} p */
+  const coordRow = (p) => {
+    const k = key(p);
+    let row = coord.get(k);
+    if (!row) { row = { phase: p, markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
+    return row;
+  };
+
   try {
     out.capped = statSync(file).size >= MAX_TRACE_BYTES;
   } catch { /* absent or unreadable - handled by the read below */ }
@@ -352,7 +442,27 @@ export function renderTrace(planningRoot, phase) {
     if (wanted !== null && key(e.phase) !== wanted) continue;
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
+
+    // Every family feeds the phase's end-of-record mark, not the lifecycle one
+    // alone: the coordinator's last step is still running while the routing and
+    // outcome events it produced are being written, so an end taken from
+    // lifecycle events only would stop the clock early.
+    const t = millis(e.ts);
+    if (t !== null) {
+      const row = coordRow(e.phase);
+      if (t > row.last) row.last = t;
+    }
+
     if (e.family !== 'lifecycle') continue;
+
+    // The marker is collected HERE rather than in the per-role chain below, so
+    // that chain keeps billing only the workers a DISPATCH opened: a coordinator
+    // event carries no `--role` at all (D-07), and a branch that keyed the empty
+    // string would render a nameless worker row through `workflows/progress.md`.
+    if (e.event === COORDINATOR) {
+      if (t !== null) coordRow(e.phase).markers.push({ step: e.step, ts: e.ts, t });
+      continue;
+    }
 
     // Per-role accounting rides the PAIRING below, not each event's own `role`.
     // A bracket's two halves are written by two separate prose lines, so
@@ -385,6 +495,16 @@ export function renderTrace(planningRoot, phase) {
     } else if (TERMINAL.includes(e.event)) {
       const pending = open.get(worker);
       const matched = pending && pending.length ? pending.shift() : null;
+      // A bracket contributes its span to the residue only once it has PAIRED,
+      // which is why the span is taken here and not from the dispatch half: an
+      // unpaired dispatch (the fixture's 12:24:57 `cad-reviewer` is one) has no
+      // known end, and inventing one - the phase's last event, say - would
+      // subtract a worker's whole tail from the coordinator's bill and hide the
+      // gap the marker exists to show.
+      if (matched) {
+        const a = millis(matched.ts);
+        if (a !== null && t !== null && t > a) coordRow(e.phase).spans.push({ a, b: t });
+      }
       if (tokens !== null) {
         // Bill the DISPATCH's role. An unmatched terminal has no dispatch to
         // speak for it, so it falls back to its own `role`: its tokens show,
@@ -430,5 +550,53 @@ export function renderTrace(planningRoot, phase) {
     }]);
   }
   out.roles = Object.fromEntries(rows);
+
+  // The coordinator's own time, computed ONCE here rather than by each reader.
+  // `/cad-report` and `trace suggest` both read this block, so the two cannot
+  // report different numbers for the same run - the arithmetic is D-01's, and
+  // the only thing that changed is that it lives in one place.
+  //
+  // A step's window runs from its marker to the NEXT marker in the same phase,
+  // and the last marker's window ends at that phase's last event. Inside the
+  // window, the merged bracket spans are clipped to it and subtracted; what
+  // survives is what the coordinator was doing while no worker was running.
+  // Floored at zero because a window can be shorter than the brackets clipped
+  // into it once a bracket straddles two markers, and a negative residue would
+  // read as the coordinator having given time back.
+  /** @type {{phase: any, step: any, ts: any, t: number, residue_ms: number}[]} */
+  const stepRows = [];
+  let wallMs = 0;
+  let bracketMs = 0;
+  let residueMs = 0;
+  for (const row of coord.values()) {
+    if (!row.markers.length) continue;
+    row.markers.sort((x, y) => x.t - y.t);
+    const merged = mergeSpans(row.spans);
+    for (let i = 0; i < row.markers.length; i++) {
+      const m = row.markers[i];
+      const end = i + 1 < row.markers.length ? row.markers[i + 1].t : row.last;
+      const wall = Math.max(0, end - m.t);
+      let bracket = 0;
+      for (const s of merged) {
+        const lo = Math.max(s.a, m.t);
+        const hi = Math.min(s.b, m.t + wall);
+        if (hi > lo) bracket += hi - lo;
+      }
+      const residue = Math.max(0, wall - bracket);
+      stepRows.push({ phase: row.phase, step: m.step, ts: m.ts, t: m.t, residue_ms: residue });
+      wallMs += wall;
+      bracketMs += bracket;
+      residueMs += residue;
+    }
+  }
+  if (stepRows.length) {
+    stepRows.sort((x, y) => x.t - y.t);
+    out.coordinator = {
+      wall_ms: wallMs,
+      bracket_ms: bracketMs,
+      residue_ms: residueMs,
+      steps: stepRows.map(({ phase: p, step, ts, residue_ms }) => ({ phase: p, step, ts, residue_ms })),
+    };
+  }
   return out;
 }

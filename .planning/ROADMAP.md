@@ -2,44 +2,40 @@
 
 ## Overview
 
-**`v2.6.2 — what the plugin carries`, opened 2026-08-10.** Scoped from a
-context-weight sweep of Cadence's own eager surfaces — four parallel read-only
-passes over the heaviest `@`-included prose, recorded in
-`design-notes/sweep-2026-08-10-context-weight.md` and filed as issues #98-#103.
+**`v3.1.0 — Cadence meets outside work`, opened 2026-08-12.** Scoped from the
+v3.0.0 backlog and the first external-project dogfood run: verbatim, a Rust
+project with no Cadence history, taken from `/cad-new-project` through a
+verified phase 1 under the retuned defaults. That run is the evidence this
+cycle is built on, and it exposed two gaps of a kind Cadence auditing Cadence
+could never surface.
 
-The measured baseline: 119,232 est tokens of shipped prose, and an eager set per
-command of 28,682 B on `/cad-execute`, 24,533 B on `/cad-verify`, 22,662 B on
-`/cad-plan`, 20,777 B on `/cad-context`, 20,547 B on `/cad-config` and 18,209 B
-on `/cad-land`. Those are the bytes an `@`-include puts in context on turn one
-and keeps there every turn after, before the command reads a single project
-file. ~39,700 B of it is removable.
+**The first gap is the front door.** `/cad-new-project` assumes a blank page.
+Verbatim arrived with a design brief from a freeform discovery session, and
+the questioning re-asked things the brief had already settled — its first
+commit is literally "restart from the design brief". Every other project that
+tries Cadence arrives with something worse: an existing repo, a messy history,
+and no way in at all. `ADP-01` and `BRF-01` are that door, and `XCP-01` is the
+same theme from the other side — friction noticed while using Cadence on
+somebody else's project, reaching Cadence's own queue instead of the host's.
 
-**The sweep also falsified the obvious hypothesis, and that is why this cycle
-looks the way it does.** Skill frontmatter `description:` fields — the suspected
-bloat — total 3,730 B across all 29 skills, against 27,940 B for
-`workflows/execute.md` alone. One command's eager include outweighs the entire
-description surface by 7x, and descriptions are what make the model select the
-right command at all. Nothing in this cycle touches them.
+**The second gap is in the receipts.** v3.0.0 shipped `trace suggest` and
+`/cad-report` on the claim that the run record prices the work. It prices the
+subagents: verbatim phase 1 recorded ~968k subagent tokens across seven
+dispatches. It does not price the coordinator, which was half of the original
+cost spiral, and it never asks whether the single most expensive dispatch in
+the spine — the assumptions analyzer, 75k on phase 1 and 132k on phase 2 —
+was worth buying for this phase at all. `TRC-01` and `SIZ-01` close those,
+and they go first: they sharpen the evidence every later judgment in this
+cycle is made on.
 
-**Phase 1 is checks, not cuts, and the ordering is the design.** This tree
-shipped a 5,792 B eager include that nothing has ever read, with a `CHANGELOG`
-entry defending it on a comparison that is false on inspection. Two CI holes let
-that happen and are still open: check 13 cannot watch a deferral made from a
-workflow file or a contract skill, and no check at all catches an `@`-include
-whose consumer does not exist. Cutting prose before those close means cutting it
-on exactly the evidence that produced the defect — and phase 3's deferrals would
-ship unguarded by the one check written to guard them.
-
-**Phase 2 is bounded by a real risk and is sequenced accordingly.** Roughly
-9,000 B of what it removes is rationale, and this repo keeps rationale because
-removing it caused regressions before. Rationale bound to a rule the model
-applies at runtime stays; rationale addressed to a human maintainer moves to a
-`.mjs` header or a design-note, where it costs zero context. `self-verify`
-structurally cannot tell those apart, which is why each surface gets its own
-commit and its own `/cad-verify` walk rather than one bulk edit.
+**`MIN-01` returns because its objection expired.** It was deferred out of two
+cycles for adding resident prose to the dispatch path. v3.0.0's own deferral
+machinery is the answer — branch-local lens prose rides behind a `Read` at the
+step that needs it, watched by check 13 — so the reason to hold it is gone.
+`CTW-06` is the re-measured remnant of the v2.6.2 byte work, riding wherever
+its files are already open.
 
 ## Phases
 
 
 ## Phase Details
-

@@ -69,6 +69,10 @@ Cadence runs as slash commands namespaced `/cadence:cad-*` (for example `/cadenc
 4. **`/cad-execute <phase>`** — build it, one atomic commit per task.
 5. **`/cad-verify <phase>`** — confirm the phase delivered what it promised.
 
+Step 1 has a second door. **`/cad-adopt`** is the entrance for a project that already exists: it reads the repo, the manifests and the git history, writes what the code already does into `PROJECT.md` as shipped work and what is left into a remaining-work `ROADMAP.md`, and asks only what the repo cannot answer. Same `.planning/` on disk either way, so step 2 onward is identical.
+
+Step 1 also takes a shortcut when the questioning already happened somewhere else: **`/cad-new-project --brief <file>`** reads the design brief that conversation produced, treats what it settles as answered, and asks only about what it leaves open. [`docs/DISCOVERY.md`](./docs/DISCOVERY.md) is how you get there from a freeform conversation.
+
 `/cad-progress` tells you where you stand and what's next at any point, and auto-resumes incomplete work.
 
 [![The Cadence phase loop: new-project feeds context, plan, execute and verify in sequence; a decision gate sits under each command, and verify loops back to context for the next phase or exits to milestone.](./docs/figures/phase-loop.svg)](./docs/WORKFLOW.md)
@@ -101,6 +105,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 **Review & quality**
 - **`/cad-plan-review`** — adversarial review of a plan before any code is written.
 - **`/cad-decision-review`** — stress-test one load-bearing decision, grounded against live docs and the real repo.
+- **`/cad-minimalism-review`** — a ranked delete-list over code that works and should not exist: reinvented stdlib, an abstraction with one implementation, flexibility nothing exercises, config nobody sets. It applies none of it.
 - **`/cad-audit`** — pre-ship traceability: every requirement traced to a phase, a plan, a verification, and every acceptance criterion traced to the check that tested it. Catches silently-dropped work.
 - **`/cad-coverage`** — find a phase's requirements that have zero failing-capable test coverage, then close the gaps.
 - **`/cad-docs-verify`** — check factual claims in docs against the live codebase.
@@ -114,11 +119,13 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.
 
 **Support**
+- **`/cad-adopt`** — bring a repo that already has code and history into Cadence, deriving `PROJECT.md`, `REQUIREMENTS.md` and a remaining-work `ROADMAP.md` from what is already there.
 - **`/cad-config`** — the `stakes` level, workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly, as in `/cad-config stakes=shipped`.
-- **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
+- **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place. `--cadence` routes friction with Cadence itself to Cadence's own queue, so it leaves the project you noticed it in.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
 - **`/cad-report`** — the run record as receipts: what each dispatch cost, what the gates caught, what got refuted. The trace prices every subagent Cadence runs; this is where you read the bill.
+- **`/cad-suggest`** — the same record read as a retune: each suggestion carries the trace figures behind it and names the one config key it concerns, and applies none of them.
 - **`/cad-health`** — a quick planning-health check.
 - **`/cad-help`** — the command reference.
 
@@ -136,7 +143,7 @@ Two honest notes on that. The plugin's own weighed total went up over the same s
 
 ## Where it came from
 
-Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence carries about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1. Today it is 23 skills and 6 agent roles across 19 rung files.
+Cadence descends from [GSD](https://github.com/open-gsd/gsd-core), the discuss/plan/execute/verify loop, which is where I first ran into it. GSD gets the hard thing right and then buries it. Seventy-one skills, thirty-four agents, forty-six capabilities underneath those, and one-point-one million words of documentation wrapped around a four-step idea, which is an elephant being a mouse built to government standards. I kept the loop and threw out the standards. Cadence carries about 3% of GSD's documentary mass, measured 2026-07-10 against GSD commit d010ea1. Today it is 27 skills and 6 agent roles across 19 rung files.
 
 Every one of those cuts was made by hand and written down. [`DESIGN.md`](./DESIGN.md) numbers the locked decisions and the reversals, [`INTERNALS.md`](./INTERNALS.md) walks the handful that took more than one try to get right, [`LINEAGE.md`](./LINEAGE.md) publishes the counts and tells you how to reproduce them, and [`MANIFESTO.md`](./MANIFESTO.md) is the why. CI fails the build when the prose drifts from the code, because every config key, script flag, and file path named in these docs has to actually exist. There is nothing in here that nobody read.
 

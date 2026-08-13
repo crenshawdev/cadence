@@ -21,7 +21,9 @@
  *            action: string|null}} Suggestion
  * @typedef {{counts: Record<string, number>,
  *            roles: Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>,
- *            events: any[]}} RenderLike
+ *            events: any[],
+ *            coordinator?: {wall_ms: number, bracket_ms: number, residue_ms: number,
+ *                           steps: {phase: any, step: any, ts: any, residue_ms: number}[]}}} RenderLike
  */
 
 // Evidence floors. Below these a rule stays silent rather than extrapolating.
@@ -29,6 +31,22 @@ export const MIN_FIRES_FOR_GATE_SUGGESTION = 2;
 export const MIN_DISPATCHES_FOR_RUNG_INFO = 4;
 export const MIN_ESCALATIONS_FOR_RUNG_SUGGESTION = 2;
 export const MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2;
+/**
+ * The coordinator receipt's floor, in milliseconds. Ten minutes: below that the
+ * residue is dominated by the second or two between a step's marker and the
+ * dispatch that follows it, which is a measurement artefact rather than time
+ * anyone spent. The other floors count events; this one cannot, because one
+ * marker can carry a whole afternoon and a hundred can carry nothing.
+ */
+export const MIN_RESIDUE_MS_FOR_COORDINATOR_INFO = 600000;
+
+/**
+ * A duration in whole minutes, the unit a run record is read in.
+ * @param {number} ms
+ */
+function minutes(ms) {
+  return `${Math.round(ms / 60000)} min`;
+}
 
 /**
  * Parse an adjudication detail line: `<trigger>: <n> survivors; voices <...>`.
@@ -163,6 +181,46 @@ export function suggestFromRender(render) {
       kind: 'info',
       subject: top.role,
       evidence: `largest recorded spend: ${top.tokens.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} recorded tokens (${Math.round((top.tokens / total) * 100)}%)`,
+      action: null,
+    });
+  }
+
+  // R6: the coordinator's own share of the run. The counterpart to R5 - that
+  // one names where the TOKENS went, this one names the time no worker was
+  // billed for. Receipt only, and `action` is null on purpose: no
+  // `config.schema.json` key governs coordinator spend, and this file's own
+  // test refuses an action naming a key the schema lacks.
+  //
+  // SILENT on a render with no `coordinator` block, never an "absent
+  // coordinator record" line (D-06). Every trace written before the marker
+  // existed - Cadence's own and the committed fixture - would otherwise gain a
+  // suggestion line saying nothing about the run it read.
+  const coord = render.coordinator;
+  const residue = coord && typeof coord.residue_ms === 'number' && Number.isFinite(coord.residue_ms)
+    ? coord.residue_ms
+    : null;
+  if (residue !== null && residue >= MIN_RESIDUE_MS_FOR_COORDINATOR_INFO) {
+    // The figures are the render's own (lib/trace.mjs computes the residue
+    // once, so this rule and `/cad-report` cannot disagree); the only
+    // arithmetic here is the share, and it is skipped rather than divided by a
+    // zero or absent wall.
+    const steps = Array.isArray(coord.steps) ? coord.steps : [];
+    /** @type {{step: any, residue_ms: number}|null} */
+    let top = null;
+    for (const s of steps) {
+      if (!s || typeof s !== 'object') continue;
+      const ms = typeof s.residue_ms === 'number' && Number.isFinite(s.residue_ms) ? s.residue_ms : 0;
+      if (!top || ms > top.residue_ms) top = { step: s.step, residue_ms: ms };
+    }
+    const wall = typeof coord.wall_ms === 'number' && Number.isFinite(coord.wall_ms) ? coord.wall_ms : 0;
+    const share = wall > 0 ? ` (${Math.round((residue / wall) * 100)}% of wall time)` : '';
+    const named = top && typeof top.step === 'string' && top.step
+      ? `, most of it at \`${top.step}\` (${minutes(top.residue_ms)})`
+      : '';
+    out.push({
+      kind: 'info',
+      subject: 'coordinator',
+      evidence: `coordinator time between worker brackets: ${minutes(residue)}${share}${named}`,
       action: null,
     });
   }

@@ -19,7 +19,10 @@ the adjustment as a deviation.
 
 <process>
 For each task in the plan, in order:
-1. Implement the task's change.
+1. Implement the task's change. Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/lean-build.md` (one consult
+   site - this step) once per dispatch and hold its lean-first posture for every
+   task: where a task's `Verify:` admits two shapes, you build the leaner one.
 2. Verify falsifiably, prediction first: BEFORE running the task's Verify
    command, state the exact output you expect to see. Then run it
    (`workflow.test_command` from config if set and relevant, otherwise
@@ -41,9 +44,8 @@ For each task in the plan, in order:
    rather than a failure. Prefer `LSP` diagnostics to the subprocess only when
    the change is confined to files the language server has already indexed AND
    they cover the same defect class, since that is state the host already holds;
-   otherwise spawn it. A failure gets the same three bounded fix attempts as any
-   blocker, and surviving the third is a `blocked` checkpoint, never the move-on
-   arm: reaching the commit step with a failing lint is what this step prevents.
+   otherwise spawn it. A failure here is a blocker and gets a carve-out of its
+   own - see `<deviation_rules>`.
 4. Commit per the commit protocol below.
 5. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
    row so far.
@@ -98,15 +100,18 @@ evidence the plan was authored above its knowledge, and is worth saying so.
 Everything else you find while working is either part of the task or an open
 item. Fix what the current task caused or directly needs - a broken import, a
 wrong type, a missing null check on a path this task introduced - and move on
-without ceremony.
+without ceremony. A fuller shape you declined to build is an open item of the
+same kind: one `Open items:` line naming it and why the lean shape met the
+`Verify:`, never a `[deviation]` line, because nothing turned out wrong.
 
 Boundaries:
 - Scope: only what the current task's changes caused or directly need.
   Pre-existing problems elsewhere are open items, not your job.
-- Three fix attempts per task, then record it as an open item and move on -
-  or checkpoint if it blocks the task. ONE carve-out: a static-analysis
-  failure surviving the third attempt is always a `blocked` checkpoint, never
-  the move-on arm, because moving on there means committing the failure.
+- A blocker gets three bounded fix attempts per task, then record it as an open
+  item and move on - or checkpoint if it blocks the task. ONE carve-out: a
+  static-analysis failure surviving the third attempt is always a `blocked`
+  checkpoint, never the move-on arm, because moving on there means committing
+  the failure.
 - Package installs are never auto-fixable. If an install fails, do not
   retry with a similar name and do not substitute an alternative - a failed
   install can mean a hallucinated or squatted package. Return a `blocked`

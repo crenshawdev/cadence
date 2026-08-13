@@ -10,13 +10,14 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
+  copyFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   appendEvent, correlationId, renderTrace, tracePath, MAX_TRACE_BYTES, FAMILIES,
-  ANCHOR, DISPATCH, TERMINAL,
+  ANCHOR, DISPATCH, TERMINAL, COORDINATOR,
 } from './lib/trace.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -732,14 +733,15 @@ const BRACKETING = new Map([
   [join('cadence-core', 'references', 'review-triggers.md'), 1],
   [join('cadence-core', 'workflows', 'execute.md'), 1],
   [join('cadence-core', 'workflows', 'decision-review.md'), 1],
+  [join('cadence-core', 'workflows', 'minimalism-review.md'), 1],
   [join('cadence-core', 'workflows', 'verify-deep.md'), 1],
 ]);
 
 /**
  * Every `trace append` invocation in one text, as
- * `{family, event, plan, role, read}`. Shell line continuations are joined
- * first so a wrapped invocation is read whole rather than read as a flagless
- * fragment.
+ * `{family, event, plan, role, read, tokens, step}`. Shell line continuations
+ * are joined first so a wrapped invocation is read whole rather than read as a
+ * flagless fragment.
  * @param {string} text
  */
 function traceAppends(text) {
@@ -765,6 +767,8 @@ function traceAppends(text) {
       plan: flag(line, 'plan', false),
       role: flag(line, 'role', false),
       read: flag(line, 'read', true),
+      tokens: flag(line, 'tokens', false),
+      step: flag(line, 'step', true),
     });
   }
   return out;
@@ -805,7 +809,7 @@ test('census: every trace family has a producer, and every producer speaks the r
   }
 
   // A lifecycle event the renderer does not know is a bracket that never pairs.
-  const known = [ANCHOR, DISPATCH, ...TERMINAL];
+  const known = [ANCHOR, DISPATCH, ...TERMINAL, COORDINATOR];
   const lifecycle = prose.filter((p) => p.family === 'lifecycle');
   for (const p of lifecycle) {
     assert.ok(known.includes(String(p.event)),
@@ -882,6 +886,7 @@ test('census: every trace family has a producer, and every producer speaks the r
   for (const p of lifecycle) {
     const event = String(p.event);
     if (event === ANCHOR) continue;   // the correlation-id anchor is not a worker
+    if (event === COORDINATOR) continue;   // ...and neither is the coordinator
     if (event !== DISPATCH && !TERMINAL.includes(event)) continue;
     assert.ok(p.role && p.role.trim(),
       `${p.where}: \`--event ${event}\` with no \`--role\` - its worker cannot be grouped `
@@ -891,4 +896,195 @@ test('census: every trace family has a producer, and every producer speaks the r
       `${p.where}: \`--event ${DISPATCH}\` with an empty or absent \`--read\` - the record `
       + 'would show a dispatch that caused no reads.');
   }
+
+  // --- the coordinator marker carries the step and nothing else ---------------
+  //
+  // The `--tokens` half is the static half of "no marker anywhere in this tree
+  // carries a token figure": a coordinator has no subagent return to read a
+  // figure off, so any number on one of these lines was invented, and an
+  // invented figure lands in trace suggest's share denominator. The `--role`
+  // half keeps the marker out of the per-role totals, where it would either bill
+  // a worker that never ran or render a nameless row. Both are prose rules, so
+  // this is where they are enforced.
+  for (const p of lifecycle.filter((x) => String(x.event) === COORDINATOR)) {
+    assert.ok(!p.tokens,
+      `${p.where}: \`--event ${COORDINATOR}\` carrying \`--tokens ${p.tokens}\` - a coordinator `
+      + 'has no subagent return to read a figure off, so that number was invented.');
+    assert.ok(!p.role,
+      `${p.where}: \`--event ${COORDINATOR}\` carrying \`--role ${p.role}\` - the marker is not a `
+      + 'worker and must never reach the per-role totals.');
+    assert.ok(p.step && p.step.trim(),
+      `${p.where}: \`--event ${COORDINATOR}\` with an empty or absent \`--step\` - a marker naming `
+      + 'no step defeats the per-step attribution it exists for.');
+  }
+});
+
+// --- the committed fixture: what the readers say about it TODAY -------------
+//
+// `fixtures/verbatim.trace.jsonl` is verbatim's own run record, copied
+// byte-for-byte out of a Rust project with no Cadence history and committed
+// unredacted (D-12). It is the calibration input for every reader change in
+// this phase, and this test is what makes "a trace written before this phase is
+// unchanged in both readers" falsifiable rather than hopeful.
+//
+// The values are LITERALS, measured before the coordinator work landed. Deriving
+// them from the fixture would be a self-comparison: it would go green on the day
+// the renderer started reading the file differently, which is the one day it
+// exists to fail. Scoped to phase 1 because that is the phase every acceptance
+// criterion in this phase names.
+//
+// Two of these values are load-bearing beyond their arithmetic. The unpaired
+// `cad-reviewer` dispatch carries `corr: "1"` while the phase renders as
+// `1-573f325`: a marker written before the phase's anchor takes the phase-only
+// id (D-04), which is why no rollup here may group on `corr` alone. And the one
+// `unrecorded` reviewer dispatch is the bracket that contributes no span at all
+// to any residue, because it never closed.
+
+const FIXTURE = join(HERE, 'fixtures', 'verbatim.trace.jsonl');
+
+/** The committed fixture, in a scratch planning root of its own. */
+function fixtureRoot() {
+  const dir = root();
+  copyFileSync(FIXTURE, tracePath(dir));
+  return dir;
+}
+
+test('fixture: the committed verbatim trace renders exactly as it did before this phase', () => {
+  const r = renderTrace(fixtureRoot(), '1');
+  assert.equal(r.corr, '1-573f325');
+  assert.equal(r.capped, false);
+  assert.equal(r.malformed, 0);
+  assert.equal(r.events.length, 28);
+  assert.deepEqual(r.counts, { routing: 8, provider: 0, lifecycle: 18, outcome: 2 });
+  assert.deepEqual(r.roles, {
+    'cad-assumptions-analyzer': { dispatches: 1, tokens: 75100 },
+    'cad-planner': { dispatches: 1, tokens: 93882 },
+    'cad-reviewer': { dispatches: 4, tokens: 297506, unrecorded: 1 },
+    'cad-executor': { dispatches: 2, tokens: 423846 },
+    'cad-verifier': { dispatches: 1, tokens: 78371 },
+  });
+  assert.deepEqual(r.unpaired, [
+    { corr: '1', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T12:24:57.907Z' },
+  ]);
+});
+
+// --- the coordinator's own time (D-01) ---------------------------------------
+//
+// The residue is what is LEFT of a step's wall span after the worker brackets
+// inside it are subtracted. Every case below fixes one rule of that arithmetic
+// against a hand-built trace with known durations, because a residue is a
+// derived number and a derived number that nothing pins drifts silently.
+
+const MIN = 60000;
+/** An ISO timestamp `m` minutes after a fixed origin. */
+const at = (m) => new Date(Date.UTC(2026, 7, 12, 10, 0, 0) + m * MIN).toISOString();
+/** One coordinator marker. */
+const mark = (dir, step, m, phase = 1) =>
+  appendEvent(dir, { phase, family: 'lifecycle', event: COORDINATOR, step, ts: at(m) });
+/** One worker bracket, opened at `a` minutes and closed at `b`. */
+function bracket(dir, plan, a, b, phase = 1) {
+  appendEvent(dir, { phase, family: 'lifecycle', event: DISPATCH, plan, role: plan, ts: at(a) });
+  appendEvent(dir, { phase, family: 'lifecycle', event: 'return', plan, ts: at(b) });
+}
+
+test('coordinator: a step\'s residue is its wall span minus the bracket inside it', () => {
+  const dir = root();
+  mark(dir, 'analyze', 0);
+  bracket(dir, 'cad-planner', 2, 6);          // 4 minutes of worker time
+  mark(dir, 'write_plan', 10);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(12) });
+  const c = renderTrace(dir, 1).coordinator;
+  // Ten minutes of wall on the first step, four of them a worker's: 360000 ms
+  // belong to the coordinator, and the second step runs to the phase's last
+  // event with nothing dispatched inside it.
+  assert.deepEqual(c.steps, [
+    { phase: 1, step: 'analyze', ts: at(0), residue_ms: 6 * MIN },
+    { phase: 1, step: 'write_plan', ts: at(10), residue_ms: 2 * MIN },
+  ]);
+  assert.equal(c.steps[0].residue_ms, 360000);
+  assert.deepEqual(
+    { wall_ms: c.wall_ms, bracket_ms: c.bracket_ms, residue_ms: c.residue_ms },
+    { wall_ms: 12 * MIN, bracket_ms: 4 * MIN, residue_ms: 8 * MIN },
+  );
+});
+
+test('coordinator: a marker before phase_start joins the same phase across both corr ids', () => {
+  const dir = root();
+  // Every /cad-context marker fires before any anchor, so it takes the
+  // phase-only id while everything after the anchor takes `1-<sha>` (D-04). One
+  // stream, or the coordinator gets counted twice.
+  mark(dir, 'load_priors', 0);
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'abc1234', ts: at(4) });
+  mark(dir, 'git_guard', 6);
+  appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', ts: at(9) });
+  const r = renderTrace(dir, 1);
+  const corrs = new Set(r.events.map((e) => e.corr));
+  assert.deepEqual([...corrs].sort(), ['1', '1-abc1234']);
+  assert.deepEqual(r.coordinator.steps.map((s) => s.step), ['load_priors', 'git_guard']);
+  assert.equal(r.coordinator.residue_ms, 9 * MIN);
+});
+
+test('coordinator: two workers running at once subtract their overlap ONCE', () => {
+  const dir = root();
+  mark(dir, 'dispatch_plans', 0);
+  bracket(dir, '1', 1, 7);
+  bracket(dir, '2', 3, 9);   // overlaps the first from 3 to 7
+  mark(dir, 'collect', 10);
+  const c = renderTrace(dir, 1).coordinator;
+  // The union is 1..9, eight minutes, not the twelve the two spans sum to.
+  assert.equal(c.steps[0].residue_ms, 2 * MIN);
+  assert.equal(c.bracket_ms, 8 * MIN);
+  assert.equal(c.residue_ms, 2 * MIN);
+});
+
+test('coordinator: an UNPAIRED dispatch subtracts nothing', () => {
+  const dir = root();
+  mark(dir, 'review', 0);
+  appendEvent(dir, {
+    phase: 1, family: 'lifecycle', event: DISPATCH, plan: 'cad-reviewer', role: 'cad-reviewer', ts: at(2),
+  });
+  mark(dir, 'triage', 10);
+  const r = renderTrace(dir, 1);
+  assert.equal(r.unpaired.length, 1);
+  // A worker that never came back has no known end, so the whole ten minutes
+  // stay on the coordinator's bill rather than being written off against a
+  // bracket nobody closed.
+  assert.equal(r.coordinator.steps[0].residue_ms, 10 * MIN);
+  assert.equal(r.coordinator.bracket_ms, 0);
+});
+
+test('coordinator: a marker with an unparseable ts contributes nothing, never NaN', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: COORDINATOR, step: 'broken', ts: 'not-a-date' });
+  mark(dir, 'analyze', 0);
+  bracket(dir, 'cad-planner', 1, 3);
+  mark(dir, 'write_plan', 5);
+  const c = renderTrace(dir, 1).coordinator;
+  assert.deepEqual(c.steps.map((s) => s.step), ['analyze', 'write_plan']);
+  for (const n of [c.wall_ms, c.bracket_ms, c.residue_ms]) assert.equal(Number.isFinite(n), true);
+  assert.equal(c.residue_ms, 3 * MIN);
+});
+
+test('coordinator: a trace with no marker renders no coordinator block at all', () => {
+  const dir = root();
+  bracket(dir, 'cad-planner', 0, 4);
+  const r = renderTrace(dir, 1);
+  assert.equal('coordinator' in r, false);
+  // And the committed fixture, which is what AC1 actually rides on.
+  assert.equal('coordinator' in renderTrace(fixtureRoot(), '1'), false);
+  assert.equal('coordinator' in renderTrace(fixtureRoot()), false);
+});
+
+test('seam: trace render emits the coordinator block only where markers were written', () => {
+  const dir = root();
+  mark(dir, 'analyze', 0);
+  bracket(dir, 'cad-planner', 2, 6);
+  mark(dir, 'write_plan', 10);
+  const shown = run(dir, ['trace', 'render', '--phase', '1']);
+  assert.equal(shown.ok, true);
+  assert.equal(shown.coordinator.residue_ms, 6 * MIN);
+  assert.deepEqual(shown.coordinator.steps.map((s) => s.step), ['analyze', 'write_plan']);
+  const bare = run(fixtureRoot(), ['trace', 'render', '--phase', '1']);
+  assert.equal(bare.ok, true);
+  assert.equal('coordinator' in bare, false);
 });

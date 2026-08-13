@@ -16,7 +16,16 @@ roadmap derived inline (no roadmapper/synthesizer agents).
 
 <step name="setup">
 Parse `$ARGUMENTS`: optional `--research` flag, which forces the research
-pass on for this run regardless of config.
+pass on for this run regardless of config, and optional `--brief <file>`, a
+design brief some earlier freeform conversation already produced
+(`docs/DISCOVERY.md` describes how a user arrives with one).
+
+With `--brief`, `Read` that file WHOLE before questioning starts - no parser,
+no schema, no seam subcommand. A brief's whole value is that it is freeform,
+and a schema would impose exactly the structure the discovery deliberately
+lacks. If the path does not resolve, stop with one line naming it ("No brief
+at `<path>`.") and write nothing: falling through into the blank-page
+interview would silently discard the input the flag exists to carry.
 
 In order (items 2-5 are one Bash step, not four separate turns - git-init if
 needed, `mkdir -p .planning`, the config copy if absent, and the `config.mjs
@@ -75,6 +84,24 @@ out a form. Don't follow a script; follow the thread.
 "What do you want to build?"
 
 Wait for the response. It gives you the material for every question after.
+
+**With `--brief`, that opening question is already answered.** Everything the
+brief SETTLES is answered material, not a topic to re-open. Replace the opening
+question with a short read-back - what you understand the project to be, who it
+is for, what it refuses to do, and the stack and constraints it commits to, as
+the brief states them - plus an invitation to correct anything you read wrong.
+Then question only what the brief leaves OPEN.
+
+What is open is what the brief SAYS, read the way you read any prose: a section
+that decides something has decided it, a question it poses and does not answer
+has not, and an item it parks as pending, deferred or a hypothesis is still
+live. Never key this off a marker convention. A brief that happens not to write
+`**OPEN**` anywhere would then read as settled throughout and the run would skip
+the questioning entirely - the exact failure this flag exists to prevent, turned
+inside out. No score, no coverage gate, no walking the brief section by section.
+
+The background checklist below is where a brief lands: the items it settles are
+ticked already, and the ones it leaves open are the thread to follow.
 
 **Follow the thread.** Each answer opens new threads; pick the live one.
 Techniques:

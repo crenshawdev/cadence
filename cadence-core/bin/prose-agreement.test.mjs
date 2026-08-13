@@ -359,3 +359,71 @@ test('the lockfile lease: both contracts name the same lockfiles and the reason 
   assert.deepEqual(fromChecker, fromPlanner,
     'the planner and the plan-checker state different lockfile sets');
 });
+
+// --- SIZ-01: the spend gate sits ahead of the resolve it gates ---------------
+
+/** The lines of `text` labelled `label` by the register's own region walker. */
+function regionText(text, label, where) {
+  const labelOf = regionLabels(text);
+  const lines = text.split('\n').filter((_, i) => labelOf(i) === label);
+  assert.ok(lines.length, `${where}: no region labelled ${label}`);
+  return lines.join('\n');
+}
+
+test('the analyzer spend gate precedes the resolve, and four surfaces state two questions', () => {
+  // The defect this pins. `analyze` folds its bracket onto a `route.mjs
+  // resolve` carrying `--bracket-read`, and that resolve writes the lifecycle
+  // DISPATCH half unconditionally - before any Task spawn, before any answer.
+  // So "before the spawn" is not far enough: a gate anywhere below that line
+  // leaves an unpaired bracket on every phase that skips the analyzer, which
+  // renders as a worker that never came back and inverts the record-health
+  // signal /cad-report reads. Position is the fact, and it is not visible in
+  // any single sentence - only in the order of two.
+  const context = doc('cadence-core', 'workflows', 'context.md');
+  const skill = doc('skills', 'cad-context', 'SKILL.md');
+
+  // The gate's step NAME is read off the deferred-read register rather than
+  // hardcoded: that register anchors `references/recall.md` at the step which
+  // performs the read, and the recall substep lives in the gate because BOTH
+  // arms consume recalled memory. Rename the step in one place and this goes
+  // red, instead of quietly passing against a step that no longer exists.
+  const recallRow = DEFERRED_READS.find((r) =>
+    r.skill === 'cad-context' && r.reference === 'references/recall.md');
+  assert.ok(recallRow, 'no cad-context recall row in the deferred-read register');
+  const gateStep = recallRow.anchors[0];
+  assert.notEqual(gateStep, 'analyze',
+    'the recall anchor is back inside `analyze`, so the skip arm - which never enters that '
+    + 'step - reaches its gray areas with no prior-project memory at all');
+
+  const at = (needle) => {
+    const i = context.indexOf(needle);
+    assert.ok(i >= 0, `context.md carries no ${needle}`);
+    return i;
+  };
+  const gate = at(`<step name="${gateStep}">`);
+  assert.ok(gate < at('<step name="analyze">'),
+    `context.md opens the ${gateStep} step BELOW <step name="analyze">, so the phase is asked `
+    + 'whether to buy a pass it has already entered');
+  assert.ok(gate < at('--bracket-read'),
+    `context.md opens the ${gateStep} step BELOW the --bracket-read resolve, which writes the `
+    + 'lifecycle dispatch half unconditionally - every skipped phase would then report an '
+    + 'unpaired bracket, a dispatch event with no worker');
+
+  // The second fact: this workflow asks TWO questions now, and every surface
+  // that describes the asking says so. A surface still promising "exactly one"
+  // forbids, in its own words, the gate the workflow just ran.
+  for (const [where, text, label] of /** @type {const} */ ([
+    ['cadence-core/workflows/context.md', context, 'size_check'],
+    ['cadence-core/workflows/context.md', context, 'guardrails'],
+    ['cadence-core/workflows/context.md', context, 'success_criteria'],
+    ['skills/cad-context/SKILL.md', skill, 'objective'],
+  ])) {
+    const naming = sentencesOf(regionText(text, label, where))
+      .filter((s) => /size question/i.test(s));
+    assert.ok(naming.length, `${where} region ${label} names no size question at all`);
+    for (const sentence of naming) {
+      assert.match(sentence, /spend question/i,
+        `${where} region ${label} names a size question with no spend question beside it`);
+    }
+  }
+});

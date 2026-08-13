@@ -15,6 +15,20 @@ Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 
 <process>
 
+Step markers: at the START of each step below, from the step where the phase
+number is known onward, append one coordinator marker naming that step.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append \
+  --phase <N> --family lifecycle --event coordinator --step "<this step's name>"
+```
+
+Written once here, run once per step. The marker carries the step name and
+nothing else - never `--role`, never `--tokens`. What the coordinator itself
+cost is DERIVED from these markers by `/cad-report`: a step's span minus the
+worker brackets inside it. A figure written onto a marker is one no host
+reported.
+
 <step name="resolve_phase">
 Parse `$ARGUMENTS` for a phase number. If missing, run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get` and
@@ -22,8 +36,9 @@ use its phase; if there is no cursor either (`no-cursor`), ask:
 "Which phase? (number from ROADMAP.md)"
 
 Read `.planning/ROADMAP.md` and extract the phase's name and goal. If
-ROADMAP.md does not exist, stop: "No roadmap found. Run /cad-new-project
-first." If the phase number is not in the roadmap, stop and say so.
+ROADMAP.md does not exist, stop: "No roadmap found. Run /cad-new-project first
+for a blank page, or /cad-adopt if this repo already has code and history."
+If the phase number is not in the roadmap, stop and say so.
 
 Phase directory: `.planning/phases/{N}/` (match the existing directory
 naming if phase directories already exist; create it at write time).
@@ -47,6 +62,14 @@ Read what already constrains this phase - never re-ask a settled question:
   decisions and requirement IDs this phase serves)
 - up to 3 most recent prior `phases/*/CONTEXT.md` files (locked decisions
   that carry forward)
+- the `## Deviations` bullets of up to 3 most recent prior
+  `phases/*/SUMMARY.md` files - bounded most-recent-first exactly as the
+  CONTEXT reads above are, so this read set cannot grow with N. Those
+  deviations are the evidence the spend gate's "already grounded by a prior
+  phase" arm turns on; without them that arm never fires and the gate
+  collapses to its size arm alone. `workflows/report.md` already reads
+  deviations out of SUMMARY for its `Refuted:` line, so this is the same
+  source, not a new artifact.
 
 Priors are subordinate to current scope: `REQUIREMENTS.md` and `ROADMAP.md`
 carry the latest decisions, while a prior CONTEXT can be stale - a scope change
@@ -56,21 +79,20 @@ current docs as authoritative: drop or re-open that decision rather than
 feeding it forward as settled.
 
 Missing files are fine - continue without. Build an internal prior-decisions
-summary for the analyzer prompt and for annotating questions ("you chose X
-in phase 2").
+summary - what earlier phases locked, plus what their deviations later
+corrected - for the spend gate below, for the analyzer prompt, and for
+annotating questions ("you chose X in phase 2").
 </step>
 
-<step name="analyze">
-Before dispatching, settle any user-only foundational fork the analyzer cannot
-resolve from code - where new code lives (which repo / path), the target
-platform, whether a referenced repo is even in scope this milestone. Surface
-the blocking ones via the ask-user seam first, and do NOT bake an unverified
-scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
-wastes the whole pass and forces a mid-analysis interruption.
+<step name="spend_gate">
+The analyzer pass is the single most expensive dispatch in this spine, and no
+phase buys it unasked. Decide here, BEFORE `analyze`: that step's `route.mjs
+resolve` writes the lifecycle dispatch half unconditionally, so a gate placed
+after it strands an unpaired bracket on every skipped phase and inverts the
+record-health signal /cad-report reads.
 
-Recall prior-project memory before dispatching. Read the config this step needs
-in ONE call - the recall gate and the dispatch timeout together, independent of
-each other, so nothing in this step is serialized behind a prior result:
+Load prior-project memory first - BOTH arms need it. The buy arm feeds it to
+the analyzer payload; the skip arm reasons with it directly:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
@@ -83,13 +105,61 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms fr
 ```
 
 Skip this substep entirely when the backend is `none` - do not issue the
-recall call at all. The gate precedes the call on purpose (D-03): recall's own
+recall call at all. The gate precedes the call on purpose: recall's own
 backend-off return is a backstop for a direct caller, not this workflow's gate,
 so `none` means the call is never made and no recalled data reaches the pass.
 
 Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/recall.md` (one
 consult site - this step) for the result shape and how the top results render
-into the `<recalled_memory>` block of the payload below.
+into the `<recalled_memory>` block of the analyzer payload below, and into your
+own reasoning on the skip arm.
+
+Then ask (ask-user seam, structured) - a SPEND question, not a second size
+question:
+
+- header: "Analyzer"
+- question: "Buy the codebase analyzer pass for this phase?"
+- options:
+  1. "Dispatch it - read the code first"
+  2. "Skip it - go straight to the gray areas"
+
+Order the two by your recommendation, recommended first, the way every other
+ask in this workflow presents its options. Annotate the question with evidence
+you have ALREADY read - never with a fresh measurement, and never with a
+number you invent for the occasion:
+
+- how many requirements this phase carries
+- the surfaces its ROADMAP entry names, by path
+- whether prior phases' SUMMARY deviations (load_priors) already settled the
+  ground this phase reopens
+
+Recommend DISPATCH unless all three point the other way: the phase's whole
+surface is already named in its roadmap entry, those files are ones this
+session has already read, and prior deviations have already settled how they
+behave. That is a judgment on evidence, and it is the whole gate. Compute no
+score, hold no threshold, and run no seam to rank the phase - measured on the
+committed verbatim fixture, a requirement-count threshold orders its two
+phases backwards, and this workflow's guardrails already ban splitting
+frameworks for the same reason.
+
+On "Dispatch it", continue into `analyze` below, unchanged.
+
+On "Skip it", do NOT enter `analyze` at all - no resolve, no dispatch, no
+bracket, and so no analyzer cost in this phase's run record. Say plainly that
+the pass was skipped and on which evidence, then take the same plain
+conversational pass `analyze`'s failure arm describes: derive 2-4 gray areas
+from the phase goal and the priors yourself, treat each as Unclear, and
+continue at `close_gray_areas`. Skipping is a stated choice, never a silent
+degradation.
+</step>
+
+<step name="analyze">
+Before dispatching, settle any user-only foundational fork the analyzer cannot
+resolve from code - where new code lives (which repo / path), the target
+platform, whether a referenced repo is even in scope this milestone. Surface
+the blocking ones via the ask-user seam first, and do NOT bake an unverified
+scope premise (e.g. "port repo X") into the analyzer prompt: a wrong premise
+wastes the whole pass and forces a mid-analysis interruption.
 
 Dispatch `cad-assumptions-analyzer` via the spawn-agent seam
 (references/seams.md), the bracket on its resolve:
@@ -257,8 +327,9 @@ machine-checkable box.
 </step>
 
 <step name="size_check">
-Exactly ONE size question, now that the criteria make size visible
-(ask-user seam, structured):
+Exactly ONE size question - and exactly one spend question, which was the one
+`spend_gate` already asked - now that the criteria make size visible (ask-user
+seam, structured):
 
 - header: "Size"
 - question: "Can one plan deliver all of these criteria, or is this phase
@@ -332,8 +403,9 @@ context loses nothing.
   correction (requirement-wording drift, above). Nothing else.
 - No audit artifacts: no DISCUSSION-LOG, no checkpoint JSON, no interview
   log, no ambiguity scores. Git history is the log.
-- Exactly one size question, near the end. No SPIDR, no story formats, no
-  splitting frameworks.
+- Exactly one size question, near the end, and exactly one spend question,
+  before the analyzer - two asks, never merged into one and never re-asked.
+  No SPIDR, no story formats, no splitting frameworks, for either of them.
 - Question budget is earned by the analyzer: Confident items cost zero
   questions. Never interview area-by-area through things the codebase
   already answers.
@@ -349,8 +421,8 @@ context loses nothing.
 - [ ] Every decision traces to a user confirmation or correction, with
       evidence cited
 - [ ] Every acceptance criterion is pass/fail observable behavior
-- [ ] Exactly one size question was asked, and its outcome is recorded as
-      Plan shape
+- [ ] Exactly one size question and exactly one spend question were asked -
+      the size outcome recorded as Plan shape, the spend arm stated plainly
 - [ ] CONTEXT.md contains exactly: scope boundary, durable decisions,
       decisions (phase-local), acceptance criteria, flagged assumptions -
       each decision classified against the durability filter

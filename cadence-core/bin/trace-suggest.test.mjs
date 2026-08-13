@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,7 @@ import {
   suggestFromRender, parseAdjudication,
   MIN_FIRES_FOR_GATE_SUGGESTION, MIN_DISPATCHES_FOR_RUNG_INFO,
   MIN_ESCALATIONS_FOR_RUNG_SUGGESTION, MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION,
+  MIN_RESIDUE_MS_FOR_COORDINATOR_INFO,
 } from './lib/trace-suggest.mjs';
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
@@ -132,6 +133,56 @@ test('R5: the spend receipt names the top role, its share, and asks for nothing'
   assert.match(s.evidence, /75%/);
 });
 
+// --- R6: the coordinator receipt ---------------------------------------------
+//
+// The render's own `coordinator` block is the input, not events: lib/trace.mjs
+// computes the residue once so this rule and `/cad-report` cannot disagree, and
+// the test helper deliberately builds a render WITHOUT the block, so every case
+// above doubles as proof that the rule tolerates its absence.
+
+/** A render carrying a coordinator block. */
+const coordRender = (residue_ms, steps, wall_ms = residue_ms) =>
+  ({ counts: {}, roles: {}, events: [], coordinator: { wall_ms, bracket_ms: wall_ms - residue_ms, residue_ms, steps } });
+
+test('R6: a residue above the floor names the total, its share and the top step', () => {
+  const out = suggestFromRender(coordRender(
+    MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 4,
+    [
+      { phase: 1, step: 'analyze', ts: 'a', residue_ms: MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 3 },
+      { phase: 1, step: 'size_check', ts: 'b', residue_ms: MIN_RESIDUE_MS_FOR_COORDINATOR_INFO },
+    ],
+    MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 8,
+  ));
+  const hits = out.filter((x) => x.subject === 'coordinator');
+  assert.equal(hits.length, 1, `expected exactly one coordinator entry, got ${JSON.stringify(out)}`);
+  assert.equal(hits[0].kind, 'info');
+  assert.equal(hits[0].action, null, 'no config key governs coordinator spend');
+  assert.match(hits[0].evidence, /40 min/);
+  assert.match(hits[0].evidence, /50% of wall time/);
+  assert.match(hits[0].evidence, /`analyze`/);
+});
+
+test('R6: a residue below the floor stays silent - a minute between steps is an artefact', () => {
+  const out = suggestFromRender(coordRender(
+    MIN_RESIDUE_MS_FOR_COORDINATOR_INFO - 1,
+    [{ phase: 1, step: 'analyze', ts: 'a', residue_ms: MIN_RESIDUE_MS_FOR_COORDINATOR_INFO - 1 }],
+  ));
+  assert.deepEqual(out, []);
+});
+
+test('R6: a render with no coordinator block says NOTHING about the coordinator (D-06)', () => {
+  // Not "absent coordinator record", not a zero - silence. Every trace written
+  // before the marker existed reads this path.
+  for (const out of [
+    suggestFromRender(render([])),
+    suggestFromRender(render([rearm('risk_surface')])),
+    suggestFromRender(render([], { 'cad-executor': { dispatches: 2, tokens: 300000 } })),
+  ]) {
+    assert.equal(out.find((x) => x.subject === 'coordinator'), undefined);
+    assert.equal(out.find((x) => /coordinator/i.test(x.evidence)), undefined);
+  }
+});
+
 test('suggestions order suggest-first, then stable by subject; an empty render is an empty list', () => {
   assert.deepEqual(suggestFromRender(render([])), []);
   const out = suggestFromRender(render([
@@ -189,6 +240,44 @@ test('seam: a real trace written through appendEvent reads back through `trace s
     assert.equal(scoped.ok, true);
     assert.equal(scoped.events_read, 0);
     assert.deepEqual(scoped.suggestions, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// --- the committed fixture: the suggestion list TODAY ------------------------
+//
+// The other half of AC1's guard (the render half lives in trace.test.mjs):
+// verbatim's own run record, read through the REAL renderer rather than a
+// hand-built `render()` helper, so this test sees exactly what `trace suggest`
+// sees. The list is a literal, measured before the coordinator work - a list
+// recomputed from the fixture would agree with itself no matter what the rules
+// did. Any new rule that speaks on a trace carrying no coordinator markers
+// fails here, which is D-06 made falsifiable.
+
+const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'verbatim.trace.jsonl');
+
+test('fixture: the committed verbatim trace suggests exactly what it did before this phase', async () => {
+  const { renderTrace, tracePath } = await import('./lib/trace.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'cad-suggest-fx-'));
+  try {
+    const planning = join(dir, '.planning');
+    mkdirSync(planning, { recursive: true });
+    copyFileSync(FIXTURE, tracePath(planning));
+    assert.deepEqual(suggestFromRender(renderTrace(planning, '1')), [
+      {
+        kind: 'info',
+        subject: 'cad-executor',
+        evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)',
+        action: null,
+      },
+      {
+        kind: 'info',
+        subject: 'risk_surface',
+        evidence: 'a fire FAILed and re-armed on its own fix - the gate caught real work; keep it',
+        action: null,
+      },
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

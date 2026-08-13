@@ -89,6 +89,60 @@ the prose those claims are about MOVED there whole. The join still reads: it
 matches on `doc` plus claim text, both cells were updated together, and the
 claim text is byte-identical to what run 1 read.
 
+Phase 1 of `v3.1.0` re-pinned the ten `cadence-core/workflows/context.md` rows
+to their locations in the LIVE file rather than at `a6b8931`, so those cells are
+no longer run-1 provenance and are the only ones that are not. Four of them
+(CONTEXT-03, CONTEXT-06, CONTEXT-07, CONTEXT-15) were already stale before that
+phase opened; the rest moved because the phase inserted a coordinator-marker
+preamble and a new `spend_gate` step above them. Left alone, the next sweep
+would have reported a wave of `stale` verdicts produced by line SHIFTS rather
+than by any claim changing, which is the signal this ledger exists to keep
+readable. The join is unaffected - it is on `doc` plus claim text - and only
+CONTEXT-03's TEXT changed, because that claim itself had become false
+(`workflow.subagent_timeout` was deleted from the seam, so the call no longer
+reads two keys).
+
+Phase 2 of `v3.1.0` did the same for the `README.md` rows, for the same reason:
+`/cad-adopt` added a second-door paragraph under `## The loop` and a bullet
+under `## The commands`, so every claim below line 70 moved. All 19 affected
+rows now name their LIVE location, joining CONTEXT's ten as cells that are no
+longer run-1 provenance; the ten tail rows from README-41 on (README-47 excepted,
+it cites the install block) were already off by one before this phase and are
+re-pinned to the live file too. A second insert in the same phase - the
+`--brief` sentence, two lines under the same `## The loop` heading - moved the
+19 rows from README-32 down again, and they are re-pinned with it. The same
+phase then did it for all 22
+`cadence-core/workflows/new-project.md` rows, which `--brief` moved twice over -
+once in the `setup` step where the flag is parsed and once in `questioning`
+where what a brief settles stops being asked. Eight of those 22 were already
+stale before the phase opened - NEW-PROJECT-15 through -22 cited lines their
+claim's text had drifted off, by three to five lines - so every row is pinned to
+where the live file states its claim rather than to its old cite plus this
+phase's shift. No
+`claim`, `verdict` or `resolution` cell changed - nothing here changes what any
+claim says, and the join is still `doc` plus claim text.
+
+Phase 3 of `v3.1.0` moved the `README.md` rows once more, and this time one
+CLAIM changed with them. Two bullets were inserted into `## The commands` -
+`/cad-minimalism-review` under **Review & quality** and `/cad-suggest` under
+**Support**, the phase's two new commands - so every claim at or below the first
+of them shifted by one line and everything below the second by two. The 13 rows
+from README-38 down (README-47 excepted again, it cites the install block) are
+re-pinned to where the live file states their claim: README-39's range widens to
+`105-130` because the lists it covers grew by two rows. The exception is
+README-44, whose claim TEXT had itself become false - the skill count read 23
+against a measured 27, wrong by four rather than by this phase's two, since it
+was already stale before the phase opened. Task 5 re-measured instead of
+incrementing (`grep -L "user-invocable: false" skills/*/SKILL.md | wc -l` and
+`ls agents/*.md | wc -l`), so the row's claim text is rewritten to the corrected
+sentence and its `resolution` reads `corrected - fe9b9b9`. Its `verdict` is left
+as run 1 recorded it, the way phase 2 left verdicts alone. That one rewrite is
+called out here on purpose: the ledger's join is `doc` plus claim text, so a
+silently rewritten claim would join to nothing in the next sweep and report as a
+new extraction rather than as a fix. No row was added - the ledger holds run-1
+provenance, and new claims (the two command bullets among them) are extracted by
+the next `/cad-docs-verify` run.
+
 **Resolution values.** `accurate` on every row the sweep confirmed;
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
 the commit that edited it; `divergence - <reason>` on one deliberately left
@@ -171,26 +225,26 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-29 | README.md | 60 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate |
 | README-30 | README.md | 64 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate |
 | README-31 | README.md | 66-70 | The five loop commands exist as named. | accurate | accurate |
-| README-32 | README.md | 72 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate |
-| README-33 | README.md | 74 | `docs/figures/phase-loop.svg` exists. | accurate | accurate |
-| README-34 | README.md | 76 | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | accurate |
-| README-35 | README.md | 80 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate |
-| README-36 | README.md | 88 | `/cad-verify` records in UAT.md. | accurate | accurate |
-| README-37 | README.md | 93 | `/cad-milestone` tags the release. | accurate | accurate |
-| README-38 | README.md | 93,111 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate |
-| README-39 | README.md | 101-122 | Every command in the three command lists exists. | accurate | accurate |
-| README-40 | README.md | 117 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate |
-| README-41 | README.md | 128 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate |
-| README-42 | README.md | 138 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | accurate | accurate |
-| README-43 | README.md | 138 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate |
-| README-44 | README.md | 138 | Today it is 23 skills and 6 agent roles across 19 rung files. | accurate | accurate |
-| README-45 | README.md | 140 | CI fails the build when the prose drifts from the code. | accurate | accurate |
-| README-46 | README.md | 142 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate |
+| README-32 | README.md | 76 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate |
+| README-33 | README.md | 78 | `docs/figures/phase-loop.svg` exists. | accurate | accurate |
+| README-34 | README.md | 80 | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | accurate |
+| README-35 | README.md | 84 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate |
+| README-36 | README.md | 92 | `/cad-verify` records in UAT.md. | accurate | accurate |
+| README-37 | README.md | 97 | `/cad-milestone` tags the release. | accurate | accurate |
+| README-38 | README.md | 97,116 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate |
+| README-39 | README.md | 105-130 | Every command in the three command lists exists. | accurate | accurate |
+| README-40 | README.md | 123 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate |
+| README-41 | README.md | 136 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate |
+| README-42 | README.md | 146 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | accurate | accurate |
+| README-43 | README.md | 146 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate |
+| README-44 | README.md | 146 | Today it is 27 skills and 6 agent roles across 19 rung files. | accurate | corrected - fe9b9b9 |
+| README-45 | README.md | 148 | CI fails the build when the prose drifts from the code. | accurate | accurate |
+| README-46 | README.md | 150 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate |
 | README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves |
-| README-48 | README.md | 128 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
-| README-49 | README.md | 132 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
-| README-50 | README.md | 132 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one |
-| README-51 | README.md | 134 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
+| README-48 | README.md | 136 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment |
+| README-49 | README.md | 140 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 |
+| README-50 | README.md | 140 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one |
+| README-51 | README.md | 142 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then |
 | METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 |
 | METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 |
 | METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 closed f6eed02 |
@@ -416,23 +470,23 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-REVIEW-08 | cadence-core/workflows/config-review.md | 72-76 | `config.mjs set 'review.providers.<name>.tiers.<pos>=<id>'` is the write path. | accurate | accurate |
 | CONFIG-REVIEW-09 | cadence-core/workflows/config-review.md | 80-82 | Adding a provider to `review.reviewers` via `set 'review.reviewers=["claude-subagent","openai"]'` is what enrolls it. | accurate | accurate |
 | CONFIG-REVIEW-10 | cadence-core/workflows/config-review.md | 78-80 | `claude-subagent` is the always-available fallback when a tier is `null`. | accurate | accurate |
-| CONTEXT-01 | cadence-core/workflows/context.md | 20-22 | `planning.mjs cursor get` returns `no-cursor` when STATE.md is absent. | accurate | accurate |
+| CONTEXT-01 | cadence-core/workflows/context.md | 34-35 | `planning.mjs cursor get` returns `no-cursor` when STATE.md is absent. | accurate | accurate |
 | CONTEXT-02 | cadence-core/workflows/context.md | 12 | Output path `.planning/phases/{N}/CONTEXT.md`. | accurate | accurate |
-| CONTEXT-03 | cadence-core/workflows/context.md | 76 | `config.mjs get memory.backend workflow.subagent_timeout` reads both in one call. | accurate | accurate |
-| CONTEXT-04 | cadence-core/workflows/context.md | 79 | `builtin` is the schema default for `memory.backend`. | accurate | accurate |
+| CONTEXT-03 | cadence-core/workflows/context.md | 97 | `config.mjs get memory.backend` reads the recall gate in one call. | accurate | accurate |
+| CONTEXT-04 | cadence-core/workflows/context.md | 100 | `builtin` is the schema default for `memory.backend`. | accurate | accurate |
 | CONTEXT-05 | cadence-core/references/recall.md | 15, 18, 25 | `planning.mjs recall "<terms>"` exists and returns `{ok, results:[{score, source, phase?, snippet}]}` with `phase` optional. | accurate | accurate |
-| CONTEXT-06 | cadence-core/workflows/context.md | 107 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate |
-| CONTEXT-07 | cadence-core/workflows/context.md | 107 | `--family lifecycle` is a valid family. | accurate | accurate |
-| CONTEXT-08 | cadence-core/workflows/context.md | 113 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate |
+| CONTEXT-06 | cadence-core/workflows/context.md | 163-165 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate |
+| CONTEXT-07 | cadence-core/workflows/context.md | 163-165 | `--family lifecycle` is a valid family. | accurate | accurate |
+| CONTEXT-08 | cadence-core/workflows/context.md | 168 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate |
 | CONTEXT-09 | cadence-core/bin/lib/trace.mjs | 51-54 | Measured token figures: analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034. | accurate | accurate |
 | CONTEXT-10 | cadence-core/bin/lib/trace.mjs | 54-55 | A built-in agent type (`Explore`) returned no token figure at all. | accurate | accurate |
 | CONTEXT-11 | cadence-core/bin/lib/trace.mjs | 56-59 | `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT. | accurate | accurate |
 | CONTEXT-12 | cadence-core/bin/lib/trace.mjs | 60-64 | A dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere. | accurate | accurate |
 | CONTEXT-13 | cadence-core/bin/lib/trace.mjs | 64-65 | The census in `trace.test.mjs` binds these lines per file. | accurate | accurate |
-| CONTEXT-14 | cadence-core/workflows/context.md | 155 | The failure arm closes with `--event checkpoint`. | accurate | accurate |
-| CONTEXT-15 | cadence-core/workflows/context.md | 351 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate |
-| CONTEXT-16 | cadence-core/workflows/context.md | 254-256 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate |
-| CONTEXT-17 | cadence-core/workflows/context.md | 396-397 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate |
+| CONTEXT-14 | cadence-core/workflows/context.md | 206 | The failure arm closes with `--event checkpoint`. | accurate | accurate |
+| CONTEXT-15 | cadence-core/workflows/context.md | 367 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate |
+| CONTEXT-16 | cadence-core/workflows/context.md | 304-306 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate |
+| CONTEXT-17 | cadence-core/workflows/context.md | 413-414 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate |
 | COVERAGE-01 | cadence-core/workflows/coverage.md | 12-13 | `planning.mjs status` reports per-phase status. | accurate | accurate |
 | COVERAGE-02 | cadence-core/workflows/coverage.md | 13-19 | Statuses include `complete` and `executed` (and `unplanned` / `planned`). | accurate | accurate |
 | COVERAGE-03 | cadence-core/workflows/coverage.md | 14-15 | `ok:false` reasons include `no-planning-dir` and `no-roadmap`, each carrying a `hint`. | accurate | accurate |
@@ -512,28 +566,28 @@ fixed, which is what makes that link answer the only question it is asked.
 | MILESTONE-14 | cadence-core/workflows/milestone.md | 117-119 | `/cad-phase add` is the only workflow that appends a phase line to an existing roadmap. | accurate | accurate |
 | MILESTONE-15 | cadence-core/workflows/milestone.md | 128-131 | `git.auto_close` false is the default, so the tag stays unpushed and publishing is a separate `/cad-land`. | accurate | accurate |
 | MILESTONE-16 | cadence-core/workflows/milestone.md | 138-142 | The chain reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback (`resolveReapBranch`). | accurate | accurate |
-| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 51 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected - 044806c |
-| NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 95 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` |
-| NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 29 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate |
-| NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 33 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate |
-| NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 38 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate |
-| NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 39 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate |
-| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 47 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate |
-| NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 51 | Defaults are research off, plan check on, verifier on. | accurate | accurate |
-| NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 57-60 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate |
-| NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 134 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate |
-| NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 146 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate |
-| NEW-PROJECT-12 | cadence-core/workflows/new-project.md | 161 | Dispatch via the spawn-agent seam with timeout `workflow.subagent_timeout`. | accurate | accurate |
-| NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 179-181 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate |
-| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 182-184 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate |
-| NEW-PROJECT-15 | cadence-core/workflows/new-project.md | 213 | Category questions batch up to 4 per AskUserQuestion call. | accurate | accurate |
-| NEW-PROJECT-16 | cadence-core/workflows/new-project.md | 237 | `cadence-core/templates/REQUIREMENTS.md` exists. | accurate | accurate |
-| NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 240,269 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate |
-| NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 256-257 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate |
-| NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 266 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate |
-| NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 293-294 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate |
-| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 297-301 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate |
-| NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 358 | STATE.md is a 4-line cursor. | accurate | accurate |
+| NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 60 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected - 044806c |
+| NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 121-122 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` |
+| NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 38 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate |
+| NEW-PROJECT-04 | cadence-core/workflows/new-project.md | 42 | `planning.mjs trace ignore --root .` exists as a seam call. | accurate | accurate |
+| NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 47 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate |
+| NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 48 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate |
+| NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate |
+| NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | accurate | accurate |
+| NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-69 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate |
+| NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 161 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate |
+| NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 173 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate |
+| NEW-PROJECT-12 | cadence-core/workflows/new-project.md | 188 | Dispatch via the spawn-agent seam with timeout `workflow.subagent_timeout`. | accurate | accurate |
+| NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 206-208 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate |
+| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 209-210 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate |
+| NEW-PROJECT-15 | cadence-core/workflows/new-project.md | 244-245 | Category questions batch up to 4 per AskUserQuestion call. | accurate | accurate |
+| NEW-PROJECT-16 | cadence-core/workflows/new-project.md | 268 | `cadence-core/templates/REQUIREMENTS.md` exists. | accurate | accurate |
+| NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 271,298 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate |
+| NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 286-287 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate |
+| NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 297 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate |
+| NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 324-325 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate |
+| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 328-330 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate |
+| NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 389 | STATE.md is a 4-line cursor. | accurate | accurate |
 | PHASE-01 | cadence-core/workflows/phase.md | 4-6 | A phase number appears in four places: ROADMAP list, `.planning/phases/<N>/`, the REQUIREMENTS Phase column, the STATE cursor. | accurate | accurate |
 | PHASE-02 | cadence-core/workflows/phase.md | 7 | The renumber mechanics live in the planning seam's `renumber` subcommand. | accurate | accurate |
 | PHASE-03 | cadence-core/workflows/phase.md | 18-20 | `cursor set` requires `--phase` and does not preserve the prior one, so `cursor get` first is not optional. | accurate | accurate |
