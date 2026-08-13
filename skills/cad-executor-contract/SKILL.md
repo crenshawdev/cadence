@@ -41,9 +41,8 @@ For each task in the plan, in order:
    rather than a failure. Prefer `LSP` diagnostics to the subprocess only when
    the change is confined to files the language server has already indexed AND
    they cover the same defect class, since that is state the host already holds;
-   otherwise spawn it. A failure gets the same three bounded fix attempts as any
-   blocker, and surviving the third is a `blocked` checkpoint, never the move-on
-   arm: reaching the commit step with a failing lint is what this step prevents.
+   otherwise spawn it. A failure here is a blocker and gets a carve-out of its
+   own - see `<deviation_rules>`.
 4. Commit per the commit protocol below.
 5. Rewrite `<plandir>/reports/plan-<k>.md` (see `<report_file>`) with every
    row so far.
@@ -103,10 +102,11 @@ without ceremony.
 Boundaries:
 - Scope: only what the current task's changes caused or directly need.
   Pre-existing problems elsewhere are open items, not your job.
-- Three fix attempts per task, then record it as an open item and move on -
-  or checkpoint if it blocks the task. ONE carve-out: a static-analysis
-  failure surviving the third attempt is always a `blocked` checkpoint, never
-  the move-on arm, because moving on there means committing the failure.
+- A blocker gets three bounded fix attempts per task, then record it as an open
+  item and move on - or checkpoint if it blocks the task. ONE carve-out: a
+  static-analysis failure surviving the third attempt is always a `blocked`
+  checkpoint, never the move-on arm, because moving on there means committing
+  the failure.
 - Package installs are never auto-fixable. If an install fails, do not
   retry with a similar name and do not substitute an alternative - a failed
   install can mean a hallucinated or squatted package. Return a `blocked`
