@@ -733,6 +733,7 @@ const BRACKETING = new Map([
   [join('cadence-core', 'references', 'review-triggers.md'), 1],
   [join('cadence-core', 'workflows', 'execute.md'), 1],
   [join('cadence-core', 'workflows', 'decision-review.md'), 1],
+  [join('cadence-core', 'workflows', 'minimalism-review.md'), 1],
   [join('cadence-core', 'workflows', 'verify-deep.md'), 1],
 ]);
 
