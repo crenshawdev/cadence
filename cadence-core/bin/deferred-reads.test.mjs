@@ -127,6 +127,12 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
   }),
   Object.freeze({
+    skill: 'cad-executor-contract',
+    reference: 'references/lean-build.md',
+    anchors: Object.freeze(['1']),
+    read_paragraphs: 1,
+  }),
+  Object.freeze({
     skill: 'cad-plan',
     reference: 'references/plan-revision.md',
     anchors: Object.freeze(['check_gate']),
@@ -153,7 +159,7 @@ test('register: the original four rows are byte-identical, and the register is e
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 11);
+  assert.equal(DEFERRED_READS.length, 12);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------

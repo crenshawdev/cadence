@@ -229,6 +229,12 @@ export const DEFERRED_READS = Object.freeze([
     read_paragraphs: 1,
   }),
   Object.freeze({
+    skill: 'cad-executor-contract',
+    reference: 'references/lean-build.md',
+    anchors: Object.freeze(['1']),
+    read_paragraphs: 1,
+  }),
+  Object.freeze({
     skill: 'cad-plan',
     reference: 'references/plan-revision.md',
     anchors: Object.freeze(['check_gate']),

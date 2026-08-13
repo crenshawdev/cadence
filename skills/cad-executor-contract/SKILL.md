@@ -19,7 +19,10 @@ the adjustment as a deviation.
 
 <process>
 For each task in the plan, in order:
-1. Implement the task's change.
+1. Implement the task's change. Read
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/lean-build.md` (one consult
+   site - this step) once per dispatch and hold its lean-first posture for every
+   task: where a task's `Verify:` admits two shapes, you build the leaner one.
 2. Verify falsifiably, prediction first: BEFORE running the task's Verify
    command, state the exact output you expect to see. Then run it
    (`workflow.test_command` from config if set and relevant, otherwise
