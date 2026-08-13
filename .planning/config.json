@@ -2,7 +2,8 @@
   "workflow": {
     "research": true,
     "inline_plan_threshold": 2,
-    "test_command": "node --test cadence-core/bin/*.test.mjs"
+    "test_command": "node --test cadence-core/bin/*.test.mjs",
+    "lint_command": "npx tsc -p tsconfig.ci.json"
   },
   "parallelization": {
     "max_concurrent_agents": 6
@@ -25,6 +26,11 @@
       "pre_ship": {
         "gate": "off"
       }
+    }
+  },
+  "model": {
+    "effort": {
+      "cad-plan-checker": "high"
     }
   }
 }
