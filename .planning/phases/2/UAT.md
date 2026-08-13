@@ -3,7 +3,7 @@ status: testing
 phase: 2
 fields_version: 1
 started: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-13
 ---
 
 ## Items
@@ -11,17 +11,26 @@ updated: 2026-08-12
 ### 1. /cad-adopt initializes .planning/ on a brownfield repo
 expected: Run /cad-adopt in a git repo with no .planning/ (e.g. /code/axel): it writes PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and config.json, and /cad-health on that directory reports zero problems. (human-verify: needs a walked /cad-adopt run on a brownfield repo)
 criterion: AC1
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: Walked /cad-adopt in /data/code/axel (git repo, no .planning/). All five files written and committed as f373cd2 "docs: adopt existing project into Cadence": PROJECT.md 8963 B, REQUIREMENTS.md 4854 B, ROADMAP.md 6806 B, STATE.md 117 B, config.json 1319 B. /cad-health checks run against it one by one, all clean: (1) presence OK x4 and `trace ignore --root . --check` -> ignored:true, tracked:false (silent arm); (2) STATE cursor parses to the 4-line schema, status "ready to plan" is a lifecycle value; (3) ROADMAP ## Phases numbered 1..6, no gaps or dupes; (4) Traceability table parses with zero rows, no bad Status; (5) `planning.mjs status` -> cursor 1 of 6 matching the 6 phases, agrees:true, no phases/ dirs; (6) parallelization.enabled true with use_worktrees true and `worktree-base.mjs resolve` -> parallelSafe:true, reviewers ["claude-subagent"] needs no credential, so nothing inert; (7) Active v0.1.0 against an empty `git tag --list` -> no drift. Zero problems.
 
 ### 2. Adopted .planning/ carries remaining work only
 expected: In that adopted .planning/: ROADMAP.md's ## Phases list has no - [x] entry, REQUIREMENTS.md's ## Traceability table has headers and zero rows, the ### Active version does not appear in `git tag --list`, and the STATE cursor names phase 1. (human-verify: needs the same walked /cad-adopt run)
 criterion: AC2
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: Same adopted /data/code/axel/.planning/, four sub-checks: (a) `grep -c "^- \[x\]" .planning/ROADMAP.md` -> 0; all six ## Phases entries are `- [ ]` (Machine-Independent Defaults, CI On Push, Vendored Integration Surface, One-Command Install, Release Artifacts, Cut v0.1.0) - all REMAINING work, D-04 held. (b) ## Traceability is the bare header row plus separator, zero data rows, matching D-10 (seed-reqs seeds them at /cad-plan). (c) PROJECT.md:35 ### Active names "Milestone v0.1.0"; `git tag --list` is empty, so the Active version appears in no tag - health rule 7 clean. (d) STATE.md reads "Phase: 1 of 6 (Machine-Independent Defaults)" and `planning.mjs status` parses cursor.phase 1, agrees:true. Note: the earlier plan-mode survey proposed v0.2.0 to dodge the Cargo.toml 0.1.0 collision; the live run wrote v0.1.0, which is still clean because rule 7 keys on tags and there are none.
 
 ### 3. Adopt asks only what the repo cannot answer
 expected: Walked on a repo whose README and manifest already state its goal, stack and build commands, adopt asks about none of those three, and every question it does ask names something absent from the repo. (human-verify: needs a walked /cad-adopt run)
 criterion: AC3
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: Walked against /data/code/axel (README.md + ARCHITECTURE.md + Cargo.toml present, 74 commits). Adopt derived rather than asked all three forbidden topics: goal ("one .r8 SQLite file as an agent's whole brain"), stack ("Rust workspace, 3 crates, ~14.7k lines, clap CLI with 15 subcommands"), build/test ("144 tests, no CI"). It asked exactly two questions plus one confirmation, each naming something absent from the repo: (1) ownership/upstream intent - every commit authored by a different person and origin is a third-party GitHub remote, which no file states; (2) the next milestone - explicitly citing that the consolidation roadmap was moved OUT of the repo in commit 1e5dd7d, so nothing on disk names it; (3) the D-12 ### Active version confirmation, proposing v0.2.0 over the Cargo.toml 0.1.0 rather than reusing a current version. It also re-checked REVIEW.md against HEAD instead of trusting it. Run captured at tasks/by9k4s3is.output.
 
 ### 4. Brief fixture test passes
 expected: node --test over cadence-core/bin/design-brief.test.mjs passes against the committed cadence-core/bin/fixtures/ copy of verbatim's DESIGN-BRIEF.md, asserting its ## 17. Open items rows.
@@ -34,7 +43,10 @@ evidence: `node --test cadence-core/bin/design-brief.test.mjs` -> tests 5, pass 
 ### 5. --brief stops re-asking what the brief settles
 expected: /cad-new-project --brief walked against that brief does not re-ask the problem, the users, the non-goals, the stack or the constraints, and every question it asks traces to an open item in the brief. (human-verify: needs a walked /cad-new-project --brief run)
 criterion: AC5
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: Walked in /tmp/brieftest; questions recovered verbatim from the run transcript (~/.claude/projects/-tmp-brieftest/a7b7c1cf-*.jsonl), 2 AskUserQuestion calls carrying 7 questions total. NOT re-asked, all five: the problem, the users, the non-goals, the stack, the constraints - zero questions touch any of them. Every question traces to something the brief leaves open: (1) "first genuinely usable slice" -> brief:510 commits to "0.0.1 onward, agile increments" and names no first slice; (2) crates.io -> brief:515 states the unresolved fork verbatim ("Publish as verbatim-cli ... or skip crates.io"), and the two options mirror its two arms; (3) where the credentials library lives -> brief:343 says it "needs its own small library" but never says where; (4) /data/verbatim-legacy import -> ## 17 row 3 "Deferred"; (6) what done looks like personally -> the gap D-08 identified by measurement as one of the two background items this brief leaves open; (7) Windows UserPromptSubmit spawn cost -> ## 17 row 2 "Measure". The one exception is (5) v1 scope, which is a follow-up to the user ANSWER to (3) rather than to the brief - adaptive questioning off a live answer, not a re-ask of settled material.
 
 ### 6. Discovery docs page linked from README
 expected: A docs/ page states the freeform-conversation -> design-brief -> --brief sequence and what a good brief answers, and README.md's getting-started path links to it by path.
@@ -54,7 +66,10 @@ evidence: self-verify.mjs -> ok:true, problems:[] (no unbudgeted-surface, no bud
 
 ### 8. Adopt refuses a subdirectory of a git repo
 expected: Running /cad-adopt from a subdirectory of a git repo refuses rather than answering from the parent repo's log and tags while writing .planning/ into the subdirectory.
-status: pending
+status: pass
+first_pass: pass
+source: model
+evidence: Scratch repo test: from the repo root, `git rev-parse --show-toplevel` == cwd; from `sub/`, cwd=.../gate/sub while toplevel=.../gate, so the gate at adopt.md:21-32 fires and directs the stop "This is a subdirectory of {root}. Run /cad-adopt in {root}." with nothing written (find -name .planning returned nothing). The banned substitution is confirmed banned for cause: `git rev-parse --git-dir` succeeded from sub/ (returned .../gate/.git), which is exactly the false-accept adopt.md:26-32 describes. Residual: the stop itself is model-followed prose, not executable enforcement, so this proves the discriminator and the instruction, not a live coordinator obeying it.
 
 ### 9. Run /cad-adopt in a brownfield git repo with no .planning/ (PLAN-1 names /code/axel as the cheapest target), then run /cad-health there
 expected: .planning/ holds PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and config.json, and /cad-health reports zero problems
@@ -94,9 +109,9 @@ reason: duplicate wording of item 8; walked and recorded there
 ## Summary
 
 total: 13
-passed: 3
+passed: 8
 failed: 0
-pending: 5
+pending: 0
 skipped: 5
 blocked: 0
 reworked: 0
