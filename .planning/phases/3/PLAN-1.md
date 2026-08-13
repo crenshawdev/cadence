@@ -8,6 +8,8 @@ files:
   - skills/cad-land/SKILL.md
   - cadence-core/bin/lib/deferred-reads.mjs
   - cadence-core/bin/weight-budgets.json
+  - cadence-core/bin/deferred-reads.test.mjs
+  - cadence-core/bin/self-verify.test.mjs
 ---
 
 # Phase 3: The lens and the loop back - Plan 1 (the executor's posture, and the two prose cuts)
