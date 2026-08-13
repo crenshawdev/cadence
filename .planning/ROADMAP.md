@@ -39,7 +39,7 @@ its files are already open.
 
 - [x] **Phase 1: The accounting the trace still misses** - the coordinator's own spend reaches the record, and the spine's most expensive dispatch stops being bought unasked
 - [x] **Phase 2: The front door** - Cadence initializes from an existing repo, and from a design brief a freeform conversation already produced
-- [ ] **Phase 3: The lens and the loop back** - over-building gets named at build and review time, Cadence-directed friction reaches Cadence's own queue, and the tuner that reads the run record gets a front door
+- [x] **Phase 3: The lens and the loop back** - over-building gets named at build and review time, Cadence-directed friction reaches Cadence's own queue, and the tuner that reads the run record gets a front door
 
 ## Phase Details
 
