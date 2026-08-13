@@ -153,22 +153,14 @@ re-derive the just-shipped branch name by version. It reaps via the
 `cadence/<this-version>`, so it is still reaped correctly.
 
 ## 8. Retune check
-The record this milestone wrote prices its own configuration. Run:
+The record this milestone wrote prices its own configuration. Invoke
+`/cad-suggest` via the SlashCommand tool, unscoped - the milestone's evidence
+spans every phase it shipped. Its rules live in
+`cadence-core/workflows/suggest.md` and are not restated here.
 
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace suggest
-```
-
-Present the returned `suggestions` as they arrive: `suggest` entries as a
-numbered list (each names its config key and the evidence behind it),
-`info` entries as one receipt line each. Then STOP - apply NOTHING. A
-suggestion is input to the user's decision, exactly as the triage gate treats
-review findings: the user names which keys to change (via `/cad-config` or a
-direct edit), and an unanswered list means no change. An empty list is
-reported as "the record supports no retune" - the configuration earned its
-keep, which is also worth one line. `ok:false` or a missing subcommand
-degrades to a one-line note, never a halt: the close does not gate on its own
-accounting.
+The close's own posture, which is not a presentation rule: a failed or missing
+run degrades to a one-line note, never a halt. The close does not gate on its
+own accounting.
 
 ## 9. Report
 Version bumped and committed - or "no version bump (non-release)" - phases

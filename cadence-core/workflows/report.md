@@ -65,9 +65,10 @@ Rules, all load-bearing:
 </step>
 
 <step name="done">
-Print the report. One suggestion max: `planning.mjs trace suggest` when the
-report shows a pattern worth a retune look (a gate with repeated empty
-adjudications, repeated escalations) - name it, do not run it unasked.
+Print the report. One suggestion max: `/cad-suggest`, whose rules live in
+`cadence-core/workflows/suggest.md`, when the report shows a pattern worth a
+retune look (a gate with repeated empty adjudications, repeated escalations) -
+name it, do not run it unasked.
 </step>
 
 </process>
