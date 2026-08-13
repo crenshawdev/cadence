@@ -6,6 +6,104 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-13
+
+### Added
+
+- **`/cad-adopt` - an entrance for a repo that already exists.** Cadence's
+  front door assumed a blank page: a brownfield project had no way in short of
+  answering `/cad-new-project`'s interview about code already written. Adopt
+  derives PROJECT.md, REQUIREMENTS.md and a REMAINING-work ROADMAP.md from the
+  code, the manifest and the git history, seeds Traceability through the
+  existing seams, and asks only what the repo cannot answer. It refuses a
+  subdirectory of a repo - git discovers upward, so `/repo/subdir` would
+  otherwise answer from `/repo`'s log while writing `.planning/` into the
+  subdirectory. No subagent: the brownfield read is paid in the coordinator's
+  own context.
+
+- **`/cad-new-project --brief <file>`.** A design brief settles most of what
+  the interview asks. The brief is read whole - no parser, no schema, no marker
+  convention - and suppression keys off what it SAYS. Replayed against
+  verbatim's own `DESIGN-BRIEF.md`, the settled decisions are not re-asked.
+  `docs/DISCOVERY.md` documents the sequence (freeform conversation, then
+  brief, then `--brief`) and what a good brief answers; it stays guidance, never
+  a scripted interview, because the discovery works BECAUSE it is freeform.
+
+- **The coordinator's own spend reaches the run record.** Every subagent was
+  priced and the orchestrating session - half the original cost spiral - was
+  invisible. A `--step` marker on `trace append` carries only what the
+  coordinator can actually know and never a fabricated token figure;
+  `renderTrace` grows a `coordinator` block (`wall_ms`, `bracket_ms`,
+  `residue_ms`, time-ordered `steps[]`, overlaps unioned before subtraction,
+  residue floored at zero) that is absent entirely on a trace written before
+  this release. `trace suggest` reads those figures rather than recomputing
+  them, and `/cad-report`'s record-health line reports the residue and its
+  heaviest step. Verbatim's phase-1 record ships as a byte-for-byte fixture
+  with both readers pinned against it.
+
+- **A spend gate in `/cad-context`.** The assumptions analyzer is the spine's
+  most expensive dispatch (75k on verbatim phase 1, 132k on phase 2), and
+  nothing asked whether a given phase was worth buying it for. A gate between
+  `load_priors` and `analyze` settles phase scope cheaply first and falls back
+  to a conversational pass when the phase is small or its ground was already
+  settled by a prior phase's deviations - which `load_priors` now reads from
+  those phases' SUMMARY `## Deviations`. The size question and the spend
+  question are stated as two distinct questions, pinned by a prose-agreement
+  test.
+
+- **`/cad-minimalism-review` - a ranked delete-list.** An adversarial
+  CORRECTNESS review structurally cannot catch over-building: a hand-rolled
+  helper the stdlib already ships, a base class with one subclass, a hook
+  nothing calls and a key nothing reads all pass it, because nothing they do is
+  wrong. This pass hunts those four species and returns the list in the review
+  subsystem's shared findings schema with `severity` carrying the rank. It
+  dispatches the existing `cad-reviewer` with a retargeting instruction - no
+  seventh role, no sixth trigger, no gate - and it applies NOTHING: the skill
+  grants neither `Write` nor `Edit`, so that is structural rather than a
+  promise.
+
+- **`/cad-suggest` - the tuner gets a front door.** The retune the run record
+  supports was reachable only as a footnote at the end of `/cad-report`. It is
+  now a command: every suggestion carries the trace figures behind it and names
+  the `/cad-config` key it concerns, and it writes no config itself. A trace
+  too thin to clear the evidence floors gets a one-line refusal rather than an
+  invented suggestion, discriminated on `events_read` alone - "no record" and
+  "below the floors" are different sentences.
+
+- **`/cad-capture --cadence`.** Friction with Cadence noticed while using
+  Cadence on somebody else's project had nowhere to go: the note either became
+  noise the host project's triage archived as out of scope, or was never
+  written. Ten projects of field use produced five lines of Cadence feedback
+  total. `--cadence` writes to Cadence's own queue beside the global config
+  layer - `~/.claude/cadence/CAPTURE.md`, or `CADENCE_GLOBAL_CONFIG`'s
+  directory - carrying the host project and the command that provoked it, and
+  never `${CLAUDE_PLUGIN_ROOT}`, which the next upgrade orphans. It makes no
+  commit in the host repo, transmits nothing, and has no `.planning/` fallback:
+  a note landing in the host repo is the failure the arm exists to close.
+
+### Changed
+
+- **`cad-executor` ships the lean shape and says so once.** Where a task's
+  `Verify:` admits two shapes, the executor builds the leaner one and records
+  the declined fuller option as an `Open items:` line in its report - not as a
+  deviation, whose narrowness is the signal, and not as a sixth field on the
+  return digest. The posture rides behind a `Read` at the step that needs it,
+  anchored by a `lib/deferred-reads.mjs` register row, so it costs the dispatch
+  path nothing until it is wanted and CI fails if the read is dropped.
+
+- **Two surfaces state their mechanic once.** `skills/cad-land/SKILL.md`'s
+  guardrails stopped re-deriving the `git.auto_close` mechanic and
+  `cad-executor-contract`'s static-analysis carve-out is stated once with a
+  pointer, each surface re-pinned in `weight-budgets.json` in the same commit -
+  both sat exactly at their pins, so the cut was invisible to CI and the re-pin
+  is the only thing stopping the bytes coming back. The named keeps stand: the
+  no-preselected-default block and the not-scoped-to-GitHub clause.
+
+- **The suggest presentation rules live in one place.** `workflows/suggest.md`
+  is now their only statement; `/cad-milestone`'s retune step and
+  `/cad-report`'s closing pointer route there instead of restating them.
+
+
 ## [3.0.0] - 2026-08-12
 
 ### Added
@@ -2203,6 +2301,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.1.0
 [3.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.0.0
 [2.6.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.2
 [2.6.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.1
