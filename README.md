@@ -121,7 +121,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 **Support**
 - **`/cad-adopt`** — bring a repo that already has code and history into Cadence, deriving `PROJECT.md`, `REQUIREMENTS.md` and a remaining-work `ROADMAP.md` from what is already there.
 - **`/cad-config`** — the `stakes` level, workflow toggles, model routing, review gates and providers, parallelism, consult. `/cad-config` walks every switch; `key=value` sets one directly, as in `/cad-config stakes=shipped`.
-- **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place.
+- **`/cad-capture`** — a phase-linked todo or a seed idea, captured without losing your place. `--cadence` routes friction with Cadence itself to Cadence's own queue, so it leaves the project you noticed it in.
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
 - **`/cad-report`** — the run record as receipts: what each dispatch cost, what the gates caught, what got refuted. The trace prices every subagent Cadence runs; this is where you read the bill.
