@@ -722,6 +722,47 @@ test('render: a terminal is billed to the role that DISPATCHED, not its own', ()
     'the dispatch role owns the figure, and the mistyped closing role invents no row');
 });
 
+test('render: a bracket closed under a DIFFERENT role is reported, not absorbed', () => {
+  const dir = root();
+  // The billing above is right and stays right - and it is also the reason the
+  // disagreement is invisible, so the prose defect at one of the two sites
+  // survives every render. `mismatched` is where it surfaces; nothing about the
+  // accounting moves.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-reviewer', tokens: 500, ts: '2026-08-14T10:00:00.000Z' });
+  // ...and two brackets that are NOT mismatches: one closed by the same role,
+  // one whose close carries no `--role` at all. An omitted flag is already
+  // visible as an unkeyed row, and reporting it here would raise a false alarm
+  // on every bracket in the existing record.
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '3', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'checkpoint', plan: '3' });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 3, tokens: 500, unrecorded: 2 } },
+    'the dispatch role still owns every figure - the report changes no accounting');
+  assert.deepEqual(r.mismatched, [{
+    corr: '4', phase: 4, plan: '1', ts: '2026-08-14T10:00:00.000Z', event: 'return',
+    dispatched: 'cad-executor', closed: 'cad-reviewer',
+  }]);
+});
+
+test('seam: trace render shows mismatched only where a bracket disagreed', () => {
+  const dir = root();
+  const base = ['trace', 'append', '--phase', '4', '--family', 'lifecycle'];
+  run(dir, [...base, '--event', 'dispatch', '--plan', '1', '--role', 'cad-executor',
+    '--read', '.planning/phases/4/PLAN-1.md']);
+  const clean = run(dir, ['trace', 'render', '--phase', '4']);
+  assert.equal(clean.ok, true);
+  assert.equal('mismatched' in clean, false,
+    'a trace with nothing to report keeps the envelope every reader already parses');
+  run(dir, [...base, '--event', 'return', '--plan', '1', '--role', 'cad-reviewer', '--tokens', '500']);
+  const shown = run(dir, ['trace', 'render', '--phase', '4']);
+  assert.deepEqual(shown.mismatched.map((m) => [m.plan, m.dispatched, m.closed]),
+    [['1', 'cad-executor', 'cad-reviewer']]);
+  assert.deepEqual(shown.roles, { 'cad-executor': { dispatches: 1, tokens: 500 } });
+});
+
 test('render: an UNMATCHED terminal shows its tokens but funds no dispatch', () => {
   const dir = root();
   // No dispatch to speak for it, so it falls back to its own role - and must

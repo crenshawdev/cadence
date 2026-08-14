@@ -2765,6 +2765,12 @@ function cmdTrace(dir, sub, opts) {
       ...(r.malformed ? { malformed: r.malformed } : {}),
       events: r.events,
       unpaired: r.unpaired,
+      // Emitted the way `roles` and `coordinator` are - only when there is
+      // something to say, so a clean trace's envelope is byte-identical to the
+      // one every reader already parses. A bracket closed under a role its
+      // dispatch did not name is a prose defect at one of the two sites; it is
+      // reported here and billed nowhere (the dispatch stays the authority).
+      ...(r.mismatched.length ? { mismatched: r.mismatched } : {}),
     });
   }
   return fail('usage', 'trace <append|render|suggest|ignore>');

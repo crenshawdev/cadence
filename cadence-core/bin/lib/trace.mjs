@@ -321,6 +321,8 @@ export function appendEvent(planningRoot, event) {
  *   what each role COST, keyed by the lifecycle events' `role` field
  * @property {Record<string, any>[]} events
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
+ * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
+ *   paired brackets whose terminal named a role its dispatch did not
  * @property {CoordinatorResidue} [coordinator] present ONLY when the scoped events
  *   carry at least one usable COORDINATOR marker, so a trace written before that
  *   marker existed renders byte-identically to the way it always did
@@ -403,6 +405,7 @@ export function renderTrace(planningRoot, phase) {
     roles: {},
     events: [],
     unpaired: [],
+    mismatched: [],
   };
 
   // Per-role accumulators, kept beside `out.roles` rather than in it: `recorded`
@@ -566,6 +569,24 @@ export function renderTrace(planningRoot, phase) {
       if (matched) {
         const a = millis(matched.ts);
         if (a !== null && t !== null && t > a) coordRow(e.phase).spans.push({ a, b: t });
+        // REPORTED, never billed. The accounting below is unchanged - the
+        // dispatch is still the authority for whose bill this is - but a
+        // bracket whose two halves name two different roles is a prose defect
+        // at one of the two sites, and absorbing it silently is how it survives
+        // four milestones. A terminal carrying NO role at all is not a mismatch:
+        // an omitted flag is already visible as an unkeyed row, and calling it
+        // one would raise a false alarm on every historical bracket (measured
+        // 2026-08-14: 0 mismatches across 88 live paired brackets).
+        // The identity fields are the TERMINAL's, as `ts` and `event` are - it
+        // is the event being reported, and its `phase` may be spelled `1` where
+        // the dispatch spelled it `"1"`, which `key()` already folds together.
+        const closed = key(e.role);
+        if (closed && closed !== matched.role) {
+          out.mismatched.push({
+            corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, event: e.event,
+            dispatched: matched.role, closed,
+          });
+        }
       }
       if (tokens !== null) {
         // Bill the DISPATCH's role. An unmatched terminal has no dispatch to
