@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, utimesSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, utimesSync, chmodSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { promisify } from 'node:util';
@@ -28,6 +28,11 @@ function fixture(body) {
 }
 
 const readBack = (file) => readFileSync(file, 'utf8');
+
+/** True when mode 000 still reads - i.e. the suite is running as root. */
+function accessibleAsRoot(file) {
+  try { accessSync(file, constants.R_OK); return true; } catch { return false; }
+}
 
 /**
  * The body of one `## Heading` section, cut at the next `## ` - a deliberately
@@ -326,4 +331,69 @@ test('capture: a newline inside --text cannot break the bullet into two lines', 
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.bullet, '- first line ## Notes second line');
   assert.equal((readBack(file).match(/^## /gm) || []).length, 3, 'no injected heading');
+});
+
+// ---------------------------------------------------------------------------
+// The risk_surface findings this phase's blocking gate returned. Each row is
+// the failure the reviewer described, run against the real seam - so the fix
+// is proved by a test that could redden, not by reading the patch.
+// ---------------------------------------------------------------------------
+
+test('appendCapture: an UNREADABLE queue is a failure, never an empty one', () => {
+  // The finding: `read()` caught every error and returned null, so a present
+  // but unreadable CAPTURE.md was treated as absent and OVERWRITTEN with the
+  // empty three-section skeleton - the whole backlog destroyed under ok:true.
+  const file = fixture(THREE);
+  const before = readBack(file);
+  chmodSync(file, 0o000);
+  try {
+    // Running as root defeats the mode bits; the row would then assert nothing,
+    // so it says so rather than passing vacuously.
+    if (accessibleAsRoot(file)) return;
+    const r = appendCapture(file, 'todo', 'must not destroy the queue');
+    assert.equal(r.ok, false, 'an unreadable queue must not report success');
+  } finally {
+    chmodSync(file, 0o600);
+  }
+  assert.equal(readBack(file), before, 'the existing queue was overwritten');
+});
+
+test('capture: --text-file carries a sentence no shell could expand', () => {
+  // The finding: workflows prescribed `--text "<item>"`, so item text holding
+  // `$(...)` executed before Node started. The path transport is the fix, and
+  // the sentence here is exactly the payload that used to be dangerous.
+  const file = fixture(THREE);
+  const src = join(dirname(file), 'item.txt');
+  const payload = 'guard $(touch /tmp/cad-should-not-exist) and `id` stay literal';
+  writeFileSync(src, payload);
+  const r = capture(['--kind', 'todo', '--text-file', src, '--file', file]);
+  assert.equal(r.ok, true);
+  assert.ok(readBack(file).includes(payload), 'the sentence did not land verbatim');
+  assert.equal(existsSync('/tmp/cad-should-not-exist'), false, 'the payload executed');
+});
+
+test('capture: --text and --text-file together is bad-args, not a silent winner', () => {
+  const file = fixture(THREE);
+  const src = join(dirname(file), 'item.txt');
+  writeFileSync(src, 'from the file');
+  const r = capture(['--kind', 'todo', '--text', 'from the flag', '--text-file', src, '--file', file]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.equal(readBack(file), THREE);
+});
+
+test('capture: a --text-file that cannot be read is bad-args and writes nothing', () => {
+  const file = fixture(THREE);
+  const r = capture(['--kind', 'todo', '--text-file', join(dirname(file), 'absent.txt'), '--file', file]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.equal(readBack(file), THREE);
+});
+
+test('capture: a VALUELESS --text-file is bad-args, never the literal "true"', () => {
+  const file = fixture(THREE);
+  const r = capture(['--kind', 'todo', '--text-file', '--file', file]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.equal(readBack(file), THREE);
 });

@@ -64,7 +64,7 @@
 // the honest gap, and it is not closable by a lock nobody else honours.
 'use strict';
 
-import { readFileSync, mkdirSync, existsSync, openSync, closeSync, statSync, unlinkSync } from 'node:fs';
+import { readFileSync, mkdirSync, existsSync, openSync, closeSync, statSync, unlinkSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { atomicWrite, sectionSpan } from './planning-files.mjs';
 
@@ -164,9 +164,22 @@ export function replaceSection(text, heading, body) {
   return `${lines.slice(0, start + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
 }
 
-/** Read a file or return null - an absent queue is data, never a crash. */
+/**
+ * Read a file, or return null when it does not exist.
+ *
+ * ONLY `ENOENT` is null. Every other error THROWS, and the throw is the point:
+ * a `catch`-all here read an unreadable-but-PRESENT queue as an absent one, and
+ * the caller then wrote `EMPTY_CAPTURE` over it - the whole backlog destroyed
+ * under an `ok:true` envelope. An absent queue is data; an unreadable one is a
+ * failure, and the two must never render the same.
+ */
 function read(file) {
-  try { return readFileSync(file, 'utf8'); } catch { return null; }
+  try {
+    return readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e && /** @type {any} */ (e).code === 'ENOENT') return null;
+    throw e;
+  }
 }
 
 // --- the guard -------------------------------------------------------------
@@ -228,8 +241,26 @@ function takeLock(lockPath) {
           detail: `could not create the lock ${lockPath}: ${e && e.message ? e.message : String(e)}` };
       }
     }
+    // Breaking a stale lock CLAIMS it first. `unlinkSync` on a path we only
+    // `statSync`ed deletes whatever is there NOW, which is not necessarily the
+    // file we measured: a holder can die, a second writer break its lock and
+    // take a fresh one, and a third writer - still holding the dead lock's
+    // stat - then unlink that FRESH lock and walk into the section beside its
+    // owner. `renameSync` is the fix because it is atomic and single-winner:
+    // exactly one contender moves the stale lock to its own private path, and
+    // the losers get ENOENT. Re-stat after the claim, because only then do we
+    // exclusively own the bytes we are judging.
     try {
-      if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) unlinkSync(lockPath);
+      if (Date.now() - statSync(lockPath).mtimeMs > LOCK_STALE_MS) {
+        const claimed = `${lockPath}.break.${process.pid}.${Math.random().toString(36).slice(2)}`;
+        renameSync(lockPath, claimed);
+        if (Date.now() - statSync(claimed).mtimeMs > LOCK_STALE_MS) unlinkSync(claimed);
+        // Fresh after all - we claimed a live writer's lock. Put it back only
+        // if nothing has taken the path meanwhile; a plain rename back would
+        // clobber a lock a fourth writer legitimately holds.
+        else if (!existsSync(lockPath)) renameSync(claimed, lockPath);
+        else unlinkSync(claimed);
+      }
     } catch { /* it vanished under us - the next create IS the retry */ }
     if (Date.now() >= deadline) {
       return { ok: false, detail: `another writer holds ${lockPath}` };
@@ -297,6 +328,18 @@ export function appendCapture(file, kind, text, phase) {
       const existing = read(file);
       const base = existing === null ? EMPTY_CAPTURE : existing;
       atomicWrite(file, insertBullet(base, heading, bullet));
+      // Read back INSIDE the lock and confirm our own bullet survived. The lock
+      // is the mechanism; this is the CRITERION - "a concurrent write cannot
+      // silently lose an append" is a statement about what the caller is told,
+      // not about how exclusion is implemented. Any path that lets two writers
+      // into the section at once (a broken stale break, a filesystem with no
+      // honest `wx`) ends in last-write-wins, and without this the loser still
+      // returns ok:true. With it, the loser is told.
+      const written = read(file);
+      if (written === null || !written.includes(bullet)) {
+        throw new Error('the appended bullet is not in the file after the write'
+          + ' - a concurrent writer overwrote it; nothing was captured');
+      }
       return existing === null;
     });
   } catch (e) {

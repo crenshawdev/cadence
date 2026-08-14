@@ -3062,11 +3062,37 @@ function cmdCapture(dir, opts) {
     return fail('bad-args', `capture --kind must be one of ${CAPTURE_KINDS.join(' | ')}`
       + ` (got: ${kind || 'none'})`);
   }
-  // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text` has
-  // to be refused here - written through, it captures the literal word "true"
-  // and the user's sentence is gone with an ok:true envelope (#42/#45).
-  const text = typeof opts.text === 'string' ? opts.text.trim() : '';
-  if (!text) return fail('bad-args', 'capture --text needs a sentence after it: --text "<text>"');
+  // `--text-file` is the SAFE transport and the one the workflows prescribe.
+  // `--text "<item>"` puts caller-derived prose inside a double-quoted shell
+  // word, so an item carrying `$(...)` or a backtick executes before Node
+  // starts. A path cannot: the caller writes the sentence with a file tool and
+  // names the file here. `--text` stays for a human typing at a shell, where
+  // the text is the user's own.
+  if ('text-file' in opts && (typeof opts['text-file'] !== 'string' || opts['text-file'].trim() === '')) {
+    return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>');
+  }
+  if ('text' in opts && 'text-file' in opts) {
+    return fail('bad-args', 'capture takes --text or --text-file, never both');
+  }
+  let text;
+  if (typeof opts['text-file'] === 'string') {
+    try {
+      text = readFileSync(opts['text-file'].trim(), 'utf8').trim();
+    } catch (e) {
+      return fail('bad-args',
+        `capture --text-file could not be read: ${e && e.message ? e.message : String(e)}`);
+    }
+    if (!text) return fail('bad-args', 'capture --text-file names an empty file');
+  } else {
+    // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text`
+    // has to be refused here - written through, it captures the literal word
+    // "true" and the user's sentence is gone with an ok:true envelope (#42/#45).
+    text = typeof opts.text === 'string' ? opts.text.trim() : '';
+    if (!text) {
+      return fail('bad-args',
+        'capture needs the sentence: --text-file <path> (workflows) or --text "<text>" (typed by hand)');
+    }
+  }
   /** @type {string|undefined} */
   let phase;
   if ('phase' in opts) {

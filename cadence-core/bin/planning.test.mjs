@@ -4577,16 +4577,22 @@ test('lease-check: the no-staged-set detail names the failure without a credenti
 });
 
 test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () => {
-  // The census, so a FIFTH site added later fails here rather than shipping a
-  // credential. planning.mjs carries three OTHER caught-error details this
-  // requirement does not cover - partial-apply, write-failed, and the
-  // dispatch-level internal catch - so the pin is by COUNT: four uses of the
-  // idiom, exactly one of them (this one) wrapped. Adding a site moves the
-  // first number whether or not the author remembered the helper.
+  // The census, so a site added later fails here rather than shipping a
+  // credential. planning.mjs carries FOUR other caught-error details this
+  // requirement does not cover - partial-apply, write-failed, the
+  // dispatch-level internal catch, and `capture --text-file`'s read failure -
+  // so the pin is by COUNT: five uses of the idiom, exactly one of them (this
+  // one) wrapped. Adding a site moves the first number whether or not the
+  // author remembered the helper.
+  //
+  // Why `capture --text-file` is NOT wrapped: its detail is an `fs` error over
+  // a path the CALLER just named, so the only string it can echo is one the
+  // caller already holds. `redactUrl` targets a credential arriving from a
+  // remote the user never typed, which a local path read cannot be.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 4, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 5, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 1, 'the no-staged-set detail is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });

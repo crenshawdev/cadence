@@ -250,7 +250,7 @@ const CONTRACTS = {
     // global queue alone - there is no `--section`, and that absence is the
     // point: a caller that could name a heading is how five filed bullets
     // landed outside the recall walk.
-    capture: ['--kind', '--text', '--phase', '--file'],
+    capture: ['--kind', '--text', '--text-file', '--phase', '--file'],
     'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],

@@ -37,8 +37,12 @@ else's project has to leave that project to reach Cadence:
    reaches `.planning/CAPTURE.md`:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind <kind> --text "<text>" --phase <N>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind <kind> --text-file <path> --phase <N>
    ```
+
+   Write the sentence to a scratch file and pass the PATH, never interpolate it:
+   `--text "<text>"` shell-expands a `$(...)` in a sentence that is often lifted
+   from a file rather than typed. `--text` remains for a human at a shell.
 
    Pass `--phase` only with `--kind todo`, and leave it off entirely when step 1
    found no phase. The seam owns every byte: it creates the file with its
@@ -69,11 +73,11 @@ else's project has to leave that project to reach Cadence:
      its directory when absent, so one writer serves both queues:
 
      ```
-     node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind <kind> --text "<text>" --file <resolved dir>/CAPTURE.md
+     node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind <kind> --text-file <path> --file <resolved dir>/CAPTURE.md
      ```
 
    - **The entry** is the user's own sentence plus two fields, carried inside
-     `--text` and never a phase: `<text> (host: <host>, command: /cad-<name>)`.
+     the `--text-file` sentence and never a phase: `<text> (host: <host>, command: /cad-<name>)`.
      HOST: this repo's `origin` URL (`git remote get-url origin`), else the
      basename of the root from `git rev-parse --show-toplevel`, else the
      absolute working directory when this is not a repo - `origin` first because
