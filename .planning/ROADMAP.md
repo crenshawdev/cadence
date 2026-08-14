@@ -89,9 +89,11 @@ role that never dispatched, is not a reporting blemish but a wrong input to ever
 tuning decision made from it.
 
 Success criteria:
-1. `corr` joins a provider call to the fire that made it. An event written before
-   the phase anchor, and a second fire inside one phase, both resolve to their
-   fire rather than falling back to the bare phase form.
+1. `corr` joins an event to its phase: an event written before the phase
+   anchor resolves to the derived `<phase>-<sha>` form rather than the bare
+   phase form. A provider call's fire is carried by its own `trigger` field
+   (D-02), total going forward only; two fires of one trigger inside a phase
+   are separated by file order, the event preceding its fire's adjudication.
 2. A terminal event's `--role` is validated against its paired dispatch's role. A
    mismatch is reported and never renders as a role with zero dispatches carrying
    a token total.
