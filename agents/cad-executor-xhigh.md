@@ -4,7 +4,7 @@ description: The `xhigh` rung of `cad-executor`; `bin/route.mjs` picks it, not t
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: yellow
 effort: xhigh
-maxTurns: 400
+maxTurns: 200
 skills:
   - cad-executor-contract
 ---

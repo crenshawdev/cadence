@@ -42,7 +42,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { decidePublish, decideReap } from './lib/publish-decision.mjs';
+import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
+import { redactUrl } from './lib/redact-url.mjs';
 
 /** The current branch of the repo at `dir`, or "" if it cannot be read. */
 function readCurrentBranch(dir) {
@@ -75,46 +76,27 @@ function repoAutoClose(dir) {
  * tolerance git-guard applies (#38): a lone-string hand-edit names the branch
  * the user means to protect; do not silently swap the list.
  *
- * Returns the merge's `warnings` alongside the list rather than dropping them:
- * this list is what stops the ONE mutating seam from pushing off a protected
- * branch, so a torn layer means that refusal is running on the default
- * `["main","master"]` and not on the user's. Both callers put it on their
- * envelope AND refuse to mutate on it - see `tornLayerDetail`. */
+ * Returns the merge's `warnings` AND its `tornLayers` alongside the list rather
+ * than dropping either: this list is what stops the ONE mutating seam from
+ * pushing off a protected branch, so a torn layer means that refusal is running
+ * on the default `["main","master"]` and not on the user's. Both callers put
+ * the warnings on their envelope AND refuse to mutate on the torn class - see
+ * `tornLayerRefusal` in lib/publish-decision.mjs.
+ *
+ * The two are separate answers on purpose. `warnings` is a MESSAGE channel that
+ * carries every diagnostic the merge can produce; refusing on all of it made
+ * each new diagnostic a land-stopper, which is why phase 1 had to route its
+ * global-only-key warning around this seam (D-18). `tornLayers` is the CLASS
+ * this gate actually means. */
 function readProtectedBranches(dir) {
-  const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
+  const { config, warnings, tornLayers } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const branches = Array.isArray(git.protected_branches)
     ? git.protected_branches
     : typeof git.protected_branches === 'string'
       ? [git.protected_branches]
       : ['main', 'master'];
-  return { branches, warnings };
-}
-
-/** The mutation gate: the refusal detail when a config layer that could have
- * carried `protected_branches` failed to parse, or null when every layer read
- * cleanly.
- *
- * `readProtectedBranches` falls back to `["main","master"]` for a layer that
- * did not parse, so a torn layer means the protected-branch gate inside
- * decidePublish/decideReap ran on the DEFAULT list and not on the user's - a
- * global layer holding `protected_branches: ["release"]` reaps `release`
- * successfully where the same command with an intact layer returns
- * `{"ok":false,"reason":"protected-branch"}`. git-guard.mjs already acts on the
- * same warning BEFORE the act it guards; this is the one seam where the act
- * deletes a branch or pushes a ref, so an unprovable protected list refuses.
- *
- * Sited at each MUTATION rather than right after the destructure, deliberately:
- * every non-mutating arm keeps the answer it has today, so `reap`'s
- * already-absent SKIP stays `ok:true` (cad-land's close is idempotent and a
- * torn layer must not break a re-run that deletes nothing) and a refusal
- * decidePublish/decideReap already reached keeps its own named reason instead
- * of being masked by this one. Nothing between the destructure and here does
- * I/O beyond reading git facts.
- * @param {string[]} warnings
- * @returns {string|null} */
-function tornLayerDetail(warnings) {
-  return Array.isArray(warnings) && warnings.length ? String(warnings[0]) : null;
+  return { branches, warnings, tornLayers };
 }
 
 /** Does `refs/heads/<branch>` exist in the repo at `dir`? The probe argument is
@@ -134,7 +116,7 @@ function publish(dir, remote) {
   const currentBranch = readCurrentBranch(dir);
   const configuredRemotes = readRemotes(dir);
   const autoClose = repoAutoClose(dir);
-  const { branches: protectedBranches, warnings } = readProtectedBranches(dir);
+  const { branches: protectedBranches, warnings, tornLayers } = readProtectedBranches(dir);
 
   const decision = decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes });
   if (decision.action !== 'publish') {
@@ -142,8 +124,13 @@ function publish(dir, remote) {
     return;
   }
 
-  // No push while the protected list is unprovable (see tornLayerDetail).
-  const tornPublish = tornLayerDetail(warnings);
+  // No push while the protected list is unprovable (lib/publish-decision.mjs
+  // `tornLayerRefusal`). Sited at the MUTATION rather than right after the
+  // destructure, deliberately: every non-mutating arm keeps the answer it has
+  // today, so a refusal decidePublish already reached keeps its own named reason
+  // instead of being masked by this one. Nothing between the destructure and
+  // here does I/O beyond reading git facts.
+  const tornPublish = tornLayerRefusal({ warnings, tornLayers });
   if (tornPublish) {
     emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
       remote: decision.remote, detail: tornPublish, warnings });
@@ -159,12 +146,15 @@ function publish(dir, remote) {
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     emit({ ok: true, action: 'published', branch: decision.branch, remote: decision.remote, warnings });
   } catch (e) {
-    emit({ ok: false, reason: 'push-failed', detail: e && e.message ? e.message : String(e), warnings });
+    // git's stderr names the remote URL, and on the transports it does not
+    // anonymize that URL still carries its userinfo - this is the one site a
+    // credential actually reaches an envelope through (lib/redact-url.mjs).
+    emit({ ok: false, reason: 'push-failed', detail: redactUrl(e && e.message ? e.message : String(e)), warnings });
   }
 }
 
 function reap(dir, branch) {
-  const { branches: protectedBranches, warnings } = readProtectedBranches(dir);
+  const { branches: protectedBranches, warnings, tornLayers } = readProtectedBranches(dir);
   const decision = decideReap({
     branch,
     currentBranch: readCurrentBranch(dir),
@@ -182,9 +172,12 @@ function reap(dir, branch) {
     return;
   }
 
-  // No branch deletion while the protected list is unprovable (see
-  // tornLayerDetail) - this is the arm the reproduction hit.
-  const tornReap = tornLayerDetail(warnings);
+  // No branch deletion while the protected list is unprovable - this is the arm
+  // the reproduction hit. Sited at the MUTATION for the reason publish states,
+  // and it is what keeps `reap`'s already-absent SKIP above at `ok:true`:
+  // cad-land's close is idempotent, and a torn layer must not break a re-run
+  // that deletes nothing.
+  const tornReap = tornLayerRefusal({ warnings, tornLayers });
   if (tornReap) {
     emit({ ok: false, reason: 'config-parse-failed', branch: decision.branch,
       detail: tornReap, warnings });
@@ -206,7 +199,7 @@ function reap(dir, branch) {
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     emit({ ok: true, action: 'reaped', branch: decision.branch, warnings });
   } catch (e) {
-    emit({ ok: false, reason: 'reap-failed', branch: decision.branch, detail: e && e.message ? e.message : String(e), warnings });
+    emit({ ok: false, reason: 'reap-failed', branch: decision.branch, detail: redactUrl(e && e.message ? e.message : String(e)), warnings });
   }
 }
 
@@ -230,5 +223,5 @@ try {
       detail: 'subcommands: publish [--dir <path>] [--remote <name>] | reap [--dir <path>] --branch <name>' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

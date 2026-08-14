@@ -41,14 +41,14 @@
 // This register names WHICH regions must each carry a Read instruction, because
 // what it is protecting is each arm's own sentence. So
 // `references/git-publish.md` is ONE site there and TWO anchors here:
-// step 4(a) and step 4(b) are mutually exclusive, but deleting either one's Read
+// step 3(a) and step 3(b) are mutually exclusive, but deleting either one's Read
 // silently loses that arm's rails. A single name for both quantities would
 // invite a maintainer to "correct" one against the other, and the correction
 // would drop an arm out of the check's coverage.
 //
 // Anchors, not a COUNT. The register used to state `read_paragraphs: 2` and the
 // check counted qualifying sentences FILE-WIDE, which made the number a quota
-// any two sentences anywhere could fill: step 4(b)'s Read could be deleted and
+// any two sentences anywhere could fill: step 3(b)'s Read could be deleted and
 // an equivalent sentence relocated into `<guardrails>`, leaving 2 of 2 and
 // self-verify ok:true while the `git.auto_close: true` arm reached `gh pr merge`
 // with the reference never loaded. Reproduced, not theorised. A count cannot
@@ -86,7 +86,7 @@
 // against the shipped rows would be asserting the register against itself.
 //
 // The matching unit is the SENTENCE, not the blank-line block. That bound is
-// load-bearing: `skills/cad-land/SKILL.md` step 4b is a single ~2,900 B
+// load-bearing: `skills/cad-land/SKILL.md` step 3b is a single ~2,900 B
 // paragraph, so a block-level test passes when the real instruction is deleted
 // as long as any other line in those 46 lines names the path and any unrelated
 // `Read` survives - and `do NOT Read <path>` passes a block-level test
@@ -95,37 +95,39 @@
 // followed by markup (`.**`, `.md\``) does not split, which is why a bolded
 // lead-in and its following clause count as one sentence here.
 //
-// THE BREAK-EVEN ARITHMETIC for the three `cad-land` rows, recorded here rather
+// THE BREAK-EVEN ARITHMETIC for the `cad-land` row, recorded here rather
 // than in the skill. It is addressed to a maintainer deciding whether a row
 // still earns its deferral; the skill's own surviving Read sentences carry only
 // what the model needs at runtime - the path, the measured bytes and the
 // consult-site count that `references/seams.md` (File round-trip) mandates.
 //
-//   region `3`, `references/review-triggers.md` (17,837 B). Larger than the
-//     whole of `skills/cad-land/SKILL.md`, consulted at exactly one step, so
-//     preloading it would put those bytes on every remaining turn of the land
-//     for a single use. The read folds into the turn that fires the trigger as
-//     one extra tool call rather than an extra turn.
-//   region `4(a)`, `references/git-publish.md` (4,611 B). The 4a ask ENDS the
+//   region `3(a)`, `references/git-publish.md` (4,611 B). The 3a ask ENDS the
 //     turn, so the read is the first call of the turn that starts with the
 //     user's answer - one extra tool call, not an extra turn. Leave-local and a
 //     tag left unpushed never reach it at all, and that unreached fraction is
 //     what makes the deferral pay rather than eager.
-//   region `4(b)`, the same reference on the unattended arm. This arm skips the
-//     4a ask, so the read does not fold into a turn an ask already ended: it is
+//   region `3(b)`, the same reference on the unattended arm. This arm skips the
+//     3a ask, so the read does not fold into a turn an ask already ended: it is
 //     the unattended chain's own first call, one extra tool call and no extra
-//     turn, on a path that ALWAYS publishes. Weakest of the three on paper and
-//     still worth it, because the alternative is eager bytes on every turn of
+//     turn, on a path that ALWAYS publishes. Weaker on paper and still worth
+//     it, because the alternative is eager bytes on every turn of
 //     every land including the ones that publish nothing.
+//
+// Two `cad-land` rows were DELETED with `pre_ship` in v3.2.0:
+// `references/review-triggers.md` and `references/triage-gate.md`, both
+// anchored at the old step 3. The skill fires no review of its own now and
+// triages nothing, so neither reference is consulted from it at all - the rows
+// went with the step rather than being re-anchored at an arm that does not
+// read them.
 //
 // The `<guardrails>` block's seam re-derivation was cut in the same commit and
 // deliberately got no destination here: `cadence-core/bin/git-publish.mjs`
 // already states the sanctioned single push and the subprocess argv git-guard
 // does not intercept at `:3-12`, and the `git.auto_close`-plus-non-protected
 // condition at `:31-34`, right at the code that enforces them. Copying it would
-// create a second place to keep true. The step-4b runtime rule the model still
+// create a second place to keep true. The step-3b runtime rule the model still
 // needs - what `ok:false` means and not to fall back to a raw `git push` - was
-// never in the guardrails and stays in the skill's step 4b.
+// never in the guardrails and stays in the skill's step 3b.
 //
 // Pure rule: no emit, no exit, no Date, no randomness, node builtins only, and
 // every read guarded so an unreadable file is one reported issue rather than an
@@ -160,25 +162,13 @@ export const CODES = Object.freeze({
  */
 export const DEFERRED_READS = Object.freeze([
   Object.freeze({
-    skill: 'cad-land',
-    reference: 'references/review-triggers.md',
-    anchors: Object.freeze(['3']),
-    read_paragraphs: 1,
-  }),
-  Object.freeze({
-    // ONE consult site under seams.md's rule (step 4a or step 4b, never both),
+    // ONE consult site under seams.md's rule (step 3a or step 3b, never both),
     // but TWO anchors here - each arm carries its own Read and deleting either
     // silently loses that arm's rails.
     skill: 'cad-land',
     reference: 'references/git-publish.md',
-    anchors: Object.freeze(['4(a)', '4(b)']),
+    anchors: Object.freeze(['3(a)', '3(b)']),
     read_paragraphs: 2,
-  }),
-  Object.freeze({
-    skill: 'cad-land',
-    reference: 'references/triage-gate.md',
-    anchors: Object.freeze(['3']),
-    read_paragraphs: 1,
   }),
   Object.freeze({
     skill: 'cad-plan-review',
@@ -313,7 +303,7 @@ const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
  * practice `<process>`. With an EMPTY stack a numbered item stays regionless,
  * exactly as today. Without that clause a column-0 `1.` sitting outside every
  * block would newly label bare `1`, and a bare number outside `<process>` can
- * collide with a live anchor: `cad-land` anchors at `3` and `4(a)`,
+ * collide with a live anchor: `cad-land` anchors at `3(a)` and `3(b)`,
  * `cad-plan-review` at `2`. No shipped skill has such a list today, so this is
  * latent - and it stays latent only because the clause is written.
  *
@@ -321,15 +311,15 @@ const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
  * reason: `execute.md`'s `<step name="git_guard">` puts `1.`-`3.` at column 0
  * inside the step, and `verify.md` and `new-project.md` carry more such lines.
  * Bare numbers there would let two regions of one file both label `"3"` - and
- * `cad-land` really does anchor at `3` - so an anchor would be satisfied by a
+ * `cad-land` really does anchor inside step `3` - so an anchor would be satisfied by a
  * Read in an unrelated bullet, the file-wide-quota defect this register already
  * shipped once, in a new spelling.
  *
  * The protection is label EXACTNESS, not null-ness. `<guardrails>` now labels
  * `guardrails` rather than `null`, and the relocation attack still fails:
- * `guardrails` is not `4(b)`. Matching is exact and never a prefix, so an anchor
+ * `guardrails` is not `3(b)`. Matching is exact and never a prefix, so an anchor
  * `execute_parallel` is not satisfied by a sentence inside `execute_parallel(6)`
- * - the same way `4` and `4(a)` are distinct. Only the preamble before the first
+ * - the same way `3` and `3(a)` are distinct. Only the preamble before the first
  * block or step stays regionless.
  * @param {string} text
  * @returns {(line: number) => string|null} region label per 0-based line index

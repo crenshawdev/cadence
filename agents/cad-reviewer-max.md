@@ -5,7 +5,7 @@ tools: Read, Bash, Glob, Grep
 disallowedTools: Write, Edit, MultiEdit
 color: red
 effort: max
-maxTurns: 400
+maxTurns: 200
 skills:
   - cad-reviewer-contract
 ---

@@ -196,7 +196,7 @@ blind. The main model kills false positives.
 
 ```mermaid
 flowchart TD
-    TRIG([Trigger fires:<br/>plan · diff · risk_surface · pre_ship · phase_diff]) --> GATE{gate on<br/>for this trigger?}
+    TRIG([Trigger fires:<br/>plan · diff · risk_surface · phase_diff]) --> GATE{gate on<br/>for this trigger?}
     GATE -->|off| SKIP([skip — proceed])
     GATE -->|on| WHO["select reviewers:<br/>claude-subagent · openai · gemini"]
 

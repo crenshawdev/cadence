@@ -6,6 +6,141 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-14
+
+### Fixed
+
+- **A `.planning/config.json` arriving with a clone can no longer reparent the
+  merged config.** `deepMerge` assigned instead of defining, so `__proto__`,
+  `constructor` and `prototype` in a repo layer reached every enforcement
+  surface that reads the merge. The hostile fixture that allowed a commit on
+  `main` with no output at all from `git-guard.mjs` now produces
+  `permissionDecision: "ask"`, identical to the benign control. Those keys
+  store inertly.
+
+- **Inspection and enforcement can no longer disagree about the same file.**
+  `config.mjs validate` returned `{"ok":true,"checked":0,"errors":[]}` on that
+  same hostile fixture, so the tool you would reach for to check a config was
+  the one thing that could not see the attack. `flatten`'s `_`-prefix skip is
+  narrowed to exactly `_meta`, the `SCHEMA[path]` lookup is `Object.hasOwn`
+  guarded, and a test pins the two surfaces together.
+
+- **`workflow.test_command`, `workflow.lint_command` and `review.key_file` are
+  global-layer only.** A repo layer that sets one is ignored AND warns, naming
+  the key and the file it came from, because silence there hides an honest
+  mistake as readily as an attack. A repo layer holding `{"workflow": "x"}`
+  replaced the whole user-global section without setting a key at all; that
+  ancestor is stripped and warned too.
+
+- **`atomicWrite` refuses a symlinked temp path instead of writing through
+  it.** The proof case wrote `PWNED CONTENT` to a file outside the repo and
+  left `ROADMAP.md` as a symlink. Temp paths are now per-writer
+  (`<file>.<pid>.<n>.tmp`), so two concurrent writers under
+  `parallelization.enabled` cannot share one, and `appendEvent` returns
+  `{written:false, reason:'symlinked-trace'}` rather than following.
+
+- **No git failure detail can carry credentials.** A remote with userinfo in
+  its URL used to land in the envelope verbatim. `redactUrl()` strips it at all
+  four emit sites, each with its own test.
+
+- **The unattended-close gate tells "no findings" apart from "could not read
+  the findings".** Unreadable stdin, malformed JSON and a valid non-findings
+  envelope each halt under `git.auto_close` with a reason naming the failure,
+  where all three previously returned `proceed` claiming no surviving finding.
+
+- **A valueless flag can no longer become the integer 1.** `phase-done`,
+  `uat record` and `renumber` each validate through `requireInt`, and each
+  carries the valueless-form test it lacked.
+
+- **An unreadable CONTEXT.md is a break, not an exemption.** `criteria-coverage`
+  under `chmod 000` returned `{"ok":true,"phases":[]}` over two uncovered
+  criteria: the exemption was written for an ABSENT context and was silently
+  granting itself to an unreadable one.
+
+- **`milestone-prune` never ships a `Deferred` requirement as `Complete`,** and
+  never deletes a `## Deferred` bullet while pruning.
+
+- **A `--label` that escapes the tree is refused before any mkdir or rename.**
+
+### Added
+
+- **`review.triggers.risk_surface.surfaces` - the surfaces your project
+  actually has.** `risk_surface` is blocking at every stakes level and fires
+  once per plan on a detection match, so on a security-shaped phase it is the
+  dominant review cost. Naming the subset of the eight categories your project
+  contains cuts the fires that were never going to find anything. Absent means
+  all eight, so nobody's coverage shrinks on upgrade. Populated by a structural
+  scan (`planning.mjs detect-surfaces`) over manifests, directories and file
+  types, never keyword greps: the grep approach false-positived `auth` on 16
+  matches of `session` meaning Claude sessions, and `money/billing` on prose
+  about token cost.
+
+- **`cadence-core/references/reviewer-brief.md`, composed into the cross-model
+  payload.** An external reviewer was handed a one-line model-authored
+  `instruction` as its entire system prompt, so it never saw the stance, the
+  severity definitions, "approach differences are NOT findings", or that an
+  empty `findings: []` is valid. At a blocking gate that uncalibrated output
+  could FAIL the gate. The brief costs about 670 tokens, 0.56% of the default
+  cap.
+
+- **Reviewer identity on the lifecycle event.** The seam resolved the gate but
+  not the reviewer SET, so a cross-model review that never happened was
+  indistinguishable afterwards from one that did. Observed on 2026-08-13:
+  `review.reviewers` was `["openai"]`, the fire went to the Claude subagent,
+  and nothing in the record could have caught it. The seam now returns the
+  reviewer set beside the gate with its fallback and cause stated, and a
+  cross-model fire leaves an event of its own.
+
+- **Adjudication records what it killed.** `<n> of <m> raised` replaces
+  `<n> survivors`, so `/cad-suggest` can tell 0-of-0 (the gate is unnecessary)
+  from 0-of-9 (the reviewer is miscalibrated and the gate is doing real work).
+  It proposed turning the gate off in both cases.
+
+### Changed
+
+- **`plan` and `phase_diff` resolve `off` at `shipped`, and `pre_ship` is
+  deleted outright.** An advisory gate blocks nothing by definition: it writes
+  a findings file and execution continues. On a reporting user's 3.1.0 run
+  `cad-reviewer` was 711,636 of 3,450,628 processed tokens, about 20.6%, while
+  the trace recorded it as 0. In this repo's own history two advisory review
+  files sat untracked and referenced by nothing. The `adjudicated` arm at
+  `critical` is untouched, and a user who does read those files can turn them
+  back on.
+
+- **Every dispatch is bounded at `maxTurns: 200` rather than a nominal 400.**
+  Measured billed tool calls on single dispatches ran 55, 81 and 106, each a
+  lower bound since Edit, Write and Task turns are not billed. One uniform
+  value across all 19 rung files, and `references/seams.md` states the bound
+  instead of claiming there is none. A test holds the two against each other in
+  both directions.
+
+- **A truncated reviewer return stops reading as "nothing survived".** Both
+  triage-gate arms gained a third reading keyed on the return's contract SHAPE,
+  not on a host stop signal: a return that is not the expected payload reads as
+  "the gate could not be evaluated" and asks, and neither arm can reach resume
+  from it.
+
+- **`/cad-report` no longer labels an unmeasured figure `Spend:`.** The heading
+  names it as the host's own per-dispatch return figure, and the report states
+  what it cannot see: advisory fires and cross-model provider calls both record
+  none. No new field is captured.
+
+- **Environment overrides commented "test injection only" are gated behind
+  `CADENCE_TEST_SEAM=1`.** `CADENCE_ROUTE_TABLE`, `CADENCE_CONFIG_SCHEMA` and
+  `CADENCE_PLUGIN_MANIFEST` each did what the comment said they should not.
+
+### Removed
+
+- **The `pre_ship` review trigger, in every direction at once.** By the time a
+  land runs, every phase has already been through `plan`, `diff` and the
+  `/cad-verify` walk, so it reviewed work that had already been reviewed. Its
+  config key, its wiring-table row, `/cad-land` step 3 and its deferred-reads
+  register row are gone, and so is the gate it drew in
+  `docs/figures/milestone-land.svg`: the milestone exit has one gate now rather
+  than two. `README.md`, `docs/WORKFLOW.md` and `METHOD.md` no longer describe
+  it as a live gate, and the unattended close is documented as what it actually
+  reads, the `risk_surface` findings this branch already settled.
+
 ## [3.1.0] - 2026-08-13
 
 ### Added
@@ -2301,6 +2436,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.2.0
 [3.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.1.0
 [3.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.0.0
 [2.6.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v2.6.2

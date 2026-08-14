@@ -26,14 +26,20 @@ import { GLOBAL_CONFIG, mergeLayers, isPlainObject } from './lib/config-merge.mj
 import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
+import { testSeamOpen } from './lib/test-seam.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
 // or malformed shipped config.schema.json degrades to {ok:false} instead of
-// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path
-// (hermetic test injection only; production always uses the shipped file).
+// crashing at import time. CADENCE_CONFIG_SCHEMA overrides the path ONLY when
+// the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without it the
+// variable is ignored and the shipped file is read, silently - this constant
+// resolves at module load, before any dispatch exists to carry a warning. The
+// gate is the point: the schema decides which keys are known and which carry
+// the `src: "global"` marker, so an ungated override re-opens CFG-02.
 let SCHEMA;
-const SCHEMA_PATH = process.env.CADENCE_CONFIG_SCHEMA || join(HERE, '..', 'config.schema.json');
+const SCHEMA_PATH = (testSeamOpen() && process.env.CADENCE_CONFIG_SCHEMA)
+  || join(HERE, '..', 'config.schema.json');
 
 // Seam convention lives in lib/seam-io.mjs. fail() throws DONE so the
 // dispatch unwinds without process.exit().
@@ -84,13 +90,28 @@ function parseToken(raw) {
 }
 
 // Flatten a config object to dotted leaf paths. Arrays and null are leaves.
+//
+// The skip is exactly `_meta` and never every `_`-prefixed key. It exists for
+// the annotation block config.schema.json:2-5 documents and the repo's own
+// template idiom encourages, so it cannot be deleted - but as a PREFIX rule it
+// also swallowed `__proto__`, which is how `validate` answered
+// {"ok":true,"checked":0,"errors":[]} on a hostile config the guard was already
+// obeying: inspection reported a file clean that enforcement read as settings.
+//
+// And the accumulation defines an own property rather than assigning `acc[path]`,
+// for the same reason the merge does (lib/config-merge.mjs): a TOP-LEVEL leaf
+// named `__proto__` assigned at that key runs Object.prototype's setter, which
+// reparents the accumulator instead of recording a key - leaving `checked` at 0
+// again for the scalar spelling, one narrowing later. (An object-valued
+// `__proto__` recurses to dotted paths that never touch `acc`'s own `__proto__`,
+// so the scalar form is the one that shows this.)
 /** @param {Record<string, any>} obj @param {string} prefix @param {Record<string, any>} acc */
 function flatten(obj, prefix, acc) {
   for (const [k, v] of Object.entries(obj)) {
-    if (k.startsWith('_')) continue;
+    if (k === '_meta') continue;
     const path = prefix ? `${prefix}.${k}` : k;
     if (v !== null && typeof v === 'object' && !Array.isArray(v)) flatten(v, path, acc);
-    else acc[path] = v;
+    else Object.defineProperty(acc, path, { value: v, writable: true, enumerable: true, configurable: true });
   }
   return acc;
 }
@@ -114,7 +135,11 @@ function validate(file) {
   const leaves = flatten(cfg, '', {});
   const errors = [];
   for (const [path, v] of Object.entries(leaves)) {
-    const spec = SCHEMA[path];
+    // hasOwn, not a bare `SCHEMA[path]`: the narrowed flatten above now reports
+    // a leaf literally named `__proto__`, and a bare lookup answers that with
+    // Object.prototype - a truthy "spec" carrying no `type`, which reached the
+    // user as "unknown schema type undefined" instead of naming the unknown key.
+    const spec = Object.hasOwn(SCHEMA, path) ? SCHEMA[path] : undefined;
     if (!spec) { errors.push({ key: path, error: 'unknown key' }); continue; }
     const msg = checkValue(spec, v);
     if (msg) errors.push({ key: path, error: msg, value: v });
@@ -216,11 +241,16 @@ function set(file, tokens, create) {
 // the read was addressed at the user-global layer rather than at a repo config
 // the global env happens to alias. It moves the `source` label, nothing else.
 function get(file, keys, asGlobal) {
-  const { config, source, warnings, layers } = mergeLayers(file, { asGlobal });
+  const { config, source, warnings, layers, scopeWarnings } = mergeLayers(file, { asGlobal });
   // A key the schema dropped is invisible to the read below - it resolves at
   // the default and looks configured. Naming it here is what keeps an upgraded
   // repo from silently routing on a value nothing reads.
-  const allWarnings = [...(warnings || []), ...retiredKeysIn(config)];
+  //
+  // `scopeWarnings` rides here for the same reason and by the same route: `get`
+  // is the read face everything reaches these keys through, so folding it in
+  // once is the whole wiring (D-03). It stays OFF `mergeLayers`'s own
+  // `warnings[]`, which git-publish reads as a refusal to mutate (D-05).
+  const allWarnings = [...(warnings || []), ...retiredKeysIn(config), ...(scopeWarnings || [])];
   const layered = flatten(config, '', {});
   /** @type {Record<string, any>} */
   const values = {};

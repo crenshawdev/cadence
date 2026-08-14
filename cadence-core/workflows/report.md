@@ -41,7 +41,7 @@ Phase <N>: <name> - run record
 Dispatches: <table: role | rung | tokens | minutes, one row per dispatch/return pair, from lifecycle brackets + routing resolves>
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from outcome events and REVIEW files>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
-Spend: <total recorded tokens; top role and its share; unrecorded dispatch count>
+Tokens on subagent returns (the host's own per-dispatch figure, not a measured cost): <total recorded; top role and its share; unrecorded dispatch count>
 Record health: <only when present: unpaired brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
 ```
 
@@ -49,6 +49,12 @@ Rules, all load-bearing:
 - Every number is FROM the record. A dispatch with no token figure reports
   `unrecorded`, never an estimate; minutes come from the bracket's own
   dispatch/return timestamps.
+- What that token line EXCLUDES, stated where it is printed: an advisory fire
+  records none, because its reviewer closes its own bracket with no `--tokens`
+  (`references/review-triggers.md`, the advisory persistence tail), and a
+  cross-model provider call records none by design - no lifecycle bracket and no
+  token field on that arm at all. So the total prices the claude-subagent voice
+  only, and it is short by an unstated amount rather than being a run's cost.
 - The coordinator residue is `coordinator.residue_ms` and the `steps[]` row
   carrying the most of it, reported AS GIVEN - the renderer computes it once so
   this line and `trace suggest` cannot disagree, and prose recomputing it is how

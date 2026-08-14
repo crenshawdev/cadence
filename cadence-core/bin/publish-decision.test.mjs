@@ -3,7 +3,7 @@
 // function is pure, so this needs no subprocess or live git.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decidePublish, decideReap } from './lib/publish-decision.mjs';
+import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 
 // A well-formed publish call: auto_close on, a non-protected feature branch, a
 // configured bare-name remote.
@@ -230,4 +230,49 @@ test('reap authorizes nothing: no auto_close input exists to pass it', () => {
   // publish authorization. Passing one changes no verdict.
   const d = decideReap({ ...REAP_OK, autoClose: false });
   assert.equal(d.action, 'reap');
+});
+
+// --- the mutation gate's classifier (EXP-01, AC10) --------------------------
+//
+// This lived in git-publish.mjs, which runs its dispatch at module load and so
+// cannot be imported - the rule was reachable only through a subprocess and had
+// no unit test at all. These arms are the reason it moved (D-18).
+
+/** The wording `mergeLayers` produces for a layer that failed to parse. */
+const TORN_FILE = '/home/u/.claude/cadence/config.json';
+const TORN_SAID = `config layer ${TORN_FILE} failed to parse and was skipped: Unexpected end of JSON input`;
+
+test('torn gate: no torn layer is no refusal, whatever else is on warnings[]', () => {
+  // THE regression this exists for. The shipped rule returned warnings[0] on any
+  // non-empty array with no layer or class discrimination, so every diagnostic
+  // `mergeLayers` might add stopped a land - which is why phase 1 had to route
+  // its global-only-key warning onto a field of its own to keep /cad-land
+  // working in this very repository.
+  assert.equal(tornLayerRefusal({ warnings: [], tornLayers: [] }), null);
+  assert.equal(tornLayerRefusal({
+    warnings: [`ignored the repo layer's workflow.test_command (${TORN_FILE})`,
+      'risk.override.auth was retired in v2.7.0'],
+    tornLayers: [],
+  }), null, 'a message-channel diagnostic is not a torn layer');
+});
+
+test('torn gate: a torn layer refuses, with the merge\'s own wording', () => {
+  assert.equal(tornLayerRefusal({ warnings: [TORN_SAID], tornLayers: [TORN_FILE] }), TORN_SAID);
+  // The torn layer's OWN sentence, not warnings[0]: a non-torn diagnostic
+  // sitting first must not become the refusal detail.
+  assert.equal(tornLayerRefusal({
+    warnings: ['risk.override.auth was retired in v2.7.0', TORN_SAID],
+    tornLayers: [TORN_FILE],
+  }), TORN_SAID);
+  // The class alone still refuses - a caller that supplies no matching message
+  // gets a named detail rather than null, because the layer really is torn.
+  const bare = tornLayerRefusal({ warnings: [], tornLayers: [TORN_FILE] });
+  assert.ok(bare && bare.includes(TORN_FILE), String(bare));
+});
+
+test('torn gate: TOTAL - a missing or non-array input is no refusal, never a throw', () => {
+  assert.equal(tornLayerRefusal(), null);
+  assert.equal(tornLayerRefusal({}), null);
+  assert.equal(tornLayerRefusal({ warnings: 'x', tornLayers: 'y' }), null);
+  assert.equal(tornLayerRefusal({ warnings: [null, 3], tornLayers: ['', null] }), null);
 });

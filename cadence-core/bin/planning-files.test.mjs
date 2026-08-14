@@ -7,12 +7,30 @@
 // same defects reach an observable. Only node: builtins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import {
+  readFileSync, writeFileSync, mkdtempSync, mkdirSync, readdirSync,
+  symlinkSync, lstatSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
 import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
+  atomicWrite,
 } from './lib/planning-files.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const LIB = join(HERE, 'lib', 'planning-files.mjs');
+
+/** A fresh scratch directory - atomicWrite does real I/O, so it needs one. */
+const scratch = () => mkdtempSync(join(tmpdir(), 'cad-atomic-'));
+
+/** Temp-file leftovers beside `file`, by the `<basename>.*.tmp` shape. */
+const strays = (file) => readdirSync(dirname(file))
+  .filter((f) => f.startsWith(`${basename(file)}.`) && f.endsWith('.tmp'));
 
 /** Wrap a frontmatter body in a bare `---` fence, the grammar's anchor. */
 const fence = (body) => `---\n${body}\n---\n# Plan\n`;
@@ -1511,4 +1529,68 @@ test('insertReqRows: a table with no separator returns no-traceability-table, te
   assert.deepEqual(res.skipped, []);
   assert.deepEqual(res.mismatched, []);
   assert.equal(res.text, text);
+});
+
+// --- atomicWrite: the temp path is this call's alone (D-05) ------------------
+
+test('atomicWrite: a DIRECTORY squatting <file>.tmp does not stop the write', () => {
+  const dir = scratch();
+  const file = join(dir, 'ROADMAP.md');
+  mkdirSync(`${file}.tmp`);            // the old fixed name, now unused
+  atomicWrite(file, '# Roadmap\n');
+  assert.equal(readFileSync(file, 'utf8'), '# Roadmap\n');
+  assert.deepEqual(strays(file), ['ROADMAP.md.tmp']);   // the squatter, untouched
+});
+
+test('atomicWrite: two concurrent writers of one target land one payload whole', async () => {
+  const dir = scratch();
+  const file = join(dir, 'STATE.md');
+  const child = join(dir, 'write.mjs');
+  writeFileSync(child,
+    `import { atomicWrite } from ${JSON.stringify(LIB)};\n`
+    + 'atomicWrite(process.argv[2], process.argv[3].repeat(Number(process.argv[4])));\n');
+
+  const run = (ch) => new Promise((resolve, reject) => {
+    const p = spawn(process.execPath, [child, file, ch, '4000000'], { stdio: 'inherit' });
+    p.on('error', reject);
+    p.on('exit', (code) => (code === 0 ? resolve(code) : reject(new Error(`exit ${code}`))));
+  });
+  await Promise.all([run('A'), run('B')]);
+
+  const got = readFileSync(file, 'utf8');
+  // One writer's payload, whole - not a splice of both under one rename.
+  assert.ok(got === 'A'.repeat(4000000) || got === 'B'.repeat(4000000),
+    `target holds neither payload whole: ${got.length} bytes, ${new Set(got).size} distinct chars`);
+  assert.deepEqual(strays(file), []);
+});
+
+// --- atomicWrite: a symlink at the temp path is refused, never followed ------
+
+test('atomicWrite: a symlink at every candidate temp path is refused, nothing written through it', () => {
+  const outside = join(mkdtempSync(join(tmpdir(), 'cad-outside-')), 'secret.txt');
+  writeFileSync(outside, 'ORIGINAL\n');
+  const dir = scratch();
+  const file = join(dir, 'ROADMAP.md');
+  writeFileSync(file, '# before\n');
+  // Every temp path this process can still mint for `file`: the pid is fixed
+  // and the counter only goes up, so the next hundred-odd values cover it.
+  for (let n = 0; n < 150; n += 1) symlinkSync(outside, `${file}.${process.pid}.${n}.tmp`);
+
+  assert.throws(() => atomicWrite(file, 'PWNED CONTENT\n'), /symlink/);
+  assert.equal(readFileSync(outside, 'utf8'), 'ORIGINAL\n');
+  assert.equal(lstatSync(file).isSymbolicLink(), false);
+  assert.equal(readFileSync(file, 'utf8'), '# before\n');
+});
+
+test("atomicWrite: the audit's <file>.tmp reproduction writes nothing outside the tree", () => {
+  const outside = join(mkdtempSync(join(tmpdir(), 'cad-outside-')), 'secret.txt');
+  writeFileSync(outside, 'ORIGINAL\n');
+  const dir = scratch();
+  const file = join(dir, 'ROADMAP.md');
+  symlinkSync(outside, `${file}.tmp`);
+
+  atomicWrite(file, '# Roadmap\n');
+  assert.equal(readFileSync(outside, 'utf8'), 'ORIGINAL\n');
+  assert.equal(lstatSync(file).isSymbolicLink(), false);
+  assert.equal(readFileSync(file, 'utf8'), '# Roadmap\n');
 });

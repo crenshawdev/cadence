@@ -144,3 +144,42 @@ export function decideReap({ branch, currentBranch, protectedBranches, exists } 
     reason: 'merged integration branch reaped locally',
   };
 }
+
+/**
+ * The mutation gate's classifier: the refusal detail when a config layer that
+ * could have carried `protected_branches` failed to parse, or null when every
+ * layer read cleanly. PURE and TOTAL, same discipline as the two deciders - a
+ * non-array input coerces to [], nothing throws.
+ *
+ * It lives HERE rather than in git-publish.mjs for the reason that file's header
+ * gives for the deciders: git-publish.mjs runs its dispatch at module load and
+ * cannot be imported, so a rule kept there is reachable only through a
+ * subprocess and cannot be unit-tested at all.
+ *
+ * The question is deliberately about the CLASS, not about the channel. The
+ * shipped rule refused on any non-empty `warnings[]`, so every diagnostic
+ * `mergeLayers` might ever add stopped a land - phase 1's global-only-key
+ * warning had to be routed onto a separate field to avoid exactly that (D-18).
+ * `tornLayers` names the files whose content could not be used as a config layer
+ * at all, which is the only class that matters here: for such a layer
+ * `readProtectedBranches` fell back to `["main","master"]`, so the
+ * protected-branch gate inside decidePublish/decideReap ran on the DEFAULT list
+ * and not on the user's.
+ *
+ * The detail is the merge's own wording for that layer where there is one, so
+ * the envelope keeps saying `failed to parse` / `is not an object` rather than a
+ * second sentence invented here; the fallback covers a caller that supplies the
+ * class without the message.
+ *
+ * @param {{ warnings?: unknown, tornLayers?: unknown }} [merged]
+ * @returns {string|null}
+ */
+export function tornLayerRefusal({ warnings, tornLayers } = {}) {
+  const torn = (Array.isArray(tornLayers) ? tornLayers : [])
+    .filter((f) => typeof f === 'string' && f !== '');
+  if (!torn.length) return null;
+  const said = (Array.isArray(warnings) ? warnings : [])
+    .filter((w) => typeof w === 'string')
+    .find((w) => torn.some((f) => w.includes(f)));
+  return said || `config layer ${torn[0]} could not be read as a config layer`;
+}

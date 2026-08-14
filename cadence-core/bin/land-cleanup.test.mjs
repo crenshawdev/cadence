@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -134,13 +134,13 @@ test('gate with git.auto_close=false + a blocker: proceed (chain not running)', 
 
 test('gate: auto_close ONLY in the global layer (repo omits) -> halt', () => {
   // The safety property, pinned in the direction that a repo-layer-only read
-  // breaks. skills/cad-land/SKILL.md:27 reads the MERGED auto_close and
-  // suppresses the pre_ship triage ask under it, so on this input the prose has
-  // already entered the unattended chain with no human watching - and this halt
-  // is the only consequence left (references/triage-gate.md:34). Reading
-  // the repo layer here (0b1c322, reverted) answered `proceed` on exactly this
-  // input while triage stayed suppressed, and on the GitLab arm - where no
-  // publish seam gates the chain - the blocker merged.
+  // breaks. skills/cad-land/SKILL.md:24 reads the MERGED auto_close and skips
+  // the publish ask under it, so on this input the prose has already entered the
+  // unattended chain with no human watching - and this halt is the only
+  // consequence left (references/triage-gate.md, the git.auto_close carve-out).
+  // Reading the repo layer here (0b1c322, reverted) answered `proceed` on
+  // exactly this input while the ask stayed skipped, and on the GitLab arm -
+  // where no publish seam gates the chain - the blocker merged.
   const dir = fixture({ on_land_cleanup: true });
   const r = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}',
     globalLayer({ git: { auto_close: true } }));
@@ -166,6 +166,89 @@ test('gate: global auto_close:true beaten by repo false -> proceed (repo wins)',
   const r = seam(['gate', '--dir', dir], '{"findings":[{"severity":"blocker"}]}',
     globalLayer({ git: { auto_close: true } }));
   assert.equal(r.action, 'proceed');
+});
+
+// --- gate: the four states the seam used to collapse to [] -------------------
+
+// Each entry is [name, stdin]. `undefined` stdin means the process is handed
+// closed stdin rather than an empty string, so the read itself can fail.
+const UNREADABLE_INPUTS = [
+  ['stdin-empty', ''],
+  ['malformed-json', '{"findings":[{"severity":"blocker"}'],
+  ['not-a-findings-payload', '{"ok":false,"reason":"dispatch-failed"}'],
+];
+
+for (const [name, stdin] of UNREADABLE_INPUTS) {
+  test(`gate under auto_close: ${name} halts with a reason naming it, never "no surviving finding"`, () => {
+    const dir = fixture({ auto_close: true });
+    const r = seam(['gate', '--dir', dir], stdin);
+    assert.equal(r.ok, true, 'the advisory envelope is preserved - ok:true with one action');
+    assert.equal(r.action, 'halt');
+    assert.deepEqual(r.findings, []);
+    assert.ok(r.reason.includes(name), `reason must name the failure: ${r.reason}`);
+  });
+
+  test(`gate with auto_close absent: ${name} still proceeds (no unattended chain)`, () => {
+    const dir = fixture({ on_land_cleanup: true });
+    const r = seam(['gate', '--dir', dir], stdin);
+    assert.equal(r.ok, true);
+    assert.equal(r.action, 'proceed');
+  });
+}
+
+test('gate under auto_close: an EXPLICIT {"findings":[]} is the one spelling that proceeds', () => {
+  const dir = fixture({ auto_close: true });
+  const r = seam(['gate', '--dir', dir], '{"findings":[]}');
+  assert.equal(r.action, 'proceed');
+  assert.match(r.reason, /no surviving blocker\/high finding/);
+});
+
+test('gate: a bare JSON array on stdin still reads as the findings list', () => {
+  const dir = fixture({ auto_close: true });
+  assert.equal(seam(['gate', '--dir', dir], '[]').action, 'proceed');
+  assert.equal(seam(['gate', '--dir', dir], '[{"severity":"blocker"}]').action, 'halt');
+});
+
+test('gate: no stdin piped at all halts under auto_close, whatever the platform calls it', () => {
+  // `input` is not passed, and stdin is 'ignore' - the child gets /dev/null on
+  // Linux, so the read succeeds and yields "", the stdin-empty arm. The name
+  // differs by platform; what must hold on every one of them is that the gate
+  // does NOT claim there were no surviving findings.
+  const dir = fixture({ auto_close: true });
+  let out;
+  try {
+    out = execFileSync('node', [SEAM, 'gate', '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch (e) { out = e.stdout; }
+  const r = JSON.parse(out);
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'halt');
+  assert.ok(/stdin-empty|stdin-unreadable/.test(r.reason), r.reason);
+});
+
+test('gate: a genuinely unreadable stdin is the fourth halting state, named', () => {
+  // A directory handed in as fd 0: the open succeeds, the read throws EISDIR.
+  // This is the one arm `input: ''` and `stdio: 'ignore'` cannot reach - both
+  // of those read successfully and land on stdin-empty - so without it the
+  // catch that mints `stdin-unreadable` has no seam-level test at all.
+  const dir = fixture({ auto_close: true });
+  const fd = openSync(tmpdir(), 'r');
+  let out;
+  try {
+    out = execFileSync('node', [SEAM, 'gate', '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL },
+      stdio: [fd, 'pipe', 'ignore'],
+    });
+  } catch (e) { out = e.stdout; } finally { closeSync(fd); }
+  const r = JSON.parse(out);
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'halt');
+  assert.ok(r.reason.includes('stdin-unreadable'), r.reason);
+  assert.deepEqual(r.findings, []);
 });
 
 // --- the config warnings both subcommands carry -----------------------------

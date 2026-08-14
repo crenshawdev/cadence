@@ -4,7 +4,7 @@ description: The `xhigh` rung of `cad-verifier`; `bin/route.mjs` picks it, not t
 tools: Read, Write, Bash, Grep, Glob
 color: green
 effort: xhigh
-maxTurns: 400
+maxTurns: 200
 disallowedTools: Edit, MultiEdit
 skills:
   - cad-verifier-contract

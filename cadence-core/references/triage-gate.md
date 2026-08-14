@@ -24,7 +24,16 @@ blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
    STOP and ask the user (ask-user seam): proceed anyway, or stop and fix by
    hand. Name the reason in the ask - "`<trigger>` re-armed once on its own fix
    and still reports N blocker/high findings" - and never fire that trigger again
-   in this loop.
+   in this loop. A return that is not the `{ "findings": [...] }` object
+   `skills/cad-reviewer-contract/SKILL.md`'s `<returns>` block specifies - prose
+   where that object was expected, a fragment, an empty return - is NEITHER
+   outcome: the gate could not be evaluated, so STOP and ask, exactly as the
+   `blocking` bullet above already says a reviewer that could not run does.
+   Read the return's SHAPE and never a host-side stop signal - the shape test
+   holds whatever the host emits. This arm exists because the two-way reading
+   sends a shapeless return down the resume branch as "nothing survived", which
+   skips the terminal ask entirely; it is how the executor family already reads
+   its own workers (`workflows/execute.md`'s timeout-or-no-report arm).
 
 The round count PERSISTS in the trace, so a `/clear` between rounds cannot
 reset it. Before firing the narrowed round, run
@@ -48,7 +57,12 @@ remembers - the pre-persistence behavior, not a new failure mode.
   NONE is the first option in every question and the default. Nothing is
   applied, committed, published or re-planned against a survivor the user did
   not name. When nothing survives, say the review RAN and adjudication killed
-  everything, not a bare "no findings".
+  everything, not a bare "no findings". A return that is not the
+  `{ "findings": [...] }` object `skills/cad-reviewer-contract/SKILL.md`'s
+  `<returns>` block specifies is not that state at all: the gate
+  could not be evaluated - say so and ask, the same arm the `blocking` bullet
+  states, and never present it as adjudication having killed everything. Here
+  too the test is the return's SHAPE, never a host-side stop signal.
 
 **Two caps, two different numbers.** One question carries at most four options
 and NONE occupies one of them, so N survivors become `ceil(N/3)` questions - at
@@ -63,18 +77,22 @@ contradictory and is not resolved by guessing which half the user meant:
 re-present that single question on its own and take the second answer as final.
 Only that question re-asks - the rest of the batch stands.
 
-**The `git.auto_close` carve-out is scoped to `pre_ship` inside `/cad-land`.**
-At that trigger, in that command's unattended close only, the adjudicated arm
-does not prompt at all: triage is NONE by construction and `land-cleanup.mjs
-gate`'s blocker/high halt is the only consequence. The scope is load-bearing
-rather than stylistic - no other trigger and no other command reads that key,
-and `land-cleanup.mjs gate` does not run outside `/cad-land`, so suppressing the
-ask at `plan`, `diff` or `phase_diff` would discard grounded survivors with
-nothing left to halt on them.
+**The `git.auto_close` carve-out is a READ inside `/cad-land`, not a suppressed
+ask.** `/cad-land` fires no review of its own - v3.2.0 removed the one it had -
+so there is no triage prompt there to switch off. What the key still
+governs is the unattended close's halt: with it true, `/cad-land` unions the
+`risk_surface` survivors this branch's own fires already persisted to
+`.planning/phases/*/REVIEW-risk_surface*.md` AND
+`.planning/REVIEW-risk_surface-*.md` and pipes them to
+`land-cleanup.mjs gate`, whose blocker/high halt is the only consequence. The
+scope is load-bearing rather than stylistic - no other command reads that key
+and `land-cleanup.mjs gate` does not run outside `/cad-land`, so a `plan`,
+`diff` or `phase_diff` fire keeps both its ask and its survivors whatever
+`auto_close` says.
 
 Adjudicated does not auto-halt like `blocking`, and it is not the auto-replan
 convergence loop (cut in DESIGN §6) - it grounds once and asks. Use it for the
-deep, rare gates (plan, pre_ship).
+deep, rare gates - `plan` and `phase_diff` at `critical`.
 
 `cad-verify` routes fix requests through fire() (a review producing the fix
 list), not its own fixer loop. That fire names no wiring-table trigger and has

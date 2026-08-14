@@ -17,7 +17,7 @@
 // *.test.mjs, so nothing here carries an @ts-check burden.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -172,6 +172,36 @@ test('risk_surface row: its shape (c) clause names no producer, and task.md stil
   assert.match(task, /\.planning\/tasks\/\{slug\}\/risk-task-\{slug\}\.diff/);
   assert.match(task, /never stage it/i);
   assert.match(task, /delete it once\s+the trigger returns/i);
+});
+
+// --- CST-02: the eight risk-surface categories, stated in three places -------
+
+test('risk-surface categories: the schema enum, the route table and the detection list are one list', () => {
+  // route.mjs may not read config.schema.json - a schema default read there
+  // becomes a user assertion - so route-table.json carries a hand-maintained
+  // copy of this vocabulary, and the reference names the same tokens beside the
+  // prose category each one stands for. Three statements of one list, and
+  // nothing but this check keeps them one list.
+  const spec = JSON.parse(doc('cadence-core', 'config.schema.json'))
+    .keys['review.triggers.risk_surface.surfaces'];
+  assert.ok(spec, 'config.schema.json defines no review.triggers.risk_surface.surfaces');
+  const table = JSON.parse(doc('cadence-core', 'route-table.json')).risk_surface_categories;
+
+  const after = doc('cadence-core', 'references', 'review-triggers.md')
+    .split('## risk_surface detection')[1];
+  assert.ok(after, 'review-triggers.md has no risk_surface detection section');
+  const prose = [...after.split(/\n## /)[0].matchAll(/^- `([a-z_]+)` - /gm)].map((m) => m[1]);
+
+  assert.deepEqual(table, spec.values,
+    `route-table.json states [${table}], config.schema.json states [${spec.values}]`);
+  assert.deepEqual(prose, spec.values,
+    `review-triggers.md's detection list states [${prose}], config.schema.json states [${spec.values}]`);
+
+  // D-12: no default ARRAY. A default of all eight would make "the user chose
+  // everything" indistinguishable from "nobody has answered", and the
+  // unanswered state is the one the first fire's ask exists to detect.
+  assert.equal(spec.default, null,
+    'the key has a default array again, so the unanswered state is undetectable');
 });
 
 test('plan authority: Action never invents, Verify decides, in all five documents', () => {
@@ -426,4 +456,113 @@ test('the analyzer spend gate precedes the resolve, and four surfaces state two 
         `${where} region ${label} names a size question with no spend question beside it`);
     }
   }
+});
+
+// --- RVW-01: one bar, two reviewers -----------------------------------------
+
+/** `text` with every run of whitespace collapsed, so a rewrap is not a defect. */
+const flat = (text) => text.replace(/\s+/g, ' ');
+
+/**
+ * The severity vocabulary a document states, as a sorted set. Parsed from the
+ * one sentence both documents spell it in, so a document that stops stating it
+ * at all fails here rather than comparing empty-to-empty.
+ */
+function severityVocabulary(text, where) {
+  const m = flat(text).match(/`severity` is exactly one of `([^`]+)`/);
+  assert.ok(m, `${where} states no severity vocabulary`);
+  return m[1].split('|').map((s) => s.trim()).sort();
+}
+
+test('the reviewer brief carries the same bar the reviewer contract states', () => {
+  // The defect: the cross-model arm sent whatever one-line instruction the fire
+  // site composed, while the stance, the severity definitions and the two rules
+  // that keep findings comparable lived only in skills/cad-reviewer-contract.
+  // An adjudicator merges both backends' findings blind - it cannot, if the two
+  // reviewers were held to different bars. The brief is the ONE bar, restated as
+  // a payload fragment; this test is what keeps the restatement from drifting.
+  const brief = doc('cadence-core', 'references', 'reviewer-brief.md');
+  const contract = doc('skills', 'cad-reviewer-contract', 'SKILL.md');
+  const flatBrief = flat(brief);
+
+  // 1. The stance, including the clause that makes a zero-finding pass earned.
+  assert.match(flatBrief, /Assume the artifact is wrong until the evidence clears it/,
+    'the brief no longer states the stance');
+  assert.match(flatBrief, /only after a genuine attempt to falsify/,
+    'the brief no longer conditions a zero-finding pass on a falsification attempt');
+
+  // 2. The severity definitions - the same VOCABULARY as the contract, and the
+  //    two anchors of the scale, so `blocker` cannot come to mean something
+  //    else on the cross-model side of a panel.
+  assert.deepEqual(severityVocabulary(brief, 'reviewer-brief.md'),
+    severityVocabulary(contract, 'cad-reviewer-contract'),
+    'the brief and the contract state different severity vocabularies');
+  assert.match(flatBrief, /`blocker` = the goal fails or a serious defect ships; `low` = minor/,
+    'the brief states the severity words without defining either end of the scale');
+
+  // 3. and 4. The two rules an external reviewer has no other way to learn.
+  assert.ok(flatBrief.includes('Approach differences are NOT findings'),
+    'the brief no longer tells a reviewer that approach differences are not findings');
+  assert.match(flatBrief, /Empty `findings: \[\]` when, after a real refutation attempt/,
+    'the brief no longer states that an empty findings list is a valid result');
+});
+
+test('the reviewer brief costs under 1% of the default review.max_prompt_tokens', () => {
+  // It rides in every cross-model payload, so its cost is paid per fire. Read
+  // off the same estimator the cap itself uses (chars/4) and against the
+  // schema's own default rather than a copied 120000, so a changed default
+  // re-prices this check instead of leaving it asserting a stale number.
+  const measured = new Map(weighAll(REPO).map((s) => [s.surface, s]));
+  const brief = measured.get('cadence-core/references/reviewer-brief.md');
+  assert.ok(brief, 'reviewer-brief.md is not a measured surface');
+
+  const schema = JSON.parse(doc('cadence-core', 'config.schema.json'));
+  const cap = schema.keys['review.max_prompt_tokens'].default;
+  assert.ok(Number.isInteger(cap), 'review.max_prompt_tokens has no integer default');
+
+  assert.ok(brief.estTokens < cap / 100,
+    `the brief estimates ${brief.estTokens} tokens, over 1% of the ${cap} default cap`);
+});
+
+// --- CST-03: the turn bound the frontmatter sets is the one the seam states --
+
+test('the turn bound: every rung file and the spawn-agent seam name one maxTurns value', () => {
+  // The defect this pins. references/seams.md told readers the spawn-agent seam
+  // "offers no bound and no cancel" while all 19 agents/*.md carried a
+  // maxTurns bound in frontmatter - which is why nobody ever tuned the value.
+  // Correcting the sentence puts a NUMBER in prose, and a number copied into
+  // prose is exactly what drifts. Both sides are read by their NAMED anchor -
+  // the `maxTurns:` key, in the frontmatter and inside the spawn-agent section
+  // - never by the shape of the sentence around it, so a rewrap or a reworded
+  // bullet that changed no fact stays green.
+  const files = readdirSync(join(REPO, 'agents')).filter((f) => f.endsWith('.md')).sort();
+  assert.ok(files.length, 'no agent files under agents/');
+
+  /** Each rung file's frontmatter bound, as written. */
+  const byFile = new Map(files.map((f) => {
+    const front = doc('agents', f).split(/^---$/m)[1];
+    assert.ok(front, `agents/${f} has no frontmatter block`);
+    const m = front.match(/^maxTurns: (\d+)$/m);
+    assert.ok(m, `agents/${f} states no maxTurns bound in its frontmatter`);
+    return [f, m[1]];
+  }));
+
+  // Direction 1: a rung file whose value differs from its siblings.
+  const [firstFile] = byFile.keys();
+  const bound = byFile.get(firstFile);
+  const drifted = [...byFile].filter(([, v]) => v !== bound).map(([f, v]) => `agents/${f}=${v}`);
+  assert.deepEqual(drifted, [],
+    `these rung files disagree with agents/${firstFile}=${bound}: ${drifted.join(', ')}`);
+
+  // Direction 2: a sentence naming a value no rung file carries.
+  const seam = doc('cadence-core', 'references', 'seams.md')
+    .split('## Seam: spawn-agent')[1];
+  assert.ok(seam, 'seams.md has no spawn-agent seam section');
+  const stated = [...seam.split(/\n## /)[0].matchAll(/maxTurns: (\d+)/g)].map((m) => m[1]);
+  assert.ok(stated.length,
+    'the spawn-agent seam states no maxTurns value, so it is back to describing a seam with no bound');
+  const wrong = [...new Set(stated.filter((v) => v !== bound))];
+  assert.deepEqual(wrong, [],
+    `references/seams.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
+    + `which no rung file carries - the 19 rung files carry ${bound}`);
 });

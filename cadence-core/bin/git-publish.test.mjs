@@ -5,11 +5,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// The two-layer git fixture, imported rather than copied (D-19). That file's
+// own arms are bound to a no-op unless it is the entry file, so importing it
+// registers nothing here.
+import { gitLayers } from './config-seams.test.mjs';
 
+const BIN = dirname(fileURLToPath(import.meta.url));
 const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'git-publish.mjs');
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-pub-')), 'no-global.json');
 const GIT_ENV = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
@@ -293,4 +298,80 @@ test('warnings[] rides the git-publish envelope on the acting AND the skip arms'
   assert.equal(skipped.d.action, 'already-absent');
   assert.equal(skipped.status, 0);
   assert.match(skipped.d.warnings[0], /failed to parse/);
+});
+
+// --- no failure detail carries a credential (EXP-01, AC8) --------------------
+//
+// The fixture is `gitLayers` imported from config-seams.test.mjs (D-19) rather
+// than this file's own `repo()`: the hostile-repo scaffolding phase 1 built is
+// what these arms reuse, and a copy of it here is the drift the shared fixture
+// exists to prevent.
+//
+// Both arms point `origin` at a remote whose URL carries userinfo on a
+// transport git does NOT anonymize, measured 2026-08-13 on git 2.55.0 (D-15).
+// The `https://x-access-token:TOKEN@host` form the requirement cites is
+// anonymized by git before the error is emitted, so an arm built on it is green
+// against unpatched code - which is the defect, not the test.
+
+/** The credential planted in the fixture remotes below. */
+const LEAK_USER = 'cad';
+const LEAK_SECRET = 's3cr3t-tok';
+
+/**
+ * A publish fixture on a non-protected branch whose `origin` is `url`.
+ * `gitLayers` writes no global layer here, so the seam's merge stays clean and
+ * the only thing under test is what the push failure carries.
+ * @param {string} url
+ */
+function leakyOrigin(url) {
+  const fx = gitLayers({ branch: 'cadence/v9.9.9', repo: { git: { auto_close: true } } });
+  git(['-C', fx.root, 'remote', 'add', 'origin', url]);
+  return fx;
+}
+
+/** @param {{ok:boolean, reason?:string, detail?:string}} d @param {string} label */
+function assertNoCredential(d, label) {
+  assert.equal(d.ok, false, `${label}: ${JSON.stringify(d)}`);
+  assert.equal(d.reason, 'push-failed', `${label}: ${JSON.stringify(d)}`);
+  assert.ok(d.detail && d.detail.length > 0, `${label}: empty detail`);
+  assert.equal(d.detail.includes(LEAK_SECRET), false, `${label}: the secret survived: ${d.detail}`);
+  assert.equal(d.detail.includes(`${LEAK_USER}:`), false, `${label}: the userinfo survived: ${d.detail}`);
+  assert.ok(d.detail.includes('host.invalid'), `${label}: the host was lost too: ${d.detail}`);
+}
+
+test('publish: a git:// remote carrying userinfo fails without leaking it', () => {
+  // Measured leak: `fatal: unable to look up cad:s3cr3t-tok@host.invalid (port
+  // 9418)`. No network - `.invalid` is reserved and never resolves.
+  const fx = leakyOrigin(`git://${LEAK_USER}:${LEAK_SECRET}@host.invalid/r.git`);
+  assertNoCredential(seam(['publish', '--dir', fx.root]), 'git://');
+});
+
+test('publish: a PATH-shaped remote carrying userinfo fails without leaking it', () => {
+  // The second transport measured to leak, and the one AC8 names beside git://:
+  // git quotes the whole path back (`fatal: '/nonexistent/cad:s3cr3t-tok@
+  // host.invalid/r.git' does not appear to be a git repository`). An scp-shaped
+  // remote is NOT usable here - git hands it straight to ssh, whose stderr
+  // names neither the URL nor the host, so there is nothing for this arm to
+  // assert and the ssh it spawns would read the developer's own ~/.ssh/config.
+  const fx = leakyOrigin(`/nonexistent/${LEAK_USER}:${LEAK_SECRET}@host.invalid/r.git`);
+  const d = seam(['publish', '--dir', fx.root]);
+  assertNoCredential(d, 'path-shaped');
+  assert.ok(d.detail.includes('/nonexistent/'), d.detail);
+});
+
+test('source: every git-publish failure detail goes through redactUrl', () => {
+  // The census, so a FOURTH site added to this file fails here rather than
+  // shipping a credential: three of EXP-01's four sites live in git-publish.mjs
+  // (push-failed, reap-failed, and the dispatch-level internal catch), and each
+  // is named so a rename cannot quietly drop one. The fourth site is
+  // planning.mjs's no-staged-set, censused by planning.test.mjs beside its own
+  // end-to-end arm - one census per file, so the two cannot drift apart.
+  const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
+  const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
+  const pub = readFileSync(join(BIN, 'git-publish.mjs'), 'utf8');
+  assert.equal((pub.match(IDIOM) || []).length, 3, 'git-publish.mjs gained or lost a detail site');
+  assert.equal((pub.match(WRAPPED) || []).length, 3, 'a git-publish.mjs detail site is unredacted');
+  for (const reason of ['push-failed', 'reap-failed', 'internal']) {
+    assert.match(pub, new RegExp(`reason: '${reason}'[\\s\\S]{0,120}?detail: redactUrl\\(`), reason);
+  }
 });

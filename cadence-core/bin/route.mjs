@@ -39,16 +39,43 @@
 //                              gate, reporting the disagreement (D-04); a value
 //                              outside that vocabulary loses to the level's gate
 //                              and is named in `warnings`
+//   review.reviewers           the reviewer backends the fire may go to, which
+//                              `resolve` filters per trigger by availability
+//                              into the `reviewers` map beside `review`
+//   review.triggers.*.tier     the model tier that trigger's availability test
+//                              reads, falling back to the table's `tiers` row
+//                              (never to the schema default, D-04)
+//   review.providers.*.tiers.* the model id a provider is configured with per
+//                              tier - a provider with none at the resolved tier
+//                              is unavailable, is dropped, and says so in
+//                              `warnings`
+//   review.triggers.risk_surface.surfaces
+//                              the categories the risk_surface fire is scoped
+//                              to, returned as `surfaces`. Absent from both
+//                              layers means ALL of the table's
+//                              `risk_surface_categories`, and
+//                              `surfaces_answered` says which of the two it is,
+//                              so "chose everything" and "never answered" stay
+//                              apart (D-12)
 //
-// The stakes level a config layer set is a FLOOR question too (STK-03): the
-// phase's own PLAN `files:` list is matched against the table's `surfaces`
-// block, and a detected risk surface RAISES the level to that row's floor -
-// never lowers it. Lowering back takes a persisted `risk.override.<surface>`,
-// one per detected surface, read from the REPO layer alone - the key is
-// `src: repo`, and a waiver found in the user-global layer is ignored and
-// named in `warnings` rather than waiving a floor machine-wide. Every
-// unresolvable input (no `--phase` and no cursor, no PLAN, an unreadable PLAN)
-// resolves at the baseline with ok:true.
+// THERE IS NO RISK FLOOR, and this is not the file that computes one. The
+// stakes level a config layer set is the baseline and the whole of it: nothing
+// here reads a plan's `files:` list, `route-table.json` carries no `surfaces`
+// block for one to be matched against, and the `risk.override.<surface>` waiver
+// family is retired (lib/retired-keys.mjs) along with the dispatch-time floor
+// that gave it something to lower. That floor judged a file by its NAME and
+// raised a whole phase on one path token - `tests/ingest_concurrency.rs` took
+// six roles to their top rung - which is what it cost, and why the record of it
+// outlives it here.
+//
+// So the `risk_surface_categories` block in route-table.json and the
+// `review.triggers.risk_surface.surfaces` key this file now reads are NOT that
+// floor returning under a new name. They scope ONE review trigger's fire, which
+// is read off the DIFF at the fire site (references/review-triggers.md), and
+// they move no role's model and no role's rung. `--phase` is likewise not a
+// floor input: it names the phase a resolve's routing event is recorded under,
+// and a resolve with no usable phase still returns the whole bundle with
+// ok:true.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -60,18 +87,25 @@ import { emit as out, DONE } from './lib/seam-io.mjs';
 import { requireInt, requirePhaseArg } from './lib/require-int.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { appendEvent } from './lib/trace.mjs';
+import { testSeamOpen } from './lib/test-seam.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // TABLE is loaded lazily, inside the dispatch try block below, so a missing
 // or malformed shipped route-table.json degrades to {ok:false} instead of
-// crashing at import time. CADENCE_ROUTE_TABLE overrides the path (hermetic
-// test injection only; production always uses the shipped file).
+// crashing at import time. CADENCE_ROUTE_TABLE overrides the path ONLY when
+// the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without it the
+// variable is ignored and the shipped file is read, silently - this constant
+// resolves at module load, before any dispatch exists to carry a warning. The
+// gate is the point: this table sets every review trigger's gate, so an
+// ungated override turns a blocking gate off.
 let TABLE;
-const TABLE_PATH = process.env.CADENCE_ROUTE_TABLE || join(HERE, '..', 'route-table.json');
+const TABLE_PATH = (testSeamOpen() && process.env.CADENCE_ROUTE_TABLE)
+  || join(HERE, '..', 'route-table.json');
 const fail = (reason, detail) => { out({ ok: false, reason, detail }); throw DONE; };
 
 // Config defaults mirror config.schema.json so a missing/partial config still routes.
-const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false };
+const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false,
+  reviewers: ['claude-subagent'] };
 
 // The accepted `review.triggers.<t>.gate` vocabulary, used ONLY when the table
 // carries no usable `gates` array. Never skip the check on an absent list:
@@ -107,29 +141,83 @@ function readConfig(file) {
     // one entry - and a start rung read as a model alias would be reported as an
     // unknown alias rather than honoured.
     effort: m.effort ?? {},
-    triggerGates: triggerGatesIn(c),
+    triggerGates: triggerFieldIn(c, 'gate'),
+    // The per-trigger model TIER, read the same way and for the same reason:
+    // it is the input to the reviewer-availability test below, and a schema
+    // default read here would report an availability answer as the user's.
+    triggerTiers: triggerFieldIn(c, 'tier'),
+    // `review.triggers.risk_surface.surfaces` - the categories the one blocking
+    // trigger is scoped to. Read through the same reader for the same reason
+    // again: config.schema.json's default for this key is `null` precisely so
+    // "nobody has answered" stays a distinguishable state (D-12), and reading a
+    // default here would erase it.
+    triggerSurfaces: triggerFieldIn(c, 'surfaces'),
+    // The configured reviewer SET, or null when no layer named a usable one -
+    // DEFAULTS.reviewers backstops it below, the way DEFAULTS backstops every
+    // other unset key.
+    reviewers: reviewersIn(c),
+    // `review.providers.<name>.tiers.<tier>` - the model id a provider is
+    // configured with per tier, which is what "available" means for a
+    // cross-model reviewer.
+    providers: providersIn(c),
     _source: source,
     _warnings: [...(warnings || []), ...retiredKeysIn(c)],
   };
 }
 
-// Per-trigger gates a LAYER actually wrote, keyed by trigger name. mergeLayers
-// merges the two FILE layers only and never folds in a schema default, so
-// everything this returns is a user assertion - which is the whole reason D-04
-// can let it win over the level's gate. Reading a default here would turn "the
+// One field of `review.triggers.<name>.*` that a LAYER actually wrote, keyed by
+// trigger name (`gate` for the gate grid, `tier` for the availability test).
+// mergeLayers merges the two FILE layers only and never folds in a schema
+// default, so everything this returns is a user assertion - which is the whole
+// reason D-04 can let a gate win over the level's gate, and the reason the tier
+// this feeds may decide a fallback. Reading a default here would turn "the
 // schema says advisory" into "the user asked for advisory" and the grid would
-// decide nothing. Defensive at every hop: this runs on whatever a user's config
-// happens to hold, and a scalar where an object belongs contributes nothing
-// rather than throwing.
-function triggerGatesIn(c) {
+// decide nothing; the same read on `tier` would turn "the schema says flagship"
+// into a user assertion and report the seam's own answer as the config's.
+// Defensive at every hop: this runs on whatever a user's config happens to
+// hold, and a scalar where an object belongs contributes nothing rather than
+// throwing.
+function triggerFieldIn(c, field) {
   const out = {};
   const triggers = (c && typeof c === 'object' ? (c.review || {}) : {}).triggers;
   if (!triggers || typeof triggers !== 'object' || Array.isArray(triggers)) return out;
   for (const [name, spec] of Object.entries(triggers)) {
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue;
-    if (spec.gate !== undefined && spec.gate !== null) out[name] = spec.gate;
+    if (spec[field] !== undefined && spec[field] !== null) out[name] = spec[field];
   }
   return out;
+}
+
+// The reviewer backends a layer named, or null when none did. Non-strings are
+// dropped rather than carried into the availability test, where they would be
+// looked up as a provider name; a value that is not a usable list at all reads
+// as unset, and DEFAULTS.reviewers backstops it the way DEFAULTS backstops
+// every other unset key.
+function reviewersIn(c) {
+  const list = (c && typeof c === 'object' ? (c.review || {}) : {}).reviewers;
+  if (!Array.isArray(list)) return null;
+  const names = list.filter((x) => typeof x === 'string' && x);
+  return names.length ? names : null;
+}
+
+// The provider blocks, defensively: `review.providers.<name>.tiers` is a map of
+// tier -> model id, and anything else contributes no model id (which reads as
+// unavailable) rather than throwing.
+function providersIn(c) {
+  const p = (c && typeof c === 'object' ? (c.review || {}) : {}).providers;
+  return p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+}
+
+// The model id one provider is configured with at one tier, or '' for none.
+// An empty string is deliberately NOT a model id: a `""` in a config is a key
+// somebody cleared, and dispatching a provider call with an empty model is the
+// silent-substitution shape RVW-02 opened against.
+function providerModel(providers, name, tier) {
+  if (!tier) return '';
+  const block = providers[name];
+  const tiers = block && typeof block === 'object' && !Array.isArray(block) ? block.tiers : null;
+  const id = tiers && typeof tiers === 'object' && !Array.isArray(tiers) ? tiers[tier] : null;
+  return typeof id === 'string' && id.trim() ? id : '';
 }
 
 function resolve(opts) {
@@ -379,6 +467,113 @@ function resolve(opts) {
     }
   }
 
+  // The OTHER half of a fire (RVW-02). The gate map above says whether a
+  // trigger fires; this says WHO it fires to, resolved by the seam instead of
+  // by prose at the fire site - the shape that let a blocking risk_surface
+  // review go to a same-model subagent on 2026-08-13 with `review.reviewers`
+  // set to `openai` and nothing recording the substitution.
+  //
+  // Its own top-level field, never folded into `review` (D-05): that map's
+  // values are gate STRINGS, and turning each into an object would break every
+  // reader of the wiring table at once.
+  //
+  // Availability, per trigger: `claude-subagent` is always available (it is a
+  // subagent dispatch, not a provider call); any other name needs a model id at
+  // the tier THIS trigger resolves at - the layer's `review.triggers.<t>.tier`
+  // when a layer set one, else the table's hand-maintained `tiers` row (D-04:
+  // never config.schema.json's default, which would report the schema's answer
+  // as the user's). An empty set falls back to `claude-subagent`, because a
+  // blocking trigger with no reviewer is a gate that silently stops gating.
+  //
+  // Detection, not prevention (D-07): nothing here refuses a dispatch to a
+  // reviewer outside this set. The set plus the `reviewer` field on the
+  // lifecycle event are what make a substitution visible afterwards.
+  const wantedReviewers = cfg.reviewers ?? DEFAULTS.reviewers;
+  const tableTiers = TABLE.tiers && typeof TABLE.tiers === 'object'
+    && !Array.isArray(TABLE.tiers) ? TABLE.tiers : {};
+  const reviewers = {};
+  for (const trigger of Object.keys(review)) {
+    const setTier = cfg.triggerTiers[trigger];
+    const tier = setTier !== undefined ? setTier : tableTiers[trigger];
+    const tierFrom = setTier !== undefined
+      ? `review.triggers.${trigger}.tier`
+      : "route-table.json's tiers row";
+    const kept = [];
+    const dropped = [];
+    for (const name of wantedReviewers) {
+      if (name === 'claude-subagent') { kept.push(name); continue; }
+      if (providerModel(cfg.providers, name, tier)) { kept.push(name); continue; }
+      dropped.push(tier
+        ? `${name} has no model id at the "${tier}" tier `
+          + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
+        : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
+          + '(no config layer set one and route-table.json names none)');
+    }
+    // The cause travels IN the return, never left to be inferred from a set
+    // that is smaller than the one the user configured. One warning per
+    // trigger, since the tier - and so the answer - is per trigger.
+    if (kept.length && dropped.length) {
+      warnings.push(`${trigger}: ${dropped.join('; ')}; dropped from the reviewer set, `
+        + `leaving [${kept.join(', ')}]`);
+    } else if (!kept.length) {
+      warnings.push(`${trigger}: no configured reviewer is available `
+        + `(${dropped.join('; ')}); falling back to claude-subagent`);
+    }
+    reviewers[trigger] = kept.length ? kept : ['claude-subagent'];
+  }
+
+  // The THIRD half of a fire (CST-02). The gate says whether `risk_surface`
+  // fires and `reviewers` says who to, and this says on WHAT: a heuristic match
+  // in a category outside the resolved set does not fire the trigger. Resolved
+  // here rather than read at the fire site (D-13) - a cost-control key whose
+  // enforcement is a model remembering to read a config value is the same shape
+  // as the `review.reviewers` substitution the map above closes.
+  //
+  // Absence means EVERYTHING, never nothing: the table's own category list is
+  // the answer when no layer wrote one, and `surfaces_answered` says which of
+  // the two it is, so a fire site can tell "the user chose all eight" from
+  // "nobody has answered yet" - the second is what the one-time ask keys on.
+  // Failing toward all eight is the only safe direction here (D-14): the
+  // alternative narrows the only blocking review trigger on evidence nobody
+  // supplied.
+  const tableCategories = Array.isArray(TABLE.risk_surface_categories)
+    ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : [];
+  const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
+  let surfaces = tableCategories;
+  let surfacesAnswered = false;
+  if (wroteSurfaces !== undefined) {
+    // Defensive at every hop, like every other config read here: a scalar where
+    // a list belongs, and an entry outside the vocabulary, contribute NOTHING
+    // and are named - never a silent narrowing of a blocking gate's scope.
+    const list = Array.isArray(wroteSurfaces) ? wroteSurfaces : [];
+    const kept = list.filter((x) => typeof x === 'string' && tableCategories.includes(x));
+    const bad = list.filter((x) => !(typeof x === 'string' && tableCategories.includes(x)));
+    if (!Array.isArray(wroteSurfaces)) {
+      warnings.push(`review.triggers.risk_surface.surfaces=${JSON.stringify(wroteSurfaces)} is not a list; `
+        + `all ${tableCategories.length} categories stand`);
+    } else if (bad.length) {
+      warnings.push(`review.triggers.risk_surface.surfaces: ${bad.map((x) => JSON.stringify(x)).join(', ')} `
+        + `${bad.length === 1 ? 'is' : 'are'} not one of [${tableCategories.join(', ')}]`);
+    }
+    // A list carrying ANY unrecognised entry fails SAFE - all categories stand
+    // and the question reads as unanswered - rather than resolving to its valid
+    // subset. `["auth", "secret"]` is a typo for `secrets`, not a decision to
+    // stop reviewing secret handling, and accepting the subset would suppress
+    // the one-time question forever while silently shrinking the only blocking
+    // gate. Widening is the safe direction; a warning the user may not read is
+    // not a substitute for it.
+    if (kept.length && !bad.length) {
+      surfaces = kept;
+      surfacesAnswered = true;
+    } else if (bad.length) {
+      warnings.push('review.triggers.risk_surface.surfaces carries an unrecognised entry; '
+        + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
+    } else if (Array.isArray(wroteSurfaces)) {
+      warnings.push('review.triggers.risk_surface.surfaces resolves to no category; '
+        + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
+    }
+  }
+
   // A per-role pin is an explicit user assertion, so it wins over the cell's
   // model. What it does NOT touch is effort: that is fixed per agent file in
   // frontmatter, so a pinned role keeps its rung and its rung escalation (same
@@ -433,9 +628,12 @@ function resolve(opts) {
 
   // The bundle: four knobs, not a bare model. `review` is the whole
   // trigger->gate map for this level (no --trigger flag: the map rides on one
-  // resolve, and a flag would change the CONTRACTS entry for no reader), and
-  // `verify` is the level's two-state deep-verify switch.
-  out({ ok: true, role: opts.role, agent, model, effort, review, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  // resolve, and a flag would change the CONTRACTS entry for no reader),
+  // `reviewers` is the trigger->reviewer-set map beside it, `surfaces` +
+  // `surfaces_answered` are the risk_surface fire's scope and whether anyone
+  // chose it, and `verify` is the level's two-state deep-verify switch. All
+  // three halves of a fire ride on ONE resolve.
+  out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------

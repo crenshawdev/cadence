@@ -10,20 +10,6 @@ subsystem.
 
 <process>
 
-Step markers: at the START of each step below, from the step where the phase
-number is known onward, append one coordinator marker naming that step.
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append \
-  --phase <N> --family lifecycle --event coordinator --step "<this step's name>"
-```
-
-Written once here, run once per step. The marker carries the step name and
-nothing else - never `--role`, never `--tokens`. What the coordinator itself
-cost is DERIVED from these markers by `/cad-report`: a step's span minus the
-worker brackets inside it. A figure written onto a marker is one no host
-reported.
-
 <step name="parse">
 Parse `$ARGUMENTS`:
 
@@ -333,8 +319,24 @@ Handle the return:
 </step>
 
 <step name="review">
-Fire the `plan` review trigger per references/review-triggers.md, payload =
-the PLAN file(s). The gate comes from the routing bundle; act on it:
+Fire the `plan` review trigger per references/review-triggers.md, payload = the
+PLAN file(s) PLUS the three artifacts the reviewer is asked to check them
+against: `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and
+`.planning/phases/{N}/CONTEXT.md`. All four are REFERENCE PATHS the reviewer
+resolves itself, exactly as the PLAN path already is - never inlined text,
+which would keep every byte of them resident here for the rest of the run - and
+all four ride the fire's `--read` bracket list (review-triggers.md step 4),
+since the read-set records what this SITE caused the worker to read.
+
+The reviewer's contract asks it for "a requirement with no task" and "a
+contradicted locked decision". Handed the PLAN alone it has nothing to check
+either against, while `check_gate` above hands `cad-plan-checker` these same
+three files for the same questions. `.planning/phases/{N}/CONTEXT.md` may be
+absent for a phase - name it optional in the payload, as `check_gate` does. Its
+absence is not a resolve failure and must not come back as the `blocker` an
+unresolvable reference earns.
+
+The gate comes from the routing bundle; act on it:
 
 - **advisory** (the `shipped` default) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The payload is the PLAN

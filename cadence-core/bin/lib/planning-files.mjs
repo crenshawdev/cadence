@@ -6,7 +6,7 @@
 // Zero-dep: node: builtins only. Consumed by bin/planning.mjs and its tests.
 'use strict';
 
-import { writeFileSync, renameSync } from 'node:fs';
+import { writeFileSync, renameSync, lstatSync } from 'node:fs';
 
 // The cursor's only permitted Status values (references/conventions.md).
 export const CURSOR_STATUSES = [
@@ -1161,7 +1161,10 @@ export function parseUat(text) {
     items.push(item);
   }
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
-  for (const it of items) if (it.status in counts) counts[String(it.status)]++;
+  // Own keys only, the idiom lib/trace.mjs's counts loop uses for the same
+  // job: `in` walks the prototype, so a hand-written `status: constructor`
+  // would pass the guard and turn that count into NaN.
+  for (const it of items) if (Object.prototype.hasOwnProperty.call(counts, String(it.status))) counts[String(it.status)]++;
   return { status: fm.status || null, phase: fm.phase || null, fm, items, counts, extras };
 }
 
@@ -1190,7 +1193,7 @@ export function renderUat({ fm, items, extras = [] }) {
     return `### ${it.k}. ${flat(it.name)}\n${fields.join('\n')}\n`;
   });
   const counts = { pass: 0, fail: 0, pending: 0, skipped: 0, blocked: 0 };
-  for (const it of items) if (String(it.status) in counts) counts[String(it.status)]++;
+  for (const it of items) if (Object.prototype.hasOwnProperty.call(counts, String(it.status))) counts[String(it.status)]++;
   const reworked = items.filter((i) => i.first_pass === 'fail').length;
   const summary = `total: ${items.length}\npassed: ${counts.pass}\nfailed: ${counts.fail}\n` +
     `pending: ${counts.pending}\nskipped: ${counts.skipped}\nblocked: ${counts.blocked}\nreworked: ${reworked}`;
@@ -1799,14 +1802,52 @@ export function cutPhaseDetail(text, n) {
 // ---------------------------------------------------------------------------
 // Atomic write - STATE/UAT are rewritten constantly; a crash must never
 // leave a torn file. Write a sibling temp file, then rename over the target.
+//
+// The temp name is UNIQUE PER CALL - `<file>.<pid>.<n>.tmp`, where `n` is a
+// module-level counter - and stays a sibling of `file`, so the rename is still
+// same-filesystem and still atomic. What that buys: two writers of one target
+// no longer share one temp path, so the second writer's bytes can no longer
+// land under the first writer's rename. What it does NOT buy (D-05): the two
+// writers still last-write-wins the TARGET, so a `uat record` racing a
+// `phase-done` on one file still loses an edit. There is no lock, no `O_EXCL`
+// retry and no `fsync` here - the promise is only that a crash never leaves a
+// torn file.
+//
+// The suffix is DERIVED, never random: a test has to be able to name the temp
+// paths this process will use before it uses them.
+//
+// A symlink SITTING AT that temp path is refused, by throwing (D-02). The read
+// side has defended against this exact shape for a while (`planning.mjs`
+// lstats and skips a link rather than reading through it); the write side never
+// got it, so a planted `ROADMAP.md.tmp` link wrote the caller's bytes wherever
+// it pointed. Refusal is a throw because no call site assigns this function's
+// result, and a throw is the failure mode all 15 already tolerate through their
+// dispatch-level catch.
+//
+// The guard covers the TEMP path only (D-03). The TARGET is still replaced by
+// the rename even when it is itself a symlink - that is what heals a tree an
+// attack already touched. Stated cost: a planning file a user deliberately
+// symlinked into a dotfiles tree is replaced on the next write.
 // ---------------------------------------------------------------------------
+
+/** Bumped on every atomicWrite call, so no two share a temp path. */
+let tmpSeq = 0;
 
 /**
  * @param {string} file
  * @param {string} text
+ * @throws when the temp path is a symlink - writing would follow it out of the tree
  */
 export function atomicWrite(file, text) {
-  const tmp = `${file}.tmp`;
+  const tmp = `${file}.${process.pid}.${tmpSeq++}.tmp`;
+  // `lstatSync`, so the LINK is what gets classified rather than whatever it
+  // points at. An ordinary existing file here is still overwritten: a stale
+  // temp from a crashed process must not wedge every future write.
+  let st = null;
+  try { st = lstatSync(tmp); } catch { /* ENOENT is the ordinary case */ }
+  if (st && st.isSymbolicLink()) {
+    throw new Error(`atomicWrite refused: temp path is a symlink: ${tmp}`);
+  }
   writeFileSync(tmp, text);
   renameSync(tmp, file);
 }

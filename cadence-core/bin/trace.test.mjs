@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
-  copyFileSync,
+  copyFileSync, symlinkSync, lstatSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -442,12 +442,97 @@ test('seam: --tokens 0 is a recorded figure, not an omission', () => {
   assert.ok('tokens' in e);
 });
 
+test('seam: --raised rides an adjudication event as a NUMBER', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 0 survivors; voices openai', '--raised', '9']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.raised, 9);
+  // A NUMBER for the same reason `--tokens` is one: the kill count is summed
+  // by trace suggest without type-checking it first.
+  assert.equal(typeof e.raised, 'number');
+  assert.match(traceBytes(dir), /"raised":9/);
+});
+
+test('seam: --raised 0 is a recorded figure, not an omission', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 0 survivors', '--raised', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.raised, 0);
+  // `0 of 0` and "nobody recorded it" are different fires, and this key is what
+  // separates them: an omitted `raised` reads downstream as UNKNOWN.
+  assert.ok('raised' in e);
+});
+
+test('seam: an append with no --raised is byte-identical to today\'s', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+  const [e] = lines(dir);
+  assert.equal('raised' in e, false, JSON.stringify(e));
+});
+
+test('seam: a malformed --raised appends NOTHING at all', () => {
+  const dir = root();
+  // No comma-grouping exception here, unlike `--tokens`: a finding count is
+  // never PRINTED grouped, so `1,234` is a typo rather than a transcription.
+  for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+      '--event', 'adjudication', '--detail', 'plan: 0 survivors', '--raised', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--raised` (parsed as boolean true) is refused the same way.
+  const bare = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--raised']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
 test('seam: a bare --role writes no role key rather than the literal true', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
     '--event', 'return', '--plan', '1', '--role']);
   const [e] = lines(dir);
   assert.equal('role' in e, false, JSON.stringify(e));
+});
+
+test('seam: --reviewer stores the reviewer that ACTUALLY ran, as a string', () => {
+  // RVW-02: two fires of one trigger - one cross-model, one subagent - were the
+  // same shape in the record. Nothing refuses a dispatch to a reviewer outside
+  // the resolved set (D-07), so this field is the whole enforcement.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--reviewer', 'claude-subagent']);
+  assert.equal(r.ok, true);
+  const [e] = lines(dir);
+  assert.equal(e.reviewer, 'claude-subagent');
+  assert.equal(typeof e.reviewer, 'string');
+  // Beside `--role`, never instead of it: the role groups the worker, the
+  // reviewer names which backend answered.
+  assert.equal(e.role, 'cad-reviewer');
+});
+
+test('seam: a bare or blank --reviewer appends NOTHING at all', () => {
+  // A bare flag parses as boolean `true` and would store the literal `true` as
+  // a reviewer name - a complete-looking record naming a backend that does not
+  // exist, which is worse than the missing field it was standing in for.
+  const dir = root();
+  for (const args of [['--reviewer'], ['--reviewer', ''], ['--reviewer', '  ']]) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer', ...args]);
+    assert.equal(r.ok, false, JSON.stringify(args));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(args));
+  }
+  assert.equal(traceBytes(dir), null);
 });
 
 test('seam: --read stores a comma-separated set as an array, verbatim', () => {
@@ -1087,4 +1172,30 @@ test('seam: trace render emits the coordinator block only where markers were wri
   const bare = run(fixtureRoot(), ['trace', 'render', '--phase', '1']);
   assert.equal(bare.ok, true);
   assert.equal('coordinator' in bare, false);
+});
+
+// --- appendEvent: a symlinked run record is refused, never followed (D-04) ---
+
+test('appendEvent: a symlinked trace path is refused and nothing is appended', () => {
+  const outside = join(mkdtempSync(join(tmpdir(), 'cad-outside-')), 'stolen.jsonl');
+  writeFileSync(outside, 'ORIGINAL\n');
+  const dir = root();
+  symlinkSync(outside, tracePath(dir));
+
+  const res = appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  // A reason, not a throw: the caller's envelope must not move (D-04).
+  assert.deepEqual(res, { written: false, reason: 'symlinked-trace' });
+  assert.equal(readFileSync(outside, 'utf8'), 'ORIGINAL\n');
+  // Nothing replaced the link either - the refusal writes nowhere at all.
+  assert.equal(lstatSync(tracePath(dir)).isSymbolicLink(), true);
+});
+
+test('appendEvent: an ordinary trace file still appends and reports written', () => {
+  const dir = root();
+  const first = appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'phase_start', sha: 'abc1234' });
+  assert.equal(first.written, true);
+  const second = appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve' });
+  assert.equal(second.written, true);
+  assert.equal(lines(dir).length, 2);
+  assert.equal(lstatSync(tracePath(dir)).isSymbolicLink(), false);
 });

@@ -49,17 +49,47 @@ function minutes(ms) {
 }
 
 /**
- * Parse an adjudication detail line: `<trigger>: <n> survivors; voices <...>`.
- * The shape is review-triggers.md step 5's, and a detail that does not match
- * contributes nothing rather than mis-attributing to a phantom trigger.
- * @param {unknown} detail
- * @returns {{trigger: string, survivors: number}|null}
+ * Parse an adjudication EVENT: the trigger and survivor count out of its
+ * `<trigger>: <n> survivors; voices <...>` detail line (review-triggers.md
+ * step 5's shape), and the RAISED count - how many findings the reviewers put
+ * up before adjudication killed them.
+ *
+ * A bare detail STRING is accepted as well as the event, because the trigger
+ * and survivor half has always been readable from the string alone and callers
+ * that only hold one must keep working.
+ *
+ * Resolution order for `raised`, and it is the whole point of the widening:
+ *   1. the event's structured `raised` field (planning.mjs `--raised`);
+ *   2. else a legacy `of <m>` clause written into the detail by hand, before
+ *      the flag existed - read only immediately after the survivor count, so a
+ *      stray "of" further down the voice list cannot be mistaken for one;
+ *   3. else `null`, meaning UNKNOWN - never 0. A fire whose raised count
+ *      nobody recorded is not a fire that raised nothing, and collapsing the
+ *      two is the exact conflation the flag exists to end.
+ *
+ * The trigger/survivor regex stays as permissive as it has always been: D-03
+ * measured that tightening it drops the historical fires already on disk and
+ * takes R1's evidence floor down with them.
+ * @param {unknown} input an adjudication event, or its detail string
+ * @returns {{trigger: string, survivors: number, raised: number|null}|null}
  */
-export function parseAdjudication(detail) {
+export function parseAdjudication(input) {
+  const event = typeof input === 'string' ? { detail: input } : input;
+  if (!event || typeof event !== 'object') return null;
+  const detail = /** @type {any} */ (event).detail;
   if (typeof detail !== 'string') return null;
-  const m = /^([a-z_]+):\s*(\d+)\s+survivors?\b/.exec(detail.trim());
+  const trimmed = detail.trim();
+  const m = /^([a-z_]+):\s*(\d+)\s+survivors?\b/.exec(trimmed);
   if (!m) return null;
-  return { trigger: m[1], survivors: Number(m[2]) };
+  const field = /** @type {any} */ (event).raised;
+  let raised = null;
+  if (typeof field === 'number' && Number.isInteger(field) && field >= 0) {
+    raised = field;
+  } else {
+    const legacy = /^\s*of\s+(\d+)\b/.exec(trimmed.slice(m[0].length));
+    if (legacy) raised = Number(legacy[1]);
+  }
+  return { trigger: m[1], survivors: Number(m[2]), raised };
 }
 
 /**
@@ -74,7 +104,7 @@ export function suggestFromRender(render) {
   const events = Array.isArray(render.events) ? render.events : [];
 
   // --- gather ---------------------------------------------------------------
-  /** @type {Map<string, {fires: number, survivors: number}>} */
+  /** @type {Map<string, {fires: number, survivors: number, raised: number}>} */
   const triggers = new Map();
   /** @type {Set<string>} */
   const rearmed = new Set();
@@ -86,11 +116,15 @@ export function suggestFromRender(render) {
   for (const e of events) {
     if (!e || typeof e !== 'object') continue;
     if (e.family === 'outcome' && e.event === 'adjudication') {
-      const parsed = parseAdjudication(e.detail);
+      const parsed = parseAdjudication(e);
       if (!parsed) continue;
-      const row = triggers.get(parsed.trigger) || { fires: 0, survivors: 0 };
+      const row = triggers.get(parsed.trigger) || { fires: 0, survivors: 0, raised: 0 };
       row.fires++;
       row.survivors += parsed.survivors;
+      // An UNKNOWN raised count contributes nothing rather than a zero, which
+      // is what keeps a corpus written before the flag existed on R1's
+      // gate-suggestion arm exactly as it is today.
+      row.raised += parsed.raised === null ? 0 : parsed.raised;
       triggers.set(parsed.trigger, row);
     } else if (e.family === 'outcome' && e.event === 'rearm') {
       if (typeof e.detail === 'string' && e.detail.trim()) rearmed.add(e.detail.trim());
@@ -114,14 +148,30 @@ export function suggestFromRender(render) {
   // R1: an adjudicated trigger that keeps coming back empty. A rearm anywhere
   // on the same trigger vetoes the suggestion - a gate that forced a fix round
   // has already paid for itself, whatever its adjudications said.
+  //
+  // Two OUTCOMES on the same evidence floor, because "nothing survived" means
+  // two opposite things (D-16). Nothing raised at all is a gate finding
+  // nothing; nine raised and nine killed is a gate doing real work in front of
+  // a reviewer that cannot tell a finding from an opinion - and proposing to
+  // turn that gate off is the wrong move on the same row. An UNKNOWN raised
+  // total counts as 0 here, so every trace written before `--raised` existed
+  // keeps landing on the gate arm it lands on today.
   for (const [trigger, row] of [...triggers.entries()].sort()) {
     if (row.fires >= MIN_FIRES_FOR_GATE_SUGGESTION && row.survivors === 0 && !rearmed.has(trigger)) {
-      out.push({
-        kind: 'suggest',
-        subject: trigger,
-        evidence: `${row.fires} adjudicated fire(s), 0 survivors, no re-arm`,
-        action: `review.triggers.${trigger}.gate`,
-      });
+      out.push(row.raised > 0
+        ? {
+          kind: 'suggest',
+          subject: `${trigger} reviewers`,
+          evidence: `${row.fires} adjudicated fire(s), 0 survivors of ${row.raised} raised`
+            + ' - the gate caught work; the reviewer set is what looks miscalibrated',
+          action: 'review.reviewers',
+        }
+        : {
+          kind: 'suggest',
+          subject: trigger,
+          evidence: `${row.fires} adjudicated fire(s), 0 survivors, no re-arm`,
+          action: `review.triggers.${trigger}.gate`,
+        });
     }
   }
 

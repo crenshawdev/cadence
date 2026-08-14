@@ -4,7 +4,7 @@ description: The `max` rung of `cad-planner`; `bin/route.mjs` picks it, not the 
 tools: Read, Write, Edit, Bash, Glob, Grep
 color: green
 effort: max
-maxTurns: 400
+maxTurns: 200
 skills:
   - cad-planner-contract
 ---

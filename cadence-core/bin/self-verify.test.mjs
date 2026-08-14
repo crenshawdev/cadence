@@ -12,6 +12,7 @@ import { rungBody } from './lib/rung-agent.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { WAIVED } from './lib/include-consumers.mjs';
+import { GLOBAL_ONLY_KEYS, globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -141,13 +142,16 @@ function cellTable(role = 'cad-verifier', cell = {}) {
   const t = {
     rung_order: RUNG_ORDER,
     model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
+    tier_names: ['flagship', 'balanced', 'cheap'],
+    tiers: { plan: 'flagship', diff: 'balanced', risk_surface: 'flagship',
+      phase_diff: 'flagship' },
     roles: [role],
     cells: {}, review: {}, verify: {},
   };
   for (const level of ['solo', 'shipped', 'critical']) {
     t.cells[level] = { [role]: { ...spec } };
     t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking',
-      phase_diff: 'off', pre_ship: 'advisory' };
+      phase_diff: 'off' };
     t.verify[level] = 'off';
   }
   return t;
@@ -289,6 +293,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
   // trigger keys as inert - <t> expands to all triggers.
   const root = fixture(
     '`review.triggers.<t>.gate` `review.triggers.<t>.tier` `review.triggers.<t>.effort`\n' +
+    '`review.triggers.<t>.surfaces`\n' +
     '`review.providers.<name>.tiers` `review.mode` `review.reviewers` `review.key_file`\n' +
     '`review.request_timeout_ms` `review.max_prompt_tokens`\n' +
     '`review.consult.enabled` `review.consult.tier` `review.consult.effort`\n' +
@@ -856,11 +861,11 @@ test('check 8: a (level, role) pair with no cell is missing-cell naming the cell
 
 test('check 8: a level whose review row omits a trigger is missing-cell naming it', () => {
   const t = cellTable('cad-verifier');
-  delete t.review.shipped.pre_ship;
+  delete t.review.shipped.phase_diff;
   const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
   const p = run(['--root', root]).problems;
   assert.ok(p.some((x) => x.kind === 'missing-cell'
-    && /shipped\/pre_ship/.test(x.detail)), JSON.stringify(p));
+    && /shipped\/phase_diff/.test(x.detail)), JSON.stringify(p));
 });
 
 test('check 8: a level with no verify value is missing-cell naming the level', () => {
@@ -874,13 +879,13 @@ test('check 8: a level with no verify value is missing-cell naming the level', (
 
 test('check 8: the trigger set comes from config.schema.json, not from the prose table', () => {
   // D-10: parsing references/review-triggers.md's Wiring table would grow a
-  // reader for a file with no stated grammar. The schema defines these five
+  // reader for a file with no stated grammar. The schema defines these four
   // names, so a level that omits one of them is caught by the schema's list.
   const t = cellTable('cad-verifier');
   for (const level of ['solo', 'shipped', 'critical']) t.review[level] = { plan: 'advisory' };
   const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
   const p = run(['--root', root]).problems.filter((x) => x.kind === 'missing-cell');
-  for (const trigger of ['diff', 'risk_surface', 'phase_diff', 'pre_ship']) {
+  for (const trigger of ['diff', 'risk_surface', 'phase_diff']) {
     assert.ok(p.some((x) => x.detail.includes(`solo/${trigger}`)), `${trigger}: ${JSON.stringify(p)}`);
   }
 });
@@ -1223,6 +1228,75 @@ test('check 9: a full tree with no reach doc fails ok:false naming the input', (
   assert.equal(r.ok, false);
   assert.ok(r.problems.some((x) => x.kind === 'missing-input'
     && x.file === 'cadence-core/references/config-reach.md'), JSON.stringify(r.problems));
+});
+
+// --- check 17: the global-only key set vs the schema's src marker (CFG-02) ---
+//
+// Both directions on the same synthetic-schema idiom check 9 uses, so no
+// expectation here is derived from the shipped schema - which is the subject of
+// the shipped-tree arm at the end.
+
+/** The three enforced keys as schema specs, each carrying the marker. */
+function markedSpecs() {
+  return Object.fromEntries(GLOBAL_ONLY_KEYS.map((k) => [k, {
+    type: 'string_or_null', default: null, src: 'global',
+    purpose: `${k} - user-global config layer only`,
+  }]));
+}
+
+test('check 17: an enforced key with no src marker is reported, naming that key', () => {
+  const specs = markedSpecs();
+  delete specs['review.key_file'].src;
+  const p = run(['--root', reachFixture(CONSISTENT_REACH, { extraKeys: specs })]).problems;
+  const hits = p.filter((x) => x.kind === 'missing-global-only-marker');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.match(hits[0].detail, /review\.key_file/);
+  assert.equal(hits[0].file, 'cadence-core/config.schema.json');
+  // the other two carry the marker, so this is the ONE key that lost it rather
+  // than a check that fires on the whole set
+  assert.doesNotMatch(hits[0].detail, /workflow\./);
+});
+
+test('check 17: an enforced key the schema does not hold at all says so', () => {
+  // The fixture schema names none of the three, which is the same direction
+  // read at its extreme: a key stripped by the merge and absent from the schema
+  // is enforced with nothing rendering it anywhere.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH)]).problems;
+  const hits = p.filter((x) => x.kind === 'missing-global-only-marker');
+  assert.equal(hits.length, GLOBAL_ONLY_KEYS.length, JSON.stringify(hits));
+  assert.ok(hits.every((h) => /does not hold the key at all/.test(h.detail)), JSON.stringify(hits));
+});
+
+test('check 17: a src:global key the merge does NOT enforce is reported too', () => {
+  const p = run(['--root', reachFixture(CONSISTENT_REACH, {
+    extraKeys: { ...markedSpecs(), 'alpha.rogue': { type: 'bool', default: false, src: 'global', purpose: 'x' } },
+  })]).problems;
+  const hits = p.filter((x) => x.kind === 'undeclared-global-only-key');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.match(hits[0].detail, /alpha\.rogue/);
+  // filed against the lib, because that is the file a maintainer edits to make
+  // the marker true - the other direction is filed against the schema
+  assert.equal(hits[0].file, 'cadence-core/bin/lib/global-only-keys.mjs');
+  // and the three marked keys ARE enforced, so nothing fires on them
+  assert.ok(!p.some((x) => x.kind === 'missing-global-only-marker'), JSON.stringify(p));
+});
+
+test('check 17: a key with NO src field is repo-settable and is never reported', () => {
+  // The choice this check makes about CONTEXT's second flagged assumption: the
+  // marker is demanded on the enforced set alone, so the ~38 unmarked keys stay
+  // unmarked rather than needing an explicit "src": "repo" each.
+  const p = run(['--root', reachFixture(CONSISTENT_REACH, { extraKeys: markedSpecs() })]).problems;
+  assert.ok(!p.some((x) => x.kind === 'undeclared-global-only-key'), JSON.stringify(p));
+  assert.ok(!p.some((x) => x.kind === 'missing-global-only-marker'), JSON.stringify(p));
+});
+
+test('check 17: the SHIPPED schema marks exactly the set the merge enforces', () => {
+  // The shipped tree, read through the rule rather than through a second whole
+  // self-verify run: the disk half is already proved by the arms above, which go
+  // through `run`, and the full-tree pass has its own arm in this file.
+  const schema = JSON.parse(readFileSync(
+    join(REPO, 'cadence-core', 'config.schema.json'), 'utf8')).keys;
+  assert.deepEqual(globalOnlyMarkerIssues(schema), []);
 });
 
 test('check 9: a key named ONLY by the reach table is still inert-config-key', () => {
@@ -1587,21 +1661,21 @@ function deferredFixture(skills) {
 }
 
 /**
- * A cad-land body satisfying every one of its three register rows.
+ * A cad-land body satisfying its one register row, both anchors.
  *
  * The shape is structural, not decorative: the rule anchors each required Read
  * to a REGION, and a region is a top-level `<n>. ` step inside `<process>`,
- * narrowed by an indented `**(<x>)` arm. `<guardrails>` is deliberately present
- * and deliberately regionless - it is where the relocation attack below puts
- * the sentence it deleted from an arm.
+ * narrowed by an indented `**(<x>)` arm. Step 4 carries no anchor and exists so
+ * the wrong-STEP falsifier below has a real second region to relocate into.
+ * `<guardrails>` is deliberately present and deliberately regionless - it is
+ * where the relocation attack below puts the sentence it deleted from an arm.
  */
 const CLEAN_LAND = [
   '<process>',
-  '3. Fire pre_ship.', readSentence('references/review-triggers.md'),
-  'Then run the triage gate exactly as', readSentence('references/triage-gate.md'),
-  '4. Publish.',
+  '3. Publish.',
   '   **(a)** Ask the mechanism.', readSentence('references/git-publish.md'),
   '   **(b)** Autonomous close.', readSentence('references/git-publish.md'),
+  '4. Terminal cleanup.',
   '</process>',
   '<guardrails>',
   '- Land nothing the user did not choose.',
@@ -1615,13 +1689,13 @@ test('check 13: the live tree satisfies every register row', () => {
   // And the register is the stated table it claims to be, not something
   // derived: git-publish.md is TWO anchors against ONE consult site.
   const gp = DEFERRED_READS.find((r) => r.reference === 'references/git-publish.md');
-  assert.deepEqual([...gp.anchors], ['4(a)', '4(b)']);
+  assert.deepEqual([...gp.anchors], ['3(a)', '3(b)']);
   assert.equal(gp.read_paragraphs, gp.anchors.length);
   // Every row's count agrees with its anchor list, so the two can never drift.
   for (const r of DEFERRED_READS) assert.equal(r.read_paragraphs, r.anchors.length);
-  assert.equal(DEFERRED_READS.length, 12);
+  assert.equal(DEFERRED_READS.length, 10);
   assert.throws(() => DEFERRED_READS.push({}));
-  assert.throws(() => gp.anchors.push('4(c)'));
+  assert.throws(() => gp.anchors.push('3(c)'));
 });
 
 test('check 13: a clean pair passes', () => {
@@ -1631,19 +1705,20 @@ test('check 13: a clean pair passes', () => {
 
 test('check 13: deferred-read-unread when a Read sentence is missing', () => {
   const root = deferredFixture({
-    'cad-land': CLEAN_LAND.replace(readSentence('references/review-triggers.md'), ''),
-    'cad-plan-review': CLEAN_PLAN_REVIEW,
+    'cad-land': CLEAN_LAND,
+    'cad-plan-review': CLEAN_PLAN_REVIEW.replace(
+      readSentence('references/review-triggers.md'), ''),
   });
   const issues = deferredReadIssues(root);
   assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
-  assert.equal(issues[0].file, 'skills/cad-land/SKILL.md');
+  assert.equal(issues[0].file, 'skills/cad-plan-review/SKILL.md');
   assert.match(issues[0].detail, /references\/review-triggers\.md/);
 });
 
 test('check 13: the unit is the ARM - one arm of a two-anchor row is not enough', () => {
   // The whole point of two anchors. A block-level rule passes here, because
   // the other arm's Read and the path both survive elsewhere in the file - and
-  // step 4(b)'s arm has silently lost its rails.
+  // step 3(b)'s arm has silently lost its rails.
   const root = deferredFixture({
     'cad-land': CLEAN_LAND.replace(
       `   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
@@ -1652,13 +1727,13 @@ test('check 13: the unit is the ARM - one arm of a two-anchor row is not enough'
   });
   const issues = deferredReadIssues(root);
   assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
-  assert.match(issues[0].detail, /4\(b\)/);
+  assert.match(issues[0].detail, /3\(b\)/);
   assert.match(issues[0].detail, /1 of 2/);
 });
 
 test('check 13: an arm\'s Read relocated ELSEWHERE in the file does not answer for it', () => {
   // The reproduced hole this rule was rewritten to close. The old check counted
-  // qualifying sentences FILE-WIDE, so deleting step 4(b)'s Read and moving an
+  // qualifying sentences FILE-WIDE, so deleting step 3(b)'s Read and moving an
   // equivalent sentence into <guardrails> kept the count at 2 of 2 and left
   // self-verify ok:true - with the auto_close arm reaching its publish bullets
   // and the reference never loaded. The count is unchanged here; only WHERE the
@@ -1674,26 +1749,26 @@ test('check 13: an arm\'s Read relocated ELSEWHERE in the file does not answer f
     'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
   }));
   assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
-  assert.match(issues[0].detail, /4\(b\)/);
+  assert.match(issues[0].detail, /3\(b\)/);
 });
 
 test('check 13: a Read in the wrong STEP does not answer for the right one', () => {
-  // Same rule, the in-process spelling: step 3 is inside <process> and is a
+  // Same rule, the in-process spelling: step 4 is inside <process> and is a
   // real region, so this is not about tag blocks - it is about the arm.
   const body = CLEAN_LAND
     .replace(`   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}`,
       '   **(b)** Autonomous close.')
-    .replace('3. Fire pre_ship.',
-      `3. Fire pre_ship.\n${readSentence('references/git-publish.md')}`);
+    .replace('4. Terminal cleanup.',
+      `4. Terminal cleanup.\n${readSentence('references/git-publish.md')}`);
   const issues = deferredReadIssues(deferredFixture({
     'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
   }));
   assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
-  assert.match(issues[0].detail, /4\(b\)/);
+  assert.match(issues[0].detail, /3\(b\)/);
 });
 
 test('check 13: deleting the ARM itself is reported, not silently satisfied', () => {
-  // A missing region must fail closed. Dropping step 4(b) entirely leaves no
+  // A missing region must fail closed. Dropping step 3(b) entirely leaves no
   // lines carrying that label, and an anchor with no region is unsatisfied.
   const body = CLEAN_LAND.replace(
     `   **(b)** Autonomous close.\n${readSentence('references/git-publish.md')}\n`, '');
@@ -1701,7 +1776,7 @@ test('check 13: deleting the ARM itself is reported, not silently satisfied', ()
     'cad-land': body, 'cad-plan-review': CLEAN_PLAN_REVIEW,
   }));
   assert.deepEqual(issues.map((i) => i.kind), ['deferred-read-unread']);
-  assert.match(issues[0].detail, /4\(b\)/);
+  assert.match(issues[0].detail, /3\(b\)/);
 });
 
 test('check 13: restating a reference inline instead of Reading it is caught', () => {
@@ -1711,8 +1786,8 @@ test('check 13: restating a reference inline instead of Reading it is caught', (
   // Accepted cost, stated: a sentence spelling `do NOT Read <path>` carries
   // both tokens and would satisfy the row. Deleting the real one still fails.
   const root = deferredFixture({
-    'cad-land': CLEAN_LAND.replace(readSentence('references/triage-gate.md'),
-      'The triage gate is restated inline here.'),
+    'cad-land': CLEAN_LAND.replace(readSentence('references/git-publish.md'),
+      'The publish rails are restated inline here.'),
     'cad-plan-review': CLEAN_PLAN_REVIEW,
   });
   assert.deepEqual(deferredReadIssues(root).map((i) => i.kind), ['deferred-read-unread']);
@@ -1720,7 +1795,7 @@ test('check 13: restating a reference inline instead of Reading it is caught', (
 
 test('check 13: deferred-read-still-eager when the include comes back', () => {
   const root = deferredFixture({
-    'cad-land': `${includeLine('references/review-triggers.md')}\n${CLEAN_LAND}`,
+    'cad-land': `${includeLine('references/git-publish.md')}\n${CLEAN_LAND}`,
     'cad-plan-review': CLEAN_PLAN_REVIEW,
   });
   const issues = deferredReadIssues(root);
@@ -1733,7 +1808,7 @@ test('check 13: deferred-read-missing-skill when the SKILL.md is gone', () => {
   // distinct from a fixture that simply has no cad-land at all.
   const root = deferredFixture({ 'cad-land': null, 'cad-plan-review': CLEAN_PLAN_REVIEW });
   const issues = deferredReadIssues(root);
-  assert.equal(issues.length, 3, JSON.stringify(issues));
+  assert.equal(issues.length, 1, JSON.stringify(issues));
   assert.ok(issues.every((i) => i.kind === 'deferred-read-missing-skill'));
 });
 
@@ -1751,7 +1826,7 @@ test('check 13: self-verify files the issue and names the check in `checked`', (
   const j = run(['--root', root]);
   assert.match(j.checked, /deferred-reads/);
   const kinds = j.problems.map((p) => p.kind);
-  assert.equal(kinds.filter((k) => k === 'deferred-read-unread').length, 3);
+  assert.equal(kinds.filter((k) => k === 'deferred-read-unread').length, 1);
 });
 
 // --- check 13 through the CLI, on a WORKFLOW-anchored row -------------------
@@ -1759,8 +1834,11 @@ test('check 13: self-verify files the issue and names the check in `checked`', (
 // exercises a synthetic row in deferred-reads.test.mjs without going through
 // the CLI. Neither can see the disk half loading the wrong register, dropping a
 // row that carries a non-default `file`, or failing to surface the issue at
-// all. `CADENCE_DEFERRED_READS` is the seam that closes the gap - the same
-// path-override shape as `CADENCE_ROUTE_TABLE`.
+// all. `CADENCE_DEFERRED_READS` is the seam that closes the gap. It was
+// modelled on `CADENCE_ROUTE_TABLE`, but the shapes have diverged: that one is
+// now gated behind the `CADENCE_TEST_SEAM` sentinel and falls back silently,
+// while this one stays ungated and reports an unusable register (phase-2 D-16),
+// so no fixture here sets a sentinel.
 
 /** A root holding a real command SKILL.md, its real workflow, and a rows file. */
 function workflowAnchoredRoot({ withRead }) {
@@ -1939,6 +2017,23 @@ test('check 14: an ABSENT bin directory is a partial fixture, not a problem', ()
   const root = fixture('Nothing to see here.\n');
   assert.deepEqual(run(['--root', root]).problems.filter(
     (p) => p.kind === 'uncontracted-script' || p.kind === 'unreadable-surface'), []);
+});
+
+// --- entry: --root absent is not --root empty -------------------------------
+
+test('entry: a valueless or empty --root refuses instead of linting the cwd', () => {
+  // The regression: the entry block read `--root` with nothing after it as
+  // ABSENT, resolved a relative root, and returned ok:true problems:[] about
+  // a tree it never checked - the quiet-wrong-answer class weight.mjs's
+  // flagValue closes. The detail assertion is the second half: a thrown seam
+  // object has no `message`, so without the catch's seam arm this envelope
+  // reports "[object Object]" instead of the flag.
+  for (const args of [['--root'], ['--root', '']]) {
+    const j = run(args);
+    assert.equal(j.ok, false, JSON.stringify(j));
+    assert.equal(j.reason, 'missing-flag-value');
+    assert.equal(j.detail, '--root');
+  }
 });
 
 // --- check 2: the BARE form -------------------------------------------------

@@ -58,25 +58,13 @@ function copyReal(root, rel, edit = (t) => t) {
 /** The register block as it must appear in the lib source, byte for byte. */
 const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
   Object.freeze({
-    skill: 'cad-land',
-    reference: 'references/review-triggers.md',
-    anchors: Object.freeze(['3']),
-    read_paragraphs: 1,
-  }),
-  Object.freeze({
-    // ONE consult site under seams.md's rule (step 4a or step 4b, never both),
+    // ONE consult site under seams.md's rule (step 3a or step 3b, never both),
     // but TWO anchors here - each arm carries its own Read and deleting either
     // silently loses that arm's rails.
     skill: 'cad-land',
     reference: 'references/git-publish.md',
-    anchors: Object.freeze(['4(a)', '4(b)']),
+    anchors: Object.freeze(['3(a)', '3(b)']),
     read_paragraphs: 2,
-  }),
-  Object.freeze({
-    skill: 'cad-land',
-    reference: 'references/triage-gate.md',
-    anchors: Object.freeze(['3']),
-    read_paragraphs: 1,
   }),
   Object.freeze({
     skill: 'cad-plan-review',
@@ -148,18 +136,21 @@ const REGISTER_SOURCE = `export const DEFERRED_READS = Object.freeze([
   }),
 ]);`;
 
-test('register: the original four rows are byte-identical, and the register is exactly the rows the cuts made', () => {
+test('register: the surviving cut rows are byte-identical, and the register is exactly the rows the cuts made', () => {
   // Two claims in one assertion, because the byte-exact literal carries both:
-  // the four rows the v2.5.0 cuts made are untouched, in order, and every row
+  // the rows the v2.5.0 cuts made are untouched, in order, and every row
   // added since is one this repo's own prose moves account for. A length check
-  // alone passes an edited, reordered or retargeted row.
+  // alone passes an edited, reordered or retargeted row. Two `cad-land` rows
+  // left in v3.2.0 with `pre_ship`: the skill fires no review and triages
+  // nothing now, so review-triggers.md and triage-gate.md are consulted from
+  // it at no step at all.
   const src = readFileSync(join(HERE, 'lib', 'deferred-reads.mjs'), 'utf8');
   const start = src.indexOf('export const DEFERRED_READS');
   assert.ok(start >= 0, 'the register export must be findable by name');
   const end = src.indexOf(']);', start);
   assert.ok(end > start, 'the register export must close with `]);`');
   assert.equal(src.slice(start, end + 3), REGISTER_SOURCE);
-  assert.equal(DEFERRED_READS.length, 12);
+  assert.equal(DEFERRED_READS.length, 10);
 });
 
 // --- AC3: a contract skill's own step ------------------------------------------
@@ -328,7 +319,7 @@ test('AC1: deleting that sentence reports exactly one deferred-read-unread', () 
 test('AC4: a Read in item 1 of a named step does not satisfy item 3 of the same step', () => {
   // The nested-label precedence rule. `git_guard` puts `1.`-`3.` at column 0
   // inside a named step; bare numbers there would let this sentence answer for
-  // any `3` anywhere in the file - and `cad-land` really does anchor at `3`.
+  // any `3` anywhere in the file - and `cad-land` really does anchor inside `3`.
   const root = executeRoot('item1');
   const issues = deferredReadIssues(root, [executeRow(['git_guard(3)'])]);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
@@ -339,8 +330,8 @@ test('AC4: a Read in item 1 of a named step does not satisfy item 3 of the same 
 });
 
 test('AC4: the named step is not a PREFIX match for its own numbered items', () => {
-  // `git_guard` and `git_guard(1)` are distinct regions, the same way `4` and
-  // `4(a)` always were.
+  // `git_guard` and `git_guard(1)` are distinct regions, the same way `3` and
+  // `3(a)` always were.
   const issues = deferredReadIssues(executeRoot('item1'), [executeRow(['git_guard'])]);
   assert.deepEqual(issues.map((i) => i.kind), [CODES.unread]);
 });
@@ -523,7 +514,7 @@ test('grammar: a nested close does not switch the enclosing frame off', () => {
 test('grammar: a numbered item with an EMPTY frame stack stays regionless', () => {
   // Without this clause a column-0 `1.` outside every block would newly label
   // bare `1`, and a bare number outside `<process>` can collide with a live
-  // anchor - `cad-land` anchors at `3` and `4(a)`, `cad-plan-review` at `2`.
+  // anchor - `cad-land` anchors at `3(a)` and `3(b)`, `cad-plan-review` at `2`.
   const labelOf = regionLabels('preamble\n\n1. A step with no block around it.\n');
   assert.equal(labelOf(2), null);
   // Inside `<process>` the same line is the bare label the shipped rows use.

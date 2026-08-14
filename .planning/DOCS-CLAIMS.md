@@ -288,7 +288,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-41 | METHOD.md | 250-252 | A heavy new dependency is flagged; the plan is approved first; a red test is never committed and goes to `/cad-debug`. | accurate | accurate |
 | METHOD-42 | METHOD.md | 260 | `cadence-core/references/review-triggers.md`. | accurate | accurate |
 | METHOD-43 | METHOD.md | 265-267 | One `fire(trigger)` procedure, no embedded reviewer loops; that rule lives in `references/conventions.md`. | accurate | accurate |
-| METHOD-44 | METHOD.md | 272-277 | Trigger table rows for `plan`, `diff`, `risk_surface`, `pre_ship` (fired-by, when, gate at `shipped`). | accurate | accurate |
+| METHOD-44 | METHOD.md | 272-277 | Trigger table rows for `plan`, `diff`, `risk_surface`, `phase_diff` (fired-by, when, gate at `shipped`). Re-stated v3.2.0: `pre_ship` was deleted and `plan`/`phase_diff` are `off` at `shipped`. | accurate | accurate |
 | METHOD-45 | METHOD.md | 281-283 | Gate vocabulary (4) and `review.mode` vocabulary (`single`, `panel`, `adjudicated`). | accurate | accurate |
 | METHOD-46 | METHOD.md | 286-292 | Gates resolve from `stakes`; `diff` is off/advisory/blocking across the three levels; `risk_surface` does not move; a typo loses to the level's gate and is named in warnings. | accurate | accurate |
 | METHOD-47 | METHOD.md | 300-301 | The default reviewer is a fresh-context Claude subagent needing no key. | accurate | accurate |
@@ -317,7 +317,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-70 | METHOD.md | 518-525 | A command counts when its first word is `git` and the verb is the first non-flag word; `bash -c`, `$(...)`, `sudo git` are invisible; rail 3 lists what it misses. | accurate | accurate |
 | METHOD-71 | METHOD.md | 527-531 | Two decisions are marked in `references/seams.md` as deliberately undefaulted: the publish mechanism and the protected-branch guard. | accurate | accurate |
 | METHOD-72 | METHOD.md | 533-539 | Two tiers: an integration branch merged into per `git.auto_branch`, named by `git.integration_branch` (`milestone` default, `trunk` escape hatch); worktrees fork from the host's `worktree.baseRef`, required at `head`; `git.on_land_cleanup` returns to base, pulls, reaps. | accurate | accurate |
-| METHOD-73 | METHOD.md | 542-547 | One conventional commit per task; publishing flows through a single sanctioned seam; `git.auto_close` runs audit through merge with no per-step prompts and halts on a blocking `pre_ship` FAIL. | accurate | accurate |
+| METHOD-73 | METHOD.md | 542-547 | One conventional commit per task; publishing flows through a single sanctioned seam; `git.auto_close` runs audit through merge with no per-step prompts and halts on a surviving blocker/high `risk_surface` finding. Re-stated v3.2.0: the halt's producer moved off the deleted `pre_ship`. | accurate | accurate |
 | METHOD-74 | METHOD.md | 554-558 | `references/conventions.md`; `STATE.md` is a four-line cursor, overwritten in place, seam is the only correct writer. | accurate | accurate |
 | METHOD-75 | METHOD.md | 560 | No audit logs, activity tables or session narratives. | accurate | accurate |
 | METHOD-76 | METHOD.md | 562-564 | Config is read only through the config seam, one call per key. | accurate | accurate |
@@ -367,8 +367,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONTRIBUTING-01 | CONTRIBUTING.md | 13 | "Cadence has no build step and no dependencies. The scripts inside are zero-dependency Node, so there is no `npm install`." | stale | corrected - b2bad1a |
 | CONTRIBUTING-02 | CONTRIBUTING.md | 13 | "The same three checks CI runs" - three checks, runnable locally. | accurate | accurate |
 | CONTRIBUTING-03 | CONTRIBUTING.md | 16 | `node --test cadence-core/bin/*.test.mjs` - unit tests for the seam cores. | accurate | accurate |
-| CONTRIBUTING-04 | CONTRIBUTING.md | 17 | `node cadence-core/bin/self-verify.mjs` - the prose<->code drift linter. | accurate | accurate |
-| CONTRIBUTING-05 | CONTRIBUTING.md | 18 | `npx tsc -p tsconfig.ci.json` - honors the `@ts-check` pragmas. | accurate | accurate |
+| CONTRIBUTING-04 | CONTRIBUTING.md | 19 | `node cadence-core/bin/self-verify.mjs` - the prose<->code drift linter. | accurate | accurate |
+| CONTRIBUTING-05 | CONTRIBUTING.md | 20 | `npx tsc -p tsconfig.ci.json` - honors the `@ts-check` pragmas. | stale | corrected - phase 4 UAT |
 | CONTRIBUTING-06 | CONTRIBUTING.md | 13 | `node` and `git` on your PATH are what the three checks need. | accurate | accurate |
 | CONTRIBUTING-07 | CONTRIBUTING.md | 21 | self-verify: every config key, script invocation and file path named in the workflows has to exist or the build fails. | accurate | accurate |
 | CONTRIBUTING-08 | CONTRIBUTING.md | 21 | It weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`. | accurate | accurate |
@@ -449,7 +449,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-33 | cadence-core/references/config-catalog.md | 57 | `review.request_timeout_ms` default `540000`, clamped to a 600000 host ceiling. | accurate | accurate |
 | CONFIG-34 | cadence-core/references/config-catalog.md | 58 | `review.max_prompt_tokens` default `120000`; over-cap refused before any request, cross-model only. | accurate | accurate |
 | CONFIG-35 | cadence-core/references/config-catalog.md | 59-62 | `review.consult.{enabled,tier,effort,attempt_threshold}` = false / flagship / high / 3. | accurate | accurate |
-| CONFIG-36 | cadence-core/references/config-catalog.md | 67 | Trigger set is `{plan, diff, risk_surface, phase_diff, pre_ship}`. | accurate | accurate |
+| CONFIG-36 | cadence-core/references/config-catalog.md | 67 | Trigger set is `{plan, diff, risk_surface, phase_diff}`. Re-stated v3.2.0: `pre_ship` was deleted from the vocabulary. | accurate | accurate |
 | CONFIG-37 | cadence-core/workflows/config.md | 141-145 | `config.mjs` subcommands are `validate \| check \| set \| get \| keys`. | accurate | accurate |
 | CONFIG-38 | cadence-core/workflows/config.md | 154-157 | `--file <path>` overrides `.planning/config.json`; `--global` targets `~/.claude/cadence/config.json`, relocatable via `CADENCE_GLOBAL_CONFIG`, auto-created by `set`. | accurate | accurate |
 | CONFIG-39 | cadence-core/workflows/config.md | 160-163 | `route.mjs` deep-merges global under repo (repo > global > defaults); nested objects merge, arrays replace wholesale. | accurate | accurate |

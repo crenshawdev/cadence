@@ -2,38 +2,47 @@
 
 ## Overview
 
-**`v3.1.0 — Cadence meets outside work`, opened 2026-08-12.** Scoped from the
-v3.0.0 backlog and the first external-project dogfood run: verbatim, a Rust
-project with no Cadence history, taken from `/cad-new-project` through a
-verified phase 1 under the retuned defaults. That run is the evidence this
-cycle is built on, and it exposed two gaps of a kind Cadence auditing Cadence
-could never surface.
+**`v3.2.0 - the controls that reported success`, opened 2026-08-13.** Scoped from
+a full-codebase security and quality audit rather than from the capture queue.
+Three parallel deep scans ran over ~34k lines of `.mjs` with 1420 tests green and
+`self-verify` clean across all 20 checks, and every finding in this cycle was
+reproduced against the real code before it was written down.
 
-**The first gap is the front door.** `/cad-new-project` assumes a blank page.
-Verbatim arrived with a design brief from a freeform discovery session, and
-the questioning re-asked things the brief had already settled — its first
-commit is literally "restart from the design brief". Every other project that
-tries Cadence arrives with something worse: an existing repo, a messy history,
-and no way in at all. `ADP-01` and `BRF-01` are that door, and `XCP-01` is the
-same theme from the other side — friction noticed while using Cadence on
-somebody else's project, reaching Cadence's own queue instead of the host's.
+**The theme is one sentence: a control that reports success without having
+checked is worse than no control**, because the product advertises the check and
+the user stops looking. Four of the nine are silent by construction. `config.mjs
+validate` returns `{"ok":true,"checked":0,"errors":[]}` on a config that is
+actively disabling the git rails. `milestone-prune` records a deliberately
+deferred requirement as delivered, inside the command whose stated job is
+auditing that nothing was dropped. The unattended-close gate reports "no
+surviving blocker/high finding" about input it never read. And `atomicWrite`
+follows a symlink that the read path, nine hundred lines away, already defends
+against with a comment explaining why.
 
-**The second gap is in the receipts.** v3.0.0 shipped `trace suggest` and
-`/cad-report` on the claim that the run record prices the work. It prices the
-subagents: verbatim phase 1 recorded ~968k subagent tokens across seven
-dispatches. It does not price the coordinator, which was half of the original
-cost spiral, and it never asks whether the single most expensive dispatch in
-the spine — the assumptions analyzer, 75k on phase 1 and 132k on phase 2 —
-was worth buying for this phase at all. `TRC-01` and `SIZ-01` close those,
-and they go first: they sharpen the evidence every later judgment in this
-cycle is made on.
+**Phase 1 goes first because two of them are the same fact.** `CFG-01` and
+`CFG-02` both come down to a tracked `.planning/config.json` being
+attacker-controlled input rather than the user's own settings, and they share one
+hostile-repo fixture. Fixing either alone leaves the other's proof standing.
 
-**`MIN-01` returns because its objection expired.** It was deferred out of two
-cycles for adding resident prose to the dispatch path. v3.0.0's own deferral
-machinery is the answer — branch-local lens prose rides behind a `Read` at the
-step that needs it, watched by check 13 — so the reason to hold it is gone.
-`CTW-06` is the re-measured remnant of the v2.6.2 byte work, riding wherever
-its files are already open.
+**Phase 3 is the same theme one level up.** The review arm cannot currently tell a
+gate that found nothing from a reviewer that produced nine false positives, so
+its own tuning advice is computed over a figure that conflates them. `RVW-01`'s
+first item costs zero tokens and is what makes the other three measurable rather
+than asserted, which is why it is ordered ahead of them inside the phase. `RVW-02`
+joined the phase on 2026-08-13, from a substitution caught in flight rather than
+from the audit: the gate half of a review fire is resolved by the seam and the
+REVIEWER half by prose, so a blocking `risk_surface` fire went to a same-model
+subagent while `review.reviewers` said `openai`, and nothing refused it or
+recorded it.
+
+**The cycle adds no new surface.** Every phase hardens what already ships.
+`LND-01` was scoped into phase 4 and CUT on 2026-08-14 before execution: it was
+the one remaining item that ADDED a mechanism, at a point where the evidence
+said the next improvement comes from deleting mechanisms rather than adding
+gates, and its GitLab arm could not be tested here. It is `## Deferred` with
+issue #121 open. What remains is `CST-03` and `HYG-01`, which retune a bound,
+stop a surface reporting an unmeasured figure as spend, and clear the audit's
+low-severity residue so it is not carried into another cycle.
 
 ## Phases
 

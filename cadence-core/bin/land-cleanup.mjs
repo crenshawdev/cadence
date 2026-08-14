@@ -3,7 +3,7 @@
 // land-cleanup.mjs - the workflow-facing seam over lib/close-decision.mjs. It
 // ADVISES cad-land whether a land should clean up (return to base + pull + reap
 // the merged integration branch) and whether an autonomous close halts before
-// merge on a blocking pre_ship finding. Like git-branch.mjs / git-guard.mjs it
+// merge on a blocking risk_surface finding. Like git-branch.mjs / git-guard.mjs it
 // only advises: it NEVER runs `checkout`, `pull`, or `branch -D` - that is
 // cad-land prose's job, gated by this advice. One JSON line on stdout, exit 0
 // (seam convention, lib/seam-io.mjs). The tested logic lives in
@@ -20,10 +20,18 @@
 //     cadence/* branch that actually merged. --merged is a test hook forcing the
 //     merged-into-base verdict (else inferred from the merged list).
 //   gate [--dir <path>]
-//     Read {findings} JSON from stdin (empty -> []) and, under the MERGED
-//     git.auto_close (the value the prose branched on - see gate() below),
-//     decide whether a surviving blocker/high pre_ship finding halts the chain
-//     before merge.
+//     Read {findings} JSON from stdin - an explicit `{"findings":[]}` (or a bare
+//     JSON array) is the only way to say "nothing survived". Unreadable stdin,
+//     EMPTY stdin, malformed JSON and a valid non-findings envelope are each
+//     reported by NAME rather than collapsed to [], and under auto_close each
+//     halts (D-09). Then, under the MERGED git.auto_close (the value the prose
+//     branched on - see gate() below), decide whether a surviving blocker/high
+//     risk_surface finding - or a payload that could not be read - halts the
+//     chain before merge. cad-land supplies those findings by unioning the
+//     .planning/phases/*/REVIEW-risk_surface*.md files this branch's fires
+//     persisted PLUS .planning/REVIEW-risk_surface-*.md, which is where
+//     /cad-milestone carries them before it prunes the phase dirs out from
+//     under an autonomous close; it fires no review of its own.
 'use strict';
 
 import { readFileSync } from 'node:fs';
@@ -55,17 +63,34 @@ function readMergedBranches(dir, base) {
   } catch { return []; }
 }
 
-/** Parsed {findings} from stdin, or [] when stdin is empty/unreadable/bad JSON. */
+/**
+ * The adjudicated findings from stdin, plus WHICH of the four unreadable states
+ * was seen when there are none. All four used to collapse to `[]`, which
+ * `decideGateHalt` then reported as "no surviving blocker/high finding" - an
+ * affirmative answer about a payload nobody parsed. The names are fixed by
+ * lib/close-decision.mjs's JSDoc; a payload that DID parse returns
+ * `unreadable: null` and the list it carried.
+ *
+ * EMPTY stdin is one of the four (D-09): the gate requires an explicit
+ * `{"findings":[]}` to proceed, because a forgotten pipe is the likeliest
+ * operator error and is otherwise indistinguishable from "adjudication killed
+ * everything" - the one case today's gate waved through under git.auto_close.
+ * A bare JSON array still reads as the findings list, as it always has.
+ *
+ * @returns {{findings: Array<{severity?:string}>, unreadable: string|null}}
+ */
 function readFindings() {
   let raw = '';
-  try { raw = readFileSync(0, 'utf8'); } catch { return []; }
+  try { raw = readFileSync(0, 'utf8'); }
+  catch { return { findings: [], unreadable: 'stdin-unreadable' }; }
   raw = raw.trim();
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-    return Array.isArray(parsed && parsed.findings) ? parsed.findings : [];
-  } catch { return []; }
+  if (!raw) return { findings: [], unreadable: 'stdin-empty' };
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch { return { findings: [], unreadable: 'malformed-json' }; }
+  if (Array.isArray(parsed)) return { findings: parsed, unreadable: null };
+  if (parsed && Array.isArray(parsed.findings)) return { findings: parsed.findings, unreadable: null };
+  return { findings: [], unreadable: 'not-a-findings-payload' };
 }
 
 function cleanup(dir, branchArg, baseArg, mergedArg) {
@@ -98,16 +123,16 @@ function gate(dir) {
   // (git-publish.mjs:53-61) asks "am I authorized to push unattended HERE", which
   // D-08 answers repo-only so a user-global value starts no close in an unrelated
   // project. This gate asks "is anybody WATCHING", and that answer has to match
-  // whatever the prose branched on - skills/cad-land/SKILL.md:27 reads the merged
-  // value through `config.mjs get` and suppresses the pre_ship triage ask under it
-  // (references/triage-gate.md:34, the carve-out scoped to pre_ship inside
-  // /cad-land: "triage is NONE by construction and land-cleanup.mjs gate's
-  // blocker/high halt is the only consequence").
+  // whatever the prose branched on - skills/cad-land/SKILL.md:24 reads the merged
+  // value through `config.mjs get` and skips the publish ask under it
+  // (references/triage-gate.md, the git.auto_close carve-out: "land-cleanup.mjs
+  // gate's blocker/high halt is the only consequence").
   //
   // So `proceed` on false is not this gate waving a blocker through; it is the
-  // gate saying a human is looking at that blocker in the triage prompt. The halt
-  // exists ONLY to replace the human who was switched off, which makes the
-  // suppression and the halt a matched pair that must read the SAME value.
+  // gate saying a human is at the publish ask, looking at the survivors this
+  // branch's risk_surface fires already reported. The halt exists ONLY to
+  // replace the human who was switched off, which makes the skipped ask and the
+  // halt a matched pair that must read the SAME value.
   // Narrowing this to `layers.repo` (0b1c322, reverted here) aligned the two
   // seams' VALUES and broke that pairing: with a global-only auto_close the prose
   // still entered the unattended chain and still suppressed triage while this gate
@@ -123,7 +148,8 @@ function gate(dir) {
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const autoClose = git.auto_close === true;
-  const decision = decideGateHalt({ autoClose, findings: readFindings() });
+  const { findings, unreadable } = readFindings();
+  const decision = decideGateHalt({ autoClose, findings, unreadable });
   emit({ ok: true, ...decision, warnings });
 }
 

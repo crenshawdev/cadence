@@ -30,19 +30,64 @@ const BIN = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 /** @param {any[]} events @param {Record<string, any>} [roles] */
 const render = (events, roles = {}) => ({ counts: {}, roles, events });
 
-const adjudication = (detail) => ({ family: 'outcome', event: 'adjudication', detail });
+const adjudication = (detail, extra = {}) => ({ family: 'outcome', event: 'adjudication', detail, ...extra });
 const rearm = (detail) => ({ family: 'outcome', event: 'rearm', detail });
 const resolve = (role, extra = {}) => ({ family: 'routing', event: 'resolve', role, ...extra });
 const checkpoint = (role) => ({ family: 'lifecycle', event: 'checkpoint', role });
 
 test('parseAdjudication: the step-5 detail shape parses, others contribute nothing', () => {
   assert.deepEqual(parseAdjudication('plan: 3 survivors; voices claude-subagent'),
-    { trigger: 'plan', survivors: 3 });
-  assert.deepEqual(parseAdjudication('pre_ship: 1 survivor; voices claude-subagent, openai'),
-    { trigger: 'pre_ship', survivors: 1 });
+    { trigger: 'plan', survivors: 3, raised: null });
+  assert.deepEqual(parseAdjudication('phase_diff: 1 survivor; voices claude-subagent, openai'),
+    { trigger: 'phase_diff', survivors: 1, raised: null });
   assert.equal(parseAdjudication('freeform note'), null);
   assert.equal(parseAdjudication(undefined), null);
   assert.equal(parseAdjudication(42), null);
+});
+
+test('parseAdjudication: the structured --raised field is the first source of the kill count', () => {
+  assert.deepEqual(parseAdjudication(adjudication('plan: 0 survivors; voices openai', { raised: 9 })),
+    { trigger: 'plan', survivors: 0, raised: 9 });
+  // 0 raised is a RECORDED figure, not an omission - it is the whole other
+  // half of the distinction this field exists for.
+  assert.deepEqual(parseAdjudication(adjudication('plan: 0 survivors; voices openai', { raised: 0 })),
+    { trigger: 'plan', survivors: 0, raised: 0 });
+  // A field that is not a non-negative integer falls through to the detail
+  // text rather than poisoning the count with a NaN or a negative.
+  for (const bad of ['9', -1, 1.5, null, {}]) {
+    assert.equal(parseAdjudication(adjudication('plan: 0 survivors', { raised: bad })).raised, null,
+      JSON.stringify(bad));
+  }
+});
+
+test('parseAdjudication: the hand-written `of <m>` clauses already on disk still read', () => {
+  // Verbatim from this repo's own `.planning/trace.jsonl`, written before the
+  // flag existed. D-03's floor: an upgrading project's history must keep
+  // reporting, or MIN_FIRES_FOR_GATE_SUGGESTION is unreachable on every one.
+  assert.deepEqual(parseAdjudication('plan: 3 survivors of 8; voices openai'),
+    { trigger: 'plan', survivors: 3, raised: 8 });
+  assert.deepEqual(parseAdjudication('plan: 5 survivors of 10 raised; voices openai'),
+    { trigger: 'plan', survivors: 5, raised: 10 });
+  // The third `of <m>` line on disk. Its TRIGGER token carries a space, so it
+  // does not parse at all - and that is the regression pin below, not a
+  // legacy clause this change should start admitting.
+  assert.equal(parseAdjudication('risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol'),
+    null);
+  // The structured field WINS over a legacy clause when both are present.
+  assert.equal(parseAdjudication(adjudication('plan: 3 survivors of 8; voices openai', { raised: 12 })).raised, 12);
+  // An "of" further down the line is not the clause: only the one immediately
+  // after the survivor count counts.
+  assert.equal(parseAdjudication('plan: 9 survivors, all 9 applied; voices openai').raised, null);
+  assert.equal(parseAdjudication('diff: 4 survivors (all latent, none blocking); voices openai').raised, null);
+});
+
+test('parseAdjudication: the two lines unparseable today are still unparseable', () => {
+  // D-03 measured 14 of 16 `outcome`/`adjudication` lines parsing. Widening
+  // the reader must not quietly admit the other two: one is a trigger token
+  // with a space in it, the other never adjudicated at all, and counting
+  // either as a fire would feed R1 evidence it does not have.
+  assert.equal(parseAdjudication('risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol'), null);
+  assert.equal(parseAdjudication('plan: 6 raised, unadjudicated (advisory gate); voices openai/gpt-5.6-sol'), null);
 });
 
 test('R1: an adjudicated trigger at the fires floor with zero survivors suggests its gate key', () => {
@@ -74,6 +119,41 @@ test('R1: any survivor, or a rearm on the same trigger, vetoes the gate suggesti
   ]));
   assert.equal(rearmedOut.find((x) => x.action === 'review.triggers.risk_surface.gate'), undefined,
     'a gate that forced a fix round has paid for itself, whatever its adjudications said');
+});
+
+test('R1: 0-of-0 and 0-of-9 are opposite evidence and stop proposing one action', () => {
+  const empty = suggestFromRender(render(Array.from(
+    { length: MIN_FIRES_FOR_GATE_SUGGESTION },
+    () => adjudication('plan: 0 survivors; voices openai', { raised: 0 }),
+  )));
+  const killed = suggestFromRender(render(Array.from(
+    { length: MIN_FIRES_FOR_GATE_SUGGESTION },
+    () => adjudication('plan: 0 survivors; voices openai', { raised: 9 }),
+  )));
+  const a = empty.find((x) => x.kind === 'suggest');
+  const b = killed.find((x) => x.kind === 'suggest');
+  assert.ok(a && b, `${JSON.stringify(empty)} / ${JSON.stringify(killed)}`);
+  // The whole point of the split: a gate that found nothing and a reviewer
+  // whose every finding was refuted are the same ROW today.
+  assert.notEqual(a.subject, b.subject);
+  assert.notEqual(a.action, b.action);
+  assert.equal(a.action, 'review.triggers.plan.gate');
+  assert.equal(b.action, 'review.reviewers');
+  assert.match(b.subject, /plan/);
+  assert.match(b.evidence, /0 survivors of 18 raised/);
+  // ...and nothing proposes turning the gate off on the 0-of-m side.
+  assert.equal(killed.find((x) => x.action === 'review.triggers.plan.gate'), undefined);
+});
+
+test('R1: a corpus with NO raised counts recorded keeps the gate arm it has today', () => {
+  // UNKNOWN is not zero at the reader, but it contributes zero to the total
+  // here, which is what leaves every pre-`--raised` trace behaving as it does.
+  const out = suggestFromRender(render(Array.from(
+    { length: MIN_FIRES_FOR_GATE_SUGGESTION },
+    () => adjudication('plan: 0 survivors; voices openai'),
+  )));
+  assert.ok(out.find((x) => x.action === 'review.triggers.plan.gate'));
+  assert.equal(out.find((x) => x.action === 'review.reviewers'), undefined);
 });
 
 test('R2: a rearm becomes a keep-the-gate receipt, not a config suggestion', () => {
@@ -202,6 +282,9 @@ test('config keys named in actions exist in config.schema.json - the suggestion 
   const schemaHas = (path) => Object.prototype.hasOwnProperty.call(schema.keys, path);
   const out = suggestFromRender(render([
     adjudication('plan: 0 survivors; voices x'), adjudication('plan: 0 survivors; voices x'),
+    // Both R1 arms, so the split's new action is held to the same rule.
+    adjudication('diff: 0 survivors; voices x', { raised: 9 }),
+    adjudication('diff: 0 survivors; voices x', { raised: 9 }),
     resolve('cad-planner', { escalated: true }), resolve('cad-planner', { escalated: true }),
     checkpoint('cad-executor'), checkpoint('cad-executor'),
   ]));

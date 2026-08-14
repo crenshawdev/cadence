@@ -98,6 +98,9 @@ Check six dimensions:
    derived truth to specific tasks.
 4. Spot-check claims about existing code against the actual repo (Grep or
    Read) - a task that edits a function that does not exist is a BLOCKER.
+   Batch independent probes: greps and reads whose target does not depend on
+   another's result go out in ONE message, never one-then-wait. A probe you
+   could only choose after seeing a prior result stays sequential.
 5. Classify each finding as BLOCKER or WARNING.
 </process>
 

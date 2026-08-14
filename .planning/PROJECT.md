@@ -101,43 +101,49 @@ context-gathering, and debugging — without any external memory system.
 - ✓ `weight.mjs resident` composes eager, reachable and dispatch bytes; `cad-land` and `cad-plan-review` stop eagerly preloading references they read at one step, with a self-verify check that a de-preloaded reference keeps a Read at the arm that needs it (CTX-01) — v2.5.0
 
 - ✓ `v2.6.0 — the reconciliation cycle`: the capture queue triaged from 213 open items to 28 with the rest archived out of the recall corpus (REC-01, REC-02); the verify walk, the unbounded re-arm and version drift (FRI-01..03); named phase dirs, an ignored run record, `REQ_ID_EXACT` and the debt-marker harvest (FLD-01, FLD-02, PRS-02, DBT-01); per-role token accounting with every phase dispatch bracketed (TOK-03, TOK-04); and the first end-to-end doc sweep, 547 claims with a committed ledger (DOC-02, DOC-03, EVD-02) — v2.6.0
+- ✓ `v3.2.0 - the controls that reported success`: a hostile repo config layer stopped reparenting the merged config and inspection stopped disagreeing with enforcement (CFG-01, CFG-02); the symlinked temp write, the gate that could not read its findings, the valueless flag and the credential-carrying failure detail all fail safe now (FSW-01, GAT-01, VAL-01, EXP-01); adjudication records kills as well as survivors and the reviewer set is resolved in the seam rather than by prose (RVW-01, RVW-02); three triggers that blocked nothing turned off or deleted, and `risk_surface` scoped to the surfaces a project has (CST-01, CST-02); the dispatch bound tuned 400 to 200 with the audit's low-severity tail deleted rather than carried (CST-03, HYG-01) - v3.2.0
 
 ### Active
 
-No cycle open. `v3.1.0 — Cadence meets outside work` closed on 2026-08-13: eight
-requirements (`ADP-01`, `BRF-01`, `TRC-01`, `SIZ-01`, `MIN-01`, `XCP-01`,
-`CTW-06`, `TUN-01`), three phases, 59 commits, the audit green (8/8 traced, 0
-broken; 21/21 acceptance criteria covered), the manifest at `3.1.0`. Its eight
-rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in
+No cycle open. `v3.2.0 — the controls that reported success` closed on
+2026-08-14: twelve requirements (`CFG-01`, `CFG-02`, `FSW-01`, `GAT-01`,
+`EXP-01`, `VAL-01`, `RVW-01`, `RVW-02`, `CST-01`, `CST-02`, `CST-03`,
+`HYG-01`), four phases, 104 commits, the audit green (12/12 traced, 0 broken;
+36/36 acceptance criteria covered), the manifest at `3.2.0`. Its twelve rows
+sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in
 `CHANGELOG.md`, and its phase record in git history at the pruning commit -
-this close ran `--mode delete`, so there is no `_archive-v3.1.0/`. The merge and
-the release tag are still outstanding: `/cad-land` on `cadence/v3.1.0`, and the
-tag cut by hand on the pulled base, since `git.create_tag` is false at both
+this close ran `--mode delete`, so there is no `_archive-v3.2.0/`. The merge
+and the release tag are still outstanding: `/cad-land` on `cadence/v3.2.0`, and
+the tag cut by hand on the pulled base, since `git.create_tag` is false at both
 config layers.
 
-What it delivered: the two gaps the first external run exposed, neither of which
-could have surfaced from Cadence auditing Cadence. `/cad-adopt` gives a
-brownfield repo an entrance - it derives the planning docs from code, manifest
-and history and asks only what the repo cannot answer - and `--brief <file>`
-stops re-interrogating a project that arrived with a design brief. The receipts
-now price the coordinator as well as the workers, and `/cad-context` has a spend
-gate that asks whether the spine's most expensive dispatch is worth buying for a
-given phase. Over-building is named at both points it can be caught: at build
-time by a lean-first posture the executor reads behind a deferred `Read`, at
-review time by `/cad-minimalism-review`, whose apply-nothing posture is
-structural - the skill grants neither `Write` nor `Edit`. `/cad-suggest` gives
-the tuner a front door, and `/cad-capture --cadence` closes the loop that ten
-projects of field use never closed: friction found on somebody else's project
-now leaves that project and reaches Cadence's own queue.
+What it delivered: the controls that reported success without doing the work.
+A `.planning/config.json` arriving with a clone could reparent the merged
+config through `__proto__` and reach every enforcement surface, and
+`config.mjs validate` returned `{"ok":true,"checked":0,"errors":[]}` over the
+same file, so the tool you would use to check a config was the one thing blind
+to the attack. `atomicWrite` wrote through a symlinked temp path. The
+unattended-close gate could not tell "no findings" from "could not read the
+findings" and returned `proceed` for both. Git failure details carried
+credentials from a remote URL. Each of those now fails safe and says which
+failure it saw. The review arm learned to prove itself in the same cycle: the
+record distinguishes a gate that found nothing from one whose findings were all
+refuted, the reviewer SET is resolved in the seam beside the gate rather than
+by prose that could be skipped without a trace, and an external reviewer is
+handed the same stance and severity bar as the local one. Three review triggers
+that blocked nothing were turned off or deleted, `risk_surface` learned the
+eight categories a project actually has, and every dispatch is bounded at 200
+turns instead of a nominal 400.
 
-The next milestone is unscoped. The candidate pool is `.planning/CAPTURE.md` —
-283 open todos, 18 tagged `[high]`, 21 from review passes — plus the delete-list
-`/cad-minimalism-review` returned over this cycle's own range, whose blocker is
-`cadence-core/references/lean-build.md`: a 3,089 B deferred file with one consult
-site that already states both of its load-bearing sentences. The process items
-that have now been hand-written twice are still open too: `/cad-milestone` has no
-close-only arm (this close was the third to write one by hand), and `pre_ship`
-is gated off rather than removed.
+The next milestone is unscoped. The candidate pool is `.planning/CAPTURE.md`,
+119 open todos with 2 tagged `[high]`, plus five deferred requirements carried
+into the new cycle: `LND-01` (the `/cad-land` tracker check, cut from phase 4
+before execution, issue #121 still open), `PRS-01`, `EVD-01`, `RCL-06` and
+`CTX-02`. Two process items are still open from the last close and were not
+addressed here: `/cad-milestone` has no close-only arm, and this close was the
+fourth to hand-write one. `### Validated` above stops at `v2.6.0`; `v2.7.0`,
+`v3.0.0` and `v3.1.0` were never added to it, so this cycle's entry sits over a
+three-milestone hole rather than beside its siblings.
 
 ## Key Decisions
 

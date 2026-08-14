@@ -4,7 +4,7 @@ description: The `high` rung of `cad-executor` (plan task execution); `bin/route
 tools: Read, Write, Edit, Bash, Grep, Glob, LSP
 color: yellow
 effort: high
-maxTurns: 400
+maxTurns: 200
 skills:
   - cad-executor-contract
 ---

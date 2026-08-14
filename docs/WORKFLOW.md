@@ -49,13 +49,13 @@ pick the convenient branch.
 | `/cad-verify` | What to do with a failure | Diagnosed inline, fix proposed, then your call. **Apply now**, one atomic commit, guard and `risk_surface` fire at commit time, item back to pending for a retest. **Re-plan**, the item stays failed and you take it to `/cad-plan` yourself; it is never auto-run. **Leave open**, recorded, move on. No silent batch-fixing, no fix-retest-fix without you between rounds. |
 | `/cad-audit` | PASS or FAIL | **PASS** only with zero broken traces and zero coverage breaks. **FAIL** on any requirement untraced, unplanned, unverified, dropped or drifted, or on any coverage break at all. Frontmatter noise and scope-creep orphans are reported but do not move the verdict. There is no PASS-with-warnings. |
 | `/cad-milestone` | The audit gate | Runs `/cad-audit` first. FAIL stops the milestone unless you explicitly override. The version bump has its own halts - a downgrade or a non-upgrade stops the close - and the release tag is not cut here at all: /cad-land cuts it on the pulled base after the merge confirms. |
-| `/cad-land` | `pre_ship`, then how to publish | A blocking FAIL halts the land; an adjudicated result gives you a survivor list with NONE as the default, and `pre_ship` re-fires *at most once* after your fixes. Then the publish question, with **no option preselected**: push, open an MR or PR, tag, or leave it local. With `git.auto_close: true` the ask is skipped and a surviving blocker or high severity is a hard halt instead. |
+| `/cad-land` | How to publish | The publish question, with **no option preselected**: push, open an MR or PR, tag, or leave it local. `/cad-land` fires no review of its own - a fourth pass over work three passes already cleared, at the one point where acting on a finding means committing on top of what is being published. With `git.auto_close: true` the ask is skipped and a surviving blocker or high `risk_surface` finding from this branch's own fires is a hard halt instead. |
 
 > **The loop that was deliberately not built**
 >
 > Review, revise, review again until it converges. Cadence refuses it
-> everywhere: the checker gets one revision, `pre_ship` re-fires once and
-> reports rather than re-triaging, and an adjudicated review grounds its
+> everywhere: the checker gets one revision, a blocking gate re-arms at most
+> once and reports rather than re-triaging, and an adjudicated review grounds its
 > findings once and hands off. Convergence loops burn tokens to agree with
 > themselves.
 
@@ -67,10 +67,10 @@ Publishing is not part of the per-phase loop. When the last phase in a milestone
 passes its walk, the traceability audit runs before anything is tagged, and the
 publish mechanism is always asked rather than assumed.
 
-![The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land fires the pre-ship review, which halts on a blocking FAIL; publishing then forks into four options with no default preselected.](figures/milestone-land.svg)
+![The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land then forks publishing into four options with no default preselected.](figures/milestone-land.svg)
 
-*Two gates stand between finished phases and a published branch, and the second
-one asks how you want to publish rather than choosing for you.*
+*One gate stands between finished phases and a published branch, and what comes
+after it asks how you want to publish rather than choosing for you.*
 
 ---
 
@@ -129,7 +129,7 @@ pointer-only stubs so the behaviour is written down exactly once.*
 
 ---
 
-## 6. Review: one function, five triggers
+## 6. Review: one function, four triggers
 
 No command embeds its own reviewer loop. There is a single `fire(trigger)`
 defined in one place, and every review in the system is a call to it.
@@ -145,11 +145,10 @@ not a convenience.*
 
 | Trigger | Fired by | What gets reviewed | solo | shipped | critical |
 |---|---|---|---|---|---|
-| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | advisory | adjudicated |
+| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | off | adjudicated |
 | `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
 | `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff, once per plan on the committed range | blocking | blocking | blocking |
-| `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | advisory | adjudicated |
-| `pre_ship` | `/cad-land` | the full branch diff | advisory | advisory | adjudicated |
+| `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | off | adjudicated |
 
 > **One risk detector, and it reads the diff**
 >

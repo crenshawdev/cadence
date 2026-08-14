@@ -27,6 +27,14 @@
 //     first, append nothing at or over the cap) for the same reason: there is no
 //     whole-file rewrite to trim from.
 //
+//     What an append costs, and what is paid for it: `appendFileSync` FOLLOWS a
+//     symlink, so a planted `.planning/trace.jsonl` link would redirect every
+//     event a run writes out of the tree. So the path is `lstat`ed ahead of the
+//     size stat and a link is REFUSED - `{written:false, reason:'symlinked-trace'}`,
+//     appending nothing. It is a reason and not a throw because of the contract
+//     directly below: a record of a decision may not be able to change the
+//     decision. An ABSENT file is still the ordinary first write.
+//
 //   NEVER throws, never speaks. `appendEvent` puts every fs call in its own try
 //     and returns `{written:false, reason}` on any failure. Its callers'
 //     envelopes must not move by a byte because a trace could not be written -
@@ -69,7 +77,9 @@
 //     absent one: `unrecorded` is readable as an absence, a wrong total is not.
 'use strict';
 
-import { appendFileSync, closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+import {
+  appendFileSync, closeSync, lstatSync, openSync, readFileSync, readSync, statSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 /** The trace file's name inside a planning root. */
@@ -242,7 +252,9 @@ function renderEvent(planningRoot, event) {
 
 /**
  * Append one event. NEVER throws, never writes to stdout or stderr: a trace that
- * cannot be written must leave its caller's envelope byte-identical.
+ * cannot be written must leave its caller's envelope byte-identical. A trace
+ * path that is a SYMLINK is refused with `reason:'symlinked-trace'` and nothing
+ * is appended - the append would otherwise follow it out of the tree.
  * @param {string} planningRoot
  * @param {any} event `{phase, family, event, ...fields}`
  * @returns {{written: boolean, reason?: string, corr?: string}}
@@ -252,6 +264,13 @@ export function appendEvent(planningRoot, event) {
     return { written: false, reason: 'bad-event' };
   }
   const file = tracePath(planningRoot);
+
+  // `lstatSync`, so the LINK is classified rather than whatever it points at -
+  // `appendFileSync` and the size `statSync` below both follow one. Ahead of the
+  // size stat, because a redirected trace must be refused whatever its size.
+  try {
+    if (lstatSync(file).isSymbolicLink()) return { written: false, reason: 'symlinked-trace' };
+  } catch { /* ENOENT is the ordinary first write; the size stat below reports the rest */ }
 
   // The bound, enforced BEFORE the write (D-07): there is no whole-file rewrite
   // to trim from, so the only place to stop is in front of the append. An

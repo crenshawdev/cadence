@@ -117,3 +117,54 @@ test('gate: total on non-array findings -> proceed, no throw', () => {
   assert.equal(decideGateHalt({ autoClose: true, findings: /** @type {any} */ (null) }).action, 'proceed');
   assert.equal(decideGateHalt({}).action, 'proceed');
 });
+
+// --- decideGateHalt: the unreadable-findings input ---------------------------
+
+// The four names land-cleanup.mjs readFindings passes, stated in the JSDoc so
+// the pure core and the seam cannot drift.
+const UNREADABLE = ['stdin-unreadable', 'stdin-empty', 'malformed-json', 'not-a-findings-payload'];
+
+for (const name of UNREADABLE) {
+  test(`gate: auto_close on + unreadable "${name}" -> halt naming it, no claim about survivors`, () => {
+    const r = decideGateHalt({ autoClose: true, findings: [], unreadable: name });
+    assert.equal(r.action, 'halt');
+    assert.deepEqual(r.findings, []);
+    assert.ok(r.reason.includes(name), `reason must name the failure: ${r.reason}`);
+    assert.ok(!/no surviving blocker\/high finding/.test(r.reason),
+      'the halt must not assert anything about findings it never read');
+  });
+
+  test(`gate: auto_close off + unreadable "${name}" -> proceed (no unattended chain)`, () => {
+    const r = decideGateHalt({ autoClose: false, findings: [], unreadable: name });
+    assert.equal(r.action, 'proceed');
+    assert.match(r.reason, /auto_close off/);
+  });
+}
+
+test('gate: an EXPLICIT empty findings array with no failure still proceeds', () => {
+  const r = decideGateHalt({ autoClose: true, findings: [], unreadable: null });
+  assert.equal(r.action, 'proceed');
+  assert.match(r.reason, /no surviving blocker\/high finding/);
+});
+
+test('gate: a surviving blocker still halts with the finding on the envelope', () => {
+  const finding = { severity: 'blocker', title: 'secret leaked' };
+  const r = decideGateHalt({ autoClose: true, findings: [finding], unreadable: null });
+  assert.equal(r.action, 'halt');
+  assert.deepEqual(r.findings, [finding]);
+});
+
+test('gate: the halt names its PRODUCER, so a fed-by-nothing gate is visible', () => {
+  // The gate spent v3.2.0 fed by `pre_ship`, which that release deleted. A
+  // reason string naming a trigger that no longer exists is how a control
+  // reporting success on an empty feed stays invisible, so the producer is
+  // pinned here rather than left to a comment.
+  const r = decideGateHalt({ autoClose: true, findings: [{ severity: 'high' }] });
+  assert.equal(r.action, 'halt');
+  assert.match(r.reason, /risk_surface/);
+});
+
+test('gate: stays total - an unknown `unreadable` value cannot halt a close', () => {
+  assert.equal(decideGateHalt({ autoClose: true, findings: [], unreadable: /** @type {any} */ ({}) }).action, 'proceed');
+  assert.equal(decideGateHalt({ autoClose: true, findings: [], unreadable: '' }).action, 'proceed');
+});

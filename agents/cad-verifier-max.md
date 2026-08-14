@@ -4,7 +4,7 @@ description: The `max` rung of `cad-verifier`; `bin/route.mjs` picks it, not the
 tools: Read, Write, Bash, Grep, Glob
 color: green
 effort: max
-maxTurns: 400
+maxTurns: 200
 disallowedTools: Edit, MultiEdit
 skills:
   - cad-verifier-contract

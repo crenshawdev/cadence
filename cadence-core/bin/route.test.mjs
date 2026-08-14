@@ -43,11 +43,14 @@ function rawCfg(body, name) {
 
 // resolve() defaults to an isolated (missing) global layer; pass opts.global to
 // point CADENCE_GLOBAL_CONFIG at a real global file for merge tests, and
-// opts.table to inject a route table through CADENCE_ROUTE_TABLE.
+// opts.table to inject a route table through CADENCE_ROUTE_TABLE. That
+// injection is gated: route.mjs reads CADENCE_ROUTE_TABLE only when
+// CADENCE_TEST_SEAM is exactly `1`, so every fixture that sets the path sets
+// the sentinel beside it (lib/test-seam.mjs).
 function resolve(role, file, extra = [], opts = {}) {
   const args = ['resolve', '--role', role, ...(file ? ['--file', file] : []), ...extra];
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: opts.global || NO_GLOBAL };
-  if (opts.table) env.CADENCE_ROUTE_TABLE = opts.table;
+  if (opts.table) { env.CADENCE_ROUTE_TABLE = opts.table; env.CADENCE_TEST_SEAM = '1'; }
   try {
     return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env }));
   } catch (e) {
@@ -181,21 +184,21 @@ test('each level resolves its whole review map and its verify value, literally',
   const solo = resolve('cad-planner', cfg({ stakes: 'solo' }));
   assert.deepEqual(solo.review, {
     plan: 'advisory', diff: 'off', risk_surface: 'blocking',
-    phase_diff: 'off', pre_ship: 'advisory',
+    phase_diff: 'off',
   });
   assert.equal(solo.verify, 'off');
 
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
-    plan: 'advisory', diff: 'off', risk_surface: 'blocking',
-    phase_diff: 'advisory', pre_ship: 'advisory',
+    plan: 'off', diff: 'off', risk_surface: 'blocking',
+    phase_diff: 'off',
   });
   assert.equal(shipped.verify, 'on');
 
   const critical = resolve('cad-planner', cfg({ stakes: 'critical' }));
   assert.deepEqual(critical.review, {
     plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
-    phase_diff: 'adjudicated', pre_ship: 'adjudicated',
+    phase_diff: 'adjudicated',
   });
   assert.equal(critical.verify, 'on');
 });
@@ -207,10 +210,10 @@ test('risk_surface is blocking at every level - a detection match is never waved
 });
 
 test('a config gate that AGREES with the level is taken silently', () => {
-  const c = rawCfg({ stakes: 'shipped', review: { triggers: { phase_diff: { gate: 'advisory' } } } },
+  const c = rawCfg({ stakes: 'shipped', review: { triggers: { phase_diff: { gate: 'off' } } } },
     'gate-agrees.json');
   const r = resolve('cad-planner', c);
-  assert.equal(r.review.phase_diff, 'advisory');
+  assert.equal(r.review.phase_diff, 'off');
   assert.equal(r.warnings, undefined); // agreement is not news
 });
 
@@ -231,6 +234,181 @@ test('a config gate that DISAGREES wins, and says so exactly once (D-04)', () =>
   assert.equal(r.review.risk_surface, 'blocking');
 });
 
+// --- the reviewer set beside the gate map (RVW-02) ---------------------------
+
+test('no configured reviewers resolves every trigger to claude-subagent, silently', () => {
+  // The shipped default: `review.reviewers` unset, so DEFAULTS backstops it and
+  // the always-available subagent is the whole set. Nothing was dropped, so
+  // there is nothing to warn about.
+  const r = resolve('cad-reviewer', cfg({ stakes: 'shipped' }));
+  assert.deepEqual(r.reviewers, {
+    plan: ['claude-subagent'], diff: ['claude-subagent'],
+    risk_surface: ['claude-subagent'], phase_diff: ['claude-subagent'],
+  });
+  assert.equal(r.warnings, undefined);
+});
+
+test('a provider with no model id at the trigger\'s tier falls back, naming both', () => {
+  // `review.reviewers: ["openai"]` with no `review.providers.openai.tiers.*`
+  // set: the provider cannot be dispatched to, so the fire would go to a
+  // subagent - the 2026-08-13 substitution. The fallback and its CAUSE are in
+  // the return rather than inferred from a set the caller never sees resolved.
+  const c = rawCfg({ stakes: 'shipped', review: { reviewers: ['openai'] } },
+    'reviewers-unavailable.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.reviewers, {
+    plan: ['claude-subagent'], diff: ['claude-subagent'],
+    risk_surface: ['claude-subagent'], phase_diff: ['claude-subagent'],
+  });
+  const plan = r.warnings.find((w) => w.startsWith('plan:'));
+  assert.ok(plan, JSON.stringify(r.warnings));
+  assert.match(plan, /openai/);                                  // the provider dropped
+  assert.match(plan, /"flagship"/);                              // ...the tier it needed
+  assert.match(plan, /review\.providers\.openai\.tiers\.flagship/); // ...the key that answers it
+  assert.match(plan, /claude-subagent/);                         // ...and the fallback
+  // The tier is per trigger, so the answer is too: `diff` resolves at the
+  // table's `balanced` row, not at plan's `flagship`.
+  assert.match(r.warnings.find((w) => w.startsWith('diff:')), /"balanced"/);
+});
+
+test('a provider WITH a model id at that tier is the resolved reviewer', () => {
+  const c = rawCfg({
+    stakes: 'shipped',
+    review: { reviewers: ['openai'], providers: { openai: { tiers: { flagship: 'gpt-5' } } } },
+  }, 'reviewers-available.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.reviewers.plan, ['openai']);
+  assert.deepEqual(r.reviewers.risk_surface, ['openai']); // flagship too
+  // `diff` resolves at `balanced`, which this config leaves unassigned.
+  assert.deepEqual(r.reviewers.diff, ['claude-subagent']);
+});
+
+test('a config-set tier wins over the table row for the availability test (D-04)', () => {
+  // The tier a LAYER set is a user assertion; the table's row is the fallback.
+  // Reading config.schema.json's default here instead would make the schema's
+  // answer indistinguishable from the user's.
+  const c = rawCfg({
+    stakes: 'shipped',
+    review: {
+      reviewers: ['openai'],
+      providers: { openai: { tiers: { cheap: 'gpt-5-mini' } } },
+      triggers: { plan: { tier: 'cheap' } },
+    },
+  }, 'reviewers-tier-set.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.reviewers.plan, ['openai']);
+  assert.deepEqual(r.reviewers.phase_diff, ['claude-subagent']); // still flagship, unassigned
+  assert.match(r.warnings.find((w) => w.startsWith('phase_diff:')), /tiers row/);
+});
+
+test('one available reviewer beside one unavailable keeps the set and names the drop', () => {
+  const c = rawCfg({
+    stakes: 'shipped',
+    review: {
+      reviewers: ['claude-subagent', 'gemini'],
+      providers: { openai: { tiers: { flagship: 'gpt-5' } } },
+    },
+  }, 'reviewers-partial.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.reviewers.plan, ['claude-subagent']);
+  const plan = r.warnings.find((w) => w.startsWith('plan:'));
+  assert.match(plan, /gemini/);
+  assert.match(plan, /leaving \[claude-subagent\]/);
+});
+
+test('the reviewer set is its own field - `review` gains, loses and reorders nothing', () => {
+  // D-05: folding reviewers into `review` turns each gate STRING into an
+  // object and breaks every reader of the wiring table at once.
+  const c = rawCfg({ stakes: 'critical', review: { reviewers: ['openai'] } },
+    'reviewers-beside.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.review, {
+    plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
+    phase_diff: 'adjudicated',
+  });
+  assert.deepEqual(Object.keys(r.review), Object.keys(r.reviewers));
+});
+
+// --- the risk_surface scope beside the gate map (CST-02) ---------------------
+
+const ALL_SURFACES = ['auth', 'migrations', 'billing', 'concurrency', 'destructive',
+  'secrets', 'api_contract', 'untrusted_input'];
+
+test('the key absent from both layers resolves all eight, marked unanswered', () => {
+  // D-12: absence means EVERYTHING and is a distinguishable state. Failing the
+  // other way would narrow the only blocking review trigger on evidence nobody
+  // supplied - and there would then be no state the one-time ask can detect.
+  const r = resolve('cad-reviewer', cfg({ stakes: 'shipped' }));
+  assert.deepEqual(r.surfaces, ALL_SURFACES);
+  assert.equal(r.surfaces_answered, false);
+  assert.equal(r.warnings, undefined);
+});
+
+test('a repo layer setting two categories resolves exactly those two, marked answered', () => {
+  const c = rawCfg({ stakes: 'shipped',
+    review: { triggers: { risk_surface: { surfaces: ['secrets', 'destructive'] } } } },
+  'surfaces-two.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.surfaces, ['secrets', 'destructive']);
+  assert.equal(r.surfaces_answered, true);
+  assert.equal(r.warnings, undefined);
+});
+
+test('an entry outside the vocabulary fails SAFE and is NAMED, never narrowed to the valid subset', () => {
+  // `nope` is a typo, not a decision to stop reviewing everything it isn't.
+  // Accepting the valid subset would mark the question answered forever while
+  // silently shrinking the only blocking gate - and the sibling test below
+  // already fails safe on a scalar, so narrowing here gave one malformation
+  // class two different answers.
+  const c = rawCfg({ stakes: 'shipped',
+    review: { triggers: { risk_surface: { surfaces: ['secrets', 'nope'] } } } },
+  'surfaces-bad-entry.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.surfaces, ALL_SURFACES, 'narrowed to the valid subset');
+  assert.equal(r.surfaces_answered, false, 'a typo marked the question answered');
+  const w = r.warnings.find((x) => x.includes('surfaces'));
+  assert.ok(w, JSON.stringify(r.warnings));
+  assert.match(w, /"nope"/);
+  assert.match(w, /untrusted_input/); // the accepted set, named
+  assert.ok(r.warnings.some((x) => /all 8 stand/.test(x)), JSON.stringify(r.warnings));
+});
+
+test('a non-list value contributes nothing and all eight stand', () => {
+  const c = rawCfg({ stakes: 'shipped',
+    review: { triggers: { risk_surface: { surfaces: 'secrets' } } } },
+  'surfaces-scalar.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.surfaces, ALL_SURFACES);
+  assert.equal(r.surfaces_answered, false);
+  assert.match(r.warnings.find((x) => x.includes('surfaces')), /is not a list/);
+});
+
+test('a list that resolves to no category reads as UNANSWERED, not as an empty scope', () => {
+  // An empty scope would turn the one blocking trigger off entirely while every
+  // document says it is blocking - the control-that-reports-success shape this
+  // milestone is named after.
+  const c = rawCfg({ stakes: 'shipped',
+    review: { triggers: { risk_surface: { surfaces: [] } } } },
+  'surfaces-empty.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.surfaces, ALL_SURFACES);
+  assert.equal(r.surfaces_answered, false);
+  assert.match(r.warnings.find((x) => x.includes('surfaces')), /unanswered/);
+});
+
+test('the surface set is its own field - `review` and `reviewers` gain nothing', () => {
+  const c = rawCfg({ stakes: 'critical',
+    review: { triggers: { risk_surface: { surfaces: ['secrets'] } } } },
+  'surfaces-beside.json');
+  const r = resolve('cad-reviewer', c);
+  assert.deepEqual(r.review, {
+    plan: 'adjudicated', diff: 'blocking', risk_surface: 'blocking',
+    phase_diff: 'adjudicated',
+  });
+  assert.deepEqual(Object.keys(r.review), Object.keys(r.reviewers));
+  assert.deepEqual(r.surfaces, ['secrets']);
+});
+
 test('a level with no review row or no verify value degrades to unresolved', () => {
   // A torn table must not emit half a bundle: two of the four knobs read as a
   // whole answer is worse than no answer.
@@ -239,7 +417,8 @@ test('a level with no review row or no verify value degrades to unresolved', () 
     delete t[drop].shipped;
     const p = join(dir, `torn-${drop}.json`);
     writeFileSync(p, JSON.stringify(t));
-    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: p };
+    const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: p,
+      CADENCE_TEST_SEAM: '1' };
     const args = ['resolve', '--role', 'cad-planner', '--file', cfg({ stakes: 'shipped' })];
     const r = (() => {
       try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
@@ -371,8 +550,8 @@ test('table dumps the routing table - the three grids and the declared roles', (
   // The whole top-level key set, pinned: the retired blocks are GONE, not
   // merely unread, and a new one cannot appear without a reader.
   assert.deepEqual(Object.keys(r.table).sort(),
-    ['_meta', 'cells', 'gates', 'model_aliases', 'review', 'roles', 'rung_order',
-      'stakes_order', 'verify']);
+    ['_meta', 'cells', 'gates', 'model_aliases', 'review', 'risk_surface_categories',
+      'roles', 'rung_order', 'stakes_order', 'tier_names', 'tiers', 'verify']);
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {
@@ -475,7 +654,8 @@ test('overrides layer: repo pin wins over a global pin', () => {
 test('CADENCE_ROUTE_TABLE malformed degrades to ok:false, reason bad-table, no stack', () => {
   const bad = join(dir, 'bad-table.json');
   writeFileSync(bad, '{ not json');
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: bad };
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: bad,
+    CADENCE_TEST_SEAM: '1' };
   const raw = (() => {
     try { return execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }); }
     catch (e) { return e.stdout; }
@@ -557,7 +737,8 @@ test('the cell retry is the SOURCE of the swap - repointing it moves the resolve
   writeFileSync(tablePath, JSON.stringify(t));
 
   const c = cfg({ stakes: 'shipped', escalate_on_failure: true });
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: tablePath };
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: tablePath,
+    CADENCE_TEST_SEAM: '1' };
   const args = ['resolve', '--role', 'cad-plan-checker', '--file', c, '--attempt', '2'];
   const r = (() => {
     try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
@@ -580,9 +761,38 @@ test('a cell whose retry IS its starting rung reports the rung held, not an esca
   assert.match(r.reason.join(' '), /rung held at xhigh/);
 });
 
+// --- the injection is GATED behind CADENCE_TEST_SEAM (EXP-01) --------------
+
+test('CADENCE_ROUTE_TABLE without the sentinel is ignored; `table` is the shipped one', () => {
+  // The attack the gate exists to refuse: a repo-supplied `.envrc` or
+  // devcontainer env block points the route table at a file whose
+  // `risk_surface` gate reads `off`, and the one trigger this repo blocks on
+  // goes quiet. Unset the sentinel and the variable is not read at all - and
+  // silently, with no warning field, because TABLE_PATH resolves at module
+  // load, before any dispatch exists to carry one.
+  const t = JSON.parse(JSON.stringify(SHIPPED_TABLE));
+  t.review.shipped.risk_surface = 'off';
+  const hostile = join(dir, 'ungated-table.json');
+  writeFileSync(hostile, JSON.stringify(t));
+
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: hostile };
+  delete env.CADENCE_TEST_SEAM; // hermetic: never inherit an open seam
+  const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
+  assert.equal(r.ok, true);
+  assert.equal(r.table.review.shipped.risk_surface, 'blocking');
+  assert.deepEqual(r.table, SHIPPED_TABLE);
+
+  // The SAME file with the sentinel set DOES take, so the arm above is proving
+  // the gate rather than a fixture path that never worked.
+  const opened = JSON.parse(execFileSync('node', [ROUTE, 'table'],
+    { encoding: 'utf8', env: { ...env, CADENCE_TEST_SEAM: '1' } }));
+  assert.equal(opened.table.review.shipped.risk_surface, 'off');
+});
+
 test('CADENCE_ROUTE_TABLE nonexistent degrades to ok:false, reason bad-table, no stack', () => {
   const missing = join(dir, 'does-not-exist-table.json');
-  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: missing };
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL, CADENCE_ROUTE_TABLE: missing,
+    CADENCE_TEST_SEAM: '1' };
   const raw = (() => {
     try { return execFileSync('node', [ROUTE, 'resolve', '--role', 'cad-planner'], { encoding: 'utf8', env }); }
     catch (e) { return e.stdout; }
@@ -639,7 +849,7 @@ test('with NO triggers block the level decides phase_diff, and nothing disagrees
   // config that writes no gate is the state a fresh scaffold is now in.
   const shipped = rawCfg({ stakes: 'shipped' }, 'pd-shipped.json');
   const rs = resolve('cad-executor', shipped);
-  assert.equal(rs.review.phase_diff, 'advisory');
+  assert.equal(rs.review.phase_diff, 'off');
   // route omits `warnings` entirely when empty, so an absent key IS the
   // no-disagreement answer - `?? []` states that rather than crashing on it.
   assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
@@ -665,7 +875,7 @@ test('the SCAFFOLDED template carries no triggers block, so nothing overrides th
   const asShipped = rawCfg(template, 'pd-template-shipped.json');
   const rs = resolve('cad-executor', asShipped);
   assert.equal(rs.stakes, 'shipped', 'the template ships at shipped');
-  assert.equal(rs.review.phase_diff, 'advisory');
+  assert.equal(rs.review.phase_diff, 'off');
   assert.deepEqual(rs.warnings ?? [], [], String(rs.warnings));
 
   const asCritical = rawCfg({ ...template, stakes: 'critical' }, 'pd-template-critical.json');

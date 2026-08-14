@@ -66,6 +66,16 @@ tasks must satisfy. The sequence:
 Before writing any task, read the actual files it will touch. Never plan
 from filenames, directory listings, or memory of similar codebases. Read
 each file once, extract everything you need in that pass, do not re-read.
+Batch independent probes: greps, globs and reads whose target does not
+depend on another's result go out in ONE message, never one-then-wait. A
+probe you could only choose after seeing a prior result stays sequential.
+
+To orient in a JS/TS file over ~20 KB, read it through
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same
+source with comments stripped and line numbers intact, roughly half the
+bytes. Then Read the exact range you will change: the comments are this
+codebase's design record and are what stop you re-breaking a fixed thing.
+Skim to find, Read to change.
 
 Your `<planning_context>` MAY carry a `<recalled_memory>` block of cited
 prior-project snippets, each tagged with a source file and phase. Treat them as
@@ -83,6 +93,11 @@ Every task has exactly three fields, all concrete:
   declared, `lease-check` refuses as `undeclared-files`, halting the task at its
   commit. A dependency change writes the lockfile too (`Cargo.lock`,
   `package-lock.json`, `uv.lock`, `go.sum`, `Gemfile.lock`).
+  When CONTEXT.md's decisions already cite evidence inside a file this task
+  touches, carry that anchor onto the path - file plus SYMBOL (function,
+  export, heading), never a line number, which rots between the decision and
+  the task. The anchor says where the executor STARTS reading; it never
+  narrows the lease and never licenses skipping a caller check.
 - **Action:** what must become true, the constraints that bind it, and what
   to avoid with WHY. Directive prose, no fenced code blocks. Name symbols that
   ALREADY EXIST - you read them, so they are facts. Never invent an identifier,

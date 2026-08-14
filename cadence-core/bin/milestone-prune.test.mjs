@@ -127,6 +127,96 @@ test('no shipped rows means no text change at all', () => {
   assert.deepEqual(r.moved, []);
 });
 
+// A completed phase carrying one Complete row and one Deferred row - the shape
+// that made the audit command report a deliberate hold as a delivery.
+const HELD = `# Requirements: Fixture
+
+## Active
+
+- **STOR-01**: bytes survive
+- **HELD-01**: held back for the next cycle
+
+## Deferred
+
+- **HELD-01**: deliberately not shipped this cycle
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+| HELD-01 | Phase 1 | Deferred |
+`;
+
+test('archiveRequirements never ships a Deferred row, whatever phase it names', () => {
+  const r = archiveRequirements(HELD, [1], 'v9.9.0');
+  // Only the Complete row moves; the held one is not in `moved` at all.
+  assert.deepEqual(r.moved, [{ id: 'STOR-01', phase: 1 }]);
+  assert.ok(r.text.includes('| STOR-01 (bytes survive) | 1 | Complete | v9.9.0 |'));
+  assert.ok(!/^\| HELD-01.*\| Complete \|/m.test(r.text),
+    'a Deferred row must never land under ## Shipped as Complete');
+  // It keeps its Traceability row, its status, and its Active bullet.
+  assert.ok(r.text.includes('| HELD-01 | Phase 1 | Deferred |'));
+  assert.ok(r.text.includes('- **HELD-01**: held back for the next cycle'));
+  // ...and its Deferred bullet survives the prune byte-identical.
+  assert.ok(r.text.includes('- **HELD-01**: deliberately not shipped this cycle'));
+});
+
+/** A shipped-eligible id carrying a bullet under `## Active` AND a
+ *  differently-worded one under a later hold section, whose heading name is the
+ *  parameter - this repo spells it `## Deferred`, the shipped template spells
+ *  it `## v2 Requirements`, and the bound is by placement so both hold. */
+const twoBullets = (holdHeading) => `# Requirements: Fixture
+
+## Active
+
+- **STOR-01**: bytes survive
+
+${holdHeading}
+
+- **STOR-01**: a v2 rewrite of the store, not this milestone
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+`;
+
+for (const heading of ['## Deferred', '## v2 Requirements']) {
+  test(`the Active-bullet scan is bounded to ## Active, not the whole file (${heading})`, () => {
+    const src = twoBullets(heading);
+    const r = archiveRequirements(src, [1], 'v9.9.0');
+    // The hold section's bullet is untouched...
+    assert.ok(r.text.includes('- **STOR-01**: a v2 rewrite of the store, not this milestone'),
+      'a bullet outside ## Active is somebody else\'s data');
+    assert.ok(r.text.includes(heading));
+    // ...the Active one is gone...
+    assert.ok(!r.text.includes('- **STOR-01**: bytes survive'));
+    // ...and the shipped row's summary is the ACTIVE wording, not the one the
+    // second `summaries.set` used to overwrite it with.
+    assert.ok(r.text.includes('| STOR-01 (bytes survive) | 1 | Complete | v9.9.0 |'));
+  });
+}
+
+test('no ## Active heading: no bullet removed, no summary captured, the row still ships', () => {
+  const noActive = `# Requirements: Fixture
+
+## Backlog
+
+- **STOR-01**: bytes survive
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+`;
+  const r = archiveRequirements(noActive, [1], 'v9.9.0');
+  assert.ok(r.text.includes('- **STOR-01**: bytes survive'), 'the out-of-section bullet stays');
+  assert.ok(r.text.includes('| STOR-01 | 1 | Complete | v9.9.0 |'), 'no summary to parenthesize');
+});
+
 // --- the seam ---------------------------------------------------------------
 
 function scaffold() {

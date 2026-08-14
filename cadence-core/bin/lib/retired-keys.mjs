@@ -119,6 +119,29 @@ export const RETIRED_KEYS = Object.freeze({
       + 'raised by a path token, so there is no floor for a waiver to lower; '
       + 'the commit-time risk_surface review still judges the actual diff',
   }),
+  'review.triggers.pre_ship.gate': Object.freeze({
+    replacement: null,
+    since: 'v3.2.0',
+    detail: 'the pre-ship trigger was removed - it was a fourth adversarial '
+      + 'pass over work risk_surface, diff and plan had already cleared, at the '
+      + 'one point where acting on a finding means committing on top of what is '
+      + 'being published; /cad-land now fires no review and its unattended '
+      + 'close halts on the risk_surface survivors the phase already recorded',
+  }),
+  'review.triggers.pre_ship.tier': Object.freeze({
+    replacement: null,
+    since: 'v3.2.0',
+    detail: 'removed with the pre-ship trigger - there is no fire left for a '
+      + 'model tier to select; set review.triggers.risk_surface.tier for the '
+      + 'gate that still runs on this branch\'s work',
+  }),
+  'review.triggers.pre_ship.effort': Object.freeze({
+    replacement: null,
+    since: 'v3.2.0',
+    detail: 'removed with the pre-ship trigger - there is no fire left for a '
+      + 'reasoning effort to reach; set review.triggers.risk_surface.effort for '
+      + 'the gate that still runs on this branch\'s work',
+  }),
 });
 
 /**

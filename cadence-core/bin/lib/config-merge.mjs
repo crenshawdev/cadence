@@ -7,6 +7,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve as resolvePath } from 'node:path';
+import { stripGlobalOnly } from './global-only-keys.mjs';
 
 // User-global config layer. CADENCE_GLOBAL_CONFIG relocates it (and keeps
 // tests hermetic); otherwise ~/.claude/cadence/config.json.
@@ -24,16 +25,6 @@ function defaultGlobalConfig() {
   catch { return ''; }
 }
 export const GLOBAL_CONFIG = process.env.CADENCE_GLOBAL_CONFIG || defaultGlobalConfig();
-
-/**
- * Parse a JSON file, or null if missing/unreadable/invalid - a bad layer is
- * skipped, never fatal (the spine must not block on config).
- * @param {string} file
- */
-export function readJSON(file) {
-  try { return JSON.parse(readFileSync(file, 'utf8')); }
-  catch { return null; }
-}
 
 /**
  * Parse a JSON file, distinguishing a legitimately-absent layer (silent, per
@@ -59,6 +50,26 @@ export function readLayer(file) {
 /**
  * Deep-merge `over` onto `base`: nested objects recurse, arrays and scalars
  * replace wholesale (the higher-precedence layer's list wins, no concat).
+ *
+ * The accumulation DEFINES an own property and never assigns `merged[k] = ...`,
+ * which is load-bearing rather than stylistic. `JSON.parse` makes `__proto__` an
+ * ordinary own key that `Object.entries` yields like any other, but assigning at
+ * that key runs `Object.prototype`'s `__proto__` SETTER, which reparents
+ * `merged` instead of storing anything on it - so a repo layer arriving with a
+ * clone could hand the merged config a prototype carrying whatever it liked, and
+ * every `config.git?.on_protected` read in the spine would inherit it. Defining
+ * the property stores the key, and a `__proto__` an attacker wrote lands as an
+ * inert own key nothing reads. Two live shapes fire this, under OPPOSITE
+ * global-layer states, and both close here: top-level `{"__proto__":{"git":...}}`
+ * when no global layer defines `git` (through `mergeLayers`'s
+ * `deepMerge(globalValue || {}, repoValue || {})`), and `{"git":{"__proto__":...}}`
+ * one level down when one does.
+ *
+ * `{ ...base }` needs nothing: spread copies own enumerable properties as data
+ * properties, so a `__proto__` on the base side is already carried as a key. And
+ * the result keeps its ordinary `Object.prototype` - never `Object.create(null)`,
+ * which is what every caller and every `assert.deepEqual` in the suite expects
+ * (lib/trace.mjs:534-541 states the same reasoning for the same hazard).
  * @param {any} base @param {any} over
  */
 export function deepMerge(base, over) {
@@ -66,7 +77,11 @@ export function deepMerge(base, over) {
   if (base === null || typeof base !== 'object' || Array.isArray(base) ||
       over === null || typeof over !== 'object' || Array.isArray(over)) return over;
   const merged = { ...base };
-  for (const [k, v] of Object.entries(over)) merged[k] = deepMerge(base[k], v);
+  for (const [k, v] of Object.entries(over)) {
+    Object.defineProperty(merged, k, {
+      value: deepMerge(base[k], v), writable: true, enumerable: true, configurable: true,
+    });
+  }
   return merged;
 }
 
@@ -136,8 +151,29 @@ function layerIdentity(p) {
  * read). On a collapse the two paths ARE one file, so nothing on disk can say
  * which layer the caller meant, and guessing from the spelling would re-import
  * the string compare this function just removed - so the caller states it. It
- * changes the `source` LABEL only: `global` for a `--global` read, `repo` for
- * every other spelling of a shared file.
+ * changes the `source` LABEL, and it exempts the read from the global-only
+ * strip below: that arm IS the user-global layer, collapsed into the repo slot,
+ * so stripping there would drop the user's own settings and warn about them.
+ *
+ * `scopeWarnings` is a field of its OWN, never an entry on `warnings[]` (D-05):
+ * a diagnostic about a key that was cleanly ignored is not a torn layer, and
+ * mixing the two on one channel is what made every warning class a land-stopper.
+ * It is empty (not absent) when nothing was set, so a caller can spread it
+ * unconditionally.
+ *
+ * `tornLayers` is ADDITIVE and names the layer FILES whose content could not be
+ * used as a config layer at all - the two parse failures and the two
+ * not-an-object skips, which are the only four places `warnings` is built here.
+ * It exists because `warnings[]` is a MESSAGE channel and the one seam that
+ * mutates needs a CLASS: `git-publish.mjs` used to refuse a publish or a reap on
+ * any non-empty `warnings[]`, so phase 1 had to route its global-only-key
+ * diagnostic onto `scopeWarnings` to avoid stopping a land, and the next
+ * diagnostic added here would have stopped one again (D-18). With the class on
+ * its own field the refusal asks the question it means - "did a layer that could
+ * have carried protected_branches fail to parse" - and every other caller is
+ * untouched: `config`, `source`, `layers`, `warnings` and `scopeWarnings` are
+ * byte-identical, and it is empty rather than absent for the same reason
+ * `scopeWarnings` is.
  * @param {string} repoFile
  * @param {{asGlobal?: boolean}} [opts]
  */
@@ -152,14 +188,21 @@ export function mergeLayers(repoFile, opts = {}) {
   const repo = readLayer(repoFile);
   const layers = [];
   const warnings = [global ? global.warning : null, repo.warning].filter(Boolean);
+  // The same four places, on the CLASS channel: the file behind each warning,
+  // never its wording (see `tornLayers` in the header).
+  const tornLayers = [];
+  if (global && global.warning) tornLayers.push(GLOBAL_CONFIG);
+  if (repo.warning) tornLayers.push(repoFile);
   let globalValue = global ? global.value : null;
   let repoValue = repo.value;
   if (global && global.present && !isPlainObject(globalValue)) {
     warnings.push(`config layer ${GLOBAL_CONFIG} top-level is not an object; skipped`);
+    tornLayers.push(GLOBAL_CONFIG);
     globalValue = null;
   }
   if (repo.present && !isPlainObject(repoValue)) {
     warnings.push(`config layer ${repoFile} top-level is not an object; skipped`);
+    tornLayers.push(repoFile);
     repoValue = null;
   }
   if (globalValue) layers.push('global');
@@ -169,13 +212,24 @@ export function mergeLayers(repoFile, opts = {}) {
   // `--global` read has no repo layer to name; every other caller asked for a
   // repo config that the user's global env happens to alias.
   const sharedSource = opts && opts.asGlobal ? 'global' : 'repo';
+  // The three keys a tracked file must not be able to choose (CFG-02), removed
+  // from the object the MERGE consumes - `layers.repo` keeps the file's own
+  // parsed content, and `config`, `source` and `warnings` keep their values for
+  // every existing caller.
+  const scoped = opts && opts.asGlobal
+    ? { layer: repoValue, warnings: [] }
+    : stripGlobalOnly(repoValue, repoFile);
   return {
-    config: deepMerge(globalValue || {}, repoValue || {}),
+    config: deepMerge(globalValue || {}, scoped.layer || {}),
     source: layers.length ? (shared ? sharedSource : layers.join('+')) : 'defaults',
     layers: { global: globalValue || null, repo: repoValue || null },
     // Kept alongside the collapse above: two genuinely different layers that
     // are both broken still get one entry each, and a caller pushing its own
     // strings in (route.mjs) never doubles a diagnostic.
     warnings: [...new Set(warnings)],
+    scopeWarnings: scoped.warnings,
+    // De-duplicated for the same reason `warnings` is: one collapsed file that
+    // resolves as both layer paths is ONE torn layer, not two.
+    tornLayers: [...new Set(tornLayers)],
   };
 }

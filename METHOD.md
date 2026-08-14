@@ -280,21 +280,25 @@ embeds its own reviewer loop; that rule lives in
 `cadence-core/references/conventions.md`. It is why gates are configurable at all
 rather than scattered across twenty workflows.
 
-### Five triggers, four consequences, three combination modes
+### Four triggers, four consequences, three combination modes
 
 | Trigger | Fired by | On | Gate at `shipped` |
 |---|---|---|---|
-| `plan` | `/cad-plan` | after PLAN.md is written | advisory |
+| `plan` | `/cad-plan` | after PLAN.md is written | off |
 | `diff` | `/cad-execute` | at plan completion | off |
 | `risk_surface` | execute, debug, task, verify | on detection match, once per plan on the committed range | blocking |
-| `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | advisory |
-| `pre_ship` | `/cad-land` | before publishing | advisory |
+| `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | off |
 
-Three of the five fire on their own at the default `shipped` level. `diff` is
-off there and at `solo`, because an advisory review gates nothing and the last
-plan of a phase has no next dispatch to overlap it with, so it is a wait bought
-for findings that stop nothing - `risk_surface` already blocked on that same
-range and `pre_ship` still reviews the whole branch at land. `phase_diff` only ever
+Exactly one of the four fires on its own at the default `shipped` level, and it
+is the one that only fires on a match. `diff` is off there and at `solo`,
+because an advisory review gates nothing and the last plan of a phase has no next
+dispatch to overlap it with, so it is a wait bought for findings that stop
+nothing - `risk_surface` already blocked on that same range. `plan` and
+`phase_diff` are off at `shipped` for the other half of the same argument: their
+findings files were read by nobody, referenced by no SUMMARY and no CONTEXT, so
+the dispatch bought findings that changed nothing. Setting
+`review.triggers.<t>.gate` puts any of them back on and beats the level.
+`phase_diff` only ever
 fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
 `adjudicated`) decides the consequence, `review.mode` (`single`, `panel`,
 `adjudicated`) decides how multiple reviewers combine, and where they disagree the
@@ -365,15 +369,15 @@ What survives is not a work order. The survivors are presented as a numbered
 list and the session asks which of them to act on, with none as the default, so
 the model that just spent four voices on the artifact does not also get to
 decide what happens next. One gate ends this way at every level: the fix list in
-`/cad-verify`, which has no resolved gate and is always triaged. Four more end
-this way wherever their gate resolves adjudicated: the pre-ship review in
-`/cad-land`, adjudicated at `critical`; the plan review in
+`/cad-verify`, which has no resolved gate and is always triaged. Three more end
+this way wherever their gate resolves adjudicated: the plan review in
 `/cad-plan`, advisory at `shipped` and adjudicated at `critical`;
 `/cad-execute`'s per-plan diff review, `off` below `critical`; and its
 `phase_diff` review, adjudicated at `critical`. The one exception is the
-opt-in unattended close at pre-ship, where nothing is acted on at all - its
-triage is none by construction, and a surviving blocker or high finding halts
-the merge instead.
+opt-in unattended close in `/cad-land`, where nothing is acted on at all - it
+fires no review of its own, reads only the `risk_surface` findings this branch
+already settled, and a surviving blocker or high finding halts the merge
+instead of being triaged.
 
 ### Decision review rules three ways, and grounds itself
 
@@ -571,7 +575,7 @@ exists because a command-string push whitelist was built, defeated four ways by
 adversarial review, and then deleted rather than patched. `/cad-land` asks how you
 want to publish and does exactly that, unless you opted into the end-to-end
 `git.auto_close`, which runs audit through merge with no per-step prompts and
-halts on a blocking `pre_ship` FAIL.
+halts on a surviving blocker or high `risk_surface` finding.
 
 ---
 

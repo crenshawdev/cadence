@@ -4,7 +4,7 @@ description: The `high` rung of `cad-verifier` (goal-backward phase verification
 tools: Read, Write, Bash, Grep, Glob
 color: green
 effort: high
-maxTurns: 400
+maxTurns: 200
 disallowedTools: Edit, MultiEdit
 skills:
   - cad-verifier-contract

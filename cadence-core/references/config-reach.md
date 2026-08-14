@@ -54,6 +54,7 @@ paraphrases. The phrases in use today:
 - `progress next-step suggestion only`
 - `repo config layer only`
 - `repo config layer only for the unattended publish`
+- `user-global config layer only`
 
 Nothing machine-checks this list against the rows, so it is a reading aid: the
 rows below are the declaration. Deliberately unenumerated - a stated count has
@@ -121,8 +122,8 @@ purpose test runs against the reach the author just replaced.
 | `workflow.skip_discuss` | progress next-step suggestion only | `workflows/progress.md`'s next-step table, for an unplanned current phase |
 | `workflow.inline_plan_threshold` | universal | `workflows/plan.md` - task count at/below which a plan runs inline |
 | `workflow.max_plan_tasks` | universal | `workflows/plan.md` - the ceiling handed to cad-planner, PER PLAN; a phase needing more capacity gets more plans. `planning.mjs plan-size --max-tasks` counts the written plan against it at `check_size`, and cad-plan-checker flags compound tasks under Proportionality - the half a count cannot see |
-| `workflow.test_command` | universal | `workflows/task.md`, `workflows/coverage.md`, `references/execute-parallel.md` (the post-batch run, at its only consumer) and the executor contract |
-| `workflow.lint_command` | universal | the executor contract's static-analysis step - the LINT command only; unset there means `bin/planning.mjs detect-commands` supplies both lint and typecheck from the project's own manifests |
+| `workflow.test_command` | user-global config layer only | `workflows/task.md`, `workflows/coverage.md`, `references/execute-parallel.md` (the post-batch run, at its only consumer) and the executor contract - but only ever with the user-global layer's value: `bin/lib/config-merge.mjs` strips this key out of the repo layer before the merge, whatever its value, and names a non-null one in `scopeWarnings` (CFG-02) |
+| `workflow.lint_command` | user-global config layer only | the executor contract's static-analysis step - the LINT command only; unset there means `bin/planning.mjs detect-commands` supplies both lint and typecheck from the project's own manifests. Same strip as the row above: `bin/lib/config-merge.mjs` removes it from the repo layer before the merge |
 | `parallelization.enabled` | universal | `workflows/execute.md` - the parallel-path gate |
 | `parallelization.max_concurrent_agents` | universal | `references/execute-parallel.md`, read at `workflows/execute.md`'s `execute_parallel` step - dispatch batch size |
 | `parallelization.min_plans_for_parallel` | universal | `workflows/execute.md` - the parallel-path gate |
@@ -138,8 +139,8 @@ purpose test runs against the reach the author just replaced.
 | `planning.commit_docs` | universal | `references/git-guard.md` and `workflows/task.md` - whether `.planning/` docs are committed |
 | `memory.backend` | universal | `bin/planning.mjs recall` - `builtin` BM25 or `none` |
 | `review.mode` | universal | `references/review-triggers.md` step 5, how multiple reviewers combine |
-| `review.reviewers` | universal | `references/review-triggers.md` step 1, the backend set fire() resolves |
-| `review.key_file` | universal | `bin/review-provider.mjs` - the provider env-file path |
+| `review.reviewers` | universal | `bin/route.mjs resolve` - the backend set, filtered per trigger by availability into the `reviewers` map beside `review` (review-triggers.md step 3 TAKES it) |
+| `review.key_file` | user-global config layer only | `bin/review-provider.mjs` - the provider env-file path, reached through the `--key-file` flag the prose sites interpolate; `bin/lib/config-merge.mjs` strips the key out of the repo layer before the merge, so no future reader of the merged config can be pointed at a repo-chosen key file (CFG-02) |
 | `review.request_timeout_ms` | universal | `bin/review-provider.mjs` - ms before a provider request aborts |
 | `review.max_prompt_tokens` | cross-model provider calls only | `bin/review-provider.mjs` `review` and `consult` - both refuse an over-cap payload before any request; the claude-subagent reviewer never runs the script |
 | `review.providers.openai.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
@@ -152,19 +153,17 @@ purpose test runs against the reach the author just replaced.
 | `review.providers.deepseek.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
 | `review.providers.deepseek.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
 | `review.triggers.plan.gate` | universal | `bin/route.mjs resolve` - the plan review's gate, over the level's |
-| `review.triggers.plan.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`; the claude-subagent reviewer's model comes from the routing cell |
+| `review.triggers.plan.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`, and `bin/route.mjs resolve`'s availability test reads the same tier (falling back to route-table.json's `tiers` row when no layer sets it); the claude-subagent reviewer's model comes from the routing cell |
 | `review.triggers.plan.effort` | cross-model reviewers only | `bin/review-provider.mjs` `--effort`; the claude-subagent reviewer's effort is frontmatter-frozen |
 | `review.triggers.diff.gate` | universal | `bin/route.mjs resolve` - the diff review's gate, over the level's |
-| `review.triggers.diff.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`; the claude-subagent reviewer's model comes from the routing cell |
+| `review.triggers.diff.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`, and `bin/route.mjs resolve`'s availability test reads the same tier (falling back to route-table.json's `tiers` row when no layer sets it); the claude-subagent reviewer's model comes from the routing cell |
 | `review.triggers.diff.effort` | cross-model reviewers only | `bin/review-provider.mjs` `--effort`; the claude-subagent reviewer's effort is frontmatter-frozen |
 | `review.triggers.risk_surface.gate` | universal | `bin/route.mjs resolve` - the risk-surface review's gate, over the level's |
-| `review.triggers.risk_surface.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`; the claude-subagent reviewer's model comes from the routing cell |
+| `review.triggers.risk_surface.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`, and `bin/route.mjs resolve`'s availability test reads the same tier (falling back to route-table.json's `tiers` row when no layer sets it); the claude-subagent reviewer's model comes from the routing cell |
 | `review.triggers.risk_surface.effort` | cross-model reviewers only | `bin/review-provider.mjs` `--effort`; the claude-subagent reviewer's effort is frontmatter-frozen |
-| `review.triggers.pre_ship.gate` | universal | `bin/route.mjs resolve` - the pre-ship review's gate, over the level's |
-| `review.triggers.pre_ship.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`; the claude-subagent reviewer's model comes from the routing cell |
-| `review.triggers.pre_ship.effort` | cross-model reviewers only | `bin/review-provider.mjs` `--effort`; the claude-subagent reviewer's effort is frontmatter-frozen |
+| `review.triggers.risk_surface.surfaces` | universal | `bin/route.mjs resolve` - the category set the risk-surface fire is scoped to, returned beside `review`; a heuristic match outside it does not fire, and unset resolves to all eight |
 | `review.triggers.phase_diff.gate` | universal | `bin/route.mjs resolve` - the merged-phase review's gate, over the level's |
-| `review.triggers.phase_diff.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`; the claude-subagent reviewer's model comes from the routing cell |
+| `review.triggers.phase_diff.tier` | cross-model reviewers only | `references/review-triggers.md` step 4 - `review.providers.<name>.tiers[trigger.tier]`, and `bin/route.mjs resolve`'s availability test reads the same tier (falling back to route-table.json's `tiers` row when no layer sets it); the claude-subagent reviewer's model comes from the routing cell |
 | `review.triggers.phase_diff.effort` | cross-model reviewers only | `bin/review-provider.mjs` `--effort`; the claude-subagent reviewer's effort is frontmatter-frozen |
 | `review.consult.enabled` | universal | `references/consult.md` step 1 - the consult gate |
 | `review.consult.tier` | universal | `references/consult.md` - the consult model id (a consult is always a cross-model call, so nothing drops it) |

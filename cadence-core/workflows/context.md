@@ -15,20 +15,6 @@ Output: `.planning/phases/{N}/CONTEXT.md` - an OPTIONAL phase artifact.
 
 <process>
 
-Step markers: at the START of each step below, from the step where the phase
-number is known onward, append one coordinator marker naming that step.
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append \
-  --phase <N> --family lifecycle --event coordinator --step "<this step's name>"
-```
-
-Written once here, run once per step. The marker carries the step name and
-nothing else - never `--role`, never `--tokens`. What the coordinator itself
-cost is DERIVED from these markers by `/cad-report`: a step's span minus the
-worker brackets inside it. A figure written onto a marker is one no host
-reported.
-
 <step name="resolve_phase">
 Parse `$ARGUMENTS` for a phase number. If missing, run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get` and

@@ -265,8 +265,8 @@ Then fire the `diff` review trigger
 reviewer runs the diff itself. Default is `off` at `solo` and `shipped`: an
 advisory review gates nothing, and the LAST plan of a phase has no next
 dispatch to overlap it with, so it buys a wait for findings that stop nothing.
-`risk_surface` above already blocked on this same range, and `pre_ship` still
-adjudicates the whole branch at land. The arms below are what a user who sets
+`risk_surface` above already blocked on this same range, and no gate reviews
+the branch again at land. The arms below are what a user who sets
 `review.triggers.diff.gate` gets, and what `critical` resolves on its own.
 
 At `advisory`, fire it in the SAME message as the NEXT plan's dispatch rather

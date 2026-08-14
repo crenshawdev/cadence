@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 215" width="1160" height="215" role="img" aria-label="The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land fires the pre-ship review, which halts on a blocking FAIL; publishing then forks into four options with no default preselected.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 215" width="1160" height="215" role="img" aria-label="The milestone exit: cad-milestone runs cad-audit, which stops everything on FAIL; cad-land then forks publishing into four options with no default preselected.">
 
   <style>
     svg        { color: #15181E; background: #FFFFFF;
@@ -74,13 +74,7 @@ ted.">
         <text class="lbl" x="550" y="66" text-anchor="middle">/cad-land</text>
         <text class="lbl-mut" x="550" y="83" text-anchor="middle">git state, then publish</text>
 
-        <line class="edge" x1="640" y1="68" x2="664" y2="68" marker-end="url(#ah)" />
-
-        <polygon class="gate" points="668,68 750,26 832,68 750,110" />
-        <text class="lbl-gate" x="750" y="65" text-anchor="middle">pre_ship</text>
-        <text class="lbl-gate" x="750" y="79" text-anchor="middle">review</text>
-
-        <line class="edge" x1="832" y1="68" x2="870" y2="68" />
+        <line class="edge" x1="640" y1="68" x2="870" y2="68" />
         <line class="edge" x1="870" y1="25" x2="870" y2="151" />
 
         <line class="edge" x1="870" y1="25"  x2="884" y2="25"  marker-end="url(#ah)" />

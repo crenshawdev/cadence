@@ -8,10 +8,11 @@ seam.
 
 Type key: `bool` = true/false · `int` = free-typed number (Other) · `str|null`
 = free-typed string or empty→null · `list` = comma-typed → array · `enum` =
-fixed options. `[repo]` = value-set pinned in DESIGN/references; `[proposed]` =
-label the executing model honors (membership pinned, behavior not yet wired).
-**Purpose** is the question text; each **Value → Explanation** pair is one
-selectable option and its `description`.
+fixed options. The `[src]` marker is CONFIG-LAYER SCOPE: `[repo]` = settable in
+either layer; `[global]` = the user-global layer only, and a repo layer setting
+it is stripped at the merge and named in the read face's warnings; no marker =
+repo-settable. **Purpose** is the question text; each **Value → Explanation**
+pair is one selectable option and its `description`.
 
 | Key `[src]` | Type | Purpose (question) | Value → Explanation (option → description) | Default |
 |---|---|---|---|---|
@@ -27,8 +28,8 @@ selectable option and its `description`.
 | `workflow.skip_discuss` | bool | Which command `/cad-progress` suggests for an unplanned phase - progress next-step suggestion only, it skips no step | `true`→suggest `/cad-plan` · `false`→suggest `/cad-context` | false |
 | `workflow.inline_plan_threshold` | int | Task count at/below which a plan runs inline vs its own doc | e.g. `3` | 3 |
 | `workflow.max_plan_tasks` | int | Task ceiling PER PLAN; a phase needing more capacity gets more plans, sequential where they share files. Counted at `check_size` by `planning.mjs plan-size` | e.g. `8` | 8 |
-| `workflow.test_command` | str\|null | Command Cadence runs to test | shell string, or empty→`null` (none) | null |
-| `workflow.lint_command` | str\|null | Command an executor runs for static analysis before it commits - LINT only, there is no typecheck key | shell string, or `null` (none set; the executor detects instead) | null |
+| `workflow.test_command` `[global]` | str\|null | Command Cadence runs to test - set it in the user-global layer, a repo layer's value is ignored | shell string, or empty→`null` (none) | null |
+| `workflow.lint_command` `[global]` | str\|null | Command an executor runs for static analysis before it commits - LINT only, there is no typecheck key; set it in the user-global layer, a repo layer's value is ignored | shell string, or `null` (none set; the executor detects instead) | null |
 | **Parallelization** |||||
 | `parallelization.enabled` | bool | Run independent plans concurrently | `true`→parallel · `false`→sequential | true |
 | `parallelization.max_concurrent_agents` | int | Cap on simultaneous agents | e.g. `3` | 3 |
@@ -42,7 +43,7 @@ selectable option and its `description`.
 | `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
 | `git.create_tag` | bool | Tag on milestone | `true`→tag · `false`→don't | true |
 | `git.on_land_cleanup` | bool | After a land/merge, return to base, pull, reap the merged integration branch? | `true`→return + pull + reap · `false`→leave in place | true |
-| `git.auto_close` | bool | Run the close end-to-end (audit → tag → PR → merge → reset) with no per-step prompts? | `true`→autonomous close, halting on a blocking `pre_ship` FAIL · `false`→publish stays the user's separate call | false |
+| `git.auto_close` | bool | Run the close end-to-end (audit → tag → PR → merge → reset) with no per-step prompts? | `true`→autonomous close, halting on a surviving blocker/high `risk_surface` finding · `false`→publish stays the user's separate call | false |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
 | **Memory** |||||
@@ -51,18 +52,19 @@ selectable option and its `description`.
 | **Review** (providers handled separately) |||||
 | `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model · `deepseek`→cross-model | claude-subagent |
 | `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |
-| `review.key_file` | str\|null | Path override for the provider key env file | path, or empty→`null` (default location) | null |
+| `review.key_file` `[global]` | str\|null | Path override for the provider key env file - set it in the user-global layer, a repo layer's value is ignored | path, or empty→`null` (default location) | null |
 | `review.request_timeout_ms` | int | ms before a provider request is aborted | e.g. `540000` (9 min); clamped to the 600000 host ceiling | 540000 |
 | `review.max_prompt_tokens` | int | Estimated tokens (chars/4) a review or consult payload may reach | e.g. `120000` (just under the tightest shipped provider window); over-cap is refused before any request, cross-model only | 120000 |
 | `review.consult.enabled` | bool | Allow a second-model consult at dead-ends | `true`→offer consult · `false`→don't | false |
 | `review.consult.tier` `[repo]` | enum | Model tier for consults | `flagship`→strongest · `balanced`→mid · `cheap`→cheapest | flagship |
 | `review.consult.effort` `[repo]` | enum | Reasoning effort for consults | `minimal` · `low` · `medium` · `high` | high |
 | `review.consult.attempt_threshold` | int | Failed fix attempts on one bug before cad-debug offers a consult | e.g. `3` | 3 |
-| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground, then present the survivors and ask which to act on (default none) | `adjudicated` for plan/pre_ship · `advisory` for diff/phase_diff · `blocking` for risk_surface |
+| `review.triggers.<t>.gate` `[repo]` | enum | How this trigger gates | `off`→skip · `advisory`→report only · `blocking`→hard stop · `adjudicated`→ground, then present the survivors and ask which to act on (default none) | `adjudicated` for plan · `advisory` for diff/phase_diff · `blocking` for risk_surface |
 | `review.triggers.<t>.tier` `[repo]` | enum | Model tier for this trigger - **cross-model only** (the claude-subagent reviewer's model comes from the routing cell) | `flagship` · `balanced` · `cheap` | `flagship`, except `balanced` for diff |
 | `review.triggers.<t>.effort` `[repo]` | enum | Reasoning effort for this trigger - **cross-model only** (claude-subagent effort is frontmatter-frozen) | `minimal` · `low` · `medium` · `high` | `high`, except `medium` for diff |
+| `review.triggers.risk_surface.surfaces` `[repo]` | list(enum) | Which risk surfaces the one blocking trigger fires on (risk_surface only) | any of `auth` · `migrations` · `billing` · `concurrency` · `destructive` · `secrets` · `api_contract` · `untrusted_input` | unset→all eight, and the first fire asks once |
 
-`<t>` ∈ `{plan, diff, risk_surface, phase_diff, pre_ship}` - present the triggers as
+`<t>` ∈ `{plan, diff, risk_surface, phase_diff}` - present the triggers as
 their own page (or a "Review triggers?" opt-in step) since they are power knobs.
 Every write goes through the **Validation seam** (below); a value outside its set
 is rejected, never written.

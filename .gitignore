@@ -27,6 +27,7 @@ scratch/
 
 # Joined run record — local diagnostics only, one machine's routing/provider/worker events
 /.planning/trace.jsonl
+/.planning/reads.jsonl
 
 # Triage working copies — these hold copies of the raw planning queue, the same
 # candid text the /.planning/CAPTURE.md line above withholds, so tracking them

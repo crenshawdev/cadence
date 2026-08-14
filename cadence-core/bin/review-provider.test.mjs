@@ -595,6 +595,34 @@ test('provider trace: a command that issues no request is STILL recorded, naming
   assert.doesNotMatch(String(ev[0].detail), /HTTP/);
 });
 
+test('provider trace: --trigger rides the event, joining the call to its fire', () => {
+  // RVW-02/D-06: the event already carried provider, model, effort, tier,
+  // duration and outcome, and already derived the same phase-scoped `corr` the
+  // fire's own events derive - what it could not say is WHICH trigger it was
+  // fired for, so a cross-model review and a subagent review of the same phase
+  // were indistinguishable. The join is this field on the EXISTING event, never
+  // a second one: a duplicate would double-count every cross-model review in
+  // renderTrace's `counts.provider`.
+  const cwd = providerCwd('trigger', false);
+  runRawIn(cwd, ['review', '--provider', 'openai', '--model', 'gpt-5',
+    '--trigger', 'risk_surface', '--key-file', join(cwd, 'absent.env')], '{}');
+  const ev = providerEventsIn(join(cwd, '.planning', 'trace.jsonl'));
+  assert.equal(ev.length, 1, JSON.stringify(ev));   // ONE event, not two
+  assert.equal(ev[0].trigger, 'risk_surface');
+  assert.ok(ev[0].corr, 'the correlation id the fire joins on');
+});
+
+test('provider trace: a call without --trigger writes an event with no trigger key', () => {
+  // Absent, never null or empty: the flag is optional, so a caller that names
+  // no trigger writes exactly the shape this seam wrote before it existed.
+  const cwd = providerCwd('no-trigger', false);
+  runRawIn(cwd, ['review', '--provider', 'openai', '--model', 'gpt-5',
+    '--key-file', join(cwd, 'absent.env')], '{}');
+  const ev = providerEventsIn(join(cwd, '.planning', 'trace.jsonl'));
+  assert.equal(ev.length, 1);
+  assert.equal('trigger' in ev[0], false, JSON.stringify(ev[0]));
+});
+
 test('provider trace: an over-cap refusal records itself, from its own process', () => {
   // A SUBPROCESS with its own cwd, because `maxPromptTokens()` memoizes per
   // process: lowering the cap in the shared in-process fault fixture would push

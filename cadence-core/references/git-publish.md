@@ -22,7 +22,8 @@ pushes exactly that branch to a configured bare-name remote. Every Bash
 push exemption); the git-publish seam is the one code-guarded exception, invoked
 only by cad-land, so the never-auto-push rule and the no-preselected-default
 posture both still hold. On GitLab `glab mr create` publishes the source branch
-itself. A blocking `pre_ship` finding still halts the chain before merge.
+itself. A surviving blocker/high `risk_surface` finding still halts the chain
+before merge.
 
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
 (default on) returns HEAD to the base, pulls, and reaps the merged integration

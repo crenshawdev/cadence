@@ -36,8 +36,12 @@
 // Usage:
 //   review-provider.mjs review  --provider <openai|gemini|deepseek> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
-//                               [--key-file <path>]
+//                               [--key-file <path>] [--trigger <name>]
 //       payload (stdin/file): {instruction, artifact} -> {ok, findings[]}
+//       --trigger names the review trigger this call was fired for, and rides
+//       the provider trace event so the call JOINS to its fire through the
+//       correlation id both already derive (RVW-02). Optional: a call without
+//       it writes exactly the event shape it wrote before.
 //   review-provider.mjs consult --provider <openai|gemini|deepseek> --model <id>
 //                               [--effort <level>] [--payload <file>|-]
 //                               [--key-file <path>]
@@ -99,7 +103,8 @@ function ok(obj) { emit({ ok: true, ...obj }); throw DONE; }
 // missing on this machine drops out of a fired trigger exactly as hard as one
 // the wire refused. `null` means no command has begun, so `fail('bad-command')`
 // from `main()` records nothing by construction rather than by a check.
-/** @type {{command: string, provider: any, model: any, effort: any, started: number}|null} */
+/** @type {{command: string, provider: any, model: any, effort: any,
+ *   trigger?: any, started: number}|null} */
 let activeMeta = null;
 
 // Exactly one event per call, whichever site records first. The explicit
@@ -113,7 +118,7 @@ let traceRecorded = false;
  * the meta so the command's own `traceProvider` calls keep taking it as an
  * argument rather than reading module state.
  * @param {string} command
- * @param {{provider: any, model: any, effort: any}} subject
+ * @param {{provider: any, model: any, effort: any, trigger?: any}} subject
  */
 function beginProviderCall(command, subject) {
   activeMeta = { command, ...subject, started: Date.now() };
@@ -403,7 +408,8 @@ function tierOf(provider, model) {
  * recorded as a drop-out (D-22).
  *
  * Never throws, never writes to a stream, never touches the caller's envelope.
- * @param {{command: string, provider: any, model: any, effort: any, started: number}} meta
+ * @param {{command: string, provider: any, model: any, effort: any,
+ *   trigger?: any, started: number}} meta
  * @param {string} outcome the fail() reason, or 'ok'
  * @param {string} [detail]
  */
@@ -428,6 +434,15 @@ function traceProvider(meta, outcome, detail) {
       provider: typeof meta.provider === 'string' ? meta.provider : null,
       model: typeof meta.model === 'string' ? meta.model : null,
       effort: typeof meta.effort === 'string' ? meta.effort : null,
+      // WHICH trigger fired this call, so a cross-model review and a subagent
+      // review of the same phase stop being one shape in the record. Emitted
+      // only when the caller named one - absent otherwise, so a call made
+      // without the flag writes byte-for-byte the event it wrote before. No
+      // SECOND event: a duplicate would double-count every cross-model review
+      // in renderTrace's `counts.provider`, and would let the seam-written and
+      // model-written records disagree about one call (D-06).
+      ...(typeof meta.trigger === 'string' && meta.trigger.trim()
+        ? { trigger: meta.trigger.trim() } : {}),
       tier: tierOf(meta.provider, meta.model),
       duration_ms: Date.now() - meta.started,
       outcome,
@@ -818,7 +833,8 @@ async function cmdReview(opts) {
   // The provider is `opts.provider` and not the resolved one for the same
   // reason - on the `bad-provider` path there is no resolved one.
   const meta = beginProviderCall('review',
-    { provider: opts.provider, model: opts.model, effort: opts.effort });
+    { provider: opts.provider, model: opts.model, effort: opts.effort,
+      trigger: opts.trigger });
   const { provider, adapter, key } = resolveProvider(opts, 'review');
   const payload = await readPayload(opts);
   if (!payload || typeof payload.instruction !== 'string' || typeof payload.artifact !== 'string') {

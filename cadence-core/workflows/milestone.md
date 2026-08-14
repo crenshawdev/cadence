@@ -72,6 +72,19 @@ contain. `/cad-land` cuts the tag in its cleanup step, on the pulled base,
 after the merge is confirmed - this close's job ends at the bump commit.
 
 ## 3. Prune completed phases + cleanup
+
+**Carry the `risk_surface` survivors forward FIRST.** The prune below removes
+`.planning/phases/<N>/`, which holds the only producer `/cad-land`'s unattended
+halt has, and step 7 chains `/cad-land` AFTER this - so pruning first leaves
+that gate globbing empty, which reads as "nothing survived" and merges over a
+held blocker. Union every `.planning/phases/*/REVIEW-risk_surface*.md` into one
+`{"findings": [...]}` at `.planning/REVIEW-risk_surface-<label>.md`, outside
+`phases/`. Empty union -> write nothing.
+
+**TRANSIENT, never staged**, deleted by step 7 when the close resolves. Commit
+it and a survivor rides onto base, where every later autonomous land unions it
+again and halts on a finding answered a milestone ago.
+
 One seam call does the mechanical half of the close - checked phases leave
 ROADMAP.md (their `- [x]` line AND their `### Phase N:` detail section, since
 a surviving detail section is the signature of an INTERRUPTED close per
@@ -96,7 +109,7 @@ construction - a milestone can close with deferred work that rolls to the next.
 
 Commit this as `chore: prune <label> completed phases` (label = the version on
 a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md and
-any `_archive-<label>/` move.
+any `_archive-<label>/` move. NOT the carry-forward file - it is transient.
 
 ## 4. Evolve PROJECT.md
 Bump the version/milestone and set the next cycle's goal and scope. Ask the user
@@ -141,9 +154,15 @@ When `git.auto_close` is `false` (default), stop here: merging, tagging and
 publishing are the user's separate `/cad-land` call (step 8's note). When
 `git.auto_close` is `true`, chain the publish end-to-end - invoke `/cad-land`
 via the SlashCommand tool so it runs PR -> merge -> tag -> reset with no
-per-step prompts (audit -> bump already ran above). The `pre_ship` gate-halt inside
-cad-land still applies: a surviving blocker/high finding stops the chain before
-merge (nothing is force-merged).
+per-step prompts (audit -> bump already ran above). The close gate inside
+cad-land still applies: a surviving blocker/high `risk_surface` finding from this
+branch's own fires stops the chain before merge (nothing is force-merged) - and
+only because step 3 carried those survivors out of the phase dirs it pruned.
+Skip that and this sentence is false: the gate globs empty and merges.
+
+Delete `.planning/REVIEW-risk_surface-<label>.md` once the close resolves, on
+BOTH arms - the halt included, or a halt the user answers by landing manually
+leaves the file behind to halt the next milestone too.
 
 Ordering note (intentional, not a latent bug): this chain runs AFTER step 4
 evolved PROJECT.md `### Active` to the NEXT version, so cad-land can no longer

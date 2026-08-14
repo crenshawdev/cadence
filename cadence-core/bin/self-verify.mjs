@@ -102,6 +102,17 @@
 //                    that it applies to the whole root. It takes no CONTRACTS
 //                    row, for the reason check 14 states: `lib/*.mjs` are
 //                    modules prose never invokes.
+//  17. global-only   the keys lib/global-only-keys.mjs strips out of the repo
+//      key scope     layer and the config.schema.json keys marked
+//                    `src: "global"`, against each other in BOTH directions -
+//                    the same pair check 8 keeps between the routing cells and
+//                    agents/. A key the merge enforces without the marker is a
+//                    scope no rendered surface shows the user setting it; a
+//                    marked key the merge does not enforce is a promise nothing
+//                    keeps. The set is hand-maintained precisely so it is not a
+//                    runtime read of the schema (CADENCE_CONFIG_SCHEMA would
+//                    otherwise un-mark every protected key), which is what makes
+//                    this cross-check the thing keeping the two honest.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -117,6 +128,7 @@ import {
 } from './lib/rung-agent.mjs';
 import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
+import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
 import { relayIssues } from './lib/route-relay.mjs';
 import { mergeWarningIssues } from './lib/merge-warnings.mjs';
@@ -127,14 +139,22 @@ import { includeConsumerIssues } from './lib/include-consumers.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Check 13's register, overridable by PATH - the same shape as
- * `CADENCE_ROUTE_TABLE` and `CADENCE_CONFIG_SCHEMA`, and for the same kind of
- * reason. The pure rule takes its rows as a parameter so a test can anchor a
- * SYNTHETIC row at a real workflow file without adding one to the shipped
- * register; without this seam the disk half is only ever exercised with the
- * four shipped rows, so it could load the wrong register, drop a row carrying a
- * non-default `file`, or fail to surface the issue at all, and every fixture
- * that calls the rule directly would still be green.
+ * Check 13's register, overridable by PATH. It was modelled on
+ * `CADENCE_ROUTE_TABLE` and `CADENCE_CONFIG_SCHEMA`, but those two are now
+ * gated behind the `CADENCE_TEST_SEAM` sentinel and fall back SILENTLY to the
+ * shipped file, so the shapes have diverged and this one is deliberately the
+ * odd one out: ungated, and reporting an unusable override rather than falling
+ * back (phase-2 D-16). What it redirects is the register a drift LINTER reads,
+ * not data an enforcement answer is computed from, so the failure the gate
+ * exists to prevent there - an injected path quietly changing what a gate
+ * decides - has no counterpart here.
+ *
+ * The pure rule takes its rows as a parameter so a test can anchor a SYNTHETIC
+ * row at a real workflow file without adding one to the shipped register;
+ * without this seam the disk half is only ever exercised with the four shipped
+ * rows, so it could load the wrong register, drop a row carrying a non-default
+ * `file`, or fail to surface the issue at all, and every fixture that calls the
+ * rule directly would still be green.
  *
  * A file that is unreadable or is not an array is a REPORTED problem, never a
  * silent fall back to the shipped rows: a fixture whose seam did not take must
@@ -202,7 +222,9 @@ const CONTRACTS = {
     'seed-reqs': ['--phase'],
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],
-    recall: [],
+    'detect-surfaces': ['--root'],
+    recall: ['--top'],
+    reads: [],
     // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
     // keeps only the last). Its grammar is deliberately heterogeneous: an
     // element is any verbatim string naming something the site caused the
@@ -211,8 +233,16 @@ const CONTRACTS = {
     // `--step` names the workflow step a COORDINATOR marker marks. It rides the
     // same event-agnostic seam as every other flag here; what keeps it off a
     // worker bracket is the prose and the census, not this table.
+    // `--raised` is the ADJUDICATED arm's kill count - how many findings the
+    // reviewers raised before adjudication, structured so a 0-of-0 fire and a
+    // 0-of-9 one stop reading alike. It lives here rather than in `--detail`
+    // because this row is what makes the flag the only structured route.
+    // `--reviewer` names the reviewer that ACTUALLY ran a fire (RVW-02), so two
+    // fires of one trigger - one cross-model, one subagent - are distinguishable
+    // in the record. Nothing refuses a dispatch to a reviewer outside the
+    // resolved set, so this mark is the whole enforcement.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
-      '--role', '--tokens', '--read', '--step'],
+      '--role', '--tokens', '--raised', '--read', '--step', '--reviewer'],
     'trace render': ['--phase'],
     'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],
@@ -257,7 +287,12 @@ const CONTRACTS = {
   },
   'review-provider.mjs': {
     '*': ['--key-file'],
-    review: ['--provider', '--model', '--effort', '--payload'],
+    // `--trigger` names the review trigger the call was fired for; it rides the
+    // provider trace event so a cross-model fire JOINS to its trigger through
+    // the correlation id, which is what makes it distinguishable from the
+    // subagent fire of the same trigger (RVW-02). Optional and review-only: a
+    // consult has no trigger.
+    review: ['--provider', '--model', '--effort', '--payload', '--trigger'],
     consult: ['--provider', '--model', '--effort', '--payload'],
     'detect-models': ['--provider'],
   },
@@ -278,6 +313,19 @@ const CONTRACTS = {
   'git-guard.mjs': {
     '*': [],
     '': [],
+  },
+
+  // read-trace.mjs is the PostToolUse recorder - like git-guard.mjs it reads
+  // its input on stdin and takes no flags and no subcommand at all.
+  'read-trace.mjs': {
+    '*': [],
+    '': [],
+  },
+  // skim.mjs takes a FILE as its positional argument, never a subcommand, so
+  // the bare row carries the whole flag set.
+  'skim.mjs': {
+    '*': [],
+    '': ['--stats', '--no-numbers'],
   },
   // test.mjs takes GROUP NAMES as positional arguments, never subcommands, so
   // the bare form is the only form and `--list` is its one flag.
@@ -1092,6 +1140,22 @@ function run(root) {
       detail: 'always-expected input absent' });
   }
 
+  // 17. the global-only key set against the schema's `src` marker, both ways
+  // (CFG-02). Reads the schema the run already loaded, so a --root fixture
+  // supplies its own - like check 8b, and OUTSIDE check 9's doc guards, because
+  // this proves the schema against a LIB and needs no reach table at all.
+  //
+  // Each direction is filed against the file a maintainer opens to fix it: an
+  // unmarked enforced key is a schema edit, and a marked key nothing enforces is
+  // a lib edit (or a marker to remove, which the detail names).
+  const GLOBAL_ONLY_FILE = {
+    'missing-global-only-marker': join('cadence-core', 'config.schema.json'),
+    'undeclared-global-only-key': join('cadence-core', 'bin', 'lib', 'global-only-keys.mjs'),
+  };
+  for (const { code, detail } of globalOnlyMarkerIssues(schema)) {
+    problems.push({ kind: code, file: GLOBAL_ONLY_FILE[code], detail });
+  }
+
   // 12. mergeLayers callsites: bind the warnings[] or say in the file header
   // why the envelope is the surfacing (lib/merge-warnings.mjs holds the rule
   // and its accepted costs). This side decides only WHERE it applies - every
@@ -1206,12 +1270,35 @@ function run(root) {
 
 // --- entry ---------------------------------------------------------------------
 
+/**
+ * The `--root` rule weight.mjs states: ABSENT and PRESENT-WITH-NO-VALUE are
+ * different inputs. `--root` with nothing after it - what a caller produces
+ * from an unset or empty `$TREE` - used to read as absent and fall back to
+ * the plugin's own tree, so the linter returned ok:true with problems:[]
+ * about a tree it never checked. That envelope looks correct, which is worse
+ * than an error. A missing, empty, or flag-shaped value now throws
+ * `missing-flag-value`; a genuinely absent flag still returns undefined so
+ * the default below applies.
+ * @param {string[]} argv @param {string} flag @returns {string|undefined}
+ */
+function flagValue(argv, flag) {
+  const i = argv.indexOf(flag);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v === '' || v.startsWith('--')) {
+    throw { seam: 'missing-flag-value', detail: flag };
+  }
+  return v;
+}
+
 try {
   const argv = process.argv.slice(2);
-  const ri = argv.indexOf('--root');
-  const root = ri >= 0 ? argv[ri + 1] : join(HERE, '..', '..');
+  const root = flagValue(argv, '--root') || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope', problems });
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  // The seam arm lands WITH flagValue: a thrown seam object carries no
+  // `message`, so without it the refusal emits detail "[object Object]".
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

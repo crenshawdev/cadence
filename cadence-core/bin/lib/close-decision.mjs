@@ -3,7 +3,8 @@
 // -close logic (Phase 2, GIT-02/GIT-03). Zero-dep (node builtins only, and it
 // uses none): three TOTAL functions that decide, from config + state, whether a
 // land should clean up (return to base + pull + reap), which branch to reap, and
-// whether an autonomous close halts before merge on a blocking pre_ship finding.
+// whether an autonomous close halts before merge on a blocking risk_surface
+// finding.
 // It never runs live git and never does I/O - the land-cleanup.mjs seam supplies
 // the live `git branch --merged` list and the adjudicated findings, and the
 // cad-land prose runs the actual checkout/pull/branch -D. Mirrors
@@ -72,21 +73,53 @@ export function decideCleanup({ onLandCleanup, mergedIntoBase, branch } = {}) {
  * Decide whether an autonomous close halts before merge. Total: a non-array
  * `findings` coerces to [] and never throws.
  *
- * A surviving `blocker` or `high` pre_ship finding under `auto_close` is a hard
- * halt before merge (D-09) - regardless of the configured gate mode - surfacing
- * the findings instead of merging over them. When auto_close is off the chain is
+ * A surviving `blocker` or `high` `risk_surface` finding under `auto_close` is a
+ * hard halt before merge (D-09) - regardless of the configured gate mode -
+ * surfacing the findings instead of merging over them. `risk_surface` is the
+ * PRODUCER because it is the only review left that runs on this branch's work
+ * and is `blocking` at every stakes level; `/cad-land` fires nothing of its own,
+ * so the seam reads the survivors those fires persisted. When auto_close is off the chain is
  * not running unattended, so this always proceeds (the manual publish ask owns
  * the decision).
  *
- * @param {{ autoClose?: boolean, findings?: Array<{severity?:string}> }} args
+ * THIRD input, `unreadable`: the name of why the findings could not be read at
+ * all. Without it a payload nobody could parse coerced to `[]` and came back as
+ * `proceed, no surviving blocker/high finding` - an affirmative claim about
+ * input this function never saw. Under `auto_close` a named failure is a halt
+ * carrying that name; the four names land-cleanup.mjs `readFindings` passes are
+ * fixed, and are stated HERE so the pure core and the seam cannot drift:
+ *
+ *   - `stdin-unreadable`   the read itself failed
+ *   - `stdin-empty`        nothing on stdin (D-09: the gate requires an
+ *                          explicit `{"findings":[]}`, because a forgotten pipe
+ *                          is the likeliest operator error and is otherwise
+ *                          indistinguishable from "adjudication killed
+ *                          everything")
+ *   - `malformed-json`     stdin did not parse
+ *   - `not-a-findings-payload`  it parsed, but carried no findings list (a
+ *                          valid `{"ok":false,"reason":"dispatch-failed"}`
+ *                          envelope is the live shape)
+ *
+ * With `auto_close` off the answer stays `proceed` whatever this holds: no
+ * unattended chain is running, and the manual publish ask owns the decision.
+ * Only a non-empty STRING counts as a failure name, so an unknown value cannot
+ * halt a close by accident. The returned shape is unchanged either way, so
+ * `/cad-land` keeps branching on `action` alone (D-08).
+ *
+ * @param {{ autoClose?: boolean, findings?: Array<{severity?:string}>, unreadable?: string|null }} args
  * @returns {{ action:'halt'|'proceed', findings:Array<{severity?:string}>, reason:string }}
  */
-export function decideGateHalt({ autoClose, findings } = {}) {
+export function decideGateHalt({ autoClose, findings, unreadable } = {}) {
+  const failure = typeof unreadable === 'string' && unreadable ? unreadable : null;
+  if (autoClose === true && failure !== null) {
+    return { action: 'halt', findings: [],
+      reason: `auto_close on but the findings payload could not be read (${failure}): halt before merge, nothing is claimed about survivors` };
+  }
   const list = Array.isArray(findings) ? findings : [];
   const blocking = list.filter((f) => f && (f.severity === 'blocker' || f.severity === 'high'));
   if (autoClose === true && blocking.length > 0) {
     return { action: 'halt', findings: blocking,
-      reason: 'auto_close on with a surviving blocker/high pre_ship finding: halt before merge, surface the findings' };
+      reason: 'auto_close on with a surviving blocker/high risk_surface finding: halt before merge, surface the findings' };
   }
   return { action: 'proceed', findings: [],
     reason: autoClose === true

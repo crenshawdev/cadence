@@ -5,7 +5,7 @@ tools: Read, Bash, Grep, Glob
 disallowedTools: Write, Edit, MultiEdit
 color: cyan
 effort: xhigh
-maxTurns: 400
+maxTurns: 200
 skills:
   - cad-assumptions-analyzer-contract
 ---

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { classifyAcceptanceCriteria } from './lib/planning-files.mjs';
 import { DEBT_TOKEN } from './lib/debt-markers.mjs';
@@ -744,6 +744,40 @@ test('phase-done: unknown phase refuses; nothing written', () => {
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
+// `--n "$PHASE"` with PHASE unset: parseArgs mints `true`, `Number(true)` is 1,
+// and phase 1 was boxed complete with its rows flipped, ok:true.
+for (const [name, arg] of [['valueless', null], ['abc', 'abc'], ['empty string', '']]) {
+  test(`phase-done: a ${name} --n refuses; neither doc is written`, () => {
+    const dir = makeTree({
+      roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+      reqs: [['REQ-1', 1, 'Pending']],
+    });
+    const roadmapBefore = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    const reqsBefore = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+    const r = run(['phase-done', ...(arg === null ? ['--n'] : ['--n', arg])], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /--n/);
+    assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), roadmapBefore);
+    assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), reqsBefore);
+  });
+}
+
+// The guard reads `.value`, not `.raw` (D-11): a zero-padded phase must stay
+// the phase it names rather than regressing to unknown-phase.
+test('phase-done: --n 02 still boxes phase 2', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }],
+    reqs: [['REQ-2', 2, 'Pending']],
+  });
+  const r = run(['phase-done', '--n', '02'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.reqs, ['REQ-2']);
+  const roadmap = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.match(roadmap, /- \[x\] \*\*Phase 2: Two\*\*/);
+  assert.match(roadmap, /- \[ \] \*\*Phase 1: One\*\*/);
+});
+
 // --- uat -----------------------------------------------------------------------
 
 const UAT_ITEMS = JSON.stringify([
@@ -789,6 +823,37 @@ test('uat record: unknown item and bad result refuse without writing', () => {
   assert.match(r.detail, /pass \| fail \| skipped \| blocked \| pending/);
   const text = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
   assert.match(text, /### 1\. Login works\nexpected: user lands on dashboard\nstatus: pending/);
+});
+
+// `--item "$K"` with K unset: parseArgs mints `true`, `Number(true)` is 1, and
+// item 1 was recorded pass - permanently, once first_pass is set.
+for (const [name, arg] of [['valueless', null], ['abc', 'abc'], ['empty string', '']]) {
+  test(`uat record: a ${name} --item refuses; UAT.md is byte-unchanged`, () => {
+    const dir = uatTree();
+    const before = readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+    const r = run(['uat', 'record', '--phase', '1',
+      ...(arg === null ? ['--item'] : ['--item', arg]), '--result', 'pass'], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /--item/);
+    assert.equal(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), before);
+  });
+}
+
+test('uat record: a clean integer naming no item still answers unknown-item', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '99', '--result', 'pass'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unknown-item');
+});
+
+test('uat record: a normal --item still records, with counts and first_pass', () => {
+  const dir = uatTree();
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'pass'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.item, { k: 1, status: 'pass' });
+  assert.equal(r.counts.pass, 1);
+  assert.match(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), /first_pass: pass/);
 });
 
 test('uat merge: matches by k, and a verifier pass never rewrites first_pass', () => {
@@ -1789,7 +1854,10 @@ test('plan-size: NO detail block is unmeasured, never zero - it is not compared'
   assert.equal(r.requirements_found, false);
   assert.equal(r.requirements, 0);
   assert.deepEqual(r.over, []);
-  assert.equal(r.within, true);
+  // No ceiling ran, so there is no verdict to report: `within: true` here was
+  // a clean bill of health for a comparison that never happened.
+  assert.deepEqual(r.compared, []);
+  assert.equal(r.within, null);
 });
 
 test('plan-size: the task ceiling is PER PLAN - 4+4+4 against a ceiling of 4 is within', () => {
@@ -2793,6 +2861,49 @@ test('criteria-coverage: a phase with no CONTEXT and no UAT is still exempt - th
   assert.equal(r.breaks, undefined);
 });
 
+// `read()` collapsed ENOENT with EACCES/EISDIR, so a CONTEXT.md the gate could
+// not open collected D-10's absent-file exemption: two declared criteria, and
+// `{"ok":true,"phases":[]}` over a file nothing ever looked at.
+test('criteria-coverage: a CONTEXT.md at chmod 000 breaks instead of being exempted', {
+  skip: process.getuid && process.getuid() === 0 ? 'root reads a 000 file anyway' : false,
+}, () => {
+  const dir = coverageTree({ 1: { criteria: [['AC1', 'a thing works'], ['AC2', 'another does']] } });
+  const ctx = join(dir, 'phases', '1', 'CONTEXT.md');
+  chmodSync(ctx, 0o000);
+  try {
+    const r = run(['criteria-coverage'], dir);
+    assert.notDeepEqual(r.phases, undefined);
+    assert.equal(r.breaks.length, 1);
+    assert.deepEqual(r.breaks[0], {
+      phase: 1, break: 'unreadable-context', code: 'EACCES', file: 'phases/1/CONTEXT.md',
+    });
+  } finally { chmodSync(ctx, 0o644); }
+});
+
+test('criteria-coverage: a CONTEXT.md that is a DIRECTORY takes the same break', () => {
+  const dir = coverageTree({ 1: { criteria: [['AC1', 'a thing works']] } });
+  const ctx = join(dir, 'phases', '1', 'CONTEXT.md');
+  rmSync(ctx);
+  mkdirSync(ctx);
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.breaks.length, 1);
+  assert.equal(r.breaks[0].break, 'unreadable-context');
+  assert.equal(r.breaks[0].code, 'EISDIR');
+  assert.equal(r.breaks[0].file, 'phases/1/CONTEXT.md');
+});
+
+// The break fires on the checkbox state too - like fieldless-checklist and
+// unlike uncovered, since an unreadable file is never work in flight.
+test('criteria-coverage: an UNCHECKED phase with an unreadable CONTEXT still breaks', () => {
+  const dir = coverageTree({ 1: { checked: false, criteria: [['AC1', 'a thing works']] } });
+  const ctx = join(dir, 'phases', '1', 'CONTEXT.md');
+  rmSync(ctx);
+  mkdirSync(ctx);
+  const r = run(['criteria-coverage'], dir);
+  assert.equal(r.breaks.length, 1);
+  assert.equal(r.breaks[0].break, 'unreadable-context');
+});
+
 // A typo'd heading used to leave no trace at all: criteria: null, issues: [],
 // so the phase reported zero criteria and the items pointing at AC1 landed in
 // the additive unknown_criterion with the gate green. Now the heading itself is
@@ -2885,7 +2996,8 @@ test('criteria-coverage: CADENCE_PLUGIN_MANIFEST pins the version the run report
   const dir = coverageTree({ 1: { criteria: P1_CRITERIA, items: P1_ITEMS } });
   const manifest = join(dir, 'fixture-plugin.json');
   writeFileSync(manifest, JSON.stringify({ name: 'cadence', version: '9.9.9-fixture' }));
-  const r = run(['criteria-coverage'], dir, undefined, { CADENCE_PLUGIN_MANIFEST: manifest });
+  const r = run(['criteria-coverage'], dir, undefined,
+    { CADENCE_PLUGIN_MANIFEST: manifest, CADENCE_TEST_SEAM: '1' });
   assert.equal(r.ok, true);
   assert.equal(r.version.plugin, '9.9.9-fixture');
   assert.equal(r.version.uat_fields, '1');
@@ -2893,14 +3005,38 @@ test('criteria-coverage: CADENCE_PLUGIN_MANIFEST pins the version the run report
 
 test('criteria-coverage: an unreadable manifest reports version.plugin null, never a throw', () => {
   const dir = coverageTree({ 1: { criteria: P1_CRITERIA, items: P1_ITEMS } });
-  const r = run(['criteria-coverage'], dir,
-    undefined, { CADENCE_PLUGIN_MANIFEST: join(dir, 'no-such-manifest.json') });
+  const r = run(['criteria-coverage'], dir, undefined,
+    { CADENCE_PLUGIN_MANIFEST: join(dir, 'no-such-manifest.json'), CADENCE_TEST_SEAM: '1' });
   // Provenance must not sink a working gate: the coverage answer is unchanged.
   assert.equal(r.ok, true);
   assert.equal(r._exit, 0);
   assert.equal(r.version.plugin, null);
   assert.equal(r.version.uat_fields, '1');
   assert.deepEqual(r.counts, { criteria: 7, covered: 7, uncovered: 0, untraced: 0, phases: 1 });
+});
+
+test('criteria-coverage: CADENCE_PLUGIN_MANIFEST without the sentinel is ignored', () => {
+  // The manifest is what every version-skew answer is computed from (QW-04), so
+  // it is read from the injected path only when CADENCE_TEST_SEAM is exactly
+  // `1`. Unset the sentinel and the run reports the SHIPPED manifest's version
+  // - silently, because MANIFEST_PATH resolves at module load, before a
+  // dispatch exists to carry a warning.
+  const dir = coverageTree({ 1: { criteria: P1_CRITERIA, items: P1_ITEMS } });
+  const manifest = join(dir, 'ungated-plugin.json');
+  writeFileSync(manifest, JSON.stringify({ name: 'cadence', version: '9.9.9-fixture' }));
+  const env = { ...process.env, CADENCE_PLUGIN_MANIFEST: manifest };
+  delete env.CADENCE_TEST_SEAM; // hermetic: never inherit an open seam
+  const r = JSON.parse(execFileSync('node',
+    [PLANNING, 'criteria-coverage', '--dir', dir], { encoding: 'utf8', env }));
+  assert.equal(r.ok, true);
+  assert.equal(r.version.plugin, JSON.parse(readFileSync(REPO_MANIFEST, 'utf8')).version);
+  assert.notEqual(r.version.plugin, '9.9.9-fixture');
+
+  // The SAME file with the sentinel set DOES take.
+  const opened = JSON.parse(execFileSync('node',
+    [PLANNING, 'criteria-coverage', '--dir', dir],
+    { encoding: 'utf8', env: { ...env, CADENCE_TEST_SEAM: '1' } }));
+  assert.equal(opened.version.plugin, '9.9.9-fixture');
 });
 
 test('criteria-coverage: an absent ROADMAP.md degrades with no-roadmap', () => {
@@ -3824,6 +3960,39 @@ test('renumber: refuses to operate ON a decimal phase', () => {
   assert.equal(run(['renumber', 'insert', '--at', '1.5'], dir).reason, 'bad-args');
 });
 
+// The decimal answer and the missing-value answer are different repairs, so
+// the decimal one keeps its own wording rather than collapsing into requireInt's.
+test('renumber: the decimal refusal names decimals, not a missing flag', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }] });
+  assert.match(run(['renumber', 'remove', '--n', '2.1'], dir).detail, /re-place decimal phases by hand/);
+  assert.match(run(['renumber', 'insert', '--at', '2.1'], dir).detail, /re-place decimal phases by hand/);
+});
+
+// `renumber remove --n` with no value used to pass the NaN screen as 1 and
+// delete phase 1 - its roadmap line, its detail section and its directory.
+for (const [sub, flag] of [['remove', 'n'], ['insert', 'at']]) {
+  test(`renumber ${sub}: a valueless --${flag} refuses; roadmap and dirs untouched`, () => {
+    const dir = renumberTree();
+    const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    const dirsBefore = readdirSync(join(dir, 'phases')).sort();
+    const r = run(['renumber', sub, `--${flag}`], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, new RegExp(`--${flag}`));
+    assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+    assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), dirsBefore);
+  });
+
+  test(`renumber ${sub}: a non-numeric --${flag} refuses the same way`, () => {
+    const dir = renumberTree();
+    const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    const r = run(['renumber', sub, `--${flag}`, 'abc'], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  });
+}
+
 // A tree with an out-of-roadmap decimal Phase 2.1 and a cursor parked on it -
 // mirrors the decimal test above rather than passing n:2.1 to makeTree, whose
 // `**Depends on:** Phase ${p.n - 1}` line would render a float artifact.
@@ -4130,13 +4299,35 @@ test('detect-commands: the project\'s own script beats a tool config in the same
   assert.equal(r.source.typecheck, 'package.json');
 });
 
-test('detect-commands: tsconfig.json matches that NAME only', () => {
-  assert.equal(detect(projectTree({ 'tsconfig.json': '{}' })).typecheck, 'npx tsc --noEmit');
-  // `npx tsc --noEmit` ignores a config it is not pointed at, so naming a
-  // CI-only project file as the project's typecheck would run the wrong check.
+test('detect-commands: two EXACT tsconfig names, each with the form that points at it', () => {
+  const plain = detect(projectTree({ 'tsconfig.json': '{}' }));
+  assert.equal(plain.typecheck, 'npx tsc --noEmit');
+  assert.equal(plain.source.typecheck, 'tsconfig.json');
+
+  // `npx tsc --noEmit` ignores a config it is not pointed at, so the CI name
+  // brings the `-p` form that does point at it - a fixed literal, never a
+  // command built out of the matched file name.
   const ci = detect(projectTree({ 'tsconfig.ci.json': '{}' }));
-  assert.equal(ci.typecheck, null);
-  assert.equal(ci.source.typecheck, null);
+  assert.equal(ci.typecheck, 'npx tsc -p tsconfig.ci.json');
+  assert.equal(ci.source.typecheck, 'tsconfig.ci.json');
+});
+
+test('detect-commands: a tree carrying BOTH tsconfigs answers with the project\'s own', () => {
+  // Order, not coincidence: `tsconfig.json` is the project's own typecheck and
+  // the CI file is the narrower one, so the second arm must never shadow the
+  // first.
+  const both = detect(projectTree({ 'tsconfig.json': '{}', 'tsconfig.ci.json': '{}' }));
+  assert.equal(both.typecheck, 'npx tsc --noEmit');
+  assert.equal(both.source.typecheck, 'tsconfig.json');
+});
+
+test('detect-commands: a NEAR-miss tsconfig name still matches nothing', () => {
+  // The glob this pair still refuses. `tsconfig.build.json` is an ordinary
+  // third spelling and names no command, which is what keeps "two exact names"
+  // a rule rather than a description of today's tree.
+  const other = detect(projectTree({ 'tsconfig.build.json': '{}' }));
+  assert.equal(other.typecheck, null);
+  assert.equal(other.source.typecheck, null);
 });
 
 test('detect-commands: nothing detected is ok:true with both null', () => {
@@ -4214,13 +4405,15 @@ function leaseRepo({ phase = 1, plan = 'PLAN.md', files = ['a.txt'], body = '' }
   return { repo, dir, pdir };
 }
 
-/** Run the seam inside a repo; parse its one JSON line and its exit code. */
-function leaseCheck(repo, dir, args) {
+/** Run the seam inside a repo; parse its one JSON line and its exit code.
+ * `env` is merged over the inherited environment, which is how the AC8 arm
+ * below points the seam's own `git rev-parse` at an unreadable GIT_DIR. */
+function leaseCheck(repo, dir, args, env) {
   let stdout;
   let code = 0;
   try {
     stdout = execFileSync('node', [PLANNING, '--dir', dir, 'lease-check', ...args],
-      { encoding: 'utf8', cwd: repo });
+      { encoding: 'utf8', cwd: repo, ...(env ? { env: { ...process.env, ...env } } : {}) });
   } catch (e) { stdout = e.stdout; code = e.status; }
   return { ...JSON.parse(stdout), _exit: code };
 }
@@ -4305,6 +4498,46 @@ test('lease-check: an unreadable staged set is ok:false, never a pass', () => {
   const r = leaseCheck(outside, dir, ['--phase', '1', '--plan', '1']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'no-staged-set');
+});
+
+test('lease-check: the no-staged-set detail names the failure without a credential', () => {
+  // The fourth emit site EXP-01 covers, end to end rather than by source read:
+  // `GIT_DIR` at an unreadable path makes the seam's own `git rev-parse
+  // --show-toplevel` fail with `fatal: not a git repository: '<path>'`, and git
+  // quotes the path back verbatim - so a path carrying userinfo puts a
+  // credential straight into `detail`. Measured 2026-08-13 on git 2.55.0. No
+  // network: the path does not exist and `.invalid` is reserved.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-lease-leak-'));
+  const dir = join(outside, '.planning');
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  writeFileSync(join(dir, 'phases', '1', 'PLAN.md'), '---\nphase: 1\nfiles:\n  - a.txt\n---\n');
+  const r = leaseCheck(outside, dir, ['--phase', '1', '--plan', '1'],
+    { GIT_DIR: '/nonexistent/cad:s3cr3t-tok@host.invalid/g' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no-staged-set');
+  assert.ok(r.detail && r.detail.length > 0, JSON.stringify(r));
+  assert.equal(r.detail.includes('s3cr3t-tok'), false, r.detail);
+  assert.equal(r.detail.includes('cad:'), false, r.detail);
+  // The rest of the message survives, or the redaction has traded one useless
+  // envelope for another: the host, the path, and the seam's own wording.
+  assert.ok(r.detail.includes('could not read the staged set'), r.detail);
+  assert.ok(r.detail.includes('host.invalid'), r.detail);
+  assert.ok(r.detail.includes('/nonexistent/'), r.detail);
+});
+
+test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () => {
+  // The census, so a FIFTH site added later fails here rather than shipping a
+  // credential. planning.mjs carries three OTHER caught-error details this
+  // requirement does not cover - partial-apply, write-failed, and the
+  // dispatch-level internal catch - so the pin is by COUNT: four uses of the
+  // idiom, exactly one of them (this one) wrapped. Adding a site moves the
+  // first number whether or not the author remembered the helper.
+  const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
+  const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
+  const src = readFileSync(PLANNING, 'utf8');
+  assert.equal((src.match(IDIOM) || []).length, 4, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(WRAPPED) || []).length, 1, 'the no-staged-set detail is unredacted');
+  assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
 
 test('lease-check: nothing staged is a clean lease, not a refusal', () => {
@@ -5048,4 +5281,63 @@ test('debt-harvest: a planning doc QUOTING a literal marker is not harvested', (
   assert.equal(r.markers, 1, JSON.stringify(r));
   assert.match(captureOf(root), /a real cut/);
   assert.doesNotMatch(captureOf(root), /example only/);
+});
+
+// --- milestone-prune: the --label guard -----------------------------------------
+// The seam's transforms and its happy paths live in milestone-prune.test.mjs;
+// what is here is the argument face, which is planning.mjs's own.
+//
+// Reproduced 2026-08-13: `--label '../../../outside-tree'` moved phases/1 clean
+// out of the planning root and answered {"ok":true,"action":"pruned"}.
+
+function pruneTree() {
+  return makeTree({
+    roadmap: [{ n: 1, name: 'One', checked: true }, { n: 2, name: 'Two' }],
+    phases: { 1: { plan: true }, 2: { plan: true } },
+    reqs: [['REQ-1', 1, 'Complete']],
+  });
+}
+
+for (const mode of ['archive', 'delete']) {
+  test(`milestone-prune --mode ${mode}: a --label escaping the tree is refused before any mkdir or rename`, () => {
+    const dir = pruneTree();
+    const escapee = resolve(dir, '_archive-../../../outside-tree');
+    const roadmapBefore = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+    const r = run(['milestone-prune', '--label', '../../../outside-tree', '--mode', mode], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /inside the planning root/);
+    assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2']);
+    assert.equal(existsSync(escapee), false, `created ${escapee} outside the planning root`);
+    assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), roadmapBefore);
+  });
+}
+
+// archiveRequirements writes the label into a markdown table cell, where either
+// character silently rewrites the row it lands in.
+for (const [name, label] of [['a pipe', 'v2|Complete|'], ['a newline', 'v2\nrogue row'],
+  ['a carriage return', 'v2\rrogue row']]) {
+  test(`milestone-prune: a --label containing ${name} is refused`, () => {
+    const dir = pruneTree();
+    const r = run(['milestone-prune', '--label', label, '--mode', 'archive'], dir);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /"\|" or a newline/);
+    assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2']);
+  });
+}
+
+// The guard is NOT publish-decision.mjs's REMOTE_NAME shape (D-13): an untagged
+// close labels the archive with the milestone NAME from PROJECT.md, spaces and
+// all, so a no-spaces regex would refuse this very milestone.
+test('milestone-prune: a spaced milestone-name label still prunes normally', () => {
+  const dir = pruneTree();
+  const label = 'the controls that reported success';
+  const r = run(['milestone-prune', '--label', label, '--mode', 'archive'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'pruned');
+  assert.deepEqual(r.phases, [1]);
+  assert.equal(existsSync(join(dir, `_archive-${label}`, '1', 'PLAN.md')), true);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['2']);
+  assert.match(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), new RegExp(label));
 });

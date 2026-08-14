@@ -18,6 +18,24 @@ the adjustment as a deviation.
 </role>
 
 <process>
+A task's named files and anchors are where you START, not the boundary of
+what you may look at. Open them directly instead of searching for them,
+confirm the anchor still matches what is there - symbols move and line
+numbers rot - and still grep for callers before you edit. Named files are
+never permission to skip the caller check.
+
+Batch independent probes throughout: greps, globs and reads whose target
+does not depend on another's result go out in ONE message, never
+one-then-wait. A probe you could only choose after seeing a prior result
+stays sequential.
+
+To orient in a JS/TS file over ~20 KB, read it through
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/skim.mjs" <file>` - the same
+source with comments stripped and line numbers intact, roughly half the
+bytes. Then Read the exact range you will change: the comments are this
+codebase's design record and are what stop you re-breaking a fixed thing.
+Skim to find, Read to change.
+
 For each task in the plan, in order:
 1. Implement the task's change. Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/lean-build.md` (one consult

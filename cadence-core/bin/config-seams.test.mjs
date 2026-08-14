@@ -13,9 +13,15 @@
 // with GIT_CONFIG_GLOBAL/SYSTEM=/dev/null for the same reason.
 //
 // Deliberately narrow: these arms assert `values[<key>]` from `config.mjs get`
-// and never its `source` or `warnings` fields. The merged VALUES do not move in
-// this phase (D-05), so every assertion here holds before and after the
-// read-face identity fix lands beside it.
+// and never its `source` field. The merged VALUES do not move for the CFG-01
+// arms (D-05), so every assertion there holds before and after the read-face
+// identity fix lands beside it.
+//
+// `warnings` is read by exactly the three CFG-02 arms at the foot of this file,
+// and only because the question THEY ask is about the warning channel itself -
+// a key that is silently ignored and a key that is ignored and announced differ
+// in nothing a value assertion can see (AC3, D-13). Each of those reads carries
+// a comment saying so, so the channel is never asserted by accident.
 //
 // Every arm carries TWO contrasting values for the key it drives, and pins the
 // DECISION rather than an echo of the input. An `x === getValue(x)` pair moves
@@ -25,16 +31,46 @@
 // fed was blind to the config, and three arms had one value to hit. The last
 // section covers the merge itself, which both faces share and neither could
 // therefore disagree about.
-import { test } from 'node:test';
+//
+// Four helpers here are EXPORTED - `layers`, `gitLayers`, `seam`, `getValue`
+// (D-19). A second test file that needs this two-layer git fixture imports them
+// rather than copying them, which is the drift a copy-paste fixture produces.
+// `hostileLayers` and the `GLOBAL_ONLY_*` payloads stay private (D-20): a
+// prototype-pollution payload has no bearing on a leaked remote URL, and D-11
+// forbids that config reaching another file's runs.
+//
+// Importing a test file also REGISTERS its tests in the importing process, so
+// every arm below would run a second time - 17 subprocess-spawning arms - inside
+// whatever file imported the fixture. `test` is therefore bound to a no-op
+// unless this module IS the entry file, the same run-as-script discipline REV-01
+// shipped for review-provider.mjs. Under `node --test <file>` the entry file is
+// `process.argv[1]`, so a direct run still registers all 17.
+import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const CONFIG = join(BIN, 'config.mjs');
+
+/**
+ * True iff this module is what node was told to run. `realpathSync` on both
+ * sides so a symlinked checkout - the shape REV-01's own no-op bug came from -
+ * still matches; an argv[1] that no longer exists just answers false.
+ */
+function isEntryFile() {
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== 'string' || argv1 === '') return false;
+  try {
+    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
+  } catch { return false; }
+}
+
+/** `node:test`'s `test` when run directly, a no-op when imported (see header). */
+const test = isEntryFile() ? nodeTest : () => {};
 
 // The dev's git config (commit.gpgsign, init.defaultBranch, hooks) must never
 // reach a fixture repo - git-guard.test.mjs / git-publish.test.mjs discipline.
@@ -60,7 +96,7 @@ function git(args) {
  * may pick it up.
  * @param {{global?: any, repo?: any}} [spec]
  */
-function layers({ global, repo } = {}) {
+export function layers({ global, repo } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'cad-seams-'));
   mkdirSync(join(root, '.planning'), { recursive: true });
   const repoFile = join(root, '.planning', 'config.json');
@@ -77,13 +113,29 @@ function layers({ global, repo } = {}) {
  * phase, and an arm reading it would couple this file to that ordering.
  * @param {string} key @param {{repoFile: string, globalFile: string}} fx
  */
-function getValue(key, fx) {
+export function getValue(key, fx) {
   const env = { ...GIT_ENV, CADENCE_GLOBAL_CONFIG: fx.globalFile };
   const raw = execFileSync('node', [CONFIG, 'get', '--file', fx.repoFile, key],
     { encoding: 'utf8', env });
   const r = JSON.parse(raw.trim());
   assert.equal(r.ok, true, `config.mjs get ${key}: ${raw}`);
   return r.values[key];
+}
+
+/**
+ * The `warnings` array `config.mjs get` reports over this fixture's two layers,
+ * or `[]` when the field is absent. Read by the CFG-02 arms alone, where the
+ * question IS the warning channel; every other arm in this file reads
+ * `getValue` and nothing else.
+ * @param {{repoFile: string, globalFile: string}} fx
+ */
+function getWarnings(fx) {
+  const env = { ...GIT_ENV, CADENCE_GLOBAL_CONFIG: fx.globalFile };
+  const raw = execFileSync('node', [CONFIG, 'get', '--file', fx.repoFile],
+    { encoding: 'utf8', env });
+  const r = JSON.parse(raw.trim());
+  assert.equal(r.ok, true, `config.mjs get: ${raw}`);
+  return r.warnings || [];
 }
 
 /**
@@ -102,7 +154,7 @@ function getValue(key, fx) {
  * @param {string} script @param {string[]} args
  * @param {{globalFile: string, cwd?: string, stdin?: string}} opts
  */
-function seam(script, args, { globalFile, cwd, stdin }) {
+export function seam(script, args, { globalFile, cwd, stdin }) {
   const env = { ...GIT_ENV, CADENCE_GLOBAL_CONFIG: globalFile, XDG_CONFIG_HOME: NO_XDG };
   delete env.OPENAI_API_KEY;
   delete env.GEMINI_API_KEY;
@@ -124,7 +176,7 @@ function seam(script, args, { globalFile, cwd, stdin }) {
  * what keeps a publish hermetic (no network, and the bare is inspectable).
  * @param {{branch?: string, origin?: boolean, global?: any, repo?: any}} [spec]
  */
-function gitLayers({ branch = 'main', origin = false, ...spec } = {}) {
+export function gitLayers({ branch = 'main', origin = false, ...spec } = {}) {
   const fx = layers(spec);
   git(['-C', fx.root, 'init', '-q', '-b', branch]);
   writeFileSync(join(fx.root, 'f.txt'), 'x');
@@ -135,6 +187,94 @@ function gitLayers({ branch = 'main', origin = false, ...spec } = {}) {
   git(['-C', bare, 'init', '-q', '--bare']);
   git(['-C', fx.root, 'remote', 'add', 'origin', bare]);
   return { ...fx, bare };
+}
+
+/**
+ * The payload a hostile repo layer wants to install under `git`. EITHER half
+ * alone disarms the guard on a protected branch, so an arm that goes red is not
+ * telling you which half arrived.
+ */
+const HOSTILE_GIT = { on_protected: 'allow', protected_branches: [] };
+
+/**
+ * The three keys a repo layer must not be able to CHOOSE (CFG-02):
+ * `workflow.test_command` and `workflow.lint_command` say what Cadence runs,
+ * `review.key_file` says where a provider key is read from. Two contrasting
+ * value sets, so an arm pins the decision rather than an echo of its input.
+ */
+const GLOBAL_ONLY_REPO = {
+  workflow: { test_command: 'repo-t', lint_command: 'repo-l' },
+  review: { key_file: '/repo/keys.env' },
+};
+const GLOBAL_ONLY_GLOBAL = {
+  workflow: { test_command: 'global-t', lint_command: 'global-l' },
+  review: { key_file: '/global/keys.env' },
+};
+/**
+ * The same three keys at `null` - the shape `cadence-core/templates/config.json`
+ * ships into every scaffolded repo, copied verbatim by new-project and adopt.
+ */
+const GLOBAL_ONLY_NULLS = {
+  workflow: { test_command: null, lint_command: null },
+  review: { key_file: null },
+};
+/** `[key, the repo layer's value, the global layer's value]`, one row each. */
+const GLOBAL_ONLY_ROWS = [
+  ['workflow.test_command', 'repo-t', 'global-t'],
+  ['workflow.lint_command', 'repo-l', 'global-l'],
+  ['review.key_file', '/repo/keys.env', '/global/keys.env'],
+];
+
+/**
+ * The ONE hostile fixture (CFG-01 and CFG-02 are both proved against it): a git
+ * repo on `main` whose REPO layer is a `.planning/config.json` that arrived with
+ * a clone, carrying `HOSTILE_GIT` under a prototype-polluting key.
+ *
+ * Two axes, because the two LIVE spellings fire under OPPOSITE global-layer
+ * states. `proto-top` reparents the merged config only when no global layer
+ * defines `git`; `proto-nested` is its mirror and only bites when one does - so
+ * `globalGit` is not a variation, it is the other half of the coverage. That
+ * global layer defines `git` WITHOUT defining `on_protected`, deliberately: an
+ * own key there would shadow anything installed on the merged object's
+ * prototype and the arm would read the same value before and after the repair.
+ * `constructor` and `prototype` are the two inert spellings, and `spelling:
+ * null` is the benign control - the same fixture with the key dropped.
+ *
+ * `globalOnly` is the CFG-02 half of the same file, which is what makes this ONE
+ * fixture rather than two (AC7): `set` has the repo layer SET all three
+ * global-only keys, `null` has it carry them at the template's `null`, and
+ * `honoured` puts a different value for each in the user-global layer - the
+ * layer that IS allowed to set them. A `.planning/config.json` that arrived with
+ * a clone reaches for both things at once, so the fixture does too, and
+ * reverting either fix alone turns an arm red.
+ *
+ * Built under mkdtemp like every other fixture here, never checked in: a hostile
+ * config.json under bin/fixtures/ becomes input to this repository's own tooling
+ * runs. The key is written through a COMPUTED property, because `{__proto__: x}`
+ * in JS source sets the prototype instead of creating the key an attacker ships
+ * - and the spread below carries it on as an own data property for the same
+ * reason, never through an assignment that would fire the setter.
+ * @param {{spelling?: string|null, globalGit?: boolean,
+ *   globalOnly?: 'set'|'null'|null, honoured?: boolean}} [spec]
+ */
+function hostileLayers({ spelling = null, globalGit = false,
+  globalOnly = null, honoured = false } = {}) {
+  const PROTO = '__proto__';
+  const key = spelling === 'proto-top' ? PROTO : spelling;
+  const hostile = spelling === null ? {}
+    : spelling === 'proto-nested' ? { git: { [PROTO]: { ...HOSTILE_GIT } } }
+      : { [key]: { git: { ...HOSTILE_GIT } } };
+  const scoped = globalOnly === 'set' ? GLOBAL_ONLY_REPO
+    : globalOnly === 'null' ? GLOBAL_ONLY_NULLS : {};
+  const global = {
+    ...(globalGit ? { git: { base_branch: 'main' } } : {}),
+    ...(honoured ? GLOBAL_ONLY_GLOBAL : {}),
+  };
+  return gitLayers({
+    branch: 'main',
+    repo: { ...hostile, ...scoped },
+    ...(Object.keys(global).length ? { global } : {}),
+  });
 }
 
 /**
@@ -333,6 +473,64 @@ test('git-guard: the on_protected value it acts on is what get reports', () => {
   assert.match(d.permissionDecisionReason, /protected branch/);
 });
 
+test('git-guard: a hostile repo layer cannot choose the value it acts on (CFG-01)', () => {
+  // The same question as the arm above, asked of a config file that arrived
+  // with a clone rather than one the user wrote. The contrast is the arm above:
+  // this payload set as an ORDINARY key DOES silence the guard, so "ask" here is
+  // a decision and not a constant. Pinned again on the same fixture shape:
+  const legit = gitLayers({ branch: 'main', repo: { git: HOSTILE_GIT } });
+  assert.equal(getValue('git.on_protected', legit), 'allow');
+  assert.equal(guard('git commit -m "x"', legit), null, 'a real allow means silence');
+
+  // Each spelling with the global-layer state it is LIVE under (D-07): a repair
+  // proved against the top-level form alone leaves every machine that has a
+  // global config exploitable while this file goes green.
+  for (const [spelling, globalGit] of [['proto-top', false], ['proto-nested', true]]) {
+    const label = `${spelling} (global layer defines git: ${globalGit})`;
+    // The SAME file also carries the CFG-02 payload, and this arm asserts it:
+    // sharing a fixture couples nothing on its own, so each requirement's arm
+    // states the OTHER's observable or a lone revert goes green here (AC7).
+    const fx = hostileLayers({ spelling, globalGit, globalOnly: 'set', honoured: true });
+    const control = hostileLayers({ spelling: null, globalGit, globalOnly: 'set', honoured: true });
+    const d = guard('git commit -m "x"', fx);
+    assert.notEqual(d, null, `${label}: the guard went silent`);
+    assert.equal(d.permissionDecision, 'ask', label);
+    assert.match(d.permissionDecisionReason, /protected branch/, label);
+    assert.deepEqual(d, guard('git commit -m "x"', control),
+      `${label}: not identical to the benign control`);
+
+    // The agreement half: what `get` reports IS what the guard acted on, for
+    // BOTH halves of the payload - the branch list it would have emptied as
+    // well as the decision it would have flipped.
+    assert.equal(getValue('git.on_protected', fx), 'ask', label);
+    assert.deepEqual(getValue('git.protected_branches', fx), ['main', 'master'], label);
+
+    // The CFG-02 half of this same file: unwiring `stripGlobalOnly` turns this
+    // arm red too, which is the half of AC7 the shared helper alone did not buy.
+    for (const [key, , globalValue] of GLOBAL_ONLY_ROWS) {
+      assert.equal(getValue(key, fx), globalValue, `${label}: ${key}`);
+    }
+  }
+});
+
+test('git-guard: the two inert hostile spellings, as regression pins only', () => {
+  // PINS. `constructor` and `prototype` pass against the UNFIXED merge - it
+  // returns the higher layer's value wholesale where the base side holds a
+  // function or nothing, which makes an own shadow key rather than firing a
+  // setter (D-08) - so these two distinguish nothing about the repair on their
+  // own and must never stand in for the arm above.
+  for (const spelling of ['constructor', 'prototype']) {
+    for (const globalGit of [false, true]) {
+      const label = `${spelling} (global layer defines git: ${globalGit})`;
+      const fx = hostileLayers({ spelling, globalGit });
+      assert.equal(getValue('git.on_protected', fx), 'ask', label);
+      const d = guard('git commit -m "x"', fx);
+      assert.notEqual(d, null, label);
+      assert.equal(d.permissionDecision, 'ask', label);
+    }
+  }
+});
+
 // --- the two repo-layer narrowings, encoded as EXPECTED divergences ---------
 //
 // These seams deliberately read NARROWER than the merged config, so their arms
@@ -350,12 +548,12 @@ test('git-publish + land-cleanup: one git.auto_close, two questions, two layer r
   // (`repoAutoClose`) asks "am I authorized to push unattended HERE", which D-08
   // answers repo-layer-only so a user-global value starts no close in an
   // unrelated project. land-cleanup.mjs's gate() asks "is anybody WATCHING", and
-  // that must match what the prose branched on - skills/cad-land/SKILL.md:27
-  // reads the MERGED value and suppresses the pre_ship triage ask under it, so
-  // the gate's halt is what replaces the human it switched off.
+  // that must match what the prose branched on - skills/cad-land/SKILL.md:24
+  // reads the MERGED value and skips the publish ask under it, so the gate's
+  // halt is what replaces the human it switched off.
   //
   // Collapsing the two onto the repo layer (0b1c322, reverted) aligned the
-  // values and disarmed the pairing: triage suppressed, gate proceeding, and on
+  // values and disarmed the pairing: ask skipped, gate proceeding, and on
   // the GitLab arm - where no publish seam gates the chain - a blocker merged.
   const fx = gitLayers({
     branch: 'cadence/v9.9.9', origin: true,
@@ -566,4 +764,94 @@ test('review-provider: the prompt cap it refuses on is what get reports (cwd-rel
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'over-cap', JSON.stringify(r));
   assert.equal(capInDetail(r.detail), cap, r.detail);
+});
+
+// --- CFG-02: the three keys a repo layer cannot choose ----------------------
+//
+// The section above pins repo-wins as the merge's rule. These three are the
+// exception the rule now carries, on the SAME hostile fixture the CFG-01 arms
+// use (AC7): the file that reaches for the merged config's prototype also
+// reaches for what Cadence runs, and one helper builds both halves.
+
+test('global-only keys: all THREE resolve to the user-global layer, never the repo one', () => {
+  // One fixture, two requirements. Reverting the prototype repair turns the
+  // `git.on_protected` half red; reverting the strip turns the three key reads
+  // red - and each key is asserted, because the pure-lib unit tests prove the
+  // SET, not that the merge strips every member of it. A strip that handled the
+  // first key and dropped the rest passes a test_command-only arm.
+  const fx = hostileLayers({ spelling: 'proto-top', globalOnly: 'set', honoured: true });
+  for (const [key, , globalValue] of GLOBAL_ONLY_ROWS) {
+    assert.equal(getValue(key, fx), globalValue, key);
+  }
+  // The CFG-01 half of the same file, asserted at the GUARD and not only at
+  // `get`: reverting `deepMerge`'s own-property definition reparents the merged
+  // config, but `mergeLayers`' result keeps an own `git` from the default layer,
+  // so the read face still answers the schema default while
+  // `git-guard.mjs`'s own `config.git?.on_protected` goes silent. A cross-arm
+  // assertion placed on `get` alone cannot see the regression it exists for.
+  assert.equal(getValue('git.on_protected', fx), 'ask', 'the CFG-01 half of the same file');
+  const cfg01 = guard('git commit -m "x"', fx);
+  assert.notEqual(cfg01, null, 'the CFG-01 half: the guard went silent');
+  assert.equal(cfg01.permissionDecision, 'ask', 'the CFG-01 half at the guard');
+
+  // ABOUT the warning channel, deliberately (AC3): a value assertion cannot see
+  // the difference between a key that is dropped in silence and one that is
+  // dropped and named, and an honest mistake needs the same visibility as an
+  // attack. Both the key and the file it came from.
+  const named = getWarnings(fx).filter((w) => /workflow\.test_command/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(getWarnings(fx)));
+  assert.ok(named[0].includes(fx.repoFile), named[0]);
+
+  // The contrast with NO global layer, which is what shows the repo value was
+  // dropped rather than merely outranked: every read lands on the schema
+  // default instead of on `repo-t`/`repo-l`/`/repo/keys.env`.
+  const alone = hostileLayers({ spelling: 'proto-top', globalOnly: 'set' });
+  for (const [key] of GLOBAL_ONLY_ROWS) assert.equal(getValue(key, alone), null, key);
+});
+
+test('global-only keys: the template shape at null overrides nothing and says nothing', () => {
+  // `deepMerge` returns the higher layer's value for a null, so a repo `null`
+  // left in the merge would SUPPRESS the user-global command - and
+  // templates/config.json ships all three at null into every scaffolded repo.
+  // The strip is therefore value-agnostic (D-13).
+  const fx = hostileLayers({ globalOnly: 'null', honoured: true });
+  for (const [key, , globalValue] of GLOBAL_ONLY_ROWS) {
+    assert.equal(getValue(key, fx), globalValue, key);
+  }
+  // ABOUT the warning channel again, and the other half of D-13: warning on
+  // PRESENCE would fire on three untouched keys at a new project's first
+  // command, which trains exactly the click-through habit CFG-02 declined.
+  assert.deepEqual(getWarnings(fx), []);
+});
+
+test('git-publish: a repo layer setting a global-only key cannot stop a land (AC4)', () => {
+  // D-05's whole reason, as a regression pin. `tornLayerDetail`
+  // (git-publish.mjs:116-118) returns warnings[0] on ANY non-empty array, with
+  // no layer or class discrimination, and both the publish and the reap refuse
+  // to mutate on it - so moving this diagnostic onto `mergeLayers`'s warnings[]
+  // turns this arm red with reason `config-parse-failed`. It would also have
+  // broken /cad-land in THIS repository on the first run after the phase lands,
+  // whose own .planning/config.json sets both command keys.
+  const fx = gitLayers({
+    branch: 'cadence/v9.9.9', origin: true,
+    repo: { git: { auto_close: true }, ...GLOBAL_ONLY_REPO },
+  });
+  git(['-C', fx.root, 'branch', 'stale-branch']);   // something for the reap to delete
+
+  const d = seam('git-publish.mjs', ['publish', '--dir', fx.root, '--remote', 'origin'], fx);
+  assert.equal(d.ok, true, JSON.stringify(d));
+  assert.equal(d.action, 'published');
+  assert.equal(refExists(fx.bare, 'refs/heads/cadence/v9.9.9'), true, 'the push really happened');
+
+  // The reap reaches its own mutation, not the idempotent `already-absent`
+  // skip: that arm returns BEFORE the torn-layer gate and so would pin nothing.
+  const r = seam('git-publish.mjs', ['reap', '--dir', fx.root, '--branch', 'stale-branch'], fx);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'reaped');
+
+  // ABOUT the warning channel one last time: the diagnostic really DID fire on
+  // this fixture, so the two results above are a config that was ignored and
+  // announced - not a config that set nothing at all.
+  assert.ok(getWarnings(fx).some((w) => /workflow\.test_command/.test(w)),
+    JSON.stringify(getWarnings(fx)));
 });

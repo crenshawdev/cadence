@@ -1,13 +1,4 @@
 {
-  "workflow": {
-    "research": true,
-    "inline_plan_threshold": 2,
-    "test_command": "node --test cadence-core/bin/*.test.mjs",
-    "lint_command": "npx tsc -p tsconfig.ci.json"
-  },
-  "parallelization": {
-    "max_concurrent_agents": 6
-  },
   "git": {
     "auto_branch": "auto",
     "base_branch": "main",
@@ -19,18 +10,16 @@
       "enabled": true
     },
     "triggers": {
-      "plan": {
-        "gate": "advisory",
-        "tier": "cheap"
-      },
-      "pre_ship": {
-        "gate": "off"
+      "risk_surface": {
+        "surfaces": [
+          "secrets",
+          "api_contract",
+          "untrusted_input",
+          "destructive",
+          "concurrency",
+          "migrations"
+        ]
       }
-    }
-  },
-  "model": {
-    "effort": {
-      "cad-plan-checker": "high"
     }
   }
 }

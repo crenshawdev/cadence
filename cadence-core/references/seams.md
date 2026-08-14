@@ -53,9 +53,12 @@ How a workflow dispatches work to a fresh-context subagent.
   stated per role rather than derived, because the unsuffixed `agents/<role>.md`
   is one rung among the others rather than the lowest. Self-verify fails in both
   directions: a rung with no file, and a rung file no cell reaches.
-- No timeout. This seam offers no bound and no cancel: a dispatch runs until it
-  returns. A config key claimed a wall-clock kill until v2.7.0, when it was
-  deleted for naming a control nothing could apply. Plan size is the only real
+- A turn bound, but no timeout and no cancel. Every `agents/*.md` carries
+  `maxTurns: 200` in its frontmatter, one uniform value across all 19 rung
+  files, so that is the bound a dispatch runs under - and it is the only one
+  this seam has: no wall-clock kill, and no way to cancel a dispatch already
+  running. A config key claimed a wall-clock kill until v2.7.0, when it was
+  deleted for naming a control nothing could apply. Plan size is still the real
   lever on what one dispatch costs, which is what `workflow.max_plan_tasks` is
   for.
 - Every dispatch is fresh-context and self-contained; there is no resume or

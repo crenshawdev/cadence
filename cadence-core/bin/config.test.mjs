@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync, writeFileSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, dirname, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { RUNG_FILES } from './lib/rung-agent.mjs';
 
@@ -608,9 +608,11 @@ test('a path under a missing directory is a read failure naming it, never intern
 
 // --- shipped config.schema.json absent/malformed (#40) ------------------------
 
+// config.mjs reads CADENCE_CONFIG_SCHEMA only when CADENCE_TEST_SEAM is
+// exactly `1` (lib/test-seam.mjs), so an injecting fixture sets both.
 function runWithSchema(args, schemaPath) {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global-schema.json') };
-  if (schemaPath) env.CADENCE_CONFIG_SCHEMA = schemaPath;
+  if (schemaPath) { env.CADENCE_CONFIG_SCHEMA = schemaPath; env.CADENCE_TEST_SEAM = '1'; }
   try {
     return { stdout: execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env }) };
   } catch (e) {
@@ -638,6 +640,32 @@ test('CADENCE_CONFIG_SCHEMA nonexistent degrades to ok:false, reason bad-schema,
   const r = JSON.parse(lines[0]);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-schema');
+});
+
+// --- the injection is GATED behind CADENCE_TEST_SEAM (EXP-01) ---------------
+
+test('CADENCE_CONFIG_SCHEMA without the sentinel is ignored; `keys` is the shipped set', () => {
+  // The schema decides which keys are known and which carry the `src: global`
+  // marker phase 1 made load-bearing, so an ungated override re-opens CFG-02.
+  // Unset the sentinel and the variable is not read at all - silently, because
+  // SCHEMA_PATH resolves at module load, before a dispatch exists to warn on.
+  const hostile = join(dir, 'ungated-schema.json');
+  writeFileSync(hostile, JSON.stringify({ keys: { 'not.a.real.key': { type: 'bool', default: false } } }));
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: join(dir, 'no-global-schema.json'),
+    CADENCE_CONFIG_SCHEMA: hostile };
+  delete env.CADENCE_TEST_SEAM; // hermetic: never inherit an open seam
+
+  const r = JSON.parse(execFileSync('node', [CONFIG, 'keys'], { encoding: 'utf8', env }));
+  assert.equal(r.ok, true);
+  const shipped = JSON.parse(readFileSync(join(dirname(CONFIG), '..', 'config.schema.json'), 'utf8')).keys;
+  assert.deepEqual(Object.keys(r.keys), Object.keys(shipped));
+  assert.equal(Object.hasOwn(r.keys, 'not.a.real.key'), false);
+
+  // The SAME file with the sentinel set DOES take, so the arm above is proving
+  // the gate rather than a fixture path that never worked.
+  const opened = JSON.parse(execFileSync('node', [CONFIG, 'keys'],
+    { encoding: 'utf8', env: { ...env, CADENCE_TEST_SEAM: '1' } }));
+  assert.deepEqual(Object.keys(opened.keys), ['not.a.real.key']);
 });
 
 // --- model.effort.<role>: the per-role start rung, refused by key (RNG-02) ---
@@ -735,14 +763,17 @@ test('workflow.lint_command: get returns the schema default null', () => {
 });
 
 test('workflow.lint_command: set writes a shell string and get reads it back', () => {
-  const file = join(dir, 'lint-set.json');
-  writeFileSync(file, '{}');
+  // The round-trip runs on the USER-GLOBAL layer, because that is the only
+  // layer this key is honoured from (CFG-02). `set --file` still WRITES it into
+  // a repo config - the write face is not scoped - but the merge drops it, so a
+  // repo-layer round-trip through `get` would be asserting the reach this phase
+  // removed. The dropped half has its own arms in the CFG-02 section below.
   const gpath = join(dir, 'lint-set-global.json');
-  const w = run(['set', '--file', file, 'workflow.lint_command=npm run lint'], gpath);
+  const w = run(['set', '--global', 'workflow.lint_command=npm run lint'], gpath);
   assert.equal(w.ok, true);
   assert.deepEqual(w.changed, [{ key: 'workflow.lint_command', value: 'npm run lint' }]);
-  assert.equal(JSON.parse(readFileSync(file, 'utf8')).workflow.lint_command, 'npm run lint');
-  const r = run(['get', 'workflow.lint_command', '--file', file], gpath);
+  assert.equal(JSON.parse(readFileSync(gpath, 'utf8')).workflow.lint_command, 'npm run lint');
+  const r = run(['get', 'workflow.lint_command', '--file', join(dir, 'lint-set-repo.json')], gpath);
   assert.equal(r.values['workflow.lint_command'], 'npm run lint');
 });
 
@@ -781,4 +812,259 @@ test('workflow.lint_command: the shipped template carries the key at null', () =
     join(dirname(CONFIG), '..', 'templates', 'config.json'), 'utf8'));
   assert.equal('lint_command' in tpl.workflow, true);
   assert.equal(tpl.workflow.lint_command, null);
+});
+
+// --- CFG-01: a repo layer cannot reparent the merged config ------------------
+//
+// The hostile input is a `.planning/config.json` that arrived with a clone. It
+// is written here as TEXT, never as an object literal that gets stringified:
+// `{__proto__: x}` in JS source sets the prototype instead of creating a key,
+// so an object-built fixture is not the file an attacker ships.
+//
+// Each arm runs in a CHILD with its own CADENCE_GLOBAL_CONFIG. `mergeLayers`
+// reads GLOBAL_CONFIG once at module load off the environment
+// (config-merge.mjs:26), which the static import at the top of this file has
+// already frozen at the developer's REAL ~/.claude/cadence/config.json - so the
+// two global-layer states the two live forms fire under cannot both be driven
+// in this process, and neither may be that file. The child reports FACTS rather
+// than the config itself: a live object cannot cross a process boundary, and
+// half the question here is prototype identity rather than value.
+const MERGE_LIB = pathToFileURL(join(dirname(CONFIG), 'lib', 'config-merge.mjs')).href;
+const MERGE_FACTS = `import(${JSON.stringify(MERGE_LIB)}).then((m) => {
+  const c = m.mergeLayers(process.argv[1]).config;
+  process.stdout.write(JSON.stringify({
+    gitUndefined: c.git === undefined,
+    // null means "not reachable": no fixture below sets it to null.
+    onProtected: c.git && c.git.on_protected !== undefined ? c.git.on_protected : null,
+    configProto: Object.getPrototypeOf(c) === Object.prototype,
+    gitProto: c.git === undefined || Object.getPrototypeOf(c.git) === Object.prototype,
+    plainObjectClean: ({}).on_protected === undefined,
+  }));
+});`;
+
+/**
+ * The merged config's facts over one two-layer fixture. `globalBytes` omitted
+ * writes no global file at all - a legitimately absent layer, which is the
+ * state the top-level form is live under.
+ * @param {string} label @param {string} repoBytes @param {string} [globalBytes]
+ */
+function mergeFacts(label, repoBytes, globalBytes) {
+  const repoFile = join(dir, `cfg01-${label}-repo.json`);
+  writeFileSync(repoFile, repoBytes);
+  const globalFile = join(dir, `cfg01-${label}-global.json`);
+  if (globalBytes !== undefined) writeFileSync(globalFile, globalBytes);
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: globalFile };
+  return JSON.parse(execFileSync('node', ['-e', MERGE_FACTS, repoFile], { encoding: 'utf8', env }));
+}
+
+// The payload: either half alone disarms git-guard on a protected branch.
+const PAYLOAD = '{"on_protected":"allow","protected_branches":[]}';
+// A global layer that defines `git` WITHOUT defining `on_protected`. The second
+// half is load-bearing: a global `on_protected` puts an OWN key on the merged
+// `git` object, which shadows a value installed on that object's prototype, so
+// the nested arm would read the same thing before and after the repair and
+// distinguish nothing.
+const GLOBAL_GIT = '{"git":{"base_branch":"main"}}';
+
+test('merge: a top-level __proto__ repo layer reparents nothing (no global layer)', () => {
+  const f = mergeFacts('top', `{"__proto__":{"git":${PAYLOAD}}}`);
+  assert.equal(f.gitUndefined, true, 'the hostile block is not reachable as config.git');
+  assert.equal(f.onProtected, null);
+  assert.equal(f.configProto, true, 'an ordinary Object.prototype, never a poisoned one (D-01)');
+  assert.equal(f.plainObjectClean, true);
+
+  // The contrast, so this is a decision rather than a constant: the identical
+  // payload written as an ORDINARY key still merges through, on the same fixture
+  // shape and the same absent global layer.
+  const legit = mergeFacts('top-control', `{"git":${PAYLOAD}}`);
+  assert.equal(legit.gitUndefined, false);
+  assert.equal(legit.onProtected, 'allow');
+  assert.equal(legit.configProto, true);
+});
+
+test('merge: a nested git.__proto__ repo layer reparents nothing (global layer defines git)', () => {
+  // The mirror form, live under the OPPOSITE global-layer state: with no global
+  // `git` the merge returns the repo object as-is and the hostile key is already
+  // inert, so a repair proved only against the top-level shape leaves every
+  // machine that HAS a global config exploitable (D-07).
+  const f = mergeFacts('nested', `{"git":{"__proto__":${PAYLOAD}}}`, GLOBAL_GIT);
+  assert.equal(f.onProtected, null, 'the payload is not reachable as config.git.on_protected');
+  assert.equal(f.gitProto, true, 'the merged git object keeps Object.prototype');
+  assert.equal(f.gitUndefined, false, 'the GLOBAL layer legitimately defines git');
+
+  // The contrast: an ordinary nested key over the same global layer merges.
+  const legit = mergeFacts('nested-control', '{"git":{"on_protected":"allow"}}', GLOBAL_GIT);
+  assert.equal(legit.onProtected, 'allow');
+  assert.equal(legit.gitProto, true);
+});
+
+test('merge: constructor and prototype repo layers stay inert (regression pins only)', () => {
+  // PINS, not proof. Both spellings pass against the UNFIXED merge - deepMerge's
+  // guard returns `over` when `base[k]` is a function or undefined, which makes
+  // an own shadow property rather than firing a setter (D-08) - so an arm built
+  // on these two distinguishes nothing about the repair and must never stand in
+  // for the two arms above.
+  for (const key of ['constructor', 'prototype']) {
+    const alone = mergeFacts(`${key}-alone`, `{"${key}":{"git":${PAYLOAD}}}`);
+    assert.equal(alone.gitUndefined, true, `${key}: nothing reaches config.git`);
+    assert.equal(alone.configProto, true, key);
+
+    // With a global layer defining `git`, `config.git` is that layer's own
+    // object and is DEFINED - by the global config, not by the hostile repo
+    // layer. What has to stay true in both states is that the payload is
+    // unreachable, which `onProtected` is the reading of.
+    const withGlobal = mergeFacts(`${key}-global`, `{"${key}":{"git":${PAYLOAD}}}`, GLOBAL_GIT);
+    assert.equal(withGlobal.onProtected, null, key);
+    assert.equal(withGlobal.gitProto, true, key);
+  }
+});
+
+test('validate: a hostile __proto__ key is REPORTED, not skipped as an annotation', () => {
+  // The read face's half of CFG-01. `flatten` skipped every `_`-prefixed key,
+  // so the file the guard was already obeying inspected as
+  // {"ok":true,"checked":0,"errors":[]} - clean, and with nothing checked.
+  const gpath = join(dir, 'cfg01-validate-global.json');
+  const hostile = join(dir, 'cfg01-validate-hostile.json');
+  writeFileSync(hostile, `{"__proto__":{"git":${PAYLOAD}}}`);
+  const r = run(['validate', '--file', hostile], gpath);
+  assert.equal(r.ok, false);
+  assert.ok(r.checked >= 1, `nothing was checked: ${JSON.stringify(r)}`);
+  assert.ok(r.errors.some((e) => e.key.includes('__proto__')), JSON.stringify(r.errors));
+  assert.equal(r.errors[0].error, 'unknown key');
+
+  // The SCALAR spelling, which is the only arm the accumulator half of the
+  // narrowing can go red on: an object-valued `__proto__` recurses to dotted
+  // leaf paths that never touch the accumulator's own `__proto__` key, while a
+  // top-level scalar leaf assigns at exactly that key and is silently lost.
+  const scalar = join(dir, 'cfg01-validate-scalar.json');
+  writeFileSync(scalar, '{"__proto__":"x"}');
+  const s = run(['validate', '--file', scalar], gpath);
+  assert.equal(s.ok, false);
+  assert.ok(s.checked >= 1, `the leaf never reached the report: ${JSON.stringify(s)}`);
+  assert.deepEqual(s.errors, [{ key: '__proto__', error: 'unknown key' }]);
+
+  // The narrowing is to exactly `_meta`, never a deletion: the annotation block
+  // the schema documents still validates clean, with real keys still counted.
+  // (The shipped arm above pins this too; repeated here because THIS is the
+  // change that could have taken it out.)
+  const annotated = join(dir, 'cfg01-validate-meta.json');
+  writeFileSync(annotated, JSON.stringify({ _meta: { note: 'hand-edited' }, granularity: 'coarse' }));
+  const m = run(['validate', '--file', annotated], gpath);
+  assert.equal(m.ok, true, JSON.stringify(m.errors));
+  assert.equal(m.checked, 1);
+});
+
+test('get: the hostile file resolves git.on_protected to the value the guard acts on', () => {
+  // A PIN, not the distinguishing assertion: `git.on_protected` is absent from
+  // the flattened map before the narrowing (the `_` skip drops the branch) and
+  // after it (the branch flattens under `__proto__.`), so it reads the schema
+  // default either way. What moved is that the MERGE now reads the same thing -
+  // before the repair the guard obeyed "allow" while this face said "ask".
+  const gpath = join(dir, 'cfg01-get-global.json');
+  const hostile = join(dir, 'cfg01-get-hostile.json');
+  writeFileSync(hostile, `{"__proto__":{"git":${PAYLOAD}}}`);
+  const r = run(['get', 'git.on_protected', '--file', hostile], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['git.on_protected'], 'ask');
+
+  // The contrast, so this is not satisfied by a constant: the same value set as
+  // an ORDINARY key reads back through the same face.
+  const legit = join(dir, 'cfg01-get-legit.json');
+  writeFileSync(legit, `{"git":${PAYLOAD}}`);
+  assert.equal(run(['get', 'git.on_protected', '--file', legit], gpath).values['git.on_protected'],
+    'allow');
+});
+
+// --- CFG-02: a repo layer cannot choose what runs, or where a key is read from -
+//
+// The behaviour arms of lib/global-only-keys.mjs, driven through the two faces
+// that share the merge. The per-row unit tests live in
+// global-only-keys.test.mjs; these ask what `config.mjs get` reports.
+
+/**
+ * Write one two-layer fixture and read one key back through `get`.
+ * @param {string} label @param {any} repo @param {any} [global]
+ * @param {string} [key]
+ */
+function scoped(label, repo, global, key = 'workflow.test_command') {
+  const repoFile = join(dir, `cfg02-${label}-repo.json`);
+  writeFileSync(repoFile, JSON.stringify(repo));
+  const globalFile = join(dir, `cfg02-${label}-global.json`);
+  if (global !== undefined) writeFileSync(globalFile, JSON.stringify(global));
+  return { r: run(['get', key, '--file', repoFile], globalFile), repoFile };
+}
+
+test('get: a repo layer setting workflow.test_command loses to the user-global one', () => {
+  const { r, repoFile } = scoped('beaten',
+    { workflow: { test_command: 'repo-cmd' } },
+    { workflow: { test_command: 'global-cmd' } });
+  assert.equal(r.ok, true);
+  assert.equal(r.values['workflow.test_command'], 'global-cmd');
+  // ...and it is named, with the file it came from, so an attack and an honest
+  // mistake are equally visible.
+  const named = (r.warnings || []).filter((w) => /workflow\.test_command/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.ok(named[0].includes(repoFile), named[0]);
+});
+
+test('get: the same key in the repo layer ALONE resolves to the schema default', () => {
+  // The half that shows the repo value is dropped rather than merely outranked:
+  // with no global layer to win, the read still lands on null.
+  const { r, repoFile } = scoped('alone', { workflow: { test_command: 'repo-cmd' } });
+  assert.equal(r.ok, true);
+  assert.equal(r.values['workflow.test_command'], null);
+  const named = (r.warnings || []).filter((w) => /workflow\.test_command/.test(w));
+  assert.equal(named.length, 1, JSON.stringify(r.warnings));
+  assert.ok(named[0].includes(repoFile), named[0]);
+});
+
+test('get: all three keys at null - the shipped template shape - are silently dropped', () => {
+  // The strip is value-agnostic (D-13). Leaving the null in place would let a
+  // scaffolded repo's untouched template SUPPRESS the user-global command,
+  // because deepMerge returns the higher layer's value for a null - reverting
+  // that half turns this arm red with `null` rather than "global-cmd".
+  const { r } = scoped('nulls',
+    { workflow: { test_command: null, lint_command: null }, review: { key_file: null } },
+    { workflow: { test_command: 'global-cmd' } });
+  assert.equal(r.ok, true);
+  assert.equal(r.values['workflow.test_command'], 'global-cmd');
+  // ...and nothing is said: a new project's first command must not train the
+  // click-through habit CFG-02 declined to build.
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+test('get: all three keys are stripped, not just the first one in the set', () => {
+  const repo = {
+    workflow: { test_command: 'repo-t', lint_command: 'repo-l' },
+    review: { key_file: '/repo/keys.env' },
+  };
+  const global = {
+    workflow: { test_command: 'global-t', lint_command: 'global-l' },
+    review: { key_file: '/global/keys.env' },
+  };
+  for (const [key, want] of [['workflow.test_command', 'global-t'],
+    ['workflow.lint_command', 'global-l'], ['review.key_file', '/global/keys.env']]) {
+    const { r } = scoped(`all-${key}`, repo, global, key);
+    assert.equal(r.values[key], want, `${key}: ${JSON.stringify(r)}`);
+  }
+});
+
+test('get --global: the user-global layer sets these keys, and is never stripped', () => {
+  // The --global arm hands GLOBAL_CONFIG in as the file to read, collapsing it
+  // into the repo slot. Stripping there would drop the user's OWN settings and
+  // then warn them about it.
+  const gpath = join(dir, 'cfg02-asglobal.json');
+  writeFileSync(gpath, JSON.stringify({ workflow: { test_command: 'global-cmd' } }));
+  const r = run(['get', '--global', 'workflow.test_command'], gpath);
+  assert.equal(r.ok, true);
+  assert.equal(r.values['workflow.test_command'], 'global-cmd');
+  assert.equal(r.source, 'global');
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+});
+
+test('get: an unrelated repo key still merges - the strip is exactly three keys', () => {
+  const { r } = scoped('sibling',
+    { workflow: { test_command: 'repo-cmd', max_plan_tasks: 4 } }, undefined,
+    'workflow.max_plan_tasks');
+  assert.equal(r.values['workflow.max_plan_tasks'], 4);
 });

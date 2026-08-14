@@ -223,14 +223,16 @@ integration-checker, code-reviewer/code-fixer (→ panel-review). Rung files
   final verdict. Same as `/panel-review`, which is the proven pattern.
 - Config drives: `backend`, `mode` (single|panel|adjudicated), `reviewers[]`, provider config
   (`providers.<name>`: model id, endpoint, key reference — key storage TBD), and per-trigger gating
-  (`plan`, `diff`, `risk_surface` auto-detected, `pre_ship`) at off|advisory|blocking|adjudicated.
+  (`plan`, `diff`, `risk_surface` auto-detected, `phase_diff`) at off|advisory|blocking|adjudicated.
   No global master switch - per-trigger `off` disables any gate, and consult is always-ask, so a
   separate on/off is redundant.
 - **Trigger wiring (which skill fires what):** `plan` → `cad-plan`, after PLAN.md is written;
   `diff` → `cad-execute`, at plan completion (advisory by default — low-ceremony solo flow);
   `risk_surface` → `cad-execute`, once per plan on the committed range when it matches a risk surface;
-  `pre_ship` → `cad-land`, before executing the chosen publish mechanism. `cad-verify` routes
-  fix requests through the subsystem rather than spawning its own fixer loop.
+  `phase_diff` → `cad-execute`, once the parallel path's worktree batches merge. `cad-verify` routes
+  fix requests through the subsystem rather than spawning its own fixer loop. `/cad-land` fires
+  nothing: the land-time gate it once had was deleted in v3.2.0 as a fourth pass over work three
+  passes had already cleared.
 - **`risk_surface` detection — shipped defaults** (path/diff heuristics, configurable list):
   auth/authz/sessions · DB schema/migrations · money/billing/pricing · concurrency/async/locking ·
   destructive ops (deletes, bulk updates, drops) · secrets/crypto/keys · public API/wire
@@ -310,8 +312,9 @@ lever is trigger frequency (gating), never a weak reviewer.
   dial needs per-rung reviewer agent files, which is #63's proposal to land or reject - deliberately
   not half-built here.
 - ⚠️ **SCOPED (2026-07-29, CFG-01):** the same treatment for the key beside it. Six `tier` keys
-  survived the routing reframe untouched - `review.triggers.{plan,diff,risk_surface,phase_diff,
-  pre_ship}.tier` and `review.decision_review.tier` - and they read as a universal per-trigger
+  survived the routing reframe untouched - `review.triggers.{plan,diff,risk_surface,phase_diff}.tier`,
+  the land-time trigger's own (deleted with that trigger in v3.2.0) and
+  `review.decision_review.tier` - and they read as a universal per-trigger
   model dial while only the cross-model arm can honour them: `review.providers.<name>.tiers[
   trigger.tier]` is the ONLY bridge from a trigger to a provider model id, and the
   `claude-subagent` reviewer's model comes from the routing cell instead (for
@@ -476,8 +479,8 @@ lever is trigger frequency (gating), never a weak reviewer.
   closing holes in `risk.override.<surface>`, a key family whose only job was to switch OFF a
   detector. The detector itself is what was wrong. It matched ~100 common lowercase tokens against
   the paths a phase's PLAN declared and raised the WHOLE phase to `critical` on one hit, which put
-  all six roles on opus at `xhigh` and turned `plan`, `phase_diff` and `pre_ship` adjudicated at
-  once. Measured on a transcript-recall project: `src/store/session.rs` floored phase 1 on `auth`,
+  all six roles on opus at `xhigh` and turned `plan`, `phase_diff` and the land-time gate
+  adjudicated at once. Measured on a transcript-recall project: `src/store/session.rs` floored phase 1 on `auth`,
   `src/store/lock.rs` and `src/ingest/mod.rs` floored phase 2 on `concurrency` and
   `untrusted_input`, and no phase of that project could ever route below `critical` - 15 of 16
   resolves ran opus, 9 of 16 at `xhigh`, against a README claim of ~27% routed down. The floor also
@@ -537,8 +540,9 @@ rewritten.
   branch, and none of that was a decision, it was just keystrokes. `auto_close` stays
   off by default because publishing should be a choice. But once I have made that
   choice, being asked to re-make it at four separate prompts is not safety, it is
-  friction wearing safety's coat. The one gate that actually matters, a blocking
-  `pre_ship` finding, still stops the chain cold.
+  friction wearing safety's coat. The one gate that actually matters, a surviving
+  blocker or high `risk_surface` finding from this branch's own fires, still stops
+  the chain cold.
 - *Not reversed:* the no-preselected-default sub-principle stands. `auto_close` skips the
   publish ask entirely; it installs no default mechanism. `/cad-land`'s interactive path
   still asks with no preselected default (above). The reversal removed the *absolute*, not

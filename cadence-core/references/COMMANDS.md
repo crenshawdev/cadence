@@ -21,7 +21,7 @@ with progress and task alongside.
 
 ## Review & quality gates
 The adversarial-review subsystem (references/review-triggers.md) fires
-automatically at the plan / diff / risk_surface / pre_ship triggers; these skills
+automatically at the plan / diff / risk_surface / phase_diff triggers; these skills
 are the on-demand and standalone gates.
 
 | Command | What it does |
@@ -37,7 +37,7 @@ are the on-demand and standalone gates.
 ## Lifecycle & git
 | Command | What it does |
 |---|---|
-| `/cad-land [base]` | Publish - report git state, fire `pre_ship`, ask the mechanism with NO default (push / MR-PR / tag / leave local), do exactly that. |
+| `/cad-land [base]` | Publish - report git state, ask the mechanism with NO default (push / MR-PR / tag / leave local), do exactly that. Fires no review of its own. |
 | `/cad-milestone [ver]` | Version cut - audit-gate, tag, prune completed phases, evolve PROJECT.md, refresh REQUIREMENTS. Folds in cleanup. |
 | `/cad-phase <op> [N]` | CRUD phases (`add`/`insert`/`remove`/`edit`) with consistent renumber + reference repair. |
 | `/cad-undo <N>` | Roll back a phase's commits from the SUMMARY manifest - dirty guard, `--no-commit` squash, status reset. |
@@ -55,7 +55,7 @@ are the on-demand and standalone gates.
 
 ## Capabilities (not standalone skills)
 - **Adversarial review** - references/review-triggers.md. Fires at plan / diff /
-  risk_surface / pre_ship; claude-subagent by default, OpenAI/Gemini when
+  risk_surface / phase_diff; claude-subagent by default, OpenAI/Gemini when
   configured (`/cad-config --review`).
 - **Consult** - references/consult.md. User-gated second-model help at dead-ends,
   offered by cad-debug, cad-execute (structural stop), cad-plan (phase too big).

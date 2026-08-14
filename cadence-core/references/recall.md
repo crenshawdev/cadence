@@ -15,10 +15,19 @@ already ran.
 `planning.mjs recall "<terms>"` prints one JSON line:
 
 ```
-{ok, results:[{score, source, phase?, snippet}]}
+{ok, results:[{score, source, phase?, snippet}], total}
 ```
 
-`results` is ranked, best first; render the TOP results and let the tail go.
+`results` is ranked, best first, and BOUNDED - `--top N` returns at most N,
+default 5. `total` is how many matched, so a truncated answer reads as
+truncated rather than as a thin corpus. Raise `--top` only when the caller
+genuinely consumes the tail; nothing in the spine does.
+
+The bound is not a nicety. Unbounded, a real query on a mature `.planning/`
+returned 72 results at 55.8 KB - past the host's spool threshold, so the caller
+paid the emit AND a second round trip to read back the five hits it wanted.
+Same query bounded: 953 B.
+
 Each rendered line carries that result's `snippet`, its `source` file and its
 `phase`.
 

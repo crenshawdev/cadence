@@ -32,7 +32,8 @@ Run the milestone workflow end-to-end. The audit gate is real - do not tag a
 milestone with a failing traceability audit unless the user explicitly
 overrides. Prune from the working tree only (git keeps the history); never
 auto-push the tag. Under `git.auto_close` (default off), chain into `/cad-land`
-to complete the close (PR -> merge -> reset), still halting on a blocking
-`pre_ship` finding; otherwise stop at the tag and leave publishing to a separate
+to complete the close (PR -> merge -> reset), still halting on a surviving
+blocker/high `risk_surface` finding; otherwise stop at the tag and leave
+publishing to a separate
 `/cad-land`.
 </process>

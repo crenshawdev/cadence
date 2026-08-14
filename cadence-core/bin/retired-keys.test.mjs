@@ -55,7 +55,29 @@ test('RETIRED_KEYS is frozen, so a caller cannot edit the shared map', () => {
   assert.equal(Object.isFrozen(RETIRED_KEYS['model.profile']), true);
 });
 
+test('review.triggers.pre_ship.gate reads as a removal naming the milestone', () => {
+  const e = retiredKeyError('review.triggers.pre_ship.gate');
+  assert.match(e, /retired in v3\.2\.0/);
+  assert.match(e, /risk_surface/);          // what still gates the close
+  assert.doesNotMatch(e, /use "/);          // nothing took its place
+});
+
+test('review.triggers.pre_ship.tier and .effort each name v3.2.0 too', () => {
+  for (const k of ['review.triggers.pre_ship.tier', 'review.triggers.pre_ship.effort']) {
+    assert.match(retiredKeyError(k), /retired in v3\.2\.0/, k);
+  }
+});
+
 // --- retiredKeysIn: the read faces --------------------------------------------
+
+test('a config that set the pre-ship gate gets a v3.2.0 warning, not unrecognized-key', () => {
+  // This repo's own .planning/config.json carried `review.triggers.pre_ship.gate`
+  // until the trigger was deleted, so the upgrade path is not hypothetical.
+  const w = retiredKeysIn({ review: { triggers: { pre_ship: { gate: 'off' } } } });
+  assert.equal(w.length, 1, JSON.stringify(w));
+  assert.match(w[0], /review\.triggers\.pre_ship\.gate/);
+  assert.match(w[0], /v3\.2\.0/);
+});
 
 test('a config still holding model.profile warns exactly once, naming both keys', () => {
   const w = retiredKeysIn({ model: { profile: 'balanced' } });

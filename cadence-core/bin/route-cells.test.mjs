@@ -10,8 +10,10 @@ import assert from 'node:assert/strict';
 import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
 
 const LEVELS = ['solo', 'shipped', 'critical'];
-const TRIGGERS = ['plan', 'diff', 'risk_surface', 'phase_diff', 'pre_ship'];
+const TRIGGERS = ['plan', 'diff', 'risk_surface', 'phase_diff'];
 const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const CATEGORIES = ['auth', 'migrations', 'billing', 'concurrency', 'destructive',
+  'secrets', 'api_contract', 'untrusted_input'];
 const VOCAB = { levels: LEVELS, triggers: TRIGGERS, gates: GATES };
 
 /** A well-formed one-role table, deep-cloned per row so a mutation is local. */
@@ -20,11 +22,13 @@ function table(role = 'cad-verifier', cell = { model: 'opus', effort: 'high', re
     rung_order: ['low', 'medium', 'high', 'xhigh', 'max'],
     model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
     roles: [role],
+    tier_names: ['flagship', 'balanced', 'cheap'],
+    tiers: { plan: 'flagship', diff: 'balanced', risk_surface: 'flagship', phase_diff: 'flagship' },
     cells: {}, review: {}, verify: {},
   };
   for (const level of LEVELS) {
     t.cells[level] = { [role]: { ...cell } };
-    t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off', pre_ship: 'advisory' };
+    t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off' };
     t.verify[level] = 'off';
   }
   return t;
@@ -172,7 +176,7 @@ test('a review key that is not a schema trigger is unknown-trigger naming the ce
   const hit = find(t, 'unknown-trigger');
   assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
   assert.match(hit.detail, /solo\/frobnicate/);
-  assert.match(hit.detail, /plan, diff, risk_surface, phase_diff, pre_ship/);
+  assert.match(hit.detail, /plan, diff, risk_surface, phase_diff/);
 });
 
 test('an unknown trigger reports ONCE, not also as a bad gate value', () => {
@@ -180,6 +184,59 @@ test('an unknown trigger reports ONCE, not also as a bad gate value', () => {
   t.review.solo.frobnicate = 'maybe';
   const c = codes(t);
   assert.deepEqual(c, ['unknown-trigger']); // the gate is the wrong thing to fix
+});
+
+// --- the tiers grid, keyed on a trigger alone ---------------------------------
+
+test('a trigger with no tiers entry is missing-cell naming that trigger', () => {
+  const t = table();
+  delete t.tiers.risk_surface;
+  const hit = find(t, 'missing-cell');
+  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+  assert.match(hit.detail, /^tiers\/risk_surface/);
+  assert.match(hit.detail, /review\.triggers\.risk_surface\.tier/);
+});
+
+test('a tiers key that is not a schema trigger is unknown-trigger naming it', () => {
+  const t = table();
+  t.tiers.frobnicate = 'flagship';
+  const hit = find(t, 'unknown-trigger');
+  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+  assert.match(hit.detail, /^tiers\/frobnicate/);
+  assert.match(hit.detail, /plan, diff, risk_surface, phase_diff/);
+});
+
+test('a tier outside tier_names is unknown-tier naming the trigger and the set', () => {
+  const t = table();
+  t.tiers.plan = 'premium';
+  const hit = find(t, 'unknown-tier');
+  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+  assert.match(hit.detail, /^tiers\/plan/);
+  assert.match(hit.detail, /\[flagship, balanced, cheap\]/);
+});
+
+test('a tier of the wrong TYPE reports rather than throwing', () => {
+  const t = table();
+  t.tiers.diff = 7;
+  const hit = find(t, 'unknown-tier');
+  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+  assert.match(hit.detail, /^tiers\/diff/);
+});
+
+test('an absent tiers block is ONE missing-cell, not one per trigger', () => {
+  const t = table();
+  delete t.tiers;
+  const c = cellIssues(t, VOCAB).filter((i) => i.code === 'missing-cell');
+  assert.equal(c.length, 1, JSON.stringify(c));
+  assert.match(c[0].detail, /^tiers: no tiers block/);
+});
+
+test('an absent tier_names is ONE problem, not one per trigger', () => {
+  const t = table();
+  delete t.tier_names;
+  const c = cellIssues(t, VOCAB).filter((i) => i.code === 'unknown-tier');
+  assert.equal(c.length, 1, JSON.stringify(c));
+  assert.match(c[0].detail, /tier_names is absent or empty/);
 });
 
 // --- rung-demotion, the direction no membership check can see -----------------
@@ -243,8 +300,9 @@ test('a table that is null, a string or an array yields issues but never throws'
     assert.doesNotThrow(() => cellIssues(bad, VOCAB));
   }
   // With no declared roles there are no (level, role) pairs to miss, but every
-  // level still owes a review row and a verify value.
-  assert.equal(cellIssues(null, VOCAB).length, LEVELS.length * 2);
+  // level still owes a review row and a verify value - plus the two the
+  // level-less `tiers` grid owes once: its block and its vocabulary array.
+  assert.equal(cellIssues(null, VOCAB).length, LEVELS.length * 2 + 2);
 });
 
 test('an empty vocabulary checks nothing rather than failing everything', () => {
@@ -287,7 +345,7 @@ const VOCAB_ARRAYS = { levels: LEVELS, gates: GATES };
 
 /** A well-formed vocabulary table, deep-cloned per row. */
 function vocabTable() {
-  return { stakes_order: LEVELS, gates: GATES };
+  return { stakes_order: LEVELS, gates: GATES, risk_surface_categories: [...CATEGORIES] };
 }
 
 const vFind = (t, code, v = VOCAB_ARRAYS) => vocabularyIssues(t, v).find((i) => i.code === code);
@@ -328,4 +386,40 @@ test('an empty vocabulary checks nothing rather than failing everything', () => 
   // The caller supplies the accepted names; a schema that failed to yield them
   // must not turn into phantom problems.
   assert.deepEqual(vocabularyIssues(vocabTable(), {}), []);
+});
+
+// --- surface-vocabulary-missing ----------------------------------------------
+//
+// The one vocabulary check that takes NO caller list: route.mjs returns this
+// array verbatim as the risk_surface scope when no config layer answered, so
+// its well-formedness is the whole subject and there is nothing to compare it
+// against here. It is checked even under an empty caller vocabulary, which is
+// why the row below passes `{}`.
+
+test('an absent risk_surface_categories is surface-vocabulary-missing', () => {
+  const t = vocabTable();
+  delete t.risk_surface_categories;
+  const hit = vFind(t, 'surface-vocabulary-missing');
+  assert.ok(hit, JSON.stringify(vocabularyIssues(t, VOCAB_ARRAYS)));
+  assert.match(hit.detail, /review\.triggers\.risk_surface\.surfaces/);
+});
+
+test('an empty risk_surface_categories is surface-vocabulary-missing - an empty scope fires on nothing', () => {
+  const t = vocabTable();
+  t.risk_surface_categories = [];
+  assert.ok(vFind(t, 'surface-vocabulary-missing'));
+});
+
+test('a non-string entry in risk_surface_categories is surface-vocabulary-missing', () => {
+  for (const bad of [['auth', 7], ['auth', ''], ['auth', null], 'auth', { auth: true }]) {
+    const t = vocabTable();
+    t.risk_surface_categories = bad;
+    assert.ok(vFind(t, 'surface-vocabulary-missing'), JSON.stringify(bad));
+  }
+});
+
+test('risk_surface_categories is checked even when the caller supplies no vocabulary', () => {
+  const t = vocabTable();
+  delete t.risk_surface_categories;
+  assert.deepEqual(vocabularyIssues(t, {}).map((i) => i.code), ['surface-vocabulary-missing']);
 });

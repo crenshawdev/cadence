@@ -11,6 +11,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Grep|Glob|Bash|NotebookRead",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/read-trace.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

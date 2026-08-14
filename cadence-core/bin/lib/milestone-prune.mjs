@@ -57,7 +57,7 @@ export function pruneRoadmap(text, completed) {
         removedSections++;
         keep[i] = false;
         let j = i + 1;
-        while (j < lines.length && !/^###? /.test(lines[j]) && !/^## /.test(lines[j])) {
+        while (j < lines.length && !/^###? /.test(lines[j])) {
           keep[j] = false;
           j++;
         }
@@ -90,11 +90,20 @@ const SHIPPED_PREAMBLE = [
 
 /**
  * Move the shipped milestone's requirements under `## Shipped`. Shipped =
- * every `## Traceability` row whose phase is in `completed`. For each id:
+ * every `## Traceability` row whose phase is in `completed` AND whose status
+ * is not `Deferred`. For each id:
  * its `## Active` bullet (`- **ID**: summary`) is removed, its Traceability
  * row is removed, and one `| ID (summary) | phase | Complete | label |` row
  * lands in `## Shipped` - created after `## Active` when absent, appended
  * after the table's last row when present.
+ *
+ * The `Deferred` term is the one the siblings at `planning.mjs:317`, `:513`
+ * and `:1023` already carry: a row held back on purpose belongs to the NEXT
+ * milestone, and recording it here as `Complete` is this command - whose whole
+ * job is auditing that nothing was dropped - reporting a drop as a delivery.
+ * A Deferred row therefore keeps its Traceability row, keeps its `## Active`
+ * bullet, and appears in no `moved` entry; the prose half of the close carries
+ * it forward, which is what `phase-done --reqs` already assumes.
  *
  * @param {string} text
  * @param {number[]} completed
@@ -104,7 +113,8 @@ const SHIPPED_PREAMBLE = [
  */
 export function archiveRequirements(text, completed, label) {
   const rows = parseRequirements(text);
-  const shipped = rows.filter((r) => r.phase !== null && completed.includes(r.phase));
+  const shipped = rows.filter((r) => r.phase !== null && completed.includes(r.phase)
+    && r.status !== 'Deferred');
   if (!shipped.length) return { text, moved: [], createdSection: false };
 
   let lines = text.split('\n');
@@ -114,13 +124,35 @@ export function archiveRequirements(text, completed, label) {
   //    and its Traceability row. Bullet form is the seeding convention
   //    (`- **ID**: line`); the row match is bounded to the Traceability
   //    section so a same-shaped row under `## Shipped` is never re-removed.
-  for (const { id } of shipped) {
-    const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
-    lines = lines.filter((line) => {
-      const m = line.match(bulletRe);
-      if (m) { summaries.set(id, m[1].trim()); return false; }
-      return true;
-    });
+  //
+  //    The bullet scan is bounded the same way, to `## Active` - heading to the
+  //    next `^## `, the cut parseRequirements and lib/planning-files.mjs:388-391
+  //    already use. Unbounded it read the WHOLE file, so an id carrying a
+  //    bullet under `## Active` AND under a later hold section had both
+  //    deleted and `summaries.set` ran twice - last write wins, and the
+  //    deferral note became the shipped row's summary. The bound is by
+  //    PLACEMENT, never by matching a hold section by NAME (D-07): the shipped
+  //    template spells it `## v2 Requirements` where this repo spells it
+  //    `## Deferred`, and a name match would fix one repository and leave every
+  //    template-shaped project broken. A file with no `## Active` heading
+  //    removes no bullet and captures no summary - the same answer it already
+  //    gives for an id with no bullet.
+  const activeAt = lines.findIndex((l) => /^## Active\s*$/.test(l));
+  if (activeAt !== -1) {
+    let activeEnd = lines.length;
+    for (let i = activeAt + 1; i < lines.length; i++) {
+      if (/^## /.test(lines[i])) { activeEnd = i; break; }
+    }
+    let body = lines.slice(activeAt + 1, activeEnd);
+    for (const { id } of shipped) {
+      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
+      body = body.filter((line) => {
+        const m = line.match(bulletRe);
+        if (m) { summaries.set(id, m[1].trim()); return false; }
+        return true;
+      });
+    }
+    lines = [...lines.slice(0, activeAt + 1), ...body, ...lines.slice(activeEnd)];
   }
   let inTrace = false;
   const shippedIds = new Set(shipped.map((r) => r.id));

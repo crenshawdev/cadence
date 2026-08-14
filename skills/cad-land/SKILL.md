@@ -1,6 +1,6 @@
 ---
 name: cad-land
-description: "Land finished work - report git state, fire the pre_ship review, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
+description: "Land finished work - report git state, then ask the mechanism (push / MR or PR / tag / leave local). Never decides how you publish"
 argument-hint: "[base branch | defaults to git.base_branch]"
 allowed-tools:
   - Read
@@ -12,8 +12,8 @@ allowed-tools:
 <objective>
 Land the current branch's work. cad-land encodes "the git mechanism is the
 user's call" by construction: it never has a preselected publish action and
-never auto-pushes. It reports the state, runs the
-final review gate, asks how to publish, and executes exactly that - nothing more.
+never auto-pushes. It reports the state, asks how to publish, and executes
+exactly that - nothing more.
 </objective>
 
 <execution_context>
@@ -24,9 +24,7 @@ final review gate, asks how to publish, and executes exactly that - nothing more
 Read every config key this run needs in ONE `config.mjs get` up front
 (conventions.md Parallel work) - `git.base_branch git.protected_branches
 git.auto_close git.on_land_cleanup git.create_tag` - and reuse the values
-across the steps below rather than re-reading per step. The `pre_ship` gate is not among them:
-fire(trigger) takes it from the routing bundle, so the stakes level decides it
-rather than a schema default no layer wrote.
+across the steps below rather than re-reading per step.
 
 1. **Report git state.** Current branch; the base = `$ARGUMENTS`, else
    `git.base_branch`, else the first `git.protected_branches` entry that
@@ -41,40 +39,7 @@ rather than a schema default no layer wrote.
    land, or stop. If HEAD is a protected branch, the protected-branch guard
    (references/git-guard.md) applies to any commit here.
 
-3. **Fire `pre_ship`.** Read
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/review-triggers.md` (one
-   consult site - this step) at this step first, since this skill no longer
-   preloads it. Then run the `pre_ship` review
-   trigger with the refs
-   `{base_ref: <base>, head_ref: HEAD}` as the artifact - shape (a), so the
-   branch diff is never inlined here - honoring `review.triggers.pre_ship`
-   (default adjudicated). Report the outcome; a blocking FAIL halts the land
-   until fixed or the user overrides.
-
-   **Triage, then publish.** When the resolved gate is `adjudicated`, run the
-   triage gate exactly as
-   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` defines it -
-   Read it at this step rather than restating it here. Act
-   ONLY on the survivors the user names, each as an atomic conventional commit
-   (references/git-guard.md), then re-fire `pre_ship` ONCE - same `base`, the NEW
-   HEAD - so the publish decision is
-   made against the tree that actually ships: at most one re-fire per `/cad-land`
-   run, and report that re-fire's survivors rather than triaging them again -
-   iterating review->revise->review is the convergence loop review-triggers.md
-   forbids. Name which ask is which as they run: this triage ask carries a
-   default (NONE), and the step-4a publish ask carries none and never gets one.
-
-   Under `git.auto_close: true` (autonomous close, step 4b) the triage gate does
-   not prompt at all - the unattended close's triage is NONE by construction -
-   and a surviving blocker/high finding is instead a HARD halt before
-   any merge, regardless of the configured gate mode (even the default
-   adjudicated, which normally asks rather than auto-halting) - pass the
-   adjudicated survivors as `{findings}` on stdin to
-   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate` and on
-   `action:"halt"` stop the chain and surface the findings instead of merging
-   over them.
-
-4. **Publish - branch on `git.auto_close`.**
+3. **Publish - branch on `git.auto_close`.**
 
    **(a) `git.auto_close` false (default): ask the mechanism (ask-user seam, NO
    preselected default):**
@@ -92,7 +57,7 @@ rather than a schema default no layer wrote.
    **Read the publish rails before a publishing answer.** When the answer is
    direct push, open MR/PR, or a tag the user chose to push, Read
    `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
-   consult site - step 4a or 4b, never both) first: rail 3 and the
+   consult site - step 3a or 3b, never both) first: rail 3 and the
    `git.auto_close` policy govern all three, and this skill no longer preloads
    them.
 
@@ -102,14 +67,31 @@ rather than a schema default no layer wrote.
    pushed, MR/PR URL, tag created) and nothing implied.
 
    **(b) `git.auto_close` true: land the integration branch on base via
-   `PR -> merge`, no prompts.** Skip the 4a ask entirely (this is the single
+   `PR -> merge`, no prompts.** Skip the 3a ask entirely (this is the single
    opt-in that lets the close run unattended; it never installs a default into
-   the 4a ask). The integration branch is local-only
+   the 3a ask). The integration branch is local-only
    (references/git-publish.md rail 3 never
    auto-pushes).
+   - **Gate the unattended merge on surviving findings.** Nobody is watching
+     this arm, so a surviving blocker/high finding is a HARD halt before any
+     merge rather than an ask. This skill fires no review of its own: the
+     findings are the ones this branch's `risk_surface` fires already settled
+     and persisted, in TWO places: `.planning/phases/*/REVIEW-risk_surface*.md`,
+     and `.planning/REVIEW-risk_surface-*.md`. Read every such file in the tree,
+     union their `findings` arrays, and pipe
+     `{"findings": [...]}` on stdin to
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" gate`; on
+     `action:"halt"` stop the chain and surface the findings instead of merging
+     over them. BOTH globs, always: `/cad-milestone` prunes the phase dirs
+     before it chains this command, so there the second is the only producer
+     left. When no such file exists, pipe an explicit `{"findings":[]}` -
+     that is the only spelling of "nothing survived", and `action:"halt"` also
+     fires when the payload could not be read at all (empty stdin, malformed
+     JSON, or a valid envelope carrying no findings list), since the gate never
+     reports "no surviving finding" about input it never parsed.
    - **Read the publish rails first.** Read
      `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/git-publish.md` (one
-     consult site - step 4a or 4b, never both) before the
+     consult site - step 3a or 3b, never both) before the
      first bullet below that publishes anything - the GitHub seam call and
      GitLab's `glab mr create`, which publishes the source branch itself, both
      count, so this read is NOT scoped to the GitHub arm. Rail 3 and the
@@ -147,7 +129,7 @@ rather than a schema default no layer wrote.
      (`--yes` skips the confirm prompt; `--auto-merge=false` merges immediately
      rather than deferring behind a running pipeline). Forgejo
      `tea pr merge --style merge <index>` (tea deletes no local branch; the
-     reap in step 5 owns that).
+     reap in step 4 owns that).
    - **Confirm it landed before any cleanup.** `gh pr view <branch> --json
      state,mergedAt` must show MERGED, `glab mr view <branch>` must show
      merged, or `tea pr <index>` must show state merged. A non-zero exit
@@ -155,7 +137,7 @@ rather than a schema default no layer wrote.
      PR/MR (auto-merge only enabled, CI pending) means the merge did NOT land:
      stop, surface the reason, and do NOT reap.
 
-5. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
+4. **Terminal cleanup - return to base + pull + reap (`git.on_land_cleanup`,
    default on).** Run this ONLY when a merge actually landed on this machine
    (skip it after an open-PR-only or leave-local land; when that PR merges
    later outside this session, this cleanup - pull, tag, reap - is the piece
@@ -177,7 +159,7 @@ rather than a schema default no layer wrote.
 
    Then compute the reap decision against the now-current base:
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/land-cleanup.mjs" cleanup`.
-   In the auto_close path append `--merged true` (step 4b confirmed the PR/MR
+   In the auto_close path append `--merged true` (step 3b confirmed the PR/MR
    MERGED) so the reap never hinges on local-base freshness; a manual land
    omits it and the seam falls back to `git branch --merged <base>`. Relay its
    `warnings[]`: a layer that did not parse means `on_land_cleanup` and `base`
@@ -197,11 +179,11 @@ rather than a schema default no layer wrote.
 <guardrails>
 - No preselected publish default, ever. No auto-push. No auto-commit. The one
   exception is `git.auto_close` (default off), the explicit opt-in that runs the
-  close unattended; its mechanic is stated once, at steps 3 and 4(b), beside the
+  close unattended; its mechanic is stated once, at step 3(b), beside the
   code that runs it.
 - With `git.auto_close` off, execute only the single chosen mechanism; do not
   chain (e.g. push AND tag) unless the user chose both.
-- No survivor is acted on that the user did not pick: adjudicated `pre_ship`
-  survivors are triaged (default NONE) before anything is committed, and the
-  unattended arm acts on none.
+- `/cad-land` fires no review of its own and commits no fix: it publishes what
+  was already reviewed and already triaged upstream. The unattended arm acts on
+  no survivor either - it reads them only to halt or proceed.
 </guardrails>

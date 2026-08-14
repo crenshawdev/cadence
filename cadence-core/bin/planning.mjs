@@ -40,6 +40,11 @@
 //   detect-commands [--root <path>]  the project's own lint/typecheck commands,
 //                                   read from its manifests (NOT --dir: --root
 //                                   is the PROJECT root, one level deep only)
+//   detect-surfaces [--root <path>]  which of the eight risk-surface categories
+//                                   the project's STRUCTURE evidences - dirs,
+//                                   manifests, file types, never source text
+//                                   (NOT --dir: --root is the PROJECT root,
+//                                   two levels deep)
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
@@ -105,10 +110,14 @@ import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.
 import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
+import { READS_FILE, summarizeReads } from './lib/read-trace.mjs';
 import { suggestFromRender } from './lib/trace-suggest.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
+import { redactUrl } from './lib/redact-url.mjs';
+import { testSeamOpen } from './lib/test-seam.mjs';
+import { scanTree } from './lib/surface-scan.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -123,9 +132,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // The one path this script resolves outside `--dir`. Read relative to the
 // SCRIPT, not the cwd, so it names the plugin actually executing - the whole
 // point, given the skew this reports on. CADENCE_PLUGIN_MANIFEST overrides it
-// (hermetic test injection only; production always uses the shipped file), the
-// same precedent as CADENCE_CONFIG_SCHEMA and CADENCE_ROUTE_TABLE.
-const MANIFEST_PATH = process.env.CADENCE_PLUGIN_MANIFEST
+// ONLY when the `CADENCE_TEST_SEAM` sentinel holds (lib/test-seam.mjs); without
+// it the variable is ignored and the shipped manifest is read, silently - this
+// constant resolves at module load, before any dispatch exists to carry a
+// warning. Same gate as CADENCE_CONFIG_SCHEMA and CADENCE_ROUTE_TABLE, and for
+// the same reason: every version-skew answer is computed from this file, which
+// is what QW-04 exists to keep honest.
+const MANIFEST_PATH = (testSeamOpen() && process.env.CADENCE_PLUGIN_MANIFEST)
   || join(HERE, '..', '..', '.claude-plugin', 'plugin.json');
 
 /**
@@ -480,8 +493,16 @@ function cmdCursorSet(dir, opts) {
 // explicitly via --reqs.
 // ---------------------------------------------------------------------------
 function cmdPhaseDone(dir, opts) {
-  const n = Number(opts.n);
-  if (!opts.n || Number.isNaN(n)) return fail('bad-args', 'phase-done needs --n <phase>');
+  // `--n "$PHASE"` with the variable unset reaches parseArgs as a valueless
+  // flag, which mints the boolean `true` - and `Number(true) === 1` boxed
+  // phase 1 complete and flipped its traceability rows, ok:true. requirePhaseArg
+  // refuses that shape (and every non-numeric one) before anything is read.
+  // `.value`, not `.raw` (D-11): setPhaseBox, the `r.phase === n` row filter and
+  // the unknown-phase message all take a number, and the raw spelling would
+  // regress `--n 02` to unknown-phase while `--n 2.1` must keep boxing Phase 2.1.
+  const parsedPhase = requirePhaseArg(opts.n);
+  if (!parsedPhase.ok) return fail('bad-args', 'phase-done needs --n <phase>');
+  const n = parsedPhase.value;
   // An explicit --reqs means "exactly these rows". An empty one is almost
   // always an unset variable (`--reqs "$IDS"`), and treating it as "flag
   // absent" would silently widen that to every non-Deferred row of the phase -
@@ -670,9 +691,18 @@ function cmdUat(dir, sub, opts) {
   if (sub === 'record') {
     const uat = loadUat(dir, n);
     if (!uat) return;
-    const k = Number(opts.item);
+    // A valueless `--item` parses as the boolean `true` and `Number(true)` is 1,
+    // so `--item "$K"` with K unset recorded a result against item 1 - and the
+    // set-once `first_pass` invariant then makes that verdict permanent. Refused
+    // before the lookup, alongside the `--result`/`--source`/`--origin` guards
+    // below rather than in place of them. A clean integer naming no item keeps
+    // today's `unknown-item` answer: "you named no item" and "that item is not
+    // here" are different repairs.
+    const parsedItem = requireInt(opts.item);
+    if (!parsedItem.ok) return fail('bad-args', 'uat record needs --item <k>');
+    const k = parsedItem.value;
     const item = uat.items.find((i) => Number(i.k) === k);
-    if (!item) return fail('unknown-item', `no item ${opts.item} in UAT.md`);
+    if (!item) return fail('unknown-item', `no item ${k} in UAT.md`);
     if (!UAT_RESULTS.includes(opts.result)) {
       return fail('bad-result', `--result must be one of: ${UAT_RESULTS.join(' | ')}`);
     }
@@ -1198,7 +1228,9 @@ function cmdAudit(dir) {
 // declared id on a phase carrying no checklist at all) | fieldless-checklist
 // (ONE per phase, `{phase, break, file}`: the checklist carries items but none
 // of the traceability fields, beside a CONTEXT that did declare ids - so nothing
-// in it can be traced in either direction). A `legacy` entry is `{phase,
+// in it can be traced in either direction) | unreadable-context (ONE per phase,
+// `{phase, break, code, file}`: the CONTEXT.md is there and could not be read,
+// so the phase's criteria were never looked at). A `legacy` entry is `{phase,
 // reason}`, never a bare phase number: an exemption that states no reason reads
 // exactly like a clean pass, which is the skew D-04 wants readable.
 // ---------------------------------------------------------------------------
@@ -1218,6 +1250,33 @@ const LEGACY_REASON = 'pre-field checklist: no `fields_version` frontmatter '
   + 'marker, no `criterion` or `origin` on any item, and its CONTEXT declares '
   + 'no AC<N> ids';
 
+/**
+ * `criteria-coverage`'s OWN CONTEXT.md reader (D-12).
+ *
+ * `read()` collapses every errno to `null`, so the D-10 exemption below could
+ * not tell a phase whose CONTEXT was pruned away from one at `chmod 000` or
+ * replaced by a directory - and the second answered `{"ok":true,"phases":[]}`
+ * over criteria it had never looked at, which is precisely the shape of "the
+ * gate passed a phase it never checked".
+ *
+ * Scoped to this ONE call site deliberately: `read()`'s 38 other callers sit
+ * behind `|| ''` fallbacks, and widening the errno set there would turn a
+ * permission problem into a break across `status`, `audit`, `plan-overlap`,
+ * `plan-size` and `seed-reqs` all at once.
+ * `code` is the refusal: null when the file was read AND when it is genuinely
+ * absent (ENOENT alone keeps the exemption - absent really is nothing to
+ * prove), the errno otherwise, with `text` null on both of those arms.
+ * @param {string} file
+ * @returns {{text: string|null, code: string|null}}
+ */
+function readCoverageContext(file) {
+  try { return { text: readFileSync(file, 'utf8'), code: null }; }
+  catch (e) {
+    const errno = e && /** @type {any} */ (e).code ? String(/** @type {any} */ (e).code) : 'UNKNOWN';
+    return { text: null, code: errno === 'ENOENT' ? null : errno };
+  }
+}
+
 function cmdCriteriaCoverage(dir) {
   const roadmapText = read(join(dir, 'ROADMAP.md'));
   if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
@@ -1236,7 +1295,19 @@ function cmdCriteriaCoverage(dir) {
 
   for (const p of roadmap) {
     const pdir = join(dir, 'phases', String(p.n));
-    const contextText = read(join(pdir, 'CONTEXT.md'));
+    const context = readCoverageContext(join(pdir, 'CONTEXT.md'));
+    // A CONTEXT that EXISTS and could not be read is a break, never D-10's
+    // exemption below: the phase's criteria were not proven absent, they were
+    // never read. `breaks` is the only verdict-moving key in this envelope, the
+    // same reasoning the `fieldless-checklist` break states - and like it (and
+    // unlike `uncovered`) it fires whatever the roadmap checkbox says, because
+    // an unreadable file is never a transient state of work in flight.
+    if (context.code !== null) {
+      breaks.push({ phase: p.n, break: 'unreadable-context', code: context.code,
+        file: `phases/${p.n}/CONTEXT.md` });
+      continue;
+    }
+    const contextText = context.text;
     const uatText = read(join(pdir, 'UAT.md'));
     // An absent CONTEXT.md is nothing to prove (D-10): CONTEXT is a documented
     // optional artifact, and `milestone.md` runs this gate at step 1 while the
@@ -1464,10 +1535,20 @@ function cmdPlanSize(dir, opts) {
   const tasks = plans.reduce((a, p) => a + p.tasks, 0);
 
   const over = [];
+  // Both ceilings are CONDITIONAL, so a verdict has to say whether anything
+  // was compared at all. `compared` names the ceilings that actually ran; an
+  // empty one makes `within` null below, because `within: true` beside
+  // `requirements_found: false` reported a comparison that never happened.
+  const reqsCompared = maxReqs !== null && phase.found;
+  const tasksCompared = maxTasks !== null && plans.length > 0;
+  const compared = [];
+  if (reqsCompared) compared.push('max_reqs');
+  if (tasksCompared) compared.push('max_tasks');
+
   // Absence is not zero (D-05): a roadmap with no detail block for this phase
   // reports found:false and is never compared, because a phase nobody wrote
   // down is not a small one.
-  if (maxReqs !== null && phase.found && phase.ids.length > maxReqs) {
+  if (reqsCompared && phase.ids.length > maxReqs) {
     over.push({ kind: 'phase-too-big', measured: phase.ids.length, ceiling: maxReqs,
       detail: `phase ${n} names ${phase.ids.length} requirements, ceiling ${maxReqs}` });
   }
@@ -1482,7 +1563,7 @@ function cmdPlanSize(dir, opts) {
   // Only once a plan EXISTS. An unwritten plan has zero tasks, and zero is
   // under every ceiling, so comparing before the planner runs would report a
   // clean phase for a plan nobody has written.
-  if (maxTasks !== null) {
+  if (tasksCompared) {
     for (const p of plans) {
       if (p.tasks <= maxTasks) continue;
       over.push({ kind: 'plan-too-many-tasks', plan: p.plan, measured: p.tasks,
@@ -1501,7 +1582,8 @@ function cmdPlanSize(dir, opts) {
     ...(maxReqs !== null ? { max_reqs: maxReqs } : {}),
     ...(maxTasks !== null ? { max_tasks: maxTasks } : {}),
     over,
-    within: over.length === 0,
+    compared,
+    within: compared.length ? over.length === 0 : null,
   });
 }
 
@@ -1642,6 +1724,23 @@ function cmdSeedReqs(dir, opts) {
 function cmdRecall(dir, query, opts) {
   if (!query) return fail('bad-args', 'recall needs a query');
 
+  // --top bounds the RETURNED set, default 5. Unbounded was the original
+  // shape and it is what makes this seam expensive to call: a real query on
+  // this repo's corpus returned 72 results at 55.8 KB, which the host spools
+  // to a file with a 2 KB preview, so the caller pays the emit AND a second
+  // round trip to read back the five hits it wanted. Every call site in the
+  // workflows already says "one line per TOP result"; nothing consumes the
+  // tail. `total` rides the envelope so a truncated answer stays legible as
+  // truncated - absence and silence are different answers here as everywhere.
+  let top = 5;
+  if (opts.top !== undefined) {
+    const parsed = requireInt(opts.top);
+    if (!parsed.ok || parsed.value < 1) {
+      return fail('bad-args', '--top must be a positive integer');
+    }
+    top = parsed.value;
+  }
+
   // memory.backend, effective across the config layers (repo > global);
   // schema default is builtin, so an unset key recalls. `none` is the off
   // switch - a successful check with a negative answer, like plan-overlap.
@@ -1654,7 +1753,7 @@ function cmdRecall(dir, query, opts) {
   const { config: recallConfig, warnings } = mergeLayers(join(dir, 'config.json'));
   const warn = warnings.length ? { warnings } : {};
   const backend = recallConfig?.memory?.backend ?? 'builtin';
-  if (backend === 'none') return ok({ backend: 'none', results: [], ...warn });
+  if (backend === 'none') return ok({ backend: 'none', results: [], total: 0, ...warn });
 
   // Corpus assembly in a fixed order: phases ascending (decimal-aware), each
   // phase's SUMMARY then UAT then CONTEXT, then the top-level CAPTURE. The
@@ -1691,13 +1790,14 @@ function cmdRecall(dir, query, opts) {
       ...(item.phase !== undefined ? { phase: item.phase } : {}) });
   }
 
-  if (!corpus.length) return ok({ results: [], ...warn });
+  if (!corpus.length) return ok({ results: [], total: 0, ...warn });
 
   // search() returns [{i, score}] in (score desc, corpus position asc) order -
   // already total because the corpus is in sorted traversal order, so do NOT
   // re-sort. Round the score so stdout is byte-stable across the Node matrix.
   const index = buildIndex(corpus.map((c) => c.text));
-  const results = search(index, query).map(({ i, score }) => {
+  const matched = search(index, query);
+  const results = matched.slice(0, top).map(({ i, score }) => {
     const c = corpus[i];
     return {
       score: Math.round(score * 1e4) / 1e4,
@@ -1706,7 +1806,7 @@ function cmdRecall(dir, query, opts) {
       snippet: c.text,
     };
   });
-  ok({ results, ...warn });
+  ok({ results, total: matched.length, ...warn });
 }
 
 // ---------------------------------------------------------------------------
@@ -1913,7 +2013,7 @@ function cmdLeaseCheck(dir, opts) {
       { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     return fail('no-staged-set',
-      `could not read the staged set: ${e && e.message ? e.message : String(e)}`);
+      `could not read the staged set: ${redactUrl(e && e.message ? e.message : String(e))}`);
   }
   const parsed = parseStagedNameStatus(stagedOut);
   if (parsed === null) {
@@ -2058,12 +2158,22 @@ function cmdDetectCommands(root) {
   let typecheckSource = null;
   const tsScript = script('typecheck') || script('type-check');
   if (tsScript) { typecheck = `npm run ${tsScript}`; typecheckSource = 'package.json'; }
-  // `tsconfig.json` and that name ONLY. A non-default `tsconfig*.json` is
-  // deliberately not matched: `npx tsc --noEmit` ignores a config it is not
-  // pointed at, and guessing `-p` across several candidates would name a
-  // CI-only or editor-only project file as the project's typecheck. This repo
-  // is exactly that case - its only TS config is tsconfig.ci.json.
+  // TWO exact names, never a `tsconfig*.json` glob. `npx tsc --noEmit` ignores
+  // a config it is not pointed at, so a matched name has to bring the `-p` form
+  // that points at it - and guessing which of several candidates is THE
+  // typecheck would name an editor-only or per-package project file as the
+  // project's own. Both literals are fixed strings; no repo content is ever
+  // interpolated into a command.
+  //
+  // Order is the whole reason there are two arms rather than one: a tree
+  // carrying both keeps `npx tsc --noEmit` off `tsconfig.json`, because that is
+  // the project's own typecheck and the CI file is the narrower one. The second
+  // arm exists for the tree that has ONLY the CI file - this repository, which
+  // the comment here used to name as the case it declined, and which is exactly
+  // the repository whose `.planning/config.json` can no longer supply a lint
+  // command from a repo layer (CFG-02).
   else if (has('tsconfig.json')) { typecheck = 'npx tsc --noEmit'; typecheckSource = 'tsconfig.json'; }
+  else if (has('tsconfig.ci.json')) { typecheck = 'npx tsc -p tsconfig.ci.json'; typecheckSource = 'tsconfig.ci.json'; }
   else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
   else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
   else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
@@ -2076,6 +2186,186 @@ function cmdDetectCommands(root) {
     // always-report convention seed-reqs's counts follow. A caller has to be
     // able to tell "found nothing" from "did not look".
     source: { lint: lintSource, typecheck: typecheckSource },
+    ...(warnings.length ? { warnings } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// detect-surfaces - the disk half of lib/surface-scan.mjs, and the evidence the
+// one-time `review.triggers.risk_surface.surfaces` question is asked against.
+// A seam and not model judgment for the reason detect-commands is one: a model
+// reading a tree and deciding what it "looks like" is the keyword pass D-14
+// measured and rejected, and nothing in CI can prove a judgment fired.
+//
+// `--root` is the PROJECT root, deliberately NOT `--dir`. It is read TWO
+// LEVELS deep - one more than detect-commands, because that is the depth D-14's
+// own measurement used and because `db/migrate` and `packages/api` are where
+// the structure actually shows. Ignored trees (node_modules, .git, build
+// output) are skipped: they are not the project's structure, and walking
+// node_modules would declare every category on every JS project.
+//
+// Finding nothing is ok:true with `inconclusive:true` and all eight
+// recommended - a successful check with a negative answer, like plan-overlap.
+// A manifest that cannot be read or parsed contributes nothing and is NAMED in
+// warnings[] rather than throwing.
+// ---------------------------------------------------------------------------
+
+/** Directory names never descended into: not the project's own structure. */
+const SCAN_SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'out',
+  'target', 'vendor', 'coverage', '.venv', 'venv', '__pycache__', '.next', '.cache']);
+
+/** The manifests whose declared dependency names the scan reads. */
+const SCAN_MANIFESTS = ['package.json', 'Cargo.toml', 'pyproject.toml',
+  'go.mod', 'requirements.txt'];
+
+/**
+ * Dependency names declared by one manifest. Each arm reads the shape it can
+ * read exactly and returns [] otherwise: a name this misses costs a broader
+ * recommendation, and a name it invents costs a user narrowing to a category
+ * they do not have.
+ * @param {string} name @param {string} text @returns {string[]}
+ */
+function manifestDeps(name, text) {
+  if (name === 'package.json') {
+    const pkg = JSON.parse(text);
+    if (!pkg || typeof pkg !== 'object' || Array.isArray(pkg)) return [];
+    return ['dependencies', 'devDependencies', 'peerDependencies']
+      .flatMap((k) => (pkg[k] && typeof pkg[k] === 'object' && !Array.isArray(pkg[k])
+        ? Object.keys(pkg[k]) : []));
+  }
+  if (name === 'go.mod') {
+    // `module.path/name v1.2.3` inside or outside a require block; the LAST
+    // path segment is the package name a signal table can match.
+    return text.split('\n')
+      .map((l) => l.replace(/\/\/.*$/, '').trim())
+      .filter((l) => /^(require\s+)?[a-z0-9][\w.\-]*(\.[a-z]{2,})?\/\S+\s+v/.test(l))
+      .map((l) => l.replace(/^require\s+/, '').split(/\s+/)[0]);
+  }
+  if (name === 'requirements.txt') {
+    return text.split('\n')
+      .map((l) => l.replace(/#.*$/, '').trim())
+      .filter((l) => /^[A-Za-z][\w.\-]*/.test(l))
+      .map((l) => (l.match(/^[A-Za-z][\w.\-]*/) || [''])[0]);
+  }
+  // Cargo.toml / pyproject.toml: TOML, read by SECTION rather than by line, so
+  // `name = "my-app"` under [package] is not collected as a dependency of
+  // itself. Only a table whose header mentions dependencies contributes.
+  /** @type {string[]} */
+  const out = [];
+  let inDeps = false;
+  let inDepArray = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/#.*$/, '').trim();
+    const header = line.match(/^\[+([^\]]+)\]+$/);
+    if (header) { inDeps = /dependencies/i.test(header[1]); inDepArray = false; continue; }
+    // PEP 621 puts `dependencies = ["flask>=3", ...]` under `[project]` - a
+    // header the section test above never matches - so a section-scoped read
+    // alone loses every pyproject-only project's evidence. Track the ARRAY by
+    // its KEY instead, across however many lines it spans, which is the one
+    // place a dependency list can hide under an unrelated header.
+    // The closing `]` is looked for OUTSIDE the quotes: a PEP 508 extra
+    // (`"requests[socks]"`) carries its own bracket, and treating that as the
+    // end of the array drops every entry after it.
+    const unquoted = (s) => s.replace(/(["']).*?\1/g, '');
+    if (inDepArray) {
+      for (const m of line.matchAll(/["']([A-Za-z][\w.\-]*)[^"']*["']/g)) out.push(m[1]);
+      if (unquoted(line).includes(']')) inDepArray = false;
+      continue;
+    }
+    // Anchored to the EXACT key: a tool table's `ignored-dependencies` is a
+    // setting, not a dependency, and reading it evidences a surface the
+    // project does not have.
+    const depArray = line.match(/^["']?dependencies["']?\s*=\s*\[/i);
+    if (depArray) {
+      for (const m of line.matchAll(/["']([A-Za-z][\w.\-]*)[^"']*["']/g)) out.push(m[1]);
+      if (!unquoted(line).includes(']')) inDepArray = true;
+      continue;
+    }
+    if (!inDeps) continue;
+    const key = line.match(/^["']?([A-Za-z][\w.\-]*)["']?\s*=/);
+    if (key) out.push(key[1]);
+    // A dependency table whose values are arrays (`dev = ["pytest"]`).
+    for (const m of line.matchAll(/["']([A-Za-z][\w.\-]*)[^"']*["']/g)) out.push(m[1]);
+  }
+  return out;
+}
+
+function cmdDetectSurfaces(root) {
+  /** @type {string[]} */
+  const warnings = [];
+  /** @type {string[]} */
+  const dirs = [];
+  /** @type {string[]} */
+  const files = [];
+  /** @type {Set<string>} */
+  const extensions = new Set();
+  /** @type {string[]} */
+  const manifests = [];
+  /** @type {string[]} */
+  const dependencies = [];
+
+  /** The errno the ROOT listing failed with, when it did. */
+  let rootError = null;
+  /**
+   * One directory level: its entries recorded, its subdirectories returned -
+   * or null when the level could not be listed at all, which only the ROOT
+   * treats as a failure (a subdirectory that cannot be read is one warning and
+   * a narrower scan, never a refusal to answer).
+   * @param {string} dir @param {string} label @returns {string[] | null}
+   */
+  const level = (dir, label) => {
+    /** @type {string[]} */
+    const subdirs = [];
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true, encoding: 'utf8' });
+    } catch (e) {
+      if (!label) { rootError = e.code || e.message; return null; }
+      warnings.push(`${label} could not be listed and was skipped (${e.code || e.message})`);
+      return subdirs;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        dirs.push(entry.name);
+        if (!SCAN_SKIP_DIRS.has(entry.name)) subdirs.push(entry.name);
+        continue;
+      }
+      files.push(entry.name);
+      const dot = entry.name.lastIndexOf('.');
+      if (dot > 0) extensions.add(entry.name.slice(dot));
+      if (!SCAN_MANIFESTS.includes(entry.name)) continue;
+      const where = label ? `${label}/${entry.name}` : entry.name;
+      manifests.push(where);
+      const text = read(join(dir, entry.name));
+      if (text === null) {
+        warnings.push(`${where} could not be read; no dependency was taken from it`);
+        continue;
+      }
+      try {
+        dependencies.push(...manifestDeps(entry.name, text));
+      } catch (e) {
+        warnings.push(`${where} failed to parse and was skipped: ${e.message}`);
+      }
+    }
+    return subdirs;
+  };
+
+  const roots = level(root, '');
+  if (roots === null) return fail('no-root', `${root} cannot be listed (${rootError})`);
+  for (const sub of roots) level(join(root, sub), sub);
+
+  const scan = scanTree({ dirs, files, extensions: [...extensions], dependencies });
+  ok({
+    root,
+    // ALWAYS present, every field, even when empty - the same always-report
+    // convention detect-commands states for its `source` block. A caller has to
+    // be able to tell "the structure evidences nothing" from "did not look".
+    manifests,
+    evidenced: scan.evidenced,
+    silent: scan.silent,
+    unspeakable: scan.unspeakable,
+    inconclusive: scan.inconclusive,
+    recommended: scan.recommended,
     ...(warnings.length ? { warnings } : {}),
   });
 }
@@ -2239,6 +2529,33 @@ function cmdTraceIgnore(root, opts) {
   return ok({ ...common, written: true });
 }
 
+// reads - the in-dispatch companion to `trace render`. `trace.jsonl` records
+// what a dispatch was HANDED; `reads.jsonl` records what it went and opened
+// afterwards, which measured ~88% of a run's tokens on this repo and had no
+// reader at all. Absent file is ok:true with zeroes - a project that has not
+// run since the hook was installed has nothing to report, and that is not an
+// error.
+function cmdReads(dir) {
+  const file = join(dir, READS_FILE);
+  let text = '';
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e && e.code === 'ENOENT') return ok({ calls: 0, distinct: 0, redundancy: null, fileCalls: 0, distinctFiles: 0, fileTouches: 0, fileRedundancy: null, byAgent: [], byTool: [], topTargets: [], topFiles: [], note: 'no reads recorded yet' });
+    return fail('read-failed', `cannot read ${file}`);
+  }
+  const records = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    // A truncated final line is SKIPPED, never fatal: the file is appended to
+    // by a hook that can be killed mid-write, and a partial tail must not cost
+    // the caller every complete record ahead of it.
+    try { records.push(JSON.parse(t)); } catch { /* partial line */ }
+  }
+  return ok(summarizeReads(records));
+}
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -2288,6 +2605,28 @@ function cmdTrace(dir, sub, opts) {
       tokens = parsed.value;
     }
 
+    // --raised: how many findings the reviewers RAISED before adjudication, so
+    // the record can tell a gate that found nothing (0 of 0) from a reviewer
+    // whose every finding was refuted (0 of 9). Structured, because the
+    // free-text `--detail` slot is the one already condemned for carrying the
+    // voice list - a figure parsed back out of prose is exactly as trustworthy
+    // as the substitution that condemned it (D-01).
+    // Validated the way `--tokens` is, and for the same reason: a malformed
+    // value is a malformed CALL and NOTHING is appended, never a best-effort
+    // append with the field dropped, because a dropped figure reads downstream
+    // as UNKNOWN while the caller believes a count was recorded.
+    // No comma-grouping exception here: that one exists because this plugin
+    // PRINTS token figures grouped, and a finding count never is, so accepting
+    // `1,234` would only widen what can be mistyped.
+    let raised;
+    if ('raised' in opts) {
+      const parsed = requireInt(opts.raised);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', 'trace append --raised needs a non-negative integer');
+      }
+      raised = parsed.value;
+    }
+
     // --read: the read-set the SITE caused the worker to read, as ONE
     // comma-separated value split the way `phase-done --reqs` splits its ids.
     // A repeated flag is impossible by construction rather than by choice -
@@ -2328,6 +2667,23 @@ function cmdTrace(dir, sub, opts) {
       step = raw;
     }
 
+    // --reviewer: WHICH reviewer actually ran this fire, so a cross-model
+    // review and a subagent review of the same trigger stop being one shape in
+    // the record (RVW-02). It names the reviewer that RAN, never the one the
+    // trigger asked for - nothing refuses a dispatch to a reviewer outside the
+    // resolved set (D-07), so this mark is the whole enforcement, and a figure
+    // parsed back out of step 5's free-text voice list would not be one:
+    // lib/trace-suggest.mjs discards that text.
+    // Refused when present but bare or blank, the refusal `--step` makes for
+    // the same reason: a bare `--reviewer` parses as boolean `true` and would
+    // store the literal `true` as a reviewer name.
+    let reviewer;
+    if ('reviewer' in opts) {
+      const raw = typeof opts.reviewer === 'string' ? opts.reviewer.trim() : '';
+      if (!raw) return fail('bad-args', 'trace append --reviewer needs a reviewer name after it: --reviewer <name>');
+      reviewer = raw;
+    }
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
     // `escalation` store tokens identically. `--step` does not change that: the
@@ -2352,8 +2708,10 @@ function cmdTrace(dir, sub, opts) {
       // `--sha` use records nothing rather than the literal `true`.
       ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
       ...(tokens === undefined ? {} : { tokens }),
+      ...(raised === undefined ? {} : { raised }),
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
+      ...(reviewer === undefined ? {} : { reviewer }),
     });
     return ok({
       written: res.written,
@@ -2468,12 +2826,27 @@ function cmdRenumber(dir, sub, opts) {
   // must not (#36).
   const maxN = Math.max(...phases.filter((p) => Number.isInteger(p.n)).map((p) => p.n));
 
-  const at = Number(sub === 'insert' ? opts.at : opts.n);
-  if (Number.isNaN(at)) return fail('bad-args', `renumber ${sub} needs --${sub === 'insert' ? 'at' : 'n'} <N>`);
-  // Renumbering is integer arithmetic; a decimal insertion (2.1) neither
-  // displaces integers nor is displaced by them, so it is never shifted -
-  // operating ON one would only produce a half-shifted tree.
-  if (!Number.isInteger(at)) return fail('bad-args', 'renumber operates on integer phases; re-place decimal phases by hand');
+  const flag = sub === 'insert' ? 'at' : 'n';
+  const rawAt = sub === 'insert' ? opts.at : opts.n;
+  // A valueless flag parses as the boolean `true` and `Number(true)` is 1, so
+  // `renumber remove --n` with no value cut phase 1's line, its detail section
+  // and shifted its directory away - ok:true, and only the NaN screen stood
+  // between the flag and the apply. requireInt refuses that shape and every
+  // non-numeric one.
+  //
+  // The decimal answer stays a SEPARATE diagnostic (renumbering is integer
+  // arithmetic; a decimal insertion like 2.1 neither displaces integers nor is
+  // displaced by them, so operating ON one would only half-shift the tree).
+  // requireInt refuses `2.1` and `--n` alike, and those are different repairs,
+  // so a well-formed decimal is re-tested here and keeps its own wording.
+  const parsedAt = requireInt(rawAt);
+  if (!parsedAt.ok) {
+    if (requirePhaseArg(rawAt).ok) {
+      return fail('bad-args', 'renumber operates on integer phases; re-place decimal phases by hand');
+    }
+    return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
+  }
+  const at = parsedAt.value;
   if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
   if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
 
@@ -2811,6 +3184,34 @@ function cmdDebtHarvest(root) {
 function cmdMilestonePrune(dir, opts) {
   const label = typeof opts.label === 'string' ? opts.label.trim() : '';
   if (!label) return fail('bad-args', 'milestone-prune needs --label <version or milestone name>');
+  // Two independent terms, both here at the point the label is read - before
+  // any read, mkdir or rename, and in BOTH modes: `--mode delete` builds no
+  // archive root but still writes the label into every shipped requirement row.
+  //
+  // NOT publish-decision.mjs's REMOTE_NAME shape (D-13): that regex admits no
+  // spaces, and `workflows/milestone.md` makes an untagged label the milestone
+  // NAME from PROJECT.md, so it would refuse this milestone's own label and
+  // block /cad-milestone step 3.
+  //
+  // 1. The table term. archiveRequirements interpolates the label into a
+  //    markdown table cell, where either character silently rewrites the row.
+  if (/[|\r\n]/.test(label)) {
+    return fail('bad-args',
+      'milestone-prune --label cannot contain "|" or a newline - it is written into a REQUIREMENTS.md table cell');
+  }
+  // 2. The containment term. `_archive-<label>` is handed to mkdirSync and
+  //    renameSync below, so `--label '../../../outside-tree'` moved phases/1
+  //    clean out of the planning root and still answered ok:true. resolve()
+  //    rather than the fsIdentity comparison the rest of this tree uses for
+  //    paths: the archive root does not exist yet at validation time, and this
+  //    has to run before any mkdir. Stated residual - a pre-existing
+  //    `_archive-<label>` that is itself a symlink out of the tree still
+  //    resolves inside it.
+  const archiveRoot = join(dir, `_archive-${label}`);
+  if (!resolvePath(archiveRoot).startsWith(resolvePath(dir) + sep)) {
+    return fail('bad-args',
+      `milestone-prune --label must stay inside the planning root: "_archive-${label}" resolves outside ${dir}`);
+  }
   const mode = opts.mode;
   if (mode !== 'delete' && mode !== 'archive') {
     return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)');
@@ -2844,7 +3245,6 @@ function cmdMilestonePrune(dir, opts) {
   // Directories third, writes last: a rename that throws leaves both docs
   // untouched on disk rather than half a close.
   const dirs = { archived: [], deleted: [], missing: [] };
-  const archiveRoot = join(dir, `_archive-${label}`);
   for (const n of completed) {
     const src = join(dir, 'phases', String(n));
     if (!existsSync(src)) { dirs.missing.push(n); continue; }
@@ -2907,6 +3307,7 @@ const COMMANDS = {
   },
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
+  reads: (dir, _sub, _opts) => cmdReads(dir),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
@@ -2924,6 +3325,11 @@ const COMMANDS = {
   'detect-commands': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
     ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
     : cmdDetectCommands(opts.root || process.cwd())),
+  // Same --root rule, same refusal: a flag present with nothing usable after it
+  // is never silently answered about the cwd.
+  'detect-surfaces': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
+    ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
+    : cmdDetectSurfaces(opts.root || process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
   // SOURCE and writes into `.planning`. Same present-but-unusable refusal

@@ -6,6 +6,9 @@
     "roles": "The declared ARRAY of routable role names, and what route.mjs checks a `--role` against.",
     "review": "The `review` grid keys on (stakes level, trigger name) and yields the gate that trigger fires at, for the five triggers config.schema.json defines. `risk_surface` is deliberately `blocking` at EVERY level: it fires only on a detection match, so there is no level at which a matched risk surface is worth waving through. A `review.triggers.<t>.gate` a user set wins over the level's value and route.mjs reports the disagreement in `warnings`.",
     "verify": "The `verify` grid keys on the stakes level ALONE - the deep-verify pass has no role in hand when it decides whether to run. It is two-state (`off`/`on`); the depth of that pass is carried by the cad-verifier row of the effort grid, not here.",
+    "tiers": "The per-trigger model tier the reviewer-availability test uses when NO config layer set `review.triggers.<t>.tier`. Transcribed here by hand rather than read from config.schema.json's defaults, for the reason `triggerGatesIn` already states for gates: route.mjs must never turn a schema default into a user assertion. Reading the default would make \"the schema says flagship\" indistinguishable from \"the user asked for flagship\", and with the key unset - which is the shipped state, since templates/config.json writes no `triggers` block at all - every provider would resolve unavailable and the fallback reported in `warnings` would be an artifact of the seam rather than the user's config. A config layer that DOES set the key wins over this row.",
+    "tier_names": "The accepted tier vocabulary, the role `model_aliases` plays for a pin and `gates` plays for a gate: lib/route-cells.mjs checks every `tiers` value against it, in the same file, so the resolver never reads config.schema.json.",
+    "risk_surface_categories": "The eight risk-surface categories `review.triggers.risk_surface.surfaces` is an enum over, and the set route.mjs returns when NO config layer answered. Hand-maintained here for the reason `tiers` and `gates` are: route.mjs must never read config.schema.json, so the resolver needs its own copy of any vocabulary it resolves against. self-verify compares this list, the schema's `values` and the category list in references/review-triggers.md, so the three cannot drift apart.",
     "gates": "The accepted `review.triggers.<t>.gate` vocabulary, checked by route.mjs before a config-set gate may win over the level's gate - the same role model_aliases plays for a pin, in the same file, so the resolver never reads config.schema.json.",
     "aliases": "model_aliases is the accepted vocabulary for a `model.overrides.<role>` pin. The ROUTED vocabulary is narrower - `sonnet` and `opus` - so `haiku` and `fable` are reachable by a pin only. For `fable` that is not a ranking claim: it requires 30-day data retention and returns 400 invalid_request_error for every zero-data-retention org, which is other people's orgs since Cadence ships as a public plugin; its safety classifiers return a refusal stop reason on cyber-adjacent content, and Cadence reviews its own git rails and secrets handling; and its multi-minute turns press against the configured provider request timeout inside the host's Bash ceiling. It is reachable only by explicit pin, which is a user assertion about their own org, not ours."
   },
@@ -13,6 +16,8 @@
   "stakes_order": ["solo", "shipped", "critical"],
   "gates": ["off", "advisory", "blocking", "adjudicated"],
   "model_aliases": ["opus", "sonnet", "haiku", "fable"],
+  "tier_names": ["flagship", "balanced", "cheap"],
+  "risk_surface_categories": ["auth", "migrations", "billing", "concurrency", "destructive", "secrets", "api_contract", "untrusted_input"],
   "roles": ["cad-planner", "cad-assumptions-analyzer", "cad-verifier", "cad-reviewer", "cad-executor", "cad-plan-checker"],
 
   "cells": {
@@ -43,9 +48,16 @@
   },
 
   "review": {
-    "solo":     { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off",         "pre_ship": "advisory" },
-    "shipped":  { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "advisory",    "pre_ship": "advisory" },
-    "critical": { "plan": "adjudicated", "diff": "blocking", "risk_surface": "blocking", "phase_diff": "adjudicated", "pre_ship": "adjudicated" }
+    "solo":     { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off"         },
+    "shipped":  { "plan": "off",         "diff": "off",      "risk_surface": "blocking", "phase_diff": "off"         },
+    "critical": { "plan": "adjudicated", "diff": "blocking", "risk_surface": "blocking", "phase_diff": "adjudicated" }
+  },
+
+  "tiers": {
+    "plan": "flagship",
+    "diff": "balanced",
+    "risk_surface": "flagship",
+    "phase_diff": "flagship"
   },
 
   "verify": {
