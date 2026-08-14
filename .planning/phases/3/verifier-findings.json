@@ -1,0 +1,21 @@
+{
+  "status": "delivered",
+  "score": "6/6",
+  "truths": [
+    { "n": 1, "truth": "resolveProtectedBranches is one pure shared helper (array passthrough incl. [], string -> [string], else ['main','master']) consumed by all four readers", "status": "VERIFIED", "uat_item": 1, "evidence": "cadence-core/bin/lib/protected-branches.mjs:37-42; imports+calls at git-guard.mjs:32,139, git-publish.mjs:46,94, git-branch.mjs:29,52, land-cleanup.mjs:44,110; grep Array.isArray(...protected in bins returns nothing" },
+    { "n": 2, "truth": "String form honored per consumer with a test at each seam, [] still means nothing protected, and the value traces end to end (land-cleanup base resolves to 'release')", "status": "VERIFIED", "uat_item": 1, "evidence": "string arms: git-guard.test.mjs:156-159, git-publish.test.mjs:112, git-branch.test.mjs:106, land-cleanup.test.mjs:113; [] arms git-guard.test.mjs:167-169; live run: land-cleanup.mjs cleanup on fixture with protected_branches:\"release\" printed \"base\":\"release\"" },
+    { "n": 3, "truth": "Section scanners are fence-aware: shipped templates classify no-section / ids:null, fenced-example-above-real fixtures read the real section, regression tests exist", "status": "VERIFIED", "uat_item": 2, "evidence": "live probe: classifyPhaseList(templates/ROADMAP.md) -> state no-section, phases [], issues []; classifyActiveSection(templates/REQUIREMENTS.md) -> ids null, issues []; parseActiveIds -> null; test arms planning-files.test.mjs:615,621,629,1020,1028,1035; SUMMARY records 6 arms measured red-on-pre-fix (74c8dcc, 47eab72)" },
+    { "n": 4, "truth": "Blank/whitespace --root refused by detect-commands and detect-surfaces exactly as debt-harvest", "status": "VERIFIED", "uat_item": 3, "evidence": "live probes: all four spellings print {\"ok\":false,\"reason\":\"bad-args\",...} byte-matching debt-harvest's shape; test rows planning.test.mjs:4428-4455 (valueless, empty, whitespace per command)" },
+    { "n": 5, "truth": "The four helpers (optionalFlag, flagValue, ''-readText, rev-parse branch reader) each defined once under cadence-core/bin/, census reddens on a re-copy, include-consumers.mjs readText the one named exemption", "status": "VERIFIED", "uat_item": 4, "evidence": "grep: flagValue+readText only in lib/seam-input.mjs (plus include-consumers.mjs null-contract exemption), '--abbrev-ref' only in lib/git-head.mjs; seven bins import from lib/; falsified live: probe file with pasted bodies turned helper-census.test.mjs red naming zz-census-probe.mjs, green again after removal (pass 5, fail 0)" },
+    { "n": 6, "truth": "Full suite green and self-verify clean on the merged tree", "status": "VERIFIED", "uat_item": 5, "evidence": "node --test cadence-core/bin/*.test.mjs: tests 1752, pass 1752, fail 0; node cadence-core/bin/self-verify.mjs: problems [] (no unbudgeted-surface, no budget-overrun)" }
+  ],
+  "passes": [
+    { "k": 1, "name": "String protected_branches honored by all four readers", "evidence": "lib/protected-branches.mjs consumed at git-guard.mjs:139, git-publish.mjs:94, git-branch.mjs:52, land-cleanup.mjs:110; string arm per consumer test file; [] arm git-guard.test.mjs:167; live land-cleanup fixture run printed base:\"release\"" },
+    { "k": 2, "name": "Section scanners skip fenced examples", "evidence": "live: classifyPhaseList(templates/ROADMAP.md)=no-section/[], classifyActiveSection(templates/REQUIREMENTS.md)=ids:null/no issues, parseActiveIds=null; regression arms planning-files.test.mjs:615-635,1020-1040" },
+    { "k": 3, "name": "Blank --root refused by both detect commands", "evidence": "all four blank/whitespace spellings return {\"ok\":false,\"reason\":\"bad-args\"} matching debt-harvest; planning.test.mjs:4428-4455" },
+    { "k": 4, "name": "Helpers defined once, pinned by census", "evidence": "single definitions confirmed by grep; census falsified live - a pasted probe copy reddened helper-census.test.mjs naming the probe file, green after removal" },
+    { "k": 5, "name": "Suite green and self-verify clean", "evidence": "1752/1752 pass, 0 fail; self-verify problems:[]" }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
