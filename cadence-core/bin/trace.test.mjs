@@ -233,6 +233,31 @@ test('renderTrace: a re-run never pairs across runs, and unpaired names the run'
   assert.deepEqual(r.unpaired.map((u) => u.corr).filter((c) => c === '1-bbb'), []);
 });
 
+test('renderTrace: a PRE-ANCHOR event joins its phase\'s next anchor at read time', () => {
+  const dir = root();
+  // /cad-plan's resolves are written before /cad-execute writes the anchor, so
+  // they took the bare `<phase>` form while everything after it took
+  // `<phase>-<sha>` - one phase, two ids, and the record joined nothing across
+  // the moment a phase begins. The repair is READ-time (D-01): the line on disk
+  // still says `"corr":"1"`.
+  appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', role: 'cad-planner' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-planner' });
+  appendEvent(dir, { phase: 2, family: 'routing', event: 'resolve', role: 'cad-planner' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'abc1234' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-planner', tokens: 7 });
+  assert.deepEqual(lines(dir).map((e) => e.corr), ['1', '1', '2', '1-abc1234', '1-abc1234'],
+    'the file is untouched by the repair - it is a reader change, not a rewrite');
+
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(r.events.map((e) => e.corr), ['1-abc1234', '1-abc1234', '1-abc1234', '1-abc1234'],
+    'every phase-1 event renders under the anchor ahead of it, bare form gone');
+  assert.deepEqual(r.unpaired, [], 'the pre-anchor dispatch and its post-anchor return are ONE bracket');
+  assert.deepEqual(r.roles, { 'cad-planner': { dispatches: 1, tokens: 7 } });
+  // Phase 2 never got an anchor, so its event has nothing to join to and keeps
+  // the bare form - the same state a head-truncated read leaves behind.
+  assert.deepEqual(renderTrace(dir, 2).events.map((e) => e.corr), ['2']);
+});
+
 test('renderTrace: the U+0000 worker separator keeps two SHIFTED brackets apart', () => {
   // The source of that separator was two literal NUL bytes until DFC-01 turned
   // them into `\0` escapes, and nothing pinned it: deleting the separator, or
@@ -1019,11 +1044,17 @@ test('census: every trace family has a producer, and every producer speaks the r
 // criterion in this phase names.
 //
 // Two of these values are load-bearing beyond their arithmetic. The unpaired
-// `cad-reviewer` dispatch carries `corr: "1"` while the phase renders as
-// `1-573f325`: a marker written before the phase's anchor takes the phase-only
-// id (D-04), which is why no rollup here may group on `corr` alone. And the one
-// `unrecorded` reviewer dispatch is the bracket that contributes no span at all
-// to any residue, because it never closed.
+// `cad-reviewer` row is what the read-time pre-anchor repair MOVED, and is the
+// only rendered figure it moved: 17 of these events were written before the
+// phase's anchor and carried the bare `1`, so their worker keys sat in a
+// namespace of their own, and the 12:24:57 dispatch was stranded there. Joined
+// to `1-573f325`, that dispatch pairs with the first post-anchor reviewer close
+// and the 13:51:44 dispatch is the one left open instead - same count, same
+// role, same tokens. Every `roles` figure above is byte-identical to what it was
+// before the repair, and a changed one would mean the repair moved accounting,
+// which it must not (D-06). And the one `unrecorded` reviewer dispatch is the
+// bracket that contributes no span at all to any residue, because it never
+// closed.
 
 const FIXTURE = join(HERE, 'fixtures', 'verbatim.trace.jsonl');
 
@@ -1049,7 +1080,7 @@ test('fixture: the committed verbatim trace renders exactly as it did before thi
     'cad-verifier': { dispatches: 1, tokens: 78371 },
   });
   assert.deepEqual(r.unpaired, [
-    { corr: '1', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T12:24:57.907Z' },
+    { corr: '1-573f325', phase: '1', plan: 'cad-reviewer', ts: '2026-08-12T13:51:44.001Z' },
   ]);
 });
 
@@ -1093,18 +1124,20 @@ test('coordinator: a step\'s residue is its wall span minus the bracket inside i
   );
 });
 
-test('coordinator: a marker before phase_start joins the same phase across both corr ids', () => {
+test('coordinator: one phase spanning two corr ids is still ONE coordinator stream', () => {
   const dir = root();
-  // Every /cad-context marker fires before any anchor, so it takes the
-  // phase-only id while everything after the anchor takes `1-<sha>` (D-04). One
-  // stream, or the coordinator gets counted twice.
+  // A phase can hold more than one id even after the read-time repair: a RE-RUN
+  // starts a new one. Every /cad-context marker fires before any anchor, so
+  // `load_priors` joins the first anchor ahead of it and `git_guard` joins the
+  // second - one coordinator, two ids, or the rollup counts it twice.
   mark(dir, 'load_priors', 0);
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'abc1234', ts: at(4) });
   mark(dir, 'git_guard', 6);
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'def5678', ts: at(7) });
   appendEvent(dir, { phase: 1, family: 'routing', event: 'resolve', ts: at(9) });
   const r = renderTrace(dir, 1);
   const corrs = new Set(r.events.map((e) => e.corr));
-  assert.deepEqual([...corrs].sort(), ['1', '1-abc1234']);
+  assert.deepEqual([...corrs].sort(), ['1-abc1234', '1-def5678']);
   assert.deepEqual(r.coordinator.steps.map((s) => s.step), ['load_priors', 'git_guard']);
   assert.equal(r.coordinator.residue_ms, 9 * MIN);
 });

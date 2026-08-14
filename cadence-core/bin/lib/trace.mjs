@@ -423,11 +423,12 @@ export function renderTrace(planningRoot, phase) {
     return row;
   };
 
-  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. A
-  // marker written before that phase's `phase_start` takes the phase-only id
-  // while everything after the anchor takes the derived one (D-04), so a
-  // corr-keyed rollup would split ONE coordinator's record into two and report
-  // its time twice. `last` is the phase's newest timestamp across every family,
+  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. One
+  // phase can still hold more than one id - a RE-RUN starts a new one, and a
+  // phase whose anchor is missing entirely (a head-truncated read) keeps the
+  // bare form the pre-anchor repair above could not resolve - so a corr-keyed
+  // rollup would split ONE coordinator's record into two and report its time
+  // twice. `last` is the phase's newest timestamp across every family,
   // because the final marker's window has no next marker to close it and the
   // phase's own last event is the only honest end for it.
   /** @type {Map<string, {phase: any, markers: {step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
@@ -447,11 +448,10 @@ export function renderTrace(planningRoot, phase) {
   const lines = readLines(planningRoot);
   if (lines === null) return out;
 
-  // Each pending entry carries the two accounting fields beyond the identity
-  // `unpaired` renders: `role` so a terminal bills the half that OPENED the
-  // worker, and `funded` so one dispatch can be funded exactly once.
-  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean}[]>} */
-  const open = new Map();
+  // PASS 1 - parse, scope, count. The accounting is a SECOND pass over the same
+  // parsed objects because the repair between them needs to see events that come
+  // AFTER the one being repaired; splitting the passes keeps that to one
+  // `JSON.parse` per line rather than reading the file twice.
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
@@ -461,7 +461,50 @@ export function renderTrace(planningRoot, phase) {
     if (wanted !== null && key(e.phase) !== wanted) continue;
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
+  }
 
+  // PASS 2 - the PRE-ANCHOR repair, at READ time only (D-01). /cad-plan's
+  // resolves are written before /cad-execute writes the phase's anchor, so those
+  // events took the bare `<phase>` form while everything after the anchor took
+  // `<phase>-<sha>`: one phase, two ids, and the join the record exists for
+  // breaks exactly where a phase begins. Here a bare-form event is attributed to
+  // the FIRST `lifecycle/phase_start` of its OWN phase at or after its position,
+  // and that repaired id is what the rendered event carries, what the worker key
+  // pairs on, and what an `unpaired` row names.
+  //
+  // FORWARD, and that is the opposite direction from `correlationId`, which
+  // scans BACKWARD for the newest anchor. Both are right for their side: a
+  // WRITER has no later lines to look at and must not join a re-run to the run
+  // before it, while a READER holds the whole file and can see the anchor the
+  // event was waiting for. Hence the walk below runs from the end, carrying the
+  // next anchor per phase back over the events that precede it.
+  //
+  // Nothing is written back - `appendEvent` still stores what it derived at
+  // write time, so the file stays append-only and every event already on disk
+  // joins without being rewritten. An event with NO later anchor for its phase
+  // keeps the bare form, which is also what a head-truncated read over
+  // `MAX_TRACE_BYTES` leaves behind.
+  /** @type {Map<string, string>} phase -> the id of the next anchor at or after here */
+  const nextAnchor = new Map();
+  for (let i = out.events.length - 1; i >= 0; i--) {
+    const e = out.events[i];
+    const p = key(e.phase);
+    if (e.family === 'lifecycle' && e.event === ANCHOR) {
+      // An anchor with no sha derives the bare form itself, so it still SHADOWS
+      // any later anchor: the first anchor ahead is the one that answers, or a
+      // re-run's id would reach back over the run before it.
+      nextAnchor.set(p, typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p);
+    } else if (typeof e.corr === 'string' && e.corr === p && nextAnchor.has(p)) {
+      e.corr = /** @type {string} */ (nextAnchor.get(p));
+    }
+  }
+
+  // Each pending entry carries the two accounting fields beyond the identity
+  // `unpaired` renders: `role` so a terminal bills the half that OPENED the
+  // worker, and `funded` so one dispatch can be funded exactly once.
+  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean}[]>} */
+  const open = new Map();
+  for (const e of out.events) {
     // Every family feeds the phase's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
     // outcome events it produced are being written, so an end taken from
@@ -516,7 +559,7 @@ export function renderTrace(planningRoot, phase) {
       const matched = pending && pending.length ? pending.shift() : null;
       // A bracket contributes its span to the residue only once it has PAIRED,
       // which is why the span is taken here and not from the dispatch half: an
-      // unpaired dispatch (the fixture's 12:24:57 `cad-reviewer` is one) has no
+      // unpaired dispatch (the fixture's 13:51:44 `cad-reviewer` is one) has no
       // known end, and inventing one - the phase's last event, say - would
       // subtract a worker's whole tail from the coordinator's bill and hide the
       // gap the marker exists to show.
