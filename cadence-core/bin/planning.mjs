@@ -3433,14 +3433,22 @@ const COMMANDS = {
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45).
-  'detect-commands': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
+  // The predicate is `debt-harvest`'s below, character for character, TRIM
+  // clause included: a valueless `--root` was already refused, but `--root ""`
+  // answered `ok:true` about the cwd - exactly the silent substitution #42/#45
+  // closed - and `--root "   "` fell through to a `no-root` ENOENT, one refusal
+  // vocabulary answering in two. The refusal is `fail('bad-args', ...)` and not
+  // the `missing-flag-value` throw `weight.mjs`/`self-verify.mjs` raise: this
+  // file has ONE refusal vocabulary and no `e.seam` catch arm to render that
+  // throw as anything but `internal`.
+  'detect-commands': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
     ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
-    : cmdDetectCommands(opts.root || process.cwd())),
-  // Same --root rule, same refusal: a flag present with nothing usable after it
-  // is never silently answered about the cwd.
-  'detect-surfaces': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
+    : cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd())),
+  // Same --root rule, same predicate, same refusal: a flag present with nothing
+  // usable after it is never silently answered about the cwd.
+  'detect-surfaces': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
     ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
-    : cmdDetectSurfaces(opts.root || process.cwd())),
+    : cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.

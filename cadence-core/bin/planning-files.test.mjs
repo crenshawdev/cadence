@@ -594,6 +594,46 @@ test('classifyPhaseList: the surviving-detail issue carries its exact line, code
     [{ line: 11, code: 'phase-heading', text: '### Phase 1: Auth' }]);
 });
 
+// --- the `## Phases` scanners see fences (D-10, D-12) ------------------------
+// Both halves of the scan read the section through `sectionSpan`, so a heading
+// inside a code block is not the section and a phase line inside one is not a
+// phase. Measured against the pre-fix code, all three rows below reddened: the
+// shipped template classified `live` with two phantom `[Name]` phases, and the
+// fenced-example-above-a-real-section shape returned the EXAMPLE's phase while
+// the real two were invisible - the fence-blind `split` bounded the section at
+// the real heading it should have started from.
+
+/** A roadmap whose `## Phases` example sits in a fence ABOVE the real one. */
+const FENCED_EXAMPLE_ROADMAP = [
+  '# Roadmap: Demo', '', '## Overview', '', 'Fill it in like this:', '',
+  '```markdown', '## Phases', '', '- [ ] **Phase 1: [Name]** - [description]',
+  '```', '', '## Phases', '', '- [x] **Phase 1: Auth** - login',
+  '- [ ] **Phase 2: Ship** - release', '', '## Phase Details', '',
+  '### Phase 1: Auth', '',
+].join('\n');
+
+test('classifyPhaseList: the shipped templates/ROADMAP.md is no-section, not two phantom phases', () => {
+  const text = readFileSync(new URL('../templates/ROADMAP.md', import.meta.url), 'utf8');
+  assert.deepEqual(classifyPhaseList(text), { state: 'no-section', phases: [], issues: [] });
+  assert.deepEqual(parseRoadmapPhases(text), []);
+});
+
+test('classifyPhaseList: a fenced example above a real section reads the REAL phases', () => {
+  const res = classifyPhaseList(FENCED_EXAMPLE_ROADMAP);
+  assert.equal(res.state, 'live');
+  assert.deepEqual(res.phases.map((p) => [p.n, p.name]), [[1, 'Auth'], [2, 'Ship']]);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseRoadmapPhases(FENCED_EXAMPLE_ROADMAP).map((p) => p.n), [1, 2]);
+});
+
+test('classifyPhaseList: a fenced phase token inside the section raises no issue', () => {
+  // A closed milestone whose section carries a formatting example. Silence is
+  // the point (D-12): a new issue code here would make every project with a
+  // documented example report a problem it does not have.
+  const text = roadmap('```markdown\n- [ ] **Phase 1: [Name]** - [description]\n```\n');
+  assert.deepEqual(classifyPhaseList(text), { state: 'closed', phases: [], issues: [] });
+});
+
 // --- cutPhaseDetail on CRLF --------------------------------------------------
 // Newly reachable: parseRoadmapPhases now normalizes, so `renumber` no longer
 // bails with unparseable-roadmap on a CRLF checkout and `/cad-phase remove`
@@ -952,6 +992,52 @@ for (const row of ACTIVE_ROWS) {
     assert.deepEqual(parseActiveIds(row.text), row.ids, 'parseActiveIds delegation');
   });
 }
+
+// --- the `## Active` scanner sees fences (D-11, D-12) ------------------------
+// Measured against the pre-fix code, every assertion below reddened: the
+// shipped template declared the example's `[CAT]-01`/`[CAT]-02` and reported
+// three `active-non-id-bullet` issues against its own documentation, and with
+// a fenced example above the real section the example's id was the only one
+// read. Asserted through BOTH entry points so `parseActiveIds` stays a
+// delegate that inherits the fix rather than a second extraction.
+
+/** REQUIREMENTS with a fenced `## Active` example ABOVE the real section. */
+const FENCED_EXAMPLE_REQS = [
+  '# Requirements: Demo', '', '## Overview', '', 'Fill it in like this:', '',
+  '```markdown', '## Active', '', '- [ ] **[CAT]-01**: [requirement]', '```', '',
+  '## Active', '', '- [ ] **REV-01**: the reviewer seam',
+  '- [ ] **GRM-02**: the grammar', '', '## Shipped', '', '- **OLD-01**: shipped', '',
+].join('\n');
+
+/** A real section carrying a fenced example that opens with a `## ` line. */
+const FENCED_INSIDE_ACTIVE = [
+  '# Requirements', '', '## Active', '', '- [ ] **REV-01**: the reviewer seam', '',
+  'Example of the shape:', '', '```markdown', '## Active', '',
+  '- [ ] **[CAT]-99**: [example]', '```', '', '- [ ] **GRM-02**: the grammar', '',
+  '## Shipped', '', '- **OLD-01**: shipped', '',
+].join('\n');
+
+test('classifyActiveSection: the shipped templates/REQUIREMENTS.md declares nothing', () => {
+  const text = readFileSync(new URL('../templates/REQUIREMENTS.md', import.meta.url), 'utf8');
+  // `ids: null`, not `[]`: its only `## Active` sits inside the template's own
+  // fence, so the heading is ABSENT to a fence-aware reader.
+  assert.deepEqual(classifyActiveSection(text), { ids: null, issues: [] });
+  assert.equal(parseActiveIds(text), null);
+});
+
+test('classifyActiveSection: a fenced example above a real section reads the REAL ids', () => {
+  const res = classifyActiveSection(FENCED_EXAMPLE_REQS);
+  assert.deepEqual(res.ids, ['REV-01', 'GRM-02']);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseActiveIds(FENCED_EXAMPLE_REQS), ['REV-01', 'GRM-02']);
+});
+
+test('classifyActiveSection: a fenced `## ` inside the section neither ends it nor declares an id', () => {
+  const res = classifyActiveSection(FENCED_INSIDE_ACTIVE);
+  assert.deepEqual(res.ids, ['REV-01', 'GRM-02']);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseActiveIds(FENCED_INSIDE_ACTIVE), ['REV-01', 'GRM-02']);
+});
 
 // --- the CONTEXT `## Acceptance criteria` grammar ----------------------------
 // The table cadence-core/references/acceptance-criteria.md states in prose.

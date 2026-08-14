@@ -4425,15 +4425,52 @@ test('detect-commands: an unlistable root is ok:false, never a silent nothing', 
   assert.equal(r.reason, 'no-root');
 });
 
-test('detect-commands: --root with nothing after it is refused, not answered about cwd', () => {
-  const r = (() => {
-    try {
-      return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root'],
-        { encoding: 'utf8' }));
-    } catch (e) { return JSON.parse(e.stdout); }
-  })();
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'bad-args');
+// --- a blank --root is refused by BOTH --root subcommands (COR-01) ----------
+// `detect-surfaces` is tested here rather than beside its scanner for the same
+// reason `trace ignore` is: this is the `--root` refusal, and the two rows sit
+// two lines apart in the dispatch table. Measured before the fix: `--root ""`
+// answered `ok:true` about the CWD from both commands - the silent substitution
+// #42/#45 closed for the valueless spelling and missed for the empty one - and
+// `--root "   "` answered `no-root`, a second vocabulary for one refusal. All
+// three shapes now take `debt-harvest`'s predicate, trim clause included.
+
+/** Any planning.mjs argv, parsed off stdout on either exit code. */
+function runPlanning(...args) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, ...args], { encoding: 'utf8' }));
+  } catch (e) { return JSON.parse(e.stdout); }
+}
+
+const BLANK_ROOTS = [
+  { name: '--root with nothing after it', args: ['--root'] },
+  { name: 'an empty --root ""', args: ['--root', ''] },
+  { name: 'a whitespace-only --root', args: ['--root', '   '] },
+];
+
+for (const cmd of ['detect-commands', 'detect-surfaces']) {
+  for (const row of BLANK_ROOTS) {
+    test(`${cmd}: ${row.name} is bad-args, not answered about cwd`, () => {
+      const r = runPlanning(cmd, ...row.args);
+      assert.equal(r.ok, false, JSON.stringify(r));
+      assert.equal(r.reason, 'bad-args', JSON.stringify(r));
+    });
+  }
+}
+
+test('detect-commands: a real --root still answers about THAT tree', () => {
+  const root = projectTree({ 'package.json': { scripts: { lint: 'eslint .' } } });
+  const r = runPlanning('detect-commands', '--root', root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.root, root);
+  assert.equal(r.lint, 'npm run lint');
+});
+
+test('detect-surfaces: a real --root still answers about THAT tree', () => {
+  const root = projectTree({ 'package.json': { dependencies: { stripe: '^1' } } });
+  const r = runPlanning('detect-surfaces', '--root', root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.root, root);
+  assert.deepEqual(r.evidenced.map((e) => e.category), ['billing']);
 });
 
 // --- lease-check: the declared file lease, enforced (QW-03) ------------------
