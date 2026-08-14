@@ -190,4 +190,9 @@ already accurate rather than about to be rewritten.
 
 Scope is deliberately open: success criteria and requirement IDs are settled at
 `/cad-context 6` - John has further thoughts to bring when the phase gets
-close.
+close. Filed so far:
+
+- README restructure, three layers in reading order: a quick intended-use
+  statement first so a visitor can decide in seconds whether to keep reading,
+  then a short ELI5 walkthrough, then the thorough documentation for
+  engineers.
