@@ -90,19 +90,24 @@ function makeTree(spec) {
     }
   }
 
-  // CAPTURE.md: a top-level `[{section:'Todos'|'Seeds'|'Notes', text, phase?}]`
-  // list, each bullet under its named heading (todos carry a `(phase N)` tag
-  // when phase is given, matching /cad-capture's real format).
+  // CAPTURE.md: a top-level `[{section, text, phase?}]` list, each bullet under
+  // its named heading (todos carry a `(phase N)` tag when phase is given,
+  // matching /cad-capture's real format).
+  //
+  // The three walked headings are always written, in order, whether or not a
+  // row names them. A section OUTSIDE that set - `Archive`, `Debt markers` - is
+  // written after them, which is how a row asserts what the recall walk does
+  // NOT reach: the falsifier for the walk-membership claim needs a bullet that
+  // exists in the file and must never come back.
   if (spec.capture) {
     const bySection = { Todos: [], Seeds: [], Notes: [] };
     for (const c of spec.capture) {
       const tag = c.phase !== undefined ? `(phase ${c.phase}) ` : '';
       const box = c.section === 'Todos' ? '[ ] ' : '';
-      bySection[c.section].push(`- ${box}${tag}${c.text}`);
+      (bySection[c.section] ||= []).push(`- ${box}${tag}${c.text}`);
     }
     writeFileSync(join(dir, 'CAPTURE.md'),
-      `## Todos\n\n${bySection.Todos.join('\n')}\n\n## Seeds\n\n${bySection.Seeds.join('\n')}\n\n` +
-      `## Notes\n\n${bySection.Notes.join('\n')}\n`);
+      Object.entries(bySection).map(([h, ls]) => `## ${h}\n\n${ls.join('\n')}\n`).join('\n'));
   }
 
   // config.json written verbatim from `spec.config` (the backend-off test pins
@@ -4202,6 +4207,52 @@ test('recall: a completed capture keeps its phase and gains a closed marker (#47
   // An open capture is unchanged: phase extracted, no marker.
   assert.equal(live.phase, 1);
   assert.doesNotMatch(live.snippet, /\[closed\]/);
+});
+
+// --- capture -> recall: the walk-membership round trip (AC1) -----------------
+// The pair below is the whole point of the phase. The first row proves a bullet
+// written through the seam comes back; the second is its FALSIFIER, and without
+// it the first would stay green if the seam wrote to `## Archive` - which is
+// exactly how five filed bullets were lost. A positive-only assertion here
+// would be an inspection dressed as a test.
+
+test('capture -> recall: a bullet written through the seam comes back, with its phase (AC1)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const w = run(['capture', '--kind', 'todo', '--text', 'the zarquon fixture leaks a handle',
+    '--phase', '2'], dir);
+  assert.equal(w.ok, true, JSON.stringify(w));
+  const r = recall('zarquon', dir);
+  const hit = r.json.results.find((x) => /zarquon/.test(x.snippet));
+  assert.ok(hit, `the captured bullet did not come back: ${r.raw}`);
+  assert.equal(hit.source, 'CAPTURE.md');
+  assert.equal(hit.phase, 2);
+});
+
+test('capture -> recall: a seed and a note come back too, unphased', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  assert.equal(run(['capture', '--kind', 'seed', '--text', 'a zarquon scanner'], dir).ok, true);
+  assert.equal(run(['capture', '--kind', 'note', '--text', 'zarquon bit us again'], dir).ok, true);
+  const hits = recall('zarquon', dir).json.results.filter((x) => x.source === 'CAPTURE.md');
+  assert.equal(hits.length, 2, JSON.stringify(hits));
+  for (const h of hits) assert.equal(h.phase, undefined);
+});
+
+test('capture -> recall: a bullet under ## Archive is NOT returned (the falsifier)', () => {
+  // Same distinctive term, one bullet through the seam and one written straight
+  // into a section the walk does not visit. Only the seam's comes back - so a
+  // seam that ever wrote to `## Archive` reddens the row above rather than
+  // passing on a bullet nobody can recall. `## Archive` stays out of the walk on
+  // purpose (D-03): widening it would re-admit 185 retired bullets.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    capture: [{ section: 'Archive', text: 'zarquon retired long ago' }],
+  });
+  assert.match(readFileSync(join(dir, 'CAPTURE.md'), 'utf8'), /## Archive\n\n- zarquon retired long ago/);
+  assert.deepEqual(recall('zarquon', dir).json.results, []);
+  assert.equal(run(['capture', '--kind', 'todo', '--text', 'zarquon is live again', '--phase', '1'], dir).ok, true);
+  const back = recall('zarquon', dir).json.results;
+  assert.equal(back.length, 1, JSON.stringify(back));
+  assert.match(back[0].snippet, /zarquon is live again/);
 });
 
 test('recall: memory.backend none reports off with empty results, exit 0', () => {
