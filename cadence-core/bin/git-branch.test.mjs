@@ -97,6 +97,20 @@ test('defaults (no git block set): milestone + ask on a protected base -> ask', 
   assert.equal(r.branch, 'cadence/v1.1.0-rc.2');
 });
 
+test('a STRING protected_branches is honored here too, not dropped (#38, COR-01)', () => {
+  // This seam's own per-consumer proof of the shared coercion
+  // (lib/protected-branches.mjs). Before it, a lone string fell to
+  // ['main','master'] HERE while git-guard already honored it: "release" read
+  // as an ordinary work branch, so the seam advised `stay` on the very branch
+  // the user had protected, and the default list protected `main` nobody named.
+  const cfg = { integration_branch: 'milestone', auto_branch: 'ask', protected_branches: 'release' };
+  const onProtected = decide(fixture(cfg), 'release');
+  assert.equal(onProtected.action, 'ask');
+  assert.equal(onProtected.branch, 'cadence/v1.1.0-rc.2');
+  // and the swapped-in default is gone: main is now an ordinary branch.
+  assert.equal(decide(fixture(cfg), 'main').action, 'stay');
+});
+
 test('published: a milestone the repo has ALREADY TAGGED asks, naming both numbers (AC8)', () => {
   // The #87 collision at the seam: `### Active` still names v0.1.0 while the
   // repo carries v0.1.0 and v0.2.0, so `create cadence/v0.1.0` would name a

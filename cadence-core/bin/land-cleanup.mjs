@@ -41,6 +41,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { integrationBranchName } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 
 /** Read a file, or "" if missing/unreadable (a missing surface is not fatal). */
 function readText(file) {
@@ -100,8 +101,14 @@ function cleanup(dir, branchArg, baseArg, mergedArg) {
   const { config, warnings } = mergeLayers(join(dir, '.planning', 'config.json'));
   const git = config.git || {};
   const onLandCleanup = git.on_land_cleanup !== false; // default true
-  const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches : ['main', 'master'];
+  // The ONE coercion (lib/protected-branches.mjs). Honoring the string form
+  // here moves `base` as well, deliberately (D-07): base falls back to
+  // protectedBranches[0], so `protected_branches: "release"` now resolves base
+  // to `release` and `git branch --merged release` becomes the reap query.
+  // That is the accepted consequence of one grammar across the four readers,
+  // not a regression - a string that named the protected branch used to be
+  // dropped here for ['main','master'] while git-guard already honored it.
+  const protectedBranches = resolveProtectedBranches(git);
   const base = baseArg !== undefined ? baseArg : (git.base_branch || protectedBranches[0]);
   const mergedList = readMergedBranches(dir, base);
   const derived = branchArg !== undefined ? branchArg

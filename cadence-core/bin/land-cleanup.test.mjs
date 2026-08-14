@@ -102,6 +102,23 @@ test('cleanup --merged false: cleanup but reap false (never reap an unmerged bra
   assert.equal(r.reap, false);
 });
 
+test('a STRING protected_branches resolves base to that branch (#38, COR-01, D-07)', () => {
+  // This seam's own per-consumer proof of the shared coercion
+  // (lib/protected-branches.mjs). `base` falls back to protectedBranches[0],
+  // so honoring the string form MOVES the base here: "release" resolves base to
+  // `release` and `git branch --merged release` becomes the reap query, where
+  // the pre-fix code dropped the string and reaped against `main`. That is the
+  // accepted consequence of one grammar across the four readers (D-07), stated
+  // rather than worked around.
+  const dir = fixture({ protected_branches: 'release' });
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.equal(r.ok, true);
+  assert.equal(r.base, 'release');
+  // An explicit --base still wins over the fallback.
+  const forced = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true', '--base', 'main']);
+  assert.equal(forced.base, 'main');
+});
+
 test('cleanup with git.on_land_cleanup=false: skip, all flags false', () => {
   const dir = fixture({ base_branch: 'main', on_land_cleanup: false });
   const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);

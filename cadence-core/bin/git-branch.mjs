@@ -28,6 +28,7 @@ import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
 // consumer (FRI-03): one reader of "what has this repo published", the same
 // single-reader discipline branch-decision.mjs keeps for the prose version.
 import { readTags } from './lib/git-tags.mjs';
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 
 /** Read a file, or "" if missing/unreadable (a missing surface is not fatal). */
 function readText(file) {
@@ -53,8 +54,11 @@ function decide(dir, branchOverride) {
   const git = config.git || {};
   const mode = git.integration_branch || 'milestone';
   const autoBranch = git.auto_branch || 'ask';
-  const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches : ['main', 'master'];
+  // The ONE coercion (lib/protected-branches.mjs): a lone-string
+  // protected_branches used to be DROPPED here for the default list, so this
+  // seam advised as though the branch the user named were unprotected while
+  // git-guard was already honoring it.
+  const protectedBranches = resolveProtectedBranches(git);
   const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
   const integrationName = integrationBranchName(
     readText(join(dir, '.planning', 'PROJECT.md')),
