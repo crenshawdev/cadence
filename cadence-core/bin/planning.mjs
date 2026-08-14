@@ -99,6 +99,7 @@ import {
   sectionBound, sectionSpan, phaseRequirements, planTaskTitles,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
+import { appendCapture, CAPTURE_KINDS } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
 // exist rather than growing second ones: the SAME prose version reader branch
@@ -3046,6 +3047,52 @@ function cmdRenumber(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// capture - one bullet into `.planning/CAPTURE.md`, under the heading its kind
+// owns. The whole point is that the heading is NOT an argument: the append used
+// to be `/cad-capture` prose holding `Write`/`Edit`, and five filed bullets were
+// lost to a heading the recall walk does not visit. The format, the section and
+// the file I/O live in lib/capture-file.mjs; this owns the flag contract and the
+// envelope.
+// ---------------------------------------------------------------------------
+function cmdCapture(dir, opts) {
+  const kind = typeof opts.kind === 'string' ? opts.kind.trim() : '';
+  if (!CAPTURE_KINDS.includes(kind)) {
+    return fail('bad-args', `capture --kind must be one of ${CAPTURE_KINDS.join(' | ')}`
+      + ` (got: ${kind || 'none'})`);
+  }
+  // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text` has
+  // to be refused here - written through, it captures the literal word "true"
+  // and the user's sentence is gone with an ok:true envelope (#42/#45).
+  const text = typeof opts.text === 'string' ? opts.text.trim() : '';
+  if (!text) return fail('bad-args', 'capture --text needs a sentence after it: --text "<text>"');
+  /** @type {string|undefined} */
+  let phase;
+  if ('phase' in opts) {
+    // Admitted with `todo` ALONE. A seed or a note carrying `--phase` would be
+    // written with no tag, leaving the caller believing it tagged something -
+    // so the flag is refused rather than dropped.
+    if (kind !== 'todo') {
+      return fail('bad-args', 'capture --phase is admitted only with --kind todo'
+        + ' - a seed and a note carry no phase tag');
+    }
+    const parsed = requirePhaseArg(opts.phase);
+    if (!parsed.ok) return fail('bad-args', 'capture --phase needs a phase number: --phase <N>');
+    // The caller's OWN spelling, so `--phase 1.10` tags `(phase 1.10)`.
+    phase = parsed.raw;
+  }
+  // Same present-but-unusable refusal `debt-harvest --root` carries: a flag with
+  // nothing usable after it is never silently answered about the default path,
+  // which would write a different file than the caller named (#42/#45).
+  if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
+    return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>');
+  }
+  const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
+  const res = appendCapture(file, kind, text, phase);
+  if (res.ok === false) return fail(res.reason, res.detail);
+  ok({ file, kind, bullet: res.bullet, heading: res.heading, created: res.created });
+}
+
+// ---------------------------------------------------------------------------
 // debt-harvest - every `CADENCE-DEBT` marker in the tracked tree, collected into
 // `.planning/CAPTURE.md`'s own section. The grammar and the rendering live in
 // lib/debt-markers.mjs (pure); this owns the walk, the reads and the write.
@@ -3331,6 +3378,9 @@ const COMMANDS = {
     ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
     : cmdDetectSurfaces(opts.root || process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
+  // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
+  // queue, which sits beside the global config layer and not in any `.planning`.
+  capture: (dir, _sub, opts) => cmdCapture(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
   // SOURCE and writes into `.planning`. Same present-but-unusable refusal
   // `trace ignore` carries.
