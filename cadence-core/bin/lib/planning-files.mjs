@@ -661,6 +661,28 @@ export function parseSummarySnippets(text) {
 }
 
 /**
+ * The `## ` sections of CAPTURE.md the recall walk visits, in order, WITHOUT
+ * the `## ` prefix.
+ *
+ * ONE fact, ONE home. `parseCaptureSnippets` below iterates this list and
+ * `lib/capture-file.mjs` derives its kind-to-heading map from it instead of
+ * restating the names: the writer and the reader disagreeing about which
+ * sections are the walk is this queue's headline defect - five filed bullets
+ * were lost to exactly that - and it can only recur while the fact is written
+ * down in two places.
+ *
+ * `## Archive` and `## Debt markers` are deliberately NOT here (D-03). The fix
+ * for a lost bullet is never "walk every section": that would re-admit 185
+ * bullets a milestone triage retired into the BM25 corpus and undo the v2.6.0
+ * reconciliation in full.
+ *
+ * The ORDER is load-bearing - `capture-file.mjs` maps its three kinds onto
+ * these three names positionally, and its per-kind rows are what turn red if
+ * the order moves.
+ */
+export const CAPTURE_WALK_SECTIONS = Object.freeze(['Todos', 'Seeds', 'Notes']);
+
+/**
  * The leading phase tag on a CAPTURE.md bullet, anchored at the head of the
  * text AFTER the checkbox strip. Four admitted shapes and nothing more:
  * `(phase N)`, `(v3.2.0 phase N)`, `(phase N, label)` and their combination
@@ -682,8 +704,9 @@ export function parseSummarySnippets(text) {
 const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]*)?\)\s*/;
 
 /**
- * CAPTURE.md item-level snippets: every `- ` bullet under `## Todos`,
- * `## Seeds`, `## Notes`, with a leading checkbox and phase tag stripped - the
+ * CAPTURE.md item-level snippets: every `- ` bullet under the sections
+ * `CAPTURE_WALK_SECTIONS` names, with a leading checkbox and phase tag
+ * stripped - the
  * tag becomes the numeric `phase` field (omitted when the bullet carries no
  * tag; decimal phase numbers are legal). `CAPTURE_PHASE_TAG` above states
  * which parentheticals are tags and which are content.
@@ -711,7 +734,7 @@ const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]
  */
 export function parseCaptureSnippets(text) {
   const out = [];
-  for (const heading of ['Todos', 'Seeds', 'Notes']) {
+  for (const heading of CAPTURE_WALK_SECTIONS) {
     const body = sectionBody(text, heading);
     if (!body) continue;
     for (const line of body.split('\n')) {

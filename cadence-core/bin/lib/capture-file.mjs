@@ -10,15 +10,21 @@
 // writer also has no test to redden. So the write is code, and the heading is
 // not a parameter.
 //
-// THE THREE HEADINGS ARE ONE FACT WITH TWO IMPLEMENTATIONS. `CAPTURE_HEADINGS`
-// below and the `['Todos', 'Seeds', 'Notes']` list inside `parseCaptureSnippets`
-// in lib/planning-files.mjs (the recall walk) must name the same three sections:
-// this module is the WRITE side of the walk that module READS. They are not
-// unified into one export because the dependency would be circular - this file
-// imports `sectionSpan` and `atomicWrite` from planning-files.mjs. If the walk
-// there ever gains or drops a section, this map moves with it, and
-// capture-file.test.mjs's per-kind rows plus planning.test.mjs's capture->recall
-// round trip are what catch the drift.
+// THE THREE HEADINGS ARE ONE FACT WITH ONE HOME. The section NAMES live in
+// `CAPTURE_WALK_SECTIONS` in lib/planning-files.mjs - the recall walk's own
+// list - and `CAPTURE_HEADINGS` below derives from it rather than restating it.
+// This module is the WRITE side of the walk that module READS, and the two
+// disagreeing about which sections are the walk is exactly how five filed
+// bullets were lost; a fact written down twice is the only way that recurs.
+// The import direction is one-way (this file already takes `sectionSpan` and
+// `atomicWrite` from there), so there is no cycle to avoid.
+//
+// What stays HERE is the kind-to-heading MAPPING, which is writer knowledge: a
+// caller may ask for a `todo`, a `seed` or a `note`, and those three words are
+// mapped onto the walk's three names positionally, in order. The order is
+// therefore load-bearing on both sides, and capture-file.test.mjs's per-kind
+// rows plus planning.test.mjs's capture->recall round trip are what turn red if
+// either side moves.
 //
 // WHY the kind-to-heading map is FIXED here rather than validated at the entry.
 // The structural cause of the lost bullets is that a writer COULD name a
@@ -66,16 +72,17 @@
 
 import { readFileSync, mkdirSync, existsSync, openSync, closeSync, statSync, unlinkSync, renameSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { atomicWrite, sectionSpan } from './planning-files.mjs';
+import { atomicWrite, sectionSpan, CAPTURE_WALK_SECTIONS } from './planning-files.mjs';
 
 /**
  * The kind a caller may ask for, and the heading it lands under. Not
- * extensible on purpose - see the header.
+ * extensible on purpose, and the three names are the WALK's, positionally -
+ * see the header.
  */
 export const CAPTURE_HEADINGS = {
-  todo: '## Todos',
-  seed: '## Seeds',
-  note: '## Notes',
+  todo: `## ${CAPTURE_WALK_SECTIONS[0]}`,
+  seed: `## ${CAPTURE_WALK_SECTIONS[1]}`,
+  note: `## ${CAPTURE_WALK_SECTIONS[2]}`,
 };
 
 /** The three words `--kind` admits, in the order they are reported. */
@@ -84,9 +91,12 @@ export const CAPTURE_KINDS = Object.keys(CAPTURE_HEADINGS);
 /**
  * The body an absent CAPTURE.md is created with - byte-for-byte the three
  * headings `cmdDebtHarvest` writes for that same case, so a queue created by
- * either writer is the one `/cad-capture` expects.
+ * either writer is the one `/cad-capture` expects. Built from the walk's own
+ * list for the same reason the map above is: a queue this seam CREATES must be
+ * one the walk can read, and that is a guarantee, not a coincidence to keep in
+ * sync by hand.
  */
-export const EMPTY_CAPTURE = '## Todos\n\n- None.\n\n## Seeds\n\n- None.\n\n## Notes\n\n- None.\n';
+export const EMPTY_CAPTURE = CAPTURE_WALK_SECTIONS.map((s) => `## ${s}\n\n- None.\n`).join('\n');
 
 /**
  * Render the bullet for one capture. The shapes are exactly the three
