@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 0 (no active cycle)
+Phase: 1 of 3 (The capture queue stops dropping filed work)
 Status: ready to plan
-Next: /cad-phase add
+Next: /cad-context 1
 Updated: 2026-08-14

@@ -105,17 +105,27 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `v3.2.0 — the controls that reported success` closed on
+`v3.3.0 — the record you plan from`, opened 2026-08-14 on `cadence/v3.3.0`.
+Three requirements (`CAP-01`, `TRC-01`, `DOC-02`) across three phases, scoped
+from a triage of the capture queue rather than from a scan: 309 file-wide
+bullets read down to 119 live todos, 15 retired against shipped v3.2.0 code, and
+the survivors grouped by fix site into eight clusters of which three are here.
+The theme is that the evidence Cadence plans and reports from is itself
+unchecked - a queue that silently dropped five filed items because they were
+appended below a heading the recall walk does not visit, and a run record that
+cannot join a provider call to the fire that made it. Phase 1 goes first because
+it protects the input to everything after it.
+
+`v3.2.0 — the controls that reported success` closed on
 2026-08-14: twelve requirements (`CFG-01`, `CFG-02`, `FSW-01`, `GAT-01`,
 `EXP-01`, `VAL-01`, `RVW-01`, `RVW-02`, `CST-01`, `CST-02`, `CST-03`,
 `HYG-01`), four phases, 104 commits, the audit green (12/12 traced, 0 broken;
 36/36 acceptance criteria covered), the manifest at `3.2.0`. Its twelve rows
 sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in
 `CHANGELOG.md`, and its phase record in git history at the pruning commit -
-this close ran `--mode delete`, so there is no `_archive-v3.2.0/`. The merge
-and the release tag are still outstanding: `/cad-land` on `cadence/v3.2.0`, and
-the tag cut by hand on the pulled base, since `git.create_tag` is false at both
-config layers.
+this close ran `--mode delete`, so there is no `_archive-v3.2.0/`. The merge and
+the release tag both landed: `81bdb5d` is the tip of `main` and the annotated
+tag `v3.2.0` points at it.
 
 What it delivered: the controls that reported success without doing the work.
 A `.planning/config.json` arriving with a clone could reparent the merged
@@ -135,15 +145,14 @@ that blocked nothing were turned off or deleted, `risk_surface` learned the
 eight categories a project actually has, and every dispatch is bounded at 200
 turns instead of a nominal 400.
 
-The next milestone is unscoped. The candidate pool is `.planning/CAPTURE.md`,
-119 open todos with 2 tagged `[high]`, plus five deferred requirements carried
-into the new cycle: `LND-01` (the `/cad-land` tracker check, cut from phase 4
-before execution, issue #121 still open), `PRS-01`, `EVD-01`, `RCL-06` and
-`CTX-02`. Two process items are still open from the last close and were not
-addressed here: `/cad-milestone` has no close-only arm, and this close was the
-fourth to hand-write one. `### Validated` above stops at `v2.6.0`; `v2.7.0`,
-`v3.0.0` and `v3.1.0` were never added to it, so this cycle's entry sits over a
-three-milestone hole rather than beside its siblings.
+Carried, not scoped into `v3.3.0`: the five deferred requirements `LND-01`
+(the `/cad-land` tracker check, cut from v3.2.0 phase 4 before execution, issue
+#121 still open), `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02`, each still holding
+its deferral reason; and two process items open since the last close -
+`/cad-milestone` has no close-only arm, and that close was the fourth to
+hand-write one. `### Validated` above stops at `v2.6.0`; `v2.7.0`, `v3.0.0`,
+`v3.1.0` and `v3.2.0` were never added to it, so that hole is now four
+milestones deep rather than three.
 
 ## Key Decisions
 
