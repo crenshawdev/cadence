@@ -62,15 +62,39 @@ const PHASE_LINE = /^- \[( |x)\] \*\*Phase (\d+(?:\.\d+)?): (.+?)\*\*(?:\s*-\s*(
  * and `phase-done` still rewrite the raw bytes. That asymmetry is why this
  * uses `normalizeCrlf` and NOT `normalize`: a lone-CR file must stay
  * unparseable, or the write paths that split raw bytes on `\n` corrupt it.
+ *
+ * BOTH ends come from `sectionSpan` (D-02/D-10), never from a `split` on the
+ * heading: the fence-blind form read the FENCED example in the shipped
+ * `templates/ROADMAP.md` as the real section and returned two phantom `[Name]`
+ * phases, and with a fenced example ABOVE a real section it stopped at the
+ * example's closing `## `, making the real phases invisible rather than merely
+ * joined. Fixing only the end bound cannot repair a start found inside a fence,
+ * which is why `sectionSpan` returns the two together and why the fix has to
+ * land HERE and not only in `classifyPhaseList`, which delegates its canonical
+ * parse to this function. A fenced heading is skipped silently and the walk
+ * continues to the next unfenced `## Phases` (D-12) - no new issue code, the
+ * `classifyAcceptanceCriteria` precedent.
+ *
+ * One accepted widening: `sectionSpan` matches a heading by TRIMMED equality
+ * where `/^## Phases\s*$/m` allowed trailing whitespace only, so a heading
+ * indented up to three spaces now matches. CommonMark reads that as a heading
+ * and no shipped grammar document forbids it.
  * @param {string} text
  */
 export function parseRoadmapPhases(text) {
-  const section = normalizeCrlf(text).split(/^## Phases\s*$/m)[1];
-  if (!section) return [];
-  const body = section.split(/^## /m)[0];
+  const lines = normalizeCrlf(text).split('\n');
+  const { start, end } = sectionSpan(lines, '## Phases');
+  if (start < 0) return [];
+  // Fresh scanner from the heading: the heading itself was matched outside a
+  // fence, so nothing is open here. A fenced example INSIDE the real section
+  // mints no phase - the same silence D-12 gives a fenced heading, and the only
+  // reading under which `classifyPhaseList` cannot report `live` off lines it
+  // simultaneously refuses to raise an issue for.
+  const fenced = fenceScanner();
   const phases = [];
-  for (const line of body.split('\n')) {
-    const m = line.match(PHASE_LINE);
+  for (let i = start + 1; i < end; i++) {
+    if (fenced(lines[i])) continue;
+    const m = lines[i].match(PHASE_LINE);
     if (m) phases.push({ n: Number(m[2]), name: m[3], desc: m[4] || '', checked: m[1] === 'x' });
   }
   return phases.sort((a, b) => a.n - b.n);
@@ -101,14 +125,20 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  *      CRLF only: a lone-CR file stays one giant line and falls out at
  *      `no-section`, which is what keeps the roadmap write paths from
  *      corrupting a file they cannot split.
- *   2. No `^## Phases$` heading -> `no-section`.
+ *   2. No `## Phases` heading OUTSIDE a fence -> `no-section`. The heading is
+ *      located by `sectionSpan`, the same call `parseRoadmapPhases` makes, so
+ *      the two cannot disagree about which occurrence is the real one; a
+ *      fenced heading is skipped silently and the walk continues (D-12).
  *   3. Parse the CANONICAL extent (heading to the next `## `, today's bound)
  *      with `parseRoadmapPhases`; one or more matches -> `live` with those
  *      phases and no issues. A near-miss beside a real checkbox list is
  *      deliberately NOT reported: the checkbox list is the phase set.
  *   4. Otherwise scan the CLASSIFICATION extent - the heading to END OF TEXT,
  *      deliberately wider than the canonical bound (D-03) - for the phase
- *      token. Any match -> `out-of-grammar`, at most one issue per line, code
+ *      token, SKIPPING fenced lines: a phase token inside somebody's code
+ *      block is an example, and reporting it would make every project whose
+ *      ROADMAP carries a formatting example fail a check it passes (D-12).
+ *      Any match -> `out-of-grammar`, at most one issue per line, code
  *      by the line's shape, EXCEPT a line that already matches `PHASE_LINE`,
  *      which is `phase-outside-section` (right shape, wrong section - it can
  *      only reach here from past the canonical bound). No match -> `closed`.
@@ -121,10 +151,7 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  */
 export function classifyPhaseList(text) {
   const lines = normalizeCrlf(text).split('\n');
-  let heading = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^## Phases\s*$/.test(lines[i])) { heading = i; break; }
-  }
+  const { start: heading } = sectionSpan(lines, '## Phases');
   if (heading === -1) return { state: 'no-section', phases: [], issues: [] };
 
   const phases = parseRoadmapPhases(text);
@@ -132,8 +159,15 @@ export function classifyPhaseList(text) {
 
   /** @type {Issue[]} */
   const issues = [];
+  // Fresh scanner from the heading, exactly as `classifyAcceptanceCriteria`
+  // does and for the same reason: the heading was matched outside a fence, so
+  // nothing is open here. The extent still runs to END OF TEXT - only the
+  // fenced lines inside it are skipped, so the wiped-list-with-surviving-
+  // details case D-03 protects still reports.
+  const fenced = fenceScanner();
   for (let i = heading + 1; i < lines.length; i++) {
     const line = lines[i];
+    if (fenced(line)) continue;
     if (!PHASE_TOKEN.test(line)) continue;
     let code = 'phase-prose-line'; // the catch-all: out of grammar, never silent
     // A byte-perfect canonical entry reaching here is in the WRONG SECTION, not

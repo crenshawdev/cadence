@@ -594,6 +594,46 @@ test('classifyPhaseList: the surviving-detail issue carries its exact line, code
     [{ line: 11, code: 'phase-heading', text: '### Phase 1: Auth' }]);
 });
 
+// --- the `## Phases` scanners see fences (D-10, D-12) ------------------------
+// Both halves of the scan read the section through `sectionSpan`, so a heading
+// inside a code block is not the section and a phase line inside one is not a
+// phase. Measured against the pre-fix code, all three rows below reddened: the
+// shipped template classified `live` with two phantom `[Name]` phases, and the
+// fenced-example-above-a-real-section shape returned the EXAMPLE's phase while
+// the real two were invisible - the fence-blind `split` bounded the section at
+// the real heading it should have started from.
+
+/** A roadmap whose `## Phases` example sits in a fence ABOVE the real one. */
+const FENCED_EXAMPLE_ROADMAP = [
+  '# Roadmap: Demo', '', '## Overview', '', 'Fill it in like this:', '',
+  '```markdown', '## Phases', '', '- [ ] **Phase 1: [Name]** - [description]',
+  '```', '', '## Phases', '', '- [x] **Phase 1: Auth** - login',
+  '- [ ] **Phase 2: Ship** - release', '', '## Phase Details', '',
+  '### Phase 1: Auth', '',
+].join('\n');
+
+test('classifyPhaseList: the shipped templates/ROADMAP.md is no-section, not two phantom phases', () => {
+  const text = readFileSync(new URL('../templates/ROADMAP.md', import.meta.url), 'utf8');
+  assert.deepEqual(classifyPhaseList(text), { state: 'no-section', phases: [], issues: [] });
+  assert.deepEqual(parseRoadmapPhases(text), []);
+});
+
+test('classifyPhaseList: a fenced example above a real section reads the REAL phases', () => {
+  const res = classifyPhaseList(FENCED_EXAMPLE_ROADMAP);
+  assert.equal(res.state, 'live');
+  assert.deepEqual(res.phases.map((p) => [p.n, p.name]), [[1, 'Auth'], [2, 'Ship']]);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseRoadmapPhases(FENCED_EXAMPLE_ROADMAP).map((p) => p.n), [1, 2]);
+});
+
+test('classifyPhaseList: a fenced phase token inside the section raises no issue', () => {
+  // A closed milestone whose section carries a formatting example. Silence is
+  // the point (D-12): a new issue code here would make every project with a
+  // documented example report a problem it does not have.
+  const text = roadmap('```markdown\n- [ ] **Phase 1: [Name]** - [description]\n```\n');
+  assert.deepEqual(classifyPhaseList(text), { state: 'closed', phases: [], issues: [] });
+});
+
 // --- cutPhaseDetail on CRLF --------------------------------------------------
 // Newly reachable: parseRoadmapPhases now normalizes, so `renumber` no longer
 // bails with unparseable-roadmap on a CRLF checkout and `/cad-phase remove`
