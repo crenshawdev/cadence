@@ -507,6 +507,27 @@ export function renderTrace(planningRoot, phase) {
   // worker, and `funded` so one dispatch can be funded exactly once.
   /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean}[]>} */
   const open = new Map();
+
+  // Every terminal's full identity, so the SECOND copy of one funds nothing. A
+  // replayed close - a re-run of a prose step, a copy-pasted append - is
+  // indistinguishable from a genuine one at the pairing rule, and with two
+  // dispatches open on ONE worker key the `funded` flag below cannot help: the
+  // FIFO `pending.shift()` hands the replay a second, genuinely open dispatch
+  // and marks THAT one funded, so a worker whose return carried no figure
+  // silently disappears out of `unrecorded` and the run reads as fully
+  // measured.
+  //
+  // The accepted cost, stated: two genuinely distinct closes that share worker
+  // key, event name, role, token figure AND millisecond are indistinguishable
+  // from a replay here, and the second is dropped. The exact alternative is a
+  // per-dispatch id the close quotes back, which is a WRITER-contract change
+  // across all six prose close sites - the same six a `trace close` subcommand
+  // is scheduled to absorb, so it is that seam's to make, not this reader's.
+  //
+  // TERMINALS only. A duplicated DISPATCH is a different hazard (it inflates a
+  // count rather than funding a bracket) and is deliberately not folded in here.
+  /** @type {Set<string>} */
+  const seenTerminals = new Set();
   for (const e of out.events) {
     // Every family feeds the phase's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
@@ -558,6 +579,17 @@ export function renderTrace(planningRoot, phase) {
       pending.push(entry);
       open.set(worker, pending);
     } else if (TERMINAL.includes(e.event)) {
+      // A byte-identical repeat of an earlier terminal is a REPLAY: it pairs
+      // with nothing, funds nothing, adds no tokens and opens no coordinator
+      // span. It still sits in `out.events` and in `counts`, because the render
+      // reports the file rather than editing it. A second close differing only
+      // in `role` is NOT a replay - it pairs normally and surfaces in
+      // `mismatched` above, and a real replay carries the same role, so
+      // discriminating on role costs this rule nothing.
+      const identity = `${worker}\0${e.event}\0${key(e.role)}\0${key(e.ts)}\0${tokens === null ? '' : tokens}`;
+      if (seenTerminals.has(identity)) continue;
+      seenTerminals.add(identity);
+
       const pending = open.get(worker);
       const matched = pending && pending.length ? pending.shift() : null;
       // A bracket contributes its span to the residue only once it has PAIRED,

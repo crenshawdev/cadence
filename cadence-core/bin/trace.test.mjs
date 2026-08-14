@@ -786,6 +786,27 @@ test('render: a duplicated terminal cannot fund a second dispatch', () => {
     'both figures are summed, but plan 2 stays unrecorded');
 });
 
+test('render: a REPLAYED terminal funds nothing, even with a dispatch still open', () => {
+  const dir = root();
+  // Both dispatches are on ONE worker key, which is where the `funded` flag
+  // cannot help: the FIFO pairing hands the replay the second, genuinely open
+  // dispatch and marks IT funded, so a worker that came back with no figure
+  // reads as measured and the token total is billed twice.
+  const at1 = '2026-08-14T10:00:00.000Z';
+  const at2 = '2026-08-14T11:00:00.000Z';
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: at1 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: at1 });
+  const close = { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 100, ts: at2 };
+  appendEvent(dir, close);
+  appendEvent(dir, close);
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 2, tokens: 100, unrecorded: 1 } },
+    'the figure is counted ONCE and the second dispatch stays unrecorded');
+  assert.deepEqual(r.unpaired.map((u) => u.plan), ['1'], 'the second dispatch never closed');
+  assert.equal(r.events.length, 4, 'the replay is still reported - the render reads the file, it does not edit it');
+  assert.deepEqual(r.mismatched, []);
+});
+
 test('render: a role named __proto__ is an own row, not a prototype write', () => {
   const dir = root();
   // Plain assignment of this one key hits the prototype setter, so the row
