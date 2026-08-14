@@ -487,6 +487,29 @@ export function renderTrace(planningRoot, phase) {
   // joins without being rewritten. An event with NO later anchor for its phase
   // keeps the bare form, which is also what a head-truncated read over
   // `MAX_TRACE_BYTES` leaves behind.
+  // A bare event whose most recent PRECEDING anchor is itself bare (a no-sha
+  // phase_start) already carries that run's id exactly as the writer derived
+  // it - repairing it forward would hand a previous run's events to the run
+  // after it, and the next run's terminal could then pair with and fund a
+  // dispatch that run never made. The forward scan marks those events so the
+  // backward walk leaves them alone; only an event with no preceding anchor
+  // for its phase, or one following a sha'd anchor whose derived id it does
+  // not carry, is genuinely pre-anchor.
+  /** @type {boolean[]} */
+  const anchoredBare = new Array(out.events.length).fill(false);
+  {
+    /** @type {Map<string, boolean>} phase -> the most recent preceding anchor is bare */
+    const lastAnchorBare = new Map();
+    for (let i = 0; i < out.events.length; i++) {
+      const e = out.events[i];
+      const p = key(e.phase);
+      if (e.family === 'lifecycle' && e.event === ANCHOR) {
+        lastAnchorBare.set(p, !(typeof e.sha === 'string' && e.sha));
+      } else if (lastAnchorBare.get(p)) {
+        anchoredBare[i] = true;
+      }
+    }
+  }
   /** @type {Map<string, string>} phase -> the id of the next anchor at or after here */
   const nextAnchor = new Map();
   for (let i = out.events.length - 1; i >= 0; i--) {
@@ -494,10 +517,10 @@ export function renderTrace(planningRoot, phase) {
     const p = key(e.phase);
     if (e.family === 'lifecycle' && e.event === ANCHOR) {
       // An anchor with no sha derives the bare form itself, so it still SHADOWS
-      // any later anchor: the first anchor ahead is the one that answers, or a
-      // re-run's id would reach back over the run before it.
+      // any later anchor for the events BEFORE it; the events after it are the
+      // `anchoredBare` set the forward scan already fenced off.
       nextAnchor.set(p, typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p);
-    } else if (typeof e.corr === 'string' && e.corr === p && nextAnchor.has(p)) {
+    } else if (!anchoredBare[i] && typeof e.corr === 'string' && e.corr === p && nextAnchor.has(p)) {
       e.corr = /** @type {string} */ (nextAnchor.get(p));
     }
   }

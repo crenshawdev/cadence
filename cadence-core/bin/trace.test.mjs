@@ -258,6 +258,26 @@ test('renderTrace: a PRE-ANCHOR event joins its phase\'s next anchor at read tim
   assert.deepEqual(renderTrace(dir, 2).events.map((e) => e.corr), ['2']);
 });
 
+test('renderTrace: events after a NO-SHA anchor stay with that run, never the next', () => {
+  // A no-sha anchor derives the bare form, so its run's events legitimately
+  // carry `"1"` - indistinguishable at the corr field from the NEXT run's
+  // pre-anchor events. Repairing them forward would let run 2's terminal pair
+  // with and fund run 1's dispatch; the fence is that a bare event whose most
+  // recent PRECEDING anchor is bare is already correct as written.
+  const dir = root();
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'bbb' });
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 9 });
+  const r = renderTrace(dir, 1);
+  assert.deepEqual(r.events.map((e) => e.corr), ['1', '1', '1-bbb', '1-bbb'],
+    'the no-sha run keeps the bare id; only genuinely pre-anchor events repair forward');
+  assert.equal(r.unpaired.length, 1, "run 2's return may not reach back and close run 1's dispatch");
+  assert.equal(r.unpaired[0].corr, '1');
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 9, unrecorded: 1 } },
+    "the stray terminal funds no bracket - run 1's dispatch stays unrecorded");
+});
+
 test('renderTrace: the U+0000 worker separator keeps two SHIFTED brackets apart', () => {
   // The source of that separator was two literal NUL bytes until DFC-01 turned
   // them into `\0` escapes, and nothing pinned it: deleting the separator, or
