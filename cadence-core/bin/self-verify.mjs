@@ -251,6 +251,11 @@ const CONTRACTS = {
     // point: a caller that could name a heading is how five filed bullets
     // landed outside the recall walk.
     capture: ['--kind', '--text', '--text-file', '--phase', '--file'],
+    // The read side of the same file, and the same `--file` override. No
+    // `--section` and no allowlist flag either: the census is unconditional
+    // (D-06), and a flag that could hide a section is what would have hidden
+    // the five lost bullets.
+    'capture-sections': ['--file'],
     'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],

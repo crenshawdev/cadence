@@ -19,7 +19,7 @@ import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
-  atomicWrite, parseCaptureSnippets,
+  atomicWrite, parseCaptureSnippets, captureSections,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1676,3 +1676,57 @@ for (const row of CAPTURE_TAG_ROWS) {
       [row.phase === undefined ? { text: row.text } : { text: row.text, phase: row.phase }]);
   });
 }
+
+// --- the CAPTURE.md section census (captureSections) ------------------------
+// Unconditional and allowlist-free (D-06): the count of a section nobody
+// expects to be out of the walk is exactly the count that reports a bullet
+// filed where recall cannot see it.
+
+const CENSUS = [
+  '# Capture',
+  '',
+  '## Todos',
+  '',
+  '- [ ] (phase 1) one',
+  '- [x] two',
+  '',
+  '## Seeds',
+  '',
+  '- a seed',
+  '',
+  '## Notes',
+  '',
+  '- None.',
+  '',
+  '## Archive',
+  '',
+  '- retired a',
+  '- retired b',
+  '- retired c',
+  '',
+  '## Debt markers',
+  '',
+  '- a marker',
+  '',
+].join('\n');
+
+test('captureSections: every section is counted, with its walk membership', () => {
+  assert.deepEqual(captureSections(CENSUS), [
+    { heading: 'Todos', bullets: 2, inWalk: true },
+    { heading: 'Seeds', bullets: 1, inWalk: true },
+    { heading: 'Notes', bullets: 1, inWalk: true },
+    { heading: 'Archive', bullets: 3, inWalk: false },
+    { heading: 'Debt markers', bullets: 1, inWalk: false },
+  ]);
+});
+
+test('captureSections: a FENCED ## line inside a body does not mint a section', () => {
+  // Column-0 fence AND a column-0 heading inside it, so the row fails without
+  // fence state rather than passing on the indentation.
+  const text = '## Todos\n\n- [ ] the queue looks like:\n\n```md\n## Archive\n\n- retired\n```\n';
+  assert.deepEqual(captureSections(text), [{ heading: 'Todos', bullets: 1, inWalk: true }]);
+});
+
+test('captureSections: a CRLF checkout counts exactly as its plain-LF twin', () => {
+  assert.deepEqual(captureSections(CENSUS.replace(/\n/g, '\r\n')), captureSections(CENSUS));
+});

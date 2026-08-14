@@ -97,6 +97,7 @@ import {
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
   sectionBound, phaseRequirements, planTaskTitles,
+  captureSections, CAPTURE_WALK_SECTIONS,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
@@ -3121,6 +3122,48 @@ function cmdCapture(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// capture-sections - every `## ` section of CAPTURE.md with its bullet count
+// and whether the recall walk visits it, so a bullet filed outside the walk is
+// REPORTED rather than silent. `/cad-health` prints the out-of-walk rows.
+//
+// STANDALONE, beside `status`, never a drift kind inside it (D-07). `cmdStatus`
+// returns `no-planning-dir` / `no-roadmap` / `unparseable-roadmap` before any
+// drift is computed, so folding this in would hand no capture report at all to
+// exactly the trees most likely to hold a mangled CAPTURE.md.
+// ---------------------------------------------------------------------------
+function cmdCaptureSections(dir, opts) {
+  // Same present-but-unusable refusal `capture` and `debt-harvest` carry: a
+  // flag with nothing usable after it is never silently answered about the
+  // default path, which would report on a different file than the caller named.
+  if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
+    return fail('bad-args', 'capture-sections --file needs a path after it: --file <path to CAPTURE.md>');
+  }
+  const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
+  /** @type {string} */
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    // ENOENT alone is the absent arm, and absence is DATA here as everywhere in
+    // this seam - a project with no queue has no out-of-walk sections. Not the
+    // module-level `read`, which flattens every error to null: an unreadable
+    // but PRESENT queue reported as "no sections" is a check announcing all
+    // clear about a file it could not open.
+    if (e && /** @type {any} */ (e).code === 'ENOENT') {
+      return ok({ file, exists: false, walk: CAPTURE_WALK_SECTIONS, sections: [] });
+    }
+    return fail('unreadable-capture', `${file}: ${e && e.message ? e.message : String(e)}`);
+  }
+  ok({
+    file,
+    exists: true,
+    walk: CAPTURE_WALK_SECTIONS,
+    sections: captureSections(text)
+      .map((s) => ({ heading: s.heading, bullets: s.bullets, in_walk: s.inWalk })),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // debt-harvest - every `CADENCE-DEBT` marker in the tracked tree, collected into
 // `.planning/CAPTURE.md`'s own section. The grammar and the rendering live in
 // lib/debt-markers.mjs (pure); this owns the walk, the reads and the write.
@@ -3396,6 +3439,9 @@ const COMMANDS = {
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.
   capture: (dir, _sub, opts) => cmdCapture(dir, opts),
+  // Same `--file` override, and STANDALONE beside `status` rather than a
+  // drift kind inside it (D-07) - see cmdCaptureSections.
+  'capture-sections': (dir, _sub, opts) => cmdCaptureSections(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
   // SOURCE and writes into `.planning`. Same present-but-unusable refusal
   // `trace ignore` carries.

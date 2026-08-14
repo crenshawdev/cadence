@@ -755,6 +755,56 @@ export function parseCaptureSnippets(text) {
 }
 
 /**
+ * Census of EVERY `## ` section in a CAPTURE.md: its name, its bullet count,
+ * and whether `parseCaptureSnippets` visits it. In document order.
+ *
+ * UNCONDITIONAL, with NO allowlist (D-06). The obvious shape - exempt the two
+ * sections everyone expects to be out of the walk - would have reported nothing
+ * on the incident this exists for: all five lost bullets sat under `## Archive`.
+ * A section being out of the walk by design is the READER's judgment to make
+ * from a stated count, not this function's to suppress.
+ *
+ * `heading` is the section name WITHOUT its `## ` prefix, the same spelling
+ * `CAPTURE_WALK_SECTIONS` uses, so `in-walk` is a membership test and not a
+ * string transform. A bullet is the same line shape `parseCaptureSnippets`
+ * indexes - a column-0 `- ` with something after it - so the count of an
+ * in-walk section is the number of snippets that section contributes.
+ *
+ * Fence-aware, because a fenced `## Debt markers` inside somebody's `## Todos`
+ * bullet is an EXAMPLE, and minting a section from it would report a phantom
+ * out-of-walk heading on a healthy queue. Pure reader, so it normalizes through
+ * the shared `normalize` (BOM, CRLF and lone CR): nothing here writes text back,
+ * and a CRLF checkout must count exactly as its plain-LF twin.
+ *
+ * Stated limit: a bullet ABOVE the first `## ` heading belongs to no section
+ * and is not counted anywhere. The walk cannot see it either, but there is no
+ * heading to name it under, and no writer in this codebase can produce one.
+ * @param {string} text
+ * @returns {Array<{heading: string, bullets: number, inWalk: boolean}>}
+ */
+export function captureSections(text) {
+  /** @type {Array<{heading: string, bullets: number, inWalk: boolean}>} */
+  const out = [];
+  const fenced = fenceScanner();
+  /** @type {{heading: string, bullets: number, inWalk: boolean}|null} */
+  let cur = null;
+  for (const line of normalize(text).split('\n')) {
+    if (fenced(line)) continue;
+    const h = line.match(/^## (.*)$/);
+    if (h) {
+      const heading = h[1].trim();
+      cur = { heading, bullets: 0, inWalk: CAPTURE_WALK_SECTIONS.includes(heading) };
+      out.push(cur);
+      continue;
+    }
+    if (!cur) continue;
+    const b = line.match(/^-\s+(.*)$/);
+    if (b && b[1].trim()) cur.bullets++;
+  }
+  return out;
+}
+
+/**
  * CONTEXT.md item-level snippets: the `- D-NN (...): ...` lines under
  * `## Durable decisions` - the durable-only recall surface (D-02). Falls
  * back to `## Decisions` ONLY when the durable heading is absent entirely

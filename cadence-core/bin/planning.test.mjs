@@ -4578,21 +4578,22 @@ test('lease-check: the no-staged-set detail names the failure without a credenti
 
 test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () => {
   // The census, so a site added later fails here rather than shipping a
-  // credential. planning.mjs carries FOUR other caught-error details this
+  // credential. planning.mjs carries FIVE other caught-error details this
   // requirement does not cover - partial-apply, write-failed, the
-  // dispatch-level internal catch, and `capture --text-file`'s read failure -
-  // so the pin is by COUNT: five uses of the idiom, exactly one of them (this
-  // one) wrapped. Adding a site moves the first number whether or not the
-  // author remembered the helper.
+  // dispatch-level internal catch, `capture --text-file`'s read failure and
+  // `capture-sections`' unreadable-capture - so the pin is by COUNT: six uses
+  // of the idiom, exactly one of them (this one) wrapped. Adding a site moves
+  // the first number whether or not the author remembered the helper.
   //
-  // Why `capture --text-file` is NOT wrapped: its detail is an `fs` error over
-  // a path the CALLER just named, so the only string it can echo is one the
-  // caller already holds. `redactUrl` targets a credential arriving from a
-  // remote the user never typed, which a local path read cannot be.
+  // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
+  // detail is an `fs` error over a path the CALLER just named, so the only
+  // string it can echo is one the caller already holds. `redactUrl` targets a
+  // credential arriving from a remote the user never typed, which a local path
+  // read cannot be.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 5, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 6, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 1, 'the no-staged-set detail is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
@@ -5397,4 +5398,65 @@ test('milestone-prune: a spaced milestone-name label still prunes normally', () 
   assert.equal(existsSync(join(dir, `_archive-${label}`, '1', 'PLAN.md')), true);
   assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['2']);
   assert.match(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), new RegExp(label));
+});
+
+// --- capture-sections: the out-of-walk census (AC4) --------------------------
+// D-07: a STANDALONE subcommand, not a drift kind inside `status`, whose early
+// returns would starve exactly the trees most likely to hold a mangled
+// CAPTURE.md. D-06: unconditional, no allowlist - an `Archive` + `Debt markers`
+// exemption would have reported nothing on the incident this exists for.
+
+/** A queue with both walked and out-of-walk sections, written by hand. */
+const QUEUE = '# Capture\n\n## Todos\n\n- [ ] (phase 1) live one\n- [ ] live two\n\n'
+  + '## Seeds\n\n- a seed\n\n## Notes\n\n- None.\n\n'
+  + '## Archive\n\n- retired a\n- retired b\n\n## Debt markers\n\n- a marker\n';
+
+test('capture-sections: every section is named with its count and its walk membership', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  writeFileSync(join(dir, 'CAPTURE.md'), QUEUE);
+  const r = run(['capture-sections'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.exists, true);
+  assert.deepEqual(r.walk, ['Todos', 'Seeds', 'Notes']);
+  assert.deepEqual(r.sections, [
+    { heading: 'Todos', bullets: 2, in_walk: true },
+    { heading: 'Seeds', bullets: 1, in_walk: true },
+    { heading: 'Notes', bullets: 1, in_walk: true },
+    { heading: 'Archive', bullets: 2, in_walk: false },
+    { heading: 'Debt markers', bullets: 1, in_walk: false },
+  ]);
+});
+
+test('capture-sections: a bullet appended to an out-of-walk section raises THAT count and no other (AC4)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const file = join(dir, 'CAPTURE.md');
+  writeFileSync(file, QUEUE);
+  const before = run(['capture-sections'], dir).sections;
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('- retired b\n', '- retired b\n- retired c\n'));
+  const after = run(['capture-sections'], dir).sections;
+  assert.equal(after.length, before.length);
+  for (let i = 0; i < before.length; i++) {
+    assert.equal(after[i].heading, before[i].heading);
+    assert.equal(after[i].in_walk, before[i].in_walk);
+    assert.equal(after[i].bullets, before[i].bullets + (before[i].heading === 'Archive' ? 1 : 0),
+      `${before[i].heading} moved unexpectedly`);
+  }
+});
+
+test('capture-sections: an absent CAPTURE.md is ok:true with no sections, never a failure', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const r = run(['capture-sections'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.exists, false);
+  assert.deepEqual(r.sections, []);
+  assert.equal(r._exit, 0);
+});
+
+test('capture-sections: a VALUELESS --file is bad-args, never silently the --dir default', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  writeFileSync(join(dir, 'CAPTURE.md'), QUEUE);
+  const r = run(['capture-sections', '--file'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
 });
