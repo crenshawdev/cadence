@@ -47,15 +47,11 @@ import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The argv reader this file used to define for itself; both flag contracts and
 // the reason there are two of them live in lib/seam-input.mjs.
 import { optionalFlag } from './lib/seam-input.mjs';
+// The current-branch reader, shared with git-guard.mjs and git-branch.mjs. It
+// degrades to '' rather than throwing; here that '' reaches decidePublish as
+// "no branch", which refuses the push.
+import { readCurrentBranch } from './lib/git-head.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
-
-/** The current branch of the repo at `dir`, or "" if it cannot be read. */
-function readCurrentBranch(dir) {
-  try {
-    return execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return ''; }
-}
 
 /** The configured remotes of the repo at `dir` (`git remote`), or [] on failure. */
 function readRemotes(dir) {

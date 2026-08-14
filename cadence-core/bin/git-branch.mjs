@@ -18,7 +18,6 @@
 //               failure (no repo / no commits -> treated as not-on-a-base).
 'use strict';
 
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
@@ -31,14 +30,10 @@ import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The argv and file readers this file used to define for itself; both contracts
 // and the reason there are two of them live in lib/seam-input.mjs.
 import { optionalFlag, readText } from './lib/seam-input.mjs';
-
-/** The current branch of the repo at `dir`, or "" if it cannot be read. */
-function readCurrentBranch(dir) {
-  try {
-    return execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return ''; }
-}
+// The current-branch reader, shared with git-guard.mjs and git-publish.mjs. It
+// degrades to "" on failure, which is the degradation the header above states:
+// no repo / no commits reads as not-on-a-base.
+import { readCurrentBranch } from './lib/git-head.mjs';
 
 function decide(dir, branchOverride) {
   // warnings[] rides the envelope: every value below - the mode, the auto_branch
