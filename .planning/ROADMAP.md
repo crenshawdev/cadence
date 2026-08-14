@@ -29,19 +29,29 @@ Land it here and phase 3 is measured by the corrected seam while phase 1 is not,
 so the two are not directly comparable - that asymmetry is accepted deliberately
 rather than discovered later.
 
-**Phase 3 is the cheapest closure in the queue.** Fourteen stale claims across
+**Phases 3 and 4 come from the 2026-08-14 repo scan** (three verified-in-session
+scan agents, adjudicated to eight clusters; the record is
+`design-notes/sweep-2026-08-14-repo-scan.md`). Phase 3 closes the two live
+correctness gaps the scan confirmed in-tree plus the duplication behind them;
+phase 4 converts its enforcement and round-trip findings into seams. They land
+before the docs phase so its sweep reconciles their prose too.
+
+**Phase 5 is the cheapest closure in the queue.** Fourteen stale claims across
 README, the references and `DOCS-CLAIMS.md`, retired by one `/cad-docs-verify`
 sweep plus the edits it names. It runs last so it also reconciles the prose
-phases 1 and 2 move.
+phases 1 through 4 move.
 
-**The cycle adds no new surface.** Every phase corrects something that already
-ships. `LND-01` stays `## Deferred` with issue #121 open.
+**Phases 1, 2 and 5 add no new surface** - they correct what already ships.
+Phases 3 and 4 add named seams deliberately, each justified by a measured
+failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 
 ## Phases
 
 - [ ] **Phase 1: The capture queue stops dropping filed work** - `/cad-capture` writes where the recall walk can see it, and the tag grammar admits every shape the writer emits
 - [ ] **Phase 2: The run record joins** - correlation and role accounting produce figures `/cad-report` and `/cad-suggest` can be trusted with
-- [ ] **Phase 3: What Cadence claims about itself is true** - one docs-verify sweep over the claims v3.0-v3.2 left behind, plus the edits it names
+- [ ] **Phase 3: The scan's correctness gaps close** - the config key the guard honors and land ignores, the fence-blind section scanners, and the copied helpers that already drifted
+- [ ] **Phase 4: Suggestions become seams** - the prose ceilings get counts, the restated bracket close gets one subcommand, and the oversized render gets a bound
+- [ ] **Phase 5: What Cadence claims about itself is true** - one docs-verify sweep over the claims v3.0-v3.2 left behind, plus the edits it names
 
 ## Phase Details
 
@@ -95,7 +105,52 @@ Success criteria:
 6. `topFiles` / `fileRedundancy` / `fileCalls` either reach a reader or are
    deleted; the seam does not keep emitting figures nothing consumes.
 
-### Phase 3: What Cadence claims about itself is true
+### Phase 3: The scan's correctness gaps close
+
+`COR-01`. From the 2026-08-14 repo scan (design-notes/sweep-2026-08-14-repo-scan.md,
+clusters 4-5; every finding re-verified at its cited line before entering this
+phase). Two are live correctness gaps, the rest is the duplication that bred
+them.
+
+Success criteria:
+1. `protected_branches` in string form is honored identically by all four
+   readers through one shared helper, with a string-form test per consumer -
+   today `git-branch.mjs:56` and `land-cleanup.mjs:103` silently drop what
+   `git-guard.mjs:142` and `git-publish.mjs:94` accept.
+2. `classifyPhaseList` and `classifyActiveSection` ignore a fenced `## Phases`
+   / `## Active` (the shape `templates/ROADMAP.md:9-39` itself ships), proved
+   by a regression test per scanner that reddens on the pre-fix code.
+3. `detect-commands` and `detect-surfaces` refuse `--root ""` exactly as
+   `debt-harvest` does.
+4. `flag`/`flagValue`/`readText` and the `rev-parse --abbrev-ref` reader each
+   exist once, in a shared lib home, pinned by an occurrence-census test so a
+   re-copy reddens (the `redactUrl`-census pattern).
+
+### Phase 4: Suggestions become seams
+
+`ENF-01`. From the same scan, clusters 1-3, plus the two queue items this phase
+absorbs (the instrumentation remainder and the executor-surfaces gap). The
+theme is the project's own measured lesson: a prose rule a model is asked to
+follow fails silently; a count enforced by a seam does not.
+
+Success criteria:
+1. The criteria ceilings prose states (`context.md` 3-7, `new-project.md` /
+   `adopt.md` 2-5) are counted by a seam and an out-of-range phase is reported,
+   mirroring `plan-size`.
+2. One `trace close` subcommand infers return-vs-checkpoint from the return
+   shape, and the six files restating that close prose call it instead.
+3. `trace render`'s default response carries no unbounded `events` array - a
+   bounded form measured on the live corpus, with the full array behind an
+   explicit flag.
+4. The measured unbatched round-trips are batched: `plan.md`'s seed-reqs +
+   cursor set in one message, `context.md`'s config keys in one read - the
+   happy-path seam-call count per workflow drops and the new count is stated.
+5. The shipped read instrumentation (`bin/read-trace.mjs`, hooks/hooks.json:21)
+   is proven to fire - or proven not to - inside subagent dispatches, and its
+   records join to the fire that caused them; the gap, either way, is stated in
+   the ledger.
+
+### Phase 5: What Cadence claims about itself is true
 
 `DOC-02`. Fourteen queue items are stale prose waiting on a sweep. They are
 cheap, they are the largest single retirement available, and several of them are

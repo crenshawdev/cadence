@@ -5,13 +5,25 @@
 
 ## Active
 
-`v3.3.0 - the record you plan from`, opened 2026-08-14. Three requirements,
+`v3.3.0 - the record you plan from`, opened 2026-08-14. Five requirements -
+three scoped at open, two added 2026-08-14 from the repo scan
+(design-notes/sweep-2026-08-14-repo-scan.md). Originally three,
 scoped from a triage of `.planning/CAPTURE.md`: 309 file-wide bullets read down
 to 119 live todos, 15 retired against shipped v3.2.0 code, the survivors grouped
 by fix site into eight clusters of which three are here. The five ids in
 `## Deferred` below - `LND-01`, `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - all
 still hold their deferral reasons and none is promoted this cycle.
 
+- **COR-01**: The four bin correctness/duplication gaps the 2026-08-14 scan
+  verified are closed: string-form `protected_branches` honored by all four
+  readers, the fence-blind `## Phases`/`## Active` scanners guarded, blank
+  `--root` refused consistently, and the copied helpers
+  (`flag`/`flagValue`/`readText`, the branch reader) stated once.
+- **ENF-01**: The scan's enforcement and round-trip findings become seams:
+  criteria ceilings counted, one `trace close` replacing six files' restated
+  close prose, `trace render` bounded by default, the measured unbatched
+  round-trips batched, and the shipped read instrumentation proven (or proven
+  absent) inside subagent dispatches and joined to its fire.
 - **CAP-01**: A bullet `/cad-capture` writes is reachable by `/cad-plan`'s
   recall, and one that is not reachable is reported rather than silent. Today
   `planning-files.mjs:684` walks `## Todos`, `## Seeds` and `## Notes` only, and
