@@ -15,15 +15,19 @@ report, which is itself the answer.
 </step>
 
 <step name="read_record">
-One seam call:
+Two seam calls:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads
 ```
 
-Everything below reads from its return: `events`, `roles` (per-role dispatch
-and token totals), `coordinator` (the coordinator's own per-step residue,
-present only where markers were written), `unpaired`, `capped`, `malformed`.
+Everything below reads from the first return: `events`, `roles` (per-role
+dispatch and token totals), `coordinator` (the coordinator's own per-step
+residue, present only where markers were written), `unpaired`, `capped`,
+`malformed`. The second is the in-dispatch read ledger over
+`.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and takes
+no phase scoping and no flag.
 Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
@@ -43,6 +47,7 @@ Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / s
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not a measured cost): <total recorded; top role and its share; unrecorded dispatch count>
 Record health: <only when present: unpaired brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
+Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; omit the whole line when the record is empty>
 ```
 
 Rules, all load-bearing:
@@ -63,6 +68,14 @@ Rules, all load-bearing:
 - That residue is TIME the coordinator spent between worker brackets, never
   tokens. A marker carries no token figure, because a figure is read off a
   subagent's return metadata and the coordinator has no such return.
+- The reading line prices `.planning/reads.jsonl`, which carries NO phase
+  scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch the
+  project ever recorded, so the line says so even when the report is scoped to
+  one phase - it does not price the phase. Report the three as returned,
+  recomputed nowhere. When the return carries `calls: 0` or its `no reads
+  recorded yet` note, say nothing about reading at all - the same silence the
+  `coordinator` block gets, because zeros from an absent record read as a run
+  that opened no files.
 - An advisory fire whose findings file is absent AND whose return is missing
   reports as `lost before persistence shipped` when the dispatch predates the
   findings-file convention, else as `in flight`.
