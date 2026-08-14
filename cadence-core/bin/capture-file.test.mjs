@@ -8,12 +8,15 @@
 // itself lives in planning.test.mjs, where a real `recall` can run against it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { execFile, execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { appendCapture, CAPTURE_HEADINGS, CAPTURE_KINDS } from './lib/capture-file.mjs';
+
+const execFileP = promisify(execFile);
 
 const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 
@@ -255,6 +258,64 @@ test('capture: --file writes THAT path and leaves the --dir queue untouched', ()
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.ok(readBack(elsewhere).includes('friction with cadence'));
   assert.equal(existsSync(join(dir, 'CAPTURE.md')), false);
+});
+
+// ---------------------------------------------------------------------------
+// The concurrent-append guard (AC5). `atomicWrite` alone is crash-safety, not
+// mutual exclusion: two writers read the same bytes and the second rename
+// erases the first one's bullet. These three rows are what say otherwise.
+// ---------------------------------------------------------------------------
+
+const WRITERS = 20;
+
+test('capture: twenty concurrent writers all land, not one bullet lost (AC5)', async () => {
+  const file = fixture(THREE);
+  const runs = Array.from({ length: WRITERS }, (_, i) => execFileP('node',
+    [PLANNING, 'capture', '--kind', 'todo', '--text', `racer-${i}`, '--file', file]));
+  for (const r of await Promise.all(runs)) {
+    assert.equal(JSON.parse(r.stdout).ok, true, r.stdout);
+  }
+  const body = readBack(file);
+  // Anchored at BOTH ends, so `racer-1` cannot be satisfied by `racer-10`.
+  for (let i = 0; i < WRITERS; i++) {
+    assert.match(body, new RegExp(`^- \\[ \\] racer-${i}$`, 'm'), `racer-${i} lost`);
+  }
+  assert.equal((body.match(/^- \[ \] racer-\d+$/gm) || []).length, WRITERS);
+  // Under ## Todos and nowhere else, and the file is still well-formed.
+  assert.equal((section(body, '## Todos').match(/^- \[ \] racer-\d+$/gm) || []).length, WRITERS);
+  assert.equal((body.match(/^## /gm) || []).length, 3);
+});
+
+test('capture: a HELD lock refuses non-silently and leaves the file byte-identical (AC5)', () => {
+  const file = fixture(THREE);
+  writeFileSync(`${file}.lock`, ''); // a fresh mtime: a live writer holds it
+  const r = capture(['--kind', 'todo', '--text', 'the loser', '--file', file]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'capture-locked');
+  assert.match(r.detail, /\.lock/, 'the reason must name the lock');
+  assert.equal(readBack(file), THREE, 'the file must be byte-identical');
+  assert.ok(existsSync(`${file}.lock`), 'a refused writer must not release a lock it never took');
+});
+
+test('capture: a STALE lock is broken rather than wedging the queue forever (AC5)', () => {
+  const file = fixture(THREE);
+  const lock = `${file}.lock`;
+  writeFileSync(lock, '');
+  // Older than any staleness threshold this seam could sanely carry: the writer
+  // that made it is gone, and the queue must not stay shut behind it.
+  const longAgo = new Date(Date.now() - 3600_000);
+  utimesSync(lock, longAgo, longAgo);
+  const r = capture(['--kind', 'todo', '--text', 'after the break', '--file', file]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok(readBack(file).includes('- [ ] after the break'));
+  assert.equal(existsSync(lock), false, 'the broken lock is released like any other');
+});
+
+test('capture: the lock is released on the SUCCESS path too', () => {
+  const file = fixture(THREE);
+  assert.equal(capture(['--kind', 'seed', '--text', 'one', '--file', file]).ok, true);
+  assert.equal(existsSync(`${file}.lock`), false);
+  assert.equal(capture(['--kind', 'seed', '--text', 'two', '--file', file]).ok, true);
 });
 
 test('capture: a newline inside --text cannot break the bullet into two lines', () => {
