@@ -52,6 +52,7 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 - [ ] **Phase 3: The scan's correctness gaps close** - the config key the guard honors and land ignores, the fence-blind section scanners, and the copied helpers that already drifted
 - [ ] **Phase 4: Suggestions become seams** - the prose ceilings get counts, the restated bracket close gets one subcommand, and the oversized render gets a bound
 - [ ] **Phase 5: What Cadence claims about itself is true** - one docs-verify sweep over the claims v3.0-v3.2 left behind, plus the edits it names
+- [ ] **Phase 6: The docs speak in one voice** - tone and audience pass over README, COMMANDS.md and user-facing workflow prose, after phase 5's accuracy sweep so re-voiced lines are already true
 
 ## Phase Details
 
@@ -175,3 +176,16 @@ Success criteria:
    scans that section's free prose, and on 2026-08-14 it reported `v3.0.0` for a
    repo at `v3.2.0` because an unrelated sentence named it first - a wrong
    `version_drift` comparand computed from correct docs.
+
+### Phase 6: The docs speak in one voice
+
+Tone and audience pass over the user-facing prose - README.md,
+`references/COMMANDS.md`, and the workflow/skill descriptions a user reads
+before trusting the tool. Phase 5 makes the claims true; this phase makes them
+read right: demands stated plainly (approve/triage/walk), the "not for you if"
+half kept, one voice throughout. Runs after phase 5 so re-voiced lines are
+already accurate rather than about to be rewritten.
+
+Scope is deliberately open: success criteria and requirement IDs are settled at
+`/cad-context 6` - John has further thoughts to bring when the phase gets
+close.
