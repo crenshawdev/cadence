@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 5 (The capture queue stops dropping filed work)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 5 (The run record joins)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-14
