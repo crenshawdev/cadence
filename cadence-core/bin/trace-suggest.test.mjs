@@ -37,9 +37,9 @@ const checkpoint = (role) => ({ family: 'lifecycle', event: 'checkpoint', role }
 
 test('parseAdjudication: the step-5 detail shape parses, others contribute nothing', () => {
   assert.deepEqual(parseAdjudication('plan: 3 survivors; voices claude-subagent'),
-    { trigger: 'plan', survivors: 3, raised: null });
+    { trigger: 'plan', survivors: 3, raised: null, rearm: false });
   assert.deepEqual(parseAdjudication('phase_diff: 1 survivor; voices claude-subagent, openai'),
-    { trigger: 'phase_diff', survivors: 1, raised: null });
+    { trigger: 'phase_diff', survivors: 1, raised: null, rearm: false });
   assert.equal(parseAdjudication('freeform note'), null);
   assert.equal(parseAdjudication(undefined), null);
   assert.equal(parseAdjudication(42), null);
@@ -47,11 +47,11 @@ test('parseAdjudication: the step-5 detail shape parses, others contribute nothi
 
 test('parseAdjudication: the structured --raised field is the first source of the kill count', () => {
   assert.deepEqual(parseAdjudication(adjudication('plan: 0 survivors; voices openai', { raised: 9 })),
-    { trigger: 'plan', survivors: 0, raised: 9 });
+    { trigger: 'plan', survivors: 0, raised: 9, rearm: false });
   // 0 raised is a RECORDED figure, not an omission - it is the whole other
   // half of the distinction this field exists for.
   assert.deepEqual(parseAdjudication(adjudication('plan: 0 survivors; voices openai', { raised: 0 })),
-    { trigger: 'plan', survivors: 0, raised: 0 });
+    { trigger: 'plan', survivors: 0, raised: 0, rearm: false });
   // A field that is not a non-negative integer falls through to the detail
   // text rather than poisoning the count with a NaN or a negative.
   for (const bad of ['9', -1, 1.5, null, {}]) {
@@ -65,14 +65,14 @@ test('parseAdjudication: the hand-written `of <m>` clauses already on disk still
   // flag existed. D-03's floor: an upgrading project's history must keep
   // reporting, or MIN_FIRES_FOR_GATE_SUGGESTION is unreachable on every one.
   assert.deepEqual(parseAdjudication('plan: 3 survivors of 8; voices openai'),
-    { trigger: 'plan', survivors: 3, raised: 8 });
+    { trigger: 'plan', survivors: 3, raised: 8, rearm: false });
   assert.deepEqual(parseAdjudication('plan: 5 survivors of 10 raised; voices openai'),
-    { trigger: 'plan', survivors: 5, raised: 10 });
-  // The third `of <m>` line on disk. Its TRIGGER token carries a space, so it
-  // does not parse at all - and that is the regression pin below, not a
-  // legacy clause this change should start admitting.
-  assert.equal(parseAdjudication('risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol'),
-    null);
+    { trigger: 'plan', survivors: 5, raised: 10, rearm: false });
+  // The third `of <m>` line on disk. Its trigger token carries the re-arm
+  // marker, and the legacy clause is read from the same place behind it - the
+  // marker moves where the token ENDS, never where the clause is looked for.
+  assert.deepEqual(parseAdjudication('risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol'),
+    { trigger: 'risk_surface', survivors: 0, raised: 1, rearm: true });
   // The structured field WINS over a legacy clause when both are present.
   assert.equal(parseAdjudication(adjudication('plan: 3 survivors of 8; voices openai', { raised: 12 })).raised, 12);
   // An "of" further down the line is not the clause: only the one immediately
@@ -81,12 +81,21 @@ test('parseAdjudication: the hand-written `of <m>` clauses already on disk still
   assert.equal(parseAdjudication('diff: 4 survivors (all latent, none blocking); voices openai').raised, null);
 });
 
-test('parseAdjudication: the two lines unparseable today are still unparseable', () => {
-  // D-03 measured 14 of 16 `outcome`/`adjudication` lines parsing. Widening
-  // the reader must not quietly admit the other two: one is a trigger token
-  // with a space in it, the other never adjudicated at all, and counting
-  // either as a fire would feed R1 evidence it does not have.
-  assert.equal(parseAdjudication('risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol'), null);
+test('parseAdjudication: both on-disk re-arm spellings read as the base trigger; nothing else with a space does', () => {
+  // D-04. Both spellings live in this repo's own record, written by hand
+  // months apart: corr `3-d558479` writes `rearm:`, corr `1-7502567` writes
+  // `re-arm:`. Each reads as the BASE trigger carrying a marker - a
+  // `risk_surface rearm` trigger of its own would mint the phantom config key
+  // `review.triggers.risk_surface rearm.gate`, which the schema test below
+  // refuses.
+  assert.deepEqual(parseAdjudication('risk_surface rearm: 2 survivors of 2 raised; voices openai'),
+    { trigger: 'risk_surface', survivors: 2, raised: 2, rearm: true });
+  assert.deepEqual(parseAdjudication('risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol'),
+    { trigger: 'risk_surface', survivors: 0, raised: 1, rearm: true });
+  // Those two spellings are the only embedded space admitted...
+  assert.equal(parseAdjudication('risk_surface second pass: 0 survivors; voices openai'), null);
+  // ...and the one line on disk that never adjudicated at all is still no
+  // fire: counting it would feed R1 evidence it does not have.
   assert.equal(parseAdjudication('plan: 6 raised, unadjudicated (advisory gate); voices openai/gpt-5.6-sol'), null);
 });
 

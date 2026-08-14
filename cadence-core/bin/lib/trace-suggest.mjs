@@ -70,8 +70,19 @@ function minutes(ms) {
  * The trigger/survivor regex stays as permissive as it has always been: D-03
  * measured that tightening it drops the historical fires already on disk and
  * takes R1's evidence floor down with them.
+ *
+ * A RE-ARM round's adjudication is spelled `<trigger> rearm:` or
+ * `<trigger> re-arm:` on disk - both spellings live in this project's own
+ * record, written by hand months apart - and both read as the BASE trigger
+ * carrying `rearm: true` (D-04). Never a trigger of its own: that would mint
+ * the phantom config key `review.triggers.risk_surface rearm.gate`, which this
+ * file's own schema test refuses. Those two spellings are the ONLY embedded
+ * space admitted; any other token with a space in it stays unparseable exactly
+ * as it is today, because counting it as a fire would feed R1 evidence it does
+ * not have.
  * @param {unknown} input an adjudication event, or its detail string
- * @returns {{trigger: string, survivors: number, raised: number|null}|null}
+ * @returns {{trigger: string, survivors: number, raised: number|null,
+ *            rearm: boolean}|null}
  */
 export function parseAdjudication(input) {
   const event = typeof input === 'string' ? { detail: input } : input;
@@ -79,7 +90,7 @@ export function parseAdjudication(input) {
   const detail = /** @type {any} */ (event).detail;
   if (typeof detail !== 'string') return null;
   const trimmed = detail.trim();
-  const m = /^([a-z_]+):\s*(\d+)\s+survivors?\b/.exec(trimmed);
+  const m = /^([a-z_]+)(?:\s+(re-?arm))?:\s*(\d+)\s+survivors?\b/.exec(trimmed);
   if (!m) return null;
   const field = /** @type {any} */ (event).raised;
   let raised = null;
@@ -89,7 +100,7 @@ export function parseAdjudication(input) {
     const legacy = /^\s*of\s+(\d+)\b/.exec(trimmed.slice(m[0].length));
     if (legacy) raised = Number(legacy[1]);
   }
-  return { trigger: m[1], survivors: Number(m[2]), raised };
+  return { trigger: m[1], survivors: Number(m[3]), raised, rearm: Boolean(m[2]) };
 }
 
 /**
