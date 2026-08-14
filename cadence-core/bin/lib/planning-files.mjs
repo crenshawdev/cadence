@@ -661,10 +661,40 @@ export function parseSummarySnippets(text) {
 }
 
 /**
+ * The leading phase tag on a CAPTURE.md bullet, anchored at the head of the
+ * text AFTER the checkbox strip. Four admitted shapes and nothing more:
+ * `(phase N)`, `(v3.2.0 phase N)`, `(phase N, label)` and their combination
+ * `(v3.2.0 phase N, label)`, where the version prefix is a `v` and
+ * dot-separated digits, `N` is an integer or a decimal `N.M`, and the label is
+ * everything after the comma up to the closing paren.
+ *
+ * DELIBERATELY NOT `^\([^)]*\)` (D-05). A leading parenthetical that does not
+ * match this pattern is CONTENT: 24 live bullets carry `(cadence-wide)` or
+ * `(tooling)` as their only scope marker, `(v3.2.0 close)` names a milestone
+ * rather than a phase, and `parseCaptureSnippets` feeds BM25 directly - so a
+ * greedy strip would eat the only word those bullets can be found by.
+ *
+ * The prose home of this grammar is `cadence-core/references/capture-grammar.md`
+ * (the same way `parseRoadmapPhases` points at `references/roadmap-phases.md`),
+ * and every shape it states - admitted and out-of-grammar - is pinned by a row
+ * in the `CAPTURE_TAG_ROWS` table in `cadence-core/bin/planning-files.test.mjs`.
+ */
+const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]*)?\)\s*/;
+
+/**
  * CAPTURE.md item-level snippets: every `- ` bullet under `## Todos`,
- * `## Seeds`, `## Notes`, with a leading checkbox and `(phase N)` tag
- * stripped - the tag becomes the numeric `phase` field (omitted when the
- * bullet carries no tag; decimal phase numbers are legal).
+ * `## Seeds`, `## Notes`, with a leading checkbox and phase tag stripped - the
+ * tag becomes the numeric `phase` field (omitted when the bullet carries no
+ * tag; decimal phase numbers are legal). `CAPTURE_PHASE_TAG` above states
+ * which parentheticals are tags and which are content.
+ *
+ * An admitted tag is stripped WHOLE - tag and trailing space - so a version
+ * token or a label riding inside a real tag leaves the indexed text. That is
+ * the trade, not an oversight: the alternative keeps the remainder and so
+ * synthesizes bullet text nobody wrote, needing a second rule for the case
+ * where the remainder is empty. 32 bullets tagged `(vX.Y.Z phase N)` stop
+ * carrying their version as a BM25 term and gain a correct phase field, which
+ * is what recall renders and what a planner filters on.
  *
  * ANY checkbox state is stripped (`[ ]`, `[x]`, `[X]`), and stripped BEFORE
  * the `(phase N)` extraction, which a checked box used to block - a closed
@@ -694,7 +724,7 @@ export function parseCaptureSnippets(text) {
       if (box) raw = raw.slice(box[0].length);
       /** @type {number|undefined} */
       let phase;
-      raw = raw.replace(/^\(phase (\d+(?:\.\d+)?)\)\s*/, (_m, n) => { phase = Number(n); return ''; });
+      raw = raw.replace(CAPTURE_PHASE_TAG, (_m, n) => { phase = Number(n); return ''; });
       out.push({ text: closed ? `[closed] ${raw}` : raw, ...(phase !== undefined ? { phase } : {}) });
     }
   }
