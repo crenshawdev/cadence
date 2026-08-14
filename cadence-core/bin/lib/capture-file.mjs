@@ -56,8 +56,8 @@
 // THE LOCK PATH IS A WORKING-TREE FILE. `<CAPTURE.md>.lock`, a sibling so the
 // exclusive create is on the same filesystem as the target. It is unlinked on
 // every exit path (a `finally`), and a crashed writer's lock is broken by
-// mtime age rather than left to wedge the queue forever. `/cad-capture` step 4
-// stages ONLY `CAPTURE.md`, so a transient lock is never committed.
+// mtime age rather than left to wedge the queue forever. `/cad-capture`'s
+// commit step stages ONLY `CAPTURE.md`, so a transient lock is never committed.
 //
 // WHAT THE GUARD DOES NOT REACH: a hand edit or a foreign script writing
 // CAPTURE.md never takes the lock, so it can still clobber a bullet. That is
