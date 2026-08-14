@@ -19,7 +19,7 @@ import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
-  atomicWrite,
+  atomicWrite, parseCaptureSnippets,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1594,3 +1594,85 @@ test("atomicWrite: the audit's <file>.tmp reproduction writes nothing outside th
   assert.equal(lstatSync(file).isSymbolicLink(), false);
   assert.equal(readFileSync(file, 'utf8'), '# Roadmap\n');
 });
+
+// --- the CAPTURE.md phase-tag grammar (parseCaptureSnippets) ----------------
+// The table cadence-core/references/capture-grammar.md states in prose: every
+// admitted leading-tag shape with what it emits and what it strips, and every
+// out-of-grammar shape, which emits no phase and keeps its parenthetical as
+// content (D-05). One test() per row, from one loop, so a shape stated in prose
+// and a shape asserted in code cannot drift apart.
+
+/**
+ * A CAPTURE.md holding ONE bullet, in the first walked section and nowhere
+ * else. No `- None.` placeholder anywhere: unlike `parseSummarySnippets`, this
+ * walk indexes a placeholder as an ordinary bullet, so a second section would
+ * put a second item in every row's result.
+ */
+const capture = (bullet) => `# Capture\n\n## Todos\n\n- ${bullet}\n`;
+
+// Each row: {name, bullet, phase, text}. `bullet` is the line after `- `;
+// `phase` is the number the tag emits, or undefined when nothing is a tag;
+// `text` is the WHOLE indexed string, so a rule that reads the phase correctly
+// while eating content still turns its row red.
+const CAPTURE_TAG_ROWS = [
+  // --- admitted: `(phase N)` ------------------------------------------------
+  { name: '(phase N)', bullet: '(phase 2) wire the recall path', phase: 2, text: 'wire the recall path' },
+  { name: '(phase N) behind an unchecked box', bullet: '[ ] (phase 2) wire the recall path',
+    phase: 2, text: 'wire the recall path' },
+  { name: '(phase N) behind a checked box', bullet: '[x] (phase 2) wire the recall path',
+    phase: 2, text: '[closed] wire the recall path' },
+
+  // --- admitted: a decimal phase number -------------------------------------
+  { name: '(phase N.M)', bullet: '(phase 2.1) hotfix the reader', phase: 2.1, text: 'hotfix the reader' },
+  { name: '(phase N.M) behind an unchecked box', bullet: '[ ] (phase 2.1) hotfix the reader',
+    phase: 2.1, text: 'hotfix the reader' },
+  { name: '(phase N.M) behind a checked box', bullet: '[x] (phase 2.1) hotfix the reader',
+    phase: 2.1, text: '[closed] hotfix the reader' },
+
+  // --- admitted: a version prefix, stripped WITH the tag --------------------
+  { name: '(vX.Y.Z phase N)', bullet: '(v3.2.0 phase 1) close the gate', phase: 1, text: 'close the gate' },
+  { name: '(vX.Y.Z phase N) behind an unchecked box', bullet: '[ ] (v3.2.0 phase 1) close the gate',
+    phase: 1, text: 'close the gate' },
+  { name: '(vX.Y.Z phase N) behind a checked box', bullet: '[x] (v3.2.0 phase 1) close the gate',
+    phase: 1, text: '[closed] close the gate' },
+
+  // --- admitted: a label after the comma, stripped WITH the tag -------------
+  { name: '(phase N, label)', bullet: '(phase 3, docs) state the grammar', phase: 3, text: 'state the grammar' },
+  { name: '(phase N, label) behind an unchecked box', bullet: '[ ] (phase 3, docs) state the grammar',
+    phase: 3, text: 'state the grammar' },
+  { name: '(phase N, label) behind a checked box', bullet: '[x] (phase 3, docs) state the grammar',
+    phase: 3, text: '[closed] state the grammar' },
+
+  // --- admitted: the combination -------------------------------------------
+  { name: '(vX.Y.Z phase N, label)', bullet: '(v3.2.0 phase 1, docs) name the sections',
+    phase: 1, text: 'name the sections' },
+  { name: '(vX.Y.Z phase N, label) behind an unchecked box',
+    bullet: '[ ] (v3.2.0 phase 1, docs) name the sections', phase: 1, text: 'name the sections' },
+  { name: '(vX.Y.Z phase N, label) behind a checked box',
+    bullet: '[x] (v3.2.0 phase 1, docs) name the sections', phase: 1, text: '[closed] name the sections' },
+
+  // --- out of grammar: no phase, and the parenthetical stays as content -----
+  { name: '(cadence-wide) is a scope marker, not a tag', bullet: '[ ] (cadence-wide) budget every surface',
+    phase: undefined, text: '(cadence-wide) budget every surface' },
+  { name: '(tooling) is a scope marker, not a tag', bullet: '[ ] (tooling) pin the CI matrix',
+    phase: undefined, text: '(tooling) pin the CI matrix' },
+  { name: '(vX.Y.Z close) names a milestone, not a phase', bullet: '[ ] (v3.2.0 close) carry the deferrals',
+    phase: undefined, text: '(v3.2.0 close) carry the deferrals' },
+  { name: '(Phase N) capitalized is not the tag', bullet: '[ ] (Phase 2) wire the recall path',
+    phase: undefined, text: '(Phase 2) wire the recall path' },
+  { name: '(phase) with no number', bullet: '[ ] (phase) wire the recall path',
+    phase: undefined, text: '(phase) wire the recall path' },
+  { name: '(phase two) with a non-numeric phase', bullet: '[ ] (phase two) wire the recall path',
+    phase: undefined, text: '(phase two) wire the recall path' },
+  { name: 'a tag-shaped parenthetical that is not at the head', bullet: '[ ] wire the path (phase 2) next',
+    phase: undefined, text: 'wire the path (phase 2) next' },
+  { name: 'an unclosed (phase 2', bullet: '[ ] (phase 2 wire the recall path',
+    phase: undefined, text: '(phase 2 wire the recall path' },
+];
+
+for (const row of CAPTURE_TAG_ROWS) {
+  test(`capture-tag: ${row.name}`, () => {
+    assert.deepEqual(parseCaptureSnippets(capture(row.bullet)),
+      [row.phase === undefined ? { text: row.text } : { text: row.text, phase: row.phase }]);
+  });
+}
