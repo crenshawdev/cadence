@@ -993,6 +993,52 @@ for (const row of ACTIVE_ROWS) {
   });
 }
 
+// --- the `## Active` scanner sees fences (D-11, D-12) ------------------------
+// Measured against the pre-fix code, every assertion below reddened: the
+// shipped template declared the example's `[CAT]-01`/`[CAT]-02` and reported
+// three `active-non-id-bullet` issues against its own documentation, and with
+// a fenced example above the real section the example's id was the only one
+// read. Asserted through BOTH entry points so `parseActiveIds` stays a
+// delegate that inherits the fix rather than a second extraction.
+
+/** REQUIREMENTS with a fenced `## Active` example ABOVE the real section. */
+const FENCED_EXAMPLE_REQS = [
+  '# Requirements: Demo', '', '## Overview', '', 'Fill it in like this:', '',
+  '```markdown', '## Active', '', '- [ ] **[CAT]-01**: [requirement]', '```', '',
+  '## Active', '', '- [ ] **REV-01**: the reviewer seam',
+  '- [ ] **GRM-02**: the grammar', '', '## Shipped', '', '- **OLD-01**: shipped', '',
+].join('\n');
+
+/** A real section carrying a fenced example that opens with a `## ` line. */
+const FENCED_INSIDE_ACTIVE = [
+  '# Requirements', '', '## Active', '', '- [ ] **REV-01**: the reviewer seam', '',
+  'Example of the shape:', '', '```markdown', '## Active', '',
+  '- [ ] **[CAT]-99**: [example]', '```', '', '- [ ] **GRM-02**: the grammar', '',
+  '## Shipped', '', '- **OLD-01**: shipped', '',
+].join('\n');
+
+test('classifyActiveSection: the shipped templates/REQUIREMENTS.md declares nothing', () => {
+  const text = readFileSync(new URL('../templates/REQUIREMENTS.md', import.meta.url), 'utf8');
+  // `ids: null`, not `[]`: its only `## Active` sits inside the template's own
+  // fence, so the heading is ABSENT to a fence-aware reader.
+  assert.deepEqual(classifyActiveSection(text), { ids: null, issues: [] });
+  assert.equal(parseActiveIds(text), null);
+});
+
+test('classifyActiveSection: a fenced example above a real section reads the REAL ids', () => {
+  const res = classifyActiveSection(FENCED_EXAMPLE_REQS);
+  assert.deepEqual(res.ids, ['REV-01', 'GRM-02']);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseActiveIds(FENCED_EXAMPLE_REQS), ['REV-01', 'GRM-02']);
+});
+
+test('classifyActiveSection: a fenced `## ` inside the section neither ends it nor declares an id', () => {
+  const res = classifyActiveSection(FENCED_INSIDE_ACTIVE);
+  assert.deepEqual(res.ids, ['REV-01', 'GRM-02']);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseActiveIds(FENCED_INSIDE_ACTIVE), ['REV-01', 'GRM-02']);
+});
+
 // --- the CONTEXT `## Acceptance criteria` grammar ----------------------------
 // The table cadence-core/references/acceptance-criteria.md states in prose.
 // Every code in that file's out-of-grammar table has a row here and vice versa.

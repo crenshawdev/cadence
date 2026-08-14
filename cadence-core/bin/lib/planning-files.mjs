@@ -416,12 +416,20 @@ function trailingBoldSpans(s) {
  *      has write paths (`insertReqRows`, `setReqStatus`) that split raw bytes,
  *      the same asymmetry `normalizeCrlf`'s own comment states, and a CRLF file
  *      already parses here because every bold span closes before the `\r`.
- *   2. No `^## Active$` line -> `{ids: null, issues: []}`. An absent heading is
- *      NOT an out-of-grammar report: it is the datum `audit`'s
- *      `no_active_section` already carries, and every project scaffolded before
- *      v1.4.0 is in that state (D-06).
- *   3. Otherwise walk from that heading to the next `^## ` - the same bound
- *      `sectionBody` cuts at, so `## Deferred` is never read (D-07). A line
+ *   2. No `## Active` line OUTSIDE a fence -> `{ids: null, issues: []}`. An
+ *      absent heading is NOT an out-of-grammar report: it is the datum
+ *      `audit`'s `no_active_section` already carries, and every project
+ *      scaffolded before v1.4.0 is in that state (D-06). A FENCED heading is
+ *      skipped silently and the walk continues to the next unfenced one (D-12),
+ *      never a new issue code - the shipped `templates/REQUIREMENTS.md` has no
+ *      `## Active` but the one inside its own template block, and read
+ *      fence-blind it declared the example's `[CAT]-01`/`[CAT]-02` and reported
+ *      three `active-non-id-bullet` issues against its own documentation.
+ *   3. Otherwise walk from that heading to the next `^## ` - BOTH ends from
+ *      `sectionSpan`, so a fenced `## ` inside the section can no longer end it
+ *      early, and `## Deferred` is still never read (D-07). Fenced lines in
+ *      between are skipped whole: a fenced example bullet neither declares an
+ *      id nor raises an `active-prose-line`/`active-non-id-bullet`. A line
  *      matching `ACTIVE_BULLET` contributes its trimmed bold span as an id
  *      (de-duplicated first-occurrence-wins, empty skipped). It produces an
  *      issue ONLY when that span is not id-shaped by `isRequirementId`
@@ -470,20 +478,23 @@ function trailingBoldSpans(s) {
  */
 export function classifyActiveSection(text) {
   const lines = text.split('\n');
-  let heading = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^## Active\s*$/.test(lines[i])) { heading = i; break; }
-  }
+  // Both ends from one never-restarted scanner: a start found fence-blind
+  // cannot be repaired by a fence-aware end, and `elsewhere` below slices on
+  // exactly these two indices, so recomputing either would let the prose filter
+  // disagree with the walk about where the section is.
+  const { start: heading, end } = sectionSpan(lines, '## Active');
   if (heading === -1) return { ids: null, issues: [] };
 
   const ids = [];
   const seen = new Set();
   /** @type {Array<{issue: Issue, prose: string[]|null}>} */
   const found = [];
-  let end = lines.length;
-  for (let i = heading + 1; i < lines.length; i++) {
+  // Fresh scanner from the heading: it was matched outside a fence, so nothing
+  // is open here.
+  const fenced = fenceScanner();
+  for (let i = heading + 1; i < end; i++) {
     const line = lines[i];
-    if (/^## /.test(line)) { end = i; break; }
+    if (fenced(line)) continue;
     const m = line.match(ACTIVE_BULLET);
     if (m) {
       const id = m[1].trim();
