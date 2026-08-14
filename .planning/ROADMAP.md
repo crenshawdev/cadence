@@ -47,7 +47,7 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 
 ## Phases
 
-- [ ] **Phase 1: The capture queue stops dropping filed work** - `/cad-capture` writes where the recall walk can see it, and the tag grammar admits every shape the writer emits
+- [x] **Phase 1: The capture queue stops dropping filed work** - `/cad-capture` writes where the recall walk can see it, and the tag grammar admits every shape the writer emits
 - [ ] **Phase 2: The run record joins** - correlation and role accounting produce figures `/cad-report` and `/cad-suggest` can be trusted with
 - [ ] **Phase 3: The scan's correctness gaps close** - the config key the guard honors and land ignores, the fence-blind section scanners, and the copied helpers that already drifted
 - [ ] **Phase 4: Suggestions become seams** - the prose ceilings get counts, the restated bracket close gets one subcommand, and the oversized render gets a bound
