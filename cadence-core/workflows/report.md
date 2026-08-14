@@ -24,8 +24,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads
 
 Everything below reads from the first return: `events`, `roles` (per-role
 dispatch and token totals), `coordinator` (the coordinator's own per-step
-residue, present only where markers were written), `unpaired`, `capped`,
-`malformed`. The second is the in-dispatch read ledger over
+residue, present only where markers were written), `unpaired`, `mismatched`,
+`capped`, `malformed`. The second is the in-dispatch read ledger over
 `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and takes
 no phase scoping and no flag.
 Then open the scoped
@@ -46,7 +46,7 @@ Dispatches: <table: role | rung | tokens | minutes, one row per dispatch/return 
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from outcome events and REVIEW files>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not a measured cost): <total recorded; top role and its share; unrecorded dispatch count>
-Record health: <only when present: unpaired brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
+Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
 Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; omit the whole line when the record is empty>
 ```
 
@@ -68,6 +68,13 @@ Rules, all load-bearing:
 - That residue is TIME the coordinator spent between worker brackets, never
   tokens. A marker carries no token figure, because a figure is read off a
   subagent's return metadata and the coordinator has no such return.
+- A `mismatched` entry is a bracket whose terminal named a role its dispatch did
+  not. Name the worker it belongs to - its `corr`/`phase`/`plan`, at the
+  terminal's `ts` - with BOTH roles: `dispatched`, the role the dispatch opened,
+  and `closed`, the role its terminal named. The tokens stay
+  billed to the dispatch's role, so a mismatch is a recording defect at one of
+  those two prose sites, to fix THERE - never a correction to make in this
+  report.
 - The reading line prices `.planning/reads.jsonl`, which carries NO phase
   scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch the
   project ever recorded, so the line says so even when the report is scoped to
