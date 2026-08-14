@@ -31,7 +31,7 @@ const BIN = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
 const render = (events, roles = {}) => ({ counts: {}, roles, events });
 
 const adjudication = (detail, extra = {}) => ({ family: 'outcome', event: 'adjudication', detail, ...extra });
-const rearm = (detail) => ({ family: 'outcome', event: 'rearm', detail });
+const rearm = (detail, extra = {}) => ({ family: 'outcome', event: 'rearm', detail, ...extra });
 const resolve = (role, extra = {}) => ({ family: 'routing', event: 'resolve', role, ...extra });
 const checkpoint = (role) => ({ family: 'lifecycle', event: 'checkpoint', role });
 
@@ -114,20 +114,56 @@ test('R1: one fire below the floor stays silent - one event is a guess, not evid
   assert.equal(out.find((x) => x.action === 'review.triggers.plan.gate'), undefined);
 });
 
-test('R1: any survivor, or a rearm on the same trigger, vetoes the gate suggestion', () => {
+test('R1: a fire with survivors, and the fire a re-arm came back to, both leave the empty count', () => {
   const survived = suggestFromRender(render([
     adjudication('plan: 0 survivors; voices claude-subagent'),
     adjudication('plan: 2 survivors; voices claude-subagent'),
   ]));
   assert.equal(survived.find((x) => x.action === 'review.triggers.plan.gate'), undefined);
 
+  // Two empty fires under ONE corr with a re-arm on that trigger: the re-arm
+  // takes one of them, and the one left is below the floor.
   const rearmedOut = suggestFromRender(render([
     adjudication('risk_surface: 0 survivors; voices claude-subagent'),
     adjudication('risk_surface: 0 survivors; voices claude-subagent'),
     rearm('risk_surface'),
   ]));
   assert.equal(rearmedOut.find((x) => x.action === 'review.triggers.risk_surface.gate'), undefined,
-    'a gate that forced a fix round has paid for itself, whatever its adjudications said');
+    'a gate that forced a fix round has paid for itself on the fire that forced it');
+});
+
+test('R1: the re-arm veto is scoped to the FIRE it belongs to, not the trigger\'s lifetime', () => {
+  // The same three events as above, spread across two corrs, plus the re-arm
+  // ROUND's own adjudication. A lifetime veto silences risk_surface here for
+  // as long as the file lives; the fire-scoped one mutes the single fire that
+  // forced the round (D-03).
+  const out = suggestFromRender(render([
+    adjudication('risk_surface: 0 survivors; voices openai', { corr: '1-aaa' }),
+    rearm('risk_surface', { corr: '1-aaa' }),
+    // The second round's RESULT, not a fire that forced anything - so the veto
+    // above must not have landed here.
+    adjudication('risk_surface rearm: 0 survivors; voices openai', { corr: '1-aaa' }),
+    adjudication('risk_surface: 0 survivors; voices openai', { corr: '2-bbb' }),
+  ]));
+  const s = out.find((x) => x.action === 'review.triggers.risk_surface.gate');
+  assert.ok(s, `expected a fire-scoped gate suggestion, got ${JSON.stringify(out)}`);
+  assert.match(s.evidence, /2 of 3 adjudicated fire/);
+});
+
+test('R1: a re-arm vetoes the fire that FORCED it - the nearest one before it, not the oldest', () => {
+  // Under corr `1-aaa`: an empty fire, then a fire with three survivors, then
+  // the re-arm. The re-arm belongs to the three-survivor fire. The corr
+  // `2-bbb` fire is only here to make the difference observable - with one
+  // corr alone both veto orders land below the floor and say nothing.
+  const out = suggestFromRender(render([
+    adjudication('risk_surface: 0 survivors; voices openai', { corr: '1-aaa' }),
+    adjudication('risk_surface: 3 survivors; voices openai', { corr: '1-aaa' }),
+    rearm('risk_surface', { corr: '1-aaa' }),
+    adjudication('risk_surface: 0 survivors; voices openai', { corr: '2-bbb' }),
+  ]));
+  const s = out.find((x) => x.action === 'review.triggers.risk_surface.gate');
+  assert.ok(s, `an oldest-first veto eats the empty fire and says nothing: ${JSON.stringify(out)}`);
+  assert.match(s.evidence, /2 of 3 adjudicated fire/);
 });
 
 test('R1: 0-of-0 and 0-of-9 are opposite evidence and stop proposing one action', () => {
