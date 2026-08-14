@@ -135,6 +135,13 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
+// The throwing `--root` reader, shared with weight.mjs: ABSENT and
+// PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
+// it used to fall back to the plugin's own tree so this linter returned ok:true
+// with problems:[] about a tree it never checked. The entry-point catch arm at
+// the foot of this file is what turns its thrown seam object into a named
+// refusal. Contract in lib/seam-input.mjs.
+import { flagValue } from './lib/seam-input.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1279,27 +1286,6 @@ function run(root) {
 }
 
 // --- entry ---------------------------------------------------------------------
-
-/**
- * The `--root` rule weight.mjs states: ABSENT and PRESENT-WITH-NO-VALUE are
- * different inputs. `--root` with nothing after it - what a caller produces
- * from an unset or empty `$TREE` - used to read as absent and fall back to
- * the plugin's own tree, so the linter returned ok:true with problems:[]
- * about a tree it never checked. That envelope looks correct, which is worse
- * than an error. A missing, empty, or flag-shaped value now throws
- * `missing-flag-value`; a genuinely absent flag still returns undefined so
- * the default below applies.
- * @param {string[]} argv @param {string} flag @returns {string|undefined}
- */
-function flagValue(argv, flag) {
-  const i = argv.indexOf(flag);
-  if (i < 0) return undefined;
-  const v = argv[i + 1];
-  if (v === undefined || v === '' || v.startsWith('--')) {
-    throw { seam: 'missing-flag-value', detail: flag };
-  }
-  return v;
-}
 
 try {
   const argv = process.argv.slice(2);
