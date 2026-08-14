@@ -166,6 +166,49 @@ test('R1: a re-arm vetoes the fire that FORCED it - the nearest one before it, n
   assert.match(s.evidence, /2 of 3 adjudicated fire/);
 });
 
+test('R1: the live record this repo has been writing for four cycles emits a suggestion', () => {
+  // The demonstration recorded in `.planning/phases/2/R1-DEMO.md`, run
+  // 2026-08-14: every `outcome` line naming `risk_surface` in this repo's own
+  // `.planning/trace.jsonl`, verbatim. They are STRING LITERALS on purpose -
+  // that file is gitignored and absent in CI, so a test that read it would go
+  // green by reading nothing (D-09). This is the regression guard behind the
+  // demonstration: the arithmetic below is the file's, not a fixture's.
+  const LIVE = [
+    '{"corr":"2-b3748a4","phase":"2","ts":"2026-08-10T18:44:28.643Z","family":"outcome","event":"adjudication","detail":"risk_surface: 0 survivors; voices openai/gpt-5.6-terra"}',
+    '{"corr":"1-7502567","phase":"1","ts":"2026-08-13T17:36:33.000Z","family":"outcome","event":"adjudication","detail":"risk_surface: 0 survivors; voices openai/gpt-5.6-terra"}',
+    '{"corr":"1-7502567","phase":"1","ts":"2026-08-13T17:56:37.028Z","family":"outcome","event":"rearm","detail":"risk_surface"}',
+    '{"corr":"1-7502567","phase":"1","ts":"2026-08-13T19:08:23.371Z","family":"outcome","event":"adjudication","detail":"risk_surface re-arm: 0 survivors of 1 raised; voices openai/gpt-5.6-sol"}',
+    '{"corr":"3-d558479","phase":"3","ts":"2026-08-14T03:43:42.447Z","family":"outcome","event":"adjudication","detail":"risk_surface: 3 survivors of 4 raised; voices openai"}',
+    '{"corr":"3-d558479","phase":"3","ts":"2026-08-14T03:47:22.001Z","family":"outcome","event":"rearm","detail":"risk_surface"}',
+    '{"corr":"3-d558479","phase":"3","ts":"2026-08-14T03:49:29.886Z","family":"outcome","event":"adjudication","detail":"risk_surface rearm: 2 survivors of 2 raised; voices openai"}',
+    '{"corr":"3-d558479","phase":"3","ts":"2026-08-14T13:39:29.459Z","family":"outcome","event":"adjudication","detail":"risk_surface: 2 survivors; voices openai/gpt-5.6-sol","raised":3}',
+    '{"corr":"2-eebba7d","phase":"2","ts":"2026-08-14T21:16:27.190Z","family":"outcome","event":"adjudication","detail":"risk_surface: 1 survivors; voices openai","raised":2}',
+    '{"corr":"2-eebba7d","phase":"2","ts":"2026-08-14T21:18:40.635Z","family":"outcome","event":"rearm","detail":"risk_surface"}',
+  ].map((l) => JSON.parse(l));
+  const out = suggestFromRender(render(LIVE));
+  // 7 fires. The re-arm under `1-7502567` mutes the empty fire before it, the
+  // one under `3-d558479` mutes the three-survivor fire before it, and the one
+  // under `2-eebba7d` mutes the one-survivor fire before it. Left unvetoed and
+  // empty: `2-b3748a4` (raised unrecorded, so 0) and the `re-arm:` round under
+  // `1-7502567` (1 raised) - exactly the floor, and 1 raised puts it on the
+  // reviewers arm.
+  assert.deepEqual(out.filter((x) => /risk_surface/.test(x.subject)), [
+    {
+      kind: 'suggest',
+      subject: 'risk_surface reviewers',
+      evidence: '2 of 7 adjudicated fire(s), 0 survivors of 1 raised'
+        + ' - the gate caught work; the reviewer set is what looks miscalibrated',
+      action: 'review.reviewers',
+    },
+    {
+      kind: 'info',
+      subject: 'risk_surface',
+      evidence: 'a fire FAILed and re-armed on its own fix - the gate caught real work; keep it',
+      action: null,
+    },
+  ]);
+});
+
 test('R1: 0-of-0 and 0-of-9 are opposite evidence and stop proposing one action', () => {
   const empty = suggestFromRender(render(Array.from(
     { length: MIN_FIRES_FOR_GATE_SUGGESTION },
