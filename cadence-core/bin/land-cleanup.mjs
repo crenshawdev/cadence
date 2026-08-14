@@ -42,12 +42,11 @@ import { emit } from './lib/seam-io.mjs';
 import { integrationBranchName } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-
-/** Read a file, or "" if missing/unreadable (a missing surface is not fatal). */
-function readText(file) {
-  try { return readFileSync(file, 'utf8'); }
-  catch { return ''; }
-}
+// The argv and file readers this file used to define for itself; both flag
+// contracts and the reason there are two of them live in lib/seam-input.mjs.
+// `readFileSync` stays imported above for readFindings' fd-0 stdin read, which
+// is a different question from "read this surface, '' if it is not there".
+import { optionalFlag, readText } from './lib/seam-input.mjs';
 
 /**
  * The branches `git branch --merged <base>` reports at `dir`, or [] if git
@@ -164,11 +163,10 @@ function gate(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'cleanup') {

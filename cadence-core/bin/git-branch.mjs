@@ -18,7 +18,6 @@
 //               failure (no repo / no commits -> treated as not-on-a-base).
 'use strict';
 
-import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
@@ -29,12 +28,9 @@ import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
 // single-reader discipline branch-decision.mjs keeps for the prose version.
 import { readTags } from './lib/git-tags.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-
-/** Read a file, or "" if missing/unreadable (a missing surface is not fatal). */
-function readText(file) {
-  try { return readFileSync(file, 'utf8'); }
-  catch { return ''; }
-}
+// The argv and file readers this file used to define for itself; both contracts
+// and the reason there are two of them live in lib/seam-input.mjs.
+import { optionalFlag, readText } from './lib/seam-input.mjs';
 
 /** The current branch of the repo at `dir`, or "" if it cannot be read. */
 function readCurrentBranch(dir) {
@@ -77,11 +73,10 @@ function decide(dir, branchOverride) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'decide') {

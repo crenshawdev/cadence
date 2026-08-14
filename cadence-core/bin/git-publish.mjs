@@ -44,6 +44,9 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+// The argv reader this file used to define for itself; both flag contracts and
+// the reason there are two of them live in lib/seam-input.mjs.
+import { optionalFlag } from './lib/seam-input.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 
 /** The current branch of the repo at `dir`, or "" if it cannot be read. */
@@ -204,11 +207,10 @@ function reap(dir, branch) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'publish') {

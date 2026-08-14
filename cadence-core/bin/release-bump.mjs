@@ -54,12 +54,11 @@ import { atomicWrite } from './lib/planning-files.mjs';
 import {
   normalizeTargetVersion, decideManifestBump, prependChangelogEntry, promoteUnreleased,
 } from './lib/release-decision.mjs';
-
-/** Read a file, or "" if missing/unreadable (a missing surface is not fatal). */
-function readText(file) {
-  try { return readFileSync(file, 'utf8'); }
-  catch { return ''; }
-}
+// The argv and file readers this file used to define for itself; both flag
+// contracts and the reason there are two of them live in lib/seam-input.mjs.
+// `readFileSync` stays imported above for the manifest parse below, which must
+// tell an unreadable manifest from an empty one.
+import { optionalFlag, readText } from './lib/seam-input.mjs';
 
 /**
  * Build the release-tag URL a CHANGELOG link reference points at, from the
@@ -204,11 +203,10 @@ function bump(dir, versionArg, dateArg) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'bump') {
