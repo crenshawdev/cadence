@@ -43,6 +43,7 @@ import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 
 /** The current branch of the repo at `dir`, or "" if it cannot be read. */
@@ -72,9 +73,10 @@ function repoAutoClose(dir) {
   } catch { return false; }
 }
 
-/** The protected-branch list for the repo at `dir`, with the same string
- * tolerance git-guard applies (#38): a lone-string hand-edit names the branch
- * the user means to protect; do not silently swap the list.
+/** The protected-branch list for the repo at `dir`, coerced by the ONE shared
+ * reader lib/protected-branches.mjs - which carries the #38 lone-string
+ * tolerance (a hand-edit names the branch the user means to protect; do not
+ * silently swap the list) and the empty-list rule.
  *
  * Returns the merge's `warnings` AND its `tornLayers` alongside the list rather
  * than dropping either: this list is what stops the ONE mutating seam from
@@ -90,12 +92,7 @@ function repoAutoClose(dir) {
  * this gate actually means. */
 function readProtectedBranches(dir) {
   const { config, warnings, tornLayers } = mergeLayers(join(dir, '.planning', 'config.json'));
-  const git = config.git || {};
-  const branches = Array.isArray(git.protected_branches)
-    ? git.protected_branches
-    : typeof git.protected_branches === 'string'
-      ? [git.protected_branches]
-      : ['main', 'master'];
+  const branches = resolveProtectedBranches(config.git || {});
   return { branches, warnings, tornLayers };
 }
 

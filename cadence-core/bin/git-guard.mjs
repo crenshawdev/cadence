@@ -30,6 +30,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { mergeLayers, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { gitVerbs } from './lib/git-segments.mjs';
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -136,14 +137,9 @@ function commitDecision(root, cwd) {
   if (GLOBAL_CONFIG) tornPrefixes.push(`config layer ${GLOBAL_CONFIG} `);
   const torn = (warnings || []).filter(
     (w) => typeof w === 'string' && tornPrefixes.some((p) => w.startsWith(p)));
-  // A lone string is an easy hand-edit; honor it rather than silently
-  // reverting to the default list and unprotecting the branch the user
-  // named (#38). Other non-array shapes still fall to the default.
-  const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches
-    : typeof git.protected_branches === 'string'
-      ? [git.protected_branches]
-      : ['main', 'master'];
+  // One coercion for all four readers (lib/protected-branches.mjs), which
+  // carries the #38 lone-string reasoning this callsite used to state inline.
+  const protectedBranches = resolveProtectedBranches(git);
 
   // git commit: enforce the protected-branch guard from config. "deny" is
   // the decision word the harness uses, so accept it as an alias of refuse
