@@ -375,13 +375,16 @@ falsified claim left standing is inherited by every planner after this one -
 the report alone corrects nobody downstream. A deviation that merely adjusts
 scope or adds work touches nothing here; only a refuted D-NN does.
 
-For each open item, also append it to `.planning/CAPTURE.md` as
-`- [ ] (phase <N>) <text>` under `## Todos` (create the file with headings
-`## Todos`, `## Seeds`, `## Notes` if absent, same format as /cad-capture).
+File each open item into `.planning/CAPTURE.md` through the seam, one call per
+item - it creates the file when absent and owns the bullet's format, so this
+step states neither:
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text "<item>" --phase <N>`
 SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
 deferred item routed here resurfaces on its phase instead of surviving only
 because the next executor re-notices it. Do not duplicate an item already
-present. This file joins the docs commit in the state step.
+present. An `ok:false` return is reported in one line, never passed over: an
+item that did not land is not queued. This file joins the docs commit in the
+state step.
 
 Then run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`
