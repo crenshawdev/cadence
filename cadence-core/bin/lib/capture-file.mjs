@@ -135,6 +135,35 @@ function insertBullet(text, heading, bullet) {
   return lines.join('\n');
 }
 
+/**
+ * Replace `heading`'s body wholesale, or append the section when it is absent.
+ *
+ * Bounded at BOTH ends by the EXPORTED `sectionSpan` rather than a second fence
+ * scanner (D-12): a `## ` line inside a fenced block in someone's `## Todos`
+ * bullet must not be read as the section boundary - nor as the section's START.
+ * Finding the heading with a bare `findIndex` was the second half of that same
+ * bug and the more destructive one: a fenced example of `## Debt markers` in an
+ * earlier section became the rewrite's anchor, and everything from inside that
+ * code block onward - `## Seeds`, `## Notes`, their bullets - was replaced by
+ * the new body.
+ *
+ * Moved here verbatim from planning.mjs, where it was `cmdDebtHarvest`'s
+ * private helper: this module owns CAPTURE.md's bytes, and the harvest is one
+ * of the three writers that has to take the same guard as the rest.
+ * @param {string} text @param {string} heading @param {string} body
+ * @returns {string}
+ */
+export function replaceSection(text, heading, body) {
+  const lines = text.split('\n');
+  const { start, end } = sectionSpan(lines, heading);
+  if (start < 0) {
+    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
+    return `${text}${sep}${heading}\n\n${body}`;
+  }
+  const tail = lines.slice(end);
+  return `${lines.slice(0, start + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
+}
+
 /** Read a file or return null - an absent queue is data, never a crash. */
 function read(file) {
   try { return readFileSync(file, 'utf8'); } catch { return null; }

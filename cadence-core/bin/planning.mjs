@@ -96,10 +96,12 @@ import {
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
-  sectionBound, sectionSpan, phaseRequirements, planTaskTitles,
+  sectionBound, phaseRequirements, planTaskTitles,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
-import { appendCapture, CAPTURE_KINDS } from './lib/capture-file.mjs';
+import {
+  appendCapture, replaceSection, withCaptureLock, CAPTURE_KINDS, EMPTY_CAPTURE,
+} from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
 // exist rather than growing second ones: the SAME prose version reader branch
@@ -3107,31 +3109,6 @@ const DEBT_MAX_FILE_BYTES = 1048576;
 /** The heading the harvest owns and rewrites wholesale. */
 const DEBT_HEADING = '## Debt markers';
 
-/**
- * Replace `heading`'s body wholesale, or append the section when it is absent.
- *
- * Bounded at BOTH ends by the EXPORTED `sectionSpan` rather than a second fence
- * scanner (D-12): a `## ` line inside a fenced block in someone's `## Todos`
- * bullet must not be read as the section boundary - nor as the section's START.
- * Finding the heading with a bare `findIndex` was the second half of that same
- * bug and the more destructive one: a fenced example of `## Debt markers` in an
- * earlier section became the rewrite's anchor, and everything from inside that
- * code block onward - `## Seeds`, `## Notes`, their bullets - was replaced by
- * the new body.
- * @param {string} text @param {string} heading @param {string} body
- * @returns {string}
- */
-function replaceSection(text, heading, body) {
-  const lines = text.split('\n');
-  const { start, end } = sectionSpan(lines, heading);
-  if (start < 0) {
-    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
-    return `${text}${sep}${heading}\n\n${body}`;
-  }
-  const tail = lines.slice(end);
-  return `${lines.slice(0, start + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
-}
-
 function cmdDebtHarvest(root) {
   if (!existsSync(root)) return fail('no-root', `${root} not found`);
   /** @type {string} */
@@ -3188,23 +3165,35 @@ function cmdDebtHarvest(root) {
 
   const captureFile = join(root, '.planning', 'CAPTURE.md');
   const body = renderDebtSection(entries);
-  const existing = read(captureFile);
-  const next = existing === null
-    // Created with the same three headings /cad-capture creates, so a harvest on
-    // a project with no queue yet leaves the file /cad-capture expects.
-    ? `## Todos\n\n- None.\n\n## Seeds\n\n- None.\n\n## Notes\n\n- None.\n\n${DEBT_HEADING}\n\n${body}`
-    : replaceSection(existing, DEBT_HEADING, body);
-  // Written ONLY when it differs, so a second run reports written:false and
-  // leaves the file byte-identical - the idempotence AC6 asks for.
-  let written = false;
-  if (next !== existing) {
-    try {
+  /** @type {{ok: true, value: boolean} | {ok: false, reason: string, detail: string}} */
+  let guarded;
+  try {
+    // The whole read-modify-write is inside the SAME guard `/cad-capture`'s
+    // append takes (D-02), and the read is inside it with the write: a harvest
+    // and a capture running at the same moment would otherwise each read the
+    // same bytes and the second rename would erase the first one's work. That
+    // is the whole point of naming all three writers.
+    guarded = withCaptureLock(captureFile, () => {
+      const existing = read(captureFile);
+      const next = existing === null
+        // Created with the same three headings /cad-capture creates - the same
+        // constant, not a second copy of them - so a harvest on a project with
+        // no queue yet leaves the file /cad-capture expects.
+        ? `${EMPTY_CAPTURE}\n${DEBT_HEADING}\n\n${body}`
+        : replaceSection(existing, DEBT_HEADING, body);
+      // Written ONLY when it differs, so a second run reports written:false and
+      // leaves the file byte-identical - the idempotence AC6 asks for.
+      if (next === existing) return false;
       atomicWrite(captureFile, next);
-    } catch (e) {
-      return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
-    }
-    written = true;
+      return true;
+    });
+  } catch (e) {
+    return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
   }
+  // A refused lock is reported through the EXISTING failure path, not a new
+  // one: every caller of this seam already branches on `write-failed`.
+  if (guarded.ok === false) return fail('write-failed', `${captureFile}: ${guarded.detail}`);
+  const written = guarded.value;
   const malformed = entries.filter((e) => e.malformed)
     .map((e) => ({ path: e.path, line: e.line, missing: e.malformed }));
   ok({
