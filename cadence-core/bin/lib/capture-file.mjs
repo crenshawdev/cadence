@@ -305,47 +305,69 @@ export function withCaptureLock(file, fn) {
  * @returns {{ok: true, bullet: string, heading: string, created: boolean}
  *   | {ok: false, reason: string, detail: string}}
  */
+/**
+ * How many times a bullet that was overwritten is re-appended before the write
+ * is called lost.
+ *
+ * Why a retry exists at all, stated plainly because it is the honest limit of
+ * this seam: `wx` gives mutual exclusion, but BREAKING a stale lock cannot be
+ * made ownership-safe with `stat` + `unlink` + `rename` alone - there is no
+ * compare-and-swap on a filesystem this module is allowed to assume. A
+ * contender holding a dead lock's stat can move a live successor's lock aside,
+ * and two writers end up in the section together. The self-heal is kept
+ * deliberately (a crashed `/cad-capture` must not wedge the queue), so the
+ * GUARANTEE moves off the lock and onto the writer: verify after releasing,
+ * and if our bullet is gone, append it again onto whatever won. Both bullets
+ * land; the criterion was never "the lock is perfect" but "a concurrent write
+ * cannot SILENTLY lose an append".
+ */
+const APPEND_ATTEMPTS = 4;
+
 export function appendCapture(file, kind, text, phase) {
   const heading = CAPTURE_HEADINGS[kind];
   if (!heading) return { ok: false, reason: 'bad-kind', detail: `unknown capture kind: ${kind}` };
   const bullet = renderBullet(kind, text, phase);
-  // Spelled out rather than `ReturnType<typeof withCaptureLock>`: that helper is
-  // generic in what its callback returns, and ReturnType erases the argument,
-  // so the `value` half would come back `unknown`. Here the callback returns
-  // "the file did not exist".
-  /** @type {{ok: true, value: boolean} | {ok: false, reason: string, detail: string}} */
-  let guarded;
-  try {
-    // Before the lock, because the LOCK is a sibling of the target: the
-    // `--cadence` queue lives in a directory that may not exist yet
-    // (`~/.claude/cadence/`), and both the lock's exclusive create and
-    // `atomicWrite`'s sibling-temp rename need the parent to be there.
-    if (!existsSync(file)) mkdirSync(dirname(file), { recursive: true });
-    // The READ is inside the lock with the write. Reading outside it is exactly
-    // the lost update: two writers each read the same bytes, each append their
-    // own bullet, and the second rename erases the first one's.
-    guarded = withCaptureLock(file, () => {
-      const existing = read(file);
-      const base = existing === null ? EMPTY_CAPTURE : existing;
-      atomicWrite(file, insertBullet(base, heading, bullet));
-      // Read back INSIDE the lock and confirm our own bullet survived. The lock
-      // is the mechanism; this is the CRITERION - "a concurrent write cannot
-      // silently lose an append" is a statement about what the caller is told,
-      // not about how exclusion is implemented. Any path that lets two writers
-      // into the section at once (a broken stale break, a filesystem with no
-      // honest `wx`) ends in last-write-wins, and without this the loser still
-      // returns ok:true. With it, the loser is told.
-      const written = read(file);
-      if (written === null || !written.includes(bullet)) {
-        throw new Error('the appended bullet is not in the file after the write'
-          + ' - a concurrent writer overwrote it; nothing was captured');
-      }
-      return existing === null;
-    });
-  } catch (e) {
-    return { ok: false, reason: 'write-failed',
-      detail: `${file}: ${e && e.message ? e.message : String(e)}` };
+  let created = false;
+  for (let attempt = 1; attempt <= APPEND_ATTEMPTS; attempt++) {
+    // Spelled out rather than `ReturnType<typeof withCaptureLock>`: that helper
+    // is generic in what its callback returns, and ReturnType erases the
+    // argument, so the `value` half would come back `unknown`.
+    /** @type {{ok: true, value: boolean} | {ok: false, reason: string, detail: string}} */
+    let guarded;
+    try {
+      // Before the lock, because the LOCK is a sibling of the target: the
+      // `--cadence` queue lives in a directory that may not exist yet
+      // (`~/.claude/cadence/`), and both the lock's exclusive create and
+      // `atomicWrite`'s sibling-temp rename need the parent to be there.
+      if (!existsSync(file)) mkdirSync(dirname(file), { recursive: true });
+      // The READ is inside the lock with the write. Reading outside it is
+      // exactly the lost update: two writers each read the same bytes, each
+      // append their own bullet, and the second rename erases the first one's.
+      guarded = withCaptureLock(file, () => {
+        const existing = read(file);
+        const base = existing === null ? EMPTY_CAPTURE : existing;
+        atomicWrite(file, insertBullet(base, heading, bullet));
+        return existing === null;
+      });
+    } catch (e) {
+      return { ok: false, reason: 'write-failed',
+        detail: `${file}: ${e && e.message ? e.message : String(e)}` };
+    }
+    if (guarded.ok === false) return guarded;
+    if (attempt === 1) created = guarded.value;
+
+    // The confirmation is AFTER the lock is released, which is the whole point
+    // of its position. A read-back INSIDE the lock passes for a writer whose
+    // bullet is erased a moment later by the second writer that a broken stale
+    // break let in - it proves only "we won at this instant", which is not the
+    // claim. Confirming after release measures the state the caller is about to
+    // be told about.
+    const settled = read(file);
+    if (settled !== null && settled.includes(bullet)) {
+      return { ok: true, bullet, heading, created };
+    }
   }
-  if (guarded.ok === false) return guarded;
-  return { ok: true, bullet, heading, created: guarded.value };
+  return { ok: false, reason: 'write-lost',
+    detail: `${file}: the bullet was overwritten by a concurrent writer on all`
+      + ` ${APPEND_ATTEMPTS} attempts - nothing was captured, and the sentence is not in the queue` };
 }
