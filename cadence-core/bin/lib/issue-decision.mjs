@@ -262,8 +262,18 @@ export function partitionIssues(numbers, fetched) {
  * `/cad-land` step 1 prints and then continues past.
  *
  * Modelled on close-decision.mjs's `decideGateHalt` return, which `/cad-land`
- * already branches on by `action` alone: `{action, reason}`, one of `query` or
- * `skip`, and every skip carries a distinct named reason.
+ * already branches on by `action` alone: `{action, reason}`, one of `query`,
+ * `skip` or `off`, and every skip carries a distinct named reason.
+ *
+ * `off` IS ITS OWN ACTION, not a skip. A skip is a degradation - something the
+ * seam wanted to read and could not - and its reason is the line step 1 prints.
+ * The key set to false is not a degradation but the user's own instruction, and
+ * the requirement is that step 1 then says NOTHING about the tracker. Folding it
+ * into `skip` would make the caller either print a tracker line on every land
+ * with the check off, or pattern-match a reason STRING to suppress it, and a
+ * caller matching on prose is how a reason rewording becomes a regression. So
+ * the discrimination is structural and the reason below still exists: it names
+ * what the seam did not do for anyone reading the JSON, and nobody prints it.
  *
  * TOTAL and STAGED. Every field past `enabled` is optional, and an absent one
  * means "not known yet, not a reason to stop", so the seam calls this before
@@ -271,7 +281,8 @@ export function partitionIssues(numbers, fetched) {
  * key-off arm is reached before anything is spawned. Only an explicit `false`
  * or an explicit incomplete fetch stops the run.
  *
- * The eight reasons, in the order they are asked:
+ * The eight reasons, in the order they are asked (1 rides the `off` action,
+ * 2-8 ride `skip`):
  *   1 the key is off        6 the resolved binary is absent from PATH
  *   2 no origin remote      7 the CLI was killed at the bound, or exited
  *   3 unrecognized host       nonzero - two lines, because "it hung" and "it
@@ -283,12 +294,17 @@ export function partitionIssues(numbers, fetched) {
  *   classification?:{verdict:string, host:string|null, slug:string|null},
  *   logOk?:boolean, bin?:string, cliPresent?:boolean, exitOk?:boolean,
  *   timedOut?:boolean, fetched?:{complete?:boolean, detail?:string|null}|null}} args
- * @returns {{action:'query'|'skip', reason:string}}
+ * @returns {{action:'query'|'skip'|'off', reason:string}}
  */
 export function decideIssueCheck({ enabled, classification, logOk, bin, cliPresent, exitOk, timedOut, fetched } = {}) {
   const skip = (reason) => ({ action: /** @type {'skip'} */ ('skip'), reason });
+  // Anything that is not the literal `true` is the off arm, including an
+  // absent argument: this is asked before a single subprocess is started.
   if (enabled !== true) {
-    return skip('git.issue_check is off: no tracker report, and no forge CLI was run');
+    return {
+      action: /** @type {'off'} */ ('off'),
+      reason: 'git.issue_check is off: no tracker report, and no forge CLI was run',
+    };
   }
   const host = classification && classification.host ? classification.host : 'the origin host';
   if (classification) {

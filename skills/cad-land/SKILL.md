@@ -48,8 +48,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    `referenced` is empty - it is the fallback, never the headline, because a
    bare list is what a reader skims past. On `skip`: print `reason` verbatim as
    ONE line and carry on - never block, never retry, never ask, and never list
-   an issue the seam did not read. `git.issue_check: false` is the off switch
-   and produces a `skip` before any forge CLI runs.
+   an issue the seam did not read. On `off` - `git.issue_check: false`, decided
+   before any forge CLI runs - say NOTHING about the tracker: not the reason,
+   not that it was skipped. The off switch is off, so this paragraph produces
+   no output at all.
 
    This report never writes: landing closes no issue, and closing one stays an
    explicit ask you make at publish time.

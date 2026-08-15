@@ -9,7 +9,9 @@
 // comments on an issue. Landing closes nothing; closing stays an explicit ask.
 // One JSON line on stdout, and the `check` arm is ok:true on EVERY path
 // including its failures - a tracker that cannot be read is a degraded report,
-// never a failed land.
+// never a failed land. Three actions: `report` (the sentence), `skip` (ONE
+// degradation line the caller prints) and `off` (git.issue_check false - the
+// caller prints nothing at all).
 //
 // WHY THIS IS NOT land-cleanup.mjs. That seam is advisory over GIT state this
 // machine already holds: it can be wrong only if the repo changed under it.
@@ -141,16 +143,22 @@ function teaHosts(text) {
   return hosts;
 }
 
-/** The one degraded shape: a named line, and NOTHING claimed about issues.
+/** The one not-reporting shape: a named line, and NOTHING claimed about issues.
+ *
+ * The core's `action` rides straight through, because the two non-query answers
+ * mean different things to the caller: `skip` is a degradation whose reason
+ * step 1 prints as one line, `off` is the user's own switch and step 1 prints
+ * NOTHING for it. Deciding that here by inspecting the reason TEXT would put a
+ * prose match in the caller's path; see decideIssueCheck's header.
  *
  * `detail` is always null on this arm, and that is the security property: the
  * reason line already names the degradation, so no git or forge-CLI stderr is
  * carried here for it to add to. See the header.
- * @param {{reason:string}} decision
+ * @param {{action:string, reason:string}} decision
  * @param {{host?:string|null, repo?:string|null, warnings:string[]}} rest */
 function skip(decision, rest) {
   emit({
-    ok: true, action: 'skip', reason: decision.reason,
+    ok: true, action: decision.action, reason: decision.reason,
     host: rest.host ?? null, repo: rest.repo ?? null,
     referenced: [], open: [],
     detail: null, warnings: rest.warnings,
@@ -169,9 +177,10 @@ function check(dir, baseArg, timeout) {
 
   // The key is consulted before ANY subprocess: `false` must spawn no forge
   // CLI at all, not merely print nothing (the test asserts that with a marker
-  // file every stub writes to).
+  // file every stub writes to). It answers `off` rather than `skip`, which is
+  // what makes step 1 print nothing at all instead of a tracker line.
   let decision = decideIssueCheck({ enabled });
-  if (decision.action === 'skip') return skip(decision, { warnings });
+  if (decision.action !== 'query') return skip(decision, { warnings });
 
   const gitRead = (args) => run('git', ['-C', dir, ...args], { cwd: dir, timeout });
   const origin = gitRead(['remote', 'get-url', 'origin']);
@@ -185,30 +194,30 @@ function check(dir, baseArg, timeout) {
   const host = classification.host;
   const repo = classification.slug;
   decision = decideIssueCheck({ enabled, classification });
-  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
+  if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
   const row = HOST_TABLE[classification.verdict];
   const bin = row.bin;
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
   const log = gitRead(['log', `${base}..HEAD`, '--format=%B']);
   decision = decideIssueCheck({ enabled, classification, logOk: log.ok, bin });
-  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
+  if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
   decision = decideIssueCheck({ enabled, classification, logOk: true, bin, cliPresent: onPath(bin) });
-  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
+  if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
   const call = run(bin, row.argv(repo, row.limit), { cwd: dir, timeout });
   decision = decideIssueCheck({
     enabled, classification, logOk: true, bin, cliPresent: true,
     exitOk: call.ok, timedOut: call.timedOut,
   });
-  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
+  if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
   const fetched = row.normalize(call.stdout, row.limit);
   decision = decideIssueCheck({
     enabled, classification, logOk: true, bin, cliPresent: true, exitOk: true, fetched,
   });
-  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
+  if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
   const numbers = scanIssueRefs(log.stdout);
   const part = partitionIssues(numbers, fetched);
@@ -216,7 +225,7 @@ function check(dir, baseArg, timeout) {
   // decision above already turned into a skip; this is belt-and-braces so a
   // future reordering cannot publish a not-found verdict nobody could read.
   if (part === null) {
-    return skip({ reason: `${bin} returned a response this seam could not read as a complete issue list: no tracker report` },
+    return skip({ action: 'skip', reason: `${bin} returned a response this seam could not read as a complete issue list: no tracker report` },
       { host, repo, warnings });
   }
   const state = (n) => (part.open.includes(n) ? 'open' : part.closed.includes(n) ? 'closed' : 'not-found');

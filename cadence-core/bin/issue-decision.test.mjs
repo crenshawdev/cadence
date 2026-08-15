@@ -201,7 +201,7 @@ test('a RENAMED field is unreadable, not an empty record set', () => {
 
 // --- decideIssueCheck: every reason distinct --------------------------------
 
-test('all nine skip reasons are distinct strings, and only `query` proceeds', () => {
+test('all nine reasons are distinct strings, and only `query` proceeds', () => {
   const forgejo = { verdict: 'forgejo', host: 'git.example.com', slug: 'org/repo' };
   const cases = {
     'key off': { enabled: false },
@@ -222,7 +222,10 @@ test('all nine skip reasons are distinct strings, and only `query` proceeds', ()
   const reasons = new Map();
   for (const [name, args] of Object.entries(cases)) {
     const d = decideIssueCheck(args);
-    assert.equal(d.action, 'skip', name);
+    // The key set false is `off`, not `skip`: cad-land prints every skip
+    // reason verbatim, and the requirement is that the off switch makes step 1
+    // say nothing about the tracker at all.
+    assert.equal(d.action, name === 'key off' ? 'off' : 'skip', name);
     assert.equal(typeof d.reason, 'string');
     assert.ok(d.reason.length > 0, name);
     assert.ok(!reasons.has(d.reason), `${name} reuses the reason of ${reasons.get(d.reason)}`);
@@ -232,6 +235,10 @@ test('all nine skip reasons are distinct strings, and only `query` proceeds', ()
   // The key-off line says what it did NOT do, since "no forge CLI ran" is the
   // property the seam test asserts with a spawn marker.
   assert.match(cases['key off'] && decideIssueCheck(cases['key off']).reason, /issue_check is off/);
+  // ONE action carries the silent arm, so a caller never has to read the prose
+  // to know whether to print it.
+  const offs = Object.values(cases).filter((args) => decideIssueCheck(args).action === 'off');
+  assert.equal(offs.length, 1, 'only the key-off case may answer `off`');
 
   // The full-information happy path, and the STAGED calls the seam makes on the
   // way to it - an unknown later stage is not a reason to stop.
@@ -244,7 +251,10 @@ test('all nine skip reasons are distinct strings, and only `query` proceeds', ()
 });
 
 test('decideIssueCheck is total: no arguments at all still answers', () => {
-  assert.equal(decideIssueCheck().action, 'skip');
-  assert.equal(decideIssueCheck({}).action, 'skip');
-  assert.equal(decideIssueCheck({ enabled: 'yes' }).action, 'skip', 'only the literal true enables it');
+  // Anything that is not the literal true is the off arm, and it still carries
+  // its reason string - nobody prints it, and the JSON stays readable.
+  assert.equal(decideIssueCheck().action, 'off');
+  assert.equal(decideIssueCheck({}).action, 'off');
+  assert.equal(decideIssueCheck({ enabled: 'yes' }).action, 'off', 'only the literal true enables it');
+  assert.match(decideIssueCheck().reason, /issue_check is off/);
 });

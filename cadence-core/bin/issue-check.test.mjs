@@ -214,11 +214,14 @@ const FORGE_REPO = 'https://forge.example.com/org/repo.git';
 const TEA_FULL_PAGE = JSON.stringify(
   Array.from({ length: 50 }, (_, i) => ({ index: String(i + 1), state: 'open' })));
 
+// [name, reason pattern, build, expected action]. Every path is a `skip`
+// except the key set to false, which is `off`: the user's own switch is not a
+// degradation, and cad-land prints nothing for it.
 const DEGRADATIONS = [
   ['the key is off', /issue_check is off/, () => ({
     args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS, gitConfig: { issue_check: false } }), '--base', 'main'],
     opts: { stubs: ALL_STUBS },
-  })],
+  }), 'off'],
   ['no origin remote', /no origin remote/, () => ({
     args: ['check', '--dir', repo({ originUrl: null, commits: COMMITS }), '--base', 'main'],
     opts: { stubs: ALL_STUBS },
@@ -261,13 +264,13 @@ const DEGRADATIONS = [
 
 const SEEN_REASONS = new Map();
 
-for (const [name, pattern, build] of DEGRADATIONS) {
+for (const [name, pattern, build, action = 'skip'] of DEGRADATIONS) {
   test(`degrades in ONE line: ${name}`, () => {
     const { args, opts } = build();
     const { status, envelope } = seamRun(args, opts);
     assert.equal(status, 0, `${name} must not fail the land`);
     assert.equal(envelope.ok, true, JSON.stringify(envelope));
-    assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+    assert.equal(envelope.action, action, JSON.stringify(envelope));
     assert.match(envelope.reason, pattern, envelope.reason);
     assert.ok(!envelope.reason.includes('\n'), `one line, not several: ${envelope.reason}`);
     // A seam never returns an affirmative answer about input it could not read
@@ -291,7 +294,11 @@ test('the key-off arm spawns NO forge CLI at all, not merely an empty report', (
   const dir = repo({ originUrl: FORGE_REPO, commits: COMMITS, gitConfig: { issue_check: false } });
   const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
   const r = seam(['check', '--dir', dir, '--base', 'main'], { stubs: ALL_STUBS, marker });
-  assert.equal(r.action, 'skip');
+  // `off`, never `skip`: SKILL.md step 1 prints every skip reason verbatim, so
+  // an off switch answering `skip` would print a tracker line on every land -
+  // which is exactly what the key is set to false to stop.
+  assert.equal(r.action, 'off', JSON.stringify(r));
+  assert.match(r.reason, /issue_check is off/);
   assert.equal(existsSync(marker), false,
     `no forge CLI may run under issue_check:false, but one wrote: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
 
