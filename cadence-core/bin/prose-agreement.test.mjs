@@ -804,6 +804,14 @@ test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it cr
   // whole failure this closes.
   assert.ok(seamAt < createAt,
     'the authorization consult comes AFTER glab mr create, which publishes the branch itself');
+  // The reuse arm, not the create, is the one this ordering exists for: an MR
+  // already open for the branch skips the create entirely, so a consult placed
+  // beside `glab mr create` never runs and `glab mr merge` lands unauthorized.
+  const viewAt = region.indexOf('glab mr view <branch>');
+  assert.ok(viewAt > -1, 'step 3(b) no longer spells the glab mr view reuse probe');
+  assert.ok(seamAt < viewAt,
+    'the authorization consult comes AFTER the glab mr view reuse probe, so an '
+    + 'already-open MR reaches glab mr merge with no seam call behind it');
   assert.match(region, /ok:false/,
     'step 3(b) never says what the GitLab arm does when the seam refuses');
 });
