@@ -94,7 +94,7 @@ Then you work one phase at a time:
 
 Between commands you `/clear`, every one, not just the phase boundaries. The window empties and you lose nothing, because each command reads `.planning/` and git back into context, and a window carried across commands is spend without information. Even a review still in flight survives the cut: an advisory reviewer writes its own findings file and its own trace line, so the session that fired it can end freely. The first external project run went through the whole cycle one command per session. Run `/cad-progress` after a clear and it tells you that phase 1 is verified and phase 2 is next, then you plan phase 2 the same way. When you hit a wall mid-build, `/cad-debug` runs the scientific method with hypotheses that survive a clear, and `/cad-capture` parks a stray todo or idea without derailing the phase you're in.
 
-When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, bumps the version, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. It also reads the run record back at you: `trace suggest` turns the milestone's own trace into evidence-backed retune suggestions, a gate whose fires kept coming back empty, a role that never needed its escalation, each named with its config key and its receipts, and applies none of them without your say. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that.
+When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, bumps the version, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. It also reads the run record back at you: `trace suggest` turns the milestone's own trace into evidence-backed retune suggestions, a gate whose fires kept coming back empty, a role that never needed its escalation, each named with its config key and its receipts, and applies none of them without your say. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that. Before it asks, it names the issues this branch's commits reference and which of them are still open on the host your origin points at, so you decide to ship knowing what the work did and did not answer; it closes nothing, and `git.issue_check: false` turns the report off.
 
 That's the whole shape of it: define once, then loop `context -> plan -> execute -> verify` per phase, clearing aggressively, until the milestone is ready to cut.
 
@@ -113,7 +113,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 
 **Lifecycle & git**
 - **`/cad-milestone`** — close a release: audit nothing was dropped, bump the version, prune completed phases, evolve the docs (the tag is cut by `/cad-land` after the merge).
-- **`/cad-land`** — publish finished work, asking how (push / MR or PR / tag / leave local) with no preselected default.
+- **`/cad-land`** — publish finished work, asking how (push / MR or PR / tag / leave local) with no preselected default, after naming the issues this branch's commits reference and which are still open (`git.issue_check: false` turns that off).
 - **`/cad-phase`** — add, insert, remove, or renumber phases, fixing every reference in one pass.
 - **`/cad-undo`** — safely roll back a phase's commits from its summary manifest.
 - **`/cad-pause`** — stop cleanly with a WIP commit and a resume pointer.

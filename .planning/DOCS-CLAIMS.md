@@ -959,6 +959,13 @@ an old one. Some of those restate a run-1 row in different words. That is the
 stated cost of joining on text rather than on an id, and it is the cost run 1's
 own join rule chose (see `## Reading this ledger`).
 
+**A `run` cell reading `-` is a claim filed WITH the code, between sweeps.** No
+run has verdicted it yet: its verdict column is the filing phase's own check,
+named in `resolution`, and the next sweep verdicts it like any other row and
+replaces the `-` with its number. Keeping those rows here rather than holding
+them until a sweep is what stops a cycle's new prose from being invisible to the
+ledger it is supposed to be measured by.
+
 Ids continue their doc's ordinal rather than restarting, so no id below collides
 with one above. Where run 1 re-pointed a row's `doc` at a file it had never
 swept, the run-1 row keeps the id it was given (the ~29 `CONFIG-` rows now
@@ -968,6 +975,12 @@ mistake.
 
 | id | doc | line | claim | verdict | resolution | run |
 |---|---|---|---|---|---|---|
+| COMMANDS-01 | cadence-core/references/COMMANDS.md | 40 | `/cad-land [base]` reports git state PLUS the tracker - which issues this branch's commits reference and which are still open - reads only and closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the row's key exists in `config.schema.json` and self-verify check 1 is clean | - |
+| README-85 | README.md | 97 | Before `/cad-land` asks how to publish, it names the issues this branch's commits reference and which of them are still open on the host the origin points at; it closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); proved by `issue-check.test.mjs` (report arm, three hosts) and by the key-off spawn-marker case | - |
+| README-86 | README.md | 116 | The `## The commands` entry for `/cad-land` states the same tracker report and the same `git.issue_check` off switch. | accurate | filed with the code, v3.4.0 phase 1 (LND-01) | - |
+| CONFIG-CATALOG-13 | cadence-core/references/config-catalog.md | 46 | `git.issue_check` is a bool defaulting to `true`: `true` gives a read-only tracker report with one line naming the reason when it cannot be read, `false` says nothing about the tracker and runs no forge CLI. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the default is proved by `config.mjs get git.issue_check` over a config that omits it, the no-spawn half by the marker-file case in `issue-check.test.mjs` | - |
+| CAD-LAND-01 | skills/cad-land/SKILL.md | 32-51 | Step 1 runs `issue-check.mjs check` before any publish ask, on both step-3 arms, and on the `skip` action prints the envelope's `reason` verbatim as ONE line and carries on - never blocking, retrying, asking, or listing an issue the seam did not read. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the one-line degradation is proved per path by the 9-case matrix in `issue-check.test.mjs`, each asserting exit 0, `ok:true`, an empty issue list and a reason unique across the matrix | - |
+| CAD-LAND-02 | skills/cad-land/SKILL.md | 50-51 | Landing closes no issue; closing one stays an explicit ask the user makes at publish time. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); no argv in `lib/issue-decision.mjs`'s host table writes to a tracker, and the seam has one subcommand and no write path | - |
 | SELFVERIFY-01 | cadence-core/bin/self-verify.mjs | 90-104 | Check 16 fails an `@`-included `cadence-core/references/*` or `cadence-core/templates/*` surface that no eager prose of the including command ever names, while `cadence-core/workflows/*` includes are exempt because the workflow IS the command's process. | accurate | accurate | 2 |
 | ADOPT-01 | cadence-core/workflows/adopt.md | 5-7 | Adopt writes the same `.planning/` shape /cad-new-project writes - same files, same STATE cursor, same config | accurate | accurate | 2 |
 | ADOPT-02 | cadence-core/workflows/adopt.md | 9-11, 274-277 | Everything is derived INLINE - no subagent is dispatched and no detector seam is added | accurate | accurate | 2 |
