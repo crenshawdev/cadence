@@ -154,8 +154,7 @@ is legitimate. This is the one deviation class with no inline path at all.
 ### Commit protocol
 
 Stage the specific files you changed, individually. Never `git add -A`, never
-`git add .`. Then check the staged diff against the risk-surface list before
-committing, commit as `{type}({scope}): {description}`, and take a post-commit
+`git add .`. Commit as `{type}({scope}): {description}`, and take a post-commit
 glance for unexpected file deletions and for generated files left untracked.
 
 Executors never push, never force-push, never write `STATE.md`, `ROADMAP.md` or
@@ -306,7 +305,7 @@ gate wins, because it is the stronger signal.
 
 That gate column is the `shipped` level, not a fixed default. Every gate is
 resolved from the project's `stakes` level, so the same trigger fires differently
-depending on what a break costs you: a `plan` review is advisory at `solo` and
+depending on what a break costs you: a `plan` review is advisory at `solo`, off at
 `shipped` and adjudicated at `critical`, an ordinary `diff` is off at `solo` and
 `shipped`, and blocking at `critical`. `risk_surface` is the one that
 does not move, blocking at all three levels. An explicit gate you set in config
@@ -371,7 +370,7 @@ the model that just spent four voices on the artifact does not also get to
 decide what happens next. One gate ends this way at every level: the fix list in
 `/cad-verify`, which has no resolved gate and is always triaged. Three more end
 this way wherever their gate resolves adjudicated: the plan review in
-`/cad-plan`, advisory at `shipped` and adjudicated at `critical`;
+`/cad-plan`, off at `shipped` and adjudicated at `critical`;
 `/cad-execute`'s per-plan diff review, `off` below `critical`; and its
 `phase_diff` review, adjudicated at `critical`. The one exception is the
 opt-in unattended close in `/cad-land`, where nothing is acted on at all - it
@@ -418,14 +417,14 @@ half-built change and cost a fresh-context re-dispatch per match, whose only job
 was writing code no plan task authorized - itself new risk surface, and the next
 halt. Blocking on the finished range keeps the gate and drops the loop.
 
-Detection also sets a floor. When a phase's own plan declares a path on one of
-those surfaces, that phase's `stakes` level is raised for the phase, the reason
-names which surface and which file matched, and the raise only ever goes up, so a
-project already at `critical` is unaffected. Lowering it back takes a named
-per-surface `risk.override.<surface>` rather than nothing at all, and that waiver
-is read from the repo's own config alone: one set in a user-global config is
-ignored and named in the warnings, because a single line in one file should not
-disable the floor in every project on the machine.
+Detection sets no floor. What a plan declares raises no level: the `stakes` you
+set is the whole of it. The dispatch-time detector that read a phase's declared
+paths, and the eight `risk.override.<surface>` waivers that existed to lower what
+it raised, were both cut in v2.7.0 - the detector judged a file by its NAME, so
+one path token in one declared file was enough to put six roles on their top rung
+for the rest of the phase. What those surfaces drive instead is the one
+`risk_surface` review: blocking at every level, fired once on the completed
+commit range.
 
 A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
 there is a narrow, evidence-based pre-filter. A destructive op drops only when

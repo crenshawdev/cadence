@@ -165,6 +165,10 @@ successive executors in the phase share a cached prefix: phase-level context
 - Shared files to read first (identical for every plan in the phase): project
   `CLAUDE.md` (if present), `.planning/PROJECT.md` (if present),
   `.planning/phases/<N>/CONTEXT.md` (if present).
+- The `surfaces` the executor's own `route.mjs resolve` answered, verbatim -
+  the bar the work is written to, not a review that fires later. On
+  `surfaces_answered: false` say that no layer answered, so ALL of the
+  table's categories stand rather than none.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."
@@ -199,14 +203,15 @@ phase re-reads, plus that plan's own file. Once that executor comes back,
 append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k> --role cad-executor --tokens <the token count on the subagent return>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
 ```
 
-The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
-`checkpoint` for any checkpoint return, and `escalation` when a plan is moved to
-another path or rung. All three close a bracket; a worker with none of them is
-what `trace render` reports as unpaired. `--plan`/`--bracket-plan` is the
+ONE line per executor. OMIT `--detail` for a `PLAN COMPLETE` or `PLAN PARTIAL`
+and the seam closes a `return`; carry it for any checkpoint return and the seam
+closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
+which the seam does not infer - it stays on `trace append`. All three close a
+bracket; a worker with none of them is what `trace render` reports as unpaired.
+`--plan`/`--bracket-plan` is the
 WORKER key that pairs a dispatch with its close; `--role` is what the per-role
 totals group on, and keyed on the plan number alone `cad-executor` - the single
 largest spender in a phase - is the one line the totals could never print.
@@ -375,13 +380,18 @@ falsified claim left standing is inherited by every planner after this one -
 the report alone corrects nobody downstream. A deviation that merely adjusts
 scope or adds work touches nothing here; only a refuted D-NN does.
 
-For each open item, also append it to `.planning/CAPTURE.md` as
-`- [ ] (phase <N>) <text>` under `## Todos` (create the file with headings
-`## Todos`, `## Seeds`, `## Notes` if absent, same format as /cad-capture).
+File each open item into `.planning/CAPTURE.md` through the seam, one call per
+item - it creates the file when absent and owns the bullet's format, so this
+step states neither:
+Write the sentence to a scratch file and name the PATH - an open item is project
+text, and `--text "<item>"` would shell-expand a `$(...)` in it:
+`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text-file <path> --phase <N>`
 SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
 deferred item routed here resurfaces on its phase instead of surviving only
 because the next executor re-notices it. Do not duplicate an item already
-present. This file joins the docs commit in the state step.
+present. An `ok:false` return is reported in one line, never passed over: an
+item that did not land is not queued. This file joins the docs commit in the
+state step.
 
 Then run
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" debt-harvest --root .`

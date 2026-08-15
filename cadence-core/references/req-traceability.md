@@ -47,7 +47,7 @@ order. Each code below is pinned by a case in `cadence-core/bin/planning-files.t
 | `active-prose-line` | `Scope for v1.4.0: TOK-01 and RDM-01.` | declares no id; reported (conditionally - see below) | write one bullet per requirement |
 | `active-non-id-bullet` | `- **Note**: scope frozen` / `- **AUD-01:** text` | IS an id by the grammar, and stays one for `seed-reqs`; held OUT of `audit`'s arithmetic and reported | put exactly the id inside the bold span, punctuation and prose outside it (`- **AUD-01**: text`), or unbold a bullet that declares no requirement |
 | `active-multi-id-bullet` | `- **AUTH-01** and **AUTH-02**: both sides` | the FIRST span is the declared id, as always; every later id-shaped span declares nothing and is reported | give each requirement its own bullet. The grammar is deliberately not widened to read every span: taking them all would mint an id out of ordinary emphasis (`- **GRM-01**: the **core** path` would declare `core`), the same silent failure reversed. Emphasis that is not id-shaped is not reported, because nothing is lost |
-| `active-non-id-bullet`, span already exactly the id | `- **2FA-01**: two-factor auth` | same - held OUT and reported | NEITHER remedy above applies: the span already holds the id alone, so the first is a no-op, and the second would delete a real declaration AND its diagnostic (the prose scan requires a letter first too, so an unbolded `2FA-01` is not even a token). Rename the category to lead with a letter (`TFA-01`), or carry the id knowing `audit` will not count it. Known limit as of v1.4.0 |
+| none - the near-miss no diagnostic can see | `- 2FA-01: two-factor auth` | declares no id and reports NOTHING: the unanchored prose scan still requires a letter at the HEAD of the category, so an unbolded digit-leading id is not a token at all and no near-miss code fires on the line | bold it. `- **2FA-01**: two-factor auth` is a real declaration that `audit` admits and counts (`isRequirementId` wants a letter SOMEWHERE in the 2-8 character category, not at its head), so the bolded form needs no remedy - but nothing tells you when the bold is the thing you forgot |
 
 Three rules that are deliberately not what a reader would guess:
 
@@ -143,14 +143,17 @@ permeable as it was at the v1.2.0 and v1.3.1 closes.
   reports `{active_ids: []}` at zero rows, and an id that is not id-shaped
   (`- **Note**: ...`) is never in the payload. That last exclusion is an
   ADMISSION TEST, not a claim about the writer: `isRequirementId` admits
-  `PREFIX-N` whose prefix is 2-8 characters STARTING WITH A LETTER, plus `#N`.
-  `seed-reqs` asks the wider bullet grammar instead, so it will seed a row for
-  an id this payload refuses to name - the two seams disagree by design, and
-  the gap is visible only in `active_issues`. The sharp edge: a category
-  leading with a digit (`2FA-01`, `3DS-02`) fails the admission test, so it is
-  held out of `unseeded` AND out of `counts`, reported only as
-  `active-non-id-bullet`. A milestone whose scope is spelled that way audits
-  clean while nothing carries it. Known limit as of v1.4.0.
+  `PREFIX-N` whose prefix is 2-8 characters carrying a letter SOMEWHERE in
+  them - not at the head (PRS-02) - plus `#N`. `seed-reqs` asks the wider
+  bullet grammar instead, so it will seed a row for an id this payload refuses
+  to name - the two seams disagree by design, and the gap is visible only in
+  `active_issues`. The surviving sharp edge is the other direction: a category
+  leading with a digit (`2FA-01`, `3DS-02`) IS admitted, counted and named in
+  `unseeded` when it is BOLDED, but the unanchored prose scan keeps its letter
+  head, so the same id written unbolded is invisible to it - the bullet
+  declares nothing and no near-miss diagnostic says so. A category with no
+  letter in it at all (`2026-08`) is still refused, and still reported as
+  `active-non-id-bullet`.
 - `counts.total` is Traceability rows PLUS unpicked ids, so
   `total = traced + broken + deferred` still holds now that a break can exist
   with no row. A reader written against `total === rows.length` will disagree

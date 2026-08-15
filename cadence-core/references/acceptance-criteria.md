@@ -245,9 +245,11 @@ Infer legacy from field absence again and the exemption absolves the drop.
 **Every run states the versions it ran as.** `version` is the first key of the
 envelope and is always present - a statement about the run, not a finding.
 `version.plugin` is read from `.claude-plugin/plugin.json` relative to the
-SCRIPT's own location, with `CADENCE_PLUGIN_MANIFEST` overriding the path for
-hermetic tests only, and is `null` on any unreadable, malformed or version-less
-manifest rather than a throw. `version.uat_fields` is `UAT_FIELDS_VERSION`.
+SCRIPT's own location, and is `null` on any unreadable, malformed or
+version-less manifest rather than a throw. `CADENCE_PLUGIN_MANIFEST` overrides
+that path for hermetic tests only, and only alongside `CADENCE_TEST_SEAM=1`:
+BOTH are required, and with the variable alone the override is ignored and the
+shipped manifest is read silently, which is the gate's point. `version.uat_fields` is `UAT_FIELDS_VERSION`.
 Both, because neither is sufficient alone: mid-cycle the manifest names the last
 RELEASED version, so the capability number is the half that does not lag, while
 the manifest is the half that names what is installed. The skew this catches is

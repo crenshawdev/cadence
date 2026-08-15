@@ -19,7 +19,7 @@
 // Usage: weight.mjs [--root <repo root>]
 //        weight.mjs resident [--root <repo root>] [--command <name>] [--role <name>]
 // A flag PRESENT with no value is `ok:false`/`missing-flag-value`, never a
-// silent default - see flagValue below.
+// silent default - see `flagValue` in lib/seam-input.mjs.
 'use strict';
 
 import { dirname, join } from 'node:path';
@@ -27,31 +27,13 @@ import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { residentWeight } from './lib/resident-weight.mjs';
+// The throwing flag reader, shared with self-verify.mjs. Its contract - and why
+// the NON-throwing sibling beside it in that module must stay a separate
+// export - live in lib/seam-input.mjs; the catch arm below is what turns the
+// thrown seam object into a named refusal instead of "[object Object]".
+import { flagValue } from './lib/seam-input.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-
-/**
- * Read a flag's value, distinguishing ABSENT from PRESENT-WITH-NO-VALUE.
- *
- * The two must not collapse. `--root` with nothing after it - the shape a
- * caller produces by passing an unset or empty `$TREE` - used to read as
- * `undefined` and fall through to the plugin's own tree, so the caller got
- * ok:true and the Cadence repo's numbers for a tree it never named. That is
- * the quiet-wrong-number class, and it is worse here than a hard error
- * because the envelope looks correct. A missing value now throws
- * `missing-flag-value`; a genuinely absent flag still returns undefined so
- * the caller's own default applies.
- * @param {string[]} argv @param {string} flag @returns {string|undefined}
- */
-function flagValue(argv, flag) {
-  const i = argv.indexOf(flag);
-  if (i < 0) return undefined;
-  const v = argv[i + 1];
-  if (v === undefined || v === '' || v.startsWith('--')) {
-    throw { seam: 'missing-flag-value', detail: flag };
-  }
-  return v;
-}
 
 try {
   const argv = process.argv.slice(2);

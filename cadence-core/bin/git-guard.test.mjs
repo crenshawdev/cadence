@@ -159,6 +159,16 @@ test('a string protected_branches guards THAT branch, not the default list (#38)
     project('main', { git: { protected_branches: 'release' } })), null);
 });
 
+test('an EMPTY protected_branches list still means nothing is protected (D-09)', () => {
+  // `[]` is the user saying "protect nothing"; it must never fall through to
+  // the default ['main','master'], which would re-protect main behind their
+  // back. A commit on main under it is unguarded.
+  assert.equal(guard('git commit -m "x"',
+    project('main', { git: { protected_branches: [] } })), null);
+  assert.equal(guard('git commit -m "x"',
+    project('main', { git: { protected_branches: [], on_protected: 'refuse' } })), null);
+});
+
 test('custom protected_branches list is honored', () => {
   const d = guard('git commit -m "x"',
     project('release', { git: { protected_branches: ['release'] } }));

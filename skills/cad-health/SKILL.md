@@ -37,6 +37,22 @@ Check, then report - do not fix without asking.
      is `git rm --cached .planning/trace.jsonl`. Both can be true at once, and
      then both steps are needed - adding the rule alone leaves a tracked file that
      keeps getting committed.
+   - The capture queue's sections outside the recall walk. Run
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture-sections`
+     and print one line per section whose `in_walk` is false, naming its heading
+     and its bullet count, then what the number MEANS in one clause: those
+     bullets are invisible to /cad-plan's recall. Silent when `exists` is false
+     or every section is in the walk.
+     Print it EVERY run, never filtered against a list of sections you expect to
+     be out of the walk. That allowlist is precisely what would have hidden the
+     incident this check exists for - all five lost bullets sat under
+     `## Archive`, the section any allowlist would have named first.
+     It is a NAMED NOTE, not an issue, the way step 7's manifest clause is a
+     distinct lower note: a project that archives inside CAPTURE.md is meant to
+     have out-of-walk bullets, and calling that an issue every run trains the
+     user to skim past exactly the line this is here to make readable. What is
+     worth their attention is a count that MOVED, which they can only see
+     because the steady-state number is printed too.
 
 2. **STATE cursor.** Exactly the 4-line schema (Phase / Status / Next / Updated -
    references/conventions.md). `Status` is one of the lifecycle values

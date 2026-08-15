@@ -31,6 +31,15 @@
 
 import { appendFileSync, lstatSync, statSync } from 'node:fs';
 import { join, resolve, sep, relative, isAbsolute } from 'node:path';
+// The ONE statement of which agent FILE carries which rung of which role. The
+// join below needs the reverse direction - a recorded `agent_type` stem back to
+// the role a dispatch event names - and deriving it from a `-<rung>` suffix
+// regex would be a SECOND statement of the mapping: `cad-assumptions-analyzer`
+// is that role's `xhigh` rung while `cad-assumptions-analyzer-high` is its
+// lower one, so no suffix convention is true of all 19 files, and a rung added
+// to the table but not to the regex would leave those reads silently unjoined.
+// Pure and fs-free, so the hook path this file also serves stays a plain parse.
+import { RUNG_FILES } from './rung-agent.mjs';
 
 export const READS_FILE = 'reads.jsonl';
 
@@ -371,4 +380,120 @@ export function summarizeReads(records) {
     topTargets: desc(targets).slice(0, 15),
     topFiles: desc(files).slice(0, 15),
   };
+}
+
+/**
+ * The agent types the HOST owns rather than Cadence. They have no dispatch
+ * event in `trace.jsonl` and never will - nothing in this plugin opens a
+ * bracket for them - so their reads are a permanent, statable FLOOR on what the
+ * join can attribute (32% of subagent reads, measured 2026-08-14), never a gap
+ * to close.
+ */
+export const HOST_AGENT_TYPES = ['fork', 'general-purpose'];
+
+/** Every rung file's stem, mapped back to the role whose rung it is. */
+const ROLE_OF_STEM = new Map(
+  Object.keys(RUNG_FILES).flatMap(
+    (role) => Object.values(RUNG_FILES[role]).map((stem) => [stem, role]),
+  ),
+);
+
+/**
+ * The role a recorded `agent` value names, or null when it names none.
+ *
+ * The corpus carries `cadence:cad-executor`, `cadence:cad-planner`,
+ * `cadence:cad-verifier-medium` and `cadence:cad-assumptions-analyzer-high` -
+ * the host's `<plugin>:<agent-file-stem>` spelling - while a dispatch event
+ * carries the bare ROLE. Null for anything else, including the host types and
+ * `coordinator`, so the caller decides what each absence means rather than
+ * having one of them silently become a role.
+ * @param {any} agent
+ * @returns {string|null}
+ */
+function roleOfAgent(agent) {
+  if (typeof agent !== 'string' || !agent) return null;
+  const stem = agent.includes(':') ? agent.slice(agent.indexOf(':') + 1) : agent;
+  return ROLE_OF_STEM.get(stem) || null;
+}
+
+/**
+ * Join `reads.jsonl` records to the `trace.jsonl` dispatch brackets that caused
+ * them, by READ-TIME inference: normalize the record's `agent` to a role, then
+ * test its timestamp for containment inside a closed bracket of that role.
+ *
+ * Why not a corr stamped at hook time (D-10). A hook-time stamp gives a read
+ * running INSIDE a subagent the coordinator's current corr, which makes the
+ * join confidently wrong rather than honestly absent - against a hook whose
+ * stated contract (this file's header) is that it never disturbs normal work.
+ * Repairing at read time with the writer untouched is the same posture the
+ * trace's own pre-anchor repair takes.
+ *
+ * Why ambiguity is reported rather than resolved (D-11). Same-role brackets
+ * genuinely overlap on the parallel execute path: measured over all 100 closed
+ * brackets in this repo's record there are 2 overlapping same-role pairs, both
+ * `cad-executor` - which is also the largest subagent share of the corpus at
+ * 440 records. Picking one would therefore be wrong exactly on the
+ * highest-cost path, so a record inside more than one bracket of its role
+ * reports AMBIGUOUS and joins to none. `lib/trace.mjs` keys its own pairing on
+ * `(corr, phase, plan)` for this same reason.
+ *
+ * Nothing here defaults an absent field. A record with no `agent` is reported
+ * with `agent: null` rather than as a coordinator read, and its `agent_id` the
+ * same way: the host guarantees neither field across subagent kinds and
+ * versions, and this file's `tool_response` comment already takes that posture.
+ *
+ * Pure by INJECTION, the way `filesOf` is: the caller supplies the bracket rows
+ * (`renderTrace(...).brackets`), and this does no I/O of its own.
+ *
+ * @param {any[]} records the parsed `reads.jsonl` lines
+ * @param {any[]} brackets paired dispatch rows, each `{role, ts, end, ...}`
+ */
+export function joinReads(records, brackets) {
+  /** @type {{role: string, a: number, b: number, row: any}[]} */
+  const spans = [];
+  for (const b of Array.isArray(brackets) ? brackets : []) {
+    if (!b || typeof b !== 'object') continue;
+    const role = typeof b.role === 'string' ? b.role : '';
+    const a = Date.parse(b.ts);
+    const z = Date.parse(b.end);
+    // A bracket whose either end is unreadable can contain nothing: it is
+    // dropped rather than widened to infinity, which would swallow every read
+    // of that role into one confident answer.
+    if (!role || !Number.isFinite(a) || !Number.isFinite(z)) continue;
+    spans.push({ role, a, b: z, row: b });
+  }
+
+  const counts = { joined: 0, ambiguous: 0, unjoined: 0, floor: 0, coordinator: 0, unresolved: 0 };
+  /** @type {{ts: any, agent: string|null, agent_id: string|null, role: string|null, status: string, bracket: any}[]} */
+  const rows = [];
+
+  for (const r of Array.isArray(records) ? records : []) {
+    if (!r || typeof r !== 'object') continue;
+    const agent = typeof r.agent === 'string' && r.agent ? r.agent : null;
+    const agentId = typeof r.agent_id === 'string' && r.agent_id ? r.agent_id : null;
+    /** @param {string} status @param {any} [bracket] */
+    const push = (status, bracket = null) => {
+      counts[status]++;
+      rows.push({ ts: r.ts ?? null, agent, agent_id: agentId, role: roleOfAgent(agent), status, bracket });
+    };
+
+    if (agent === null) { push('unresolved'); continue; }
+    if (agent === 'coordinator') { push('coordinator'); continue; }
+    if (HOST_AGENT_TYPES.includes(agent)) { push('floor'); continue; }
+    const role = roleOfAgent(agent);
+    // `unknown-agent` lands here: the writer uses it when a call carried an
+    // `agent_id` and no `agent_type`, so the read IS a subagent's and its role
+    // is simply not knowable. Reporting it unjoined would read as "no bracket
+    // contained it", which was never tested.
+    if (role === null) { push('unresolved'); continue; }
+
+    const t = Date.parse(r.ts);
+    if (!Number.isFinite(t)) { push('unresolved'); continue; }
+    const hits = spans.filter((s) => s.role === role && t >= s.a && t <= s.b);
+    if (hits.length === 1) push('joined', hits[0].row);
+    else if (hits.length > 1) push('ambiguous');
+    else push('unjoined');
+  }
+
+  return { ...counts, rows };
 }

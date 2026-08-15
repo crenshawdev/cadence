@@ -18,8 +18,6 @@
 //               failure (no repo / no commits -> treated as not-on-a-base).
 'use strict';
 
-import { readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
@@ -28,20 +26,14 @@ import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
 // consumer (FRI-03): one reader of "what has this repo published", the same
 // single-reader discipline branch-decision.mjs keeps for the prose version.
 import { readTags } from './lib/git-tags.mjs';
-
-/** Read a file, or "" if missing/unreadable (a missing surface is not fatal). */
-function readText(file) {
-  try { return readFileSync(file, 'utf8'); }
-  catch { return ''; }
-}
-
-/** The current branch of the repo at `dir`, or "" if it cannot be read. */
-function readCurrentBranch(dir) {
-  try {
-    return execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return ''; }
-}
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+// The argv and file readers this file used to define for itself; both contracts
+// and the reason there are two of them live in lib/seam-input.mjs.
+import { optionalFlag, readText } from './lib/seam-input.mjs';
+// The current-branch reader, shared with git-guard.mjs and git-publish.mjs. It
+// degrades to "" on failure, which is the degradation the header above states:
+// no repo / no commits reads as not-on-a-base.
+import { readCurrentBranch } from './lib/git-head.mjs';
 
 function decide(dir, branchOverride) {
   // warnings[] rides the envelope: every value below - the mode, the auto_branch
@@ -53,8 +45,11 @@ function decide(dir, branchOverride) {
   const git = config.git || {};
   const mode = git.integration_branch || 'milestone';
   const autoBranch = git.auto_branch || 'ask';
-  const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches : ['main', 'master'];
+  // The ONE coercion (lib/protected-branches.mjs): a lone-string
+  // protected_branches used to be DROPPED here for the default list, so this
+  // seam advised as though the branch the user named were unprotected while
+  // git-guard was already honoring it.
+  const protectedBranches = resolveProtectedBranches(git);
   const branch = branchOverride !== undefined ? branchOverride : readCurrentBranch(dir);
   const integrationName = integrationBranchName(
     readText(join(dir, '.planning', 'PROJECT.md')),
@@ -73,11 +68,10 @@ function decide(dir, branchOverride) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'decide') {

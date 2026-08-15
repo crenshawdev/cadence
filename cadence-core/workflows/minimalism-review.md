@@ -84,15 +84,12 @@ Parse the returned `{findings:[...]}` and close the bracket the moment you have
 it. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
 ```
 
-A dispatch that failed or returned nothing parseable closes as a checkpoint
-instead, so the burned budget still reaches the record:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --detail "<what failed>"
-```
+A dispatch that failed or returned nothing parseable adds
+`--detail "<what failed>"` to that same line and closes as a checkpoint, so the
+burned budget still reaches the record.
 
 That arm reports NO LIST, never an empty one: an unusable return and a clean
 sweep are opposite results and must not read alike.

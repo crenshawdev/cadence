@@ -186,20 +186,14 @@ plan's truths and tasks, citing each recalled item's `source` file and `phase`
 </step>
 
 <step name="handle_return">
-The dispatch came back, so close its bracket before anything else. OMIT
-`--tokens` on a figureless return (seams.md's bracket rule - the one statement
-of why):
+The dispatch came back, so close its bracket before anything else - ONE line,
+always exactly one, or `trace render` reports a worker that never came back. On
+the empty-or-unmarked arm below add `--detail "<empty or unmarked return>"` and
+the seam closes it as a checkpoint instead. OMIT `--tokens` on a figureless
+return (seams.md's bracket rule - the one statement of why):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
-```
-
-On the empty-or-unmarked arm below, close it as a checkpoint instead - one of
-the two, always exactly one, or `trace render` reports a worker that never came
-back:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-planner --role cad-planner --detail "<empty or unmarked return>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
 ```
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
@@ -291,16 +285,12 @@ Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
 ```
 
 Close its bracket the moment the return is in hand, before reading a single
-severity. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
+severity. ONE line: an empty or unmarked return carries
+`--detail "<empty or unmarked return>"` and the seam closes it as a checkpoint.
+OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
-```
-
-An empty or unmarked return closes as a checkpoint instead:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-plan-checker --role cad-plan-checker --detail "<empty or unmarked return>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
 ```
 
 Handle the return:
@@ -336,27 +326,31 @@ absent for a phase - name it optional in the payload, as `check_gate` does. Its
 absence is not a resolve failure and must not come back as the `blocker` an
 unresolvable reference earns.
 
-The gate comes from the routing bundle; act on it:
+The gate comes from the routing bundle; act on it.
+At the `shipped` default the gate is `off`: fire nothing, return immediately
+(review-triggers.md step 1), and let `done`'s Review line report the gate as
+off rather than as a pass. `solo` resolves `advisory`, `critical` resolves
+`adjudicated`:
 
-- **advisory** (the `shipped` default) -> fire in the SAME message as the
+- **advisory** (the `solo` gate) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The payload is the PLAN
   file(s) already on disk and the commit alters none of them, so the reviewer
   reads nothing the commit writes, and advisory findings gate nothing
-  downstream - serializing them buys a wait for findings that stop nothing
-  (the same overlap the per-plan `diff` review runs at advisory). The dispatch
-  carries the advisory persistence tail (review-triggers.md step 4): the
-  reviewer writes its findings to `.planning/phases/<N>/REVIEW-plan.md` and
-  closes its own bracket, so this session ending before the return lands
-  loses nothing. `done` reads that file if it is on disk by then; otherwise
-  its Review line names the path as in flight - never a clean pass.
+  downstream - serializing them buys a wait for findings that stop nothing.
+  The dispatch carries the advisory persistence tail (review-triggers.md
+  step 4): the reviewer writes its findings to
+  `.planning/phases/<N>/REVIEW-plan.md` and closes its own bracket, so this
+  session ending before the return lands loses nothing. `done` reads that file
+  if it is on disk by then; otherwise its Review line names the path as in
+  flight - never a clean pass.
 - **blocking** -> fire and WAIT; halt on FAIL until findings are fixed or the
   user overrides.
-- **adjudicated** -> fire and WAIT - triage precedes the commit because an
-  applied survivor EDITS the plan files the commit stages. Triage the
-  survivors, then apply ONLY the ones the user picked to the plan file(s) and
-  leave the rest recorded in this step's report. The survivors are a numbered
-  list the user triages, NONE is the default, and only what the user names is
-  acted on - RE-READ
+- **adjudicated** (the `critical` gate) -> fire and WAIT - triage precedes the
+  commit because an applied survivor EDITS the plan files the commit stages.
+  Triage the survivors, then apply ONLY the ones the user picked to the plan
+  file(s) and leave the rest recorded in this step's report. The survivors are
+  a numbered list the user triages, NONE is the default, and only what the user
+  names is acted on - RE-READ
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
   before presenting, since this workflow does not preload it.
 
@@ -365,14 +359,21 @@ opinion, not another iteration.
 </step>
 
 <step name="commit">
-1. Seed this phase's Traceability rows through the seam, right where the plan
-   was just written:
+1. Seed this phase's Traceability rows and update the cursor - both through the
+   seam, right where the plan was just written, and both in ONE message. No
+   value flows from the first into the second, which is the only thing that
+   would serialize them:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" seed-reqs --phase {N}
    ```
 
-   Inserts `| <id> | Phase {N} | Pending |` for exactly the declared
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
+   ```
+
+   `cursor set` derives name/total from ROADMAP and stamps the date.
+   `seed-reqs` inserts `| <id> | Phase {N} | Pending |` for exactly the declared
    `requirements:` ids that also have an `## Active` bullet in
    REQUIREMENTS.md; idempotent, so a replan or a `--gaps` plan can never
    duplicate a row. Report `orphan_ids` to the user - a declared id with no
@@ -384,14 +385,7 @@ opinion, not another iteration.
    any other status. `ok:false` is reported to the user and the workflow
    CONTINUES regardless - the plan is already on disk, seeding is not a gate.
 
-2. Update the cursor through the seam (it derives name/total from ROADMAP
-   and stamps the date):
-
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
-   ```
-
-3. If planning.commit_docs is true: apply the protected-branch guard
+2. If planning.commit_docs is true: apply the protected-branch guard
    (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.

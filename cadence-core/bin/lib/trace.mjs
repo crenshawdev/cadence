@@ -320,7 +320,17 @@ export function appendEvent(planningRoot, event) {
  * @property {Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>} roles
  *   what each role COST, keyed by the lifecycle events' `role` field
  * @property {Record<string, any>[]} events
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null}[]} brackets
+ *   every dispatch that PAIRED, one row each, in the order its terminal was
+ *   read. The pairing was already computed here for the accounting; exposing it
+ *   is what lets a caller print per-worker rows without re-deriving `open` and
+ *   `seenTerminals` for itself - and re-deriving them is how two readers of one
+ *   record start disagreeing about which bracket closed. `role` is the
+ *   DISPATCH's, the same authority `roles` bills on; `event` is the terminal's,
+ *   so a `checkpoint` row is distinguishable from a `return` one.
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
+ * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
+ *   paired brackets whose terminal named a role its dispatch did not
  * @property {CoordinatorResidue} [coordinator] present ONLY when the scoped events
  *   carry at least one usable COORDINATOR marker, so a trace written before that
  *   marker existed renders byte-identically to the way it always did
@@ -402,7 +412,9 @@ export function renderTrace(planningRoot, phase) {
     malformed: 0,
     roles: {},
     events: [],
+    brackets: [],
     unpaired: [],
+    mismatched: [],
   };
 
   // Per-role accumulators, kept beside `out.roles` rather than in it: `recorded`
@@ -423,11 +435,12 @@ export function renderTrace(planningRoot, phase) {
     return row;
   };
 
-  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. A
-  // marker written before that phase's `phase_start` takes the phase-only id
-  // while everything after the anchor takes the derived one (D-04), so a
-  // corr-keyed rollup would split ONE coordinator's record into two and report
-  // its time twice. `last` is the phase's newest timestamp across every family,
+  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. One
+  // phase can still hold more than one id - a RE-RUN starts a new one, and a
+  // phase whose anchor is missing entirely (a head-truncated read) keeps the
+  // bare form the pre-anchor repair above could not resolve - so a corr-keyed
+  // rollup would split ONE coordinator's record into two and report its time
+  // twice. `last` is the phase's newest timestamp across every family,
   // because the final marker's window has no next marker to close it and the
   // phase's own last event is the only honest end for it.
   /** @type {Map<string, {phase: any, markers: {step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
@@ -447,11 +460,10 @@ export function renderTrace(planningRoot, phase) {
   const lines = readLines(planningRoot);
   if (lines === null) return out;
 
-  // Each pending entry carries the two accounting fields beyond the identity
-  // `unpaired` renders: `role` so a terminal bills the half that OPENED the
-  // worker, and `funded` so one dispatch can be funded exactly once.
-  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean}[]>} */
-  const open = new Map();
+  // PASS 1 - parse, scope, count. The accounting is a SECOND pass over the same
+  // parsed objects because the repair between them needs to see events that come
+  // AFTER the one being repaired; splitting the passes keeps that to one
+  // `JSON.parse` per line rather than reading the file twice.
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
@@ -461,7 +473,94 @@ export function renderTrace(planningRoot, phase) {
     if (wanted !== null && key(e.phase) !== wanted) continue;
     out.events.push(e);
     if (Object.prototype.hasOwnProperty.call(out.counts, e.family)) out.counts[e.family]++;
+  }
 
+  // PASS 2 - the PRE-ANCHOR repair, at READ time only (D-01). /cad-plan's
+  // resolves are written before /cad-execute writes the phase's anchor, so those
+  // events took the bare `<phase>` form while everything after the anchor took
+  // `<phase>-<sha>`: one phase, two ids, and the join the record exists for
+  // breaks exactly where a phase begins. Here a bare-form event is attributed to
+  // the FIRST `lifecycle/phase_start` of its OWN phase at or after its position,
+  // and that repaired id is what the rendered event carries, what the worker key
+  // pairs on, and what an `unpaired` row names.
+  //
+  // FORWARD, and that is the opposite direction from `correlationId`, which
+  // scans BACKWARD for the newest anchor. Both are right for their side: a
+  // WRITER has no later lines to look at and must not join a re-run to the run
+  // before it, while a READER holds the whole file and can see the anchor the
+  // event was waiting for. Hence the walk below runs from the end, carrying the
+  // next anchor per phase back over the events that precede it.
+  //
+  // Nothing is written back - `appendEvent` still stores what it derived at
+  // write time, so the file stays append-only and every event already on disk
+  // joins without being rewritten. An event with NO later anchor for its phase
+  // keeps the bare form, which is also what a head-truncated read over
+  // `MAX_TRACE_BYTES` leaves behind.
+  // A bare event whose most recent PRECEDING anchor is itself bare (a no-sha
+  // phase_start) already carries that run's id exactly as the writer derived
+  // it - repairing it forward would hand a previous run's events to the run
+  // after it, and the next run's terminal could then pair with and fund a
+  // dispatch that run never made. The forward scan marks those events so the
+  // backward walk leaves them alone; only an event with no preceding anchor
+  // for its phase, or one following a sha'd anchor whose derived id it does
+  // not carry, is genuinely pre-anchor.
+  /** @type {boolean[]} */
+  const anchoredBare = new Array(out.events.length).fill(false);
+  {
+    /** @type {Map<string, boolean>} phase -> the most recent preceding anchor is bare */
+    const lastAnchorBare = new Map();
+    for (let i = 0; i < out.events.length; i++) {
+      const e = out.events[i];
+      const p = key(e.phase);
+      if (e.family === 'lifecycle' && e.event === ANCHOR) {
+        lastAnchorBare.set(p, !(typeof e.sha === 'string' && e.sha));
+      } else if (lastAnchorBare.get(p)) {
+        anchoredBare[i] = true;
+      }
+    }
+  }
+  /** @type {Map<string, string>} phase -> the id of the next anchor at or after here */
+  const nextAnchor = new Map();
+  for (let i = out.events.length - 1; i >= 0; i--) {
+    const e = out.events[i];
+    const p = key(e.phase);
+    if (e.family === 'lifecycle' && e.event === ANCHOR) {
+      // An anchor with no sha derives the bare form itself, so it still SHADOWS
+      // any later anchor for the events BEFORE it; the events after it are the
+      // `anchoredBare` set the forward scan already fenced off.
+      nextAnchor.set(p, typeof e.sha === 'string' && e.sha ? `${p}-${e.sha}` : p);
+    } else if (!anchoredBare[i] && typeof e.corr === 'string' && e.corr === p && nextAnchor.has(p)) {
+      e.corr = /** @type {string} */ (nextAnchor.get(p));
+    }
+  }
+
+  // Each pending entry carries the two accounting fields beyond the identity
+  // `unpaired` renders: `role` so a terminal bills the half that OPENED the
+  // worker, and `funded` so one dispatch can be funded exactly once.
+  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean, tokens: number|null}[]>} */
+  const open = new Map();
+
+  // Every terminal's full identity, so the SECOND copy of one funds nothing. A
+  // replayed close - a re-run of a prose step, a copy-pasted append - is
+  // indistinguishable from a genuine one at the pairing rule, and with two
+  // dispatches open on ONE worker key the `funded` flag below cannot help: the
+  // FIFO `pending.shift()` hands the replay a second, genuinely open dispatch
+  // and marks THAT one funded, so a worker whose return carried no figure
+  // silently disappears out of `unrecorded` and the run reads as fully
+  // measured.
+  //
+  // The accepted cost, stated: two genuinely distinct closes that share worker
+  // key, event name, role, token figure AND millisecond are indistinguishable
+  // from a replay here, and the second is dropped. The exact alternative is a
+  // per-dispatch id the close quotes back, which is a WRITER-contract change
+  // across all six prose close sites - the same six a `trace close` subcommand
+  // is scheduled to absorb, so it is that seam's to make, not this reader's.
+  //
+  // TERMINALS only. A duplicated DISPATCH is a different hazard (it inflates a
+  // count rather than funding a bracket) and is deliberately not folded in here.
+  /** @type {Set<string>} */
+  const seenTerminals = new Set();
+  for (const e of out.events) {
     // Every family feeds the phase's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
     // outcome events it produced are being written, so an end taken from
@@ -506,23 +605,65 @@ export function renderTrace(planningRoot, phase) {
       // A figure on the OPEN half is unusual - prose writes it at the close -
       // but it is counted rather than dropped, and it marks THIS dispatch
       // funded so its own terminal cannot fund it a second time.
-      const entry = { corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role, funded: false };
-      if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; }
+      const entry = { corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role, funded: false, tokens: null };
+      if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; entry.tokens = tokens; }
       const pending = open.get(worker) || [];
       pending.push(entry);
       open.set(worker, pending);
     } else if (TERMINAL.includes(e.event)) {
+      // A byte-identical repeat of an earlier terminal is a REPLAY: it pairs
+      // with nothing, funds nothing, adds no tokens and opens no coordinator
+      // span. It still sits in `out.events` and in `counts`, because the render
+      // reports the file rather than editing it. A second close differing only
+      // in `role` is NOT a replay - it pairs normally and surfaces in
+      // `mismatched` above, and a real replay carries the same role, so
+      // discriminating on role costs this rule nothing.
+      const identity = `${worker}\0${e.event}\0${key(e.role)}\0${key(e.ts)}\0${tokens === null ? '' : tokens}`;
+      if (seenTerminals.has(identity)) continue;
+      seenTerminals.add(identity);
+
       const pending = open.get(worker);
       const matched = pending && pending.length ? pending.shift() : null;
       // A bracket contributes its span to the residue only once it has PAIRED,
       // which is why the span is taken here and not from the dispatch half: an
-      // unpaired dispatch (the fixture's 12:24:57 `cad-reviewer` is one) has no
+      // unpaired dispatch (the fixture's 13:51:44 `cad-reviewer` is one) has no
       // known end, and inventing one - the phase's last event, say - would
       // subtract a worker's whole tail from the coordinator's bill and hide the
       // gap the marker exists to show.
       if (matched) {
         const a = millis(matched.ts);
         if (a !== null && t !== null && t > a) coordRow(e.phase).spans.push({ a, b: t });
+        // The bracket ROW, taken here because this is the one place the two
+        // halves are both in hand. `ms` is null rather than 0 when either
+        // timestamp is unreadable: a duration of zero and a duration nobody
+        // could compute are different answers, the same posture the token
+        // figure already takes. `tokens` prefers the terminal's figure and
+        // falls back to one the dispatch half carried, which is exactly what
+        // the per-role accounting below bills.
+        out.brackets.push({
+          corr: e.corr, phase: e.phase, plan: e.plan, role: matched.role,
+          event: e.event, ts: matched.ts, end: e.ts,
+          ms: a !== null && t !== null ? t - a : null,
+          tokens: tokens !== null ? tokens : matched.tokens,
+        });
+        // REPORTED, never billed. The accounting below is unchanged - the
+        // dispatch is still the authority for whose bill this is - but a
+        // bracket whose two halves name two different roles is a prose defect
+        // at one of the two sites, and absorbing it silently is how it survives
+        // four milestones. A terminal carrying NO role at all is not a mismatch:
+        // an omitted flag is already visible as an unkeyed row, and calling it
+        // one would raise a false alarm on every historical bracket (measured
+        // 2026-08-14: 0 mismatches across 88 live paired brackets).
+        // The identity fields are the TERMINAL's, as `ts` and `event` are - it
+        // is the event being reported, and its `phase` may be spelled `1` where
+        // the dispatch spelled it `"1"`, which `key()` already folds together.
+        const closed = key(e.role);
+        if (closed && closed !== matched.role) {
+          out.mismatched.push({
+            corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, event: e.event,
+            dispatched: matched.role, closed,
+          });
+        }
       }
       if (tokens !== null) {
         // Bill the DISPATCH's role. An unmatched terminal has no dispatch to

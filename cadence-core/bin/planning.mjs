@@ -29,6 +29,18 @@
 //                                   fieldless-checklist break, untraced and
 //                                   legacy {phase, reason} report
 //                                   (references/acceptance-criteria.md)
+//   criteria-size [--phase N] [--context-min N] [--context-max N]
+//                 [--roadmap-min N] [--roadmap-max N]
+//                                   the criteria-count ceilings three workflows
+//                                   state in prose, counted: CONTEXT's
+//                                   `## Acceptance criteria` and ROADMAP's
+//                                   per-phase criteria list, each against the
+//                                   CALLER's literal bounds (no config keys).
+//                                   --phase scopes to one; absent walks every
+//                                   phase the roadmap declares. A source that
+//                                   declared nothing reports *_found:false and
+//                                   is never compared, so `within` is null
+//                                   when nothing was compared at all
 //   recall "<query>"                BM25 over .planning artifacts (SUMMARY/
 //                                   CAPTURE/UAT/CONTEXT); memory.backend-gated.
 //                                   Bare words after `recall` are joined into
@@ -55,12 +67,28 @@
 //                                   integer, --read is ONE comma-separated
 //                                   read-set stored verbatim, --step is the
 //                                   workflow step a coordinator marker names
-//   trace render [--phase N]        the four families, the derived id, every
+//   trace close --phase N [--plan k] [--role <name>] [--tokens <n>]
+//               [--detail "<text>"] [--reviewer <name>]
+//                                   the CLOSE half of a worker bracket, in one
+//                                   subcommand rather than two restated
+//                                   `trace append` spellings per dispatch site.
+//                                   --family is fixed to lifecycle and the arm
+//                                   is inferred from --detail: present means
+//                                   `checkpoint` (the worker came back empty,
+//                                   unmarked or unusable), absent means
+//                                   `return`. `escalation` is NOT inferred and
+//                                   stays reachable through `trace append`
+//   trace render [--phase N] [--events]
+//                                   the four families, the derived id, every
 //                                   worker dispatch paired to its
 //                                   return/checkpoint/escalation, the per-role
 //                                   dispatch/token totals, and - where markers
 //                                   were written - the coordinator's own
-//                                   per-step residue between those brackets
+//                                   per-step residue between those brackets.
+//                                   By default the response carries the paired
+//                                   `brackets` rows and every `outcome` event
+//                                   in place of the raw event array; --events
+//                                   asks for that array instead
 //   debt-harvest [--root <path>]    every CADENCE-DEBT marker in the tracked
 //                                   tree, collected into .planning/CAPTURE.md's
 //                                   own `## Debt markers` section (NOT --dir:
@@ -96,9 +124,13 @@ import {
   parseSummarySnippets, parseCaptureSnippets, parseContextDecisions,
   parseActiveIds, classifyActiveSection, isRequirementId, insertReqRows,
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
-  sectionBound, sectionSpan, phaseRequirements, planTaskTitles,
+  sectionBound, phaseRequirements, phaseCriteria, planTaskTitles,
+  captureSections, CAPTURE_WALK_SECTIONS,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
+import {
+  appendCapture, replaceSection, withCaptureLock, CAPTURE_KINDS, EMPTY_CAPTURE,
+} from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
 // exist rather than growing second ones: the SAME prose version reader branch
@@ -110,7 +142,7 @@ import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.
 import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
-import { READS_FILE, summarizeReads } from './lib/read-trace.mjs';
+import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
 import { suggestFromRender } from './lib/trace-suggest.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
@@ -1587,6 +1619,127 @@ function cmdPlanSize(dir, opts) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// criteria-size - the criteria-count ceilings three workflows state in PROSE,
+// as arithmetic. `context.md:281` says 3-7 acceptance criteria, `new-project.md`
+// and `adopt.md` say 2-5 success criteria per roadmap phase, and nothing has
+// ever counted either: the whole measured lesson of this phase is that a prose
+// rule a model is asked to follow fails silently while a count does not.
+//
+// TWO grammars in one call, because the ceilings live in two files and only one
+// of them had a reader (D-01): CONTEXT's `## Acceptance criteria` through
+// `classifyAcceptanceCriteria` (already the reader `criteria-coverage` counts
+// per phase) and ROADMAP's per-phase criteria list through `phaseCriteria`. A
+// single-parser design would report not-found for every roadmap phase and ship
+// the new-project/adopt half with no enforcement at all - the exact silent
+// no-op this seam exists to remove.
+//
+// The four ceilings are the CALLER's literal numbers, arriving as flags, and
+// are NOT config keys (D-04) - the same rule `plan-size` states above, for the
+// same reason: two keys would each need a config.schema.json entry, a
+// config-catalog row and a config-reach row to express a shape rule about
+// planning documents rather than a per-project preference.
+//
+// A REPORT, never a gate: `over` names the phase, its measured count and the
+// bound it broke, and the workflow decides - exactly as `plan-size`'s
+// `phase-too-big` is presented and acted on by prose.
+const CRITERIA_CEILINGS = [
+  { flag: 'context-min', name: 'context_min', source: 'context', bound: 'min' },
+  { flag: 'context-max', name: 'context_max', source: 'context', bound: 'max' },
+  { flag: 'roadmap-min', name: 'roadmap_min', source: 'roadmap', bound: 'min' },
+  { flag: 'roadmap-max', name: 'roadmap_max', source: 'roadmap', bound: 'max' },
+];
+
+function cmdCriteriaSize(dir, opts) {
+  // Resolved to plain numbers at the boundary, never carried as the requireInt
+  // envelope - the same shape rule cmdPlanSize states.
+  /** @type {Record<string, number|null>} */
+  const ceiling = {};
+  for (const c of CRITERIA_CEILINGS) {
+    ceiling[c.name] = null;
+    if (opts[c.flag] === undefined) continue;
+    const parsed = requireInt(opts[c.flag]);
+    if (!parsed.ok) return fail('bad-args', `--${c.flag} must be an integer`);
+    ceiling[c.name] = parsed.value;
+  }
+
+  const roadmapText = read(join(dir, 'ROADMAP.md'));
+  if (roadmapText === null) return fail('no-roadmap', `${join(dir, 'ROADMAP.md')} not found`);
+
+  // `--phase` present scopes to one phase, in the CALLER's spelling (D-02);
+  // absent walks every phase the roadmap declares, through the same
+  // `parseRoadmapPhases` list `cmdCriteriaCoverage` walks - so a caller that
+  // just wrote a whole roadmap checks all of it in ONE call, which is what
+  // new-project and adopt need at their approval gate.
+  let targets;
+  if (opts.phase !== undefined) {
+    const parsedPhase = requirePhaseArg(opts.phase);
+    if (!parsedPhase.ok) return fail('bad-args', 'criteria-size --phase needs a phase number');
+    targets = [{ n: parsedPhase.value, raw: parsedPhase.raw }];
+  } else {
+    targets = parseRoadmapPhases(roadmapText).map((p) => ({ n: p.n, raw: String(p.n) }));
+  }
+
+  const phases = [];
+  const over = [];
+  const comparedNames = new Set();
+
+  for (const t of targets) {
+    const roadmap = phaseCriteria(roadmapText, t.raw);
+    const contextText = read(join(dir, 'phases', t.raw, 'CONTEXT.md'));
+    // `criteria: null` is BOTH an absent `## Acceptance criteria` heading and a
+    // near-miss one, and neither is zero: the second means this reader never
+    // walked the section, so what the phase declares is not known here.
+    const classified = contextText === null ? null : classifyAcceptanceCriteria(contextText);
+    const contextCriteria = classified && classified.criteria ? classified.criteria : null;
+
+    phases.push({
+      phase: t.n,
+      context_criteria: contextCriteria ? contextCriteria.length : 0,
+      context_found: contextCriteria !== null,
+      roadmap_criteria: roadmap.count,
+      roadmap_found: roadmap.found,
+    });
+
+    for (const c of CRITERIA_CEILINGS) {
+      const limit = ceiling[c.name];
+      if (limit === null) continue;
+      // Absence is not zero (D-03): a source that declared nothing is never
+      // compared, because zero criteria under a floor of 3 would report every
+      // unwritten CONTEXT.md as a defect in the document nobody has written.
+      const found = c.source === 'context' ? contextCriteria !== null : roadmap.found;
+      if (!found) continue;
+      comparedNames.add(c.name);
+      const measured = c.source === 'context' ? contextCriteria.length : roadmap.count;
+      if (c.bound === 'min' ? measured >= limit : measured <= limit) continue;
+      over.push({
+        kind: `${c.source}-criteria-too-${c.bound === 'min' ? 'few' : 'many'}`,
+        phase: t.n,
+        measured,
+        ceiling: limit,
+        detail: `phase ${t.n} declares ${measured} ${c.source} criteria, `
+          + `${c.bound === 'min' ? 'floor' : 'ceiling'} ${limit}`,
+      });
+    }
+  }
+
+  // The conditional-comparison envelope, not a bare boolean (D-03). `compared`
+  // names the ceilings that ACTUALLY ran against a source that was found; an
+  // empty one makes `within` null, because `ok:true, within:true` having
+  // compared nothing reproduces inside this seam the very defect it was built
+  // to report.
+  const compared = CRITERIA_CEILINGS.filter((c) => comparedNames.has(c.name)).map((c) => c.name);
+  ok({
+    ...(opts.phase !== undefined ? { phase: targets[0].n } : {}),
+    phases,
+    ...Object.fromEntries(CRITERIA_CEILINGS
+      .filter((c) => ceiling[c.name] !== null).map((c) => [c.name, ceiling[c.name]])),
+    over,
+    compared,
+    within: compared.length ? over.length === 0 : null,
+  });
+}
+
 function cmdPlanOverlap(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'plan-overlap needs --phase <N>');
@@ -2535,7 +2688,7 @@ function cmdTraceIgnore(root, opts) {
 // reader at all. Absent file is ok:true with zeroes - a project that has not
 // run since the hook was installed has nothing to report, and that is not an
 // error.
-function cmdReads(dir) {
+function cmdReads(dir, opts) {
   const file = join(dir, READS_FILE);
   let text = '';
   try {
@@ -2553,7 +2706,34 @@ function cmdReads(dir) {
     // the caller every complete record ahead of it.
     try { records.push(JSON.parse(t)); } catch { /* partial line */ }
   }
-  return ok(summarizeReads(records));
+  const summary = summarizeReads(records);
+  // Without `--join` the envelope is what it has always been, including the
+  // `no reads recorded yet` arm above, which returns before this line: a
+  // reader that never asked for the join must not have to parse around it.
+  //
+  // WHOLE record, no phase scoping. `reads.jsonl` has none - it is one file
+  // per project - and the brackets it joins to therefore have to span every
+  // phase, or a read caused by phase 3 would report unjoined while phase 3's
+  // bracket sat one scope away.
+  if (!('join' in opts)) return ok(summary);
+  const j = joinReads(records, renderTrace(dir).brackets);
+  // SIX figures, not one ratio. `joined` and `unjoined` are the join working
+  // and not working; `ambiguous` is it declining to guess between overlapping
+  // same-role brackets; `floor` is the permanent limit (`fork` and
+  // `general-purpose` are HOST agent types with no dispatch event, ever);
+  // `coordinator` is the main thread, which has no worker bracket by
+  // construction; `unresolved` is a record whose `agent` field was absent or
+  // named no role. Collapsing any of them into `unjoined` reports a limit as
+  // a failure, which is exactly the distinction the join exists to make.
+  return ok({
+    ...summary,
+    joined: j.joined,
+    ambiguous: j.ambiguous,
+    unjoined: j.unjoined,
+    floor: j.floor,
+    coordinator: j.coordinator,
+    unresolved: j.unresolved,
+  });
 }
 
 function cmdTrace(dir, sub, opts) {
@@ -2568,15 +2748,41 @@ function cmdTrace(dir, sub, opts) {
     }
     return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
   }
-  if (sub === 'append') {
+  // `close` is `append` with the two fields a dispatch site used to restate
+  // taken off its hands, so every flag below is validated by ONE body: a second
+  // copy of the `--tokens` grammar is a second place for it to drift, and the
+  // close half is exactly where the token figure lands.
+  if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) return fail('bad-args', 'trace append needs --phase <N>');
-    const family = typeof opts.family === 'string' ? opts.family : '';
-    if (!FAMILIES.includes(family)) {
-      return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+    if (!parsedPhase.ok) return fail('bad-args', `trace ${sub} needs --phase <N>`);
+    let family;
+    let event;
+    if (sub === 'close') {
+      // Fixed, never read off the caller: the whole point of the subcommand is
+      // that a close site states WHAT it is closing and nothing about how the
+      // record spells it.
+      family = 'lifecycle';
+      // The arm is inferred from `--detail` and NEVER from `--tokens` (D-06).
+      // Measured across all twenty shipped close lines: 6 of the 10 checkpoint
+      // sites carry `--tokens` and 4 do not, while every checkpoint carries
+      // `--detail` and no return does. A token-presence classifier would
+      // therefore write `return` for four shipped checkpoint sites - billing a
+      // worker that came back unusable as a clean close, which is the one arm
+      // the record exists to keep separate.
+      //
+      // `escalation` stays OUTSIDE this inference (D-13): it is a TERMINAL
+      // member with zero prose producers, so a three-way inference would be
+      // flexibility nothing exercises. It stays reachable through
+      // `trace append --event escalation`.
+      event = typeof opts.detail === 'string' && opts.detail.trim() ? 'checkpoint' : 'return';
+    } else {
+      family = typeof opts.family === 'string' ? opts.family : '';
+      if (!FAMILIES.includes(family)) {
+        return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+      }
+      event = typeof opts.event === 'string' && opts.event ? opts.event : '';
+      if (!event) return fail('bad-args', 'trace append needs --event <name>');
     }
-    const event = typeof opts.event === 'string' && opts.event ? opts.event : '';
-    if (!event) return fail('bad-args', 'trace append needs --event <name>');
 
     // --tokens: what the dispatch COST, read by the orchestrator off the
     // worker's return metadata. A malformed value is a malformed CALL, not a
@@ -2600,7 +2806,7 @@ function cmdTrace(dir, sub, opts) {
         : opts.tokens;
       const parsed = requireInt(raw);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', 'trace append --tokens needs a non-negative integer');
+        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`);
       }
       tokens = parsed.value;
     }
@@ -2622,7 +2828,7 @@ function cmdTrace(dir, sub, opts) {
     if ('raised' in opts) {
       const parsed = requireInt(opts.raised);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', 'trace append --raised needs a non-negative integer');
+        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`);
       }
       raised = parsed.value;
     }
@@ -2649,7 +2855,7 @@ function cmdTrace(dir, sub, opts) {
       // always an unset `"$PATHS"`, and a complete-looking dispatch with no
       // read-set is the failure this refusal exists against.
       if (!list.length) {
-        return fail('bad-args', 'trace append --read needs a comma-separated path list');
+        return fail('bad-args', `trace ${sub} --read needs a comma-separated path list`);
       }
       read = list;
     }
@@ -2663,7 +2869,7 @@ function cmdTrace(dir, sub, opts) {
     let step;
     if ('step' in opts) {
       const raw = typeof opts.step === 'string' ? opts.step.trim() : '';
-      if (!raw) return fail('bad-args', 'trace append --step needs a step name after it: --step <name>');
+      if (!raw) return fail('bad-args', `trace ${sub} --step needs a step name after it: --step <name>`);
       step = raw;
     }
 
@@ -2680,7 +2886,7 @@ function cmdTrace(dir, sub, opts) {
     let reviewer;
     if ('reviewer' in opts) {
       const raw = typeof opts.reviewer === 'string' ? opts.reviewer.trim() : '';
-      if (!raw) return fail('bad-args', 'trace append --reviewer needs a reviewer name after it: --reviewer <name>');
+      if (!raw) return fail('bad-args', `trace ${sub} --reviewer needs a reviewer name after it: --reviewer <name>`);
       reviewer = raw;
     }
 
@@ -2748,6 +2954,25 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
+    // The BOUND, and it lives here rather than in `renderTrace` (D-08). Two
+    // in-process consumers read the full array off the function - `trace
+    // suggest` above reads `r.events.length`, and lib/trace-suggest.mjs reads
+    // `render.events` directly - so bounding the function would make every
+    // evidence-backed retune suggestion price a fraction of the run. What is
+    // oversized is the CLI RESPONSE, which is read into a model's context:
+    // 36,916 B for `--phase 3` on this repo's own record, nearly all of it the
+    // raw event array.
+    //
+    // What replaces it is NOT a tail-N of `events`. It is the per-bracket rows
+    // plus EVERY `outcome` event, because references/triage-gate.md reads this
+    // response to find a prior `rearm` outcome under the current `corr` before
+    // firing the narrowed round - a truncated payload makes that lookup miss,
+    // and the one-re-arm cap on the only BLOCKING trigger fails open. The
+    // second reader, workflows/report.md, needs one row per dispatch/return
+    // pair and one line per review fire, which is the same shape.
+    // PRESENCE, the `--undo` precedent at `phase-done`: the flag says "hand me
+    // the raw array" and has no value to get wrong.
+    const full = 'events' in opts;
     return ok({
       file: r.file,
       corr: r.corr,
@@ -2759,11 +2984,19 @@ function cmdTrace(dir, sub, opts) {
       // zeroed block would read as a coordinator that spent nothing.
       ...(r.coordinator ? { coordinator: r.coordinator } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
-      events: r.events,
+      ...(full
+        ? { events: r.events }
+        : { brackets: r.brackets, outcomes: r.events.filter((e) => e.family === 'outcome') }),
       unpaired: r.unpaired,
+      // Emitted the way `roles` and `coordinator` are - only when there is
+      // something to say, so a clean trace's envelope is byte-identical to the
+      // one every reader already parses. A bracket closed under a role its
+      // dispatch did not name is a prose defect at one of the two sites; it is
+      // reported here and billed nowhere (the dispatch stays the authority).
+      ...(r.mismatched.length ? { mismatched: r.mismatched } : {}),
     });
   }
-  return fail('usage', 'trace <append|render|suggest|ignore>');
+  return fail('usage', 'trace <append|close|render|suggest|ignore>');
 }
 
 // ---------------------------------------------------------------------------
@@ -3046,6 +3279,120 @@ function cmdRenumber(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// capture - one bullet into `.planning/CAPTURE.md`, under the heading its kind
+// owns. The whole point is that the heading is NOT an argument: the append used
+// to be `/cad-capture` prose holding `Write`/`Edit`, and five filed bullets were
+// lost to a heading the recall walk does not visit. The format, the section and
+// the file I/O live in lib/capture-file.mjs; this owns the flag contract and the
+// envelope.
+// ---------------------------------------------------------------------------
+function cmdCapture(dir, opts) {
+  const kind = typeof opts.kind === 'string' ? opts.kind.trim() : '';
+  if (!CAPTURE_KINDS.includes(kind)) {
+    return fail('bad-args', `capture --kind must be one of ${CAPTURE_KINDS.join(' | ')}`
+      + ` (got: ${kind || 'none'})`);
+  }
+  // `--text-file` is the SAFE transport and the one the workflows prescribe.
+  // `--text "<item>"` puts caller-derived prose inside a double-quoted shell
+  // word, so an item carrying `$(...)` or a backtick executes before Node
+  // starts. A path cannot: the caller writes the sentence with a file tool and
+  // names the file here. `--text` stays for a human typing at a shell, where
+  // the text is the user's own.
+  if ('text-file' in opts && (typeof opts['text-file'] !== 'string' || opts['text-file'].trim() === '')) {
+    return fail('bad-args', 'capture --text-file needs a path after it: --text-file <path>');
+  }
+  if ('text' in opts && 'text-file' in opts) {
+    return fail('bad-args', 'capture takes --text or --text-file, never both');
+  }
+  let text;
+  if (typeof opts['text-file'] === 'string') {
+    try {
+      text = readFileSync(opts['text-file'].trim(), 'utf8').trim();
+    } catch (e) {
+      return fail('bad-args',
+        `capture --text-file could not be read: ${e && e.message ? e.message : String(e)}`);
+    }
+    if (!text) return fail('bad-args', 'capture --text-file names an empty file');
+  } else {
+    // parseArgs hands a VALUELESS flag the boolean `true`, so a bare `--text`
+    // has to be refused here - written through, it captures the literal word
+    // "true" and the user's sentence is gone with an ok:true envelope (#42/#45).
+    text = typeof opts.text === 'string' ? opts.text.trim() : '';
+    if (!text) {
+      return fail('bad-args',
+        'capture needs the sentence: --text-file <path> (workflows) or --text "<text>" (typed by hand)');
+    }
+  }
+  /** @type {string|undefined} */
+  let phase;
+  if ('phase' in opts) {
+    // Admitted with `todo` ALONE. A seed or a note carrying `--phase` would be
+    // written with no tag, leaving the caller believing it tagged something -
+    // so the flag is refused rather than dropped.
+    if (kind !== 'todo') {
+      return fail('bad-args', 'capture --phase is admitted only with --kind todo'
+        + ' - a seed and a note carry no phase tag');
+    }
+    const parsed = requirePhaseArg(opts.phase);
+    if (!parsed.ok) return fail('bad-args', 'capture --phase needs a phase number: --phase <N>');
+    // The caller's OWN spelling, so `--phase 1.10` tags `(phase 1.10)`.
+    phase = parsed.raw;
+  }
+  // Same present-but-unusable refusal `debt-harvest --root` carries: a flag with
+  // nothing usable after it is never silently answered about the default path,
+  // which would write a different file than the caller named (#42/#45).
+  if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
+    return fail('bad-args', 'capture --file needs a path after it: --file <path to CAPTURE.md>');
+  }
+  const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
+  const res = appendCapture(file, kind, text, phase);
+  if (res.ok === false) return fail(res.reason, res.detail);
+  ok({ file, kind, bullet: res.bullet, heading: res.heading, created: res.created });
+}
+
+// ---------------------------------------------------------------------------
+// capture-sections - every `## ` section of CAPTURE.md with its bullet count
+// and whether the recall walk visits it, so a bullet filed outside the walk is
+// REPORTED rather than silent. `/cad-health` prints the out-of-walk rows.
+//
+// STANDALONE, beside `status`, never a drift kind inside it (D-07). `cmdStatus`
+// returns `no-planning-dir` / `no-roadmap` / `unparseable-roadmap` before any
+// drift is computed, so folding this in would hand no capture report at all to
+// exactly the trees most likely to hold a mangled CAPTURE.md.
+// ---------------------------------------------------------------------------
+function cmdCaptureSections(dir, opts) {
+  // Same present-but-unusable refusal `capture` and `debt-harvest` carry: a
+  // flag with nothing usable after it is never silently answered about the
+  // default path, which would report on a different file than the caller named.
+  if ('file' in opts && (typeof opts.file !== 'string' || opts.file.trim() === '')) {
+    return fail('bad-args', 'capture-sections --file needs a path after it: --file <path to CAPTURE.md>');
+  }
+  const file = typeof opts.file === 'string' ? opts.file : join(dir, 'CAPTURE.md');
+  /** @type {string} */
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    // ENOENT alone is the absent arm, and absence is DATA here as everywhere in
+    // this seam - a project with no queue has no out-of-walk sections. Not the
+    // module-level `read`, which flattens every error to null: an unreadable
+    // but PRESENT queue reported as "no sections" is a check announcing all
+    // clear about a file it could not open.
+    if (e && /** @type {any} */ (e).code === 'ENOENT') {
+      return ok({ file, exists: false, walk: CAPTURE_WALK_SECTIONS, sections: [] });
+    }
+    return fail('unreadable-capture', `${file}: ${e && e.message ? e.message : String(e)}`);
+  }
+  ok({
+    file,
+    exists: true,
+    walk: CAPTURE_WALK_SECTIONS,
+    sections: captureSections(text)
+      .map((s) => ({ heading: s.heading, bullets: s.bullets, in_walk: s.inWalk })),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // debt-harvest - every `CADENCE-DEBT` marker in the tracked tree, collected into
 // `.planning/CAPTURE.md`'s own section. The grammar and the rendering live in
 // lib/debt-markers.mjs (pure); this owns the walk, the reads and the write.
@@ -3059,31 +3406,6 @@ const DEBT_MAX_FILE_BYTES = 1048576;
 
 /** The heading the harvest owns and rewrites wholesale. */
 const DEBT_HEADING = '## Debt markers';
-
-/**
- * Replace `heading`'s body wholesale, or append the section when it is absent.
- *
- * Bounded at BOTH ends by the EXPORTED `sectionSpan` rather than a second fence
- * scanner (D-12): a `## ` line inside a fenced block in someone's `## Todos`
- * bullet must not be read as the section boundary - nor as the section's START.
- * Finding the heading with a bare `findIndex` was the second half of that same
- * bug and the more destructive one: a fenced example of `## Debt markers` in an
- * earlier section became the rewrite's anchor, and everything from inside that
- * code block onward - `## Seeds`, `## Notes`, their bullets - was replaced by
- * the new body.
- * @param {string} text @param {string} heading @param {string} body
- * @returns {string}
- */
-function replaceSection(text, heading, body) {
-  const lines = text.split('\n');
-  const { start, end } = sectionSpan(lines, heading);
-  if (start < 0) {
-    const sep = text === '' || text.endsWith('\n\n') ? '' : (text.endsWith('\n') ? '\n' : '\n\n');
-    return `${text}${sep}${heading}\n\n${body}`;
-  }
-  const tail = lines.slice(end);
-  return `${lines.slice(0, start + 1).join('\n')}\n\n${body}${tail.length ? `\n${tail.join('\n')}` : ''}`;
-}
 
 function cmdDebtHarvest(root) {
   if (!existsSync(root)) return fail('no-root', `${root} not found`);
@@ -3141,23 +3463,35 @@ function cmdDebtHarvest(root) {
 
   const captureFile = join(root, '.planning', 'CAPTURE.md');
   const body = renderDebtSection(entries);
-  const existing = read(captureFile);
-  const next = existing === null
-    // Created with the same three headings /cad-capture creates, so a harvest on
-    // a project with no queue yet leaves the file /cad-capture expects.
-    ? `## Todos\n\n- None.\n\n## Seeds\n\n- None.\n\n## Notes\n\n- None.\n\n${DEBT_HEADING}\n\n${body}`
-    : replaceSection(existing, DEBT_HEADING, body);
-  // Written ONLY when it differs, so a second run reports written:false and
-  // leaves the file byte-identical - the idempotence AC6 asks for.
-  let written = false;
-  if (next !== existing) {
-    try {
+  /** @type {{ok: true, value: boolean} | {ok: false, reason: string, detail: string}} */
+  let guarded;
+  try {
+    // The whole read-modify-write is inside the SAME guard `/cad-capture`'s
+    // append takes (D-02), and the read is inside it with the write: a harvest
+    // and a capture running at the same moment would otherwise each read the
+    // same bytes and the second rename would erase the first one's work. That
+    // is the whole point of naming all three writers.
+    guarded = withCaptureLock(captureFile, () => {
+      const existing = read(captureFile);
+      const next = existing === null
+        // Created with the same three headings /cad-capture creates - the same
+        // constant, not a second copy of them - so a harvest on a project with
+        // no queue yet leaves the file /cad-capture expects.
+        ? `${EMPTY_CAPTURE}\n${DEBT_HEADING}\n\n${body}`
+        : replaceSection(existing, DEBT_HEADING, body);
+      // Written ONLY when it differs, so a second run reports written:false and
+      // leaves the file byte-identical - the idempotence AC6 asks for.
+      if (next === existing) return false;
       atomicWrite(captureFile, next);
-    } catch (e) {
-      return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
-    }
-    written = true;
+      return true;
+    });
+  } catch (e) {
+    return fail('write-failed', `${captureFile}: ${e && e.message ? e.message : String(e)}`);
   }
+  // A refused lock is reported through the EXISTING failure path, not a new
+  // one: every caller of this seam already branches on `write-failed`.
+  if (guarded.ok === false) return fail('write-failed', `${captureFile}: ${guarded.detail}`);
+  const written = guarded.value;
   const malformed = entries.filter((e) => e.malformed)
     .map((e) => ({ path: e.path, line: e.line, missing: e.malformed }));
   ok({
@@ -3307,9 +3641,10 @@ const COMMANDS = {
   },
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
-  reads: (dir, _sub, _opts) => cmdReads(dir),
+  reads: (dir, _sub, opts) => cmdReads(dir, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
+  'criteria-size': (dir, _sub, opts) => cmdCriteriaSize(dir, opts),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),
   'plan-size': (dir, _sub, opts) => cmdPlanSize(dir, opts),
   'seed-reqs': (dir, _sub, opts) => cmdSeedReqs(dir, opts),
@@ -3322,15 +3657,29 @@ const COMMANDS = {
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
   // cwd, which would report a different tree than the caller named (#42/#45).
-  'detect-commands': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
+  // The predicate is `debt-harvest`'s below, character for character, TRIM
+  // clause included: a valueless `--root` was already refused, but `--root ""`
+  // answered `ok:true` about the cwd - exactly the silent substitution #42/#45
+  // closed - and `--root "   "` fell through to a `no-root` ENOENT, one refusal
+  // vocabulary answering in two. The refusal is `fail('bad-args', ...)` and not
+  // the `missing-flag-value` throw `weight.mjs`/`self-verify.mjs` raise: this
+  // file has ONE refusal vocabulary and no `e.seam` catch arm to render that
+  // throw as anything but `internal`.
+  'detect-commands': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
     ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
-    : cmdDetectCommands(opts.root || process.cwd())),
-  // Same --root rule, same refusal: a flag present with nothing usable after it
-  // is never silently answered about the cwd.
-  'detect-surfaces': (_dir, _sub, opts) => (opts.root !== undefined && typeof opts.root !== 'string'
+    : cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd())),
+  // Same --root rule, same predicate, same refusal: a flag present with nothing
+  // usable after it is never silently answered about the cwd.
+  'detect-surfaces': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
     ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
-    : cmdDetectSurfaces(opts.root || process.cwd())),
+    : cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
+  // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
+  // queue, which sits beside the global config layer and not in any `.planning`.
+  capture: (dir, _sub, opts) => cmdCapture(dir, opts),
+  // Same `--file` override, and STANDALONE beside `status` rather than a
+  // drift kind inside it (D-07) - see cmdCaptureSections.
+  'capture-sections': (dir, _sub, opts) => cmdCaptureSections(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
   // SOURCE and writes into `.planning`. Same present-but-unusable refusal
   // `trace ignore` carries.

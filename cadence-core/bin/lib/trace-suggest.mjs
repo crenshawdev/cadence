@@ -27,6 +27,13 @@
  */
 
 // Evidence floors. Below these a rule stays silent rather than extrapolating.
+/**
+ * R1's floor, counted in UNVETOED EMPTY fires - fires that adjudicated zero
+ * survivors and were not the fire a re-arm round came back to fix - never in a
+ * trigger's fires overall. A trigger that fires ten times and comes back empty
+ * once is not evidence about the gate; two empty fires are the least that can
+ * be.
+ */
 export const MIN_FIRES_FOR_GATE_SUGGESTION = 2;
 export const MIN_DISPATCHES_FOR_RUNG_INFO = 4;
 export const MIN_ESCALATIONS_FOR_RUNG_SUGGESTION = 2;
@@ -70,8 +77,19 @@ function minutes(ms) {
  * The trigger/survivor regex stays as permissive as it has always been: D-03
  * measured that tightening it drops the historical fires already on disk and
  * takes R1's evidence floor down with them.
+ *
+ * A RE-ARM round's adjudication is spelled `<trigger> rearm:` or
+ * `<trigger> re-arm:` on disk - both spellings live in this project's own
+ * record, written by hand months apart - and both read as the BASE trigger
+ * carrying `rearm: true` (D-04). Never a trigger of its own: that would mint
+ * the phantom config key `review.triggers.risk_surface rearm.gate`, which this
+ * file's own schema test refuses. Those two spellings are the ONLY embedded
+ * space admitted; any other token with a space in it stays unparseable exactly
+ * as it is today, because counting it as a fire would feed R1 evidence it does
+ * not have.
  * @param {unknown} input an adjudication event, or its detail string
- * @returns {{trigger: string, survivors: number, raised: number|null}|null}
+ * @returns {{trigger: string, survivors: number, raised: number|null,
+ *            rearm: boolean}|null}
  */
 export function parseAdjudication(input) {
   const event = typeof input === 'string' ? { detail: input } : input;
@@ -79,7 +97,7 @@ export function parseAdjudication(input) {
   const detail = /** @type {any} */ (event).detail;
   if (typeof detail !== 'string') return null;
   const trimmed = detail.trim();
-  const m = /^([a-z_]+):\s*(\d+)\s+survivors?\b/.exec(trimmed);
+  const m = /^([a-z_]+)(?:\s+(re-?arm))?:\s*(\d+)\s+survivors?\b/.exec(trimmed);
   if (!m) return null;
   const field = /** @type {any} */ (event).raised;
   let raised = null;
@@ -89,7 +107,7 @@ export function parseAdjudication(input) {
     const legacy = /^\s*of\s+(\d+)\b/.exec(trimmed.slice(m[0].length));
     if (legacy) raised = Number(legacy[1]);
   }
-  return { trigger: m[1], survivors: Number(m[2]), raised };
+  return { trigger: m[1], survivors: Number(m[3]), raised, rearm: Boolean(m[2]) };
 }
 
 /**
@@ -104,10 +122,21 @@ export function suggestFromRender(render) {
   const events = Array.isArray(render.events) ? render.events : [];
 
   // --- gather ---------------------------------------------------------------
-  /** @type {Map<string, {fires: number, survivors: number, raised: number}>} */
-  const triggers = new Map();
+  // One row per FIRE, in file order, because that is the unit a re-arm veto
+  // acts on (D-03). A trigger's lifetime totals cannot carry the veto: a
+  // `.planning/trace.jsonl` is never pruned or archived, so a re-arm recorded
+  // in one cycle muted its trigger for the life of the file - permanently, by
+  // construction, four cycles after the gate stopped finding anything.
+  /** @type {{corr: string, trigger: string, survivors: number, raised: number|null,
+   *          rearm: boolean, vetoed: boolean}[]} */
+  const fires = [];
   /** @type {Set<string>} */
   const rearmed = new Set();
+  /**
+   * The correlation id an event joins on, as a comparable string.
+   * @param {any} e
+   */
+  const corrOf = (e) => (typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '');
   /** @type {Map<string, {resolves: number, escalated: number}>} */
   const rungs = new Map();
   /** @type {Map<string, number>} */
@@ -118,16 +147,33 @@ export function suggestFromRender(render) {
     if (e.family === 'outcome' && e.event === 'adjudication') {
       const parsed = parseAdjudication(e);
       if (!parsed) continue;
-      const row = triggers.get(parsed.trigger) || { fires: 0, survivors: 0, raised: 0 };
-      row.fires++;
-      row.survivors += parsed.survivors;
-      // An UNKNOWN raised count contributes nothing rather than a zero, which
-      // is what keeps a corpus written before the flag existed on R1's
-      // gate-suggestion arm exactly as it is today.
-      row.raised += parsed.raised === null ? 0 : parsed.raised;
-      triggers.set(parsed.trigger, row);
+      fires.push({
+        corr: corrOf(e),
+        trigger: parsed.trigger,
+        survivors: parsed.survivors,
+        raised: parsed.raised,
+        rearm: parsed.rearm,
+        vetoed: false,
+      });
     } else if (e.family === 'outcome' && e.event === 'rearm') {
-      if (typeof e.detail === 'string' && e.detail.trim()) rearmed.add(e.detail.trim());
+      const trigger = typeof e.detail === 'string' ? e.detail.trim() : '';
+      if (!trigger) continue;
+      rearmed.add(trigger);
+      // The veto lands on exactly ONE fire: the nearest fire BEFORE this one in
+      // the same `(corr, trigger)` group - the fire that forced the round.
+      // Nearest rather than oldest, because an earlier fire in the same phase
+      // was answered by its own adjudication and this round says nothing about
+      // it. A re-arm round's OWN adjudication is skipped: it is the second
+      // round's RESULT, not the fire that forced the round. A fire already
+      // vetoed is skipped too, so two re-arms mute two fires rather than one.
+      const corr = corrOf(e);
+      for (let i = fires.length - 1; i >= 0; i--) {
+        const f = fires[i];
+        if (f.trigger === trigger && f.corr === corr && !f.rearm && !f.vetoed) {
+          f.vetoed = true;
+          break;
+        }
+      }
     } else if (e.family === 'routing' && e.event === 'resolve') {
       const role = typeof e.role === 'string' ? e.role : '';
       if (!role) continue;
@@ -145,31 +191,47 @@ export function suggestFromRender(render) {
   }
 
   // --- rules ----------------------------------------------------------------
-  // R1: an adjudicated trigger that keeps coming back empty. A rearm anywhere
-  // on the same trigger vetoes the suggestion - a gate that forced a fix round
-  // has already paid for itself, whatever its adjudications said.
+  // R1: an adjudicated trigger that keeps coming back empty. Read a FIRE at a
+  // time: a fire counts as evidence when it adjudicated zero survivors and no
+  // re-arm came back to it - a gate that forced a fix round has already paid
+  // for itself on THAT fire, whatever its adjudication said, and says nothing
+  // about the other fires the same trigger had. The evidence names the empty
+  // count out of the trigger's fires overall, so a reader sees the productive
+  // fires beside the empty ones instead of a bare total.
   //
   // Two OUTCOMES on the same evidence floor, because "nothing survived" means
   // two opposite things (D-16). Nothing raised at all is a gate finding
   // nothing; nine raised and nine killed is a gate doing real work in front of
   // a reviewer that cannot tell a finding from an opinion - and proposing to
-  // turn that gate off is the wrong move on the same row. An UNKNOWN raised
-  // total counts as 0 here, so every trace written before `--raised` existed
-  // keeps landing on the gate arm it lands on today.
+  // turn that gate off is the wrong move on the same row. The raised total is
+  // summed over the EMPTY fires alone, and an UNKNOWN raised count contributes
+  // 0 rather than being invented, so every trace written before `--raised`
+  // existed keeps landing on the gate arm it lands on today.
+  /** @type {Map<string, {total: number, empty: number, raised: number}>} */
+  const triggers = new Map();
+  for (const f of fires) {
+    const row = triggers.get(f.trigger) || { total: 0, empty: 0, raised: 0 };
+    row.total++;
+    if (!f.vetoed && f.survivors === 0) {
+      row.empty++;
+      row.raised += f.raised === null ? 0 : f.raised;
+    }
+    triggers.set(f.trigger, row);
+  }
   for (const [trigger, row] of [...triggers.entries()].sort()) {
-    if (row.fires >= MIN_FIRES_FOR_GATE_SUGGESTION && row.survivors === 0 && !rearmed.has(trigger)) {
+    if (row.empty >= MIN_FIRES_FOR_GATE_SUGGESTION) {
       out.push(row.raised > 0
         ? {
           kind: 'suggest',
           subject: `${trigger} reviewers`,
-          evidence: `${row.fires} adjudicated fire(s), 0 survivors of ${row.raised} raised`
+          evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors of ${row.raised} raised`
             + ' - the gate caught work; the reviewer set is what looks miscalibrated',
           action: 'review.reviewers',
         }
         : {
           kind: 'suggest',
           subject: trigger,
-          evidence: `${row.fires} adjudicated fire(s), 0 survivors, no re-arm`,
+          evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors, no re-arm`,
           action: `review.triggers.${trigger}.gate`,
         });
     }

@@ -115,11 +115,14 @@ causes the worker to read, one comma-separated value) makes the resolve write
 the worker's lifecycle `dispatch` event itself - one seam call where dispatch
 sites used to pay two. `--bracket-plan` is the worker key when it is not the
 role name (an executor's plan number). The CLOSE half stays with the caller,
-which alone sees the return: a lifecycle `return` event through the trace seam
-(`checkpoint` on an empty/unmarked return, `escalation` on a path change),
-carrying `--tokens <the figure on the subagent return>` - each dispatch site
-states its own close command. OMIT `--tokens` when the return carries no
-figure - never `--tokens 0`, which would claim a dispatch that cost nothing. A
+which alone sees the return: ONE `trace close` per dispatch moment, keyed
+`--plan <the worker key>` and `--role <name>`, carrying
+`--tokens <the figure on the subagent return>`. The seam fixes the family and
+picks the arm off `--detail`: absent means `return`, present means `checkpoint`
+(the worker came back empty, unmarked or unusable). `escalation` on a path
+change is NOT inferred and stays on `trace append`. OMIT `--tokens` when the
+return carries no figure - never `--tokens 0`, which would claim a dispatch
+that cost nothing. A
 figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
 `unrecorded` it produces names a silent return, never a skipped bracket. This
 paragraph is the ONE statement of that rule; dispatch sites point here rather

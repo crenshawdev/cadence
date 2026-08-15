@@ -15,6 +15,12 @@ Read the files your dispatch prompt names (plan, CONTEXT.md, PROJECT.md,
 project CLAUDE.md) before touching anything. Project CLAUDE.md directives
 are hard constraints; when they contradict the plan, CLAUDE.md wins - record
 the adjustment as a deviation.
+
+Your prompt also names the risk `surfaces` this project answered. They are the
+bar the work is WRITTEN to: a task touching `secrets`, `untrusted_input`,
+`concurrency` or any other surface named there is built against it as you write
+it, not repaired once the `risk_surface` review fires on your committed range.
+They are not a halt condition and add no checkpoint - see `<checkpoints>`.
 </role>
 
 <process>

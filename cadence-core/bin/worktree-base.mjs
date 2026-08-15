@@ -45,6 +45,9 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { emit } from './lib/seam-io.mjs';
+// The argv reader this file used to define for itself; both flag contracts and
+// the reason there are two of them live in lib/seam-input.mjs.
+import { optionalFlag } from './lib/seam-input.mjs';
 
 /** The documented default when no layer sets the key. */
 const DEFAULT_BASE_REF = 'fresh';
@@ -137,11 +140,10 @@ function resolveBaseRef(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'resolve') {

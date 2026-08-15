@@ -78,13 +78,20 @@ after it strands an unpaired bracket on every skipped phase and inverts the
 record-health signal /cad-report reads.
 
 Load prior-project memory first - BOTH arms need it. The buy arm feeds it to
-the analyzer payload; the skip arm reasons with it directly:
+the analyzer payload; the skip arm reasons with it directly. ONE call for every
+key this workflow uses, the batched form seven other sites already ship:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
+  memory.backend planning.commit_docs
 ```
 
-When it is `builtin` (the schema default), run recall for the phase goal:
+`planning.commit_docs` is not needed until the `commit` step at the very end;
+it is read HERE because this workflow's only other config touchpoint was a
+second Bash round-trip for one key. Carry the value forward.
+
+When `memory.backend` is `builtin` (the schema default), run recall for the
+phase goal:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
@@ -173,10 +180,12 @@ Analyze the codebase for Phase {N}: {phase_name}.
 Follow your output format exactly.
 ```
 
-The dispatch came back, so close its bracket before anything else:
+The dispatch came back, so close its bracket before anything else. ONE line,
+whichever way it ended - add `--detail "<what failed>"` when the agent failed or
+timed out and the seam closes it as a `checkpoint` instead of a `return`:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return>
 ```
 
 Wait for the result. Parse:
@@ -185,17 +194,9 @@ Wait for the result. Parse:
   (Likely/Unclear items only)
 - `needs_research[]` - topics the codebase alone could not settle (often empty)
 
-If the agent fails or times out, close the bracket on THIS arm instead - it is
-the only other way this dispatch can end, and an unclosed bracket is what
-`trace render` reports as a worker that never came back:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --detail "<what failed>"
-```
-
-Then say so and continue with a plain conversational pass: derive 2-4 gray areas
-from the phase goal yourself and treat each as Unclear below. Do not silently
-degrade.
+If the agent fails or times out, say so and continue with a plain
+conversational pass: derive 2-4 gray areas from the phase goal yourself and
+treat each as Unclear below. Do not silently degrade.
 </step>
 
 <step name="close_gray_areas">
@@ -344,6 +345,18 @@ Deferred on SIZE, not branch-locality (references/seams.md, File round-trip):
 this step is unconditional but reached once, at the very end, so the read folds
 into the turn that writes the file while an eager copy would ride every turn of
 the interview before it.
+
+Then count what was written against the 3-7 the `acceptance_criteria` step
+states - a ceiling nothing counts is the silent no-op this seam removes:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --phase {N} --context-min 3 --context-max 7
+```
+
+Report an `over` entry to the user in ONE line, its count and the bound it
+broke. A REPORT, not a gate - like `plan-size`'s `phase-too-big`, present it and
+continue. `context_found: false` is not zero: the section was never read (absent
+or near-miss heading), which is a file to fix rather than a count to report.
 </step>
 
 <step name="update_cursor">
@@ -356,7 +369,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N
 </step>
 
 <step name="commit">
-If `planning.commit_docs` is true: apply the protected-branch guard
+If `planning.commit_docs` - the value read in the `spend_gate` batch, never
+re-read here - is true: apply the protected-branch guard
 (references/git-guard.md rail 1 - context is the first act of a phase), then
 commit exactly `{phase_dir}/CONTEXT.md`, `.planning/STATE.md`, and - only
 when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:

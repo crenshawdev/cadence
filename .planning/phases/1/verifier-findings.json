@@ -1,0 +1,36 @@
+{
+  "status": "needs_human",
+  "score": "6/7",
+  "truths": [
+    { "n": 1, "truth": "A bullet written through planning.mjs capture lands in the recall walk and recall returns it same session; the falsifier proves an Archive bullet is not returned", "status": "VERIFIED", "uat_item": 1,
+      "evidence": "Live probe in scratchpad: capture --kind todo --phase 2 wrote '- [ ] (phase 2) quarantine the flaky zebra fixture' under ## Todos, recall 'zebra' returned it with phase:2; a hand-planted ## Archive bullet returned 0 results. Named tests planning.test.mjs:4219 (AC1 round trip), :4240 (Archive falsifier) both pass in the 1702/1702 suite run." },
+    { "n": 2, "truth": "The phase-tag reader admits (phase N), (vX.Y.Z phase N), (phase N, label), the combined form and decimals; capture-grammar.md states every admitted and out-of-grammar shape with one test row per shape", "status": "VERIFIED", "uat_item": 2,
+      "evidence": "CAPTURE_PHASE_TAG at planning-files.mjs:704 encodes exactly those shapes (anchored, non-greedy); CAPTURE_TAG_ROWS at planning-files.test.mjs:1617-1671 with row loop at :1673 covers 5 admitted shapes x box states + 8 out-of-grammar rows; references/capture-grammar.md lists the same admitted (lines 69-73) and out-of-grammar (lines 93-99) shapes and names the CAPTURE_TAG_ROWS table (line 14). All rows pass in the suite run." },
+    { "n": 3, "truth": "A non-phase leading parenthetical survives byte-identical in indexed text with no phase field", "status": "VERIFIED", "uat_item": 3,
+      "evidence": "Rows '(cadence-wide) is a scope marker, not a tag' and '(tooling) is a scope marker, not a tag' at planning-files.test.mjs:1655-1658 assert phase:undefined AND the parenthetical still in text; both pass in the suite run. Pattern at planning-files.mjs:704 cannot match a non-'phase N' parenthetical." },
+    { "n": 4, "truth": "capture-sections names every out-of-walk section with its bullet count, no allowlist, and an appended out-of-walk bullet raises the count on the next run", "status": "VERIFIED", "uat_item": 4,
+      "evidence": "Live run against this repo: Archive 185 in_walk:false, Debt markers 1 in_walk:false (Todos 192/Seeds 6/Notes 3 in-walk). Scratchpad probe: appending one bullet under ## Archive raised its count 1->2 with all other counts unchanged. captureSections at planning-files.mjs:785 iterates every ## heading against CAPTURE_WALK_SECTIONS membership - no allowlist. /cad-health SKILL.md:41 invokes capture-sections and prints the out-of-walk note." },
+    { "n": 5, "truth": "Two concurrent writers both land or the loser returns non-silently; the 20-writer interleaving test passes with zero lost bullets", "status": "VERIFIED", "uat_item": 5,
+      "evidence": "capture-file.test.mjs:276 (twenty concurrent writers, none lost), :294 (held lock refuses non-silently, file byte-identical), :305 (stale lock broken), :319 (lock released on success) all pass in the suite run. write-lost return at capture-file.mjs:380 surfaces through cmdCapture's ok:false envelope; /cad-capture SKILL.md:55 and execute.md:387 report an ok:false rather than continuing. Caveat already on record as a SUMMARY open item: the write-lost arm itself has no deterministic test (interleaving unforceable from outside); the no-silent-loss claim rests on the passing 20-writer and held-lock rows." },
+    { "n": 6, "truth": "Full test suite green and self-verify reports no unbudgeted-surface, budget-overrun, unknown-subcommand or unknown-flag", "status": "VERIFIED", "uat_item": 6,
+      "evidence": "node --test cadence-core/bin/*.test.mjs: 1702 pass, 0 fail. node cadence-core/bin/self-verify.mjs: ok:true, problems:[] across all 21 checks including budgets and invocations. capture-grammar.md has its weight-budgets.json row (line 26)." },
+    { "n": 7, "truth": "All three product writers reach CAPTURE.md through the one seam with no second write path", "status": "VERIFIED", "uat_item": null,
+      "evidence": "/cad-capture SKILL.md:40+:76 call planning.mjs capture (allowed-tools is Read/Bash/AskUserQuestion - no Write/Edit grant); execute.md:383 files open items through capture --kind todo; cmdDebtHarvest rewrites through replaceSection now exported from capture-file.mjs:166 under the same guard (planning.mjs:3240-3252); grep shows no local replaceSection definition in planning.mjs, only the import at :104. Kind-to-heading map derives from CAPTURE_WALK_SECTIONS (capture-file.mjs:83-85), the single statement at planning-files.mjs:683." },
+    { "n": 8, "truth": "/cad-health prints the out-of-walk note in a real session", "status": "UNCERTAIN", "uat_item": 7,
+      "evidence": "Seam half proved by the live capture-sections run; whether a live /cad-health session actually renders the note is session behavior no repo probe exercises." }
+  ],
+  "passes": [
+    { "k": 1, "name": "Captured bullet is recallable same-session", "evidence": "Live scratchpad round trip (capture -> recall returns the bullet with phase:2; Archive bullet not returned) plus named tests planning.test.mjs:4219/:4240 passing in the 1702-test suite run." },
+    { "k": 2, "name": "Phase-tag reader admits all three tagged shapes", "evidence": "CAPTURE_PHASE_TAG planning-files.mjs:704; CAPTURE_TAG_ROWS 23 rows with loop at planning-files.test.mjs:1673, all passing; capture-grammar.md lists every admitted and out-of-grammar shape and names the table." },
+    { "k": 3, "name": "Non-phase labels survive as content", "evidence": "Rows at planning-files.test.mjs:1655-1658 assert phase absent AND '(cadence-wide)'/'(tooling)' still in the indexed text; both pass." },
+    { "k": 4, "name": "/cad-health names out-of-walk sections with counts", "evidence": "Live run: Archive 185, Debt markers 1, in_walk:false, no allowlist in captureSections (planning-files.mjs:785); scratchpad append raised Archive 1->2 on the next run; /cad-health SKILL.md:41 wires the call." },
+    { "k": 5, "name": "Concurrent appends never silently lose a bullet", "evidence": "capture-file.test.mjs rows at :276/:294/:305/:319 pass (20 writers zero lost; held lock refuses non-silently, byte-identical file); write-lost return at capture-file.mjs:380 surfaced as ok:false and reported by SKILL.md:55/execute.md:387. Note: the write-lost arm specifically has no deterministic test (recorded SUMMARY open item)." },
+    { "k": 6, "name": "Test suite and budget checks green", "evidence": "1702/1702 tests pass; self-verify problems:[] - no unbudgeted-surface, no budget-overrun, no unknown-subcommand." }
+  ],
+  "gaps": [],
+  "human_checks": [
+    { "name": "Run /cad-health in this repo and confirm the report prints the capture note naming Archive and Debt markers with their counts",
+      "expected": "One line per out-of-walk section (Archive 185, Debt markers 1 at current baseline; live Todos is 192) framed as a named note, present on every run",
+      "why_human": "UAT item 7 is marked human-verify by the phase itself: the truth is what a live /cad-health session renders from the skill prose, which is model-interpreted at session time - no repo command exercises the prose-to-output step. The seam half (capture-sections output) is already machine-proved." }
+  ]
+}

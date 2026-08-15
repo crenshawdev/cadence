@@ -25,11 +25,16 @@
 'use strict';
 
 import { existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { mergeLayers, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { gitVerbs } from './lib/git-segments.mjs';
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+// The current-branch reader lives in lib/ because three seams ask this same
+// question. It degrades to '' rather than throwing, which matters most HERE:
+// main()'s catch swallows everything, so a throwing reader would make this hook
+// stop guarding in silence.
+import { readCurrentBranch } from './lib/git-head.mjs';
 
 function decide(decision, reason) {
   process.stdout.write(JSON.stringify({
@@ -69,13 +74,6 @@ function planningRoot(start) {
 // declines to see is listed in references/git-publish.md rail 3 as the accepted cost of
 // deleting the tokenizer.
 
-// The current branch name, or '' on any failure (not a repo / no commits).
-function currentBranch(cwd) {
-  try {
-    return execFileSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return ''; }
-}
 
 // The protected-branch decision for a `git commit`, or null when there is
 // nothing to say (on_protected: allow, no branch, branch not protected). It
@@ -136,21 +134,16 @@ function commitDecision(root, cwd) {
   if (GLOBAL_CONFIG) tornPrefixes.push(`config layer ${GLOBAL_CONFIG} `);
   const torn = (warnings || []).filter(
     (w) => typeof w === 'string' && tornPrefixes.some((p) => w.startsWith(p)));
-  // A lone string is an easy hand-edit; honor it rather than silently
-  // reverting to the default list and unprotecting the branch the user
-  // named (#38). Other non-array shapes still fall to the default.
-  const protectedBranches = Array.isArray(git.protected_branches)
-    ? git.protected_branches
-    : typeof git.protected_branches === 'string'
-      ? [git.protected_branches]
-      : ['main', 'master'];
+  // One coercion for all four readers (lib/protected-branches.mjs), which
+  // carries the #38 lone-string reasoning this callsite used to state inline.
+  const protectedBranches = resolveProtectedBranches(git);
 
   // git commit: enforce the protected-branch guard from config. "deny" is
   // the decision word the harness uses, so accept it as an alias of refuse
   // instead of silently degrading the intended hard block to a soft ask (#38).
   const raw = git.on_protected === 'deny' ? 'refuse' : git.on_protected;
   const onProtected = raw || 'ask';
-  const branch = currentBranch(cwd);
+  const branch = readCurrentBranch(cwd);
 
   // The ordinary protected-branch decision, computed BEFORE the torn-layer arm
   // below rather than after it. The torn arm returns `ask`, so returning it

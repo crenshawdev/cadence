@@ -43,15 +43,15 @@ import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
+import { resolveProtectedBranches } from './lib/protected-branches.mjs';
+// The argv reader this file used to define for itself; both flag contracts and
+// the reason there are two of them live in lib/seam-input.mjs.
+import { optionalFlag } from './lib/seam-input.mjs';
+// The current-branch reader, shared with git-guard.mjs and git-branch.mjs. It
+// degrades to '' rather than throwing; here that '' reaches decidePublish as
+// "no branch", which refuses the push.
+import { readCurrentBranch } from './lib/git-head.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
-
-/** The current branch of the repo at `dir`, or "" if it cannot be read. */
-function readCurrentBranch(dir) {
-  try {
-    return execFileSync('git', ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return ''; }
-}
 
 /** The configured remotes of the repo at `dir` (`git remote`), or [] on failure. */
 function readRemotes(dir) {
@@ -72,9 +72,10 @@ function repoAutoClose(dir) {
   } catch { return false; }
 }
 
-/** The protected-branch list for the repo at `dir`, with the same string
- * tolerance git-guard applies (#38): a lone-string hand-edit names the branch
- * the user means to protect; do not silently swap the list.
+/** The protected-branch list for the repo at `dir`, coerced by the ONE shared
+ * reader lib/protected-branches.mjs - which carries the #38 lone-string
+ * tolerance (a hand-edit names the branch the user means to protect; do not
+ * silently swap the list) and the empty-list rule.
  *
  * Returns the merge's `warnings` AND its `tornLayers` alongside the list rather
  * than dropping either: this list is what stops the ONE mutating seam from
@@ -90,12 +91,7 @@ function repoAutoClose(dir) {
  * this gate actually means. */
 function readProtectedBranches(dir) {
   const { config, warnings, tornLayers } = mergeLayers(join(dir, '.planning', 'config.json'));
-  const git = config.git || {};
-  const branches = Array.isArray(git.protected_branches)
-    ? git.protected_branches
-    : typeof git.protected_branches === 'string'
-      ? [git.protected_branches]
-      : ['main', 'master'];
+  const branches = resolveProtectedBranches(config.git || {});
   return { branches, warnings, tornLayers };
 }
 
@@ -207,11 +203,10 @@ function reap(dir, branch) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. */
-function flag(name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
+/** Value after a `--flag`, or undefined if the flag is absent. An adapter
+ * binding over lib/seam-input.mjs's reader - this file's own argv, so every
+ * call site below keeps its spelling - never a second definition of it. */
+const flag = (name) => optionalFlag(argv, name);
 
 try {
   if (cmd === 'publish') {

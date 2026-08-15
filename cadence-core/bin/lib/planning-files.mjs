@@ -62,15 +62,39 @@ const PHASE_LINE = /^- \[( |x)\] \*\*Phase (\d+(?:\.\d+)?): (.+?)\*\*(?:\s*-\s*(
  * and `phase-done` still rewrite the raw bytes. That asymmetry is why this
  * uses `normalizeCrlf` and NOT `normalize`: a lone-CR file must stay
  * unparseable, or the write paths that split raw bytes on `\n` corrupt it.
+ *
+ * BOTH ends come from `sectionSpan` (D-02/D-10), never from a `split` on the
+ * heading: the fence-blind form read the FENCED example in the shipped
+ * `templates/ROADMAP.md` as the real section and returned two phantom `[Name]`
+ * phases, and with a fenced example ABOVE a real section it stopped at the
+ * example's closing `## `, making the real phases invisible rather than merely
+ * joined. Fixing only the end bound cannot repair a start found inside a fence,
+ * which is why `sectionSpan` returns the two together and why the fix has to
+ * land HERE and not only in `classifyPhaseList`, which delegates its canonical
+ * parse to this function. A fenced heading is skipped silently and the walk
+ * continues to the next unfenced `## Phases` (D-12) - no new issue code, the
+ * `classifyAcceptanceCriteria` precedent.
+ *
+ * One accepted widening: `sectionSpan` matches a heading by TRIMMED equality
+ * where `/^## Phases\s*$/m` allowed trailing whitespace only, so a heading
+ * indented up to three spaces now matches. CommonMark reads that as a heading
+ * and no shipped grammar document forbids it.
  * @param {string} text
  */
 export function parseRoadmapPhases(text) {
-  const section = normalizeCrlf(text).split(/^## Phases\s*$/m)[1];
-  if (!section) return [];
-  const body = section.split(/^## /m)[0];
+  const lines = normalizeCrlf(text).split('\n');
+  const { start, end } = sectionSpan(lines, '## Phases');
+  if (start < 0) return [];
+  // Fresh scanner from the heading: the heading itself was matched outside a
+  // fence, so nothing is open here. A fenced example INSIDE the real section
+  // mints no phase - the same silence D-12 gives a fenced heading, and the only
+  // reading under which `classifyPhaseList` cannot report `live` off lines it
+  // simultaneously refuses to raise an issue for.
+  const fenced = fenceScanner();
   const phases = [];
-  for (const line of body.split('\n')) {
-    const m = line.match(PHASE_LINE);
+  for (let i = start + 1; i < end; i++) {
+    if (fenced(lines[i])) continue;
+    const m = lines[i].match(PHASE_LINE);
     if (m) phases.push({ n: Number(m[2]), name: m[3], desc: m[4] || '', checked: m[1] === 'x' });
   }
   return phases.sort((a, b) => a.n - b.n);
@@ -101,14 +125,20 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  *      CRLF only: a lone-CR file stays one giant line and falls out at
  *      `no-section`, which is what keeps the roadmap write paths from
  *      corrupting a file they cannot split.
- *   2. No `^## Phases$` heading -> `no-section`.
+ *   2. No `## Phases` heading OUTSIDE a fence -> `no-section`. The heading is
+ *      located by `sectionSpan`, the same call `parseRoadmapPhases` makes, so
+ *      the two cannot disagree about which occurrence is the real one; a
+ *      fenced heading is skipped silently and the walk continues (D-12).
  *   3. Parse the CANONICAL extent (heading to the next `## `, today's bound)
  *      with `parseRoadmapPhases`; one or more matches -> `live` with those
  *      phases and no issues. A near-miss beside a real checkbox list is
  *      deliberately NOT reported: the checkbox list is the phase set.
  *   4. Otherwise scan the CLASSIFICATION extent - the heading to END OF TEXT,
  *      deliberately wider than the canonical bound (D-03) - for the phase
- *      token. Any match -> `out-of-grammar`, at most one issue per line, code
+ *      token, SKIPPING fenced lines: a phase token inside somebody's code
+ *      block is an example, and reporting it would make every project whose
+ *      ROADMAP carries a formatting example fail a check it passes (D-12).
+ *      Any match -> `out-of-grammar`, at most one issue per line, code
  *      by the line's shape, EXCEPT a line that already matches `PHASE_LINE`,
  *      which is `phase-outside-section` (right shape, wrong section - it can
  *      only reach here from past the canonical bound). No match -> `closed`.
@@ -121,10 +151,7 @@ const PHASE_TOKEN = /\bPhase (\d+(?:\.\d+)?)\b/;
  */
 export function classifyPhaseList(text) {
   const lines = normalizeCrlf(text).split('\n');
-  let heading = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^## Phases\s*$/.test(lines[i])) { heading = i; break; }
-  }
+  const { start: heading } = sectionSpan(lines, '## Phases');
   if (heading === -1) return { state: 'no-section', phases: [], issues: [] };
 
   const phases = parseRoadmapPhases(text);
@@ -132,8 +159,15 @@ export function classifyPhaseList(text) {
 
   /** @type {Issue[]} */
   const issues = [];
+  // Fresh scanner from the heading, exactly as `classifyAcceptanceCriteria`
+  // does and for the same reason: the heading was matched outside a fence, so
+  // nothing is open here. The extent still runs to END OF TEXT - only the
+  // fenced lines inside it are skipped, so the wiped-list-with-surviving-
+  // details case D-03 protects still reports.
+  const fenced = fenceScanner();
   for (let i = heading + 1; i < lines.length; i++) {
     const line = lines[i];
+    if (fenced(line)) continue;
     if (!PHASE_TOKEN.test(line)) continue;
     let code = 'phase-prose-line'; // the catch-all: out of grammar, never silent
     // A byte-perfect canonical entry reaching here is in the WRONG SECTION, not
@@ -301,6 +335,33 @@ export function isRequirementId(id) {
 }
 
 /**
+ * One phase's `### Phase <N>:` detail block, verbatim, or null when the roadmap
+ * has no such block.
+ *
+ * Extracted so the roadmap block readers - `phaseRequirements` and
+ * `phaseCriteria` - cannot disagree about where a phase's block ENDS. Two
+ * copies of this walk is how a criteria count would silently absorb the next
+ * phase's list while the requirement count stopped at the right line.
+ *
+ * @param {string} body ROADMAP bytes, already through `normalizeCrlf`
+ * @param {string|number} phase the caller's own spelling (D-02)
+ * @returns {string|null}
+ */
+function phaseDetailBlock(body, phase) {
+  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
+  const at = body.search(head);
+  if (at < 0) return null;
+  const rest = body.slice(at);
+  // Search from AFTER this block's own heading line, never from `rest[1]`:
+  // `^` under /m matches at index 0, so slicing by one character finds the
+  // heading we just matched and yields a one-character block.
+  const afterHeading = rest.indexOf('\n') + 1;
+  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
+  const nextHeading = tail.search(/^#{1,3} /m);
+  return nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+}
+
+/**
  * The requirement ids a phase's ROADMAP detail block names, and its goal line.
  *
  * The grammar is the one `/cad-new-project` writes and `references/roadmap-phases.md`
@@ -320,17 +381,8 @@ export function isRequirementId(id) {
  */
 export function phaseRequirements(text, phase) {
   const body = normalizeCrlf(String(text || ''));
-  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
-  const at = body.search(head);
-  if (at < 0) return { found: false, ids: [], goal: '' };
-  const rest = body.slice(at);
-  // Search from AFTER this block's own heading line, never from `rest[1]`:
-  // `^` under /m matches at index 0, so slicing by one character finds the
-  // heading we just matched and yields a one-character block.
-  const afterHeading = rest.indexOf('\n') + 1;
-  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
-  const nextHeading = tail.search(/^#{1,3} /m);
-  const block = nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+  const block = phaseDetailBlock(body, phase);
+  if (block === null) return { found: false, ids: [], goal: '' };
 
   const reqLine = block.match(/^\*\*Requirements:\*\*(.*)$/m);
   const goalLine = block.match(/^\*\*Goal:\*\*(.*)$/m);
@@ -339,6 +391,66 @@ export function phaseRequirements(text, phase) {
   // said two would push a phase over a ceiling for a typo.
   const ids = [...new Set(idTokensIn(reqLine[1]).filter(isRequirementId))];
   return { found: true, ids, goal: goalLine ? goalLine[1].trim() : '' };
+}
+
+// BOTH live spellings of the roadmap criteria heading, and no third (D-02).
+// `templates/ROADMAP.md:28,36` writes the bold, capital-C form; this repo's own
+// `.planning/ROADMAP.md` writes the bare lower-c form at all five of its phase
+// blocks (10 hits tree-wide, measured 2026-08-14). A parser anchored to the
+// template alone reports "no criteria declared" for every phase of the repo
+// whose dogfooding proves the seam - and because absence is not zero, it
+// reports nothing rather than failing, so that regression would be invisible.
+// The bold markers are balanced by construction: `**Success criteria:` is a
+// half-written heading, and admitting it would be inventing a third spelling
+// nothing writes.
+const CRITERIA_HEADING = /^(?:\*\*Success Criteria:\*\*|Success Criteria:)[ \t]*$/im;
+
+// A criterion is a TOP-LEVEL ordered item under that heading. Anchored at
+// column 0 on purpose: every wrapped criterion in this repo's roadmap continues
+// on an indented line, and a pattern that admitted leading whitespace would
+// count a two-line criterion twice and an indented sub-list as criteria.
+const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
+
+/**
+ * How many success criteria a phase's ROADMAP detail block declares.
+ *
+ * The second reader of the roadmap's per-phase grammar, beside
+ * `phaseRequirements` and sharing its block extraction exactly. Both heading
+ * spellings above are admitted; the items are the numbered list under the
+ * heading, bounded with the block at the next `^#{1,3} ` heading, so the
+ * following phase's criteria are never counted into this one.
+ *
+ * Pure and total: no I/O, no throw. Absence is not zero - a block with no
+ * criteria heading yields `{found: false, count: 0}`, the same contract
+ * `phaseRequirements` states above, because a phase nobody wrote criteria for
+ * is not a phase with zero criteria and must never be compared against a floor.
+ * A heading carrying its first item on the same line is out of grammar and
+ * reads as not-found for the same reason.
+ *
+ * Fenced lines INSIDE the block are dropped before either the heading or the
+ * items are matched. A roadmap that SHOWS the criteria grammar in a fenced
+ * example - the shape every template and every doc page writes - would
+ * otherwise have the example's numbered items counted as the phase's own and
+ * report a compliant phase over its ceiling, which is exactly the false
+ * out-of-range this counter exists to make meaningful. The BLOCK BOUNDARY is
+ * still `phaseRequirements`'s and still fence-blind (phase 3 D-02): a fenced
+ * `### Phase N:` heading can still end a block early, unchanged here.
+ *
+ * @param {string} text the ROADMAP.md bytes
+ * @param {string|number} phase the caller's own spelling (D-02)
+ * @returns {{found: boolean, count: number}}
+ */
+export function phaseCriteria(text, phase) {
+  const block = phaseDetailBlock(normalizeCrlf(String(text || '')), phase);
+  if (block === null) return { found: false, count: 0 };
+  // One scanner over the block, fence delimiters dropped with their contents,
+  // so a fenced example neither mints the heading nor contributes items.
+  const fenced = fenceScanner();
+  const defenced = block.split('\n').filter((line) => !fenced(line)).join('\n');
+  const heading = defenced.match(CRITERIA_HEADING);
+  if (!heading || heading.index === undefined) return { found: false, count: 0 };
+  const after = defenced.slice(heading.index + heading[0].length);
+  return { found: true, count: (after.match(CRITERIA_ITEM_G) || []).length };
 }
 
 /**
@@ -382,12 +494,20 @@ function trailingBoldSpans(s) {
  *      has write paths (`insertReqRows`, `setReqStatus`) that split raw bytes,
  *      the same asymmetry `normalizeCrlf`'s own comment states, and a CRLF file
  *      already parses here because every bold span closes before the `\r`.
- *   2. No `^## Active$` line -> `{ids: null, issues: []}`. An absent heading is
- *      NOT an out-of-grammar report: it is the datum `audit`'s
- *      `no_active_section` already carries, and every project scaffolded before
- *      v1.4.0 is in that state (D-06).
- *   3. Otherwise walk from that heading to the next `^## ` - the same bound
- *      `sectionBody` cuts at, so `## Deferred` is never read (D-07). A line
+ *   2. No `## Active` line OUTSIDE a fence -> `{ids: null, issues: []}`. An
+ *      absent heading is NOT an out-of-grammar report: it is the datum
+ *      `audit`'s `no_active_section` already carries, and every project
+ *      scaffolded before v1.4.0 is in that state (D-06). A FENCED heading is
+ *      skipped silently and the walk continues to the next unfenced one (D-12),
+ *      never a new issue code - the shipped `templates/REQUIREMENTS.md` has no
+ *      `## Active` but the one inside its own template block, and read
+ *      fence-blind it declared the example's `[CAT]-01`/`[CAT]-02` and reported
+ *      three `active-non-id-bullet` issues against its own documentation.
+ *   3. Otherwise walk from that heading to the next `^## ` - BOTH ends from
+ *      `sectionSpan`, so a fenced `## ` inside the section can no longer end it
+ *      early, and `## Deferred` is still never read (D-07). Fenced lines in
+ *      between are skipped whole: a fenced example bullet neither declares an
+ *      id nor raises an `active-prose-line`/`active-non-id-bullet`. A line
  *      matching `ACTIVE_BULLET` contributes its trimmed bold span as an id
  *      (de-duplicated first-occurrence-wins, empty skipped). It produces an
  *      issue ONLY when that span is not id-shaped by `isRequirementId`
@@ -436,20 +556,23 @@ function trailingBoldSpans(s) {
  */
 export function classifyActiveSection(text) {
   const lines = text.split('\n');
-  let heading = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^## Active\s*$/.test(lines[i])) { heading = i; break; }
-  }
+  // Both ends from one never-restarted scanner: a start found fence-blind
+  // cannot be repaired by a fence-aware end, and `elsewhere` below slices on
+  // exactly these two indices, so recomputing either would let the prose filter
+  // disagree with the walk about where the section is.
+  const { start: heading, end } = sectionSpan(lines, '## Active');
   if (heading === -1) return { ids: null, issues: [] };
 
   const ids = [];
   const seen = new Set();
   /** @type {Array<{issue: Issue, prose: string[]|null}>} */
   const found = [];
-  let end = lines.length;
-  for (let i = heading + 1; i < lines.length; i++) {
+  // Fresh scanner from the heading: it was matched outside a fence, so nothing
+  // is open here.
+  const fenced = fenceScanner();
+  for (let i = heading + 1; i < end; i++) {
     const line = lines[i];
-    if (/^## /.test(line)) { end = i; break; }
+    if (fenced(line)) continue;
     const m = line.match(ACTIVE_BULLET);
     if (m) {
       const id = m[1].trim();
@@ -661,10 +784,63 @@ export function parseSummarySnippets(text) {
 }
 
 /**
- * CAPTURE.md item-level snippets: every `- ` bullet under `## Todos`,
- * `## Seeds`, `## Notes`, with a leading checkbox and `(phase N)` tag
- * stripped - the tag becomes the numeric `phase` field (omitted when the
- * bullet carries no tag; decimal phase numbers are legal).
+ * The `## ` sections of CAPTURE.md the recall walk visits, in order, WITHOUT
+ * the `## ` prefix.
+ *
+ * ONE fact, ONE home. `parseCaptureSnippets` below iterates this list and
+ * `lib/capture-file.mjs` derives its kind-to-heading map from it instead of
+ * restating the names: the writer and the reader disagreeing about which
+ * sections are the walk is this queue's headline defect - five filed bullets
+ * were lost to exactly that - and it can only recur while the fact is written
+ * down in two places.
+ *
+ * `## Archive` and `## Debt markers` are deliberately NOT here (D-03). The fix
+ * for a lost bullet is never "walk every section": that would re-admit 185
+ * bullets a milestone triage retired into the BM25 corpus and undo the v2.6.0
+ * reconciliation in full.
+ *
+ * The ORDER is load-bearing - `capture-file.mjs` maps its three kinds onto
+ * these three names positionally, and its per-kind rows are what turn red if
+ * the order moves.
+ */
+export const CAPTURE_WALK_SECTIONS = Object.freeze(['Todos', 'Seeds', 'Notes']);
+
+/**
+ * The leading phase tag on a CAPTURE.md bullet, anchored at the head of the
+ * text AFTER the checkbox strip. Four admitted shapes and nothing more:
+ * `(phase N)`, `(v3.2.0 phase N)`, `(phase N, label)` and their combination
+ * `(v3.2.0 phase N, label)`, where the version prefix is a `v` and
+ * dot-separated digits, `N` is an integer or a decimal `N.M`, and the label is
+ * everything after the comma up to the closing paren.
+ *
+ * DELIBERATELY NOT `^\([^)]*\)` (D-05). A leading parenthetical that does not
+ * match this pattern is CONTENT: 24 live bullets carry `(cadence-wide)` or
+ * `(tooling)` as their only scope marker, `(v3.2.0 close)` names a milestone
+ * rather than a phase, and `parseCaptureSnippets` feeds BM25 directly - so a
+ * greedy strip would eat the only word those bullets can be found by.
+ *
+ * The prose home of this grammar is `cadence-core/references/capture-grammar.md`
+ * (the same way `parseRoadmapPhases` points at `references/roadmap-phases.md`),
+ * and every shape it states - admitted and out-of-grammar - is pinned by a row
+ * in the `CAPTURE_TAG_ROWS` table in `cadence-core/bin/planning-files.test.mjs`.
+ */
+const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]*)?\)\s*/;
+
+/**
+ * CAPTURE.md item-level snippets: every `- ` bullet under the sections
+ * `CAPTURE_WALK_SECTIONS` names, with a leading checkbox and phase tag
+ * stripped - the
+ * tag becomes the numeric `phase` field (omitted when the bullet carries no
+ * tag; decimal phase numbers are legal). `CAPTURE_PHASE_TAG` above states
+ * which parentheticals are tags and which are content.
+ *
+ * An admitted tag is stripped WHOLE - tag and trailing space - so a version
+ * token or a label riding inside a real tag leaves the indexed text. That is
+ * the trade, not an oversight: the alternative keeps the remainder and so
+ * synthesizes bullet text nobody wrote, needing a second rule for the case
+ * where the remainder is empty. 32 bullets tagged `(vX.Y.Z phase N)` stop
+ * carrying their version as a BM25 term and gain a correct phase field, which
+ * is what recall renders and what a planner filters on.
  *
  * ANY checkbox state is stripped (`[ ]`, `[x]`, `[X]`), and stripped BEFORE
  * the `(phase N)` extraction, which a checked box used to block - a closed
@@ -681,7 +857,7 @@ export function parseSummarySnippets(text) {
  */
 export function parseCaptureSnippets(text) {
   const out = [];
-  for (const heading of ['Todos', 'Seeds', 'Notes']) {
+  for (const heading of CAPTURE_WALK_SECTIONS) {
     const body = sectionBody(text, heading);
     if (!body) continue;
     for (const line of body.split('\n')) {
@@ -694,9 +870,59 @@ export function parseCaptureSnippets(text) {
       if (box) raw = raw.slice(box[0].length);
       /** @type {number|undefined} */
       let phase;
-      raw = raw.replace(/^\(phase (\d+(?:\.\d+)?)\)\s*/, (_m, n) => { phase = Number(n); return ''; });
+      raw = raw.replace(CAPTURE_PHASE_TAG, (_m, n) => { phase = Number(n); return ''; });
       out.push({ text: closed ? `[closed] ${raw}` : raw, ...(phase !== undefined ? { phase } : {}) });
     }
+  }
+  return out;
+}
+
+/**
+ * Census of EVERY `## ` section in a CAPTURE.md: its name, its bullet count,
+ * and whether `parseCaptureSnippets` visits it. In document order.
+ *
+ * UNCONDITIONAL, with NO allowlist (D-06). The obvious shape - exempt the two
+ * sections everyone expects to be out of the walk - would have reported nothing
+ * on the incident this exists for: all five lost bullets sat under `## Archive`.
+ * A section being out of the walk by design is the READER's judgment to make
+ * from a stated count, not this function's to suppress.
+ *
+ * `heading` is the section name WITHOUT its `## ` prefix, the same spelling
+ * `CAPTURE_WALK_SECTIONS` uses, so `in-walk` is a membership test and not a
+ * string transform. A bullet is the same line shape `parseCaptureSnippets`
+ * indexes - a column-0 `- ` with something after it - so the count of an
+ * in-walk section is the number of snippets that section contributes.
+ *
+ * Fence-aware, because a fenced `## Debt markers` inside somebody's `## Todos`
+ * bullet is an EXAMPLE, and minting a section from it would report a phantom
+ * out-of-walk heading on a healthy queue. Pure reader, so it normalizes through
+ * the shared `normalize` (BOM, CRLF and lone CR): nothing here writes text back,
+ * and a CRLF checkout must count exactly as its plain-LF twin.
+ *
+ * Stated limit: a bullet ABOVE the first `## ` heading belongs to no section
+ * and is not counted anywhere. The walk cannot see it either, but there is no
+ * heading to name it under, and no writer in this codebase can produce one.
+ * @param {string} text
+ * @returns {Array<{heading: string, bullets: number, inWalk: boolean}>}
+ */
+export function captureSections(text) {
+  /** @type {Array<{heading: string, bullets: number, inWalk: boolean}>} */
+  const out = [];
+  const fenced = fenceScanner();
+  /** @type {{heading: string, bullets: number, inWalk: boolean}|null} */
+  let cur = null;
+  for (const line of normalize(text).split('\n')) {
+    if (fenced(line)) continue;
+    const h = line.match(/^## (.*)$/);
+    if (h) {
+      const heading = h[1].trim();
+      cur = { heading, bullets: 0, inWalk: CAPTURE_WALK_SECTIONS.includes(heading) };
+      out.push(cur);
+      continue;
+    }
+    if (!cur) continue;
+    const b = line.match(/^-\s+(.*)$/);
+    if (b && b[1].trim()) cur.bullets++;
   }
   return out;
 }

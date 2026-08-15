@@ -19,7 +19,7 @@ import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
-  atomicWrite,
+  atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -594,6 +594,46 @@ test('classifyPhaseList: the surviving-detail issue carries its exact line, code
     [{ line: 11, code: 'phase-heading', text: '### Phase 1: Auth' }]);
 });
 
+// --- the `## Phases` scanners see fences (D-10, D-12) ------------------------
+// Both halves of the scan read the section through `sectionSpan`, so a heading
+// inside a code block is not the section and a phase line inside one is not a
+// phase. Measured against the pre-fix code, all three rows below reddened: the
+// shipped template classified `live` with two phantom `[Name]` phases, and the
+// fenced-example-above-a-real-section shape returned the EXAMPLE's phase while
+// the real two were invisible - the fence-blind `split` bounded the section at
+// the real heading it should have started from.
+
+/** A roadmap whose `## Phases` example sits in a fence ABOVE the real one. */
+const FENCED_EXAMPLE_ROADMAP = [
+  '# Roadmap: Demo', '', '## Overview', '', 'Fill it in like this:', '',
+  '```markdown', '## Phases', '', '- [ ] **Phase 1: [Name]** - [description]',
+  '```', '', '## Phases', '', '- [x] **Phase 1: Auth** - login',
+  '- [ ] **Phase 2: Ship** - release', '', '## Phase Details', '',
+  '### Phase 1: Auth', '',
+].join('\n');
+
+test('classifyPhaseList: the shipped templates/ROADMAP.md is no-section, not two phantom phases', () => {
+  const text = readFileSync(new URL('../templates/ROADMAP.md', import.meta.url), 'utf8');
+  assert.deepEqual(classifyPhaseList(text), { state: 'no-section', phases: [], issues: [] });
+  assert.deepEqual(parseRoadmapPhases(text), []);
+});
+
+test('classifyPhaseList: a fenced example above a real section reads the REAL phases', () => {
+  const res = classifyPhaseList(FENCED_EXAMPLE_ROADMAP);
+  assert.equal(res.state, 'live');
+  assert.deepEqual(res.phases.map((p) => [p.n, p.name]), [[1, 'Auth'], [2, 'Ship']]);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseRoadmapPhases(FENCED_EXAMPLE_ROADMAP).map((p) => p.n), [1, 2]);
+});
+
+test('classifyPhaseList: a fenced phase token inside the section raises no issue', () => {
+  // A closed milestone whose section carries a formatting example. Silence is
+  // the point (D-12): a new issue code here would make every project with a
+  // documented example report a problem it does not have.
+  const text = roadmap('```markdown\n- [ ] **Phase 1: [Name]** - [description]\n```\n');
+  assert.deepEqual(classifyPhaseList(text), { state: 'closed', phases: [], issues: [] });
+});
+
 // --- cutPhaseDetail on CRLF --------------------------------------------------
 // Newly reachable: parseRoadmapPhases now normalizes, so `renumber` no longer
 // bails with unparseable-roadmap on a CRLF checkout and `/cad-phase remove`
@@ -651,6 +691,65 @@ test('setPhaseBox: a CRLF line is flipped in place with its `\\r` intact', () =>
 
 test('setPhaseBox: a lone-CR file matches nothing - the parse path must not have let it here', () => {
   assert.equal(setPhaseBox(asCr(ROADMAP_LF), 1, true), null);
+});
+
+// --- phaseCriteria: the roadmap's per-phase success-criteria count -----------
+// One row per LIVE heading spelling, because a parser anchored to the template
+// alone reads zero criteria out of this repo's own roadmap and - absence not
+// being zero - says nothing at all about it.
+
+/** A two-phase detail section whose criteria heading is spelled `spelling`. */
+const criteriaRoadmap = (spelling) => `# Roadmap\n\n## Phase Details\n\n`
+  + `### Phase 1: A\n**Goal:** a\n**Requirements:** CAT-01\n${spelling}\n`
+  + '1. first, which wraps\n   onto a second line\n2. second\n3. third\n\n'
+  + `### Phase 2: B\n**Goal:** b\n${spelling}\n1. only one here\n`;
+
+test('phaseCriteria: the template spelling `**Success Criteria:**` is counted', () => {
+  assert.deepEqual(phaseCriteria(criteriaRoadmap('**Success Criteria:**'), 1),
+    { found: true, count: 3 });
+});
+
+test('phaseCriteria: the bare `Success criteria:` spelling reads the same count', () => {
+  assert.deepEqual(phaseCriteria(criteriaRoadmap('Success criteria:'), 1),
+    { found: true, count: 3 });
+});
+
+test('phaseCriteria: a block with no criteria heading is not-found, never zero', () => {
+  const text = '# Roadmap\n\n## Phase Details\n\n### Phase 1: A\n**Goal:** a\n'
+    + '**Requirements:** CAT-01\n';
+  assert.deepEqual(phaseCriteria(text, 1), { found: false, count: 0 });
+  // Same answer for a phase with no detail block at all - both are "nobody
+  // wrote this down", and a floor must never be compared against either.
+  assert.deepEqual(phaseCriteria(text, 9), { found: false, count: 0 });
+});
+
+test("phaseCriteria: a phase's block ends at the next heading, so the next phase's criteria are not its own", () => {
+  // Phase 1 declares 3 and phase 2 declares 1. Reading past the `### Phase 2:`
+  // heading would report 4 for phase 1 - the shape that makes an in-range phase
+  // read as over its ceiling.
+  const text = criteriaRoadmap('Success criteria:');
+  assert.equal(phaseCriteria(text, 1).count, 3);
+  assert.equal(phaseCriteria(text, 2).count, 1);
+});
+
+test('phaseCriteria: a fenced example inside the block does not inflate the count', () => {
+  // The shape that makes an in-range phase read as over its ceiling: a real
+  // 2-item list, then a fenced example of the same grammar. Counted
+  // fence-blind this is 8 against a ceiling of 5, so the seam reports a
+  // compliant phase out of range and the report means nothing.
+  const text = '# Roadmap\n\n## Phase Details\n\n### Phase 1: A\n**Goal:** a\n'
+    + 'Success criteria:\n1. first\n2. second\n\n'
+    + 'Write them like this:\n\n```\nSuccess criteria:\n1. a\n2. b\n3. c\n'
+    + '4. d\n5. e\n6. f\n```\n';
+  assert.deepEqual(phaseCriteria(text, 1), { found: true, count: 2 });
+});
+
+test('phaseCriteria: a heading that exists only inside a fence is not-found', () => {
+  // The other half of the same blindness: the fenced example alone must not
+  // mint criteria for a phase that declared none. Absence is not zero.
+  const text = '# Roadmap\n\n## Phase Details\n\n### Phase 1: A\n**Goal:** a\n\n'
+    + '```\nSuccess criteria:\n1. a\n2. b\n```\n';
+  assert.deepEqual(phaseCriteria(text, 1), { found: false, count: 0 });
 });
 
 // --- parseActiveIds ----------------------------------------------------------
@@ -952,6 +1051,52 @@ for (const row of ACTIVE_ROWS) {
     assert.deepEqual(parseActiveIds(row.text), row.ids, 'parseActiveIds delegation');
   });
 }
+
+// --- the `## Active` scanner sees fences (D-11, D-12) ------------------------
+// Measured against the pre-fix code, every assertion below reddened: the
+// shipped template declared the example's `[CAT]-01`/`[CAT]-02` and reported
+// three `active-non-id-bullet` issues against its own documentation, and with
+// a fenced example above the real section the example's id was the only one
+// read. Asserted through BOTH entry points so `parseActiveIds` stays a
+// delegate that inherits the fix rather than a second extraction.
+
+/** REQUIREMENTS with a fenced `## Active` example ABOVE the real section. */
+const FENCED_EXAMPLE_REQS = [
+  '# Requirements: Demo', '', '## Overview', '', 'Fill it in like this:', '',
+  '```markdown', '## Active', '', '- [ ] **[CAT]-01**: [requirement]', '```', '',
+  '## Active', '', '- [ ] **REV-01**: the reviewer seam',
+  '- [ ] **GRM-02**: the grammar', '', '## Shipped', '', '- **OLD-01**: shipped', '',
+].join('\n');
+
+/** A real section carrying a fenced example that opens with a `## ` line. */
+const FENCED_INSIDE_ACTIVE = [
+  '# Requirements', '', '## Active', '', '- [ ] **REV-01**: the reviewer seam', '',
+  'Example of the shape:', '', '```markdown', '## Active', '',
+  '- [ ] **[CAT]-99**: [example]', '```', '', '- [ ] **GRM-02**: the grammar', '',
+  '## Shipped', '', '- **OLD-01**: shipped', '',
+].join('\n');
+
+test('classifyActiveSection: the shipped templates/REQUIREMENTS.md declares nothing', () => {
+  const text = readFileSync(new URL('../templates/REQUIREMENTS.md', import.meta.url), 'utf8');
+  // `ids: null`, not `[]`: its only `## Active` sits inside the template's own
+  // fence, so the heading is ABSENT to a fence-aware reader.
+  assert.deepEqual(classifyActiveSection(text), { ids: null, issues: [] });
+  assert.equal(parseActiveIds(text), null);
+});
+
+test('classifyActiveSection: a fenced example above a real section reads the REAL ids', () => {
+  const res = classifyActiveSection(FENCED_EXAMPLE_REQS);
+  assert.deepEqual(res.ids, ['REV-01', 'GRM-02']);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseActiveIds(FENCED_EXAMPLE_REQS), ['REV-01', 'GRM-02']);
+});
+
+test('classifyActiveSection: a fenced `## ` inside the section neither ends it nor declares an id', () => {
+  const res = classifyActiveSection(FENCED_INSIDE_ACTIVE);
+  assert.deepEqual(res.ids, ['REV-01', 'GRM-02']);
+  assert.deepEqual(res.issues, []);
+  assert.deepEqual(parseActiveIds(FENCED_INSIDE_ACTIVE), ['REV-01', 'GRM-02']);
+});
 
 // --- the CONTEXT `## Acceptance criteria` grammar ----------------------------
 // The table cadence-core/references/acceptance-criteria.md states in prose.
@@ -1593,4 +1738,140 @@ test("atomicWrite: the audit's <file>.tmp reproduction writes nothing outside th
   assert.equal(readFileSync(outside, 'utf8'), 'ORIGINAL\n');
   assert.equal(lstatSync(file).isSymbolicLink(), false);
   assert.equal(readFileSync(file, 'utf8'), '# Roadmap\n');
+});
+
+// --- the CAPTURE.md phase-tag grammar (parseCaptureSnippets) ----------------
+// The table cadence-core/references/capture-grammar.md states in prose: every
+// admitted leading-tag shape with what it emits and what it strips, and every
+// out-of-grammar shape, which emits no phase and keeps its parenthetical as
+// content (D-05). One test() per row, from one loop, so a shape stated in prose
+// and a shape asserted in code cannot drift apart.
+
+/**
+ * A CAPTURE.md holding ONE bullet, in the first walked section and nowhere
+ * else. No `- None.` placeholder anywhere: unlike `parseSummarySnippets`, this
+ * walk indexes a placeholder as an ordinary bullet, so a second section would
+ * put a second item in every row's result.
+ */
+const capture = (bullet) => `# Capture\n\n## Todos\n\n- ${bullet}\n`;
+
+// Each row: {name, bullet, phase, text}. `bullet` is the line after `- `;
+// `phase` is the number the tag emits, or undefined when nothing is a tag;
+// `text` is the WHOLE indexed string, so a rule that reads the phase correctly
+// while eating content still turns its row red.
+const CAPTURE_TAG_ROWS = [
+  // --- admitted: `(phase N)` ------------------------------------------------
+  { name: '(phase N)', bullet: '(phase 2) wire the recall path', phase: 2, text: 'wire the recall path' },
+  { name: '(phase N) behind an unchecked box', bullet: '[ ] (phase 2) wire the recall path',
+    phase: 2, text: 'wire the recall path' },
+  { name: '(phase N) behind a checked box', bullet: '[x] (phase 2) wire the recall path',
+    phase: 2, text: '[closed] wire the recall path' },
+
+  // --- admitted: a decimal phase number -------------------------------------
+  { name: '(phase N.M)', bullet: '(phase 2.1) hotfix the reader', phase: 2.1, text: 'hotfix the reader' },
+  { name: '(phase N.M) behind an unchecked box', bullet: '[ ] (phase 2.1) hotfix the reader',
+    phase: 2.1, text: 'hotfix the reader' },
+  { name: '(phase N.M) behind a checked box', bullet: '[x] (phase 2.1) hotfix the reader',
+    phase: 2.1, text: '[closed] hotfix the reader' },
+
+  // --- admitted: a version prefix, stripped WITH the tag --------------------
+  { name: '(vX.Y.Z phase N)', bullet: '(v3.2.0 phase 1) close the gate', phase: 1, text: 'close the gate' },
+  { name: '(vX.Y.Z phase N) behind an unchecked box', bullet: '[ ] (v3.2.0 phase 1) close the gate',
+    phase: 1, text: 'close the gate' },
+  { name: '(vX.Y.Z phase N) behind a checked box', bullet: '[x] (v3.2.0 phase 1) close the gate',
+    phase: 1, text: '[closed] close the gate' },
+
+  // --- admitted: a label after the comma, stripped WITH the tag -------------
+  { name: '(phase N, label)', bullet: '(phase 3, docs) state the grammar', phase: 3, text: 'state the grammar' },
+  { name: '(phase N, label) behind an unchecked box', bullet: '[ ] (phase 3, docs) state the grammar',
+    phase: 3, text: 'state the grammar' },
+  { name: '(phase N, label) behind a checked box', bullet: '[x] (phase 3, docs) state the grammar',
+    phase: 3, text: '[closed] state the grammar' },
+
+  // --- admitted: the combination -------------------------------------------
+  { name: '(vX.Y.Z phase N, label)', bullet: '(v3.2.0 phase 1, docs) name the sections',
+    phase: 1, text: 'name the sections' },
+  { name: '(vX.Y.Z phase N, label) behind an unchecked box',
+    bullet: '[ ] (v3.2.0 phase 1, docs) name the sections', phase: 1, text: 'name the sections' },
+  { name: '(vX.Y.Z phase N, label) behind a checked box',
+    bullet: '[x] (v3.2.0 phase 1, docs) name the sections', phase: 1, text: '[closed] name the sections' },
+
+  // --- out of grammar: no phase, and the parenthetical stays as content -----
+  { name: '(cadence-wide) is a scope marker, not a tag', bullet: '[ ] (cadence-wide) budget every surface',
+    phase: undefined, text: '(cadence-wide) budget every surface' },
+  { name: '(tooling) is a scope marker, not a tag', bullet: '[ ] (tooling) pin the CI matrix',
+    phase: undefined, text: '(tooling) pin the CI matrix' },
+  { name: '(vX.Y.Z close) names a milestone, not a phase', bullet: '[ ] (v3.2.0 close) carry the deferrals',
+    phase: undefined, text: '(v3.2.0 close) carry the deferrals' },
+  { name: '(Phase N) capitalized is not the tag', bullet: '[ ] (Phase 2) wire the recall path',
+    phase: undefined, text: '(Phase 2) wire the recall path' },
+  { name: '(phase) with no number', bullet: '[ ] (phase) wire the recall path',
+    phase: undefined, text: '(phase) wire the recall path' },
+  { name: '(phase two) with a non-numeric phase', bullet: '[ ] (phase two) wire the recall path',
+    phase: undefined, text: '(phase two) wire the recall path' },
+  { name: 'a tag-shaped parenthetical that is not at the head', bullet: '[ ] wire the path (phase 2) next',
+    phase: undefined, text: 'wire the path (phase 2) next' },
+  { name: 'an unclosed (phase 2', bullet: '[ ] (phase 2 wire the recall path',
+    phase: undefined, text: '(phase 2 wire the recall path' },
+];
+
+for (const row of CAPTURE_TAG_ROWS) {
+  test(`capture-tag: ${row.name}`, () => {
+    assert.deepEqual(parseCaptureSnippets(capture(row.bullet)),
+      [row.phase === undefined ? { text: row.text } : { text: row.text, phase: row.phase }]);
+  });
+}
+
+// --- the CAPTURE.md section census (captureSections) ------------------------
+// Unconditional and allowlist-free (D-06): the count of a section nobody
+// expects to be out of the walk is exactly the count that reports a bullet
+// filed where recall cannot see it.
+
+const CENSUS = [
+  '# Capture',
+  '',
+  '## Todos',
+  '',
+  '- [ ] (phase 1) one',
+  '- [x] two',
+  '',
+  '## Seeds',
+  '',
+  '- a seed',
+  '',
+  '## Notes',
+  '',
+  '- None.',
+  '',
+  '## Archive',
+  '',
+  '- retired a',
+  '- retired b',
+  '- retired c',
+  '',
+  '## Debt markers',
+  '',
+  '- a marker',
+  '',
+].join('\n');
+
+test('captureSections: every section is counted, with its walk membership', () => {
+  assert.deepEqual(captureSections(CENSUS), [
+    { heading: 'Todos', bullets: 2, inWalk: true },
+    { heading: 'Seeds', bullets: 1, inWalk: true },
+    { heading: 'Notes', bullets: 1, inWalk: true },
+    { heading: 'Archive', bullets: 3, inWalk: false },
+    { heading: 'Debt markers', bullets: 1, inWalk: false },
+  ]);
+});
+
+test('captureSections: a FENCED ## line inside a body does not mint a section', () => {
+  // Column-0 fence AND a column-0 heading inside it, so the row fails without
+  // fence state rather than passing on the indentation.
+  const text = '## Todos\n\n- [ ] the queue looks like:\n\n```md\n## Archive\n\n- retired\n```\n';
+  assert.deepEqual(captureSections(text), [{ heading: 'Todos', bullets: 1, inWalk: true }]);
+});
+
+test('captureSections: a CRLF checkout counts exactly as its plain-LF twin', () => {
+  assert.deepEqual(captureSections(CENSUS.replace(/\n/g, '\r\n')), captureSections(CENSUS));
 });

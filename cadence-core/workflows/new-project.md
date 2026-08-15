@@ -58,7 +58,7 @@ line):
 
    Ask no configuration questions. Tell the user in one line:
    "Config written with defaults (standard granularity, shipped stakes,
-   research off, plan check and verifier on). /cad-config changes any of it."
+   research and plan check off, verifier on). /cad-config changes any of it."
 5. Read the keys this workflow needs through the seam (effective values,
    global layer included):
 
@@ -299,8 +299,21 @@ Read `${CLAUDE_PLUGIN_ROOT}/cadence-core/templates/ROADMAP.md` and write
 headers - `/cad-plan` seeds each row when its phase is planned
 (`references/req-traceability.md`); do not hand-author a row here.
 
-**Present the roadmap** inline: a table (phase, goal, REQ-IDs, criteria
-count), then per-phase details with their success criteria.
+Then count what you just wrote - rule 5 above is prose until a seam counts it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
+```
+
+No `--phase`: one call walks every phase the roadmap declares. Each `over` entry
+names the phase, its measured count and the bound it broke. `roadmap_found:
+false` is not zero criteria - that phase's block declares none at all, so write
+them rather than report it as under the floor. A REPORT, not a gate, exactly as
+`plan-size`'s `phase-too-big` is: present it and let the approval gate decide.
+
+**Present the roadmap** inline: a table (phase, goal, REQ-IDs, and the criteria
+count the seam just reported), then per-phase details with their success
+criteria. Name every `over` phase and its numbers in that same presentation.
 
 **Approval gate** (ask-user seam):
 

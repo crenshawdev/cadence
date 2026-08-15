@@ -104,6 +104,18 @@ test('refuse: HEAD on a protected branch -> protected-branch, no push', () => {
   assert.equal(refExists(bare, 'refs/heads/main'), false);
 });
 
+test('refuse: a STRING protected_branches protects that branch too (#38, COR-01)', () => {
+  // The seam's own per-consumer proof of the shared coercion
+  // (lib/protected-branches.mjs): before it, this file had no string-form arm
+  // at all. On the array-only code `"release"` resolved to ['main','master'],
+  // so the ONE mutating seam pushed off a branch the user had named.
+  const { dir, bare } = repo({ branch: 'release', config: { git: { auto_close: true, protected_branches: 'release' } } });
+  const d = seam(['publish', '--dir', dir]);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'protected-branch');
+  assert.equal(refExists(bare, 'refs/heads/release'), false, 'nothing was pushed');
+});
+
 test('refuse: no origin remote configured -> remote-not-configured', () => {
   const { dir } = repo({ origin: false });
   const d = seam(['publish', '--dir', dir]);

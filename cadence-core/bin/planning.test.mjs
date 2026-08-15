@@ -90,19 +90,24 @@ function makeTree(spec) {
     }
   }
 
-  // CAPTURE.md: a top-level `[{section:'Todos'|'Seeds'|'Notes', text, phase?}]`
-  // list, each bullet under its named heading (todos carry a `(phase N)` tag
-  // when phase is given, matching /cad-capture's real format).
+  // CAPTURE.md: a top-level `[{section, text, phase?}]` list, each bullet under
+  // its named heading (todos carry a `(phase N)` tag when phase is given,
+  // matching /cad-capture's real format).
+  //
+  // The three walked headings are always written, in order, whether or not a
+  // row names them. A section OUTSIDE that set - `Archive`, `Debt markers` - is
+  // written after them, which is how a row asserts what the recall walk does
+  // NOT reach: the falsifier for the walk-membership claim needs a bullet that
+  // exists in the file and must never come back.
   if (spec.capture) {
     const bySection = { Todos: [], Seeds: [], Notes: [] };
     for (const c of spec.capture) {
       const tag = c.phase !== undefined ? `(phase ${c.phase}) ` : '';
       const box = c.section === 'Todos' ? '[ ] ' : '';
-      bySection[c.section].push(`- ${box}${tag}${c.text}`);
+      (bySection[c.section] ||= []).push(`- ${box}${tag}${c.text}`);
     }
     writeFileSync(join(dir, 'CAPTURE.md'),
-      `## Todos\n\n${bySection.Todos.join('\n')}\n\n## Seeds\n\n${bySection.Seeds.join('\n')}\n\n` +
-      `## Notes\n\n${bySection.Notes.join('\n')}\n`);
+      Object.entries(bySection).map(([h, ls]) => `## ${h}\n\n${ls.join('\n')}\n`).join('\n'));
   }
 
   // config.json written verbatim from `spec.config` (the backend-off test pins
@@ -1902,6 +1907,110 @@ test('plan-size: a missing --phase is bad-args, never the cursor', () => {
   const dir = sizeTree(['STOR-01'], {});
   assert.equal(run(['plan-size'], dir).reason, 'bad-args');
   assert.equal(run(['plan-size', '--phase', 'x'], dir).reason, 'bad-args');
+});
+
+// --- criteria-size: the criteria ceilings three workflows only stated --------
+// The prose said 3-7 and 2-5 and nothing counted either. Both grammars are
+// asserted here, including the two live roadmap heading spellings, because a
+// parser anchored to the template alone would report "declared nothing" for
+// every phase of this repo's own roadmap - and, absence not being zero, would
+// say so in silence.
+
+/**
+ * A roadmap whose phase `i+1` declares `roadmapCounts[i]` criteria under
+ * `spelling`, plus a CONTEXT.md carrying `contexts[n]` acceptance criteria for
+ * each phase named there (a phase absent from `contexts` gets no CONTEXT.md).
+ */
+function criteriaTree(roadmapCounts, spelling, contexts = {}) {
+  const dir = makeTree({
+    roadmap: roadmapCounts.map((_, i) => ({ n: i + 1, name: `P${i + 1}` })),
+  });
+  let rm = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  roadmapCounts.forEach((count, i) => {
+    const list = Array.from({ length: count }, (_, k) => `${k + 1}. criterion ${k + 1}`).join('\n');
+    rm = rm.replace(`### Phase ${i + 1}: P${i + 1}\n`,
+      `### Phase ${i + 1}: P${i + 1}\n${spelling}\n${list}\n`);
+  });
+  writeFileSync(join(dir, 'ROADMAP.md'), rm);
+  for (const [n, count] of Object.entries(contexts)) {
+    const pdir = join(dir, 'phases', n);
+    mkdirSync(pdir, { recursive: true });
+    const items = Array.from({ length: count }, (_, k) => `- [ ] AC${k + 1}: does thing ${k + 1}`);
+    writeFileSync(join(pdir, 'CONTEXT.md'),
+      `# Phase ${n} Context\n\n## Acceptance criteria\n\n${items.join('\n')}\n`);
+  }
+  return dir;
+}
+
+const BOTH_SPELLINGS = ['**Success Criteria:**', 'Success criteria:'];
+
+for (const spelling of BOTH_SPELLINGS) {
+  test(`criteria-size: under the floor and over the ceiling are both named, heading \`${spelling}\``, () => {
+    // No --phase: every phase the roadmap declares, in one call - what
+    // new-project and adopt need at their approval gate.
+    const dir = criteriaTree([1, 6, 3], spelling);
+    const r = run(['criteria-size', '--roadmap-min', '2', '--roadmap-max', '5'], dir);
+    assert.equal(r.ok, true);
+    assert.equal(r.within, false);
+    assert.deepEqual(r.compared, ['roadmap_min', 'roadmap_max']);
+    assert.deepEqual(r.over.map((o) => [o.phase, o.kind, o.measured, o.ceiling]), [
+      [1, 'roadmap-criteria-too-few', 1, 2],
+      [2, 'roadmap-criteria-too-many', 6, 5],
+    ]);
+    assert.deepEqual(r.phases.map((p) => [p.phase, p.roadmap_criteria, p.roadmap_found]),
+      [[1, 1, true], [2, 6, true], [3, 3, true]]);
+  });
+}
+
+test('criteria-size: an absent CONTEXT.md is not-found, never compared, and never a pass', () => {
+  // The absence-is-not-zero arm on the CONTEXT half: 0 criteria is under every
+  // floor, so an unwritten CONTEXT would otherwise read as a phase that failed
+  // the ceiling it was never measured against.
+  const dir = criteriaTree([3], 'Success criteria:');
+  const r = run(['criteria-size', '--phase', '1', '--context-min', '3', '--context-max', '7'], dir);
+  assert.equal(r.phases[0].context_found, false);
+  assert.equal(r.phases[0].context_criteria, 0);
+  assert.deepEqual(r.over, []);
+  assert.deepEqual(r.compared, []);
+  assert.equal(r.within, null);
+});
+
+test('criteria-size: a CONTEXT that declared its criteria IS compared, both bounds', () => {
+  const dir = criteriaTree([3, 3], 'Success criteria:', { 1: 2, 2: 5 });
+  const r = run(['criteria-size', '--context-min', '3', '--context-max', '7'], dir);
+  assert.deepEqual(r.compared, ['context_min', 'context_max']);
+  assert.deepEqual(r.over.map((o) => [o.phase, o.kind, o.measured]),
+    [[1, 'context-criteria-too-few', 2]]);
+  assert.equal(r.within, false);
+  assert.equal(r.phases[1].context_criteria, 5);
+});
+
+test('criteria-size: no ceiling flags compares nothing and reports within: null', () => {
+  const dir = criteriaTree([1, 9], 'Success criteria:', { 1: 1 });
+  const r = run(['criteria-size'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.compared, []);
+  assert.equal(r.within, null);
+  assert.deepEqual(r.over, []);
+  // The counts are still reported - a caller that supplied no bound still
+  // learns what is there, exactly as plan-size does.
+  assert.deepEqual(r.phases.map((p) => p.roadmap_criteria), [1, 9]);
+  assert.equal(r.roadmap_min, undefined);
+});
+
+test('criteria-size: a phase with no criteria heading is not-found, and a floor never fires on it', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'P1' }] });
+  const r = run(['criteria-size', '--roadmap-min', '2'], dir);
+  assert.equal(r.phases[0].roadmap_found, false);
+  assert.equal(r.phases[0].roadmap_criteria, 0);
+  assert.deepEqual(r.over, []);
+  assert.equal(r.within, null);
+});
+
+test('criteria-size: a non-integer bound is bad-args, never a coerced comparison', () => {
+  const dir = criteriaTree([3], 'Success criteria:');
+  assert.equal(run(['criteria-size', '--roadmap-min', 'x'], dir).reason, 'bad-args');
+  assert.equal(run(['criteria-size', '--phase', 'x'], dir).reason, 'bad-args');
 });
 
 test('plan-overlap: block-form files: lists intersect like inline ones (#48.1)', () => {
@@ -4204,6 +4313,52 @@ test('recall: a completed capture keeps its phase and gains a closed marker (#47
   assert.doesNotMatch(live.snippet, /\[closed\]/);
 });
 
+// --- capture -> recall: the walk-membership round trip (AC1) -----------------
+// The pair below is the whole point of the phase. The first row proves a bullet
+// written through the seam comes back; the second is its FALSIFIER, and without
+// it the first would stay green if the seam wrote to `## Archive` - which is
+// exactly how five filed bullets were lost. A positive-only assertion here
+// would be an inspection dressed as a test.
+
+test('capture -> recall: a bullet written through the seam comes back, with its phase (AC1)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const w = run(['capture', '--kind', 'todo', '--text', 'the zarquon fixture leaks a handle',
+    '--phase', '2'], dir);
+  assert.equal(w.ok, true, JSON.stringify(w));
+  const r = recall('zarquon', dir);
+  const hit = r.json.results.find((x) => /zarquon/.test(x.snippet));
+  assert.ok(hit, `the captured bullet did not come back: ${r.raw}`);
+  assert.equal(hit.source, 'CAPTURE.md');
+  assert.equal(hit.phase, 2);
+});
+
+test('capture -> recall: a seed and a note come back too, unphased', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  assert.equal(run(['capture', '--kind', 'seed', '--text', 'a zarquon scanner'], dir).ok, true);
+  assert.equal(run(['capture', '--kind', 'note', '--text', 'zarquon bit us again'], dir).ok, true);
+  const hits = recall('zarquon', dir).json.results.filter((x) => x.source === 'CAPTURE.md');
+  assert.equal(hits.length, 2, JSON.stringify(hits));
+  for (const h of hits) assert.equal(h.phase, undefined);
+});
+
+test('capture -> recall: a bullet under ## Archive is NOT returned (the falsifier)', () => {
+  // Same distinctive term, one bullet through the seam and one written straight
+  // into a section the walk does not visit. Only the seam's comes back - so a
+  // seam that ever wrote to `## Archive` reddens the row above rather than
+  // passing on a bullet nobody can recall. `## Archive` stays out of the walk on
+  // purpose (D-03): widening it would re-admit 185 retired bullets.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    capture: [{ section: 'Archive', text: 'zarquon retired long ago' }],
+  });
+  assert.match(readFileSync(join(dir, 'CAPTURE.md'), 'utf8'), /## Archive\n\n- zarquon retired long ago/);
+  assert.deepEqual(recall('zarquon', dir).json.results, []);
+  assert.equal(run(['capture', '--kind', 'todo', '--text', 'zarquon is live again', '--phase', '1'], dir).ok, true);
+  const back = recall('zarquon', dir).json.results;
+  assert.equal(back.length, 1, JSON.stringify(back));
+  assert.match(back[0].snippet, /zarquon is live again/);
+});
+
 test('recall: memory.backend none reports off with empty results, exit 0', () => {
   const dir = makeTree({
     phases: { 1: { summaryBody: { deviations: ['findable term here'] } } },
@@ -4374,15 +4529,52 @@ test('detect-commands: an unlistable root is ok:false, never a silent nothing', 
   assert.equal(r.reason, 'no-root');
 });
 
-test('detect-commands: --root with nothing after it is refused, not answered about cwd', () => {
-  const r = (() => {
-    try {
-      return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root'],
-        { encoding: 'utf8' }));
-    } catch (e) { return JSON.parse(e.stdout); }
-  })();
-  assert.equal(r.ok, false);
-  assert.equal(r.reason, 'bad-args');
+// --- a blank --root is refused by BOTH --root subcommands (COR-01) ----------
+// `detect-surfaces` is tested here rather than beside its scanner for the same
+// reason `trace ignore` is: this is the `--root` refusal, and the two rows sit
+// two lines apart in the dispatch table. Measured before the fix: `--root ""`
+// answered `ok:true` about the CWD from both commands - the silent substitution
+// #42/#45 closed for the valueless spelling and missed for the empty one - and
+// `--root "   "` answered `no-root`, a second vocabulary for one refusal. All
+// three shapes now take `debt-harvest`'s predicate, trim clause included.
+
+/** Any planning.mjs argv, parsed off stdout on either exit code. */
+function runPlanning(...args) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, ...args], { encoding: 'utf8' }));
+  } catch (e) { return JSON.parse(e.stdout); }
+}
+
+const BLANK_ROOTS = [
+  { name: '--root with nothing after it', args: ['--root'] },
+  { name: 'an empty --root ""', args: ['--root', ''] },
+  { name: 'a whitespace-only --root', args: ['--root', '   '] },
+];
+
+for (const cmd of ['detect-commands', 'detect-surfaces']) {
+  for (const row of BLANK_ROOTS) {
+    test(`${cmd}: ${row.name} is bad-args, not answered about cwd`, () => {
+      const r = runPlanning(cmd, ...row.args);
+      assert.equal(r.ok, false, JSON.stringify(r));
+      assert.equal(r.reason, 'bad-args', JSON.stringify(r));
+    });
+  }
+}
+
+test('detect-commands: a real --root still answers about THAT tree', () => {
+  const root = projectTree({ 'package.json': { scripts: { lint: 'eslint .' } } });
+  const r = runPlanning('detect-commands', '--root', root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.root, root);
+  assert.equal(r.lint, 'npm run lint');
+});
+
+test('detect-surfaces: a real --root still answers about THAT tree', () => {
+  const root = projectTree({ 'package.json': { dependencies: { stripe: '^1' } } });
+  const r = runPlanning('detect-surfaces', '--root', root);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.root, root);
+  assert.deepEqual(r.evidenced.map((e) => e.category), ['billing']);
 });
 
 // --- lease-check: the declared file lease, enforced (QW-03) ------------------
@@ -4526,16 +4718,23 @@ test('lease-check: the no-staged-set detail names the failure without a credenti
 });
 
 test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () => {
-  // The census, so a FIFTH site added later fails here rather than shipping a
-  // credential. planning.mjs carries three OTHER caught-error details this
-  // requirement does not cover - partial-apply, write-failed, and the
-  // dispatch-level internal catch - so the pin is by COUNT: four uses of the
-  // idiom, exactly one of them (this one) wrapped. Adding a site moves the
-  // first number whether or not the author remembered the helper.
+  // The census, so a site added later fails here rather than shipping a
+  // credential. planning.mjs carries FIVE other caught-error details this
+  // requirement does not cover - partial-apply, write-failed, the
+  // dispatch-level internal catch, `capture --text-file`'s read failure and
+  // `capture-sections`' unreadable-capture - so the pin is by COUNT: six uses
+  // of the idiom, exactly one of them (this one) wrapped. Adding a site moves
+  // the first number whether or not the author remembered the helper.
+  //
+  // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
+  // detail is an `fs` error over a path the CALLER just named, so the only
+  // string it can echo is one the caller already holds. `redactUrl` targets a
+  // credential arriving from a remote the user never typed, which a local path
+  // read cannot be.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 4, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 6, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 1, 'the no-staged-set detail is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
@@ -5340,4 +5539,65 @@ test('milestone-prune: a spaced milestone-name label still prunes normally', () 
   assert.equal(existsSync(join(dir, `_archive-${label}`, '1', 'PLAN.md')), true);
   assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['2']);
   assert.match(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), new RegExp(label));
+});
+
+// --- capture-sections: the out-of-walk census (AC4) --------------------------
+// D-07: a STANDALONE subcommand, not a drift kind inside `status`, whose early
+// returns would starve exactly the trees most likely to hold a mangled
+// CAPTURE.md. D-06: unconditional, no allowlist - an `Archive` + `Debt markers`
+// exemption would have reported nothing on the incident this exists for.
+
+/** A queue with both walked and out-of-walk sections, written by hand. */
+const QUEUE = '# Capture\n\n## Todos\n\n- [ ] (phase 1) live one\n- [ ] live two\n\n'
+  + '## Seeds\n\n- a seed\n\n## Notes\n\n- None.\n\n'
+  + '## Archive\n\n- retired a\n- retired b\n\n## Debt markers\n\n- a marker\n';
+
+test('capture-sections: every section is named with its count and its walk membership', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  writeFileSync(join(dir, 'CAPTURE.md'), QUEUE);
+  const r = run(['capture-sections'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.exists, true);
+  assert.deepEqual(r.walk, ['Todos', 'Seeds', 'Notes']);
+  assert.deepEqual(r.sections, [
+    { heading: 'Todos', bullets: 2, in_walk: true },
+    { heading: 'Seeds', bullets: 1, in_walk: true },
+    { heading: 'Notes', bullets: 1, in_walk: true },
+    { heading: 'Archive', bullets: 2, in_walk: false },
+    { heading: 'Debt markers', bullets: 1, in_walk: false },
+  ]);
+});
+
+test('capture-sections: a bullet appended to an out-of-walk section raises THAT count and no other (AC4)', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const file = join(dir, 'CAPTURE.md');
+  writeFileSync(file, QUEUE);
+  const before = run(['capture-sections'], dir).sections;
+  writeFileSync(file, readFileSync(file, 'utf8')
+    .replace('- retired b\n', '- retired b\n- retired c\n'));
+  const after = run(['capture-sections'], dir).sections;
+  assert.equal(after.length, before.length);
+  for (let i = 0; i < before.length; i++) {
+    assert.equal(after[i].heading, before[i].heading);
+    assert.equal(after[i].in_walk, before[i].in_walk);
+    assert.equal(after[i].bullets, before[i].bullets + (before[i].heading === 'Archive' ? 1 : 0),
+      `${before[i].heading} moved unexpectedly`);
+  }
+});
+
+test('capture-sections: an absent CAPTURE.md is ok:true with no sections, never a failure', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  const r = run(['capture-sections'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.exists, false);
+  assert.deepEqual(r.sections, []);
+  assert.equal(r._exit, 0);
+});
+
+test('capture-sections: a VALUELESS --file is bad-args, never silently the --dir default', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One' }] });
+  writeFileSync(join(dir, 'CAPTURE.md'), QUEUE);
+  const r = run(['capture-sections', '--file'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
 });

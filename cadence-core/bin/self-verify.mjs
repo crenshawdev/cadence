@@ -135,6 +135,13 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
+// The throwing `--root` reader, shared with weight.mjs: ABSENT and
+// PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
+// it used to fall back to the plugin's own tree so this linter returned ok:true
+// with problems:[] about a tree it never checked. The entry-point catch arm at
+// the foot of this file is what turns its thrown seam object into a named
+// refusal. Contract in lib/seam-input.mjs.
+import { flagValue } from './lib/seam-input.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -216,6 +223,13 @@ const CONTRACTS = {
     'uat status': ['--phase'],
     audit: [],
     'criteria-coverage': [],
+    // The criteria-count ceilings, as the CALLER's literal numbers. Four bounds
+    // rather than two because the two grammars have different ones - CONTEXT's
+    // acceptance criteria 3-7, ROADMAP's per-phase criteria 2-5 - and folding
+    // them onto one pair would make a workflow state a bound it does not hold.
+    // No config keys: D-04, the rule `plan-size`'s row above already follows.
+    'criteria-size': ['--phase', '--context-min', '--context-max',
+      '--roadmap-min', '--roadmap-max'],
     'plan-overlap': ['--phase'],
     'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
     'milestone-prune': ['--label', '--mode'],
@@ -224,7 +238,12 @@ const CONTRACTS = {
     'detect-commands': ['--root'],
     'detect-surfaces': ['--root'],
     recall: ['--top'],
-    reads: [],
+    // `--join` ties each record to the `trace.jsonl` dispatch bracket that
+    // caused it, by role normalization and timestamp containment. Off by
+    // default so the envelope every existing reader parses is unchanged, and
+    // whole-record by construction: `reads.jsonl` carries no phase scoping, so
+    // the brackets it joins to must span every phase.
+    reads: ['--join'],
     // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
     // keeps only the last). Its grammar is deliberately heterogeneous: an
     // element is any verbatim string naming something the site caused the
@@ -243,9 +262,29 @@ const CONTRACTS = {
     // resolved set, so this mark is the whole enforcement.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
       '--role', '--tokens', '--raised', '--read', '--step', '--reviewer'],
-    'trace render': ['--phase'],
+    // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
+    // family is fixed to `lifecycle` in the seam and the arm is inferred from
+    // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
+    // states what it closes and nothing about how the record spells it. A row
+    // that listed them would let the restated spelling back in through the lint.
+    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail', '--reviewer'],
+    // `--events` asks for the RAW event array. The default response carries the
+    // paired `brackets` rows plus every `outcome` event instead, which is what
+    // the two shipped readers (triage-gate's `rearm` lookup, report.md's
+    // dispatch table) actually consume - and one to three of the bytes.
+    'trace render': ['--phase', '--events'],
     'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],
+    // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s
+    // global queue alone - there is no `--section`, and that absence is the
+    // point: a caller that could name a heading is how five filed bullets
+    // landed outside the recall walk.
+    capture: ['--kind', '--text', '--text-file', '--phase', '--file'],
+    // The read side of the same file, and the same `--file` override. No
+    // `--section` and no allowlist flag either: the census is unconditional
+    // (D-06), and a flag that could hide a section is what would have hidden
+    // the five lost bullets.
+    'capture-sections': ['--file'],
     'debt-harvest': ['--root'],
     'renumber insert': ['--at', '--dry-run'],
     'renumber remove': ['--n', '--dry-run'],
@@ -1269,27 +1308,6 @@ function run(root) {
 }
 
 // --- entry ---------------------------------------------------------------------
-
-/**
- * The `--root` rule weight.mjs states: ABSENT and PRESENT-WITH-NO-VALUE are
- * different inputs. `--root` with nothing after it - what a caller produces
- * from an unset or empty `$TREE` - used to read as absent and fall back to
- * the plugin's own tree, so the linter returned ok:true with problems:[]
- * about a tree it never checked. That envelope looks correct, which is worse
- * than an error. A missing, empty, or flag-shaped value now throws
- * `missing-flag-value`; a genuinely absent flag still returns undefined so
- * the default below applies.
- * @param {string[]} argv @param {string} flag @returns {string|undefined}
- */
-function flagValue(argv, flag) {
-  const i = argv.indexOf(flag);
-  if (i < 0) return undefined;
-  const v = argv[i + 1];
-  if (v === undefined || v === '' || v.startsWith('--')) {
-    throw { seam: 'missing-flag-value', detail: flag };
-  }
-  return v;
-}
 
 try {
   const argv = process.argv.slice(2);

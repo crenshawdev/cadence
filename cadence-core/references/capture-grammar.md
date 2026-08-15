@@ -1,0 +1,118 @@
+# CAPTURE.md bullet grammar
+
+The stated grammar for `.planning/CAPTURE.md` - which sections the recall walk
+visits, what counts as a bullet, and which leading parenthetical is a PHASE TAG
+rather than content. It answers one question at each level, so a bullet that is
+filed but never recalled is a stated out-of-grammar row rather than a silent
+drop.
+
+Two modules implement it. `cadence-core/bin/lib/capture-file.mjs` is the WRITE
+side - the one owner of this file's bytes, and the reason no writer can name its
+own heading. `parseCaptureSnippets` in `cadence-core/bin/lib/planning-files.mjs`
+is the READ side, the walk that feeds the BM25 corpus behind
+`planning.mjs recall`. Every claim below about the TAG is pinned by a row in
+the `CAPTURE_TAG_ROWS` table in `cadence-core/bin/planning-files.test.mjs`;
+every claim about where a written bullet LANDS is pinned by the per-kind rows
+in `cadence-core/bin/capture-file.test.mjs`.
+
+## The sections, and which three are walked
+
+| Section | Walked | Written by |
+|---|---|---|
+| `## Todos` | yes | `/cad-capture --kind todo`, `/cad-execute`'s open items |
+| `## Seeds` | yes | `/cad-capture --kind seed` |
+| `## Notes` | yes | `/cad-capture --kind note` |
+| `## Archive` | NO | the milestone triage, by hand |
+| `## Debt markers` | NO | `planning.mjs debt-harvest`, rewritten wholesale |
+| any other `## ` heading | NO | nothing - a hand-added section |
+
+The three walked headings are ONE fact with one home: the frozen list beside
+`parseCaptureSnippets`. `capture-file.mjs` derives its kind-to-heading map from
+that list rather than restating the names, because the writer and the reader
+disagreeing about which sections are the walk is the defect this grammar exists
+to close - five filed bullets were lost to exactly that disagreement.
+
+**`## Archive` and `## Debt markers` are outside the walk deliberately (D-03).**
+The fix for a lost bullet is never "walk every section": widening the walk would
+re-admit 185 bullets that a milestone triage deliberately retired, undoing the
+v2.6.0 phase-1 reconciliation in full and putting closed work back in front of
+every `/cad-plan`. A bullet under one of those headings is invisible to recall
+BY DESIGN, and `/cad-health` names every out-of-walk section with its bullet
+count on every run so the invisibility is stated rather than discovered.
+
+## The bullet
+
+```markdown
+- [ ] (phase 2) the sentence
+```
+
+A column-0 `- `, an OPTIONAL checkbox in any state (`[ ]`, `[x]`, `[X]`), then
+the text. Anything else on a line is not a bullet and is not indexed: an
+indented continuation line, a `* ` bullet, a table row, prose. A capture's text
+is therefore flattened to one line at the write seam - a second line would not
+be a bullet, and the walk would drop it in silence.
+
+A CHECKED bullet is still indexed, with a literal `[closed] ` prefix on its
+text. A closed item carries the reasoning that produced the fix, which is the
+prior evidence recall exists to surface; the prefix is what stops a planner
+reading a shipped fix as live work.
+
+## The leading phase tag
+
+A tag is matched ANCHORED at the head of the text, after the checkbox strip.
+There are four admitted shapes. An admitted tag emits a numeric `phase` field
+and is stripped WHOLE - tag and trailing space - so a version token or a label
+riding inside a tag leaves the indexed text.
+
+| Shape | Example | Emits | Indexed text |
+|---|---|---|---|
+| `(phase N)` | `- [ ] (phase 2) wire recall` | `phase: 2` | `wire recall` |
+| `(phase N.M)` | `- [ ] (phase 2.1) hotfix` | `phase: 2.1` | `hotfix` |
+| `(vX.Y.Z phase N)` | `- [ ] (v3.2.0 phase 1) close it` | `phase: 1` | `close it` |
+| `(phase N, label)` | `- [ ] (phase 3, docs) state it` | `phase: 3` | `state it` |
+| `(vX.Y.Z phase N, label)` | `- [ ] (v3.2.0 phase 1, docs) name it` | `phase: 1` | `name it` |
+
+`N` is an integer or a decimal `N.M` (a `2.1` insertion is a real phase number
+everywhere in Cadence). The version prefix is a `v` and dot-separated digits.
+The label is everything after the comma up to the closing paren.
+
+Stripping the tag whole is a decision with a stated cost: 32 bullets tagged
+`(vX.Y.Z phase N)` stop carrying their version as a BM25 term. The alternative -
+strip the phase words, keep the remainder - synthesizes bullet text nobody wrote
+and needs a second rule for the case where the remainder is empty. What those
+32 bullets gain is a correct `phase` field, which is what recall renders and
+what a planner filters on.
+
+## Out of grammar
+
+These leading parentheticals are NOT tags. Each emits no `phase` and keeps the
+parenthetical, byte-identical, in the indexed text.
+
+| Shape | Example | Why |
+|---|---|---|
+| a non-phase scope marker | `(cadence-wide)`, `(tooling)` | It is the bullet's only scope word - see below |
+| a milestone rather than a phase | `(v3.2.0 close)` | A close is not a phase; there is no number to emit |
+| capitalized | `(Phase 2)` | The tag is lowercase, the way `Phase 2` is the ROADMAP token and `phase 2` is prose |
+| no number | `(phase)` | Nothing to emit; guessing a phase is worse than none |
+| a non-numeric phase | `(phase two)` | Same |
+| not at the head | `wire the path (phase 2) next` | Anchored: a mid-sentence parenthetical is prose |
+| unclosed | `(phase 2 wire the path` | No closing paren, so no tag ends anywhere |
+
+**A leading parenthetical that is not a tag is CONTENT (D-05).** The widening
+is deliberately not a greedy `^\([^)]*\)` strip: 24 live bullets carry
+`(cadence-wide)` or `(tooling)` as their ONLY scope marker, and
+`parseCaptureSnippets` feeds BM25 directly, so a greedy strip would eat the one
+word those bullets can be found by. A rule that reads the phase correctly while
+eating content is the failure this row exists to catch, which is why every row
+in the table asserts the emitted TEXT as well as the emitted phase.
+
+## Not in this grammar
+
+- Ordering, deduplication and triage of bullets. The queue is append-only at
+  the seam; retiring a bullet into `## Archive` is a milestone-close judgment.
+- The `- None.` placeholder is an ordinary bullet to this walk, unlike
+  `parseSummarySnippets`, which skips the template's own prose. It costs one
+  low-scoring corpus entry per empty section and removing it is a separate
+  change with its own blast radius.
+- BM25 scoring and ranking, which read the text this grammar produces and know
+  nothing about tags.

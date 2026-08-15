@@ -1,0 +1,8 @@
+{"ts":"2026-08-14T12:00:00.000Z","tool":"Read","agent":"coordinator","target":".planning/ROADMAP.md"}
+{"ts":"2026-08-14T12:05:00.000Z","tool":"Read","agent":"cadence:cad-verifier-medium","agent_id":"ag-verifier","target":".planning/phases/4/UAT.md"}
+{"ts":"2026-08-14T12:05:00.000Z","tool":"Read","agent":"cadence:cad-planner","agent_id":"ag-planner","target":".planning/PROJECT.md"}
+{"ts":"2026-08-14T12:20:00.000Z","tool":"Read","agent":"cadence:cad-executor","agent_id":"ag-exec-a","target":"cadence-core/bin/planning.mjs"}
+{"ts":"2026-08-14T12:20:00.000Z","tool":"Grep","agent":"fork","agent_id":"ag-fork","target":"cadence-core"}
+{"ts":"2026-08-14T12:20:00.000Z","tool":"Glob","agent":"general-purpose","agent_id":"ag-gp","target":"cadence-core"}
+{"ts":"2026-08-14T12:41:00.000Z","tool":"Read","agent":"cadence:cad-executor","agent_id":"ag-exec-b","target":"cadence-core/bin/lib/trace.mjs"}
+{"ts":"2026-08-14T13:00:00.000Z","tool":"Read","agent":"cadence:cad-executor","agent_id":"ag-exec-b","target":"README.md"}

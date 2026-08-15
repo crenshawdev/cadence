@@ -22,6 +22,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
 
@@ -565,4 +566,158 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
   assert.deepEqual(wrong, [],
     `references/seams.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
     + `which no rung file carries - the 19 rung files carry ${bound}`);
+});
+
+// --- DOC-02: README counts its own skills, roles and rung files --------------
+
+test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {
+  // The defect this pins. That sentence is the only place the plugin states its
+  // own size, and nothing read it against the tree: the v3.1.0 correction to the
+  // skill number (README-44 in .planning/DOCS-CLAIMS.md) was found by a human
+  // doc sweep, a year of cycles apart from the commit that changed the count.
+  // Both sides are measured HERE, in the same run - a number typed into this
+  // test would pin today's tree and report a correct future count as a defect.
+  //
+  // README.md ONLY (D-06). LINEAGE.md duplicates the same two counts and still
+  // publishes a stale agents row, but it is a historical doc self-verify
+  // already excludes and it stays a queue item. And not in self-verify.mjs
+  // either: that runs against every --root fixture and any user tree it is
+  // pointed at, where a `skills/` count means nothing.
+  const stated = doc('README.md')
+    .match(/Today it is (\d+) skills and (\d+) agent roles across (\d+) rung files/);
+  assert.ok(stated, 'README.md states no "Today it is N skills and M agent roles '
+    + 'across K rung files" sentence - the counts this test compares are gone');
+
+  // Skills: the ones a USER can invoke. `user-invocable: false` marks the
+  // contract skills, which are preloaded into an agent and never appear in
+  // anyone's slash-command list, so counting them would overstate the surface.
+  // Read from the frontmatter block rather than from anywhere in the file, so
+  // prose quoting the key cannot silently drop a skill from the count.
+  const skills = readdirSync(join(REPO, 'skills'), { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name).sort()
+    .filter((name) => {
+      const front = doc('skills', name, 'SKILL.md').split(/^---$/m)[1];
+      assert.ok(front, `skills/${name}/SKILL.md has no frontmatter block`);
+      return !/^user-invocable:\s*false\s*$/m.test(front);
+    });
+
+  // Rung files: every `.md` directly under agents/. Roles: those filenames with
+  // the rung suffix stripped. The suffix VOCABULARY is read off
+  // route-table.json's `rung_order` rather than typed, so a new rung renames
+  // agent files and this keeps deriving the same six roles instead of counting
+  // the new spelling as a seventh.
+  const rungs = readdirSync(join(REPO, 'agents')).filter((f) => f.endsWith('.md'));
+  assert.ok(rungs.length, 'no agent files under agents/');
+  const order = JSON.parse(doc('cadence-core', 'route-table.json')).rung_order;
+  assert.ok(Array.isArray(order) && order.length, 'route-table.json states no rung_order');
+  const suffix = new RegExp(`-(?:${order.join('|')})$`);
+  // The analyzer's UNSUFFIXED file is its xhigh rung (route-table.json:4), so a
+  // name carrying no suffix is already the role.
+  const roles = new Set(rungs.map((f) => f.replace(/\.md$/, '').replace(suffix, '')));
+
+  const wrong = /** @type {[string, number, number][]} */ ([
+    ['skills', Number(stated[1]), skills.length],
+    ['agent roles', Number(stated[2]), roles.size],
+    ['rung files', Number(stated[3]), rungs.length],
+  ]).filter(([, said, is]) => said !== is)
+    .map(([what, said, is]) => `${what}: README says ${said}, the tree has ${is}`);
+
+  assert.deepEqual(wrong, [],
+    `README's count sentence disagrees with the tree - ${wrong.join('; ')}`);
+});
+
+// --- DOC-02: PROJECT.md declares its milestone before it mentions another ----
+
+test('PROJECT.md\'s `### Active` declares its milestone as the section\'s first version token', () => {
+  // The defect this pins, measured at 81bdb5d: the section's first version
+  // token was `v3.2.0` on its opening line - correct - and activeVersion()
+  // returned `v3.0.0`, a token forty lines below it that landed at the start of
+  // a line only because markdown wrapped a sentence there. Nothing compares
+  // those two readings, so the docs were right and every consumer of
+  // activeVersion() was wrong: version_drift compares its answer against the
+  // tag list, and the branch-naming seam refuses an integration branch on it.
+  //
+  // The property is that the two scans AGREE, not that either equals a value:
+  // an assertion phrased as "the first version token" would have PASSED on the
+  // broken file, and one naming a version would need re-baselining every cycle
+  // open. activeVersion() and DECLARED_VERSION_RE are NOT changed and get no
+  // fallback (D-07) - the line anchor is the deliberate v2.4.0 fix for reading
+  // a MENTION as the milestone, with four fixtures pinning it at
+  // branch-decision.test.mjs:237-265. Loosening it to make this pass would ship
+  // a behaviour change to the branch-naming seam out of a docs phase; the file
+  // is what moves when this goes red.
+  const text = doc('.planning', 'PROJECT.md');
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
+  assert.ok(start >= 0, '.planning/PROJECT.md has no `### Active` section');
+
+  // The body exactly as activeVersion's own doc comment bounds it: the heading
+  // to the next level-1..3 heading.
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^#{1,3}\s/.test(lines[i])) { end = i; break; }
+  }
+
+  // The loose scan. This token shape is spelled here rather than imported
+  // because branch-decision.mjs exports neither regex and this task does not
+  // modify it; it is a GRAMMAR and not a version, so it never re-baselines.
+  const token = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
+  let first = null;
+  for (let i = start + 1; i < end; i++) {
+    const m = lines[i].match(token);
+    if (m) { first = { version: m[0], line: i + 1 }; break; }
+  }
+  assert.ok(first, '.planning/PROJECT.md\'s `### Active` body names no version at all');
+
+  const declared = activeVersion(text);
+  assert.ok(declared, 'activeVersion() reads no version from a body that names one');
+  // The line it was read on: the first body line naming that token, which is
+  // its anchored line whenever the section names it once.
+  const at = lines.findIndex((l, i) => i > start && i < end && l.includes(declared)) + 1;
+
+  assert.equal(declared, first.version,
+    `activeVersion() reads ${declared} (line ${at}) as the milestone while the \`### Active\` `
+    + `body's FIRST version token is ${first.version} (line ${first.line}). A line-anchored `
+    + 'token below an earlier prose mention wins under DECLARED_VERSION_RE, so version_drift '
+    + 'compares the wrong version against the tag list while the docs themselves are correct. '
+    + 'Fix the section - declare the milestone on its own line above every mention - rather '
+    + 'than the anchor, which is the v2.4.0 fix for reading a mention as the milestone.');
+});
+
+// --- AC6: the executor is told the surfaces it will be judged on -------------
+
+test('the executor dispatch hands over the resolve\'s answered surfaces, and the contract says what to do with them', () => {
+  // `route.mjs resolve` has always returned `surfaces` and `surfaces_answered`
+  // on every dispatch - a `--role cad-executor` resolve on this repo returns
+  // six answered surfaces - and the executor was never handed them. The worker
+  // therefore met its own risk bar for the first time when the `risk_surface`
+  // review fired against its committed range, which is the most expensive
+  // moment to learn it.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const start = execute.indexOf('<step name="execute_sequential">');
+  const end = execute.indexOf('Do NOT restate the executor\'s standing rules', start);
+  assert.ok(start >= 0 && end > start, 'execute.md has no execute_sequential dispatch prompt');
+  const prompt = execute.slice(start, end);
+  assert.match(prompt, /`surfaces`/,
+    'the executor dispatch prompt does not hand over the resolve\'s `surfaces`');
+  assert.match(prompt, /surfaces_answered/,
+    'the dispatch prompt names `surfaces` but never says what an UNANSWERED resolve means - '
+    + '`surfaces_answered: false` means all of the table\'s categories stand, not none');
+
+  // The other half: the contract states what the executor DOES with them, and
+  // it may not invent a category. The vocabulary is machine-readable, so this
+  // is the same subject as every other check in this file.
+  const values = JSON.parse(doc('cadence-core', 'config.schema.json'))
+    .keys['review.triggers.risk_surface.surfaces'].values;
+  const contract = doc('skills', 'cad-executor-contract', 'SKILL.md');
+  const para = contract.split(/\n\s*\n/).find((p) => p.includes('surfaces'));
+  assert.ok(para, 'skills/cad-executor-contract/SKILL.md never mentions the risk surfaces');
+  const named = [...para.matchAll(/`([a-z][a-z_]+)`/g)].map((m) => m[1])
+    .filter((t) => t !== 'surfaces' && t !== 'risk_surface');
+  assert.ok(named.length > 0, 'the contract\'s surfaces paragraph names no category at all');
+  for (const t of named) {
+    assert.ok(values.includes(t),
+      `the executor contract names surface \`${t}\`, which config.schema.json's `
+      + `review.triggers.risk_surface.surfaces does not carry (${values.join(', ')})`);
+  }
 });

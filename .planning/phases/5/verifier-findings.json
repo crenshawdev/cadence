@@ -1,0 +1,97 @@
+{
+  "status": "gaps",
+  "score": "7/9",
+  "method_note": "AC2's ~261 cites were checked by SCRIPT, not by hand: every data row was parsed off unescaped pipes, its line cell expanded (ranges and comma lists), the doc opened at line-2..line+2, and claim tokens matched against that window. 932 of 933 rows carry a parseable cite; the 40 lowest-overlap rows in the seven moved docs were then read by hand to separate paraphrase from a wrong cite.",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The ledger carries a non-empty run cell on every data row, records a fourth invocation naming adopt/minimalism-review/report/suggest, and holds a /cad-capture --cadence row",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Scripted parse of .planning/DOCS-CLAIMS.md: 937 pipe lines = 4 meta (2 headers + 2 separators) + 933 data rows, all 9 fields; empty run cells: 0; run values {1: 190, 2: 743}; empty verdict cells: 0; verdicts {accurate 849, stale 46, unverifiable 38}. Fourth invocation at DOCS-CLAIMS.md:82 `/cad-docs-verify cadence-core/workflows/{adopt,minimalism-review,report,suggest}.md` (a fifth for the three reference docs at :83). --cadence row: DOCS-CLAIMS.md:1052 `| README-78 | README.md | 124 | /cad-capture --cadence routes friction with Cadence to Cadence's own queue | accurate | accurate | 2 |`."
+    },
+    {
+      "n": 2,
+      "truth": "In the seven ledgered docs that moved, opening each row's cited line shows that row's claim text",
+      "status": "FAILED",
+      "uat_item": 2,
+      "evidence": "Scripted window scan over the 211 rows in the seven docs: 0 out-of-range cites, 134 rows >=0.8 token overlap, 43 at 0.6-0.8, 23 at 0.4-0.6, 11 <0.4. Hand-read of all 12 sub-0.5 rows whose verdict is `accurate` found every one correctly pinned (e.g. PLAN-07 -> plan.md:34-38 is the eight-key config.mjs get batch; EXECUTE-24 -> execute.md:255-258 states the ONE-round cap; NEW-PROJECT-32 -> new-project.md:300 names references/req-traceability.md) - the low scores are paraphrase, not drift. Seven rows genuinely do NOT show their claim text at the cited line: CONTEXT-06, CONTEXT-07 (context.md:163-165 is prose about dispatch cost), PLAN-12 (plan.md:86 is `<step name=\"route\">`), VERIFY-DEEP-01 (verify-deep.md:13 is the contract pointer), VERIFY-DEEP-02 (verify-deep.md:8-11 is the bracket-read path list), EXECUTE-02 (execute.md:360-361 is SUMMARY-paragraph prose) and EXECUTE-03 (execute.md:365-366 is `<step name=\"summary\">`). Five carry an explicit `line left at run-1 provenance` resolution and are among the 8 orphans the SUMMARY discloses; EXECUTE-02 and EXECUTE-03 carry only `corrected - 044806c + DFC-02 closed 98be3d2` and no provenance note, while the live `phase_diff` mention sits at execute.md:35."
+    },
+    {
+      "n": 3,
+      "truth": "The seven rows phase 4's `trace close` invalidated are re-verdicted stale with a resolution naming the rewrite, and no superseded `--event return/checkpoint` spelling survives",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "All seven rows read verdict `stale`, resolution `corrected - 4110fde - claim rewritten to the live trace close call`, run `2`: CONTEXT-14 (DOCS-CLAIMS.md:645), EXECUTE-17 (:698), EXECUTE-18 (:699), PLAN-18 (:784), PLAN-19 (:785), VERIFY-DEEP-05 (:845), VERIFY-DEEP-12 (:852), each claim text now spelling `trace close ...`. `grep -c -- \"--event return\\|--event checkpoint\" .planning/DOCS-CLAIMS.md` -> 0. `git log --oneline -1 4110fde` -> `refactor(4-1): convert all eight close sites to trace close`, so the cited sha is real."
+    },
+    {
+      "n": 4,
+      "truth": "The three head-anchored REQ_ID surfaces now state the surviving asymmetry rather than the removed limit",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`grep -n 2FA-01 cadence-core/references/req-traceability.md cadence-core/templates/REQUIREMENTS.md` -> req-traceability.md:50 ('the unanchored prose scan still requires a letter at the HEAD of the category, so an unbolded digit-leading id is not a token at all'), :151 ('leading with a digit (2FA-01, 3DS-02) IS admitted, counted and named in'), REQUIREMENTS.md:62-63 ('a bolded 2FA-01 IS counted by /cad-audit. Unbolded, 2FA-01 is invisible to the prose scan'). No line states a digit-leading category fails admission. `grep -rn \"Known limit as of v1.4.0\" cadence-core/` -> 0 hits. The stated asymmetry matches live code: planning-files.mjs:299 `REQ_ID_TOKEN = /\\b[A-Z][A-Z0-9]{1,7}-\\d+\\b.../` (letter head) vs :324 `REQ_ID_EXACT = /^(?:(?=[A-Z0-9]{2,8}-)[A-Z0-9]*[A-Z][A-Z0-9]*-\\d+|#\\d+)$/` (letter anywhere)."
+    },
+    {
+      "n": 5,
+      "truth": "acceptance-criteria.md's env-override passage names CADENCE_TEST_SEAM=1 beside CADENCE_PLUGIN_MANIFEST",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/references/acceptance-criteria.md:248-251: 'CADENCE_PLUGIN_MANIFEST overrides that path for hermetic tests only, and only alongside CADENCE_TEST_SEAM=1: BOTH are required, and with the variable alone the override is ignored and the shipped manifest is read silently'. That matches the code: cadence-core/bin/lib/test-seam.mjs:37 `return process.env.CADENCE_TEST_SEAM === '1';`, gated at self-verify.mjs:151, config.mjs:35, route.mjs:96, planning.mjs:167."
+    },
+    {
+      "n": 6,
+      "truth": "prose-agreement.test.mjs carries two assertions that derive both sides, and each reddens on the named pre-fix input",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/bin/prose-agreement.test.mjs:573-627 derives skills from skills/*/SKILL.md frontmatter (excluding user-invocable:false), rung files from agents/*.md and roles by stripping route-table.json rung_order suffixes; :631-685 compares activeVersion() against a locally-spelled loose version-token scan of PROJECT.md's ### Active body. Redden probes run in a tar copy of the tree at /tmp/.../scratchpad/tree (repo untouched): baseline `node --test cadence-core/bin/prose-agreement.test.mjs` -> pass 15, fail 0. Bumping README's skill count 27->28 -> `fail 1 ... README's count sentence disagrees with the tree - skills: README says 28, the tree has 27`. Replacing .planning/PROJECT.md with `git show 81bdb5d:.planning/PROJECT.md` -> `fail 1 ... activeVersion() reads v3.0.0 (line 145) as the milestone while the ### Active body's FIRST version token is v3.2.0 (line 108)`."
+    },
+    {
+      "n": 7,
+      "truth": "The prose CI group passes with no budget-overrun and each prose edit re-pinned weight-budgets.json in its own commit",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/test.mjs prose` -> exit 0, `tests 225 / pass 225 / fail 0` in 3.3 s; `grep -ci budget-overrun` over its saved output -> 0. `git show --stat 3c21fb2 48769e8 19d9965` shows cadence-core/bin/weight-budgets.json changed in each of the three prose-edit commits alongside req-traceability.md, templates/REQUIREMENTS.md and references/acceptance-criteria.md respectively. `node cadence-core/bin/self-verify.mjs --root .` -> `problems []`."
+    },
+    {
+      "n": 8,
+      "truth": "Both run-2 sweep reports are on disk, opening with their surface and verbatim invocations and closing with per-invocation counts that reconcile to their own rows",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": ".planning/phases/5/docs-verify-run-2-a.md (611 lines, 81,121 B) opens with sha 4602393, invocations 1-2 transcribed byte-identically, surface 'Fourteen files, 185,264 B', and closes '356 accurate, 6 stale, 9 unverifiable - 371 claims'; the file carries 385 `| ` rows minus 14 separators = 371. -b.md (771 lines, 94,208 B) opens with sha b41821e, invocations 3-5 plus the targeted .mjs pass, and closes with per-invocation counts 215 / 85 / 62 / 10 = 372; 391 `| ` rows minus 19 separators = 372. Both counts match the ledger's Run 2 header at DOCS-CLAIMS.md:98-118."
+    },
+    {
+      "n": 9,
+      "truth": "What the shipped docs claim about Cadence is true - the sweep's stale findings are corrected in the prose a user reads, not only recorded",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Twelve rows verdicted `stale` at run 2 carry a `divergence` resolution and are still stated falsely in shipped files (the seven `corrected - 4110fde` rows are the fixed ones). Confirmed live: README.md:56 and cadence-core/workflows/plan.md:331 say a plan review is 'advisory at solo and shipped', but cadence-core/route-table.json:52 resolves `\"shipped\": { \"plan\": \"off\" }` (plan.md:336 makes the same error for `diff`); cadence-core/workflows/new-project.md:60-61 and adopt.md:54-56 say a written config turns plan check on while cadence-core/templates/config.json:6 and config.schema.json:27 both default `workflow.plan_check` to false; cadence-core/references/config-catalog.md:51 publishes a `| **Risk** |||||` header with zero rows under it; recall.md:3-6 says two commands call `planning.mjs recall` while plan.md:117 and :182 make it three; METHOD.md:157-158, :309-310, :373-374 and INTERNALS.md:13 carry the retired risk floor and the same shipped-plan-gate error. SUMMARY.md's Goal check discloses this ('they are not yet all true in the docs a user reads')."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Ledger carries a run column, the fourth invocation, and a --cadence row", "evidence": "933 data rows parsed on unescaped pipes, 9 fields each, zero empty run cells (190 read 1, 743 read 2) and zero empty verdicts; fourth invocation at DOCS-CLAIMS.md:82 names adopt/minimalism-review/report/suggest; README-78 at :1052 names /cad-capture --cadence." },
+    { "k": 3, "name": "The seven trace-close rows are re-verdicted stale and rewritten", "evidence": "CONTEXT-14, EXECUTE-17/18, PLAN-18/19, VERIFY-DEEP-05/12 all read verdict `stale` + `corrected - 4110fde - claim rewritten to the live trace close call`, and their claim text now spells `trace close`; grep -c for `--event return|--event checkpoint` returns 0; 4110fde is the real phase-4 conversion commit." },
+    { "k": 4, "name": "REQ-ID prose states the surviving asymmetry, not the removed limit", "evidence": "req-traceability.md:50 and :151 and templates/REQUIREMENTS.md:62-63 state that an UNBOLDED digit-leading id is invisible to the prose scan while a bolded one IS admitted; no line claims admission failure; `Known limit as of v1.4.0` is gone repo-wide; matches planning-files.mjs:299 vs :324." },
+    { "k": 5, "name": "The test-seam sentinel is named beside the manifest override", "evidence": "acceptance-criteria.md:248-251 names CADENCE_TEST_SEAM=1 beside CADENCE_PLUGIN_MANIFEST and states BOTH are required, matching lib/test-seam.mjs:37 and its four gated call sites." },
+    { "k": 6, "name": "Two derived assertions, each shown to redden on a pre-fix input", "evidence": "prose-agreement.test.mjs:573-627 and :631-685 derive both sides; in a scratch copy of the tree the count test failed with 'README says 28, the tree has 27' after bumping the sentence, and the version test failed with 'activeVersion() reads v3.0.0 (line 145) ... FIRST version token is v3.2.0 (line 108)' on git show 81bdb5d:.planning/PROJECT.md. Baseline copy: 15 pass, 0 fail." },
+    { "k": 7, "name": "The prose CI group passes with budgets re-pinned", "evidence": "node cadence-core/bin/test.mjs prose -> exit 0, 225/225 pass, no budget-overrun string; weight-budgets.json is in the same commit as each of 3c21fb2, 48769e8, 19d9965; self-verify --root . reports problems []." },
+    { "k": 8, "name": "Both run-2 sweep reports are on disk with their surface and counts", "evidence": "-a.md: sha 4602393, invocations 1-2 verbatim, 14 files / 185,264 B, closes 356/6/9 = 371 and its rows tally to 371. -b.md: sha b41821e, invocations 3-5 plus the targeted .mjs pass, closes 215/85/62/10 = 372 and its rows tally to 372." }
+  ],
+  "gaps": [
+    {
+      "k": 2,
+      "name": "Cited line numbers still show their claim text in the seven moved docs",
+      "reason": "behavior wrong - seven rows in the seven moved docs cite a line that does not show their claim text, so AC2 does not hold literally",
+      "evidence": "Scripted scan of all 211 rows in the seven docs (0 out-of-range, 134 at >=0.8 overlap) plus a hand read of every sub-0.5 `accurate` row confirmed the re-pin is otherwise sound. The seven exceptions: CONTEXT-06 and CONTEXT-07 at context.md:163-165 (dispatch-cost prose), PLAN-12 at plan.md:86 (`<step name=\"route\">`), VERIFY-DEEP-01 at verify-deep.md:13 (contract pointer), VERIFY-DEEP-02 at verify-deep.md:8-11 (bracket-read path list), EXECUTE-02 at execute.md:360-361 and EXECUTE-03 at execute.md:365-366 (SUMMARY-step prose; the live phase_diff mention is at execute.md:35). Five are the disclosed run-1 provenance orphans; EXECUTE-02/03 carry no provenance note at all, only `corrected - 044806c + DFC-02 closed 98be3d2`.",
+      "severity": "minor",
+      "missing": "Either re-pin EXECUTE-02 and EXECUTE-03 to execute.md:35 (or wherever the corrected phase_diff prose now lives) or give them the same `line left at run-1 provenance` resolution the other orphans carry; and state in `## Reading this ledger` that a `corrected`/orphan row's cite is provenance rather than a live cite, so criterion 1's 'no row cites a line that has moved' reads against a rule instead of an exception. Separately, CONFIG-REVIEW-13 cites `38-39, 200-205` in an 87-line file that is byte-identical to a6b8931, so its second cite was already wrong in run 1 and survived the sweep."
+    },
+    {
+      "name": "Twelve stale claims the sweep found are still stated falsely in shipped docs",
+      "reason": "behavior wrong - the phase goal is that what Cadence claims about itself is TRUE; the sweep measured and dated the claims but twelve of them remain false in the prose a user reads",
+      "evidence": "route-table.json:52 resolves `plan: off` at `shipped` while README.md:56 and cadence-core/workflows/plan.md:331 say advisory (and :336 the same for `diff`); templates/config.json:6 and config.schema.json:27 default workflow.plan_check to false while new-project.md:60-61 and adopt.md:54-56 say a written config turns it on; config-catalog.md:51 ships a `**Risk**` category header with zero rows and no risk* key behind it; recall.md:3-6 says two callers where plan.md:117 and :182 make three; METHOD.md:157-158, :309-310, :373-374 and INTERNALS.md:13 carry the retired risk floor and the shipped-gate error. Each has a dated `stale` + `divergence` ledger row beside it.",
+      "severity": "major",
+      "missing": "A follow-on lease (phase 6 or a filed queue item) that fixes the twelve divergence-resolved rows in their source files, starting with the four that misdescribe a review gate a user configures: README.md:56, plan.md:331 and :336, new-project.md:60-61, adopt.md:54-56."
+    }
+  ],
+  "human_checks": []
+}
