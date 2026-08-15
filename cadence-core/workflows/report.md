@@ -22,10 +22,13 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads
 ```
 
-Everything below reads from the first return: `events`, `roles` (per-role
-dispatch and token totals), `coordinator` (the coordinator's own per-step
-residue, present only where markers were written), `unpaired`, `mismatched`,
-`capped`, `malformed`. The second is the in-dispatch read ledger over
+Everything below reads from the first return: `brackets` (one row per paired
+dispatch - `role`, `plan`, `event`, `ms`, `tokens`), `outcomes` (every outcome
+event), `roles` (per-role dispatch and token totals), `coordinator` (the
+coordinator's own per-step residue, present only where markers were written),
+`unpaired`, `mismatched`, `capped`, `malformed`. Never ask for the raw `events`
+array: nothing here reads one, and the flag re-buys 27 KB on the one path that
+reads a record into a model's context. The second is the in-dispatch read ledger over
 `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and takes
 no phase scoping and no flag.
 Then open the scoped
@@ -42,8 +45,8 @@ Compose the report, tersest form that keeps the receipts. Shape:
 
 ```
 Phase <N>: <name> - run record
-Dispatches: <table: role | rung | tokens | minutes, one row per dispatch/return pair, from lifecycle brackets + routing resolves>
-Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from outcome events and REVIEW files>
+Dispatches: <table: role | rung | tokens | minutes, one row per `brackets` entry (minutes from its `ms`), rung from routing resolves>
+Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not a measured cost): <total recorded; top role and its share; unrecorded dispatch count>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
@@ -52,8 +55,8 @@ Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that
 
 Rules, all load-bearing:
 - Every number is FROM the record. A dispatch with no token figure reports
-  `unrecorded`, never an estimate; minutes come from the bracket's own
-  dispatch/return timestamps.
+  `unrecorded`, never an estimate; minutes come from the row's own `ms`, and a
+  null `ms` or a null `tokens` reports absent rather than zero.
 - What that token line EXCLUDES, stated where it is printed: an advisory fire
   records none, because its reviewer closes its own bracket with no `--tokens`
   (`references/review-triggers.md`, the advisory persistence tail), and a
