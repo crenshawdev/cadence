@@ -732,6 +732,26 @@ test("phaseCriteria: a phase's block ends at the next heading, so the next phase
   assert.equal(phaseCriteria(text, 2).count, 1);
 });
 
+test('phaseCriteria: a fenced example inside the block does not inflate the count', () => {
+  // The shape that makes an in-range phase read as over its ceiling: a real
+  // 2-item list, then a fenced example of the same grammar. Counted
+  // fence-blind this is 8 against a ceiling of 5, so the seam reports a
+  // compliant phase out of range and the report means nothing.
+  const text = '# Roadmap\n\n## Phase Details\n\n### Phase 1: A\n**Goal:** a\n'
+    + 'Success criteria:\n1. first\n2. second\n\n'
+    + 'Write them like this:\n\n```\nSuccess criteria:\n1. a\n2. b\n3. c\n'
+    + '4. d\n5. e\n6. f\n```\n';
+  assert.deepEqual(phaseCriteria(text, 1), { found: true, count: 2 });
+});
+
+test('phaseCriteria: a heading that exists only inside a fence is not-found', () => {
+  // The other half of the same blindness: the fenced example alone must not
+  // mint criteria for a phase that declared none. Absence is not zero.
+  const text = '# Roadmap\n\n## Phase Details\n\n### Phase 1: A\n**Goal:** a\n\n'
+    + '```\nSuccess criteria:\n1. a\n2. b\n```\n';
+  assert.deepEqual(phaseCriteria(text, 1), { found: false, count: 0 });
+});
+
 // --- parseActiveIds ----------------------------------------------------------
 
 test('parseActiveIds: a plain bullet', () => {

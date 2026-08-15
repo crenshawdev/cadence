@@ -427,8 +427,14 @@ const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
  * A heading carrying its first item on the same line is out of grammar and
  * reads as not-found for the same reason.
  *
- * Fence handling is `phaseRequirements`'s: none. Phase 3's D-02 left the
- * roadmap paths fence-blind and widening that here was out of scope.
+ * Fenced lines INSIDE the block are dropped before either the heading or the
+ * items are matched. A roadmap that SHOWS the criteria grammar in a fenced
+ * example - the shape every template and every doc page writes - would
+ * otherwise have the example's numbered items counted as the phase's own and
+ * report a compliant phase over its ceiling, which is exactly the false
+ * out-of-range this counter exists to make meaningful. The BLOCK BOUNDARY is
+ * still `phaseRequirements`'s and still fence-blind (phase 3 D-02): a fenced
+ * `### Phase N:` heading can still end a block early, unchanged here.
  *
  * @param {string} text the ROADMAP.md bytes
  * @param {string|number} phase the caller's own spelling (D-02)
@@ -437,9 +443,13 @@ const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
 export function phaseCriteria(text, phase) {
   const block = phaseDetailBlock(normalizeCrlf(String(text || '')), phase);
   if (block === null) return { found: false, count: 0 };
-  const heading = block.match(CRITERIA_HEADING);
+  // One scanner over the block, fence delimiters dropped with their contents,
+  // so a fenced example neither mints the heading nor contributes items.
+  const fenced = fenceScanner();
+  const defenced = block.split('\n').filter((line) => !fenced(line)).join('\n');
+  const heading = defenced.match(CRITERIA_HEADING);
   if (!heading || heading.index === undefined) return { found: false, count: 0 };
-  const after = block.slice(heading.index + heading[0].length);
+  const after = defenced.slice(heading.index + heading[0].length);
   return { found: true, count: (after.match(CRITERIA_ITEM_G) || []).length };
 }
 
