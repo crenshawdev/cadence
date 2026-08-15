@@ -47,54 +47,5 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 
 ## Phases
 
-- [x] **Phase 1: The tracker enters the spine** - `/cad-land` step 1 names the issues this branch's commits reference and the ones still open, or says in one line why it could not
 
 ## Phase Details
-
-### Phase 1: The tracker enters the spine
-**Goal:** `/cad-land` step 1 names the issues this branch's commits reference and the ones still open on the detected host, or says in one line why it could not.
-**Depends on:** Nothing (first phase)
-**Requirements:** LND-01
-
-`LND-01`, the milestone's only requirement, tracked as #121. Nothing in the
-spine has ever read the issue tracker: Cadence audits its requirements, its
-plans and its own run record, then lands work without asking whether that work
-answered something the tracker has open. The check goes into `/cad-land` step 1,
-which ALREADY detects the remote host from the origin URL and ALREADY resolves a
-`tea` login to pick the PR mechanism (`skills/cad-land/SKILL.md:31-38`), so the
-host and the CLI are in hand at exactly that point - this adds facts to a report
-that already runs, not a command and not a dependency class.
-
-This is the one item left in the queue that ADDS a mechanism, and it was cut
-from the v3.2.0 cycle before execution for that reason. The added surface is
-therefore bounded by criteria 3 through 6 rather than by intent: it degrades in
-one line, it cannot stall a land, it never closes anything, and its key cannot
-be confused with the one that already means "merge unattended".
-
-Success criteria:
-1. `/cad-land` step 1 reports every issue number the commits on this branch
-   reference - `git log <base>..HEAD` scanned for `#N`, `closes #N`, `fixes #N` -
-   each marked open or closed, so "your branch references #42 and #47; #42 is
-   still open" is the line the user reads. Proved by a failing-capable test over
-   a fabricated log, not by inspection.
-2. Open issues on the detected host are listed when no commit on the branch
-   references one. This is the fallback, not the headline - a bare list is easy
-   to skim past and is not what earns the check its place.
-3. Every degradation path produces ONE line naming the reason and never blocks
-   the land, never retries, never fabricates a list: no remote, unrecognized
-   host, CLI absent, no login, nonzero exit. Each path fault-injected with a
-   test proving what the caller sees.
-4. A hanging forge CLI cannot stall a land. The call is bounded by a hard
-   timeout, proved against a stub that never exits - this is the first time
-   `/cad-land` reads remote state that is not git.
-5. `git.issue_check` (bool, default true) ships in the config catalog and the
-   schema, and no new key or prose shares vocabulary with `git.auto_close`,
-   which already means "merge the integration branch unattended" across
-   `cad-land` step 4b, `land-cleanup.mjs` and `close-decision.mjs`. Landing
-   never closes an issue, and closing one stays an explicit ask at publish time.
-6. The GitLab arm resolves through the same CLI-resolution seam as `gh` and
-   `tea` and is proven by a stubbed `glab` path, since `glab` is absent on this
-   machine - the untestability that justified the original deferral is answered
-   by the seam, not waited on. Registration lands with the code:
-   `skills/cad-help`, `README.md`, `.planning/DOCS-CLAIMS.md` and the config
-   catalog each carry the new key.
