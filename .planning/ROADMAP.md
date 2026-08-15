@@ -47,7 +47,7 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 
 ## Phases
 
-- [ ] **Phase 1: The tracker enters the spine** - `/cad-land` step 1 names the issues this branch's commits reference and the ones still open, or says in one line why it could not
+- [x] **Phase 1: The tracker enters the spine** - `/cad-land` step 1 names the issues this branch's commits reference and the ones still open, or says in one line why it could not
 
 ## Phase Details
 
