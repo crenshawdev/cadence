@@ -57,6 +57,12 @@
 //                                   manifests, file types, never source text
 //                                   (NOT --dir: --root is the PROJECT root,
 //                                   two levels deep)
+//   risk-check run --phase N --base <ref> --head <ref> [--plan k]
+//                  [--surfaces <a,b,c>]
+//                                   whether a COMMITTED range touched a risk
+//                                   surface, recorded on the trace whatever the
+//                                   answer - so "the check was skipped" stops
+//                                   reading like "it ran and matched nothing"
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
@@ -149,7 +155,8 @@ import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
-import { scanTree } from './lib/surface-scan.mjs';
+import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
+import { scanDiff } from './lib/risk-diff.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -3000,6 +3007,156 @@ function cmdTrace(dir, sub, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// risk-check - the detection the blocking `risk_surface` gate fires on, and the
+// record that proves it ran (RSK-01/RSK-02).
+//
+// The defect it closes: detection was `workflows/execute.md` telling a model to
+// check a diff against the eight-category prose list in
+// references/review-triggers.md. A fire wrote a lifecycle event and a NON-match
+// wrote nothing, so the run record could not tell "the detection step was
+// skipped" from "it ran and matched nothing", and an omitted check was
+// indistinguishable from a clean one.
+//
+// What changed is not the heuristics - those stay heuristics, in lib/
+// risk-diff.mjs - it is that the answer is computed by something that always
+// returns one and always appends it. `run` records on EVERY invocation that got
+// past argument validation, including the no-match path and the git-failure
+// path; `status` refuses a phase holding a completed executor range with no
+// record.
+// ---------------------------------------------------------------------------
+
+/** The `git diff` body this will read, at most. An oversized range is a
+ * REPORTED state (`checked:false`, with the reason on the envelope), never a
+ * throw that leaves the caller with no answer at all. */
+const RISK_DIFF_MAX_BUFFER = 32 * 1024 * 1024;
+
+/**
+ * A ref the caller stated, or null. Refused when it opens with `-`: git would
+ * read it as a FLAG, and a gate whose range can be turned into an option by its
+ * own argument is a gate that can be told to look at something else.
+ * @param {any} raw
+ */
+function riskRef(raw) {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim();
+  if (!t || t.startsWith('-')) return null;
+  return t;
+}
+
+function cmdRiskCheckRun(dir, opts) {
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
+  const n = parsedPhase.value;
+
+  // requireInt, not Number(): `parseArgs` gives a VALUELESS flag the boolean
+  // `true` and `Number(true)` is `1`, so `--plan` with nothing after it would
+  // record the answer against plan 1 (the VAL-01 rail).
+  let plan;
+  if ('plan' in opts) {
+    const parsedPlan = requireInt(opts.plan);
+    if (!parsedPlan.ok) return fail('bad-args', 'risk-check run --plan needs a plan number after it: --plan <k>');
+    plan = parsedPlan.value;
+  }
+
+  // BOTH required, and neither defaulted: a defaulted head is a range the
+  // caller never stated, and this record is the evidence of what was checked.
+  const base = riskRef(opts.base);
+  const head = riskRef(opts.head);
+  if (!base || !head) {
+    return fail('bad-args', 'risk-check run needs --base <ref> and --head <ref>, neither opening with `-`');
+  }
+
+  // The scope of the check, narrowed only by what the caller named. A token
+  // outside the eight is a malformed CALL - refused, with NOTHING appended, the
+  // rule `trace append --tokens` already states - because a caller who mistyped
+  // the scope of a blocking gate must see a refusal rather than a narrowed
+  // clean answer.
+  let categories = [...CATEGORIES];
+  if ('surfaces' in opts) {
+    const raw = typeof opts.surfaces === 'string' ? opts.surfaces : '';
+    const tokens = raw.split(',').map((t) => t.trim()).filter(Boolean);
+    if (!tokens.length) {
+      return fail('bad-args', 'risk-check run --surfaces needs a comma-separated list after it: --surfaces <a,b,c>');
+    }
+    const unknown = tokens.filter((t) => !CATEGORIES.includes(t));
+    if (unknown.length) {
+      return fail('bad-args',
+        `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
+    }
+    categories = [...new Set(tokens)];
+  }
+
+  let body = null;
+  let diffError = null;
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    // `-C top`, the way cmdLeaseCheck reads its staged set, so the range is the
+    // repository's and not the cwd's. The trailing `--` ends the revision list:
+    // a ref that also names a path cannot turn into a pathspec here.
+    body = execFileSync('git', ['-C', top, 'diff', base, head, '--'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
+  } catch (e) {
+    // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set` applies:
+    // a git failure detail can carry a remote URL with credentials in it.
+    diffError = redactUrl(e && e.message ? e.message : String(e));
+  }
+
+  const scan = scanDiff(body, categories);
+
+  // Appended BEFORE the envelope is emitted, and on every path past argument
+  // validation - the no-match path and the git-failure path included - so even
+  // a refusal leaves the record saying the check was ATTEMPTED. `appendEvent`
+  // never throws and never speaks; its `{written, reason}` rides the envelope
+  // so a trace that could not be written is reported rather than silently
+  // dropped, and it may NOT change the verdict.
+  //
+  // `plan` is the parsed NUMBER while a prose `trace append --plan` stores the
+  // caller's string; `risk-check status` stringifies both sides before
+  // comparing, the way lib/trace.mjs's own `key()` does, so the two spellings
+  // join.
+  const res = appendEvent(dir, {
+    phase: parsedPhase.raw,
+    family: 'outcome',
+    event: 'risk_check',
+    ...(plan === undefined ? {} : { plan }),
+    base,
+    head,
+    checked: scan.checked,
+    categories: scan.categories,
+    // TOKENS on the record, the `{category, signal}` pairs on the envelope: the
+    // record is joined and counted, the envelope is read by the fire site that
+    // has to state a reason.
+    matches: scan.matches.map((m) => m.category),
+    inconclusive: scan.inconclusive,
+  });
+
+  const envelope = {
+    phase: n,
+    ...(plan === undefined ? {} : { plan }),
+    base,
+    head,
+    checked: scan.checked,
+    categories: scan.categories,
+    matches: scan.matches,
+    inconclusive: scan.inconclusive,
+    trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
+  };
+
+  // A range that could not be READ is never ok: a caller must not be able to
+  // take "git refused" for "clean".
+  if (diffError !== null) {
+    return emit({ ok: false, reason: 'no-diff', detail: diffError, ...envelope });
+  }
+  return ok(envelope);
+}
+
+function cmdRiskCheck(dir, sub, opts) {
+  if (sub === 'run') return cmdRiskCheckRun(dir, opts);
+  return fail('usage', 'risk-check <run>');
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -3741,6 +3898,7 @@ const COMMANDS = {
     ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
     : cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd())),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
+  'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.
   capture: (dir, _sub, opts) => cmdCapture(dir, opts),
