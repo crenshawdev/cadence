@@ -256,7 +256,11 @@ const CONTRACTS = {
     // states what it closes and nothing about how the record spells it. A row
     // that listed them would let the restated spelling back in through the lint.
     'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail', '--reviewer'],
-    'trace render': ['--phase'],
+    // `--events` asks for the RAW event array. The default response carries the
+    // paired `brackets` rows plus every `outcome` event instead, which is what
+    // the two shipped readers (triage-gate's `rearm` lookup, report.md's
+    // dispatch table) actually consume - and one to three of the bytes.
+    'trace render': ['--phase', '--events'],
     'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],
     // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s

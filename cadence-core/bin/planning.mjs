@@ -66,12 +66,17 @@
 //                                   unmarked or unusable), absent means
 //                                   `return`. `escalation` is NOT inferred and
 //                                   stays reachable through `trace append`
-//   trace render [--phase N]        the four families, the derived id, every
+//   trace render [--phase N] [--events]
+//                                   the four families, the derived id, every
 //                                   worker dispatch paired to its
 //                                   return/checkpoint/escalation, the per-role
 //                                   dispatch/token totals, and - where markers
 //                                   were written - the coordinator's own
-//                                   per-step residue between those brackets
+//                                   per-step residue between those brackets.
+//                                   By default the response carries the paired
+//                                   `brackets` rows and every `outcome` event
+//                                   in place of the raw event array; --events
+//                                   asks for that array instead
 //   debt-harvest [--root <path>]    every CADENCE-DEBT marker in the tracked
 //                                   tree, collected into .planning/CAPTURE.md's
 //                                   own `## Debt markers` section (NOT --dir:
@@ -2789,6 +2794,25 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
+    // The BOUND, and it lives here rather than in `renderTrace` (D-08). Two
+    // in-process consumers read the full array off the function - `trace
+    // suggest` above reads `r.events.length`, and lib/trace-suggest.mjs reads
+    // `render.events` directly - so bounding the function would make every
+    // evidence-backed retune suggestion price a fraction of the run. What is
+    // oversized is the CLI RESPONSE, which is read into a model's context:
+    // 36,916 B for `--phase 3` on this repo's own record, nearly all of it the
+    // raw event array.
+    //
+    // What replaces it is NOT a tail-N of `events`. It is the per-bracket rows
+    // plus EVERY `outcome` event, because references/triage-gate.md reads this
+    // response to find a prior `rearm` outcome under the current `corr` before
+    // firing the narrowed round - a truncated payload makes that lookup miss,
+    // and the one-re-arm cap on the only BLOCKING trigger fails open. The
+    // second reader, workflows/report.md, needs one row per dispatch/return
+    // pair and one line per review fire, which is the same shape.
+    // PRESENCE, the `--undo` precedent at `phase-done`: the flag says "hand me
+    // the raw array" and has no value to get wrong.
+    const full = 'events' in opts;
     return ok({
       file: r.file,
       corr: r.corr,
@@ -2800,7 +2824,9 @@ function cmdTrace(dir, sub, opts) {
       // zeroed block would read as a coordinator that spent nothing.
       ...(r.coordinator ? { coordinator: r.coordinator } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
-      events: r.events,
+      ...(full
+        ? { events: r.events }
+        : { brackets: r.brackets, outcomes: r.events.filter((e) => e.family === 'outcome') }),
       unpaired: r.unpaired,
       // Emitted the way `roles` and `coordinator` are - only when there is
       // something to say, so a clean trace's envelope is byte-identical to the

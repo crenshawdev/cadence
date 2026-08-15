@@ -325,7 +325,7 @@ test('seam: append then render joins both events under the derived id', () => {
   const b = run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
     '--event', 'dispatch', '--plan', '1']);
   assert.equal(b.corr, '1-abc1234');
-  const r = run(dir, ['trace', 'render', '--phase', '1']);
+  const r = run(dir, ['trace', 'render', '--phase', '1', '--events']);
   assert.equal(r.ok, true);
   assert.equal(r.corr, '1-abc1234');
   assert.equal(r.capped, false);
@@ -374,23 +374,119 @@ test('seam: 1.1 and 1.10 are two phases, not one trace key (D-02)', () => {
   assert.equal(a.corr, '1.1-aaa1111');
   assert.equal(b.corr, '1.10-bbb2222');
 
-  const ten = run(dir, ['trace', 'render', '--phase', '1.10']);
+  const ten = run(dir, ['trace', 'render', '--phase', '1.10', '--events']);
   assert.equal(ten.corr, '1.10-bbb2222');
   assert.equal(ten.events.length, 1, JSON.stringify(ten.events));
   assert.equal(ten.events[0].phase, '1.10');
 
-  const one = run(dir, ['trace', 'render', '--phase', '1.1']);
+  const one = run(dir, ['trace', 'render', '--phase', '1.1', '--events']);
   assert.equal(one.corr, '1.1-aaa1111');
   assert.equal(one.events.length, 1, JSON.stringify(one.events));
   assert.equal(one.events[0].phase, '1.1');
 });
 
-test('seam: render on an absent trace file is ok:true with empty events', () => {
+test('seam: render on an absent trace file is ok:true with an empty record', () => {
   const dir = root();
   const r = run(dir, ['trace', 'render', '--phase', '1']);
   assert.equal(r.ok, true);
-  assert.deepEqual(r.events, []);
+  assert.deepEqual(r.brackets, []);
+  assert.deepEqual(r.outcomes, []);
   assert.deepEqual(r.unpaired, []);
+  assert.ok(!('events' in r));
+  // ...and the raw array is still reachable, still empty.
+  assert.deepEqual(run(dir, ['trace', 'render', '--phase', '1', '--events']).events, []);
+});
+
+// --- the bounded render (D-08, D-09) -----------------------------------------
+//
+// The CLI response is what gets read into a model's context; the FUNCTION's
+// return is what `trace suggest` prices a run from. So the bound is on the
+// response alone, and what replaces `events` is the paired bracket rows plus
+// every `outcome` event - never a tail-N, because triage-gate's one-re-arm cap
+// looks up a `rearm` outcome in this payload and a truncated one makes it miss.
+
+/** A dispatch/terminal pair `a`..`b` minutes apart, with a token figure. */
+function billed(dir, plan, role, a, b, tokens, event = 'return') {
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: DISPATCH, plan, role, ts: at(a) });
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event, plan, role, tokens, ts: at(b) });
+}
+
+test('renderTrace: every PAIRED bracket is exposed as a row, unpaired ones are not', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-executor', 0, 4, 100);
+  billed(dir, '2', 'cad-reviewer', 2, 5, 50, 'checkpoint');
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: DISPATCH, plan: '3', role: 'cad-planner', ts: at(6) });
+  const r = renderTrace(dir, 9);
+  assert.deepEqual(r.brackets.map((b) => [b.plan, b.role, b.event, b.ms, b.tokens]), [
+    ['1', 'cad-executor', 'return', 4 * MIN, 100],
+    ['2', 'cad-reviewer', 'checkpoint', 3 * MIN, 50],
+  ]);
+  // The third dispatch never closed, so it is `unpaired` and has no row - the
+  // same split the accounting already makes, exposed rather than re-derived.
+  assert.deepEqual(r.unpaired.map((u) => u.plan), ['3']);
+});
+
+test('renderTrace: a bracket row bills the DISPATCH\'s role, like `roles` does', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: DISPATCH, plan: '1', role: 'cad-executor', ts: at(0) });
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-reviewer', tokens: 7, ts: at(1) });
+  const r = renderTrace(dir, 9);
+  assert.equal(r.brackets[0].role, 'cad-executor');
+  // ...and the disagreement is still reported where it always was.
+  assert.equal(r.mismatched.length, 1);
+});
+
+test('renderTrace: a bracket whose timestamps cannot be read reports ms null, never 0', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: DISPATCH, plan: '1', role: 'r', ts: 'not-a-time' });
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: 'return', plan: '1', role: 'r', ts: at(3) });
+  const r = renderTrace(dir, 9);
+  assert.equal(r.brackets[0].ms, null);
+  // A figureless close reports null too - the same absent-is-not-zero rule the
+  // token accounting already holds.
+  assert.equal(r.brackets[0].tokens, null);
+});
+
+test('seam: the DEFAULT render carries bracket rows and outcomes, never the event array', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-executor', 0, 4, 100);
+  appendEvent(dir, { phase: 9, family: 'outcome', event: 'gate', detail: 'risk_surface', ts: at(5) });
+  appendEvent(dir, { phase: 9, family: 'routing', event: 'resolve', ts: at(6) });
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  assert.equal(r.ok, true);
+  assert.ok(!('events' in r), JSON.stringify(Object.keys(r)));
+  assert.deepEqual(r.brackets.map((b) => b.plan), ['1']);
+  assert.deepEqual(r.outcomes.map((e) => e.event), ['gate']);
+  // Everything else is exactly what it was: the counts still price the WHOLE
+  // scoped record, not the bounded payload.
+  assert.deepEqual(r.counts, { routing: 1, provider: 0, lifecycle: 2, outcome: 1 });
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 100 } });
+});
+
+test('seam: triage-gate\'s `rearm` lookup still finds its event in the bounded response', () => {
+  const dir = root();
+  // The one-re-arm cap on the only BLOCKING trigger reads this payload for a
+  // `rearm` outcome under the current `corr`. A tail-N bound would drop it
+  // behind the phase's lifecycle traffic and the cap would fail OPEN.
+  appendEvent(dir, { phase: 9, family: 'lifecycle', event: ANCHOR, sha: 'abc1234', ts: at(0) });
+  appendEvent(dir, { phase: 9, family: 'outcome', event: 'rearm', detail: 'risk_surface', ts: at(1) });
+  for (let i = 0; i < 40; i++) billed(dir, `p${i}`, 'cad-executor', 2 + i, 3 + i, 1000);
+  const r = run(dir, ['trace', 'render', '--phase', '9']);
+  const rearm = r.outcomes.filter((e) => e.event === 'rearm' && e.corr === r.corr);
+  assert.equal(rearm.length, 1);
+  assert.equal(rearm[0].detail, 'risk_surface');
+});
+
+test('seam: --events hands back the raw array the two in-process readers use', () => {
+  const dir = root();
+  billed(dir, '1', 'cad-executor', 0, 4, 100);
+  appendEvent(dir, { phase: 9, family: 'outcome', event: 'gate', ts: at(5) });
+  const full = run(dir, ['trace', 'render', '--phase', '9', '--events']);
+  assert.deepEqual(full.events.map((e) => e.event), [DISPATCH, 'return', 'gate']);
+  // The flag is an EITHER/OR: asking for the array is asking for today's
+  // envelope, so the bounded keys do not ride along and re-buy the bytes.
+  assert.ok(!('brackets' in full));
+  assert.ok(!('outcomes' in full));
 });
 
 // --- what a dispatch COST: --tokens, --role, --read --------------------------
@@ -586,7 +682,7 @@ test('seam: --read stores a comma-separated set as an array, verbatim', () => {
     '--event', 'dispatch', '--plan', 'cad-planner', '--role', 'cad-planner',
     '--read', 'a.md,b.md,c.md']);
   assert.equal(r.ok, true);
-  const rendered = run(dir, ['trace', 'render', '--phase', '4']);
+  const rendered = run(dir, ['trace', 'render', '--phase', '4', '--events']);
   assert.deepEqual(rendered.events[0].read, ['a.md', 'b.md', 'c.md']);
 });
 

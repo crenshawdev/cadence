@@ -320,6 +320,14 @@ export function appendEvent(planningRoot, event) {
  * @property {Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>} roles
  *   what each role COST, keyed by the lifecycle events' `role` field
  * @property {Record<string, any>[]} events
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null}[]} brackets
+ *   every dispatch that PAIRED, one row each, in the order its terminal was
+ *   read. The pairing was already computed here for the accounting; exposing it
+ *   is what lets a caller print per-worker rows without re-deriving `open` and
+ *   `seenTerminals` for itself - and re-deriving them is how two readers of one
+ *   record start disagreeing about which bracket closed. `role` is the
+ *   DISPATCH's, the same authority `roles` bills on; `event` is the terminal's,
+ *   so a `checkpoint` row is distinguishable from a `return` one.
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
  * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
  *   paired brackets whose terminal named a role its dispatch did not
@@ -404,6 +412,7 @@ export function renderTrace(planningRoot, phase) {
     malformed: 0,
     roles: {},
     events: [],
+    brackets: [],
     unpaired: [],
     mismatched: [],
   };
@@ -528,7 +537,7 @@ export function renderTrace(planningRoot, phase) {
   // Each pending entry carries the two accounting fields beyond the identity
   // `unpaired` renders: `role` so a terminal bills the half that OPENED the
   // worker, and `funded` so one dispatch can be funded exactly once.
-  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean}[]>} */
+  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean, tokens: number|null}[]>} */
   const open = new Map();
 
   // Every terminal's full identity, so the SECOND copy of one funds nothing. A
@@ -596,8 +605,8 @@ export function renderTrace(planningRoot, phase) {
       // A figure on the OPEN half is unusual - prose writes it at the close -
       // but it is counted rather than dropped, and it marks THIS dispatch
       // funded so its own terminal cannot fund it a second time.
-      const entry = { corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role, funded: false };
-      if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; }
+      const entry = { corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role, funded: false, tokens: null };
+      if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; entry.tokens = tokens; }
       const pending = open.get(worker) || [];
       pending.push(entry);
       open.set(worker, pending);
@@ -624,6 +633,19 @@ export function renderTrace(planningRoot, phase) {
       if (matched) {
         const a = millis(matched.ts);
         if (a !== null && t !== null && t > a) coordRow(e.phase).spans.push({ a, b: t });
+        // The bracket ROW, taken here because this is the one place the two
+        // halves are both in hand. `ms` is null rather than 0 when either
+        // timestamp is unreadable: a duration of zero and a duration nobody
+        // could compute are different answers, the same posture the token
+        // figure already takes. `tokens` prefers the terminal's figure and
+        // falls back to one the dispatch half carried, which is exactly what
+        // the per-role accounting below bills.
+        out.brackets.push({
+          corr: e.corr, phase: e.phase, plan: e.plan, role: matched.role,
+          event: e.event, ts: matched.ts, end: e.ts,
+          ms: a !== null && t !== null ? t - a : null,
+          tokens: tokens !== null ? tokens : matched.tokens,
+        });
         // REPORTED, never billed. The accounting below is unchanged - the
         // dispatch is still the authority for whose bill this is - but a
         // bracket whose two halves name two different roles is a prose defect
