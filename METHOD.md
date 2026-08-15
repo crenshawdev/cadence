@@ -417,14 +417,14 @@ half-built change and cost a fresh-context re-dispatch per match, whose only job
 was writing code no plan task authorized - itself new risk surface, and the next
 halt. Blocking on the finished range keeps the gate and drops the loop.
 
-Detection also sets a floor. When a phase's own plan declares a path on one of
-those surfaces, that phase's `stakes` level is raised for the phase, the reason
-names which surface and which file matched, and the raise only ever goes up, so a
-project already at `critical` is unaffected. Lowering it back takes a named
-per-surface `risk.override.<surface>` rather than nothing at all, and that waiver
-is read from the repo's own config alone: one set in a user-global config is
-ignored and named in the warnings, because a single line in one file should not
-disable the floor in every project on the machine.
+Detection sets no floor. What a plan declares raises no level: the `stakes` you
+set is the whole of it. The dispatch-time detector that read a phase's declared
+paths, and the eight `risk.override.<surface>` waivers that existed to lower what
+it raised, were both cut in v2.7.0 - the detector judged a file by its NAME, so
+one path token in one declared file was enough to put six roles on their top rung
+for the rest of the phase. What those surfaces drive instead is the one
+`risk_surface` review: blocking at every level, fired once on the completed
+commit range.
 
 A blocking panel on every `rm -rf dist/` would train you to ignore the gate, so
 there is a narrow, evidence-based pre-filter. A destructive op drops only when
