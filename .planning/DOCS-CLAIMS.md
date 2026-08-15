@@ -203,10 +203,15 @@ newly drifted one as already corrected.
 changed since `a6b8931` - 23 of the 31 docs the ledger cited then, 493 rows, of
 which 261 cells moved. 206 came from the run-2 report's own location cell, 55
 from a per-row read of the live file, and the rest were confirmed to still hold
-their claim. Two classes are deliberately NOT live: a row resolved
+their claim. Three classes are deliberately NOT live: a row resolved
 `corrected - <sha>`, whose claim text predates the fix and whose cite is
-provenance, and the 55 rows on the eight workflow files byte-identical to run 1,
-which were not re-read because they cannot have moved. The paragraphs below are
+provenance; a row resolved `divergence - ... line left at run-1 provenance`,
+whose claim was dropped from the doc outright so there is no live line to move
+it to (CONTEXT-06, CONTEXT-07, PLAN-12, VERIFY-DEEP-01, VERIFY-DEEP-02); and the
+55 rows on the eight workflow files byte-identical to run 1,
+which were not re-read because they cannot have moved. Those three classes are
+the whole of it: outside them, opening a row's `doc` at its `line` shows its
+claim. The paragraphs below are
 the record of how the column got here and still describe how to read a cell that
 is provenance.
 
@@ -680,8 +685,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | DOCS-VERIFY-03 | cadence-core/workflows/docs-verify.md | 46 | The report table columns are `claim \| location \| verdict \| correct value (if stale)`. | accurate | accurate | 2 |
 | DOCS-VERIFY-04 | cadence-core/workflows/docs-verify.md | 40-44 | Verdicts are exactly `accurate \| stale \| unverifiable`. | accurate | accurate | 2 |
 | EXECUTE-01 | cadence-core/workflows/execute.md | 174-176 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected - 044806c | 1 |
-| EXECUTE-02 | cadence-core/workflows/execute.md | 360-361 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 | 1 |
-| EXECUTE-03 | cadence-core/workflows/execute.md | 365-366 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 | 1 |
+| EXECUTE-02 | cadence-core/workflows/execute.md | 360-361 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 closed 98be3d2; line is run-1 provenance, the live `phase_diff` mention is `:35` | 1 |
+| EXECUTE-03 | cadence-core/workflows/execute.md | 365-366 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 closed 98be3d2; line is run-1 provenance, the live `phase_diff` mention is `:35` | 1 |
 | EXECUTE-04 | cadence-core/workflows/execute.md | 10-12 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate | 2 |
 | EXECUTE-05 | cadence-core/workflows/execute.md | 17-18 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate | 2 |
 | EXECUTE-06 | cadence-core/workflows/execute.md | 27-33 | The nine config keys in the single `config.mjs get` all exist (`workflow.test_command` left the batch in v2.6.2 and is read at its only consumer, `execute_parallel` step 5). | accurate | accurate | 1 |
@@ -1125,7 +1130,7 @@ mistake.
 | CONFIG-60 | cadence-core/workflows/config.md | 192-198 | A trigger whose provider tier resolves to `null` silently falls back to `claude-subagent` | accurate | accurate | 2 |
 | CONFIG-REVIEW-11 | cadence-core/workflows/config-review.md | 3-5, 84-87 | It is loaded from config.md on `--review` and rejoins config.md at Wrap-up | accurate | accurate | 2 |
 | CONFIG-REVIEW-12 | cadence-core/workflows/config-review.md | 43-45 | `ok:true` carries `models[]` of `{id, tier, high_effort}` | accurate | accurate | 2 |
-| CONFIG-REVIEW-13 | cadence-core/workflows/config-review.md | 38-39, 200-205 | `claude-subagent` is the always-available fallback, so a failed provider never blocks | accurate | accurate | 2 |
+| CONFIG-REVIEW-13 | cadence-core/workflows/config-review.md | 38-39, 79-81 | `claude-subagent` is the always-available fallback, so a failed provider never blocks | accurate | accurate | 2 |
 | CONFIG-REVIEW-14 | cadence-core/workflows/config-review.md | 80-82 | Assignment alone does not enrol a reviewer - the provider must be added to `review.reviewers` | accurate | accurate | 2 |
 | CONTEXT-18 | cadence-core/workflows/context.md | 44-58 | Priors read: PROJECT.md, REQUIREMENTS.md, up to 3 prior CONTEXT.md files, and up to 3 prior SUMMARY `## Deviations` blocks | accurate | accurate | 2 |
 | CONTEXT-19 | cadence-core/workflows/context.md | 55-58 | `workflows/report.md` already reads deviations out of SUMMARY for its `Refuted:` line | accurate | accurate | 2 |
