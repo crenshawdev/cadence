@@ -1,0 +1,247 @@
+// Zero-dep tests for lib/issue-decision.mjs - the pure core of the /cad-land
+// tracker report (LND-01). Run: node --test cadence-core/bin/issue-decision.test.mjs.
+// Nothing here spawns a process: the module does no I/O, and the gitlab row is
+// proved against a CAPTURED sample of glab's documented JSON output precisely
+// because `glab` is absent on this machine.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  HOST_TABLE, classifyOrigin, scanIssueRefs, partitionIssues, decideIssueCheck,
+} from './lib/issue-decision.mjs';
+
+// --- classifyOrigin ---------------------------------------------------------
+
+const TEA_HOSTS = ['git.jcrenshaw.dev'];
+
+test('classifyOrigin reads BOTH url shapes for github and gitlab', () => {
+  for (const [url, verdict] of [
+    ['https://github.com/crenshawdev/cadence.git', 'github'],
+    ['git@github.com:crenshawdev/cadence.git', 'github'],
+    ['https://gitlab.com/org/team/repo.git', 'gitlab'],
+    ['git@gitlab.com:org/team/repo.git', 'gitlab'],
+  ]) {
+    const c = classifyOrigin(url, TEA_HOSTS);
+    assert.equal(c.verdict, verdict, url);
+    assert.ok(c.slug && c.slug.endsWith('repo') || c.slug === 'crenshawdev/cadence', `${url} -> ${c.slug}`);
+  }
+  // The subgroup path survives whole: `org/team/repo` is the selector GitLab
+  // takes, and truncating it to `org/repo` would name another project.
+  assert.equal(classifyOrigin('https://gitlab.com/org/team/repo.git', []).slug, 'org/team/repo');
+  // A port and an ssh:// scheme do not change the hostname classification.
+  assert.equal(classifyOrigin('ssh://git@github.com:22/org/repo.git', []).verdict, 'github');
+});
+
+test('classifyOrigin: a tea-login host is forgejo in both url shapes', () => {
+  for (const url of [
+    'https://git.jcrenshaw.dev/crenshawdev/cadence.git',
+    'git@git.jcrenshaw.dev:crenshawdev/cadence.git',
+    'ssh://git@git.jcrenshaw.dev:2222/crenshawdev/cadence.git',
+  ]) {
+    const c = classifyOrigin(url, TEA_HOSTS);
+    assert.equal(c.verdict, 'forgejo', url);
+    assert.equal(c.slug, 'crenshawdev/cadence');
+    assert.equal(c.host, 'git.jcrenshaw.dev');
+  }
+});
+
+test('classifyOrigin: no-login and unrecognized are DIFFERENT verdicts', () => {
+  const url = 'https://forge.example.com/org/repo.git';
+  // tea WAS consulted and named no login for this host: the fix is a login, and
+  // the line has to be able to say so.
+  assert.equal(classifyOrigin(url, TEA_HOSTS).verdict, 'no-login');
+  assert.equal(classifyOrigin(url, []).verdict, 'no-login');
+  // tea could not be consulted at all - no reading exists to recognize it.
+  assert.equal(classifyOrigin(url, null).verdict, 'unrecognized');
+  assert.equal(classifyOrigin(url, undefined).verdict, 'unrecognized');
+});
+
+test('classifyOrigin: an absent origin is no-remote, and garbage is unrecognized', () => {
+  for (const absent of ['', '   ', null, undefined, 42]) {
+    assert.equal(classifyOrigin(absent, TEA_HOSTS).verdict, 'no-remote', String(absent));
+  }
+  // Parses as no host/path pair at all.
+  assert.equal(classifyOrigin('not-a-url', TEA_HOSTS).verdict, 'unrecognized');
+  // Parses, but names no owner/repo - so no selector could bind the call.
+  const bare = classifyOrigin('https://github.com/cadence.git', TEA_HOSTS);
+  assert.equal(bare.verdict, 'unrecognized');
+  assert.equal(bare.slug, null);
+});
+
+// --- scanIssueRefs ----------------------------------------------------------
+
+test('scanIssueRefs finds the three forms, dedupes, sorts, and mints no near-miss', () => {
+  const log = [
+    'commit deadbeef1234567890abcdef1234567890abcdef',
+    '    feat(1-1): the tracker enters the spine (#47)',
+    '',
+    'commit 7b1466bfeedfacefeedfacefeedfacefeedfaced',
+    '    fix(1-2): closes #42 and fixes #7',
+    '',
+    'commit 1234567890abcdef1234567890abcdef12345678',
+    '    docs: mention #42 again, plus abc#999 and ##3 and #12abc',
+    '    ## 3 things this does not mint',
+  ].join('\n');
+  assert.deepEqual(scanIssueRefs(log), [7, 42, 47]);
+});
+
+test('scanIssueRefs is total on non-text and empty input', () => {
+  for (const bad of ['', null, undefined, 5, {}]) assert.deepEqual(scanIssueRefs(bad), []);
+});
+
+// --- partitionIssues --------------------------------------------------------
+
+const COMPLETE = {
+  complete: true,
+  records: [{ number: 42, state: 'open' }, { number: 47, state: 'closed' }],
+  detail: null,
+};
+
+test('partitionIssues answers open / closed / not-found, and not-found is never closed', () => {
+  const p = partitionIssues([42, 47, 99], COMPLETE);
+  assert.deepEqual(p, { open: [42], closed: [47], notFound: [99] });
+  assert.ok(!p.closed.includes(99), '#99 is absent from the tracker, not closed on it');
+});
+
+test('partitionIssues answers NOTHING over a fetch that is not complete', () => {
+  // The whole point: a truncated page and an empty tracker carry the same
+  // records, so an incomplete read may not produce a not-found verdict.
+  for (const bad of [
+    { complete: false, records: [], detail: 'truncated' },
+    { complete: false, records: [{ number: 42, state: 'open' }], detail: null },
+    { records: [] }, null, undefined, 'nope', {},
+  ]) {
+    assert.equal(partitionIssues([42, 99], bad), null, JSON.stringify(bad));
+  }
+});
+
+// --- the per-host table: argv, paging, and the normalizers ------------------
+
+test('every row carries its own paging flag with the limit it states', () => {
+  const paging = { github: '--limit', gitlab: '--per-page', forgejo: '--limit' };
+  for (const [host, row] of Object.entries(HOST_TABLE)) {
+    const argv = row.argv('org/repo', row.limit);
+    const i = argv.indexOf(paging[host]);
+    assert.ok(i >= 0, `${host} argv must carry ${paging[host]}: ${argv.join(' ')}`);
+    assert.equal(argv[i + 1], String(row.limit), `${host} paging flag must carry the row's limit`);
+    assert.ok(row.limit > 30, `${host} limit must defeat the CLI's own 30-row default`);
+    // The repo selector is always present: cwd alone lets a --dir elsewhere
+    // report another project's tracker, and tea infers nothing at all.
+    assert.ok(argv.includes('--repo') && argv.includes('org/repo'), `${host} argv must name the repo`);
+  }
+  assert.deepEqual(Object.keys(HOST_TABLE), ['github', 'gitlab', 'forgejo']);
+  assert.deepEqual([HOST_TABLE.github.bin, HOST_TABLE.gitlab.bin, HOST_TABLE.forgejo.bin],
+    ['gh', 'glab', 'tea']);
+});
+
+test('the gitlab row is proved against a CAPTURED glab sample, with no glab spawned', () => {
+  // The shape gitlab-org/cli's `issue list` json arm prints (docs/source/issue/
+  // list.md, read 2026-08-15): the API issue objects, numbered by `iid` and
+  // stated as opened/closed. `glab` is not installed here; nothing in this file
+  // may run one.
+  const sample = JSON.stringify([
+    { id: 90001, iid: 42, state: 'opened', title: 'still open' },
+    { id: 90002, iid: 47, state: 'closed', title: 'done' },
+  ]);
+  const row = HOST_TABLE.gitlab;
+  assert.deepEqual(row.argv('org/team/repo', row.limit),
+    ['issue', 'list', '--repo', 'org/team/repo', '--all', '--output', 'json', '--per-page', '100']);
+  const got = row.normalize(sample, row.limit);
+  assert.equal(got.complete, true);
+  assert.deepEqual(got.records, [{ number: 42, state: 'open' }, { number: 47, state: 'closed' }]);
+  // `opened` normalizes to `open`, so the partition speaks one vocabulary.
+  assert.deepEqual(partitionIssues([42, 47], got), { open: [42], closed: [47], notFound: [] });
+});
+
+test('the github and forgejo normalizers read their CLIs own captured shapes', () => {
+  // gh, live sample 2026-08-15: numeric `number`, UPPERCASE state.
+  const gh = HOST_TABLE.github.normalize('[{"number":14156,"state":"OPEN"},{"number":14153,"state":"CLOSED"}]', 200);
+  assert.deepEqual(gh.records, [{ number: 14156, state: 'open' }, { number: 14153, state: 'closed' }]);
+  assert.equal(gh.complete, true);
+  assert.deepEqual(HOST_TABLE.github.argv('org/repo', 200),
+    ['issue', 'list', '--repo', 'org/repo', '--state', 'all', '--json', 'number,state', '--limit', '200']);
+  // tea, live sample 2026-08-15: `index` is a STRING, state lowercase.
+  const tea = HOST_TABLE.forgejo.normalize('[{"index":"171","state":"open"},{"index":"115","state":"closed"}]', 50);
+  assert.deepEqual(tea.records, [{ number: 171, state: 'open' }, { number: 115, state: 'closed' }]);
+  assert.deepEqual(HOST_TABLE.forgejo.argv('org/repo', 50),
+    ['issues', 'list', '--repo', 'org/repo', '--state', 'all', '--fields', 'index,state', '--output', 'json', '--limit', '50']);
+});
+
+test('a response TRUNCATED at the limit is unreadable, never an issue list', () => {
+  const rows = Array.from({ length: 50 }, (_, i) => ({ index: String(i + 1), state: 'open' }));
+  const got = HOST_TABLE.forgejo.normalize(JSON.stringify(rows), 50);
+  assert.equal(got.complete, false);
+  assert.deepEqual(got.records, [], 'an incomplete read carries NO records');
+  assert.match(got.detail, /truncated/);
+  // One row short of the page is the whole tracker and answers normally.
+  assert.equal(HOST_TABLE.forgejo.normalize(JSON.stringify(rows.slice(0, 49)), 50).complete, true);
+  // An EMPTY tracker is complete and empty - the case truncation must not imitate.
+  assert.deepEqual(HOST_TABLE.forgejo.normalize('[]', 50), { complete: true, records: [], detail: null });
+});
+
+test('a RENAMED field is unreadable, not an empty record set', () => {
+  for (const [host, body] of [
+    ['github', '[{"id":14156,"state":"OPEN"}]'],
+    ['gitlab', '[{"iid":42,"status":"opened"}]'],
+    ['forgejo', '[{"number":"171","state":"open"}]'],
+  ]) {
+    const got = HOST_TABLE[host].normalize(body, HOST_TABLE[host].limit);
+    assert.equal(got.complete, false, host);
+    assert.deepEqual(got.records, [], host);
+    assert.ok(got.detail, host);
+  }
+  // And the non-JSON / non-array / non-text shapes answer the same way.
+  for (const body of ['not json', '{"issues":[]}', null, 7]) {
+    const got = HOST_TABLE.github.normalize(body, 200);
+    assert.equal(got.complete, false, String(body));
+    assert.deepEqual(got.records, []);
+  }
+  // An unreadable read can never reach a not-found verdict.
+  assert.equal(partitionIssues([42], HOST_TABLE.github.normalize('[{"id":42}]', 200)), null);
+});
+
+// --- decideIssueCheck: every reason distinct --------------------------------
+
+test('all eight skip reasons are distinct strings, and only `query` proceeds', () => {
+  const forgejo = { verdict: 'forgejo', host: 'git.example.com', slug: 'org/repo' };
+  const cases = {
+    'key off': { enabled: false },
+    'no remote': { enabled: true, classification: { verdict: 'no-remote', host: null, slug: null } },
+    unrecognized: { enabled: true, classification: { verdict: 'unrecognized', host: 'forge.example.com', slug: 'o/r' } },
+    'no login': { enabled: true, classification: { verdict: 'no-login', host: 'forge.example.com', slug: 'o/r' } },
+    'log unreadable': { enabled: true, classification: forgejo, logOk: false, bin: 'tea' },
+    'cli absent': { enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: false },
+    'nonzero exit': { enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: true, exitOk: false },
+    unreadable: {
+      enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: true, exitOk: true,
+      fetched: { complete: false, detail: 'response was not JSON' },
+    },
+  };
+  const reasons = new Map();
+  for (const [name, args] of Object.entries(cases)) {
+    const d = decideIssueCheck(args);
+    assert.equal(d.action, 'skip', name);
+    assert.equal(typeof d.reason, 'string');
+    assert.ok(d.reason.length > 0, name);
+    assert.ok(!reasons.has(d.reason), `${name} reuses the reason of ${reasons.get(d.reason)}`);
+    reasons.set(d.reason, name);
+  }
+  assert.equal(reasons.size, 8);
+  // The key-off line says what it did NOT do, since "no forge CLI ran" is the
+  // property the seam test asserts with a spawn marker.
+  assert.match(cases['key off'] && decideIssueCheck(cases['key off']).reason, /issue_check is off/);
+
+  // The full-information happy path, and the STAGED calls the seam makes on the
+  // way to it - an unknown later stage is not a reason to stop.
+  assert.equal(decideIssueCheck({ enabled: true }).action, 'query');
+  assert.equal(decideIssueCheck({ enabled: true, classification: forgejo }).action, 'query');
+  assert.equal(decideIssueCheck({
+    enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: true, exitOk: true,
+    fetched: { complete: true, detail: null },
+  }).action, 'query');
+});
+
+test('decideIssueCheck is total: no arguments at all still answers', () => {
+  assert.equal(decideIssueCheck().action, 'skip');
+  assert.equal(decideIssueCheck({}).action, 'skip');
+  assert.equal(decideIssueCheck({ enabled: 'yes' }).action, 'skip', 'only the literal true enables it');
+});
