@@ -6,6 +6,74 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-08-15
+
+The evidence Cadence plans and reports from is itself checked this cycle: the
+capture queue that silently dropped filed work, the run record that could not
+join a provider call to the fire that made it, and the claims the docs make
+about the code.
+
+### Fixed
+
+- **`/cad-capture` no longer writes where recall cannot see it.** Five items
+  filed after the 2026-08-08 archive block landed below a heading the corpus
+  walk does not visit and were invisible to `/cad-plan`'s recall until they
+  were lifted by hand, one of them a `[high]` finding that a tuning rule can
+  never fire. The writer lands inside the walk, the tag reader admits every
+  shape the writer emits, `/cad-health` reports any bullet outside the walk,
+  and a concurrent append can no longer lose an update.
+
+- **The run record joins.** `corr` is fire-scoped rather than phase-scoped, so
+  a provider call attributes to the fire that made it; a terminal event's
+  `--role` is validated against its paired dispatch, so a role with zero
+  dispatches can no longer render carrying a token total; and `recorded` counts
+  matched dispatches rather than token-bearing events, so a replayed terminal
+  stops hiding a missing report.
+
+- **String-form `protected_branches` is honored by all four readers**, the
+  fence-blind `## Phases` and `## Active` scanners are guarded, and a blank
+  `--root` is refused consistently rather than linting the cwd and returning
+  `ok:true`.
+
+- **Fourteen stale claims are corrected at their source.** `README.md`,
+  `METHOD.md` and `cadence-core/workflows/plan.md` stated a `plan` review as
+  advisory at `shipped` where `route-table.json` resolves `off`;
+  `/cad-new-project` and `/cad-adopt` reported the config they had just copied
+  as turning plan check on when the template ships it off;
+  `config-catalog.md` published a `Risk` knob category with zero rows behind
+  it; `recall.md` named two callers where the code makes three; and
+  `METHOD.md` and `INTERNALS.md` still described the dispatch-time risk floor
+  and its per-surface waivers, both retired in v2.7.0.
+
+### Added
+
+- **A second `/cad-docs-verify` sweep, transcribed and dated.**
+  `.planning/DOCS-CLAIMS.md` now carries 933 rows over 32 files, each with a
+  generated `run` column and a live line cite, 373 line re-pins, and the seven
+  rows phase 4's `trace close` invalidated rewritten to the live call rather
+  than silently re-pinned.
+
+- **Two prose assertions that derive both sides from the tree**, in
+  `cadence-core/bin/prose-agreement.test.mjs`: README's skill, role and
+  rung-file counts measured against `skills/` and `agents/`, and a check that
+  `PROJECT.md`'s `### Active` declares its milestone before naming any other
+  version. Both were shown to redden on a pre-fix input.
+
+- **`planning.mjs criteria-size`**, so the 3-7 acceptance-criteria ceiling
+  `/cad-context` states is counted rather than merely written down.
+
+### Changed
+
+- **One `trace close` subcommand replaces eight workflow files' restated close
+  prose**, `trace render` is bounded by default, and the round-trips measured
+  as unbatched now issue as one call.
+
+- **The `REQ_ID` documentation states the asymmetry that is live** rather than
+  the head-anchored limit `PRS-02` removed: `REQ_ID_EXACT` admits a
+  digit-leading category while `REQ_ID_TOKEN` keeps its letter head, so an
+  unbolded `2FA-01` remains invisible to the prose scan.
+
+
 ## [3.2.0] - 2026-08-14
 
 ### Fixed
@@ -2436,6 +2504,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.0
 [3.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.2.0
 [3.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.1.0
 [3.0.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.0.0
