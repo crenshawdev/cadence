@@ -135,10 +135,10 @@ the sweep agreed with itself.
 - [x] cadence-core/workflows/verify-deep.md
 - [x] cadence-core/workflows/verify.md
 - [x] cadence-core/workflows/verify-sweep.md
-- [ ] cadence-core/workflows/adopt.md
-- [ ] cadence-core/workflows/minimalism-review.md
-- [ ] cadence-core/workflows/report.md
-- [ ] cadence-core/workflows/suggest.md
+- [x] cadence-core/workflows/adopt.md
+- [x] cadence-core/workflows/minimalism-review.md
+- [x] cadence-core/workflows/report.md
+- [x] cadence-core/workflows/suggest.md
 - [ ] cadence-core/references/config-catalog.md
 - [ ] cadence-core/references/recall.md
 - [ ] cadence-core/references/plan-revision.md
@@ -422,3 +422,126 @@ Re-run surface. These eleven files carry run-1 rows; their rows join to run 1 on
 | A phase with status `executed` and no `uat` field was built and never verified | verify-sweep.md:13-14 | accurate | `planning.mjs:423` emits `uat` only when a checklist exists |
 | The `.planning/phases/<N>/UAT.md` paths are already known from the status output, so no read is serialized behind a prior result | verify-sweep.md:20-22 | accurate | `status` returns each phase's `n`, and the path is `phases/<n>/UAT.md` by the directory grammar |
 | The resume offer goes through the ask-user seam and continues at verify.md `build_or_resume` | verify-sweep.md:26-32 | accurate | `references/seams.md` defines the ask-user seam; the step name matches |
+
+---
+
+# Invocation 4 - `/cad-docs-verify cadence-core/workflows/{adopt,minimalism-review,report,suggest}.md`
+
+**NEW SURFACE.** These four files carry NO run-1 ledger row. Every row in the
+four tables below is a claim run 1 never extracted, so none of them is part of
+run 1's 547 and none joins to an existing ledger row. Plan 3 files them under
+`.planning/DOCS-CLAIMS.md`'s post-run-1 section, leaving run 1's baseline where
+it is.
+
+## adopt.md
+
+*New surface.*
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| Adopt writes the same `.planning/` shape /cad-new-project writes - same files, same STATE cursor, same config | adopt.md:5-7 | accurate | both workflows write PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md and config.json and nothing else |
+| Everything is derived INLINE - no subagent is dispatched and no detector seam is added | adopt.md:9-11, :274-277 | accurate | the file contains no spawn-agent call; its only seam calls are `trace ignore`, `config.mjs get`, `criteria-size` and `cursor set` |
+| `git rev-parse --show-toplevel` must succeed AND equal the working directory | adopt.md:21-27 | accurate | real git behaviour; `--show-toplevel` prints the repo root |
+| `git rev-parse --git-dir` is NOT this check - it succeeds in any subdirectory of an enclosing repo | adopt.md:28-32 | accurate | real git behaviour; `new-project.md:38` uses `--git-dir` precisely because it only asks "am I in a repo" |
+| `planning.mjs trace ignore --root .` and it is the only thing in Cadence that writes the rule | adopt.md:40, :47-48 | accurate | `planning.mjs:2740` dispatches it; `:2638` states it is the scaffold-time writer, and no other `.gitignore` writer exists under `cadence-core/bin/**` |
+| /cad-health reports `ignored:false` and `tracked:true` as separate issues with different remedies | adopt.md:49-51 | accurate | `skills/cad-health/SKILL.md:35-38` states exactly that - the ignore rule fixes one, `git rm --cached` the other, and both are needed together |
+| Append-if-absent, so a brownfield `.gitignore` keeps every line and a re-run adds no second line | adopt.md:50-51 | accurate | `planning.mjs:2672` returns `{written:false, reason:'already-ignored'}` on a re-run |
+| The config template is copied VERBATIM from `cadence-core/templates/config.json` | adopt.md:41, :53 | accurate | template present |
+| "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | adopt.md:54-56 | **stale** | `workflow.plan_check` defaults to **`false`** - `config.schema.json` and `templates/config.json` both write it off. Correct: "plan check off, verifier on". Identical wording to `new-project.md:60-61`, so both sites move together |
+| The five keys read: `planning.commit_docs`, `granularity`, `git.protected_branches`, `git.on_protected`, `git.base_branch` | adopt.md:42-44 | accurate | all five present in `config.schema.json` |
+| `planning.mjs detect-commands` is neither required nor extended for this | adopt.md:61-62 | accurate | the subcommand exists (`planning.mjs:2265` region) and adopt calls it nowhere |
+| `cadence-core/templates/PROJECT.md` | adopt.md:135 | accurate | present |
+| The `### Active` milestone version is never the repo's current tag, because /cad-health rule 7 reports drift when it is a member of `git tag --list` | adopt.md:149-155 | accurate | `skills/cad-health/SKILL.md:107-111` - "Membership, not sort order: the issue is an Active version that equals an existing release TAG (`git tag --list`)" |
+| `cadence-core/templates/REQUIREMENTS.md` | adopt.md:159 | accurate | present |
+| `## Active` bullets take the stated grammar `- **[CAT]-01**: [requirement]`, a 3-5 letter category code starting with a letter | adopt.md:162-164 | accurate | restates `templates/REQUIREMENTS.md:59` ("a 3-5 letter category code") and `:62-63` ("requires the category to START WITH A LETTER") exactly. Note for the ledger: the LIVE `REQ_ID_EXACT` (`lib/planning-files.mjs:324`) admits 2-8 chars and a digit-leading category, so the stated grammar is narrower than the parser - the asymmetry phase 5 AC4 documents at the template, not a defect in adopt.md's restatement |
+| `## Traceability` is left as BARE HEADERS; `/cad-plan` seeds each row (`references/req-traceability.md`) | adopt.md:170-172 | accurate | reference present; `plan.md:364` runs `seed-reqs` |
+| `planning.mjs seed-reqs` reads `.planning/phases/<N>/PLAN*.md` and returns `no-phase-dir` / `no-plans` before any plan exists | adopt.md:171-174 | accurate | `planning.mjs:1821` fails `no-phase-dir`, `:1822` fails `no-plans` with a `/cad-plan` hint |
+| `cadence-core/templates/ROADMAP.md` | adopt.md:179 | accurate | present |
+| /cad-health rule 5 flags an `- [x]` phase whose mapped REQUIREMENTS rows are not all `Complete` | adopt.md:184-186 | accurate | `skills/cad-health/SKILL.md` rule 5 - "A phase marked `- [x]` in ROADMAP whose mapped REQUIREMENTS rows are not all `Complete` ... is a status-drift issue - flag it" |
+| Seeded rows are always `Pending` | adopt.md:186-187 | accurate | `plan.md:380` - "Status is always `Pending`" |
+| Phase count follows `granularity`: coarse 3-5, standard 5-8, fine 8-12 | adopt.md:188-189 | accurate | `config.schema.json:7` states those three ranges verbatim |
+| `planning.mjs criteria-size --roadmap-min 2 --roadmap-max 5`, no `--phase`, `roadmap_found: false` is not zero | adopt.md:200-206 | accurate | flags declared at `planning.mjs:1649-1650`; `roadmap_found` emitted at `:1701`; `--phase` optional |
+| A REPORT, not a gate, exactly as `plan-size`'s `phase-too-big` is | adopt.md:206-207 | accurate | `planning.mjs:1584`, `:1645` |
+| `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` | adopt.md:229-230 | accurate | `planning.mjs:443`, `:456` |
+| A phase directory is `.planning/phases/<N>/` with a bare integer, created lazily | adopt.md:233-235 | accurate | the `phase-dir-grammar` drift kind (`planning.mjs:279`) reports anything else |
+| `planning.commit_docs` false skips the commit step entirely | adopt.md:239-240 | accurate | `config.schema.json:49`, default `true` |
+| The protected-branch guard is `references/git-guard.md` | adopt.md:242 | accurate | present |
+| ONE commit staging exactly five files: PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json | adopt.md:247-251 | accurate | those are the only files the workflow's steps write |
+| Adopt REFUSES a non-repo-root and never runs `git init` | adopt.md:277-279 | accurate | no `git init` appears in the file; `new-project.md:38` is the workflow that runs it |
+
+## minimalism-review.md
+
+*New surface.*
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| It reuses the review subsystem's `claude-subagent` backend (`references/review-triggers.md`) | minimalism-review.md:10-13 | accurate | `claude-subagent` is one of the four `review.reviewers` enum values in `config.schema.json` |
+| The list comes back in the findings schema every reviewer in the subsystem shares | minimalism-review.md:12-13, :124-126 | accurate | `references/review-triggers.md:14` states `{ findings: [ { file, line, severity: blocker\|high\|medium\|low, claim, failure_scenario } ] }` |
+| It never auto-fires - no entry in the wiring table, no `review.triggers` key, no gate | minimalism-review.md:15-17, :122-123 | accurate | the wiring table (`review-triggers.md:342-344`) names only `plan`, `diff`, `phase_diff`, `risk_surface`, and `config.schema.json` carries `review.triggers` keys for exactly those |
+| A phase target resolves to the committed range `.planning/phases/<N>/SUMMARY.md` records, as a `<base_ref>..<head_ref>` pair | minimalism-review.md:28-29 | accurate | SUMMARY.md carries the phase's commit hashes; the range form is the shape (a) refs pair review-triggers.md:55 defines |
+| `artifact` is the target as a REFERENCE, never its bytes (`references/seams.md`'s deferred-read rule) | minimalism-review.md:45-48 | accurate | `references/seams.md` states the deferred-read rule |
+| `skills/cad-reviewer-contract` defaults to correctness and rules approach differences out of scope | minimalism-review.md:63-65 | accurate | directory present; the contract is a correctness reviewer, which is why the instruction has to retarget it |
+| `planning.mjs cursor get` supplies `<N>` for a path or directory target | minimalism-review.md:68-70 | accurate | `cmdCursorGet` at `planning.mjs:433` |
+| `trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<ref>"` | minimalism-review.md:73 | accurate | `planning.mjs:60-67` declares `--family`, `--event`, `--plan`, `--role` and `--read` as ONE comma-separated value (`:2836`) |
+| No routing cell resolves a model for this arm - it is the base `cad-reviewer` at the session default, at every stakes level | minimalism-review.md:77-79 | accurate | this workflow issues no `route.mjs resolve` at all, which is exactly why it writes the `dispatch` event by hand at `:73` while every other dispatch site puts the bracket ON a resolve. `route-table.json` does carry a `cad-reviewer` cell, but nothing here consults it |
+| There is no cross-model arm: a provider call needs a resolved tier and this pass owns no tier key | minimalism-review.md:80-81 | accurate | no `review.triggers.minimalism*` key exists in `config.schema.json` |
+| `trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <n>`, `--tokens` omitted on a figureless return | minimalism-review.md:84-88 | accurate | `planning.mjs:70` declares the flag set; `--tokens` is optional |
+| Adding `--detail "<what failed>"` to that same line closes as a checkpoint | minimalism-review.md:90-92 | accurate | `planning.mjs:75-76` - the arm is inferred from `--detail` |
+| Severity ranks are `blocker`, `high`, `medium`, `low` | minimalism-review.md:99-100 | accurate | `references/review-triggers.md:14` enumerates exactly those four |
+| Each entry carries the reviewer's own `file`, `line`, `claim` and `failure_scenario` | minimalism-review.md:100-101 | accurate | same schema line |
+| The delete-list is input to the user's decision exactly as `references/triage-gate.md` treats review findings | minimalism-review.md:118-120 | accurate | reference present; triage-gate.md's NONE-first default is that posture |
+| It applies NOTHING, so `git status --short` is byte-identical before and after a run | minimalism-review.md:116-118, :149-150 | accurate | the workflow contains no edit, stage or commit step |
+
+## report.md
+
+*New surface.*
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| Everything reported is drawn from `.planning/trace.jsonl` and the phase's own artifacts; no file is written | report.md:3-5, :115-116 | accurate | the workflow's only seam calls are `trace render` and `reads`, both readers |
+| Neither a phase number nor `--all` means the STATE cursor's phase (`planning.mjs cursor get`) | report.md:11-13 | accurate | `cmdCursorGet` at `planning.mjs:433` |
+| `planning.mjs trace render [--phase <N>]` | report.md:21 | accurate | `renderTrace` in `lib/trace.mjs`, dispatched by `planning.mjs` |
+| `planning.mjs reads --join` | report.md:22 | accurate | `planning.mjs:3644` dispatches `reads`; `--join` branches at `cmdReads` |
+| The render carries `brackets` (`role`, `plan`, `event`, `ms`, `tokens`), `outcomes`, `roles`, `coordinator`, `unpaired`, `mismatched`, `capped`, `malformed` | report.md:25-29 | accurate | `lib/trace.mjs:405-417` initialises `file`, `corr`, `capped`, `counts`, `malformed`, `roles`, `events`, `brackets`, `unpaired`, `mismatched`, and `out.coordinator` is added conditionally at the tail |
+| Never ask for the raw `events` array - the flag re-buys 27 KB | report.md:29-31 | unverifiable | the 27 KB figure is a measurement of one record on one machine; `events: []` is on the render (`lib/trace.mjs:414`) but the byte figure cannot be re-derived from this tree |
+| `reads --join` reports `fileCalls`, `fileRedundancy`, `topFiles` over `.planning/reads.jsonl` | report.md:31-33 | accurate | `cmdReads` returns all three; `lib/read-trace.mjs:313` and `:323` define them |
+| `--join` ties each record to the bracket that caused it: `joined`, `ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved` | report.md:33-34 | accurate | `cmdReads` returns exactly those six under `join`, and its comment calls them "SIX figures, not one ratio" |
+| `.planning/phases/<N>/SUMMARY.md`, `REVIEW-*.md` and `reports/plan-*.md` are the grounding artifacts, the last ONLY when SUMMARY is absent | report.md:37-40 | accurate | `references/review-triggers.md:146` defines the `REVIEW-<trigger>.md` path; the executor contract writes `reports/plan-<k>.md` |
+| A dispatch with no token figure reports `unrecorded`, never an estimate | report.md:58-60 | accurate | `lib/trace.mjs:62-77` states exactly that rule for the render |
+| An advisory fire records no tokens, because its reviewer closes its own bracket with no `--tokens` | report.md:61-64 | accurate | `references/review-triggers.md`'s advisory persistence tail; `--tokens` is optional on `trace close` |
+| A cross-model provider call records no tokens - no lifecycle bracket and no token field on that arm at all | report.md:64-66 | accurate | provider events are family `provider`; the bracket pairing in `lib/trace.mjs` runs over family `lifecycle` only |
+| The coordinator residue is `coordinator.residue_ms` and the `steps[]` row carrying the most of it | report.md:67-69 | accurate | `lib/trace.mjs` builds `out.coordinator = {wall_ms, bracket_ms, residue_ms, steps}` where each step row carries `residue_ms` |
+| The renderer computes it once so this line and `trace suggest` cannot disagree | report.md:69-70 | accurate | `lib/trace-suggest.mjs` reads the render rather than the raw file |
+| Residue is TIME between worker brackets, never tokens; a marker carries no token figure | report.md:72-74 | accurate | the step rows carry `ts` and `residue_ms` only - no token field |
+| A `mismatched` entry names `corr`, `phase`, `plan`, `ts`, `dispatched` and `closed` | report.md:75-79 | accurate | `lib/trace.mjs:332` typedefs exactly `{corr, phase, plan, ts, event, dispatched, closed}`; pushed at `:662-664` |
+| The tokens stay billed to the dispatch's role | report.md:79-80 | accurate | `lib/trace.mjs:664` records `dispatched: matched.role` and leaves the accumulator on it |
+| `.planning/reads.jsonl` carries NO phase scoping - it is one file per project | report.md:82-85 | accurate | `planning.mjs:2714` states "WHOLE record, no phase scoping. `reads.jsonl` has none - it is one file per project" |
+| `calls: 0` or the `no reads recorded yet` note means say nothing about reading | report.md:86-89 | accurate | `cmdReads` returns `{calls: 0, ..., note: 'no reads recorded yet'}` on ENOENT |
+| `floor` is a permanent LIMIT: `fork` and `general-purpose` are HOST agent types with no dispatch event to join to | report.md:93-95 | accurate | `cmdReads`'s comment states "`floor` is the permanent limit (`fork` and `general-purpose` are HOST agent types with no dispatch event, ever)" |
+| `coordinator` reads have no worker bracket by construction and `unresolved` ones carried no readable agent | report.md:95-97 | accurate | same comment - "`coordinator` is the main thread, which has no worker bracket by construction; `unresolved` is a record whose `agent` field was absent or named no role" |
+| `--all` renders per-phase subtotals then one milestone line | report.md:101-102 | unverifiable | a composition rule for the model's own output; `trace render` takes `--phase` or nothing and returns no per-phase rollup of its own |
+| The closing pointer is `/cad-suggest`, whose rules live in `cadence-core/workflows/suggest.md` | report.md:106-107 | accurate | file present, and `suggest.md:8-11` claims to be the ONE statement of those rules |
+
+## suggest.md
+
+*New surface.*
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| `planning.mjs trace suggest` reads the joined trace and returns the retune the record supports | suggest.md:2-4 | accurate | `planning.mjs:2928` dispatches `suggest`; `lib/trace-suggest.mjs` computes it off the render |
+| This file is the ONE statement of the presentation rules, and milestone.md's retune step and report.md's closing pointer both route here | suggest.md:8-11 | accurate | `report.md:106-107` points here by name; the rules appear in no third file |
+| A phase number becomes `--phase <N>`; no argument means the WHOLE record; those are the only two scopes | suggest.md:17-20 | accurate | `planning.mjs:2936` validates `--phase` and it is the only flag accepted |
+| `trace suggest`'s contract row in `cadence-core/bin/self-verify.mjs` fixes its flag set at `--phase` alone | suggest.md:20-22 | accurate | `self-verify.mjs:276` - `'trace suggest': ['--phase']` |
+| There is no correlation-id scoping to reach for | suggest.md:22-23 | accurate | `corr` is derived per phase (`lib/trace.mjs:212`) and no seam takes it as a flag |
+| Nothing prunes `.planning/trace.jsonl` at a close, so an unscoped run spans every milestone still in the file | suggest.md:26-28 | accurate | the milestone prune (`planning.mjs:3558`) removes phase dirs and roadmap entries, not the trace file |
+| `planning.mjs trace suggest [--phase <N>]` returns `scope`, `events_read`, `suggestions`, and `capped` / `malformed` when present | suggest.md:35-39 | accurate | `lib/trace-suggest.mjs` returns that envelope; `capped` and `malformed` ride the render it reads |
+| Every `kind: "suggest"` entry carries `subject`, `evidence` and `action` | suggest.md:46-49 | accurate | `lib/trace-suggest.mjs:20-21` typedefs `{kind: 'suggest'\|'info', subject, evidence, action}` |
+| Every `kind: "info"` entry is one receipt line and asks for nothing | suggest.md:50-51 | accurate | same typedef; `:114-115` orders `suggest` before `info` |
+| The per-role escalation evidence is denominated in `routing/resolve` events | suggest.md:57-60 | accurate | the rule reads routing-family resolve events, which is why a cross-model-only configuration inflates the denominator |
+| A suggestion is input to the user's decision, exactly as `cadence-core/references/triage-gate.md` treats review findings | suggest.md:65-67 | accurate | reference present |
+| The user changes keys through `/cad-config` or a direct edit of `.planning/config.json` | suggest.md:67-68 | accurate | `skills/cad-config/` present; `.planning/config.json` is the repo layer |
+| The envelope offers one discriminator, `events_read`, so the thin-record arm has exactly two lines to choose between | suggest.md:73-80 | accurate | `events_read` is the only count on the envelope beside `suggestions` |
+| The envelope returns no floor figure | suggest.md:83-84 | accurate | `lib/trace-suggest.mjs:15` keeps the `MIN_*` floors module-internal; none is emitted |
+| Name no config key that `cadence-core/config.schema.json` does not carry | suggest.md:100-101 | accurate | schema present; this file names none |
+| No config file is written - not `.planning/config.json`, not the global layer | suggest.md:92-95 | accurate | the workflow's only seam call is `trace suggest`, a reader |
+| No subagent is dispatched; a suggestion cannot PASS or FAIL anything | suggest.md:96-97 | accurate | the file contains no spawn-agent call and no gate |
