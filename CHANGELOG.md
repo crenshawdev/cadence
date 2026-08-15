@@ -6,6 +6,8 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-08-15
+
 ### Fixed
 
 - **`milestone-prune` stops reporting a half-finished close as a finished one.**
@@ -2524,6 +2526,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.3.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.1
 [3.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.0
 [3.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.2.0
 [3.1.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.1.0
