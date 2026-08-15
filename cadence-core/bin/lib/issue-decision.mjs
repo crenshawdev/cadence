@@ -133,16 +133,32 @@ export const HOST_TABLE = Object.freeze({
   }),
 });
 
+/** Everything that would stop a degradation reason being ONE line: the C0
+ * controls (newline and CR, and the ESC that opens an ANSI sequence), DEL, the
+ * C1 range, and the two Unicode line separators. The hostname classes below are
+ * `[^/:]+`, which admits every one of them, and the hostname is interpolated
+ * straight into the unrecognized and no-login reasons - so `origin` set to
+ * `https://evil.example\nINJECTED/org/repo.git` would print two lines, or
+ * terminal control sequences, where criterion 3 promises exactly one. */
+const NOT_ONE_LINE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+
 /** `https://host[:port]/owner/repo[.git]` and the scp-shaped
  * `[user@]host:owner/repo[.git]` - the two forms cad-land already meets.
+ *
+ * A hostname carrying anything from NOT_ONE_LINE is REJECTED, not cleaned: no
+ * forge serves such a host, so there is no honest repaired form, and a stripped
+ * hostname would be printed back as though it were what the user configured.
+ * The caller reads null as an unrecognized origin and degrades to its own line.
  * @param {string} url @returns {{hostname:string, path:string}|null} */
 function splitOrigin(url) {
+  const parsed = (hostname, path) =>
+    (NOT_ONE_LINE.test(hostname) ? null : { hostname: hostname.toLowerCase(), path });
   const schemed = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)(?::\d+)?\/(.+)$/.exec(url);
-  if (schemed) return { hostname: schemed[1].toLowerCase(), path: schemed[2] };
+  if (schemed) return parsed(schemed[1], schemed[2]);
   // scp-shaped: the colon separates host from PATH, so the part after it must
   // not start with `/` (that spelling is a schemeless URL, not scp syntax).
   const scp = /^(?:[^@/]*@)?([^/:]+):(?!\/)(.+)$/.exec(url);
-  if (scp) return { hostname: scp[1].toLowerCase(), path: scp[2] };
+  if (scp) return parsed(scp[1], scp[2]);
   return null;
 }
 

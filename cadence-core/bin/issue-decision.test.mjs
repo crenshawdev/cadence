@@ -67,6 +67,36 @@ test('classifyOrigin: an absent origin is no-remote, and garbage is unrecognized
   assert.equal(bare.slug, null);
 });
 
+test('a hostname carrying a control character never reaches the ONE-line reason', () => {
+  // The hostname classes are `[^/:]+`, which admits a newline and an ESC, and
+  // the host is interpolated into the unrecognized and no-login reasons - so a
+  // hostile origin could print several lines, or move the cursor, where
+  // criterion 3 promises exactly one line.
+  const HOSTILE = ['\nINJECTED', '\r\nINJECTED', '\u001b[31mred', '\u0007', '\u2028INJECTED', '\u009b'];
+  const ONE_LINE = /^[^\u0000-\u001f\u007f-\u009f\u2028\u2029]*$/;
+  for (const evil of HOSTILE) {
+    for (const url of [
+      `https://evil.example${evil}/org/repo.git`,     // schemed
+      `https://evil.example${evil}:2222/org/repo.git`, // schemed and ported
+      `git@evil.example${evil}:org/repo.git`,          // scp-shaped
+    ]) {
+      const c = classifyOrigin(url, TEA_HOSTS);
+      assert.equal(c.verdict, 'unrecognized', url);
+      // Rejected, never cleaned: nothing about that host is reported back.
+      assert.equal(c.host, null, url);
+      assert.equal(c.slug, null, url);
+      const { reason } = decideIssueCheck({ enabled: true, classification: c });
+      assert.match(reason, ONE_LINE, JSON.stringify(reason));
+      assert.equal(reason.split('\n').length, 1, JSON.stringify(reason));
+      assert.ok(!reason.includes('INJECTED'), JSON.stringify(reason));
+    }
+  }
+  // The control character is the ONLY thing that changed: the same hosts
+  // without it still classify, so the guard is not rejecting everything.
+  assert.equal(classifyOrigin('https://github.com/org/repo.git', TEA_HOSTS).verdict, 'github');
+  assert.equal(classifyOrigin('git@github.com:org/repo.git', TEA_HOSTS).verdict, 'github');
+});
+
 // --- scanIssueRefs ----------------------------------------------------------
 
 test('scanIssueRefs finds the three forms, dedupes, sorts, and mints no near-miss', () => {
