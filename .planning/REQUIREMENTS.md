@@ -5,63 +5,16 @@
 
 ## Active
 
-`v3.3.0 - the record you plan from`, opened 2026-08-14. Five requirements -
-three scoped at open, two added 2026-08-14 from the repo scan
-(design-notes/sweep-2026-08-14-repo-scan.md). Originally three,
-scoped from a triage of `.planning/CAPTURE.md`: 309 file-wide bullets read down
-to 119 live todos, 15 retired against shipped v3.2.0 code, the survivors grouped
-by fix site into eight clusters of which three are here. The five ids in
-`## Deferred` below - `LND-01`, `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - all
-still hold their deferral reasons and none is promoted this cycle.
+No cycle open. `v3.3.0 - the record you plan from` closed 2026-08-15 and its
+five requirements moved to `## Shipped` below. The next milestone is scoped at
+its open; the five ids in `## Deferred` - `LND-01`, `PRS-01`, `EVD-01`,
+`RCL-06`, `CTX-02` - all still hold their deferral reasons and none has been
+promoted.
 
-- **COR-01**: The four bin correctness/duplication gaps the 2026-08-14 scan
-  verified are closed: string-form `protected_branches` honored by all four
-  readers, the fence-blind `## Phases`/`## Active` scanners guarded, blank
-  `--root` refused consistently, and the copied helpers
-  (`flag`/`flagValue`/`readText`, the branch reader) stated once.
-- **ENF-01**: The scan's enforcement and round-trip findings become seams:
-  criteria ceilings counted, one `trace close` replacing eight files' restated
-  close prose, `trace render` bounded by default, the measured unbatched
-  round-trips batched, and the shipped read instrumentation proven (or proven
-  absent) inside subagent dispatches and joined to its fire.
-- **CAP-01**: A bullet `/cad-capture` writes is reachable by `/cad-plan`'s
-  recall, and one that is not reachable is reported rather than silent. Today
-  `planning-files.mjs:684` walks `## Todos`, `## Seeds` and `## Notes` only, and
-  five items filed after the 2026-08-08 archive block were appended below
-  `## Archive` - outside that walk, invisible to recall, one of them a `[high]`
-  finding that a tuning rule can never fire - until they were lifted by hand on
-  2026-08-14. The tag reader at `:627` compounds it by dropping shapes the queue
-  actually contains, so an item can also lose its phase field while staying in
-  the walk. Covers the section the writer lands in, the reader's grammar, a
-  `/cad-health` report naming any capture bullet outside the walk, and a
-  concurrent-append guard: the file has no locking, it is the recall corpus, and
-  a lost update was caught in flight while this cycle was being scoped.
-
-- **TRC-01**: The joined run record answers questions about itself correctly.
-  `corr` is phase-scoped rather than fire-scoped, so a provider call cannot be
-  attributed to the fire that made it; an event written before the phase anchor
-  falls back to the bare phase form and never joins; a terminal event's `--role`
-  is never validated against its paired dispatch, so a role with zero dispatches
-  can render carrying a token total while the real worker reads `unrecorded`;
-  `recorded` counts token-bearing events rather than matched dispatches, so a
-  replayed terminal can hide a missing report; and `trace suggest`'s R1 rule
-  sums survivors across a trigger's whole lifetime (`lib/trace-suggest.mjs:161`),
-  which measured over 460 events on 2026-08-14 means it can never fire and never
-  has. `/cad-report` prices a phase from this record and `/cad-suggest` derives
-  retune advice from it, and run cost is this project's standing second
-  priority - these are the instruments that answer it.
-
-- **DOC-02**: What Cadence claims about itself is verified this cycle or
-  corrected. Fourteen queue items are stale prose left behind by v3.0 through
-  v3.2: three surfaces still state the `REQ_ID_EXACT` head-anchored limit
-  `PRS-02` removed, `/cad-capture --cadence` is registered in both user-facing
-  surfaces but covered by no `DOCS-CLAIMS.md` row, the `README.md` skill count
-  has been stale twice and nothing re-measures it,
-  `references/acceptance-criteria.md` documents an env override without the
-  sentinel now required beside it, and `PROJECT.md`'s `### Active` is trusted
-  rather than asserted to name the open cycle's version first. One
-  `/cad-docs-verify` sweep plus the edits it names, run last so it also
-  reconciles the prose the four phases ahead of it move.
+One phase carries forward unstarted: **Phase 6, the docs speak in one voice**,
+a tone and audience pass over `README.md`, `references/COMMANDS.md` and the
+user-facing workflow prose. It keeps its `## Phases` entry in `ROADMAP.md` and
+needs a requirement id when the next cycle opens.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -200,6 +153,11 @@ parses only the Traceability table).
 | CST-02 (`risk_surface` fires on the surfaces a project actually has, chosen once by the user rather than assumed. It is the only trigger that scales per plan - blocking at every stakes level, once per plan on a detection match, and a FAIL re-arms for a second full dispatch - so on a security-shaped phase where nearly every plan matches it is the dominant review cost. It must not simply be turned down: it is what makes a blocking review mean anything, and phase 2 shipped five plans of unreviewed security work by suppressing it. Add `review.triggers.risk_surface.surfaces`, the subset of the eight categories at `references/review-triggers.md:285` this project contains, absent meaning all eight so no existing user's coverage silently shrinks. Populate it from a STRUCTURAL scan - dependency manifests, directory existence, file types - never from keyword greps of source text: that approach was tested against this repo on 2026-08-13 and false-positived `auth` (matching `session` x16, meaning Claude sessions) and `money/billing` (matching prose about token cost), failing toward expensive. Present the result as a one-time choice the user cannot skip, at the first `risk_surface` fire on a project that has not answered it, through the ask-user seam: four presets (the seam caps options at four), each stating its cost, with detection run BEFORE the question so it marks the recommendation per seams.md's existing recommended-option convention.) | 3 | Complete | v3.2.0 |
 | CST-03 (The bound that already exists is tuned and described, and no surface reports an unmeasured figure as spend. Every agent file carries `maxTurns: 400` while phase 2's five executors used 36-76 tool calls, so the bound sits 5-11x above anything observed and has never bound anything - and `references/seams.md:56` tells readers "this seam offers no bound and no cancel", which is false against Cadence's own agent frontmatter and is why nobody tuned it. Lower it above observed usage and correct that sentence. PAIRED, landing together or not at all: a standing CAPTURE item records that a truncated `cad-reviewer`, `cad-verifier`, `cad-plan-checker` or `cad-planner` returns prose where a contract-shaped payload was expected with nothing marking it - only the executor family has a consumer-side arm for that signature - so lowering the cap without that arm trades overspend for silent garbage. Separately, `workflows/report.md`'s `compose` step prints the recorded token figure under the heading `Spend:`; `lib/trace.mjs:41` states that figure is "read off the HOST's subagent return", and a reporting user's 3.1.0 run put it 23x below actual transcript telemetry (117,646 recorded against 2,738,992 for `cad-executor`), so `/cad-report` tells a user a number is their cost when it is 3-4% of it. Label what the figure is and name what it excludes; this half adds no new capture.) | 4 | Complete | v3.2.0 |
 | HYG-01 (The audit's low-severity residue is closed rather than carried. The test suite is excluded from typechecking (`tsconfig.ci.json:15` drops ~13,000 lines including the 5,051-line `planning.test.mjs`) while every non-test file is checked, and a test that only reads the properties that still exist keeps passing after the shape changes underneath it - a class `self-verify` structurally cannot see. `@ts-check` pragmas are decorative under `checkJs: true` (48 of 49 non-test files carry one; `review-provider.mjs` lacks it and is checked anyway) though the tsconfig comment calls them load-bearing. `lib/config-merge.mjs:33 readJSON` has zero callers. `lib/milestone-prune.mjs:60`'s `/^## /` clause is unreachable because `/^###? /` already matches it. `lib/planning-files.mjs:1164` uses `in` where `lib/trace.mjs:463` uses `hasOwnProperty` for the identical job and says why. `self-verify.mjs:1269` reads `--root` with an inline `indexOf`, so `--root ""` lints the cwd and returns `ok:true`, where `weight.mjs:46-53` has a `flagValue()` written specifically to close that class. `planning.mjs:1575` reports `within: true` beside `requirements_found: false` when ROADMAP.md is absent. And `design-brief.test.mjs`'s five tests import no Cadence module at all, asserting only over an immutable fixture, so they cannot fail on a regression - a green test that cannot go red reports coverage that does not exist. Tracked as #122) | 4 | Complete | v3.2.0 |
+| CAP-01 (a bullet `/cad-capture` writes is reachable by `/cad-plan`'s recall, and one that is not is reported rather than silent) | 1 | Complete | v3.3.0 |
+| TRC-01 (the joined run record answers questions about itself correctly: fire-scoped `corr`, roles validated against their dispatch, counts that match) | 2 | Complete | v3.3.0 |
+| COR-01 (the four bin correctness gaps the 2026-08-14 scan verified: string-form `protected_branches`, the fence-blind scanners, blank `--root`, the copied helpers) | 3 | Complete | v3.3.0 |
+| ENF-01 (the scan's enforcement and round-trip findings become seams: criteria ceilings counted, one `trace close`, `trace render` bounded, the round-trips batched) | 4 | Complete | v3.3.0 |
+| DOC-02 (what Cadence claims about itself is verified this cycle or corrected: one docs-verify sweep, 933 dated ledger rows, fourteen stale claims fixed at source) | 5 | Complete | v3.3.0 |
 
 ## Deferred
 
@@ -244,11 +202,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CAP-01 | Phase 1 | Complete |
-| TRC-01 | Phase 2 | Complete |
-| COR-01 | Phase 3 | Complete |
-| ENF-01 | Phase 4 | Complete |
-| DOC-02 | Phase 5 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

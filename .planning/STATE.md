@@ -1,6 +1,6 @@
 # State
 
-Phase: 5 of 6 (What Cadence claims about itself is true)
-Status: phase complete
-Next: /cad-context 6 - the docs speak in one voice; the audit gate precedes any ship
+Phase: 6 of 1 (The docs speak in one voice)
+Status: ready to plan
+Next: scope the next milestone, then /cad-context 6
 Updated: 2026-08-15
