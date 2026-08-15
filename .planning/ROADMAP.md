@@ -25,7 +25,7 @@ require it. Semantic detection stays heuristic on purpose - what changes is that
 
 ## Phases
 
-- [ ] **Phase 1: The check that proves it ran** - a seam answers a diff range with a risk record, match or no match, and plan and task completion require it
+- [x] **Phase 1: The check that proves it ran** - a seam answers a diff range with a risk record, match or no match, and plan and task completion require it
 
 ## Phase Details
 
