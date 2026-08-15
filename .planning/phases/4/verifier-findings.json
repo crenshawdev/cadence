@@ -1,0 +1,109 @@
+{
+  "status": "gaps",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A seam counts the criteria ceilings both grammars state, admits both roadmap heading spellings, and never reports a pass for a surface that declared nothing",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`planning.mjs criteria-size --phase 4 --context-min 3 --context-max 7 --roadmap-min 2 --roadmap-max 5` -> {\"context_criteria\":7,\"roadmap_criteria\":5,\"compared\":[4 bounds],\"within\":true}; `--phase 2 --roadmap-min 2 --roadmap-max 5` -> over:[{\"kind\":\"roadmap-criteria-too-many\",\"measured\":6,\"ceiling\":5}]; `--phase 6` -> {\"roadmap_found\":false,\"compared\":[],\"within\":null} (never ok-with-nothing-compared). Wired at three call sites: cadence-core/workflows/context.md:353 (3-7), new-project.md:305 and adopt.md:200 (2-5). Both spellings carry a test row each: planning-files.test.mjs:707 (`**Success Criteria:**`) and :712 (bare `Success criteria:`); dispatch arm planning.mjs:3647 -> cmdCriteriaSize; parser lib/planning-files.mjs:437 phaseCriteria."
+    },
+    {
+      "n": 2,
+      "truth": "`trace close` writes the terminal, all eight restating files call it, and the BRACKETING census reddens on a raw terminal append put back",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "Behavior run on a temp dir: `trace close --phase 1 --plan 1 --role cad-executor --tokens 100` writes {\"family\":\"lifecycle\",\"event\":\"return\"}, the same line with `--detail \"budget burned\"` writes {\"event\":\"checkpoint\"} - the seam, not the prose, picks the arm. Tree-wide grep for `trace append --event return|checkpoint` under cadence-core/ skills/ agents/ returns ZERO invocations (only a quoted mention inside seam-calls.test.mjs:78). BRACKETING (trace.test.mjs:1100-1109) carries all eight rows: context.md, plan.md, plan-revision.md, review-triggers.md, execute.md, decision-review.md, minimalism-review.md, verify-deep.md, asserted EQUALS not at-least (:1261). Mutation-proved in a scratchpad copy: appending one raw `trace append --family lifecycle --event return` line to verify-deep.md turned trace.test.mjs from 84 pass/0 fail to 83 pass/1 fail with 'a restated raw append is the spelling this census exists to refuse'."
+    },
+    {
+      "n": 3,
+      "truth": "`trace render`'s default response carries no events array, is >=3x smaller, still carries every outcome and one row per bracket, and the full array sits behind a flag with a CONTRACTS row",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Re-measured: `trace render --phase 3` = 9,890 B, `--phase 3 --events` = 36,916 B - 3.73x, both figures exactly as SUMMARY claims. Default keys are [ok,file,corr,capped,counts,roles,coordinator,brackets,outcomes,unpaired]; 'events' in o === false. Completeness re-measured rather than assumed: the `--events` payload holds 164 events of which 15 are family `outcome`, and the default `outcomes` array is length 15 - every outcome event, none dropped - and includes the `rearm` the triage gate looks up. brackets length 31. CONTRACTS row self-verify.mjs:275 `'trace render': ['--phase','--events']`, and self-verify reports 0 problems (so no unknown-flag)."
+    },
+    {
+      "n": 4,
+      "truth": "The two measured round-trips are batched in prose and a census pins the per-workflow invocation count, reddening when a call comes back",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/workflows/context.md:85-86 is ONE wrapped `config.mjs get memory.backend planning.commit_docs`; workflows/plan.md:358-369 issues seed-reqs and `cursor set` under 'both in ONE message. No value flows from the first into the second'. Census cadence-core/bin/seam-calls.test.mjs pins context.md=6 and plan.md=9 with the derivation in its header, plus a not-dead test (:83) proving the counter joins continuations and ignores backticked prose. Mutation-proved in a scratchpad copy: adding one `config.mjs get planning.commit_docs` call to context.md turned it 2 pass/1 fail. CAVEAT, already disclosed in SUMMARY Open items: ROADMAP criterion 4's wording says the per-workflow count DROPS; plan.md dropped 11->9 but context.md is FLAT 6->6 (the batching removed a round trip, not a call, and this phase's own criteria-size call added one back). The UAT item's expected text and CONTEXT AC4 are fully met; the ROADMAP phrasing must not be restated as-is by phase 5/6."
+    },
+    {
+      "n": 5,
+      "truth": "A reads.jsonl record joins to the trace.jsonl bracket that caused it on committed fixtures, reports ambiguous on overlapping same-role brackets and the unjoinable floor as a count, with report.md prose and the CONTRACTS row moved",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "Committed fixtures exist and are tracked: cadence-core/bin/fixtures/join.reads.jsonl, join.trace.jsonl. read-trace.test.mjs:592 runs the real seam over them and fixes all eight records exactly: calls 8 = joined 2 + ambiguous 1 + unjoined 2 + floor 2 + coordinator 1 + unresolved 0, asserted as a partition (:613); :494-497 pins the overlapping same-role case to status 'ambiguous' rather than a picked bracket; :506 pins the HOST_AGENT_TYPES floor. Live run `planning.mjs reads --join` returns joined 1391 / ambiguous 85 / unjoined 12 / floor 553 / coordinator 1107 / unresolved 0. CONTRACTS row moved: self-verify.mjs:246 `reads: ['--join']`. Prose moved: workflows/report.md:22 invokes `reads --join`, :33 documents the six figures, and the old 'takes no phase scoping and no flag' sentence is gone tree-wide (grep returns only two source comments, no shipped prose). read-trace.test.mjs:545-556 also covers the unparsable-timestamp and no-bracket paths."
+    },
+    {
+      "n": 6,
+      "truth": "The cad-executor dispatch hands over the resolve's answered surfaces, the contract states what the executor does with them, and a test asserts it on the dispatch payload",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/workflows/execute.md:168-171 puts the resolved `surfaces` on the stable-first half of the dispatch prompt and states the `surfaces_answered: false` meaning (ALL categories stand, not none). skills/cad-executor-contract/SKILL.md:19-23 states the use - the bar the work is WRITTEN to, explicitly NOT a halt condition. Test on the payload: prose-agreement.test.mjs (added in e04dcc2) slices the execute_sequential prompt between its step marker and the 'Do NOT restate' line and asserts both /`surfaces`/ and /surfaces_answered/, then asserts the contract names no surface config.schema.json does not carry. Parallel path inherits it: references/execute-parallel.md:15 'Same prompt as sequential except the mode line'. Whole suite green, so this test passes."
+    },
+    {
+      "n": 7,
+      "truth": "The suite and self-verify are clean",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "One full-suite run, `node --test cadence-core/bin/*.test.mjs`: exit 0, tests 1790 / pass 1790 / fail 0 / cancelled 0 / skipped 0 / todo 0 - SUMMARY's 1,790/0 re-measured and confirmed. `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true,...,\"problems\":[]} across 21 checks including budgets, script-contracts and config-keys, so no unbudgeted-surface, budget-overrun, unknown-flag or config-key failure. `npx tsc -p tsconfig.ci.json` produced no diagnostics."
+    },
+    {
+      "n": 8,
+      "truth": "criteria-size's roadmap parser reports a phase's real criteria count rather than a fence-inflated one",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Reproduced directly on a synthetic roadmap: a `### Phase 1:` block declaring TWO criteria, followed by a fenced ``` example containing a six-item `Success criteria:` list, is reported as {\"roadmap_criteria\":8,\"over\":[{\"kind\":\"roadmap-criteria-too-many\",\"measured\":8,\"ceiling\":5}],\"within\":false} - a compliant surface reported out of range. Parser: cadence-core/bin/lib/planning-files.mjs:437 phaseCriteria. Not firing on this repo today (its ROADMAP carries no fenced criteria example inside a phase block) and not on cadence-core/templates/ROADMAP.md (no `### Phase N:` blocks at all, so it reports phases:[]), and SUMMARY's Open items discloses it honestly - but it is a live false positive on any user roadmap that shows a criteria example inside a phase block, and phase 3 shipped COR-01 specifically to guard fence-blind scanners."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "criteria-size counts the ceilings",
+      "evidence": "Seam run four ways: phase 4 within:true on all four bounds; phase 2 reports roadmap-criteria-too-many (6 > 5); phase 6 reports roadmap_found:false with compared:[] and within:null, never a pass; no-flag run compares nothing. Wired at context.md:353 (3-7), new-project.md:305 and adopt.md:200 (2-5). One test row per heading spelling: planning-files.test.mjs:707 and :712."
+    },
+    {
+      "k": 2,
+      "name": "trace close replaces the restated prose",
+      "evidence": "`trace close` writes event:return without --detail and event:checkpoint with it (run on a temp trace file). Zero raw `trace append --event return|checkpoint` invocations remain anywhere under cadence-core/, skills/ or agents/. BRACKETING carries all eight rows (trace.test.mjs:1100-1109) and asserts close count EQUALS dispatch count plus zero raw terminals. Mutation-proved: putting one raw terminal append back into verify-deep.md turns the file red (83 pass / 1 fail) with the census's own message."
+    },
+    {
+      "k": 3,
+      "name": "trace render's default is bounded",
+      "evidence": "Re-measured 9,890 B default vs 36,916 B with --events = 3.73x (>= 3x). No `events` key in the default. Every outcome carried: 15 outcome-family events in the full payload, 15 rows in the default `outcomes` array, `rearm` among them; 31 bracket rows. CONTRACTS row self-verify.mjs:275 declares ['--phase','--events'] and self-verify reports 0 problems."
+    },
+    {
+      "k": 4,
+      "name": "the two round-trips are batched and pinned",
+      "evidence": "context.md:85-86 is one wrapped `config.mjs get` over both keys; plan.md:358-369 issues seed-reqs and cursor set in ONE message. seam-calls.test.mjs pins context.md=6, plan.md=9 with derived (not baselined) arithmetic and a counter-not-dead test. Mutation-proved: adding a second config.mjs get to context.md reddens the row. Note for phases 5-6: ROADMAP's 'the count drops' holds for plan.md (11->9) but is FLAT for context.md (6->6), as SUMMARY discloses."
+    },
+    {
+      "k": 5,
+      "name": "a read joins to the bracket that caused it",
+      "evidence": "Committed fixtures cadence-core/bin/fixtures/join.{reads,trace}.jsonl drive the real seam; read-trace.test.mjs:592 fixes all 8 records as a partition (joined 2, ambiguous 1, unjoined 2, floor 2, coordinator 1, unresolved 0), with the overlapping same-role case pinned to 'ambiguous' at :494-497. Live `reads --join`: joined 1391 / ambiguous 85 / unjoined 12 / floor 553. CONTRACTS row now `reads: ['--join']` (self-verify.mjs:246); report.md:22,33 carries the flag and the stale 'no phase scoping and no flag' sentence is gone from shipped prose."
+    },
+    {
+      "k": 6,
+      "name": "the executor is handed its risk surfaces",
+      "evidence": "execute.md:168-171 puts the resolved `surfaces` on the dispatch prompt's stable half and states the surfaces_answered:false meaning; SKILL.md:19-23 states the use and that it is not a halt condition; prose-agreement.test.mjs asserts both against the sliced execute_sequential prompt and refuses an invented category. execute-parallel.md:15 makes the parallel path inherit the same prompt."
+    },
+    {
+      "k": 7,
+      "name": "the suite and self-verify are clean",
+      "evidence": "`node --test cadence-core/bin/*.test.mjs` exit 0, 1790 pass / 0 fail (SUMMARY's figure re-measured). `self-verify.mjs` -> ok:true, problems:[] over 21 checks. `npx tsc -p tsconfig.ci.json` silent."
+    }
+  ],
+  "gaps": [
+    {
+      "name": "criteria-size mis-counts a roadmap phase that shows a fenced criteria example",
+      "reason": "behavior wrong - phaseCriteria is fence-blind, so numbered items inside a ``` block are counted as the phase's own criteria and a compliant phase is reported out of range",
+      "evidence": "cadence-core/bin/lib/planning-files.mjs:437 phaseCriteria. Reproduced: a `### Phase 1:` block with a real 2-item `Success criteria:` list followed by a fenced 6-item example returns {\"roadmap_criteria\":8,\"over\":[{\"kind\":\"roadmap-criteria-too-many\",\"measured\":8,\"ceiling\":5}],\"within\":false}. Not firing on this repo's own ROADMAP.md or on cadence-core/templates/ROADMAP.md, and disclosed in SUMMARY.md's Open items - but AC1's promise is that an out-of-range report means something, and phase 3 shipped COR-01 to guard exactly this fence-blindness elsewhere.",
+      "severity": "minor",
+      "missing": "Strip fenced blocks before counting inside a phase block (reuse phase 3's COR-01 fence-skipping helper), and add a phaseCriteria test row asserting a fenced example does not inflate the count."
+    }
+  ],
+  "human_checks": []
+}
