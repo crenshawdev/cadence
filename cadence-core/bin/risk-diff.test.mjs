@@ -106,6 +106,48 @@ test('a partly-binary range that also matched reports BOTH, not one or the other
   assert.ok(r.matches.some((m) => m.category === 'migrations'));
 });
 
+/** The real bytes `git diff` emits for a gitlink, captured from a repository
+ * whose `vendor/sdk` entry was written with `update-index --cacheinfo 160000`.
+ * The hunk carries commit IDS and not one line of the code they name. */
+const GITLINK_BUMP = 'diff --git a/vendor/sdk b/vendor/sdk\n'
+  + 'index 1111111..2222222 160000\n'
+  + '--- a/vendor/sdk\n+++ b/vendor/sdk\n'
+  + '@@ -1 +1 @@\n'
+  + '-Subproject commit 1111111111111111111111111111111111111111\n'
+  + '+Subproject commit 2222222222222222222222222222222222222222\n';
+
+test('a gitlink bump is inconclusive: git emitted a hunk, the nested code is not in it', () => {
+  // The hunk makes the section look READ - `@@` is there - while every line of
+  // the submodule's actual change sits in another repository the scan never
+  // opened. Reporting `matches: []` with `inconclusive: false` here is a
+  // judged-clean verdict over code nothing looked at, which is exactly the
+  // collapse criterion 3 forbids.
+  const r = scanDiff(GITLINK_BUMP, ALL);
+  assert.equal(r.checked, true);
+  assert.equal(r.inconclusive, true,
+    'a submodule bump read as a judged-clean range');
+  assert.deepEqual(r.matches, []);
+});
+
+test('a submodule ADD is inconclusive on the same grounds', () => {
+  const r = scanDiff('diff --git a/vendor/sdk b/vendor/sdk\n'
+    + 'new file mode 160000\n'
+    + 'index 0000000..1111111\n'
+    + '--- /dev/null\n+++ b/vendor/sdk\n'
+    + '@@ -0,0 +1 @@\n'
+    + '+Subproject commit 1111111111111111111111111111111111111111\n', ALL);
+  assert.equal(r.checked, true);
+  assert.equal(r.inconclusive, true);
+  assert.deepEqual(r.matches, []);
+});
+
+test('a gitlink beside a readable file reports BOTH the match and the unread half', () => {
+  const r = scanDiff(GITLINK_BUMP
+    + diffOf('db/migrations/004_add_column.sql', ['ALTER TABLE users ADD COLUMN kind text;']), ALL);
+  assert.equal(r.inconclusive, true);
+  assert.ok(r.matches.some((m) => m.category === 'migrations'), JSON.stringify(r.matches));
+});
+
 test('the vocabulary is the CALLER\'s: a category outside it is never reported', () => {
   const r = scanDiff(diffOf('src/auth/login.ts', ['const c = jwt.verify(raw, KEY);']),
     ['migrations', 'billing']);

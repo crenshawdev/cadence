@@ -22,7 +22,8 @@
 //
 // SILENCE IS NEVER A CLEARED RANGE, the same rule lib/surface-scan.mjs states
 // for structure. A range this cannot judge - a file git rendered as binary, a
-// body with no readable hunk - is `inconclusive: true`, never collapsed into
+// body with no readable hunk, a GITLINK section whose hunk carries a submodule
+// commit id where the code would be - is `inconclusive: true`, never collapsed into
 // `matches: []`, and `inconclusive` is INDEPENDENT of `matches` so a partly
 // unreadable range that also matched reports both. The caller fires on either,
 // because widening is the only safe direction on the one gate that is
@@ -170,12 +171,24 @@ function baseAndExt(/** @type {string} */ path) {
 }
 
 /**
+ * A GITLINK section: a submodule pointer moving. Two markers, because git
+ * spells the same change either way depending on which lines the range
+ * produced - the `160000` mode on the `index`/`new file`/`deleted file` line,
+ * and the `Subproject commit <id>` lines the hunk carries INSTEAD of code.
+ * (A third spelling, `diff.submodule=log`'s `Submodule <path> aaa..bbb:`
+ * stanza, emits no `@@` at all and already lands in `unreadable` through the
+ * no-hunk arm below.)
+ */
+const GITLINK_MODE = /^(?:index [0-9a-f]+\.\.[0-9a-f]+ 160000|(?:new file|deleted file|old|new) mode 160000)$/;
+const GITLINK_LINE = /^Subproject commit [0-9a-f]{7,64}(?:-dirty)?$/;
+
+/**
  * The parts of a unified diff this reads: which paths changed, which lines the
  * range ADDED or REMOVED, and whether anything in it could not be read.
  *
- * `unreadable` is the honest half. A `Binary files ... differ` stanza and a
- * file section carrying no hunk at all are both change this cannot judge, and
- * saying so is the whole point of the seam.
+ * `unreadable` is the honest half. A `Binary files ... differ` stanza, a file
+ * section carrying no hunk at all, and a GITLINK section are all change this
+ * cannot judge, and saying so is the whole point of the seam.
  * @param {string} body
  */
 function parseDiff(body) {
@@ -221,11 +234,29 @@ function parseDiff(body) {
       sectionRead = true;
       continue;
     }
+    // A GITLINK section is UNREADABLE even though git emitted a hunk for it.
+    // The `@@` sets `sectionRead` and the hunk then carries commit ids where
+    // the code would be: every line of what the submodule actually changed
+    // lives in another repository this never opened. Left alone, a range whose
+    // only change was `vendor/sdk` bumping read `matches: []` with
+    // `inconclusive: false` - a judged-clean verdict over code the scanner
+    // never saw, which is the one collapse this seam exists to refuse.
+    if (!inHunk && GITLINK_MODE.test(line)) { unreadable = true; continue; }
     if (!inHunk && line.startsWith('--- ')) { addPath(line.slice(4).replace(/^a\//, '')); continue; }
     if (!inHunk && line.startsWith('+++ ')) { addPath(line.slice(4).replace(/^b\//, '')); continue; }
     // Content. `+++`/`---` are consumed above, so a bare `+`/`-` here is a
     // changed line; a leading space is CONTEXT and is deliberately dropped.
-    if (line.startsWith('+') || line.startsWith('-')) changed.push(line.slice(1));
+    if (line.startsWith('+') || line.startsWith('-')) {
+      const content = line.slice(1);
+      // The gitlink's own pointer line. Marked unread and kept OUT of
+      // `changed`: it is a commit id, not code, and feeding a bare hex string
+      // to the content patterns can only ever produce a reason that is not
+      // true. The PATH still reaches the path signals, so a bumped
+      // `vendor/auth-sdk` still names its category - with `inconclusive` beside
+      // it, since the match is all this could see.
+      if (GITLINK_LINE.test(content)) { unreadable = true; continue; }
+      changed.push(content);
+    }
   }
   if (inSection && !sectionRead) unreadable = true;
   // No hunk anywhere in a body that had bytes: an unparseable body, a
