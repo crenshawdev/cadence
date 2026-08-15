@@ -108,8 +108,9 @@ run 1:
 
 - **Invocations 1-3, the re-run arm: 562 accurate, 9 stale, 15 unverifiable —
   586 claims.** This is the ONLY figure comparable to run 1's 509/18/20 = 547,
-  and it is taken over the same 25 files. (Half A splits 168/6/8 = 182 for invocation 1 and 188/0/1 = 189 for
-  invocation 2; invocation 3 is 206/3/6 = 215.)
+  and it is taken over the same 25 files. (Half A splits 168/6/8 = 182 for
+  invocation 1 and 188/0/1 = 189 for invocation 2; invocation 3 is
+  206/3/6 = 215.)
 - **Invocation 4, new surface: 82 accurate, 1 stale, 2 unverifiable — 85
   claims.** Not comparable: none of these existed in run 1's 547.
 - **Invocation 5, ledgered docs no invocation had named: 58 accurate, 2 stale,
@@ -118,11 +119,18 @@ run 1:
 - **Targeted `.mjs` pass: 8 accurate, 0 stale, 2 unverifiable — 10 claims.** Not
   comparable: a per-row re-verdict, not an extraction.
 
-743 claim rows across both reports (586 + 85 + 62 + 10).
+743 claim rows across both reports (586 + 85 + 62 + 10). Every one of them is
+accounted for in the tables below: 358 joined to a row already here and carried
+run 2's verdict onto it, and 385 joined to nothing and are filed under
+`## Claims added after run 1`. That is why the tables now hold 933 rows - the 548
+that predate this run plus those 385 - and why exactly 743 of them read `2` in
+the `run` column.
 
 **Re-pin scope: every ledgered doc that CHANGED since `a6b8931`.** Measured with
 `git diff --quiet a6b8931 HEAD -- <doc>` per distinct `doc` value, that is 23 of
-the 31 docs the ledger cites, carrying 493 of its 548 rows. The other eight are
+the 31 docs the ledger cited when run 2 started, carrying 493 of the 548 rows it
+held then - the 385 rows run 2 itself filed are pinned live by construction and
+are not part of that scope. The other eight docs are
 byte-identical to run 1 and their 55 rows were not re-read: `config-review` 10,
 `coverage` 8, `docs-verify` 4, `phase` 13, `plan-gaps` 4, `spike` 2, `undo` 8,
 `verify-sweep` 6.
@@ -156,17 +164,21 @@ inside run 2's surface — that is what invocation 5 and the targeted `.mjs` pas
 above exist for — so a row reading `1` means run 2's fresh extraction produced
 no claim matching that row's TEXT for that doc: the claim was dropped from the
 doc, reworded past the join, or is one this cycle re-pinned or re-verdicted by
-hand. 194 of the 548 rows read `1`, concentrated in the two documents run 2
-extracted least like run 1 did (`METHOD.md` 41 of 82, `README.md` 20 of 51).
+hand. 190 of the 933 rows read `1` and all 190 predate run 2 - every row run 2
+filed reads `2` - so it is 190 of the 548 rows that were here when run 2 ran,
+concentrated in the two documents run 2 extracted least like run 1 did
+(`METHOD.md` 41 of its 82 pre-run-2 rows, `README.md` 20 of its 51).
 The join is `doc` plus claim text, never the id, for the reason stated below.
 
 **A row resolved `corrected - <sha>` is a closed finding and never joins.** Its
 claim text is what run 1 read BEFORE the fix, so a run-2 claim that looks like
 it is the corrected sentence rather than this claim; joining the two would
-overwrite a recorded correction with a verdict about different words. Those 20
-rows keep run 1's verdict, their `corrected - <sha>` resolution, and their
-run-1 line. The one exception is README-44, whose claim TEXT was itself
-rewritten to the corrected sentence (see below), so it joins like any other row.
+overwrite a recorded correction with a verdict about different words. 20 of the
+28 rows whose resolution begins `corrected` are in that class: they keep run 1's
+verdict, their `corrected - <sha>` resolution, and their run-1 line, which is
+provenance rather than an address. The other eight are README-44, whose claim
+TEXT was itself rewritten to the corrected sentence (see below) so it joins like
+any other row, and the seven phase 5 rewrote to the live `trace close` call.
 
 **`divergence` is a RESOLUTION value here, and deliberately not a fourth
 verdict.** `docs-verify.md`'s classification vocabulary is exactly
@@ -187,8 +199,20 @@ in that doc, so next cycle's `README-02` need not be this cycle's.
 diff joined on the id alone would report a resolved claim as regressed and a
 newly drifted one as already corrected.
 
-**The `line` column is run 1's location**, read at `a6b8931`. Phase 5's own
-corrections moved some of them, by varying amounts and in more than one file.
+**As of run 2 the `line` column is the LIVE location** for every row whose `doc`
+changed since `a6b8931` - 23 of the 31 docs the ledger cited then, 493 rows, of
+which 261 cells moved. 206 came from the run-2 report's own location cell, 55
+from a per-row read of the live file, and the rest were confirmed to still hold
+their claim. Two classes are deliberately NOT live: a row resolved
+`corrected - <sha>`, whose claim text predates the fix and whose cite is
+provenance, and the 55 rows on the eight workflow files byte-identical to run 1,
+which were not re-read because they cannot have moved. The paragraphs below are
+the record of how the column got here and still describe how to read a cell that
+is provenance.
+
+**Before run 2 the `line` column was run 1's location**, read at `a6b8931`.
+Phase 5 of `v2.6.1`'s own corrections moved some of them, by varying amounts and
+in more than one file.
 `METHOD.md` took three edits in `b2bad1a` - `+3` at `:91`, `+1` at `:276`, `+2`
 at `:304`, 614 lines to 620 - so a `METHOD.md` row below `:91` sits 3, 4 or 6
 lines lower than its cell says depending on how many of those it is below; and
@@ -274,13 +298,17 @@ fixes happened. The `stale` verdict is the finding and the resolution is the
 fix, which is why run 2's `accurate` verdict on the rewritten text is NOT
 imported over them.
 
-**Resolution values.** `accurate` on every row the sweep confirmed;
+**Resolution values.** Measured over all 933 rows, every cell is one of four
+forms: `accurate` on every row the sweep confirmed (847);
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
-the commit that edited it; `divergence - <reason>` on one deliberately left
-standing. `pending` is a transient placeholder used only while phase 5 is
-executing, so that no cell is ever empty; zero rows read `pending` at the phase's
-close. A row whose claim turned out to describe a code defect rather than stale
-prose carries the defect's `DFC-0k` id in its resolution.
+the commit that edited it (28); `divergence - <reason>` on one deliberately left
+standing (57); and `RETIRED - <reason>` on a row whose claimed SENTENCE was cut
+rather than corrected, so there is nothing left to re-verify (1, PLAN-03, whose
+`line` cell reads `—` for the same reason). `pending` is a transient placeholder
+used only while a phase is executing, so that no cell is ever empty; zero rows
+read `pending` at the close. A row whose claim turned out to describe a code
+defect rather than stale prose carries the defect's `DFC-0k` id in its
+resolution.
 
 ## Defects filed out of this sweep
 
