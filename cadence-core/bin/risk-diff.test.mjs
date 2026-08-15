@@ -256,3 +256,124 @@ test('risk-check run: --plan with nothing after it is refused, never read as pla
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'bad-args');
 });
+
+// --- the `risk-check status` gate ---------------------------------------------
+
+/**
+ * FROZEN LITERALS, not a read of `.planning/trace.jsonl`, and that is the point
+ * of them. These are the real bytes this repository's record held for phase 1 on
+ * 2026-08-15 - one `cad-executor` dispatch closed by a CHECKPOINT, a second
+ * closed by a RETURN, under one `phase_start` anchor - at a commit where no
+ * `risk_check` event existed anywhere, because the seam did not exist. Reading
+ * them from disk would make the evidence arm ("this check reports the omission
+ * that was actually there") evaporate the moment task 4's wiring starts writing
+ * records, which is exactly what it must survive.
+ */
+const FROZEN_PHASE_1 = [
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:13:18.573Z","family":"lifecycle","event":"phase_start","sha":"ae5ca09"}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:13:21.869Z","family":"lifecycle","event":"dispatch","plan":"1","role":"cad-executor","read":["CLAUDE.md",".planning/PROJECT.md",".planning/phases/1/CONTEXT.md",".planning/phases/1/PLAN.md"]}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:13:21.873Z","family":"routing","event":"resolve","role":"cad-executor","stakes":"shipped","agent":"cad-executor","model":"opus","effort":"high","escalated":false,"pinned":false,"attempt":1,"warning_count":1}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:22:22.335Z","family":"lifecycle","event":"checkpoint","plan":"1","detail":"structural checkpoint at task 2: verify clauses mutually exclusive","role":"cad-executor","tokens":133860}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:34:27.371Z","family":"lifecycle","event":"dispatch","plan":"1","role":"cad-executor","read":[".planning/PROJECT.md",".planning/phases/1/CONTEXT.md",".planning/phases/1/PLAN.md",".planning/phases/1/reports/plan-1.md"]}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:34:27.372Z","family":"routing","event":"resolve","role":"cad-executor","stakes":"shipped","agent":"cad-executor","model":"opus","effort":"high","escalated":false,"pinned":false,"attempt":1,"warning_count":1}',
+  '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:45:06.939Z","family":"lifecycle","event":"return","plan":"1","role":"cad-executor","tokens":136898}',
+];
+
+/** A `.planning` fixture holding the given trace lines. No git repo: `status`
+ * reads the record and nothing else. */
+function traceFixture(lines) {
+  const dir = join(mkdtempSync(join(tmpdir(), 'cad-risk-status-')), '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'trace.jsonl'), `${lines.join('\n')}\n`);
+  return dir;
+}
+
+/** One `outcome`/`risk_check` line, as `risk-check run` writes it. */
+const recordLine = (plan, base, head) => JSON.stringify({
+  corr: '1-ae5ca09', phase: '1', ts: '2026-08-15T18:46:00.000Z',
+  family: 'outcome', event: 'risk_check', plan, base, head,
+  checked: true, categories: ['secrets'], matches: [], inconclusive: false,
+});
+
+/** `risk-check status` against a fixture; its one JSON line and its exit code. */
+function riskStatus(dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'risk-check', 'status', ...args],
+      { encoding: 'utf8' });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+test('risk-check status: a completed range with no record refuses, naming the plan', () => {
+  // The evidence arm. These are the bytes the record actually held, and the
+  // omission this check reports is the one that was actually there.
+  const dir = traceFixture(FROZEN_PHASE_1);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing');
+  assert.equal(r._exit, 1);
+  assert.deepEqual(r.missing, ['1']);
+  assert.match(r.hint, /risk-check run/);
+});
+
+test('risk-check status: appending the plan-1 record makes the identical call pass', () => {
+  const dir = traceFixture([...FROZEN_PHASE_1, recordLine('1', 'ae5ca09', 'HEAD')]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  assert.equal(r.plans.length, 1);
+  assert.equal(r.plans[0].state, 'recorded');
+  // The record's own refs ride the row, so a stale one is visible rather than
+  // silently counted on the phase-wide arm.
+  assert.deepEqual(r.plans[0].records, [{ base: 'ae5ca09', head: 'HEAD' }]);
+});
+
+test('risk-check status: a checkpoint AND a return for one plan report it once, not twice', () => {
+  const dir = traceFixture([...FROZEN_PHASE_1, recordLine('1', 'ae5ca09', 'HEAD')]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.plans.length, 1, JSON.stringify(r.plans));
+  assert.equal(r.plans[0].plan, '1');
+  assert.equal(r.plans[0].completed, 1, 'the checkpoint was counted as a completed range');
+});
+
+test('risk-check status: a record from an earlier, narrower range is STALE, not satisfaction', () => {
+  // execute.md's "re-dispatch the remainder" arm is exactly the case: the plan
+  // number matches, the range does not, and passing on it would clear a range
+  // nothing ever checked.
+  const dir = traceFixture([...FROZEN_PHASE_1, recordLine('1', 'refA', 'refB')]);
+  const stale = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refC']);
+  assert.equal(stale.ok, false, JSON.stringify(stale));
+  assert.equal(stale._exit, 1);
+  assert.equal(stale.plans[0].state, 'stale');
+  assert.deepEqual(stale.plans[0].wanted, { base: 'refA', head: 'refC' });
+  assert.deepEqual(stale.plans[0].records, [{ base: 'refA', head: 'refB' }]);
+
+  const matched = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refB']);
+  assert.equal(matched.ok, true, JSON.stringify(matched));
+  assert.equal(matched._exit, 0);
+});
+
+test('risk-check status: a phase with no completed executor range is ok:true and empty', () => {
+  // Nothing to require is not a failure - a gate that refused here would block
+  // the first plan of every phase.
+  const dir = traceFixture([FROZEN_PHASE_1[0]]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.plans, []);
+});
+
+test('risk-check status: the range triple is all three or none', () => {
+  const dir = traceFixture([...FROZEN_PHASE_1, recordLine('1', 'refA', 'refB')]);
+  const half = riskStatus(dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(half.ok, false, JSON.stringify(half));
+  assert.equal(half.reason, 'bad-args');
+});
+
+test('risk-check status: a named range is required even when its return never landed', () => {
+  const dir = traceFixture([FROZEN_PHASE_1[0]]);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '2', '--base', 'refA', '--head', 'refB']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.deepEqual(r.missing, ['2']);
+});

@@ -63,6 +63,12 @@
 //                                   surface, recorded on the trace whatever the
 //                                   answer - so "the check was skipped" stops
 //                                   reading like "it ran and matched nothing"
+//   risk-check status --phase N [--plan k --base <ref> --head <ref>]
+//                                   every COMPLETED executor range in that
+//                                   phase against the records, refusing by plan
+//                                   when one carries none; the optional triple
+//                                   requires a record for THAT range, so an
+//                                   earlier narrower one does not satisfy it
 //   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
@@ -3151,9 +3157,118 @@ function cmdRiskCheckRun(dir, opts) {
   return ok(envelope);
 }
 
+/**
+ * A plan identity as ONE spelling. `trace append --plan` stores the caller's
+ * string and `risk-check run` stores the parsed number, so both sides of every
+ * comparison are stringified - the rule lib/trace.mjs's own `key()` follows for
+ * the same reason. A row with no plan at all keys to '' and is still carried:
+ * an unidentified completed range is not an exempt one.
+ * @param {any} v
+ */
+const planKey = (v) => (v === undefined || v === null ? '' : String(v));
+
+function cmdRiskCheckStatus(dir, opts) {
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'risk-check status needs --phase <N>');
+  const n = parsedPhase.value;
+
+  // The triple is all three or none. A plan number alone is NOT a range
+  // identity, and two of the three would let a caller ask about a range it only
+  // half named - which reads as the phase-wide arm and passes on a record left
+  // by some other range.
+  const given = ['plan', 'base', 'head'].filter((f) => f in opts);
+  /** @type {{plan: number, base: string, head: string} | null} */
+  let wanted = null;
+  if (given.length) {
+    if (given.length !== 3) {
+      return fail('bad-args',
+        'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three');
+    }
+    const parsedPlan = requireInt(opts.plan);
+    if (!parsedPlan.ok) return fail('bad-args', 'risk-check status --plan needs a plan number after it: --plan <k>');
+    const base = riskRef(opts.base);
+    const head = riskRef(opts.head);
+    if (!base || !head) {
+      return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`');
+    }
+    wanted = { plan: parsedPlan.value, base, head };
+  }
+
+  // ONE reader of the record, through renderTrace and nothing else: a second
+  // reader is how two readers of one record start disagreeing about what
+  // closed, which is the reason renderTrace exposes its paired `brackets` at
+  // all.
+  const r = renderTrace(dir, parsedPhase.raw);
+
+  /** Completed ranges, keyed by plan. A COMPLETED range is an executor bracket
+   * whose terminal is a `return`; a `checkpoint` closed a dispatch that came
+   * back unfinished and requires nothing. Grouping by plan is what makes a
+   * checkpoint-then-return continuation count once rather than twice. */
+  /** @type {Map<string, {plan: string|null, completed: number}>} */
+  const completed = new Map();
+  const planRow = (k) => {
+    let row = completed.get(k);
+    if (!row) { row = { plan: k === '' ? null : k, completed: 0 }; completed.set(k, row); }
+    return row;
+  };
+  for (const b of r.brackets) {
+    if (b.role !== 'cad-executor' || b.event !== 'return') continue;
+    planRow(planKey(b.plan)).completed++;
+  }
+  // A named range is required whether or not its return has landed yet: the
+  // caller states the range it just committed, and a bracket that never paired
+  // must not turn the gate off.
+  if (wanted) planRow(planKey(wanted.plan));
+
+  /** Every record the phase holds, keyed by plan. @type {Map<string, {base: any, head: any}[]>} */
+  const records = new Map();
+  for (const e of r.events) {
+    if (e.family !== 'outcome' || e.event !== 'risk_check') continue;
+    const k = planKey(e.plan);
+    if (!records.has(k)) records.set(k, []);
+    records.get(k).push({ base: e.base === undefined ? null : e.base,
+      head: e.head === undefined ? null : e.head });
+  }
+
+  const rows = [...completed.entries()].map(([k, row]) => {
+    const found = records.get(k) || [];
+    const asked = wanted && planKey(wanted.plan) === k ? { base: wanted.base, head: wanted.head } : null;
+    // STALE, not satisfied: a plan re-dispatched over a widened range
+    // (execute.md's "re-dispatch the remainder" arm) is exactly the case that
+    // would otherwise pass on the record its earlier, narrower range left. Both
+    // ref pairs are named so the reader can see which one it has.
+    const state = asked
+      ? (found.some((f) => f.base === asked.base && f.head === asked.head)
+        ? 'recorded' : (found.length ? 'stale' : 'missing'))
+      : (found.length ? 'recorded' : 'missing');
+    return { ...row, state, records: found, ...(asked ? { wanted: asked } : {}) };
+  });
+
+  const offending = rows.filter((row) => row.state !== 'recorded');
+  if (offending.length) {
+    // Emitted directly rather than through fail(): its reason/detail/hint shape
+    // has no channel for the list, and the list is the whole point of the
+    // refusal - exactly as cmdLeaseCheck's `undeclared-files` arm reasons.
+    return emit({
+      ok: false,
+      reason: 'risk-record-missing',
+      phase: n,
+      plans: rows,
+      missing: offending.map((row) => row.plan),
+      hint: `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
+        + ' for each plan listed, then re-run this check',
+    });
+  }
+  // Nothing to require is not a failure: a phase with no completed executor
+  // range at all is ok:true with an empty list, or a gate here would block the
+  // first plan of every phase.
+  ok({ phase: n, plans: rows });
+}
+
 function cmdRiskCheck(dir, sub, opts) {
   if (sub === 'run') return cmdRiskCheckRun(dir, opts);
-  return fail('usage', 'risk-check <run>');
+  if (sub === 'status') return cmdRiskCheckStatus(dir, opts);
+  return fail('usage', 'risk-check <run|status>');
 }
 
 // ---------------------------------------------------------------------------
