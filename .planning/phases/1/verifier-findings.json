@@ -1,0 +1,74 @@
+{
+  "status": "delivered",
+  "score": "8/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A pure gate-agreement rule exists, is substantive, and flags the pre-patch schema values (plan/diff/phase_diff) with at least one detail naming phase_diff AND shipped",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/gate-agreement.mjs (257 lines, six codes, no fs/process/Date, exports gateTriggers + gateAgreementIssues). cadence-core/bin/gate-agreement.test.mjs:42 holds PRE_PATCH as a frozen literal (plan adjudicated, diff advisory, risk_surface blocking, phase_diff advisory with 'advisory at shipped') and :29-31 the frozen shipped grid; arms at :123 and :132 assert the three triggers and the phase_diff+shipped detail. `node --test cadence-core/bin/gate-agreement.test.mjs` -> tests 28, pass 28, fail 0. The live pre-patch failing run is recorded verbatim in .planning/phases/1/reports/plan-1.md (13 problems, two naming phase_diff with shipped)."
+    },
+    {
+      "n": 2,
+      "truth": "The rule is wired into self-verify as check 18 and the live tree is green with the check named",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/self-verify.mjs:145 imports gateAgreementIssues; :1106 calls it inside the route-table arm with `schema` (bound at :565 to config.schema.json's `.keys`, the map the lib indexes) and the stakes/gate vocabularies, filing each `{code, detail}` onto `problems` with file 'cadence-core/config.schema.json'; :1348 `checked` ends with 'gate-agreement'. `node cadence-core/bin/self-verify.mjs` -> exit 0, ok true, problems 0, checked contains gate-agreement."
+    },
+    {
+      "n": 3,
+      "truth": "An unset gate reads back null with exactly one warning naming `route.mjs resolve`, and a pinned gate reads back byte-identical with no such warning",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/config.mjs:240 GATE_KEY shape match, :283 pushes one allWarnings entry gated on `keys.length && layered[k] === undefined`; :261 value line unchanged (D-06) and :258 wanted.filter untouched. Live: `config.mjs get review.triggers.{diff,risk_surface,phase_diff}.gate` -> null + exactly one warning '... `route.mjs resolve` answers it for a level'; `review.triggers.plan.gate` (pinned in the global layer) -> \"adjudicated\", no warning. Isolated probe with --file on a temp config pinning diff=blocking -> {\"review.triggers.diff.gate\":\"blocking\"}, no warning. config.test.mjs adds five arms (:25, :41, :55, :69, :80) covering all four triggers unset, the pinned read, the set round trip."
+    },
+    {
+      "n": 4,
+      "truth": "A keyless `get` carries no gate warning, and `check review.triggers.diff.gate=null` is still refused with the four-member enum message",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`node cadence-core/bin/config.mjs get` (no keys) -> warnings [] (no gate entry). `node cadence-core/bin/config.mjs check review.triggers.diff.gate=null` -> {\"ok\":false,\"reason\":\"invalid\",...\"error\":\"must be one of: off, advisory, blocking, adjudicated\"}. All four `values` arrays in config.schema.json remain four-membered (null not added, D-05)."
+    },
+    {
+      "n": 5,
+      "truth": "No surface in the repo still says a `get` of a gate returns the schema default, and the catalog's gate row publishes no per-key scalar default",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`grep -rniE \"schema default|schema DEFAULT\" cadence-core docs README.md skills` -> 22 hits, none claiming a gate get returns the schema default; cadence-core/workflows/execute.md and cadence-core/workflows/plan.md do not appear at all. execute.md:35-39 and plan.md:57-62 now read 'a config.mjs get of a gate is not a source for one either way: unset, it answers null and names route.mjs resolve'. config-catalog.md:62 Default cell = 'unset->the stakes level decides, per trigger (`route.mjs resolve` answers it)', per-value Explanation copy intact. references/conventions.md:73 left alone per D-11. DOCS-CLAIMS.md EXECUTE-07, PLAN-09, CONFIG-CATALOG-08 all moved off `accurate` to stale / 'corrected - v3.4.1 phase 1'. Budget rows re-pinned in weight-budgets.json (execute.md 25287, plan.md 22067, config-catalog.md 8815) and self-verify's budget check is green."
+    },
+    {
+      "n": 6,
+      "truth": "All four gate `purpose` strings name a gate for solo, shipped and critical, each equal to route-table.json's review[level][trigger], and deleting one clause makes self-verify report a problem",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Parsed comparison of cadence-core/config.schema.json against cadence-core/route-table.json: plan 'advisory at solo, blocking at shipped, adjudicated at critical' = grid; diff 'off/off/blocking' = grid; risk_surface 'blocking/blocking/blocking' = grid; phase_diff 'off at solo, off at shipped, adjudicated at critical' = grid, with the verbatim 'writing any value pins it at every level and warns' clause preserved (D-10). All four defaults are the null sentinel. Failing direction proved through the CLI, not by inspection: cadence-core/bin/self-verify.test.mjs:'check 18: deleting one level clause from one purpose files exactly one problem' (plus three sibling arms on a synthetic root) passes in the suite run; the executor additionally deleted 'blocking at shipped' on the live tree and got exactly one gate-prose-missing naming plan and shipped (reports/plan-1.md)."
+    },
+    {
+      "n": 7,
+      "truth": "The full suite passes with no test file removed and no count-pin assertion loosened",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node --test cadence-core/bin/*.test.mjs` -> exit 0, tests 1870, pass 1870, fail 0 (one full-suite run). `git diff ae5ca09..HEAD -- 'cadence-core/bin/*.test.mjs'` is 512 insertions, 0 deletions across three files (config.test.mjs +81, gate-agreement.test.mjs +321, self-verify.test.mjs +110); no test file deleted and the live-tree assertion at self-verify.test.mjs:210-214 stands untouched."
+    },
+    {
+      "n": 8,
+      "truth": "The phase SUMMARY names all twelve cells and they match the shipped grid",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": ".planning/phases/1/SUMMARY.md:37-42 tables plan/diff/risk_surface/phase_diff at solo/shipped/critical with a Moved? column; every cell is byte-equal to the parsed route-table.json review grid (plan advisory/blocking/adjudicated, diff off/off/blocking, risk_surface blocking x3, phase_diff off/off/adjudicated). route-table.json is unchanged in ae5ca09..HEAD."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "The gate-agreement check flags the pre-patch schema values", "evidence": "Frozen PRE_PATCH fixture at gate-agreement.test.mjs:42 + arms :123/:132; 28/28 pass; verbatim pre-patch failing JSON in reports/plan-1.md names plan, diff, phase_diff with two entries naming phase_diff and shipped." },
+    { "k": 2, "name": "self-verify is green and names the new check", "evidence": "node cadence-core/bin/self-verify.mjs -> exit 0, problems 0, checked ends with 'gate-agreement'; call site self-verify.mjs:1106 inside the route-table arm, import at :145." },
+    { "k": 3, "name": "An unset gate reads back as unset, a pinned gate reads back pinned", "evidence": "Live get: diff/risk_surface/phase_diff -> null + exactly one warning naming `route.mjs resolve`; plan (pinned in the global layer) -> \"adjudicated\" unwarned; --file probe with diff pinned to blocking -> \"blocking\" unwarned. config.mjs:283." },
+    { "k": 4, "name": "Keyless get carries no gate warning and check still refuses null", "evidence": "Keyless get -> warnings []; check review.triggers.diff.gate=null -> ok:false, 'must be one of: off, advisory, blocking, adjudicated'." },
+    { "k": 5, "name": "The workaround wording is gone from the prose surfaces", "evidence": "Repo-wide grep: 22 hits, none about a gate get; execute.md and plan.md absent; config-catalog.md:62 Default cell carries no scalar gate; three DOCS-CLAIMS rows moved off accurate." },
+    { "k": 6, "name": "All four purposes name all three levels and match the route grid", "evidence": "Parsed schema-vs-grid comparison matches cell-for-cell on all twelve; self-verify.test.mjs delete-a-clause arm files exactly one problem and passes in the suite." },
+    { "k": 7, "name": "The full test suite passes with nothing removed or loosened", "evidence": "1870 pass / 0 fail; 512 insertions and 0 deletions across the three touched test files." },
+    { "k": 8, "name": "The twelve cells are named in the phase SUMMARY", "evidence": "SUMMARY.md:37-42 twelve-cell table, each cell equal to route-table.json's review grid." }
+  ],
+  "gaps": [],
+  "human_checks": []
+}

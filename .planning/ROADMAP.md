@@ -31,7 +31,7 @@ the unpatched files first - the same shape `v2.6.1` used.
 
 ## Phases
 
-- [ ] **Phase 1: What the config says is what routing does** - the schema, `config.mjs get` and `route-table.json` give one answer per trigger per level, and self-verify fails when they do not
+- [x] **Phase 1: What the config says is what routing does** - the schema, `config.mjs get` and `route-table.json` give one answer per trigger per level, and self-verify fails when they do not
 
 ## Phase Details
 
