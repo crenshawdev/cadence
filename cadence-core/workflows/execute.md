@@ -165,6 +165,10 @@ successive executors in the phase share a cached prefix: phase-level context
 - Shared files to read first (identical for every plan in the phase): project
   `CLAUDE.md` (if present), `.planning/PROJECT.md` (if present),
   `.planning/phases/<N>/CONTEXT.md` (if present).
+- The `surfaces` the executor's own `route.mjs resolve` answered, verbatim -
+  the bar the work is written to, not a review that fires later. On
+  `surfaces_answered: false` say that no layer answered, so ALL of the
+  table's categories stand rather than none.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."

@@ -566,3 +566,41 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
     `references/seams.md's spawn-agent bullet states maxTurns ${wrong.join('/')}, `
     + `which no rung file carries - the 19 rung files carry ${bound}`);
 });
+
+// --- AC6: the executor is told the surfaces it will be judged on -------------
+
+test('the executor dispatch hands over the resolve\'s answered surfaces, and the contract says what to do with them', () => {
+  // `route.mjs resolve` has always returned `surfaces` and `surfaces_answered`
+  // on every dispatch - a `--role cad-executor` resolve on this repo returns
+  // six answered surfaces - and the executor was never handed them. The worker
+  // therefore met its own risk bar for the first time when the `risk_surface`
+  // review fired against its committed range, which is the most expensive
+  // moment to learn it.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const start = execute.indexOf('<step name="execute_sequential">');
+  const end = execute.indexOf('Do NOT restate the executor\'s standing rules', start);
+  assert.ok(start >= 0 && end > start, 'execute.md has no execute_sequential dispatch prompt');
+  const prompt = execute.slice(start, end);
+  assert.match(prompt, /`surfaces`/,
+    'the executor dispatch prompt does not hand over the resolve\'s `surfaces`');
+  assert.match(prompt, /surfaces_answered/,
+    'the dispatch prompt names `surfaces` but never says what an UNANSWERED resolve means - '
+    + '`surfaces_answered: false` means all of the table\'s categories stand, not none');
+
+  // The other half: the contract states what the executor DOES with them, and
+  // it may not invent a category. The vocabulary is machine-readable, so this
+  // is the same subject as every other check in this file.
+  const values = JSON.parse(doc('cadence-core', 'config.schema.json'))
+    .keys['review.triggers.risk_surface.surfaces'].values;
+  const contract = doc('skills', 'cad-executor-contract', 'SKILL.md');
+  const para = contract.split(/\n\s*\n/).find((p) => p.includes('surfaces'));
+  assert.ok(para, 'skills/cad-executor-contract/SKILL.md never mentions the risk surfaces');
+  const named = [...para.matchAll(/`([a-z][a-z_]+)`/g)].map((m) => m[1])
+    .filter((t) => t !== 'surfaces' && t !== 'risk_surface');
+  assert.ok(named.length > 0, 'the contract\'s surfaces paragraph names no category at all');
+  for (const t of named) {
+    assert.ok(values.includes(t),
+      `the executor contract names surface \`${t}\`, which config.schema.json's `
+      + `review.triggers.risk_surface.surfaces does not carry (${values.join(', ')})`);
+  }
+});
