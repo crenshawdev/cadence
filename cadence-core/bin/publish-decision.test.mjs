@@ -3,7 +3,7 @@
 // function is pure, so this needs no subprocess or live git.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
+import { authorizationDetail, decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 
 // A well-formed publish call: auto_close on, a non-protected feature branch, a
 // configured bare-name remote.
@@ -56,6 +56,72 @@ test('refuse: auto_close off wins even when everything else is valid', () => {
 test('refuse: auto_close undefined -> auto-close-off (only literal true publishes)', () => {
   const d = decidePublish({ ...OK, autoClose: undefined });
   assert.equal(d.reason, 'auto-close-off');
+});
+
+// --- which authorization was missing (AUT-01, AC4) ---------------------------
+//
+// `reason` is the token `auto-close-off` in BOTH off-states, deliberately - it
+// is asserted by equality across git-publish.test.mjs and config-seams.test.mjs
+// and changing its text buys no behaviour. So the state a user has to act on -
+// "you turned it on in your home directory, and this repository never did" -
+// can only reach them through the sentence.
+
+test('detail: off everywhere and requested-globally are DIFFERENT sentences', () => {
+  const off = decidePublish({ ...OK, autoClose: false, autoCloseRequested: false });
+  const requested = decidePublish({ ...OK, autoClose: false, autoCloseRequested: true });
+  assert.equal(off.reason, 'auto-close-off');
+  assert.equal(requested.reason, 'auto-close-off');
+  assert.ok(off.detail, 'off-everywhere carries a detail');
+  assert.ok(requested.detail, 'requested-globally carries a detail');
+  assert.notEqual(off.detail, requested.detail);
+});
+
+test('detail: the requested-globally sentence says a user-global setting cannot authorize here', () => {
+  const d = decidePublish({ ...OK, autoClose: false, autoCloseRequested: true }).detail || '';
+  assert.match(d, /user-global setting cannot authorize/);
+  assert.match(d, /never set it|did not opt in/);
+  // and names where the opt-in belongs, so the user needs no second lookup
+  assert.match(d, /\.planning\/config\.json/);
+});
+
+test('detail: the off-everywhere sentence still names where the opt-in belongs', () => {
+  const d = decidePublish({ ...OK, autoClose: false, autoCloseRequested: false }).detail || '';
+  assert.match(d, /not true anywhere/);
+  assert.match(d, /\.planning\/config\.json/);
+});
+
+test('detail: an authorized call publishes and carries no detail at all', () => {
+  const d = decidePublish({ ...OK, autoCloseRequested: true });
+  assert.equal(d.action, 'publish');
+  assert.equal(d.detail, undefined);
+  assert.equal(authorizationDetail({ requested: true, authorized: true }), null);
+  // Authorized here, never requested globally: the repository's own opt-in is
+  // the whole answer, so there is still nothing to say.
+  assert.equal(authorizationDetail({ requested: false, authorized: true }), null);
+});
+
+test('detail: gate 1 is the ONLY refusal that carries one', () => {
+  // Every other refuse arm's envelope is unchanged by this addition.
+  for (const args of [
+    { currentBranch: 'HEAD' }, { currentBranch: '-rf' }, { currentBranch: 'main' },
+    { remote: '/tmp/e' }, { remote: 'origin', configuredRemotes: ['upstream'] },
+  ]) {
+    const d = decidePublish({ ...OK, autoCloseRequested: true, ...args });
+    assert.equal(d.action, 'refuse', JSON.stringify(args));
+    assert.notEqual(d.reason, 'auto-close-off', JSON.stringify(args));
+    assert.equal(d.detail, undefined, JSON.stringify(args));
+  }
+});
+
+test('detail total: a bare call and non-boolean inputs coerce rather than throw', () => {
+  assert.ok(authorizationDetail());
+  assert.ok(authorizationDetail({}));
+  // Only a literal true authorizes, and only a literal true reads as requested.
+  assert.equal(authorizationDetail({ requested: 'true', authorized: 'true' }),
+    authorizationDetail({ requested: false, authorized: false }));
+  assert.equal(authorizationDetail({ requested: 1, authorized: null }),
+    authorizationDetail({ requested: false, authorized: false }));
+  assert.ok(decidePublish().detail, 'the bare decidePublish refusal still words itself');
 });
 
 test('refuse: no branch / detached HEAD -> no-branch', () => {
