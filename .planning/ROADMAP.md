@@ -51,7 +51,7 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 - [x] **Phase 2: The run record joins** - correlation and role accounting produce figures `/cad-report` and `/cad-suggest` can be trusted with
 - [x] **Phase 3: The scan's correctness gaps close** - the config key the guard honors and land ignores, the fence-blind section scanners, and the copied helpers that already drifted
 - [x] **Phase 4: Suggestions become seams** - the prose ceilings get counts, the restated bracket close gets one subcommand, and the oversized render gets a bound
-- [ ] **Phase 5: What Cadence claims about itself is true** - one docs-verify sweep over the claims v3.0-v3.2 left behind, plus the edits it names
+- [x] **Phase 5: What Cadence claims about itself is true** - one docs-verify sweep over the claims v3.0-v3.2 left behind, plus the edits it names
 - [ ] **Phase 6: The docs speak in one voice** - tone and audience pass over README, COMMANDS.md and user-facing workflow prose, after phase 5's accuracy sweep so re-voiced lines are already true
 
 ## Phase Details

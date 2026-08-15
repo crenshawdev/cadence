@@ -78,20 +78,27 @@ evidence: -a.md: sha 4602393, invocations 1-2 verbatim, 14 files / 185,264 B, cl
 ### 9. Twelve stale claims the sweep found are still stated falsely in shipped docs
 expected: behavior wrong - the phase goal is that what Cadence claims about itself is TRUE; the sweep measured and dated the claims but twelve of them remain false in the prose a user reads
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
-source: verifier
-evidence: route-table.json:52 resolves `plan: off` at `shipped` while README.md:56 and cadence-core/workflows/plan.md:331 say advisory (and :336 the same for `diff`); templates/config.json:6 and config.schema.json:27 default workflow.plan_check to false while new-project.md:60-61 and adopt.md:54-56 say a written config turns it on; config-catalog.md:51 ships a `**Risk**` category header with zero rows and no risk* key behind it; recall.md:3-6 says two callers where plan.md:117 and :182 make three; METHOD.md:157-158, :309-310, :373-374 and INTERNALS.md:13 carry the retired risk floor and the shipped-gate error. Each has a dated `stale` + `divergence` ledger row beside it.
+source: model
+evidence: Re-run after plans 6+7 (813f468..af72e6f): route-table.json:51-53 resolves plan advisory/off/adjudicated and diff off/off/blocking; README.md:56, METHOD.md:308-310 and :372-374, plan.md:330-348 all now state exactly that ('At the shipped default the gate is off'); templates/config.json:6 reads plan_check false / verifier true and new-project.md:60-61 + adopt.md:54-55 carry the same sentence 'research and plan check off, verifier on'; grep 'Risk' config-catalog.md is empty; recall.md:3-6 names three callers (/cad-context spend_gate, /cad-debug Hypothesize, /cad-plan spawn_planner); METHOD.md commit protocol at :155-158 asks for no staged-diff risk check; the risk floor and risk.override waivers read as CUT in v2.7.0 in both METHOD.md:420-427 and INTERNALS.md:13. node cadence-core/bin/test.mjs prose -> 0 fail; self-verify --root . -> problems [].
 reported: behavior wrong - the phase goal is that what Cadence claims about itself is TRUE; the sweep measured and dated the claims but twelve of them remain false in the prose a user reads
 severity: major
 cause: Plan 4's lease covered only the four surfaces the roadmap named, so the sweep's other twelve stale findings were dated in the ledger but never fixed at their source. The phase measured accuracy without a lease to repair what it measured; the four sharpest misdescribe a review gate a user configures (README.md:56, plan.md:331 and :336, new-project.md:60-61, adopt.md:54-56).
-fix: routed to /cad-plan
+fix: plans 6+7 executed (813f468..af72e6f), retest
+
+### 10. The fourteen fixed claims are closed in the ledger, census consistent
+expected: grep -c "Prose fix beyond this phase" .planning/DOCS-CLAIMS.md returns 0; each of the fourteen rows PLAN-27, PLAN-49, NEW-PROJECT-27, ADOPT-09, CONFIG-CATALOG-07, RECALL-01, README-25, METHOD-59, METHOD-87, METHOD-93, METHOD-97, INTERNALS-13 (plus the two invalidated rows) reads corrected - <sha> against a sha that resolves in this repo; and the stated census 845 accurate / 42 corrected / 45 divergence / 1 retired sums to the 933 data rows.
+status: pass
+first_pass: pass
+source: model
+evidence: grep -ic 'prose fix beyond this phase' .planning/DOCS-CLAIMS.md -> 0. Parsed on unescaped pipes: 933 data rows, 7 fields each, 0 empty run cells. All twelve named rows plus the two the same edits invalidated read 'corrected - <sha>': PLAN-27/PLAN-49 813f468, NEW-PROJECT-27/ADOPT-09 ee0199b, CONFIG-CATALOG-07 fdb2d69, RECALL-01 75b1d28, README-25 39583ba, METHOD-59/INTERNALS-13 fa0d4b4, METHOD-87 1b4086f, METHOD-93/METHOD-97 ffb16a4; every 'corrected - <sha>' in the file resolves via git cat-file -e (0 unresolved). Census by resolution kind: 845 accurate + 42 corrected + 45 divergence + 1 RETIRED = 933, matching the stated count exactly.
 
 ## Summary
 
-total: 9
-passed: 8
-failed: 1
+total: 10
+passed: 10
+failed: 0
 pending: 0
 skipped: 0
 blocked: 0
