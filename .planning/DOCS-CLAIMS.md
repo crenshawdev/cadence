@@ -258,6 +258,22 @@ new extraction rather than as a fix. No row was added - the ledger holds run-1
 provenance, and new claims (the two command bullets among them) are extracted by
 the next `/cad-docs-verify` run.
 
+Phase 4 of `v3.3.0` invalidated seven rows by their claim TEXT rather than by
+their line, and phase 5 rewrote all seven rather than re-pinning them silently.
+`4110fde` converted all eight dispatch-close sites from a `trace append` call
+carrying an explicit return-or-checkpoint event flag to a single `trace close`
+call that infers which one it is, so `PLAN-18`, `PLAN-19`, `CONTEXT-14`, `EXECUTE-17`,
+`EXECUTE-18`, `VERIFY-DEEP-05` and `VERIFY-DEEP-12` each stated a spelling no
+workflow makes any more. Each now carries a `stale` verdict, the claim its live
+file states, a line re-pinned to that statement, and
+`corrected - 4110fde - claim rewritten to the live `trace close` call` as its
+resolution. This is called out here for the same reason README-44's rewrite is:
+the join is `doc` plus claim text, so seven silently rewritten claims would join
+to nothing next cycle and report as seven brand-new extractions where seven
+fixes happened. The `stale` verdict is the finding and the resolution is the
+fix, which is why run 2's `accurate` verdict on the rewritten text is NOT
+imported over them.
+
 **Resolution values.** `accurate` on every row the sweep confirmed;
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
 the commit that edited it; `divergence - <reason>` on one deliberately left
@@ -598,7 +614,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONTEXT-11 | cadence-core/bin/lib/trace.mjs | 56-59 | `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT. | accurate | accurate | 2 |
 | CONTEXT-12 | cadence-core/bin/lib/trace.mjs | 60-64 | A dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere. | accurate | accurate | 2 |
 | CONTEXT-13 | cadence-core/bin/lib/trace.mjs | 64-65 | The census in `trace.test.mjs` binds these lines per file. | accurate | accurate | 2 |
-| CONTEXT-14 | cadence-core/workflows/context.md | 206 | The failure arm closes with `--event checkpoint`. | accurate | accurate | 1 |
+| CONTEXT-14 | cadence-core/workflows/context.md | 183-188 | The analyzer's bracket closes with ONE `trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <n>` line, and `--detail "<what failed>"` on the failed-or-timed-out arm makes the seam close a `checkpoint` instead of a `return`. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | CONTEXT-15 | cadence-core/workflows/context.md | 367 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate | 2 |
 | CONTEXT-16 | cadence-core/workflows/context.md | 304-306 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate | 2 |
 | CONTEXT-17 | cadence-core/workflows/context.md | 413-414 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate | 2 |
@@ -651,8 +667,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-14 | cadence-core/workflows/execute.md | 129-136 | `worktree-base.mjs resolve` reports `parallelSafe`, with `baseRef:"fresh"` the default. | accurate | accurate | 2 |
 | EXECUTE-15 | cadence-core/workflows/execute.md | 179-181 | An executor writes its task table to `<plandir>/reports/plan-<k>.md` and returns a five-field digest. | accurate | accurate | 2 |
 | EXECUTE-16 | cadence-core/workflows/execute.md | 188-189 | `git worktree list --porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`. | accurate | accurate | 2 |
-| EXECUTE-17 | cadence-core/workflows/execute.md | 197-199 | The three `trace append` bracket lines and every flag on them exist. | accurate | accurate | 1 |
-| EXECUTE-18 | cadence-core/workflows/execute.md | 202-206 | The closing event is `return`, `checkpoint` or `escalation`; a worker with none is what `trace render` reports as unpaired. | accurate | accurate | 2 |
+| EXECUTE-17 | cadence-core/workflows/execute.md | 196-207 | The executor bracket is two halves: the dispatch rides the spawn-agent seam's `--bracket-plan <k>` / `--bracket-read "..."` flags, and the close is ONE `trace close --phase <N> --plan <k> --role cad-executor --tokens <n> --detail "<one line>"` line. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
+| EXECUTE-18 | cadence-core/workflows/execute.md | 209-213 | `--detail` omitted closes a `return` and carried closes a `checkpoint`; an `escalation` is not inferred and stays on `trace append`; a worker with none of the three is what `trace render` reports as unpaired. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | EXECUTE-19 | cadence-core/workflows/execute.md | 209-214 | `--role` is a separate key from `--plan`; `--plan` pairs the bracket, `--role` groups the per-role totals. | accurate | accurate | 1 |
 | EXECUTE-20 | cadence-core/workflows/execute.md | 216-219 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate | 1 |
 | EXECUTE-21 | cadence-core/workflows/execute.md | 222-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate | 2 |
@@ -737,8 +753,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-15 | cadence-core/workflows/plan.md | 117,153 | seams.md states a cache discipline for dispatch prompts. | accurate | accurate | 1 |
 | PLAN-16 | cadence-core/workflows/plan.md | 130 | `workflow.max_plan_tasks` is the ceiling and the planner returns `## PHASE TOO BIG` above it. | accurate | accurate | 1 |
 | PLAN-17 | cadence-core/workflows/plan.md | 141 | `cadence-core/templates/PLAN.md` exists. | accurate | accurate | 2 |
-| PLAN-18 | cadence-core/workflows/plan.md | 187 | `trace append ... --event return ... --tokens <n>` is valid, and `--tokens` may be omitted. | accurate | accurate | 1 |
-| PLAN-19 | cadence-core/workflows/plan.md | 195 | `trace append ... --event checkpoint ... --detail` is valid. | accurate | accurate | 2 |
+| PLAN-18 | cadence-core/workflows/plan.md | 193-196 | The planner's return closes with ONE `trace close --phase <N> --plan cad-planner --role cad-planner --tokens <n>` line, and `--tokens` is omitted on a figureless return. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
+| PLAN-19 | cadence-core/workflows/plan.md | 191-192 | On the empty-or-unmarked arm `--detail "<empty or unmarked return>"` is added and the seam closes it as a checkpoint instead. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | PLAN-20 | cadence-core/workflows/plan.md | 198 | `## PLANNING COMPLETE` is a planner return marker. | accurate | accurate | 1 |
 | PLAN-21 | cadence-core/workflows/plan.md | 202-206 | `plan-overlap` means plans sharing a file cannot run concurrently. | accurate | accurate | 2 |
 | PLAN-22 | cadence-core/workflows/plan.md | 207 | `offer_consult` is defined in `references/consult.md`. | accurate | accurate | 2 |
@@ -798,14 +814,14 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-DEEP-02 | cadence-core/workflows/verify-deep.md | 8-11 | `--plan` is the pairing key and `--role` the per-role grouping key. | accurate | accurate | 1 |
 | VERIFY-DEEP-03 | cadence-core/workflows/verify-deep.md | 21 | The verifier writes `.planning/phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
 | VERIFY-DEEP-04 | cadence-core/workflows/verify-deep.md | 23 | The verifier contract lives at `skills/cad-verifier-contract`. | accurate | accurate | 2 |
-| VERIFY-DEEP-05 | cadence-core/workflows/verify-deep.md | 34-40 | The close bracket `--event return ... --tokens` is valid, and `--tokens` is omitted when the return carries no figure. | accurate | accurate | 2 |
+| VERIFY-DEEP-05 | cadence-core/workflows/verify-deep.md | 15-19, 23-24 | The verifier's bracket closes with ONE `trace close --phase <N> --plan cad-verifier --role cad-verifier --tokens <n>` line the moment the return is in hand, and `--tokens` is omitted on a figureless return. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | VERIFY-DEEP-06 | cadence-core/workflows/verify-deep.md | 46-48 | `uat merge --phase <N> --payload <file>`. | accurate | accurate | 2 |
 | VERIFY-DEEP-07 | cadence-core/workflows/verify-deep.md | 52-54 | Verifier results only fill `pending` items; a conflicting finding is skipped and counted. | accurate | accurate | 2 |
 | VERIFY-DEEP-08 | cadence-core/workflows/verify-deep.md | 54-55 | Unmatched gaps append as new failed items; human checks append as pending. | accurate | accurate | 1 |
 | VERIFY-DEEP-09 | cadence-core/workflows/verify-deep.md | 55-56 | An entry resolving to no usable item name is rejected and counted, never appended. | accurate | accurate | 2 |
 | VERIFY-DEEP-10 | cadence-core/workflows/verify-deep.md | 59 | The seam's summary carries `auto_passed`, `gaps`, `added`, `skipped`, `rejected`. | accurate | accurate | 2 |
 | VERIFY-DEEP-11 | cadence-core/workflows/verify-deep.md | 62-68 | The seam writes `.planning/phases/<N>/FINDINGS.json` with those counters plus `rejected_entries` and `skipped_entries`, overwriting on every successful merge. | accurate | accurate | 2 |
-| VERIFY-DEEP-12 | cadence-core/workflows/verify-deep.md | 80 | The fall-through checkpoint call with `--tokens` and `--detail` is valid. | accurate | accurate | 1 |
+| VERIFY-DEEP-12 | cadence-core/workflows/verify-deep.md | 22-23 | Carrying `--detail` on a failed, empty or timed-out dispatch closes a `checkpoint`; omitting it on a usable return closes a `return`. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | VERIFY-01 | cadence-core/workflows/verify.md | 6-10 | The seam owns first_pass set-once, verifier-never-overwrites-user, counts recomputed every write. | accurate | accurate | 2 |
 | VERIFY-02 | cadence-core/workflows/verify.md | 11-12,19,124 | `--sweep` cold branch is `workflows/verify-sweep.md`; `--deep` is `workflows/verify-deep.md`. | accurate | accurate | 2 |
 | VERIFY-03 | cadence-core/workflows/verify.md | 23 | `planning.mjs cursor get` supplies the current phase. | accurate | accurate | 2 |
