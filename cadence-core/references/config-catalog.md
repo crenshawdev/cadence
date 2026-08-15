@@ -43,6 +43,7 @@ pair is one selectable option and its `description`.
 | `git.base_branch` | str\|null | Branch new work branches off | branch name, or empty→`null` (current) | null |
 | `git.create_tag` | bool | Tag on milestone | `true`→tag · `false`→don't | true |
 | `git.on_land_cleanup` | bool | After a land/merge, return to base, pull, reap the merged integration branch? | `true`→return + pull + reap · `false`→leave in place | true |
+| `git.issue_check` | bool | When a land starts, report the issue tracker - which issues this branch's commits reference and which are still open? | `true`→read-only report, one line naming the reason when it cannot be read · `false`→say nothing about the tracker and run no forge CLI | true |
 | `git.auto_close` | bool | Run the close end-to-end (audit → tag → PR → merge → reset) with no per-step prompts? | `true`→autonomous close, halting on a surviving blocker/high `risk_surface` finding · `false`→publish stays the user's separate call | false |
 | **Planning** |||||
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |

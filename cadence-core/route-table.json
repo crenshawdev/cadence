@@ -49,7 +49,7 @@
 
   "review": {
     "solo":     { "plan": "advisory",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off"         },
-    "shipped":  { "plan": "off",         "diff": "off",      "risk_surface": "blocking", "phase_diff": "off"         },
+    "shipped":  { "plan": "blocking",    "diff": "off",      "risk_surface": "blocking", "phase_diff": "off"         },
     "critical": { "plan": "adjudicated", "diff": "blocking", "risk_surface": "blocking", "phase_diff": "adjudicated" }
   },
 

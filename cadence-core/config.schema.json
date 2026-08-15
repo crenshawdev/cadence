@@ -24,7 +24,7 @@
     "model.effort.cad-plan-checker":            { "type": "enum", "values": ["low", "medium", "high", "xhigh", null], "default": null, "purpose": "The rung the plan checker STARTS at, replacing the one its routing cell names (null = route normally off the cell). Only a rung this role actually has is accepted; any other value is refused, naming the allowed set." },
 
     "workflow.research":                    { "type": "bool", "default": false, "purpose": "Run a research pass - new-project research step only; no other workflow reads it" },
-    "workflow.plan_check":                  { "type": "bool", "default": false, "purpose": "Gate plans through the checker before code - opt-in; the plan review trigger remains the default second opinion" },
+    "workflow.plan_check":                  { "type": "bool", "default": false, "purpose": "Gate plans through the checker before code - opt-in second pass; the plan review trigger is the default second opinion and is blocking at `shipped`" },
     "workflow.verifier":                    { "type": "bool", "default": true, "purpose": "The off switch for goal-backward verification after a phase: false always skips the deep pass. When true the stakes level decides whether it runs (--deep forces it either way)" },
     "workflow.skip_discuss":                { "type": "bool", "default": false, "purpose": "Select which command /cad-progress suggests for an unplanned phase - progress next-step suggestion only; it skips no step" },
     "workflow.inline_plan_threshold":       { "type": "int", "min": 0, "default": 3, "purpose": "Task count at/below which a plan runs inline vs its own doc" },
@@ -44,6 +44,7 @@
     "git.base_branch":                      { "type": "string_or_null", "default": null, "purpose": "Branch new work branches off (null = current)" },
     "git.create_tag":                       { "type": "bool", "default": true, "purpose": "Tag on milestone" },
     "git.on_land_cleanup":                  { "type": "bool", "default": true, "purpose": "After a successful land/merge, return to the base branch, pull, and reap the merged integration branch" },
+    "git.issue_check":                      { "type": "bool", "default": true, "purpose": "Read-only issue-tracker report at the start of a land: which issues this branch's commits reference and which of them are still open on the detected host, degrading to one line when it cannot be read. It reports only - nothing on this path ever writes to a tracker" },
     "git.auto_close":                       { "type": "bool", "default": false, "src": "repo", "purpose": "Opt-in end-to-end close: cad-milestone/cad-land run audit -> tag -> PR -> merge -> reset with no per-step prompts, halting on a surviving blocker/high risk_surface finding. Honoured repo config layer only for the unattended publish: that close applies to ONE repository, so a user-global value authorizes no push (D-08, git-publish.mjs repoAutoClose). The land gate reads the MERGED value on purpose - cad-land skips the publish ask on that same merged value, so the gate's blocker/high halt is what replaces the human it switched off, and both must read one value." },
 
     "planning.commit_docs":                 { "type": "bool", "default": true, "purpose": "Commit .planning docs alongside code" },

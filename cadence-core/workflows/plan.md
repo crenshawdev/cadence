@@ -327,10 +327,10 @@ absence is not a resolve failure and must not come back as the `blocker` an
 unresolvable reference earns.
 
 The gate comes from the routing bundle; act on it.
-At the `shipped` default the gate is `off`: fire nothing, return immediately
-(review-triggers.md step 1), and let `done`'s Review line report the gate as
-off rather than as a pass. `solo` resolves `advisory`, `critical` resolves
-`adjudicated`:
+At the `shipped` default the gate is `blocking`: fire and WAIT. `solo` resolves
+`advisory`, `critical` resolves `adjudicated`. A gate resolved `off` by config
+fires nothing and returns immediately (review-triggers.md step 1) - `done`'s
+Review line then reports the gate as off rather than as a pass:
 
 - **advisory** (the `solo` gate) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The payload is the PLAN

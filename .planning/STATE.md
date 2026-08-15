@@ -2,5 +2,5 @@
 
 Phase: 1 of 0 (no active cycle)
 Status: ready to plan
-Next: scope the next milestone
+Next: /cad-phase add
 Updated: 2026-08-15

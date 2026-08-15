@@ -19,6 +19,7 @@
     "base_branch": null,
     "create_tag": true,
     "on_land_cleanup": true,
+    "issue_check": true,
     "auto_close": false
   },
   "planning": { "commit_docs": true },

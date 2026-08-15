@@ -34,6 +34,28 @@ across the steps below rather than re-reading per step.
    Forgejo/Gitea PR via `tea` (`tea login list` names the host), none of those
    -> local only). Show this plainly before doing anything.
 
+   **Then the tracker, in the same report.** Run it here, before any publish
+   ask, on both step-3 arms:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root> --base <base>
+```
+
+   Branch on `action` alone. On `report`: say in ONE sentence which issues this
+   branch's commits reference and which of them are still open ("your branch
+   references #42 and #47; #42 is still open"), naming a `not-found` number as
+   not found rather than as closed. Print the `open` list ONLY when
+   `referenced` is empty - it is the fallback, never the headline, because a
+   bare list is what a reader skims past. On `skip`: print `reason` verbatim as
+   ONE line and carry on - never block, never retry, never ask, and never list
+   an issue the seam did not read. On `off` - `git.issue_check: false`, decided
+   before any forge CLI runs - say NOTHING about the tracker: not the reason,
+   not that it was skipped. The off switch is off, so this paragraph produces
+   no output at all.
+
+   This report never writes: landing closes no issue, and closing one stays an
+   explicit ask you make at publish time.
+
 2. **Uncommitted changes.** If the tree is dirty, do NOT auto-commit. Ask
    (ask-user seam): commit them first (then continue), leave them out of this
    land, or stop. If HEAD is a protected branch, the protected-branch guard

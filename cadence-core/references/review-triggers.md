@@ -339,7 +339,7 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 
 | Trigger | Fired by | When | Payload artifact | Gate (solo/shipped/critical) |
 |---|---|---|---|---|
-| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST | advisory / off / adjudicated |
+| `plan` | `cad-plan` | after PLAN.md is written | (c) the PLAN file path(s), plus `.planning/ROADMAP.md`, `.planning/REQUIREMENTS.md` and `.planning/phases/<N>/CONTEXT.md` (optional) - the artifacts the plan is checked AGAINST | advisory / blocking / adjudicated |
 | `diff` | `cad-execute` | at plan completion | (a) refs `<pre-plan HEAD>..HEAD` | off / off / blocking |
 | `risk_surface` | `cad-execute`, `cad-debug`, `cad-task`, `cad-verify` | on detection match, ONCE per plan/task/fix - `cad-execute`/`cad-task` on the completed commit range, never mid-plan; `cad-debug`/`cad-verify` on their single staged fix | (c) the range-diff FILE path, or (b) the staged-diff scope for a single in-tree fix | blocking / blocking / blocking |
 | `phase_diff` | `cad-execute` (parallel path only) | after all worktree batches merge | (a) refs `<PHASE_START>..HEAD` | off / off / adjudicated |
@@ -348,11 +348,16 @@ The gate column is per LEVEL: solo / shipped / critical, in that order.
 detection match, and there is no level at which a matched risk surface is worth
 waving through.
 
-`plan` and `phase_diff` are `off` at `shipped` because an advisory gate blocks
-nothing and their findings files were referenced by no SUMMARY and no CONTEXT -
-the dispatch bought findings that changed nothing. A user who reads them sets
+`phase_diff` is `off` at `shipped` because an advisory gate blocks nothing and
+its findings files were referenced by no SUMMARY and no CONTEXT - the dispatch
+bought findings that changed nothing. A user who reads them sets
 `review.triggers.<t>.gate` back on and wins over the level; that is the existing
 config-wins precedence in step 1, not new code.
+
+`plan` is `blocking` at `shipped` on that same measurement: it condemned the
+ADVISORY gate, not the review, so the choice was a gate that changes an outcome
+or no review at all. A plan is the cheapest artifact to halt on - no code exists
+yet - and `blocking` adds no user-triage turn, which is what `critical` buys.
 
 It fires on a COMPLETED range, never on a staged index mid-plan. Halting an
 executor at each risky commit bought nothing the range-level fire does not:

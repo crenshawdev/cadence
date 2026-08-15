@@ -311,6 +311,10 @@ const CONTRACTS = {
     cleanup: ['--branch', '--base', '--merged'],
     gate: [],
   },
+  'issue-check.mjs': {
+    '*': ['--dir'],
+    check: ['--base', '--timeout-ms'],
+  },
   'release-bump.mjs': {
     '*': ['--dir'],
     bump: ['--version', '--date'],

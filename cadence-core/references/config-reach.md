@@ -135,6 +135,7 @@ purpose test runs against the reach the author just replaced.
 | `git.base_branch` | universal | `bin/land-cleanup.mjs` - the base a land returns to |
 | `git.create_tag` | universal | `workflows/milestone.md` - release-mode detection |
 | `git.on_land_cleanup` | universal | `bin/land-cleanup.mjs` - return, pull, reap after a merge |
+| `git.issue_check` | universal | `bin/issue-check.mjs` - the read-only tracker report `/cad-land` step 1 prints |
 | `git.auto_close` | repo config layer only for the unattended publish | `bin/git-publish.mjs` publish reads the repo layer alone - a user-global value authorizes no push (D-08); `bin/land-cleanup.mjs` gate, `skills/cad-land/SKILL.md` and `cadence-core/workflows/milestone.md` read the MERGED value, because the triage ask and the gate's halt are a matched pair and must agree |
 | `planning.commit_docs` | universal | `references/git-guard.md` and `workflows/task.md` - whether `.planning/` docs are committed |
 | `memory.backend` | universal | `bin/planning.mjs recall` - `builtin` BM25 or `none` |

@@ -312,7 +312,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
     '`git.auto_branch` `git.base_branch` `git.create_tag`\n' +
-    '`git.on_land_cleanup` `git.auto_close`\n' +
+    '`git.on_land_cleanup` `git.auto_close` `git.issue_check`\n' +
     '`planning.commit_docs` `memory.backend`\n' +
     '`risk.override.<surface>`\n');
   const r = run(['--root', root]);
@@ -1588,8 +1588,8 @@ test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an a
       }
     }
   }
-  assert.equal(total, 11, `callsites: ${files.join(', ')}`);
-  assert.equal(files.length, 8, files.join(', '));
+  assert.equal(total, 12, `callsites: ${files.join(', ')}`);
+  assert.equal(files.length, 9, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
   assert.deepEqual(armB, [join('cadence-core', 'bin', 'review-provider.mjs')]);

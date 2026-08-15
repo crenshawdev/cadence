@@ -283,19 +283,22 @@ rather than scattered across twenty workflows.
 
 | Trigger | Fired by | On | Gate at `shipped` |
 |---|---|---|---|
-| `plan` | `/cad-plan` | after PLAN.md is written | off |
+| `plan` | `/cad-plan` | after PLAN.md is written | blocking |
 | `diff` | `/cad-execute` | at plan completion | off |
 | `risk_surface` | execute, debug, task, verify | on detection match, once per plan on the committed range | blocking |
 | `phase_diff` | `/cad-execute` parallel path | after worktree batches merge | off |
 
-Exactly one of the four fires on its own at the default `shipped` level, and it
-is the one that only fires on a match. `diff` is off there and at `solo`,
+Two of the four fire at the default `shipped` level: the plan review, on every
+plan, and `risk_surface`, on a detection match. `diff` is off there and at `solo`,
 because an advisory review gates nothing and the last plan of a phase has no next
 dispatch to overlap it with, so it is a wait bought for findings that stop
-nothing - `risk_surface` already blocked on that same range. `plan` and
-`phase_diff` are off at `shipped` for the other half of the same argument: their
-findings files were read by nobody, referenced by no SUMMARY and no CONTEXT, so
-the dispatch bought findings that changed nothing. Setting
+nothing - `risk_surface` already blocked on that same range. `phase_diff` is off at `shipped` for the other half of the same
+argument: its findings files were read by nobody, referenced by no SUMMARY and
+no CONTEXT, so the dispatch bought findings that changed nothing. `plan` was cut
+to `off` on that same evidence and is now `blocking`, because the measurement
+condemned the ADVISORY gate rather than the review: a plan is the cheapest thing
+in the pipeline to halt on, no code exists yet, and a gate that stops something
+cannot be a findings file nobody reads. Setting
 `review.triggers.<t>.gate` puts any of them back on and beats the level.
 `phase_diff` only ever
 fires on the parallel path, which most projects never run. The gate (`off`, `advisory`, `blocking`,
@@ -305,7 +308,7 @@ gate wins, because it is the stronger signal.
 
 That gate column is the `shipped` level, not a fixed default. Every gate is
 resolved from the project's `stakes` level, so the same trigger fires differently
-depending on what a break costs you: a `plan` review is advisory at `solo`, off at
+depending on what a break costs you: a `plan` review is advisory at `solo`, blocking at
 `shipped` and adjudicated at `critical`, an ordinary `diff` is off at `solo` and
 `shipped`, and blocking at `critical`. `risk_surface` is the one that
 does not move, blocking at all three levels. An explicit gate you set in config
@@ -370,7 +373,7 @@ the model that just spent four voices on the artifact does not also get to
 decide what happens next. One gate ends this way at every level: the fix list in
 `/cad-verify`, which has no resolved gate and is always triaged. Three more end
 this way wherever their gate resolves adjudicated: the plan review in
-`/cad-plan`, off at `shipped` and adjudicated at `critical`;
+`/cad-plan`, blocking at `shipped` and adjudicated at `critical`;
 `/cad-execute`'s per-plan diff review, `off` below `critical`; and its
 `phase_diff` review, adjudicated at `critical`. The one exception is the
 opt-in unattended close in `/cad-land`, where nothing is acted on at all - it

@@ -6,6 +6,65 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-15
+
+### Added
+
+- **`/cad-land` step 1 reads the issue tracker.** Cadence audited its own
+  requirements, its own plans and its own run record, then landed work without
+  ever asking whether that work answered something the tracker had open. Step 1
+  now scans `git log <base>..HEAD` for `#N`, `closes #N` and `fixes #N` and
+  names each referenced issue with its state ("your branch references #42 and
+  #47; #42 is still open"). Reference nothing and it lists the open issues
+  instead, as the fallback rather than the headline.
+
+  It reads, it never writes. Landing closes no issue, and closing one stays an
+  explicit ask you make at publish time.
+
+  The host comes off the origin URL the same way step 1 already picked the PR
+  mechanism: `gh` for github, `glab` for gitlab, `tea` for a host your
+  `tea login list` names. Every path that cannot answer prints exactly ONE line
+  saying why and the land carries on: no remote, an unrecognized host, no
+  login, the CLI missing from `PATH`, a nonzero exit, a response that came back
+  truncated or unreadable. A forge CLI that never returns is killed at 10
+  seconds, so it cannot stall a land. The call is bound to the repository
+  `--dir` names by an explicit `owner/name` selector, not by the process cwd,
+  and a referenced issue is never reported as closed when what actually
+  happened is that the fetch could not be read.
+
+  `git.issue_check` (bool, default `true`) turns it off. False and step 1 says
+  nothing about the tracker and spawns no forge CLI at all.
+
+  Known limits, both one-line degradations rather than wrong answers: `tea`
+  clamps a page at 50 server-side, so a Gitea or Forgejo repo with 50 or more
+  issues reports the truncation line instead of a list, and a self-hosted
+  GitLab or GitHub Enterprise host with no matching `tea` login reads as
+  unrecognized.
+
+### Changed
+
+- **The `plan` review is `blocking` at `shipped`, where it was `off`.** At the
+  default stakes level a plan had no second opinion of any kind, and the two
+  decisions that produced that each named the other as the remaining net:
+  `e0b5448` cut the gate to advisory because "a plan at `shipped` has already
+  passed cad-plan-checker, a blocking gate ... on by default", `b20fd14` took
+  it to `off`, and `70007f7` - one day later, same cycle - flipped
+  `workflow.plan_check` to `default: false` because "the plan review trigger
+  remains the default second opinion". Both cuts shipped, and neither re-read
+  the other's justification.
+
+  `blocking` rather than a return to `advisory`, because the measurement behind
+  the original cut (CST-01: findings files referenced by no SUMMARY and no
+  CONTEXT) condemned the advisory GATE and not the review. A plan is the
+  cheapest artifact in the pipeline to halt on - no code exists yet, the
+  payload is one file, and the fix is an edit - and `blocking` adds no
+  user-triage turn, which is what `adjudicated` costs at `critical`.
+  `workflow.plan_check` stays `default: false`: one net, on, before code.
+
+  `config.schema.json`'s purpose string for `workflow.plan_check` stops
+  claiming a second opinion that was not running. `solo` (advisory) and
+  `critical` (adjudicated) are unchanged.
+
 ## [3.3.1] - 2026-08-15
 
 ### Fixed
@@ -2526,6 +2585,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.0
 [3.3.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.1
 [3.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.0
 [3.2.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.2.0
