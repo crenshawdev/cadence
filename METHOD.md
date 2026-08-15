@@ -154,8 +154,7 @@ is legitimate. This is the one deviation class with no inline path at all.
 ### Commit protocol
 
 Stage the specific files you changed, individually. Never `git add -A`, never
-`git add .`. Then check the staged diff against the risk-surface list before
-committing, commit as `{type}({scope}): {description}`, and take a post-commit
+`git add .`. Commit as `{type}({scope}): {description}`, and take a post-commit
 glance for unexpected file deletions and for generated files left untracked.
 
 Executors never push, never force-push, never write `STATE.md`, `ROADMAP.md` or
