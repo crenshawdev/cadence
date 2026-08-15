@@ -105,16 +105,20 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-`v3.3.0 — the record you plan from`, opened 2026-08-14 on `cadence/v3.3.0`.
-Three requirements (`CAP-01`, `TRC-01`, `DOC-02`) across three phases, scoped
-from a triage of the capture queue rather than from a scan: 309 file-wide
-bullets read down to 119 live todos, 15 retired against shipped v3.2.0 code, and
-the survivors grouped by fix site into eight clusters of which three are here.
-The theme is that the evidence Cadence plans and reports from is itself
-unchecked - a queue that silently dropped five filed items because they were
-appended below a heading the recall walk does not visit, and a run record that
-cannot join a provider call to the fire that made it. Phase 1 goes first because
-it protects the input to everything after it.
+No cycle open.
+
+`v3.3.0 — the record you plan from` closed on 2026-08-15: five requirements
+(`CAP-01`, `TRC-01`, `COR-01`, `ENF-01`, `DOC-02`), five phases, 113 commits,
+the manifest at `3.3.0`, tagged `v3.3.0` and released. The theme was that the
+evidence Cadence plans and reports from is itself unchecked, a queue that
+silently dropped five filed items because they were appended below a heading
+the recall walk does not visit, and a run record that could not join a provider
+call to the fire that made it. Both are closed, and a second `/cad-docs-verify`
+sweep over 32 files and 743 claims left a ledger where all 933 rows carry a run
+number and a live cite with the fourteen stale claims corrected at their
+source. Its five rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`,
+its narrative in `CHANGELOG.md`, and its phase record in
+`.planning/_archive-v3.3.0/` and git history.
 
 `v3.2.0 — the controls that reported success` closed on
 2026-08-14: twelve requirements (`CFG-01`, `CFG-02`, `FSW-01`, `GAT-01`,
