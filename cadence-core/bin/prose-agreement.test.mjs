@@ -743,6 +743,39 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     'execute.md dropped the rule that an inconclusive range fires the trigger');
 });
 
+test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it creates', () => {
+  // On GitHub and Forgejo the unattended chain has to come through
+  // `git-publish.mjs publish` to get the branch onto the remote, so the
+  // repo-layer refusal stops it. On GitLab `glab mr create` publishes the source
+  // branch itself: no seam call happened, and an unattended merge proceeded on a
+  // `git.auto_close` the repository never set. The enforcement on that host IS
+  // this prose, so a seam test alone proves nothing.
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const rails = doc('cadence-core', 'references', 'git-publish.md');
+  const labelOf = regionLabels(skill);
+  // The 3(b) region alone, blanked elsewhere so line ORDER is preserved: the
+  // same notion of "inside the anchor" the deferred-read check uses.
+  const region = skill.split('\n').map((l, i) => (labelOf(i) === '3(b)' ? l : '')).join('\n');
+
+  for (const [name, text] of [['skills/cad-land/SKILL.md', skill],
+    ['cadence-core/references/git-publish.md', rails]]) {
+    assert.doesNotMatch(text, /no seam call is needed/,
+      `${name} states the GitLab non-gating as correct again`);
+  }
+
+  const seamAt = region.indexOf('git-publish.mjs" authorized');
+  const createAt = region.indexOf('glab mr create --source-branch');
+  assert.ok(createAt > -1, 'step 3(b) no longer spells the glab mr create invocation');
+  assert.ok(seamAt > -1, 'step 3(b) does not call git-publish.mjs authorized on the GitLab arm');
+  // ORDER, not presence. A tree that keeps the seam call but moves it after the
+  // create has already published the branch by the time it asks - which is the
+  // whole failure this closes.
+  assert.ok(seamAt < createAt,
+    'the authorization consult comes AFTER glab mr create, which publishes the branch itself');
+  assert.match(region, /ok:false/,
+    'step 3(b) never says what the GitLab arm does when the seam refuses');
+});
+
 test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
   // Detection without enforcement is precisely the outcome RSK-02 exists to
   // prevent, and it passes every other check in this phase. A tree carrying

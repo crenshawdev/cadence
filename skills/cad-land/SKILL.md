@@ -137,13 +137,23 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
      past it.
    - **Open (or reuse) the PR/MR.** Reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
-     open` (filtered by head branch) finds it, else create:
-     GitHub `gh pr create --base <base> --head <branch> --fill`, GitLab
+     open` (filtered by head branch) finds it, else create.
+     On GitLab the create IS the publish: `glab mr create` pushes the source
+     branch itself, so it is the unattended external mutation and the
+     repository has to have authorized it. Ask FIRST, on its own physical line:
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`
+     On `ok:false` create nothing - stop and surface the `detail`, which says
+     which authorization was missing (a `git.auto_close` the user set globally
+     does not authorize a repository that never set it in its own
+     `.planning/config.json`). That is the same stop the GitHub/Forgejo arm
+     makes on the publish seam's `ok:false`. ONE consult, before the create:
+     the create is the first mutation, so stopping it stops the chain and no
+     second check is needed beside `glab mr merge`.
+     Then create: GitHub `gh pr create --base <base> --head <branch> --fill`,
+     GitLab
      `glab mr create --source-branch <branch> --target-branch <base> --fill`,
      Forgejo `tea pr create --base <base> --head <branch>` (record the index
      it prints - tea addresses PRs by index, not branch).
-     On GitLab `glab mr create` publishes the source branch itself, so no seam
-     call is needed there.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
      --delete-branch` (an explicit merge strategy is required or gh
      errors/prompts; `--delete-branch` removes the remote+local source). GitLab

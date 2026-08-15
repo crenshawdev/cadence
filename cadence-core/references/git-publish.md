@@ -22,7 +22,11 @@ pushes exactly that branch to a configured bare-name remote. Every Bash
 push exemption); the git-publish seam is the one code-guarded exception, invoked
 only by cad-land, so the never-auto-push rule and the no-preselected-default
 posture both still hold. On GitLab `glab mr create` publishes the source branch
-itself. A surviving blocker/high `risk_surface` finding still halts the chain
+itself, so THAT is the mutation and no push seam sits in its path: the GitLab
+arm consults `git-publish.mjs authorized` before it creates, and creates nothing
+on `ok:false`. Same repo-layer opt-in, asked one step earlier. A user-global
+`git.auto_close` authorizes neither arm - it is read only to say which
+authorization was missing. A surviving blocker/high `risk_surface` finding still halts the chain
 before merge.
 
 After a land/merge actually lands on this machine, `git.on_land_cleanup`
