@@ -52,7 +52,7 @@ Two stops first, before anything is written.
 
    The config template is copied VERBATIM - ask no configuration questions. When
    it was written, say so in one line: "Config written with defaults (standard
-   granularity, shipped stakes, research off, plan check and verifier on).
+   granularity, shipped stakes, research and plan check off, verifier on).
    /cad-config changes any of it."
 </step>
 
