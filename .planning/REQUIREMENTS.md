@@ -246,6 +246,7 @@ section only, bounded at the next `## ` heading.
 | CAP-01 | Phase 1 | Complete |
 | TRC-01 | Phase 2 | Complete |
 | COR-01 | Phase 3 | Complete |
+| ENF-01 | Phase 4 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
