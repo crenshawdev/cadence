@@ -130,7 +130,7 @@ import { activeVersion, titleVersion, tagCarrying } from './lib/branch-decision.
 import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
-import { READS_FILE, summarizeReads } from './lib/read-trace.mjs';
+import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
 import { suggestFromRender } from './lib/trace-suggest.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
@@ -2555,7 +2555,7 @@ function cmdTraceIgnore(root, opts) {
 // reader at all. Absent file is ok:true with zeroes - a project that has not
 // run since the hook was installed has nothing to report, and that is not an
 // error.
-function cmdReads(dir) {
+function cmdReads(dir, opts) {
   const file = join(dir, READS_FILE);
   let text = '';
   try {
@@ -2573,7 +2573,34 @@ function cmdReads(dir) {
     // the caller every complete record ahead of it.
     try { records.push(JSON.parse(t)); } catch { /* partial line */ }
   }
-  return ok(summarizeReads(records));
+  const summary = summarizeReads(records);
+  // Without `--join` the envelope is what it has always been, including the
+  // `no reads recorded yet` arm above, which returns before this line: a
+  // reader that never asked for the join must not have to parse around it.
+  //
+  // WHOLE record, no phase scoping. `reads.jsonl` has none - it is one file
+  // per project - and the brackets it joins to therefore have to span every
+  // phase, or a read caused by phase 3 would report unjoined while phase 3's
+  // bracket sat one scope away.
+  if (!('join' in opts)) return ok(summary);
+  const j = joinReads(records, renderTrace(dir).brackets);
+  // SIX figures, not one ratio. `joined` and `unjoined` are the join working
+  // and not working; `ambiguous` is it declining to guess between overlapping
+  // same-role brackets; `floor` is the permanent limit (`fork` and
+  // `general-purpose` are HOST agent types with no dispatch event, ever);
+  // `coordinator` is the main thread, which has no worker bracket by
+  // construction; `unresolved` is a record whose `agent` field was absent or
+  // named no role. Collapsing any of them into `unjoined` reports a limit as
+  // a failure, which is exactly the distinction the join exists to make.
+  return ok({
+    ...summary,
+    joined: j.joined,
+    ambiguous: j.ambiguous,
+    unjoined: j.unjoined,
+    floor: j.floor,
+    coordinator: j.coordinator,
+    unresolved: j.unresolved,
+  });
 }
 
 function cmdTrace(dir, sub, opts) {
@@ -3481,7 +3508,7 @@ const COMMANDS = {
   },
   'phase-done': (dir, _sub, opts) => cmdPhaseDone(dir, opts),
   uat: (dir, sub, opts) => cmdUat(dir, sub, opts),
-  reads: (dir, _sub, _opts) => cmdReads(dir),
+  reads: (dir, _sub, opts) => cmdReads(dir, opts),
   audit: (dir, _sub, _opts) => cmdAudit(dir),
   'criteria-coverage': (dir, _sub, _opts) => cmdCriteriaCoverage(dir),
   'plan-overlap': (dir, _sub, opts) => cmdPlanOverlap(dir, opts),

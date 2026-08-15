@@ -1,0 +1,7 @@
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:00:00.000Z","family":"lifecycle","event":"phase_start","sha":"abc1234"}
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:01:00.000Z","family":"lifecycle","event":"dispatch","plan":"cad-verifier","role":"cad-verifier","read":[".planning/phases/4/UAT.md"]}
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:09:00.000Z","family":"lifecycle","event":"return","plan":"cad-verifier","role":"cad-verifier","tokens":5000}
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:10:00.000Z","family":"lifecycle","event":"dispatch","plan":"1","role":"cad-executor","read":[".planning/phases/4/PLAN-1.md"]}
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:11:00.000Z","family":"lifecycle","event":"dispatch","plan":"2","role":"cad-executor","read":[".planning/phases/4/PLAN-2.md"]}
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:40:00.000Z","family":"lifecycle","event":"return","plan":"1","role":"cad-executor","tokens":120000}
+{"corr":"4-abc1234","phase":"4","ts":"2026-08-14T12:41:00.000Z","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":98000}

@@ -555,3 +555,85 @@ test('join: no bracket rows at all is every subagent read unjoined, never an err
   assert.deepEqual(joinReads([], []).rows, []);
   assert.equal(joinReads(null, null).joined, 0);
 });
+
+// --- the join through the seam, on COMMITTED fixtures (D-22) ------------------
+//
+// `.planning/trace.jsonl` and `.planning/reads.jsonl` are both gitignored, so
+// the live corpus cannot be a regression input - and it would leave the
+// overlapping same-role case untested anyway, since it holds exactly two such
+// pairs among a hundred brackets. The fixtures carry one ordinary role bracket,
+// the overlapping pair, and reads that land inside one, inside both, outside
+// all, under the two HOST agent types and on the coordinator.
+
+import { execFileSync } from 'node:child_process';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const FIXTURES = join(HERE, 'fixtures');
+const PLANNING = join(HERE, 'planning.mjs');
+
+/** A planning root holding both committed fixtures under their real names. */
+function joinRoot() {
+  const dir = join(tmp(), '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'trace.jsonl'), readFileSync(join(FIXTURES, 'join.trace.jsonl'), 'utf8'));
+  writeFileSync(join(dir, 'reads.jsonl'), readFileSync(join(FIXTURES, 'join.reads.jsonl'), 'utf8'));
+  return dir;
+}
+
+/** Run the seam and parse its one JSON line, ok:false included. */
+function seam(dir, args) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, '--dir', dir, ...args], { encoding: 'utf8' }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+test('seam: `reads --join` reports four figures the fixtures fix exactly', () => {
+  const r = seam(joinRoot(), ['reads', '--join']);
+  assert.equal(r.ok, true);
+  assert.equal(r.calls, 8);
+  // Two reads land inside exactly one bracket of their role: the verifier's at
+  // 12:05, and the executor's at 12:41 - past plan 1's close, inside plan 2's.
+  assert.equal(r.joined, 2);
+  // ONE lands inside both overlapping `cad-executor` brackets and is refused
+  // rather than guessed at.
+  assert.equal(r.ambiguous, 1);
+  // Two land outside every bracket of their role: the planner (no planner
+  // bracket at all) and the executor read at 13:00.
+  assert.equal(r.unjoined, 2);
+  // The permanent floor: one `fork`, one `general-purpose`.
+  assert.equal(r.floor, 2);
+  assert.equal(r.coordinator, 1);
+  assert.equal(r.unresolved, 0);
+  // Every record is in exactly one bucket, so the four figures a report prints
+  // are a partition and not a sample.
+  assert.equal(r.joined + r.ambiguous + r.unjoined + r.floor + r.coordinator + r.unresolved, r.calls);
+});
+
+test('seam: `reads` WITHOUT the flag returns the envelope it always returned', () => {
+  const dir = joinRoot();
+  const plain = seam(dir, ['reads']);
+  for (const k of ['joined', 'ambiguous', 'unjoined', 'floor', 'coordinator', 'unresolved']) {
+    assert.ok(!(k in plain), `${k} rode an unasked-for envelope`);
+  }
+  // ...and the shared half is byte-identical between the two calls.
+  const joined = seam(dir, ['reads', '--join']);
+  for (const k of Object.keys(plain)) {
+    assert.deepEqual(joined[k], plain[k], k);
+  }
+});
+
+test('seam: an empty record still says `no reads recorded yet` under the flag', () => {
+  const dir = join(tmp(), '.planning');
+  mkdirSync(dir, { recursive: true });
+  const r = seam(dir, ['reads', '--join']);
+  assert.equal(r.ok, true);
+  assert.equal(r.note, 'no reads recorded yet');
+  // The absent-file arm returns before the join, so a project that has not run
+  // since the hook was installed reports nothing rather than six zeroes that
+  // would read as a join that found nothing.
+  assert.ok(!('joined' in r));
+});

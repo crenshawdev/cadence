@@ -231,7 +231,12 @@ const CONTRACTS = {
     'detect-commands': ['--root'],
     'detect-surfaces': ['--root'],
     recall: ['--top'],
-    reads: [],
+    // `--join` ties each record to the `trace.jsonl` dispatch bracket that
+    // caused it, by role normalization and timestamp containment. Off by
+    // default so the envelope every existing reader parses is unchanged, and
+    // whole-record by construction: `reads.jsonl` carries no phase scoping, so
+    // the brackets it joins to must span every phase.
+    reads: ['--join'],
     // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
     // keeps only the last). Its grammar is deliberately heterogeneous: an
     // element is any verbatim string naming something the site caused the
