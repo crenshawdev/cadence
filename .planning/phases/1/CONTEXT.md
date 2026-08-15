@@ -178,8 +178,13 @@ Plan shape: one plan.
 
 - [ ] AC1: A config pair where the two values DIFFER (global `true`, repo unset)
       resolves `autoCloseRequested: true` and `autoCloseAuthorized: false`, from
-      separate sources, in a failing-capable test. No site produces either value
-      from a bare `config.mjs get git.auto_close`.
+      separate sources, in a failing-capable test. No site produces the
+      AUTHORIZED value from a bare `config.mjs get git.auto_close` - the merged
+      `get` stays the requested value's source at the sites D-01 locks
+      (`skills/cad-land/SKILL.md`, `cadence-core/workflows/milestone.md`).
+      (Narrowed 2026-08-15 at the `plan` review gate: as first written this
+      sentence barred EITHER value from that bare `get` and so contradicted
+      D-01, which locks exactly that read.)
 - [ ] AC2: `/cad-land` skips the publish ask on `autoCloseRequested`, and the
       blocking `risk_surface` gate reads that same value. A test fails if the two
       ever read different sources.
