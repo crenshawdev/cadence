@@ -326,27 +326,31 @@ absent for a phase - name it optional in the payload, as `check_gate` does. Its
 absence is not a resolve failure and must not come back as the `blocker` an
 unresolvable reference earns.
 
-The gate comes from the routing bundle; act on it:
+The gate comes from the routing bundle; act on it.
+At the `shipped` default the gate is `off`: fire nothing, return immediately
+(review-triggers.md step 1), and let `done`'s Review line report the gate as
+off rather than as a pass. `solo` resolves `advisory`, `critical` resolves
+`adjudicated`:
 
-- **advisory** (the `shipped` default) -> fire in the SAME message as the
+- **advisory** (the `solo` gate) -> fire in the SAME message as the
   `commit` step's seam calls rather than waiting. The payload is the PLAN
   file(s) already on disk and the commit alters none of them, so the reviewer
   reads nothing the commit writes, and advisory findings gate nothing
-  downstream - serializing them buys a wait for findings that stop nothing
-  (the same overlap the per-plan `diff` review runs at advisory). The dispatch
-  carries the advisory persistence tail (review-triggers.md step 4): the
-  reviewer writes its findings to `.planning/phases/<N>/REVIEW-plan.md` and
-  closes its own bracket, so this session ending before the return lands
-  loses nothing. `done` reads that file if it is on disk by then; otherwise
-  its Review line names the path as in flight - never a clean pass.
+  downstream - serializing them buys a wait for findings that stop nothing.
+  The dispatch carries the advisory persistence tail (review-triggers.md
+  step 4): the reviewer writes its findings to
+  `.planning/phases/<N>/REVIEW-plan.md` and closes its own bracket, so this
+  session ending before the return lands loses nothing. `done` reads that file
+  if it is on disk by then; otherwise its Review line names the path as in
+  flight - never a clean pass.
 - **blocking** -> fire and WAIT; halt on FAIL until findings are fixed or the
   user overrides.
-- **adjudicated** -> fire and WAIT - triage precedes the commit because an
-  applied survivor EDITS the plan files the commit stages. Triage the
-  survivors, then apply ONLY the ones the user picked to the plan file(s) and
-  leave the rest recorded in this step's report. The survivors are a numbered
-  list the user triages, NONE is the default, and only what the user names is
-  acted on - RE-READ
+- **adjudicated** (the `critical` gate) -> fire and WAIT - triage precedes the
+  commit because an applied survivor EDITS the plan files the commit stages.
+  Triage the survivors, then apply ONLY the ones the user picked to the plan
+  file(s) and leave the rest recorded in this step's report. The survivors are
+  a numbered list the user triages, NONE is the default, and only what the user
+  names is acted on - RE-READ
   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`
   before presenting, since this workflow does not preload it.
 
