@@ -106,7 +106,8 @@ context-gathering, and debugging — without any external memory system.
 ### Active
 
 `v3.5.1 - authorization the repo grants, not the user`, opened 2026-08-15.
-Scoped off the Forgejo milestone, which holds one issue: #131.
+Scoped off the Forgejo milestone, which holds three issues: #131, #179 and
+#180.
 
 **The theme is one sentence: a user-global setting can authorize an unattended
 publish and merge that the stated policy says only the repository may
@@ -122,6 +123,19 @@ On GitLab nothing gates it at all: `glab mr create` publishes the source branch
 itself, so no seam call is made, and the workflow proceeds to `glab mr merge`.
 `cadence-core/bin/land-cleanup.mjs` already records the discrepancy in its own
 source, which is the shape of a known gap rather than a discovered one.
+
+Two seams that ship today and degrade silently on this repository ride along,
+both hit live during the `v3.5.0` close itself rather than found by a scan.
+`milestone-prune` reads only the first physical line of a WRAPPED requirement
+bullet, so every close orphans prose fragments under `## Active` and truncates
+rows mid-sentence under `## Shipped`; it has been hand-repaired at three
+consecutive closes, and `lib/milestone-prune.mjs`'s own header says these
+surgeries were made deterministic because the hand-performed version kept
+leaving a tree that failed its own audit (#179). And `issue-check.mjs` matches a
+`tea` login against the host parsed off the origin URL, so this repo's
+`ssh.jcrenshaw.dev` endpoint never resolves against a login keyed on
+`git.jcrenshaw.dev` - which means LND-01, shipped in `v3.4.0`, has never once
+produced a tracker report in the repository it was built in (#180).
 
 The fix shape is two distinct booleans rather than one aligned value: an
 `autoCloseRequested` read from the merged config, which is presentation and what

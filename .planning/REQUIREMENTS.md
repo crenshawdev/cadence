@@ -7,10 +7,13 @@
 
 `v3.5.1 - authorization the repo grants, not the user`, opened 2026-08-15.
 Scoped from the Forgejo milestone rather than from a scan or the capture queue:
-milestone `v3.5.1` holds one issue, #131, and the two ids below split its stated
-fix shape into the authorization resolution and the host arm that today is
-ungated. The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep
-their deferral reasons and none is promoted.
+milestone `v3.5.1` holds three issues. #131 is the theme, and `AUT-01`/`AUT-02`
+split its stated fix shape into the authorization resolution and the host arm
+that today is ungated. #179 and #180 were both hit live during the `v3.5.0`
+close itself and are carried in as `PRN-01` and `TRK-01`: two shipped seams that
+degrade silently on this repository, which is the repository they were built in.
+The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted.
 
 - **AUT-01**: `git.auto_close` resolves as two distinct booleans rather than one
   merged value: `autoCloseRequested` from the merged config, which is
@@ -33,6 +36,30 @@ their deferral reasons and none is promoted.
   is a known gap rather than a discovered one. `glab` is absent on this machine,
   so the GitLab arm is proven through the same resolved-CLI seam the other hosts
   use rather than by a live call (#131).
+- **PRN-01**: `milestone-prune` transforms a WRAPPED requirement bullet
+  correctly in both halves - the `## Active` removal takes the whole bullet span
+  (lead line plus its indented continuation lines) rather than the lead line
+  alone, and `archiveRequirements` builds the archived row's parenthetical from
+  that same span rather than truncating at the first physical line. Today it
+  does neither, so every close leaves orphaned prose fragments under `## Active`
+  and rows cut mid-sentence under `## Shipped`
+  (`| RSK-01 (An executable risk-check seam under \`cadence-core/bin/\` answers a) |`).
+  Hand-repaired at the v3.3.0, v3.4.1 and v3.5.0 closes. Requirement bullets in
+  this repo wrap by default, so this is the common path, not an edge case, and
+  `lib/milestone-prune.mjs`'s own header says these surgeries were made
+  deterministic precisely because the hand-performed version kept leaving a tree
+  that failed its own audit. Regression cover needs a fixture whose bullets wrap
+  (#179).
+- **TRK-01**: `issue-check.mjs` resolves the tracker by repository rather than
+  by origin-URL host equality, so a Forgejo remote whose SSH endpoint differs
+  from its web host still reports. Today the host parsed off
+  `ssh://git@ssh.jcrenshaw.dev:2222/...` is matched against a `tea` login keyed
+  on `git.jcrenshaw.dev`, nothing matches, and the seam takes its skip arm - by
+  its own contract, which is why LND-01 has never once produced a report on this
+  repository. A separate SSH endpoint on a non-standard port is a normal
+  deployment shape, not a misconfiguration, and `tea --repo <owner>/<name>`
+  already works against the same login. The one-line read-only degradation stays;
+  what changes is that a correctly configured remote stops hitting it (#180).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
