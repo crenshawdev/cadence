@@ -3220,27 +3220,60 @@ function cmdRiskCheckStatus(dir, opts) {
   // must not turn the gate off.
   if (wanted) planRow(planKey(wanted.plan));
 
-  /** Every record the phase holds, keyed by plan. @type {Map<string, {base: any, head: any}[]>} */
+  /**
+   * Every record the phase holds, keyed by plan, carrying its VERDICT fields
+   * beside its refs - because a record is not the same thing as a check.
+   * `risk-check run` appends on every path past argument validation, the
+   * git-failure path included, so a `checked:false` line means the check was
+   * ATTEMPTED and read no diff at all. Matching a ref pair off one of those and
+   * reporting `recorded` is the exact state RSK-02 exists to refuse: completion
+   * would pass on a check that never saw the range.
+   *
+   * `inconclusive` is the OPPOSITE call, deliberately. A `checked:true,
+   * inconclusive:true` record IS a completed check - the seam read the range
+   * and honestly reported that part of it cannot be judged - so it satisfies
+   * this gate and rides the row with the flag visible rather than collapsed.
+   * "An unjudged range is not a cleared one" is enforced at the FIRE site,
+   * which is where a response to it exists: `workflows/execute.md` fires
+   * `risk_surface` on `inconclusive: true` exactly as it does on a match.
+   * Refusing here instead would make a range holding a binary file or a
+   * submodule bump permanently unclearable - the caller cannot make git render
+   * it - and an unclearable gate is one that gets bypassed.
+   * @type {Map<string, {base: any, head: any, checked: boolean, inconclusive: boolean}[]>}
+   */
   const records = new Map();
   for (const e of r.events) {
     if (e.family !== 'outcome' || e.event !== 'risk_check') continue;
     const k = planKey(e.plan);
     if (!records.has(k)) records.set(k, []);
-    records.get(k).push({ base: e.base === undefined ? null : e.base,
-      head: e.head === undefined ? null : e.head });
+    records.get(k).push({
+      base: e.base === undefined ? null : e.base,
+      head: e.head === undefined ? null : e.head,
+      // `=== true`, never truthiness: a record written by an older seam carries
+      // neither field, and an absent verdict is not a passing one.
+      checked: e.checked === true,
+      inconclusive: e.inconclusive === true,
+    });
   }
 
   const rows = [...completed.entries()].map(([k, row]) => {
     const found = records.get(k) || [];
+    // Only a record whose read SUCCEEDED can satisfy the gate; the rest are
+    // reported so the reader sees an attempt rather than an absence.
+    const usable = found.filter((f) => f.checked);
     const asked = wanted && planKey(wanted.plan) === k ? { base: wanted.base, head: wanted.head } : null;
+    const sameRange = (/** @type {{base: any, head: any}} */ f) =>
+      f.base === asked.base && f.head === asked.head;
     // STALE, not satisfied: a plan re-dispatched over a widened range
     // (execute.md's "re-dispatch the remainder" arm) is exactly the case that
     // would otherwise pass on the record its earlier, narrower range left. Both
-    // ref pairs are named so the reader can see which one it has.
+    // ref pairs are named so the reader can see which one it has. UNCHECKED is
+    // the third state: the range was named and attempted, and nothing was read.
     const state = asked
-      ? (found.some((f) => f.base === asked.base && f.head === asked.head)
-        ? 'recorded' : (found.length ? 'stale' : 'missing'))
-      : (found.length ? 'recorded' : 'missing');
+      ? (usable.some(sameRange) ? 'recorded'
+        : found.some(sameRange) ? 'unchecked'
+          : found.length ? 'stale' : 'missing')
+      : (usable.length ? 'recorded' : (found.length ? 'unchecked' : 'missing'));
     return { ...row, state, records: found, ...(asked ? { wanted: asked } : {}) };
   });
 

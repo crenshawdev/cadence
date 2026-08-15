@@ -288,11 +288,15 @@ function traceFixture(lines) {
   return dir;
 }
 
-/** One `outcome`/`risk_check` line, as `risk-check run` writes it. */
-const recordLine = (plan, base, head) => JSON.stringify({
+/** One `outcome`/`risk_check` line, as `risk-check run` writes it. `extra`
+ * overrides the VERDICT fields, because a record is not the same thing as a
+ * check: `run` appends on every path past argument validation, so a
+ * `checked:false` line is on disk whenever a git read failed. */
+const recordLine = (plan, base, head, extra = {}) => JSON.stringify({
   corr: '1-ae5ca09', phase: '1', ts: '2026-08-15T18:46:00.000Z',
   family: 'outcome', event: 'risk_check', plan, base, head,
   checked: true, categories: ['secrets'], matches: [], inconclusive: false,
+  ...extra,
 });
 
 /** `risk-check status` against a fixture; its one JSON line and its exit code. */
@@ -327,7 +331,8 @@ test('risk-check status: appending the plan-1 record makes the identical call pa
   assert.equal(r.plans[0].state, 'recorded');
   // The record's own refs ride the row, so a stale one is visible rather than
   // silently counted on the phase-wide arm.
-  assert.deepEqual(r.plans[0].records, [{ base: 'ae5ca09', head: 'HEAD' }]);
+  assert.deepEqual(r.plans[0].records,
+    [{ base: 'ae5ca09', head: 'HEAD', checked: true, inconclusive: false }]);
 });
 
 test('risk-check status: a checkpoint AND a return for one plan report it once, not twice', () => {
@@ -348,11 +353,58 @@ test('risk-check status: a record from an earlier, narrower range is STALE, not 
   assert.equal(stale._exit, 1);
   assert.equal(stale.plans[0].state, 'stale');
   assert.deepEqual(stale.plans[0].wanted, { base: 'refA', head: 'refC' });
-  assert.deepEqual(stale.plans[0].records, [{ base: 'refA', head: 'refB' }]);
+  assert.deepEqual(stale.plans[0].records,
+    [{ base: 'refA', head: 'refB', checked: true, inconclusive: false }]);
 
   const matched = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refB']);
   assert.equal(matched.ok, true, JSON.stringify(matched));
   assert.equal(matched._exit, 0);
+});
+
+test('risk-check status: a record whose git read FAILED is not a check, and does not satisfy', () => {
+  // The record `risk-check run` leaves on its git-failure path: `ok:false`,
+  // `checked:false`, and the line on disk saying the check was ATTEMPTED. A
+  // status that found the ref pair and reported `recorded` would pass
+  // completion on a check that never read a diff - the exact state RSK-02
+  // exists to refuse.
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'ae5ca09', 'HEAD', { checked: false, inconclusive: true })]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r._exit, 1);
+  assert.equal(r.plans[0].state, 'unchecked');
+  assert.equal(r.plans[0].records[0].checked, false,
+    'the verdict fields were dropped off the row, so a reader cannot see why');
+  assert.deepEqual(r.missing, ['1']);
+});
+
+test('risk-check status: a NAMED range whose only record is unchecked is refused too', () => {
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'refA', 'refB', { checked: false, inconclusive: true })]);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refB']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r._exit, 1);
+  assert.equal(r.plans[0].state, 'unchecked',
+    'a matching ref pair on an unchecked record read as satisfaction');
+});
+
+test('risk-check status: an INCONCLUSIVE record satisfies the gate, with the flag on the row', () => {
+  // The deliberate other half, and the opposite call from `checked:false`. A
+  // `checked:true, inconclusive:true` record is a COMPLETED check - the seam
+  // read the range and honestly reported that part of it cannot be judged - so
+  // it satisfies this gate and rides the row with the flag visible. Acting on
+  // "an unjudged range is not a cleared one" is the FIRE site's job:
+  // workflows/execute.md fires `risk_surface` on `inconclusive: true` exactly
+  // as it does on a match. Refusing here would make a range holding a binary
+  // file or a submodule bump permanently unclearable.
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'ae5ca09', 'HEAD', { inconclusive: true })]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  assert.equal(r.plans[0].state, 'recorded');
+  assert.equal(r.plans[0].records[0].inconclusive, true,
+    'the row hides that the range was never judged');
 });
 
 test('risk-check status: a phase with no completed executor range is ok:true and empty', () => {
