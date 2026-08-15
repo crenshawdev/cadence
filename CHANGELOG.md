@@ -6,6 +6,26 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **`milestone-prune` stops reporting a half-finished close as a finished one.**
+  A phase whose directory could not be moved or deleted was collected as a
+  warning, after which ROADMAP.md and REQUIREMENTS.md were pruned for every
+  completed phase anyway and the envelope answered `ok:true, action:"pruned"` -
+  contradicting the comment above it, which promised a failed rename left both
+  documents untouched. The directory pass now runs first and only the phases it
+  actually cleared reach the documents, so the tree and the docs still agree; a
+  partial application returns `ok:false, reason:"partial-prune"` naming the
+  phases that did not clear, and `/cad-milestone` halts on it instead of
+  committing the disagreement. Re-running picks up only what is left.
+
+- **An `_archive-<label>` that is a symlink can no longer redirect the archive
+  out of the planning root.** The containment check was lexical, so a
+  pre-existing link resolved inside the tree, `mkdirSync` succeeded against it
+  and `renameSync` followed it. The path is now classified with `lstat` before
+  anything moves, and a per-phase destination left by an interrupted close is
+  refused rather than clobbered.
+
 ## [3.3.0] - 2026-08-15
 
 The evidence Cadence plans and reports from is itself checked this cycle: the

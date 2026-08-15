@@ -104,6 +104,13 @@ dirs MOVE to `_archive-<label>/` rather than delete, and git history is not
 the only copy. Relay `warnings[]` (a missing detail section, an unreadable
 REQUIREMENTS.md). `action:"skip"` means no checked phase existed - an
 interrupted close or the wrong milestone; stop and look rather than continue.
+
+`ok:false` STOPS the close - do not commit, do not chain to `/cad-land`.
+`partial-prune` means `failed`'s phases did not clear and were left in BOTH
+documents on purpose, so tree and docs still agree: surface them with their
+`warnings[]` lines, clear what blocked them, re-run (already-pruned phases are
+skipped). `archive-root-unusable` means `_archive-<label>` is not a real
+directory and nothing moved - show the path, never delete it to clear the way.
 Unfinished phases, their dirs and their requirements are untouched by
 construction - a milestone can close with deferred work that rolls to the next.
 

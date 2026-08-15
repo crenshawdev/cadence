@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -284,6 +284,99 @@ test('seam: missing REQUIREMENTS.md degrades to a warning, roadmap half still la
   assert.deepEqual(r.requirements.moved, []);
   assert.ok(r.warnings.some((w) => /REQUIREMENTS\.md/.test(w)));
   assert.ok(!readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'));
+});
+
+// --- partial application: the arm that used to answer ok:true ---------------
+// Both tests below redden on the pre-fix seam, which caught a directory failure
+// into `warnings` and then pruned the documents for every completed phase
+// regardless. Forcing the failure needs no chmod and no root check: a
+// destination that already exists as a NON-EMPTY directory makes renameSync
+// throw ENOTEMPTY on any platform this ships to.
+
+test('seam: a phase whose directory move fails is refused, and keeps its docs', () => {
+  const dir = scaffold();
+  // Occupy _archive-v1.2.0/1 with a non-empty directory. Phase 1 cannot move
+  // there; phase 2.1 is untouched and must still clear.
+  mkdirSync(join(dir, '_archive-v1.2.0', '1', 'squatter'), { recursive: true });
+
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'archive']);
+
+  assert.equal(r.ok, false, 'a partial application is a refusal, never ok:true');
+  assert.equal(r.reason, 'partial-prune');
+  assert.equal(r.action, 'partial');
+  assert.deepEqual(r.failed, [1]);
+  assert.deepEqual(r.phases, [2.1], 'only the phase that cleared is reported applied');
+  assert.deepEqual(r.dirs.archived, [2.1]);
+  assert.ok(r.warnings.some((w) => /phase 1: directory archive failed/.test(w)));
+
+  // The tree and the documents agree: phase 1 is still on disk AND still in
+  // both documents; phase 2.1 left both.
+  assert.ok(existsSync(join(dir, 'phases', '1', 'SUMMARY.md')), 'the failed phase dir stays');
+  const road = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  assert.ok(road.includes('Phase 1: Store'), 'the failed phase keeps its roadmap line');
+  assert.ok(road.includes('### Phase 1: Store'), 'and its detail section');
+  assert.ok(!road.includes('Phase 2.1: Patch'), 'the phase that cleared is pruned');
+  const reqs = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.ok(!reqs.includes('| STOR-01 (bytes survive) | 1 | Complete | v1.2.0 |'),
+    'the failed phase does not get a Shipped row');
+});
+
+test('seam: when every phase fails, neither document is written at all', () => {
+  const dir = scaffold();
+  const before = {
+    road: readFileSync(join(dir, 'ROADMAP.md'), 'utf8'),
+    reqs: readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'),
+  };
+  for (const n of ['1', '2.1']) {
+    mkdirSync(join(dir, '_archive-v1.2.0', n, 'squatter'), { recursive: true });
+  }
+
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'archive']);
+
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.failed, [1, 2.1]);
+  assert.deepEqual(r.phases, []);
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before.road, 'roadmap byte-identical');
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), before.reqs, 'requirements byte-identical');
+});
+
+// --- archive containment: the symlink the lexical check could not see -------
+
+test('seam: an _archive-<label> that is a symlink is refused before anything moves', () => {
+  const dir = scaffold();
+  // The escape hatch: a writable directory OUTSIDE the planning root, reached
+  // through a link whose own path resolves lexically inside it.
+  const outside = mkdtempSync(join(tmpdir(), 'cad-prune-outside-'));
+  symlinkSync(outside, join(dir, '_archive-v1.2.0'), 'dir');
+
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'archive']);
+
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'archive-root-unusable');
+  assert.match(r.detail, /symlink/);
+  // Nothing left the tree, and nothing arrived outside it.
+  assert.deepEqual(readdirSync(outside), [], 'no phase directory escaped the planning root');
+  assert.ok(existsSync(join(dir, 'phases', '1', 'SUMMARY.md')));
+  assert.ok(existsSync(join(dir, 'phases', '2.1', 'SUMMARY.md')));
+  assert.ok(readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'),
+    'a refusal before the loop writes nothing');
+});
+
+test('seam: a regular file squatting _archive-<label> is refused the same way', () => {
+  const dir = scaffold();
+  writeFileSync(join(dir, '_archive-v1.2.0'), 'not a directory');
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'archive']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'archive-root-unusable');
+  assert.doesNotMatch(r.detail, /symlink/, 'the symlink clause is conditional on it being one');
+});
+
+test('seam: delete mode builds no archive root, so the type check does not apply', () => {
+  const dir = scaffold();
+  symlinkSync(mkdtempSync(join(tmpdir(), 'cad-prune-outside-')), join(dir, '_archive-v1.2.0'), 'dir');
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'delete']);
+  assert.equal(r.ok, true, 'delete never touches _archive-<label>');
+  assert.deepEqual(r.dirs.deleted, [1, 2.1]);
 });
 
 test('seam: bad args are refused - label required, mode must be delete|archive', () => {
