@@ -439,3 +439,119 @@ test('a corpus recorded before files existed yields no file measurement rather t
   assert.equal(s.fileRedundancy, null);
   assert.deepEqual(s.topFiles, []);
 });
+
+// --- the join: a read record back to the bracket that caused it (D-10, D-11) -
+//
+// Read-time inference, never a corr stamped at hook time: a hook-time stamp
+// gives a read running inside a subagent the coordinator's current corr, which
+// is confidently wrong rather than honestly absent. Pure by injection, so the
+// caller supplies the bracket rows and this needs no trace file.
+
+import { joinReads, HOST_AGENT_TYPES } from './lib/read-trace.mjs';
+
+/** One paired bracket row, the shape `renderTrace(...).brackets` returns. */
+const span = (role, plan, from, to) => ({
+  corr: '4-abc1234', phase: '4', plan, role, event: 'return',
+  ts: from, end: to, ms: Date.parse(to) - Date.parse(from), tokens: 100,
+});
+/** One reads.jsonl record. */
+const read = (agent, ts, extra) => ({ ts, tool: 'Read', target: '/x', ...(agent === undefined ? {} : { agent }), ...extra });
+
+const T = (m) => new Date(Date.UTC(2026, 7, 14, 12, m, 0)).toISOString();
+
+test('join: a rung-suffixed agent normalizes to its role and joins its bracket', () => {
+  // `cadence:cad-verifier-medium` is a FILE stem; the dispatch event names the
+  // ROLE. lib/rung-agent.mjs is the one statement of that mapping.
+  const brackets = [span('cad-verifier', 'cad-verifier', T(0), T(10))];
+  const j = joinReads([read('cadence:cad-verifier-medium', T(5))], brackets);
+  assert.equal(j.joined, 1);
+  assert.equal(j.rows[0].role, 'cad-verifier');
+  assert.equal(j.rows[0].status, 'joined');
+  assert.equal(j.rows[0].bracket.plan, 'cad-verifier');
+});
+
+test('join: the same record outside every bracket of its role is unjoined', () => {
+  const brackets = [span('cad-verifier', 'cad-verifier', T(0), T(10))];
+  const j = joinReads([read('cadence:cad-verifier-medium', T(20))], brackets);
+  assert.equal(j.unjoined, 1);
+  assert.equal(j.joined, 0);
+  assert.equal(j.rows[0].bracket, null);
+  // ...and a bracket of a DIFFERENT role containing the same instant does not
+  // catch it either: the role is half the key, not decoration.
+  const other = joinReads([read('cadence:cad-verifier-medium', T(5))],
+    [span('cad-executor', '1', T(0), T(10))]);
+  assert.equal(other.unjoined, 1);
+});
+
+test('join: a record inside two overlapping same-role brackets is AMBIGUOUS, joined to neither', () => {
+  // The measured case: phase 4 plans 1 and 2 open a second apart, both
+  // `cad-executor`. Picking one would be wrong exactly on the largest subagent
+  // share of the corpus (440 records), so the join reports and picks none.
+  const brackets = [
+    span('cad-executor', '1', T(0), T(30)),
+    span('cad-executor', '2', T(1), T(31)),
+  ];
+  const j = joinReads([read('cadence:cad-executor', T(10))], brackets);
+  assert.equal(j.ambiguous, 1);
+  assert.equal(j.joined, 0);
+  assert.equal(j.rows[0].status, 'ambiguous');
+  assert.equal(j.rows[0].bracket, null);
+  // A read inside only ONE of the two still joins - ambiguity is per record,
+  // never a property of the overlapping pair.
+  assert.equal(joinReads([read('cadence:cad-executor', T(31))], brackets).joined, 1);
+});
+
+test('join: the host agent types are a stated FLOOR, never a failed join', () => {
+  const brackets = [span('cad-executor', '1', T(0), T(30))];
+  const j = joinReads(HOST_AGENT_TYPES.map((a) => read(a, T(10))), brackets);
+  assert.deepEqual(HOST_AGENT_TYPES, ['fork', 'general-purpose']);
+  assert.equal(j.floor, 2);
+  assert.equal(j.joined, 0);
+  assert.equal(j.unjoined, 0);
+  // They fall inside a bracket in wall-clock terms and STILL do not join:
+  // nothing in this plugin opens a bracket for a host type, so a containment
+  // hit there would be an invented attribution.
+  for (const row of j.rows) assert.equal(row.status, 'floor');
+});
+
+test('join: a record with no agent field names the field absent rather than defaulting', () => {
+  const j = joinReads([read(undefined, T(5)), read('unknown-agent', T(5))],
+    [span('cad-executor', '1', T(0), T(30))]);
+  assert.equal(j.unresolved, 2);
+  assert.equal(j.coordinator, 0);
+  assert.equal(j.rows[0].agent, null);
+  assert.equal(j.rows[0].role, null);
+  assert.equal(j.rows[0].agent_id, null);
+  // `unknown-agent` is the writer's mark for a call that carried an `agent_id`
+  // and no `agent_type`: a subagent read whose role is not knowable, which is
+  // not the same claim as "no bracket contained it".
+  assert.equal(j.rows[1].agent, 'unknown-agent');
+  assert.equal(j.rows[1].status, 'unresolved');
+});
+
+test('join: a coordinator read is its own bucket, never an unjoined worker read', () => {
+  // 1,006 of 2,725 records are the main thread's. Folding them into `unjoined`
+  // would report a thousand failed joins for reads that have no worker bracket
+  // by construction.
+  const j = joinReads([read('coordinator', T(5))], [span('cad-executor', '1', T(0), T(30))]);
+  assert.equal(j.coordinator, 1);
+  assert.equal(j.unjoined, 0);
+});
+
+test('join: an unreadable timestamp on either side is refused, never widened', () => {
+  const brackets = [span('cad-executor', '1', T(0), T(30))];
+  // The RECORD's ts: unparseable means it cannot be placed, not that it lands
+  // outside every bracket.
+  assert.equal(joinReads([read('cadence:cad-executor', 'not-a-time')], brackets).unresolved, 1);
+  // The BRACKET's: a half-open row is dropped rather than swallowing every read
+  // of its role.
+  const broken = [{ ...span('cad-executor', '1', T(0), T(30)), end: null }];
+  assert.equal(joinReads([read('cadence:cad-executor', T(5))], broken).unjoined, 1);
+});
+
+test('join: no bracket rows at all is every subagent read unjoined, never an error', () => {
+  const j = joinReads([read('cadence:cad-planner', T(5))], []);
+  assert.equal(j.unjoined, 1);
+  assert.deepEqual(joinReads([], []).rows, []);
+  assert.equal(joinReads(null, null).joined, 0);
+});
