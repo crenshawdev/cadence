@@ -1966,6 +1966,116 @@ test('check 16: the CLI reports the UAT include the day it is re-added', () => {
   assert.match(named[0].detail, /templates\/UAT\.md/);
 });
 
+// --- check 18: the schema's gate rows vs what the review grid fires ---------
+// The rule and every failure class are pinned in gate-agreement.test.mjs. This
+// side pins the WIRING: that the issues reach `problems` filed against
+// config.schema.json (the side that moves - the grid is the authority), that
+// `checked` names the check, and that the prose half is reachable through the
+// CLI and not only through the lib. Every fixture below writes its OWN schema
+// and its OWN route table, and its grid deliberately does NOT match the shipped
+// one, so an expectation here cannot be satisfied by the live files the
+// "the repo itself passes self-verification" test already guards.
+
+/** Every code lib/gate-agreement.mjs can file, for "this fixture is clean" arms. */
+const GATE_KINDS = ['gate-default-drift', 'gate-default-invalid', 'gate-prose-missing',
+  'gate-prose-drift', 'gate-grid-missing', 'gate-row-malformed'];
+
+/** A synthetic review grid: valid, four triggers, and unlike the shipped one. */
+const FIXTURE_GRID = {
+  solo: { plan: 'off', diff: 'advisory', risk_surface: 'blocking', phase_diff: 'off' },
+  shipped: { plan: 'advisory', diff: 'blocking', risk_surface: 'off', phase_diff: 'adjudicated' },
+  critical: { plan: 'blocking', diff: 'adjudicated', risk_surface: 'advisory', phase_diff: 'blocking' },
+};
+
+/** The purpose FIXTURE_GRID makes true for a trigger, as the mandatory clauses. */
+const fixturePurpose = (t) => `How the ${t} review gates - ${FIXTURE_GRID.solo[t]} at solo, `
+  + `${FIXTURE_GRID.shipped[t]} at shipped, ${FIXTURE_GRID.critical[t]} at critical`;
+
+/**
+ * A root carrying only the two files this check reads. `triggers` maps a trigger
+ * name to `{default?, purpose}`; an omitted `default` is the `null` sentinel.
+ * @param {Record<string, {default?: any, purpose?: any}>} triggers
+ * @param {any} [review] the grid, defaulting to FIXTURE_GRID
+ */
+function gateRoot(triggers, review = FIXTURE_GRID) {
+  const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-gates-'));
+  mkdirSync(join(root, 'cadence-core'), { recursive: true });
+  const keys = {
+    stakes: { type: 'enum', values: ['solo', 'shipped', 'critical'], default: 'shipped',
+      src: 'repo', purpose: 'The synthetic stakes vocabulary this fixture lints against' },
+  };
+  for (const [t, row] of Object.entries(triggers)) {
+    keys[`review.triggers.${t}.gate`] = {
+      type: 'enum', values: ['off', 'advisory', 'blocking', 'adjudicated'],
+      default: 'default' in row ? row.default : null,
+      src: 'repo',
+      purpose: 'purpose' in row ? row.purpose : fixturePurpose(t),
+    };
+  }
+  writeFileSync(join(root, 'cadence-core', 'config.schema.json'),
+    JSON.stringify({ keys }, null, 2));
+  writeFileSync(join(root, 'cadence-core', 'route-table.json'),
+    JSON.stringify({ review }, null, 2));
+  return root;
+}
+
+/** The four triggers, all on the sentinel with prose the grid makes true. */
+const AGREEING = { plan: {}, diff: {}, risk_surface: {}, phase_diff: {} };
+
+test('check 18: `checked` names the gate-agreement check and an agreeing schema is clean', () => {
+  const j = run(['--root', gateRoot(AGREEING)]);
+  assert.match(j.checked, /gate-agreement/);
+  assert.deepEqual(j.problems.filter((p) => GATE_KINDS.includes(p.kind)), [],
+    JSON.stringify(j.problems));
+});
+
+test('check 18: a default the grid disagrees with reaches problems, naming the levels', () => {
+  // The defect this phase exists to close, in its schema-default half: a scalar
+  // `config.mjs get` answers verbatim for a gate no level fires.
+  const root = gateRoot({ ...AGREEING, plan: { default: 'adjudicated' } });
+  const p = run(['--root', root]).problems;
+  const hits = p.filter((x) => x.kind === 'gate-default-drift');
+  assert.equal(hits.length, 1, JSON.stringify(p.filter((x) => GATE_KINDS.includes(x.kind))));
+  assert.equal(hits[0].file, 'cadence-core/config.schema.json');
+  assert.match(hits[0].detail, /review\.triggers\.plan\.gate/);
+  for (const level of ['solo', 'shipped', 'critical']) {
+    assert.match(hits[0].detail, new RegExp(`at ${level}\\b`));
+  }
+  // The prose half of the SAME row is untouched, so the two halves are
+  // separable at the CLI and not only inside the lib.
+  assert.deepEqual(p.filter((x) => x.kind === 'gate-prose-missing'
+    || x.kind === 'gate-prose-drift'), []);
+});
+
+test('check 18: deleting one level clause from one purpose files exactly one problem', () => {
+  // AC6's falsifier, proved through the CLI. The prose half is MANDATORY, so
+  // the sentence cannot be removed to silence the check.
+  const full = fixturePurpose('phase_diff');
+  const cut = full.replace(`, ${FIXTURE_GRID.shipped.phase_diff} at shipped`, '');
+  assert.notEqual(cut, full, 'the fixture purpose must actually lose its shipped clause');
+  const root = gateRoot({ ...AGREEING, phase_diff: { purpose: cut } });
+  const p = run(['--root', root]).problems;
+  const gate = p.filter((x) => GATE_KINDS.includes(x.kind));
+  assert.equal(gate.length, 1, JSON.stringify(gate));
+  assert.equal(gate[0].kind, 'gate-prose-missing');
+  assert.equal(gate[0].file, 'cadence-core/config.schema.json');
+  assert.match(gate[0].detail, /review\.triggers\.phase_diff\.gate/);
+  assert.match(gate[0].detail, /shipped/);
+});
+
+test('check 18: a purpose naming a gate the grid does not fire is reported at that level', () => {
+  // The v3.2.0 regression in miniature: a level's cell moves and the sentence
+  // describing it does not.
+  const root = gateRoot({ ...AGREEING,
+    diff: { purpose: fixturePurpose('diff').replace('advisory at solo', 'off at solo') } });
+  const p = run(['--root', root]).problems;
+  const hits = p.filter((x) => x.kind === 'gate-prose-drift');
+  assert.equal(hits.length, 1, JSON.stringify(p.filter((x) => GATE_KINDS.includes(x.kind))));
+  assert.equal(hits[0].file, 'cadence-core/config.schema.json');
+  assert.match(hits[0].detail, /review\.triggers\.diff\.gate/);
+  assert.match(hits[0].detail, /solo/);
+});
+
 // --- check 14: every shipped seam is contracted -----------------------------
 // AC2's second clause. Check 2 skips a script with no CONTRACTS row, which it
 // must - prose names third-party scripts too - so deleting a row used to be a

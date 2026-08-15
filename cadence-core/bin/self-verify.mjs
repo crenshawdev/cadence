@@ -113,6 +113,21 @@
 //                    runtime read of the schema (CADENCE_CONFIG_SCHEMA would
 //                    otherwise un-mark every protected key), which is what makes
 //                    this cross-check the thing keeping the two honest.
+//  18. gate          every config.schema.json `review.triggers.<t>.gate` row
+//      agreement     against route-table.json's `review` grid, in both of the
+//                    ways that row describes a gate: its `default`, which
+//                    `config.mjs get` answers verbatim for an unset key, and
+//                    its `purpose`, which must state a `<gate> at <level>`
+//                    clause for solo, shipped and critical. Three surfaces
+//                    described these gates and nothing made them agree - a
+//                    `phase_diff` default of `advisory` outlived the v3.2.0
+//                    move of that cell to `off` at `shipped` with every check
+//                    green, and workflows/execute.md carried a paragraph
+//                    telling callers to route around the seam because of it.
+//                    The grid is the AUTHORITY, so every issue is filed against
+//                    config.schema.json, the side that moves. The rule is
+//                    lib/gate-agreement.mjs; it takes no CONTRACTS row, for the
+//                    reason check 14 states about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -127,6 +142,7 @@ import {
   rungBodyIssue, rungEffortIssue, rungFile, effortEnumIssues,
 } from './lib/rung-agent.mjs';
 import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './lib/route-cells.mjs';
+import { gateAgreementIssues } from './lib/gate-agreement.mjs';
 import { parseReachTable, reachIssues } from './lib/config-reach.mjs';
 import { globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
 import { dispatchPhrasingIssues } from './lib/dispatch-phrasing.mjs';
@@ -1082,6 +1098,18 @@ function run(root) {
         problems.push({ kind: code, file: 'cadence-core/route-table.json', detail });
       }
 
+      // 18. what the schema SAYS a gate is, against what the grid FIRES. Same
+      // block because it is the one place both files are parsed and in hand.
+      // Filed against config.schema.json rather than the table: the grid is the
+      // authority and does not move, the schema is the side that reconciles to
+      // it, so `file` has to name the file a maintainer edits.
+      for (const { code, detail } of gateAgreementIssues(schema, table, {
+        levels: stakesValues,
+        gates: Array.isArray(gateSpec.values) ? gateSpec.values : [],
+      })) {
+        problems.push({ kind: code, file: 'cadence-core/config.schema.json', detail });
+      }
+
       // table -> disk: every name route.mjs can return must exist. route.mjs
       // never checks the name it returns, so without this an unbuilt or
       // renamed rung fails at dispatch time instead of in CI.
@@ -1317,7 +1345,7 @@ try {
   const argv = process.argv.slice(2);
   const root = flagValue(argv, '--root') || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement', problems });
 } catch (e) {
   // The seam arm lands WITH flagValue: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
