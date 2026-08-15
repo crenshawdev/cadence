@@ -6,6 +6,30 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The `plan` review is `blocking` at `shipped`, where it was `off`.** At the
+  default stakes level a plan had no second opinion of any kind, and the two
+  decisions that produced that each named the other as the remaining net:
+  `e0b5448` cut the gate to advisory because "a plan at `shipped` has already
+  passed cad-plan-checker, a blocking gate ... on by default", `b20fd14` took
+  it to `off`, and `70007f7` - one day later, same cycle - flipped
+  `workflow.plan_check` to `default: false` because "the plan review trigger
+  remains the default second opinion". Both cuts shipped, and neither re-read
+  the other's justification.
+
+  `blocking` rather than a return to `advisory`, because the measurement behind
+  the original cut (CST-01: findings files referenced by no SUMMARY and no
+  CONTEXT) condemned the advisory GATE and not the review. A plan is the
+  cheapest artifact in the pipeline to halt on - no code exists yet, the
+  payload is one file, and the fix is an edit - and `blocking` adds no
+  user-triage turn, which is what `adjudicated` costs at `critical`.
+  `workflow.plan_check` stays `default: false`: one net, on, before code.
+
+  `config.schema.json`'s purpose string for `workflow.plan_check` stops
+  claiming a second opinion that was not running. `solo` (advisory) and
+  `critical` (adjudicated) are unchanged.
+
 ## [3.3.1] - 2026-08-15
 
 ### Fixed

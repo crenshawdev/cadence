@@ -190,7 +190,7 @@ test('each level resolves its whole review map and its verify value, literally',
 
   const shipped = resolve('cad-planner', cfg({ stakes: 'shipped' }));
   assert.deepEqual(shipped.review, {
-    plan: 'off', diff: 'off', risk_surface: 'blocking',
+    plan: 'blocking', diff: 'off', risk_surface: 'blocking',
     phase_diff: 'off',
   });
   assert.equal(shipped.verify, 'on');
