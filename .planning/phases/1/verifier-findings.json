@@ -1,0 +1,129 @@
+{
+  "status": "gaps",
+  "score": "11/13",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A seam under cadence-core/bin/ answers a diff range with {checked, categories, matches, inconclusive}, using exactly the eight route-table tokens, on a matching range and a clean one alike",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Live run in a scratch git repo: clean range -> {\"ok\":true,...,\"checked\":true,\"matches\":[],\"inconclusive\":false}; risky range -> matches [{\"category\":\"migrations\",\"signal\":\".sql file\"}]. cadence-core/bin/lib/risk-diff.mjs:286 scanDiff; vocabulary is the caller's (planning.mjs imports CATEGORIES from lib/surface-scan.mjs), and CATEGORIES === route-table.json risk_surface_categories (both print [\"auth\",\"migrations\",\"billing\",\"concurrency\",\"destructive\",\"secrets\",\"api_contract\",\"untrusted_input\"])"
+    },
+    {
+      "n": 2,
+      "truth": "The record is appended on EVERY invocation past argument validation - no-match and git-failure included - and NOT on a refused call",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "Scratch fixture: clean run and risky run each added one {\"family\":\"outcome\",\"event\":\"risk_check\"} line (trace count 1 -> 2); --surfaces auth,nope -> ok:false reason bad-args with trace count unchanged at 2; --base nosuchref -> ok:false reason no-diff with checked:false AND trace count 3. appendEvent call precedes the emit in cadence-core/bin/planning.mjs (cmdRiskCheckRun)"
+    },
+    {
+      "n": 3,
+      "truth": "inconclusive stays honest and is distinguishable from judged-clean, and is independent of matches",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Direct probe of scanDiff: binary stanza -> checked:true, matches:[], inconclusive:true; gitlink/Subproject bump -> inconclusive:true; clean hunk -> inconclusive:false; empty/null/scalar body -> checked:false, inconclusive:true, no throw. Named suite rows exist for each (risk-diff.test.mjs:58,70,85,92,99,119,144)"
+    },
+    {
+      "n": 4,
+      "truth": "risk-check status names, by plan, every COMPLETED executor range in the phase carrying no risk record, and exits 0 only once each has one",
+      "status": "FAILED",
+      "uat_item": 5,
+      "evidence": "Only true within the newest correlation id. Probe fixture (two phase_start anchors for phase 1, an unrecorded cad-executor return under the first): `risk-check status --phase 1` printed {\"ok\":true,\"phase\":1,\"plans\":[]} exit 0. Not hypothetical - this repo's own phase 1 wrote four phase_start anchors (1-7b1466b, 1-ae5ca09, 1-279466b x2) and holds three cad-executor returns under superseded anchors (2026-08-15 16:28, 16:44, 18:45) with no risk_check record, while the live `risk-check status --phase 1` reports ok:true. Introduced by the unreviewed commit b481fb3 (thisRun filter in cmdRiskCheckStatus)"
+    },
+    {
+      "n": 5,
+      "truth": "Given --plan/--base/--head, status requires a record for THAT resolved commit pair; an earlier or narrower range of the same plan reports stale",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Live scratch check: records exist for B..C and C..H; `status --plan 1 --base B --head H` -> ok:false reason risk-record-missing, state \"stale\", both ref pairs named, exit 1; `--base B --head C` -> ok:true state \"recorded\", exit 0. Identity is base_id/head_id, not spelling (resolveRange), and planRow(wanted.plan) forces the row even with no paired return"
+    },
+    {
+      "n": 6,
+      "truth": "Both completion paths call the seam instead of a prose list, and neither reports done while the record is absent (including ok:true with written:false)",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "cadence-core/workflows/execute.md post-plan step now runs `risk-check run --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD`, fires on non-empty matches OR inconclusive:true, then runs `risk-check status --phase <N> --plan <k> --base --head` with 'The plan is NOT reported done while that call refuses'. cadence-core/workflows/task.md risk_check step runs the seam with --phase 0 and withholds done on `written: false`. Three failing-capable rows added in cadence-core/bin/prose-agreement.test.mjs (both fire sites invoke the seam; execute.md enforcement sentence; task.md written:false sentence), all green in the 1908-test run. --phase 0 confirmed accepted by requirePhaseArg via a live run"
+    },
+    {
+      "n": 7,
+      "truth": "Blocking-on-match behaviour and the ONE-round re-arm cap read exactly as before",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "`git diff --stat 279466b..b481fb3 -- cadence-core/references/triage-gate.md` empty; grep -c 'triage-gate.md' is 3 in execute.md and 1 in task.md, identical to the same greps at 279466b"
+    },
+    {
+      "n": 8,
+      "truth": "No gate, config key or route-table cell moved",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "`git diff --stat 279466b..b481fb3 -- cadence-core/route-table.json cadence-core/config.schema.json` prints nothing"
+    },
+    {
+      "n": 9,
+      "truth": "lib/surface-scan.mjs stayed the scoping aid, the new lib is the range detector, each header names the other, and no caller confuses them",
+      "status": "VERIFIED",
+      "uat_item": 10,
+      "evidence": "The surface-scan.mjs change in the range is six comment lines only ('THE SPLIT FROM lib/risk-diff.mjs'); scanTree still returns recommended = [...CATEGORIES] unconditionally and CATEGORIES still prints all eight. risk-diff.mjs:6-13 states the reciprocal split. planning.mjs imports scanTree for detect-surfaces and CATEGORIES only as the vocabulary handed to scanDiff"
+    },
+    {
+      "n": 10,
+      "truth": "The new subcommand takes its self-verify CONTRACTS rows so the invocation lint covers its flags",
+      "status": "VERIFIED",
+      "uat_item": 11,
+      "evidence": "cadence-core/bin/self-verify.mjs adds 'risk-check run': ['--phase','--plan','--base','--head','--surfaces'] and 'risk-check status': ['--phase','--plan','--base','--head'], plus 'risk-check' in TWO_WORD; self-verify prints {\"ok\":true,...,\"problems\":[]} over 22 checks"
+    },
+    {
+      "n": 11,
+      "truth": "The suite and self-verify run clean, with fixture rows for a risky, clean, inconclusive and missing-record case",
+      "status": "VERIFIED",
+      "uat_item": 12,
+      "evidence": "`node --test 'cadence-core/bin/*.test.mjs'` -> tests 1908, pass 1908, fail 0. `node cadence-core/bin/self-verify.mjs` -> problems []. risk-diff.test.mjs holds 36 named test() rows including the risky, clean, binary/gitlink-inconclusive, empty-body and missing-record refusal rows"
+    },
+    {
+      "n": 12,
+      "truth": "The enforcement was watched to FAIL against the tree before the wiring landed",
+      "status": "VERIFIED",
+      "uat_item": 13,
+      "evidence": "Commit 3eb0971 (status) precedes 23daf54 (wiring) and quotes the verbatim live refusal: {\"ok\":false,\"reason\":\"risk-record-missing\",...\"missing\":[\"1\",\"2\"]} exit=1. risk-diff.test.mjs FROZEN_PHASE_1 pins the real pre-wiring trace bytes as frozen literals so the row cannot evaporate"
+    },
+    {
+      "n": 13,
+      "truth": "The detector's live matches name real signals in the range rather than the seam's own test fixtures",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "`risk-check run --phase 99 --base 279466b --head b481fb3` (written to a scratch planning dir) returns six matches - auth 'a JWT sign/verify call', migrations 'an ALTER TABLE statement', billing 'a Stripe reference', concurrency 'a lock primitive', destructive 'an `rm -rf`', untrusted_input 'a JSON.parse call' - sourced from the literals in cadence-core/bin/risk-diff.test.mjs. The blocking gate's first live firing is a false positive on the seam's own fixtures, and every future phase touching that file repeats it"
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "risk-check run answers a matching range", "evidence": "Scratch-repo run over a range adding m.sql: ok:true with matches [{\"category\":\"migrations\",\"signal\":\".sql file\"}] and all four fields on one JSON line" },
+    { "k": 2, "name": "risk-check run records a CLEAN range too", "evidence": "Clean range printed the four fields and the fixture trace.jsonl gained one outcome/risk_check line; the git-failure path also appended, while a bad-args refusal appended nothing" },
+    { "k": 3, "name": "categories uses the existing eight tokens only", "evidence": "CATEGORIES from lib/surface-scan.mjs is byte-equal to route-table.json risk_surface_categories and config.schema.json review.triggers.risk_surface.surfaces; risk-diff.mjs takes the vocabulary from the caller and states no token list of its own" },
+    { "k": 4, "name": "inconclusive stays honest", "evidence": "Binary stanza and gitlink/Subproject bump both -> inconclusive:true with matches:[]; a readable clean hunk -> inconclusive:false; empty/null/scalar -> checked:false with inconclusive:true and no throw" },
+    { "k": 6, "name": "a narrower earlier record does not satisfy a later range", "evidence": "Live: named range B..H against records for B..C and C..H -> state \"stale\", exit 1, both ref pairs named; B..C -> \"recorded\", exit 0. Identity is the resolved base_id/head_id pair" },
+    { "k": 7, "name": "both completion paths call the seam", "evidence": "execute.md runs risk-check run then risk-check status and withholds done on its refusal; task.md runs risk-check run --phase 0 and withholds done on written:false; three failing-capable prose-agreement rows pin all of it and pass" },
+    { "k": 8, "name": "blocking behaviour and the re-arm cap are unchanged", "evidence": "triage-gate.md byte-identical across the range; triage-gate.md reference counts in execute.md (3) and task.md (1) unchanged from 279466b" },
+    { "k": 9, "name": "no gate, key or route-table cell moved", "evidence": "git diff --stat over route-table.json and config.schema.json across 279466b..b481fb3 is empty" },
+    { "k": 10, "name": "surface-scan.mjs stayed the scoping aid", "evidence": "Comment-only change to surface-scan.mjs; scanTree still returns all eight unconditionally; both headers name the split; planning.mjs uses CATEGORIES only as the vocabulary passed to scanDiff" },
+    { "k": 11, "name": "the new seam has its self-verify CONTRACTS row", "evidence": "Two CONTRACTS rows plus risk-check added to TWO_WORD; self-verify reports problems [] with no unknown-subcommand or uncontracted-script" },
+    { "k": 12, "name": "the suite and self-verify run clean", "evidence": "1908/1908 tests pass in one full run; self-verify problems [] over 22 checks; 36 named rows in risk-diff.test.mjs cover risky, clean, inconclusive and missing-record" },
+    { "k": 13, "name": "the enforcement was watched to FAIL first", "evidence": "3eb0971 landed before the wiring commit 23daf54 and quotes the verbatim exit-1 refusal naming plans 1 and 2; FROZEN_PHASE_1 freezes the pre-wiring bytes" }
+  ],
+  "gaps": [
+    {
+      "k": 5,
+      "name": "risk-check status refuses a phase with a missing record",
+      "reason": "behavior wrong - the phase-wide arm only sees completed ranges whose correlation id equals the phase's NEWEST phase_start anchor, so any range completed before a re-anchor is silently exempt from the requirement",
+      "evidence": "cadence-core/bin/planning.mjs cmdRiskCheckStatus, the `thisRun` filter added by the unreviewed commit b481fb3, applied to both r.brackets and r.events. Probe: a fixture with a phase_start anchor 1-aaaaaaa, an unrecorded cad-executor return under it, and a later phase_start anchor 1-bbbbbbb makes `risk-check status --phase 1` print {\"ok\":true,\"phase\":1,\"plans\":[]} and exit 0. Live confirmation on this repo: phase 1 alone wrote four phase_start anchors and holds three cad-executor returns under superseded anchors (1-7b1466b at 16:28 and 16:44, 1-ae5ca09 at 18:45) with no risk_check record, yet `risk-check status --phase 1` reports ok:true with a single plan-1 row. Because execute.md re-anchors on every /cad-execute invocation, a phase executed across more than one invocation - the normal case, and this phase's own case - exempts most of its completed ranges from the phase-wide gate. The named-range arm (--plan/--base/--head, which execute.md actually calls) still forces its own row, so the fire-site check is not defeated; the phase-wide arm is",
+      "severity": "major",
+      "missing": "Scope the bracket/record scan by something stable across a phase's anchors (all corr values sharing the phase, or the phase number with records keyed the same way) rather than the newest anchor alone, and add a failing-capable row for two phase_start anchors in one phase with an unrecorded return under the first"
+    },
+    {
+      "name": "the detector self-matches its own test fixtures",
+      "reason": "behavior wrong - the content patterns fire on the literal strings in cadence-core/bin/risk-diff.test.mjs, so the blocking gate's first live firing on this repository was a false positive on the seam's own fixtures",
+      "evidence": "`risk-check run --base 279466b --head b481fb3` (record diverted to a scratch planning dir) returns six of eight categories: auth 'a JWT sign/verify call', migrations 'an ALTER TABLE statement', billing 'a Stripe reference', concurrency 'a lock primitive', destructive 'an `rm -rf`', untrusted_input 'a JSON.parse call'. Every one of those strings is fixture text in cadence-core/bin/risk-diff.test.mjs. The ROADMAP holds detection heuristic on purpose, so this breaches no success criterion, but it means every future Cadence phase touching that file fires the one gate that is blocking at every stakes level",
+      "severity": "minor",
+      "missing": "Either build the fixture diffs from assembled fragments so the literals never appear intact in the file, or give the caller a way to exclude the detector's own fixture path from the scanned range"
+    }
+  ],
+  "human_checks": []
+}
