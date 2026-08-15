@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,11 @@ const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.co
  *  the `tea login list` probe gets, so ONE `tea` stub answers both argv shapes
  *  the seam sends it. */
 function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, stderr = '' } = {}) {
-  const heredoc = (text) => `cat <<'CADEOF'\n${text}\nCADEOF`;
+  // `echo`, never a `cat` heredoc: under `bare: true` the child's PATH holds
+  // git and nothing else, and /bin/sh has no `cat` builtin - a heredoc stub
+  // silently printed nothing there and every bare case degraded for the wrong
+  // reason (caught 2026-08-15 by the reason-uniqueness assertion below).
+  const heredoc = (text) => `echo '${String(text).replace(/'/g, `'\\''`)}'`;
   const script = ['#!/bin/sh',
     '[ -n "$CAD_SPAWN_MARKER" ] && echo "' + name + '" >> "$CAD_SPAWN_MARKER"',
     '[ -n "$CAD_ARGV_LOG" ] && echo "' + name + ' $*" >> "$CAD_ARGV_LOG"',
@@ -75,25 +79,45 @@ function repo({ originUrl, commits = [], gitConfig = {} }) {
   return dir;
 }
 
-/** Run the seam. `stubs` are built into a fresh dir prepended to the child's
- *  PATH; `cwd` defaults to a directory that is NOT the repo, so nothing can
- *  pass by inferring the repository from the process cwd. */
-function seam(args, { stubs = {}, cwd = tmpdir(), marker = null, argvLog = null } = {}) {
+/** A directory holding ONLY a symlink to the real `git`. A case about an
+ *  ABSENT forge CLI cannot inherit the dev box's PATH - `gh` and `tea` are
+ *  installed at /usr/bin here - so `bare: true` builds the child's PATH out of
+ *  the stub dir plus this one, and nothing else resolves. */
+const GIT_ONLY = (() => {
+  const dir = mkdtempSync(join(tmpdir(), 'cad-ic-git-'));
+  for (const d of (process.env.PATH || '').split(':')) {
+    if (!d) continue;
+    try { statSync(join(d, 'git')); symlinkSync(join(d, 'git'), join(dir, 'git')); return dir; }
+    catch { /* next */ }
+  }
+  throw new Error('no git on PATH to link');
+})();
+
+/** Run the seam and keep the EXIT STATUS: the degradation matrix asserts
+ *  status 0 on every path, because a nonzero exit is a failed land rather than
+ *  a degraded report. `stubs` are built into a fresh dir prepended to the
+ *  child's PATH; `cwd` defaults to a directory that is NOT the repo, so nothing
+ *  can pass by inferring the repository from the process cwd. */
+function seamRun(args, { stubs = {}, cwd = tmpdir(), marker = null, argvLog = null, bare = false } = {}) {
   const stubDir = mkdtempSync(join(tmpdir(), 'cad-ic-bin-'));
   for (const [name, opts] of Object.entries(stubs)) stub(stubDir, name, opts);
   const env = {
     ...process.env,
     CADENCE_GLOBAL_CONFIG: NO_GLOBAL,
-    PATH: stubDir + ':' + process.env.PATH,
+    PATH: stubDir + ':' + (bare ? GIT_ONLY : process.env.PATH),
   };
   if (marker) env.CAD_SPAWN_MARKER = marker;
   if (argvLog) env.CAD_ARGV_LOG = argvLog;
+  // process.execPath, not 'node': under `bare` the child PATH has no node on it.
   try {
-    return JSON.parse(execFileSync('node', [SEAM, ...args], { encoding: 'utf8', env, cwd }));
+    return { status: 0, envelope: JSON.parse(execFileSync(process.execPath, [SEAM, ...args], { encoding: 'utf8', env, cwd })) };
   } catch (e) {
-    return JSON.parse(e.stdout);
+    return { status: e.status, envelope: JSON.parse(e.stdout) };
   }
 }
+
+/** seamRun's envelope alone, for the cases that do not assert the status. */
+function seam(args, opts) { return seamRun(args, opts).envelope; }
 
 const COMMITS = ['feat: first cut (#42)', 'fix: closes #47', 'docs: mention #42 again', 'chore: fixes #99'];
 
@@ -172,4 +196,120 @@ test('unknown subcommand: usage', () => {
   const r = seam(['frobnicate']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
+});
+
+// --- the degradation matrix -------------------------------------------------
+//
+// Every path the requirement names, fault-injected, each asserting what the
+// CALLER sees: exit status 0, ok:true, a reason unique across the matrix, and
+// NOTHING claimed about issues. The uniqueness is the point - cad-land prints
+// `reason` verbatim, so two paths sharing a line is a user who cannot tell a
+// missing login from a missing CLI.
+
+const ALL_STUBS = { gh: { body: GH_BODY }, glab: { body: GLAB_BODY }, tea: { body: TEA_BODY, login: TEA_LOGINS } };
+const GH_REPO = 'https://github.com/org/repo.git';
+const FORGE_REPO = 'https://forge.example.com/org/repo.git';
+/** 50 rows is exactly tea's page, so the response FILLS it (see the limits in
+ *  lib/issue-decision.mjs's header, measured against a live Gitea 2026-08-15). */
+const TEA_FULL_PAGE = JSON.stringify(
+  Array.from({ length: 50 }, (_, i) => ({ index: String(i + 1), state: 'open' })));
+
+const DEGRADATIONS = [
+  ['the key is off', /issue_check is off/, () => ({
+    args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS, gitConfig: { issue_check: false } }), '--base', 'main'],
+    opts: { stubs: ALL_STUBS },
+  })],
+  ['no origin remote', /no origin remote/, () => ({
+    args: ['check', '--dir', repo({ originUrl: null, commits: COMMITS }), '--base', 'main'],
+    opts: { stubs: ALL_STUBS },
+  })],
+  // Neither github nor gitlab, and no tea reading exists to recognize it.
+  ['unrecognized host', /neither github nor gitlab/, () => ({
+    args: ['check', '--dir', repo({ originUrl: FORGE_REPO, commits: COMMITS }), '--base', 'main'],
+    opts: { bare: true },
+  })],
+  // The SAME host, with tea present and answering - no login for it is its own
+  // reason, because the fix is a login rather than a different remote.
+  ['no tea login', /tea holds no login/, () => ({
+    args: ['check', '--dir', repo({ originUrl: FORGE_REPO, commits: COMMITS }), '--base', 'main'],
+    opts: { stubs: { tea: { body: TEA_BODY, login: '[]' } }, bare: true },
+  })],
+  ['the resolved binary is absent', /gh CLI is not on PATH/, () => ({
+    args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'main'],
+    opts: { bare: true },
+  })],
+  ['the CLI exits nonzero', /exited nonzero/, () => ({
+    args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'main'],
+    opts: { stubs: { gh: { code: 1, stderr: 'gh: could not authenticate' } } },
+  })],
+  // Exit ZERO, and a response that filled its page: a truncated read and an
+  // empty tracker carry the same records, so this may not reach the partition.
+  ['a response truncated at the page limit', /filled the 50-row page/, () => ({
+    args: ['check', '--dir', repo({ originUrl: FORGE_REPO, commits: COMMITS }), '--base', 'main'],
+    opts: { stubs: { tea: { body: TEA_FULL_PAGE, login: TEA_LOGINS } }, bare: true },
+  })],
+  ['a response with a renamed field', /no readable number\/state/, () => ({
+    args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'main'],
+    opts: { stubs: { gh: { body: '[{"id":42,"status":"OPEN"}]' } } },
+  })],
+  // The ref scan itself: a --base this repo does not have.
+  ['the ref scan fails', /could not be read/, () => ({
+    args: ['check', '--dir', repo({ originUrl: GH_REPO, commits: COMMITS }), '--base', 'no-such-ref'],
+    opts: { stubs: ALL_STUBS },
+  })],
+];
+
+const SEEN_REASONS = new Map();
+
+for (const [name, pattern, build] of DEGRADATIONS) {
+  test(`degrades in ONE line: ${name}`, () => {
+    const { args, opts } = build();
+    const { status, envelope } = seamRun(args, opts);
+    assert.equal(status, 0, `${name} must not fail the land`);
+    assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+    assert.match(envelope.reason, pattern, envelope.reason);
+    assert.ok(!envelope.reason.includes('\n'), `one line, not several: ${envelope.reason}`);
+    // A seam never returns an affirmative answer about input it could not read
+    // (GAT-01, decideGateHalt's JSDoc).
+    assert.deepEqual(envelope.referenced, [], name);
+    assert.deepEqual(envelope.open, [], name);
+    assert.ok(!SEEN_REASONS.has(envelope.reason),
+      `${name} reuses the line ${SEEN_REASONS.get(envelope.reason)} prints`);
+    SEEN_REASONS.set(envelope.reason, name);
+  });
+}
+
+test('the key-off arm spawns NO forge CLI at all, not merely an empty report', () => {
+  // A test reading only the reason and the empty list also passes an
+  // implementation that probed `tea login list` before consulting the key. So
+  // every stub on PATH appends its name to a marker file, and the assertion is
+  // that the file was never created.
+  const dir = repo({ originUrl: FORGE_REPO, commits: COMMITS, gitConfig: { issue_check: false } });
+  const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], { stubs: ALL_STUBS, marker });
+  assert.equal(r.action, 'skip');
+  assert.equal(existsSync(marker), false,
+    `no forge CLI may run under issue_check:false, but one wrote: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
+
+  // The control: the same repo with the key ON does reach a stub, so the
+  // assertion above is about the key and not about a marker that never works.
+  const on = repo({ originUrl: FORGE_REPO, commits: COMMITS });
+  const marker2 = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+  seam(['check', '--dir', on, '--base', 'main'], { stubs: ALL_STUBS, marker: marker2 });
+  assert.equal(existsSync(marker2), true);
+  assert.match(readFileSync(marker2, 'utf8'), /tea/);
+});
+
+test('a CLI error carrying a credentialed remote URL reaches detail REDACTED', () => {
+  // EXP-01: the fifth site that could put a caught error into an envelope goes
+  // through lib/redact-url.mjs, never a new regex.
+  const dir = repo({ originUrl: GH_REPO, commits: COMMITS });
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { gh: { code: 1, stderr: 'fatal: https://x-access-token:ghs_notarealtoken@github.com/org/repo.git rejected' } },
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'skip');
+  assert.ok(r.detail.includes('<redacted>'), r.detail);
+  assert.ok(!r.detail.includes('ghs_notarealtoken'), r.detail);
 });
