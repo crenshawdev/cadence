@@ -2,26 +2,26 @@
 
 ## Overview
 
-**`v3.4.1 - what the config says is what routing does`, opened 2026-08-15.**
-Scoped off the Forgejo milestone, which holds three issues: #129, #134 and
-#135. No phases yet - `/cad-phase add` opens the first.
+**`v3.5.0 - the check that proves it ran`, opened 2026-08-15.** Scoped off the
+Forgejo milestone, which holds one issue: #130.
 
-**The theme is one sentence: three surfaces describe the review gates and no
-check makes them agree.** `config.mjs get` answers a gate from the schema
-default when no layer set one, `config.schema.json`'s prose names a level's
-gate, and `route-table.json` is what actually fires. `phase_diff` is the case
-already on the floor: the schema calls it `advisory` at `shipped`, the route
-table says `off`. The last cycle worked around the same defect rather than
-fixing it, and `workflows/execute.md` still carries the paragraph explaining
-why it must not pre-fetch a gate through `config.mjs get`.
+**The theme is one sentence: the only gate live on a default install fires on a
+model reading a prose list, and leaves no record either way.** `risk_surface` is
+`blocking` at every stakes level, and at the shipped default it is the only
+trigger that fires at all. Its firing condition is `workflows/execute.md`
+instructing the orchestrator to check a diff against the eight categories in
+`references/review-triggers.md`. A fire writes a lifecycle event; a non-match
+writes nothing. The run record therefore cannot tell "the detection step was
+skipped" from "it ran and matched nothing".
 
-`self-verify.mjs` is where it closes. It fails in both directions on rung files
-and routing cells, and it has never compared a trigger's schema default or its
-prose to `route-table.json`, so the drift was invisible to the one check whose
-job is catching exactly this.
+`lib/surface-scan.mjs` is not the missing piece - it is explicitly a scoping
+aid, returns every category unconditionally, and never inspects source text. No
+risk-check seam exists under `cadence-core/bin/` at all.
 
-This cycle adds no key, no flag and no command. All three requirements are
-corrections to surfaces that already ship.
+RSK-01 is the seam that always records `{checked, categories, matches,
+inconclusive}` for a diff range; RSK-02 is what makes plan and task completion
+require it. Semantic detection stays heuristic on purpose - what changes is that
+"did not run" stops masquerading as "ran clean".
 
 ## Phases
 

@@ -716,7 +716,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-04 | cadence-core/workflows/execute.md | 10-12 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate | 2 |
 | EXECUTE-05 | cadence-core/workflows/execute.md | 17-18 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate | 2 |
 | EXECUTE-06 | cadence-core/workflows/execute.md | 27-33 | The nine config keys in the single `config.mjs get` all exist (`workflow.test_command` left the batch in v2.6.2 and is read at its only consumer, `execute_parallel` step 5). | accurate | accurate | 1 |
-| EXECUTE-07 | cadence-core/workflows/execute.md | 35-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | accurate | accurate | 2 |
+| EXECUTE-07 | cadence-core/workflows/execute.md | 35-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | stale | corrected - v3.4.1 phase 1 | 2 |
 | EXECUTE-08 | cadence-core/workflows/execute.md | 70 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
 | EXECUTE-09 | cadence-core/workflows/execute.md | 59-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate | 2 |
 | EXECUTE-10 | cadence-core/bin/planning.mjs | 1990-1996 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
@@ -803,7 +803,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-06 | cadence-core/workflows/plan.md | 28-29 | `--gaps` loads `cadence-core/workflows/plan-gaps.md`. | accurate | accurate | 2 |
 | PLAN-07 | cadence-core/workflows/plan.md | 34-38 | The eight-key `config.mjs get` batch is valid. | accurate | accurate | 2 |
 | PLAN-08 | cadence-core/workflows/plan.md | 58-59 | `fire(trigger)` takes gates from the routing bundle (`route.mjs resolve`). | accurate | accurate | 2 |
-| PLAN-09 | cadence-core/workflows/plan.md | 60-62 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | accurate | accurate | 2 |
+| PLAN-09 | cadence-core/workflows/plan.md | 60-62 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | stale | corrected - v3.4.1 phase 1 | 2 |
 | PLAN-10 | cadence-core/workflows/plan.md | 64-66, 107-108, 180-185 | `memory.backend` gates recall in spawn_planner and inline_plan. | accurate | accurate | 2 |
 | PLAN-11 | cadence-core/workflows/plan.md | 88-89 | `workflow.inline_plan_threshold` is the inline routing threshold. | accurate | accurate | 1 |
 | PLAN-12 | cadence-core/workflows/plan.md | 86 | `trace append --phase --family lifecycle --event dispatch --plan --role --read` is a valid call. | stale | divergence - run 2 half B: `4110fde` left plan.md with no `trace append` call; line left at run-1 provenance | 1 |
@@ -1340,7 +1340,7 @@ mistake.
 | CONFIG-CATALOG-05 | cadence-core/references/config-catalog.md | 46 | `git.auto_close` carries no `[src]` marker | accurate | accurate | 2 |
 | CONFIG-CATALOG-06 | cadence-core/references/config-catalog.md | 46 | `git.auto_close` halts on a surviving blocker/high `risk_surface` finding | accurate | accurate | 2 |
 | CONFIG-CATALOG-07 | cadence-core/references/config-catalog.md | 51 | A `**Risk**` knob category exists | stale | corrected - fdb2d69 - the empty `**Risk**` category header deleted, no surviving row moved | 2 |
-| CONFIG-CATALOG-08 | cadence-core/references/config-catalog.md | 61 | `review.triggers.<t>.gate` defaults: `adjudicated` for plan, `advisory` for diff/phase_diff, `blocking` for risk_surface | accurate | accurate | 2 |
+| CONFIG-CATALOG-08 | cadence-core/references/config-catalog.md | 61 | `review.triggers.<t>.gate` defaults: `adjudicated` for plan, `advisory` for diff/phase_diff, `blocking` for risk_surface | stale | corrected - v3.4.1 phase 1 | 2 |
 | CONFIG-CATALOG-09 | cadence-core/references/config-catalog.md | 62 | `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | accurate | accurate | 2 |
 | CONFIG-CATALOG-10 | cadence-core/references/config-catalog.md | 63 | `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | accurate | accurate | 2 |
 | CONFIG-CATALOG-11 | cadence-core/references/config-catalog.md | 64 | `review.triggers.risk_surface.surfaces` list(enum) over the eight surfaces, unset means all eight and the first fire asks once | accurate | accurate | 2 |

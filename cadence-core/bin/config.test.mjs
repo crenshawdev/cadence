@@ -1068,3 +1068,84 @@ test('get: an unrelated repo key still merges - the strip is exactly three keys'
     'workflow.max_plan_tasks');
   assert.equal(r.values['workflow.max_plan_tasks'], 4);
 });
+
+// --- get: an unset gate reads as unset, not as a gate (GAT-02) ---------------
+// The defect: `config.mjs get` answered a `review.triggers.<t>.gate` out of the
+// schema default when no layer had set one, so a reader was told a gate routing
+// fires at no level, and `workflows/execute.md` had to carry a paragraph
+// telling callers not to pre-fetch a gate through this seam. The schema's
+// sentinel does the VALUE half (`null` for every unset gate); these arms pin
+// the REPORTING half - which of the two states the seam says it is in.
+
+/** The four gate keys, walked rather than spelled per test. */
+const GATE_KEYS = ['plan', 'diff', 'risk_surface', 'phase_diff']
+  .map((t) => `review.triggers.${t}.gate`);
+
+/** Gate-unset warnings in an envelope, by the seam they must point a reader at. */
+const gateWarnings = (r) => (r.warnings || []).filter((w) => /route\.mjs resolve/.test(w));
+
+test('get: every unset gate answers null plus exactly one warning naming route.mjs resolve', () => {
+  const gpath = join(dir, 'gates-no-global.json');
+  const repo = join(dir, 'gates-absent.json');
+  for (const key of GATE_KEYS) {
+    const r = run(['get', '--file', repo, key], gpath);
+    assert.equal(r.ok, true);
+    assert.equal(r.values[key], null, key);
+    const named = gateWarnings(r);
+    assert.equal(named.length, 1, `${key}: ${JSON.stringify(r.warnings)}`);
+    assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
+    // D-07: the seam does not know the stakes level, so it must not answer for
+    // one. A warning naming a gate would be the same defect pointed the other way.
+    assert.ok(!/\b(off|advisory|blocking|adjudicated)\b/.test(named[0]), named[0]);
+  }
+});
+
+test('get: a gate a layer PINNED reads back byte-identical, with no unset warning', () => {
+  const gpath = join(dir, 'gates-pinned-global.json');
+  const repo = join(dir, 'gates-pinned-repo.json');
+  const pinned = { plan: 'off', diff: 'blocking', risk_surface: 'adjudicated', phase_diff: 'advisory' };
+  writeFileSync(repo, JSON.stringify({ review: { triggers: Object.fromEntries(
+    Object.entries(pinned).map(([t, gate]) => [t, { gate }])) } }));
+  for (const [t, gate] of Object.entries(pinned)) {
+    const key = `review.triggers.${t}.gate`;
+    const r = run(['get', '--file', repo, key], gpath);
+    assert.equal(r.values[key], gate, key);
+    assert.deepEqual(gateWarnings(r), [], key);
+  }
+});
+
+test('get: the round trip through `set` - blocking answers blocking, unwarned', () => {
+  // AC3 in its literal shape: the write face, then the read face.
+  const gpath = join(dir, 'gates-set-global.json');
+  const repo = join(dir, 'gates-set-repo.json');
+  writeFileSync(repo, '{}\n');
+  const before = run(['get', '--file', repo, 'review.triggers.diff.gate'], gpath);
+  assert.equal(before.values['review.triggers.diff.gate'], null);
+  assert.equal(gateWarnings(before).length, 1);
+  assert.equal(run(['set', '--file', repo, 'review.triggers.diff.gate=blocking'], gpath).ok, true);
+  const after = run(['get', '--file', repo, 'review.triggers.diff.gate'], gpath);
+  assert.equal(after.values['review.triggers.diff.gate'], 'blocking');
+  assert.deepEqual(gateWarnings(after), []);
+});
+
+test('get: the KEYLESS full read carries no gate warning at all', () => {
+  // D-02. A full read walks every schema key, so warning there would append one
+  // line per gate to prose workflows/milestone.md and verify.md relay to the
+  // user - for a caller that asked about no gate in particular.
+  const r = run(['get', '--file', join(dir, 'gates-absent.json')],
+    join(dir, 'gates-no-global.json'));
+  assert.equal(r.ok, true);
+  for (const key of GATE_KEYS) assert.equal(r.values[key], null, key);
+  assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
+});
+
+test('check: null is still refused at the write face - the sentinel is not a value', () => {
+  // D-05: the `values` arrays stay four-membered, so `set` and `check` behave
+  // byte-identically to before the default moved. `null` is the schema's way of
+  // saying "nobody set one", never something a user writes.
+  const r = run(['check', 'review.triggers.diff.gate=null']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'invalid');
+  assert.equal(r.detail[0].key, 'review.triggers.diff.gate');
+  assert.match(r.detail[0].error, /must be one of: off, advisory, blocking, adjudicated/);
+});

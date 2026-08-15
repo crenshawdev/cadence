@@ -2,7 +2,7 @@
   "git": {
     "auto_branch": "auto",
     "base_branch": "main",
-    "create_tag": false
+    "create_tag": true
   },
   "review": {
     "request_timeout_ms": 600000,

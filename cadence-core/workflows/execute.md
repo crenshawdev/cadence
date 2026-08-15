@@ -35,8 +35,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
 The `diff` and `phase_diff` gates are NOT read here: fire(trigger) takes every
 gate from the routing bundle (`route.mjs resolve`), which is what makes the
 stakes level reach a fire site rather than only the seam. A `config.mjs get` of
-a gate returns the SCHEMA DEFAULT when no layer set it, so pre-fetching one
-would fire at the default while the seam reported the level's.
+a gate is not a source for one either way: unset, it answers `null` and names
+`route.mjs resolve` as where the level's gate is resolved.
 </step>
 
 <step name="git_guard">

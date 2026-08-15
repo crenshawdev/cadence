@@ -1,19 +1,29 @@
-# Requirements: Cadence (v3.4.1 open)
+# Requirements: Cadence (v3.5.0 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.4.1 - what the config says is what routing does`, opened 2026-08-15. Scoped
-from the Forgejo milestone rather than from a scan or the capture queue:
-milestone `v3.4.1` holds three issues, #129, #134 and #135, and the three ids
-below are their requirements. The four deferred ids - `PRS-01`, `EVD-01`,
-`RCL-06`, `CTX-02` - keep their deferral reasons and none is promoted.
+`v3.5.0 - the check that proves it ran`, opened 2026-08-15. Scoped from the
+Forgejo milestone rather than from a scan or the capture queue: milestone
+`v3.5.0` holds one issue, #130, and the two ids below split its stated fix
+shape into the seam and the enforcement that makes the seam load-bearing. The
+four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted.
 
-- **GAT-02**: `config.mjs get` stops reporting a review gate that routing does not execute. A gate no layer set is answered from the schema default while `route.mjs resolve` answers the level's, so inspection and enforcement disagree wherever a project has not written the key - the disagreement `workflows/execute.md` already carries a paragraph to work around. Reported so a reader can tell a level's gate from a layer's, without pretending the seam knows something it does not (#129)
-- **GAT-03**: `config.schema.json`'s prose and `route-table.json` agree on every trigger's gate per level. The schema says `phase_diff` is `advisory` at `shipped`; the route table says `off`, and the route table is what fires (#134)
-- **ENF-02**: `self-verify.mjs` fails when a trigger's schema default or its prose disagrees with `route-table.json`. It already fails in both directions on rung files and routing cells and has never compared these at all, so the drift above was invisible to the one check whose job is catching it (#135)
+- **RSK-01**: An executable risk-check seam under `cadence-core/bin/` answers a
+  diff range with `{checked, categories, matches, inconclusive}` and ALWAYS
+  writes that record, match or no match. Today `risk_surface` detection is
+  `workflows/execute.md` telling the orchestrator to read a diff against eight
+  prose categories, and `lib/surface-scan.mjs` is a scoping aid that never
+  inspects source text, so no seam exists to answer this at all (#130).
+- **RSK-02**: A plan or task cannot complete without that record, so the run
+  record distinguishes "the detection step was skipped" from "it ran and matched
+  nothing". `risk_surface` is `blocking` at every level and is the only live gate
+  on a default install, and today a fire writes a lifecycle event while a
+  non-match writes nothing - an omitted check and a clean one are the same bytes
+  (#130).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -158,6 +168,9 @@ parses only the Traceability table).
 | ENF-01 (the scan's enforcement and round-trip findings become seams: criteria ceilings counted, one `trace close`, `trace render` bounded, the round-trips batched) | 4 | Complete | v3.3.0 |
 | DOC-02 (what Cadence claims about itself is verified this cycle or corrected: one docs-verify sweep, 933 dated ledger rows, fourteen stale claims fixed at source) | 5 | Complete | v3.3.0 |
 | LND-01 (`/cad-land` surfaces the tracker before work lands. Nothing in the spine ever looks at issues, and landing work without checking whether it addressed one is the most frequent process miss in real use. It belongs in step 1, which ALREADY detects the remote host from the origin URL and resolves a `tea` login to pick the PR mechanism (`skills/cad-land/SKILL.md:31-38`), so the host and CLI are already in hand and `gh`/`glab`/`tea` are already first-class here. Two facts: open issues on the detected host, and any issue number a commit on this branch references (`git log <base>..HEAD` for `#N`, `closes #N`, `fixes #N`). The second earns its place - "your branch references #42 and #47; #42 is still open" is a specific discrepancy, where a bare list is easy to skim past. Read-only and default on, so it does not violate the skill's "never decides how you publish" objective; closing an issue stays an explicit ask and is never implied by landing. Degrades in ONE line on no remote, unrecognized host, missing CLI, no login or a nonzero exit, never blocking the land and never fabricating a list, and bounded so a hanging forge CLI cannot stall a land. NAMING TRAP: `git.auto_close` already means "merge the integration branch unattended" across `cad-land` step 4b, `land-cleanup.mjs` and `close-decision.mjs`, so the new key must not share that vocabulary - `git.issue_check` is the suggestion. Registration in `skills/cad-help`, `README.md`, `.planning/DOCS-CLAIMS.md` and the config catalog is part of the requirement. Tracked as #121 DEFERRED 2026-08-14: cut from phase 4 before execution - the one remaining item in the v3.2.0 cycle that ADDED a mechanism, and its GitLab arm is untestable here (`glab` absent). Issue #121 stays open. PROMOTED 2026-08-15 into `v3.4.0` as its sole requirement, from Forgejo milestone `v3.4.0` (issue #121). The deferral reason is still live and is a planning constraint, not a blocker: `glab` is absent on this machine (`gh` and `tea` are present), so the GitLab arm ships behind the same resolved-CLI seam as the others and is proven by a stubbed CLI path rather than a live `glab` call.) | 1 | Complete | v3.4.0 |
+| GAT-02 (`config.mjs get` stops reporting a review gate that routing does not execute. A gate no layer set is answered from the schema default while `route.mjs resolve` answers the level's, so inspection and enforcement disagree wherever a project has not written the key - the disagreement `workflows/execute.md` already carries a paragraph to work around. Reported so a reader can tell a level's gate from a layer's, without pretending the seam knows something it does not (#129)) | 1 | Complete | v3.4.1 |
+| GAT-03 (`config.schema.json`'s prose and `route-table.json` agree on every trigger's gate per level. The schema says `phase_diff` is `advisory` at `shipped`; the route table says `off`, and the route table is what fires (#134)) | 1 | Complete | v3.4.1 |
+| ENF-02 (`self-verify.mjs` fails when a trigger's schema default or its prose disagrees with `route-table.json`. It already fails in both directions on rung files and routing cells and has never compared these at all, so the drift above was invisible to the one check whose job is catching it (#135)) | 1 | Complete | v3.4.1 |
 
 ## Deferred
 

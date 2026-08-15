@@ -6,6 +6,73 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-08-15
+
+### Fixed
+
+- **The schema said one gate, the route table fired another.** Three surfaces
+  described the review gates and nothing had ever compared them.
+  `config.schema.json:81` gave `review.triggers.phase_diff.gate` a default of
+  `advisory` and its purpose string said "advisory at shipped", while
+  `route-table.json`'s `review.shipped.phase_diff` fired `off`. That one cell
+  was the visible half. The invisible half is that a `config.mjs get` of any
+  gate no layer had set answered with the SCHEMA DEFAULT rather than with what
+  the stakes level actually fires, so all four triggers could disagree and
+  nothing said so.
+
+  All four `review.triggers.*.gate` defaults are now the `null` sentinel, and
+  each purpose string names the gate for `solo`, `shipped` and `critical` read
+  straight off `route-table.json`. `risk_surface` moved with them even though
+  its three cells agree today: a scalar default that is legal only while every
+  level's cell equals it passes quietly right up to the first cell that moves.
+  The `review` grid did not move at all - it is the authority, and this release
+  is the other two surfaces catching up to it.
+
+  The workaround came out with the defect. `workflows/execute.md` carried a
+  paragraph telling a caller not to pre-fetch a gate through `config.mjs get`
+  because the answer would be the schema default rather than the level's;
+  `workflows/plan.md` carried the same one. Both now state the shipped
+  behaviour, and `references/config-catalog.md`'s gate row stops publishing a
+  per-key scalar default that routing never fires.
+
+### Added
+
+- **`self-verify.mjs` check 18, `gate-agreement`.** The check that makes the
+  fix above stay fixed, and the reason one visible cell was worth a release.
+  `self-verify.mjs` already failed in both directions on rung files and on the
+  three routing grids, and it already read `config.schema.json` for the gate and
+  stakes vocabularies - it had both files open and had never compared a trigger's
+  gate across them, so the drift was invisible to the one check whose job is
+  catching exactly this.
+
+  It compares every `review.triggers.<t>.gate` schema default AND its `purpose`
+  prose against `route-table.json`'s `review[level][trigger]`, over six codes
+  (`gate-default-drift`, `gate-default-invalid`, `gate-prose-missing`,
+  `gate-prose-drift`, `gate-grid-missing`, `gate-row-malformed`). The rule is a
+  pure lib at `cadence-core/bin/lib/gate-agreement.mjs`, unit-tested from frozen
+  fixtures rather than from the live files, so the tests do not move when the
+  grid does.
+
+  It was watched to FAIL before the fix landed, not inspected: run against the
+  unpatched tree it reported `plan`, `diff` and `phase_diff`, naming
+  `phase_diff` together with `shipped` by name.
+
+### Changed
+
+- **`config.mjs get` reports an unset gate as unset.** A gate no layer pinned
+  now answers `null` with one `warnings[]` entry naming `route.mjs resolve` as
+  what decides it for a level, so a reader can tell "no layer set this, the
+  stakes level decides" from "this project pinned it". A pinned gate still reads
+  back byte-identical with no warning, a keyless `get` carries no gate warning at
+  all, and `config.mjs check review.triggers.diff.gate=null` still refuses with
+  `must be one of: off, advisory, blocking, adjudicated` - the `values` arrays
+  stayed four-membered, so `set` and `check` behave exactly as before.
+
+  Known gap, filed rather than papered over: `gate-agreement` compares the
+  default against the cells, not against the `null` sentinel, so a gate whose
+  three cells happen to be identical could regress its default and stay green.
+  `risk_surface` is that case today.
+
 ## [3.4.0] - 2026-08-15
 
 ### Added
@@ -2585,6 +2652,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.4.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.1
 [3.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.0
 [3.3.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.1
 [3.3.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.0

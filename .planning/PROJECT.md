@@ -105,27 +105,41 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-`v3.4.1 - what the config says is what routing does`, opened 2026-08-15. Three
-requirements scoped straight off the Forgejo milestone, which holds three
-issues: #129, #134 and #135.
+`v3.5.0 - the check that proves it ran`, opened 2026-08-15. Scoped off the
+Forgejo milestone, which holds one issue: #130.
 
-**The theme is one sentence: three surfaces describe the review gates and no
-check makes them agree.** `config.mjs get` answers a gate out of the schema
-default when no layer set one, `config.schema.json`'s prose names a level's
-gate, and `route-table.json` is what actually fires. A user reading the first
-two learns what the third does not do: `config.mjs get` reports a gate routing
-never executes (#129), and the schema says `phase_diff` is `advisory` at
-`shipped` where the route table says `off` (#134). Both are the same defect
-seen from two ends, and it is the defect the last cycle already had to work
-around - `workflows/execute.md` carries a paragraph explaining why it must not
-pre-fetch a gate through `config.mjs get`, because the seam would answer the
-schema default while the fire site used the level's.
+**The theme is one sentence: the only gate live on a default install fires on a
+model reading a prose list, and leaves no record either way.** `risk_surface` is
+`blocking` at every stakes level and is the sole live gate at the shipped
+default, but its firing condition is `workflows/execute.md` instructing the
+orchestrator to check a diff against the eight categories in
+`references/review-triggers.md`. A fire writes a lifecycle event; a non-match
+writes nothing. So the run record cannot tell "the detection step was skipped"
+from "it ran and matched nothing", and an omitted check is indistinguishable
+from a clean one.
 
-`self-verify.mjs` is where this closes (#135). It already fails in both
-directions on rung files and routing cells, and it never compares a trigger's
-schema default or its prose to `route-table.json` at all, so the drift is
-invisible to the one check whose job is catching exactly this. The fix is a
-comparison, not a new surface: nothing here adds a key, a flag or a command.
+`cadence-core/bin/lib/surface-scan.mjs` is not the missing piece - it is
+explicitly a scoping aid, returns every category unconditionally, and never
+inspects source text. No risk-check seam exists under `cadence-core/bin/` at
+all. The fix shape is an executable seam that ALWAYS records
+`{checked, categories, matches, inconclusive}` for a diff range, required before
+plan completion. Semantic detection stays heuristic on purpose; what changes is
+that "did not run" stops masquerading as "ran clean".
+
+`v3.4.1 - what the config says is what routing does` closed on 2026-08-15:
+three requirements (`GAT-02`, `GAT-03`, `ENF-02`), one phase, 6 commits, the
+manifest at `3.4.1`. Three surfaces described the review gates and nothing had
+ever compared them - `config.mjs get` answered a gate from the schema default
+when no layer set one, and the schema called `phase_diff` `advisory` at
+`shipped` where the route table fires `off`. All four gate defaults are now the
+`null` sentinel with per-level prose read off the grid, an unset gate reads back
+`null` plus a warning naming `route.mjs resolve`, and `self-verify.mjs` check 18
+(`gate-agreement`) compares all three surfaces and was watched to FAIL against
+the unpatched tree before the fix landed. The workaround paragraph came out of
+`workflows/execute.md` and `workflows/plan.md` with the defect. One gap filed
+rather than papered over: the check compares the default against the cells, not
+against the `null` sentinel, so a trigger whose three cells agree could regress
+its default and stay green.
 
 `v3.4.0 - the tracker enters the spine` closed on 2026-08-15: one requirement
 (`LND-01`), one phase, 18 commits on the cycle branch, the manifest at
