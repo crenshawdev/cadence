@@ -4722,9 +4722,16 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // credential. planning.mjs carries FIVE other caught-error details this
   // requirement does not cover - partial-apply, write-failed, the
   // dispatch-level internal catch, `capture --text-file`'s read failure and
-  // `capture-sections`' unreadable-capture - so the pin is by COUNT: six uses
-  // of the idiom, exactly one of them (this one) wrapped. Adding a site moves
-  // the first number whether or not the author remembered the helper.
+  // `capture-sections`' unreadable-capture - so the pin is by COUNT: seven uses
+  // of the idiom, exactly two of them wrapped. Adding a site moves the first
+  // number whether or not the author remembered the helper.
+  //
+  // The two wrapped sites, both git failures on the same EXP-01 rail:
+  // `cmdLeaseCheck`'s `no-staged-set` detail, and `risk-check run`'s
+  // `diffError` at planning.mjs:3108, where a failing `git rev-parse` /
+  // `git diff` quotes back a remote URL that can carry credentials in its
+  // userinfo. A git failure detail is exactly the string EXP-01 covers, so a
+  // git call added to this file arrives wrapped or this row goes red.
   //
   // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
   // detail is an `fs` error over a path the CALLER just named, so the only
@@ -4734,8 +4741,9 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 6, 'planning.mjs gained or lost a detail site');
-  assert.equal((src.match(WRAPPED) || []).length, 1, 'the no-staged-set detail is unredacted');
+  assert.equal((src.match(IDIOM) || []).length, 7, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(WRAPPED) || []).length, 2,
+    'a git-failure detail (no-staged-set, or risk-check run\'s diffError) is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
 
