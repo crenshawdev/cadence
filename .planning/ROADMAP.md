@@ -52,6 +52,9 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 ## Phase Details
 
 ### Phase 1: The tracker enters the spine
+**Goal:** `/cad-land` step 1 names the issues this branch's commits reference and the ones still open on the detected host, or says in one line why it could not.
+**Depends on:** Nothing (first phase)
+**Requirements:** LND-01
 
 `LND-01`, the milestone's only requirement, tracked as #121. Nothing in the
 spine has ever read the issue tracker: Cadence audits its requirements, its
