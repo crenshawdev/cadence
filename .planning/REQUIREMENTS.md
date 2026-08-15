@@ -54,13 +54,14 @@ still hold their deferral reasons and none is promoted this cycle.
 - **DOC-02**: What Cadence claims about itself is verified this cycle or
   corrected. Fourteen queue items are stale prose left behind by v3.0 through
   v3.2: three surfaces still state the `REQ_ID_EXACT` head-anchored limit
-  `PRS-02` removed, `/cad-capture --cadence` ships registered nowhere, the
-  `README.md` skill count has been stale twice, `references/acceptance-criteria.md`
-  documents an env override without the sentinel now required beside it, and
-  `PROJECT.md`'s `### Active` still reports the v3.2.0 merge and tag as
-  outstanding when both landed on 2026-08-14. One `/cad-docs-verify` sweep plus
-  the edits it names, run last so it also reconciles the prose the two phases
-  ahead of it move.
+  `PRS-02` removed, `/cad-capture --cadence` is registered in both user-facing
+  surfaces but covered by no `DOCS-CLAIMS.md` row, the `README.md` skill count
+  has been stale twice and nothing re-measures it,
+  `references/acceptance-criteria.md` documents an env override without the
+  sentinel now required beside it, and `PROJECT.md`'s `### Active` is trusted
+  rather than asserted to name the open cycle's version first. One
+  `/cad-docs-verify` sweep plus the edits it names, run last so it also
+  reconciles the prose the four phases ahead of it move.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
