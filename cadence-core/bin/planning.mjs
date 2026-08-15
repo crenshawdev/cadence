@@ -55,6 +55,17 @@
 //                                   integer, --read is ONE comma-separated
 //                                   read-set stored verbatim, --step is the
 //                                   workflow step a coordinator marker names
+//   trace close --phase N [--plan k] [--role <name>] [--tokens <n>]
+//               [--detail "<text>"] [--reviewer <name>]
+//                                   the CLOSE half of a worker bracket, in one
+//                                   subcommand rather than two restated
+//                                   `trace append` spellings per dispatch site.
+//                                   --family is fixed to lifecycle and the arm
+//                                   is inferred from --detail: present means
+//                                   `checkpoint` (the worker came back empty,
+//                                   unmarked or unusable), absent means
+//                                   `return`. `escalation` is NOT inferred and
+//                                   stays reachable through `trace append`
 //   trace render [--phase N]        the four families, the derived id, every
 //                                   worker dispatch paired to its
 //                                   return/checkpoint/escalation, the per-role
@@ -2572,15 +2583,41 @@ function cmdTrace(dir, sub, opts) {
     }
     return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
   }
-  if (sub === 'append') {
+  // `close` is `append` with the two fields a dispatch site used to restate
+  // taken off its hands, so every flag below is validated by ONE body: a second
+  // copy of the `--tokens` grammar is a second place for it to drift, and the
+  // close half is exactly where the token figure lands.
+  if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
-    if (!parsedPhase.ok) return fail('bad-args', 'trace append needs --phase <N>');
-    const family = typeof opts.family === 'string' ? opts.family : '';
-    if (!FAMILIES.includes(family)) {
-      return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+    if (!parsedPhase.ok) return fail('bad-args', `trace ${sub} needs --phase <N>`);
+    let family;
+    let event;
+    if (sub === 'close') {
+      // Fixed, never read off the caller: the whole point of the subcommand is
+      // that a close site states WHAT it is closing and nothing about how the
+      // record spells it.
+      family = 'lifecycle';
+      // The arm is inferred from `--detail` and NEVER from `--tokens` (D-06).
+      // Measured across all twenty shipped close lines: 6 of the 10 checkpoint
+      // sites carry `--tokens` and 4 do not, while every checkpoint carries
+      // `--detail` and no return does. A token-presence classifier would
+      // therefore write `return` for four shipped checkpoint sites - billing a
+      // worker that came back unusable as a clean close, which is the one arm
+      // the record exists to keep separate.
+      //
+      // `escalation` stays OUTSIDE this inference (D-13): it is a TERMINAL
+      // member with zero prose producers, so a three-way inference would be
+      // flexibility nothing exercises. It stays reachable through
+      // `trace append --event escalation`.
+      event = typeof opts.detail === 'string' && opts.detail.trim() ? 'checkpoint' : 'return';
+    } else {
+      family = typeof opts.family === 'string' ? opts.family : '';
+      if (!FAMILIES.includes(family)) {
+        return fail('bad-args', `trace append --family must be one of ${FAMILIES.join(' | ')}`);
+      }
+      event = typeof opts.event === 'string' && opts.event ? opts.event : '';
+      if (!event) return fail('bad-args', 'trace append needs --event <name>');
     }
-    const event = typeof opts.event === 'string' && opts.event ? opts.event : '';
-    if (!event) return fail('bad-args', 'trace append needs --event <name>');
 
     // --tokens: what the dispatch COST, read by the orchestrator off the
     // worker's return metadata. A malformed value is a malformed CALL, not a
@@ -2604,7 +2641,7 @@ function cmdTrace(dir, sub, opts) {
         : opts.tokens;
       const parsed = requireInt(raw);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', 'trace append --tokens needs a non-negative integer');
+        return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`);
       }
       tokens = parsed.value;
     }
@@ -2626,7 +2663,7 @@ function cmdTrace(dir, sub, opts) {
     if ('raised' in opts) {
       const parsed = requireInt(opts.raised);
       if (!parsed.ok || parsed.value < 0) {
-        return fail('bad-args', 'trace append --raised needs a non-negative integer');
+        return fail('bad-args', `trace ${sub} --raised needs a non-negative integer`);
       }
       raised = parsed.value;
     }
@@ -2653,7 +2690,7 @@ function cmdTrace(dir, sub, opts) {
       // always an unset `"$PATHS"`, and a complete-looking dispatch with no
       // read-set is the failure this refusal exists against.
       if (!list.length) {
-        return fail('bad-args', 'trace append --read needs a comma-separated path list');
+        return fail('bad-args', `trace ${sub} --read needs a comma-separated path list`);
       }
       read = list;
     }
@@ -2667,7 +2704,7 @@ function cmdTrace(dir, sub, opts) {
     let step;
     if ('step' in opts) {
       const raw = typeof opts.step === 'string' ? opts.step.trim() : '';
-      if (!raw) return fail('bad-args', 'trace append --step needs a step name after it: --step <name>');
+      if (!raw) return fail('bad-args', `trace ${sub} --step needs a step name after it: --step <name>`);
       step = raw;
     }
 
@@ -2684,7 +2721,7 @@ function cmdTrace(dir, sub, opts) {
     let reviewer;
     if ('reviewer' in opts) {
       const raw = typeof opts.reviewer === 'string' ? opts.reviewer.trim() : '';
-      if (!raw) return fail('bad-args', 'trace append --reviewer needs a reviewer name after it: --reviewer <name>');
+      if (!raw) return fail('bad-args', `trace ${sub} --reviewer needs a reviewer name after it: --reviewer <name>`);
       reviewer = raw;
     }
 
@@ -2773,7 +2810,7 @@ function cmdTrace(dir, sub, opts) {
       ...(r.mismatched.length ? { mismatched: r.mismatched } : {}),
     });
   }
-  return fail('usage', 'trace <append|render|suggest|ignore>');
+  return fail('usage', 'trace <append|close|render|suggest|ignore>');
 }
 
 // ---------------------------------------------------------------------------

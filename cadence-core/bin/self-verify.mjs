@@ -250,6 +250,12 @@ const CONTRACTS = {
     // resolved set, so this mark is the whole enforcement.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
       '--role', '--tokens', '--raised', '--read', '--step', '--reviewer'],
+    // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
+    // family is fixed to `lifecycle` in the seam and the arm is inferred from
+    // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
+    // states what it closes and nothing about how the record spells it. A row
+    // that listed them would let the restated spelling back in through the lint.
+    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail', '--reviewer'],
     'trace render': ['--phase'],
     'trace suggest': ['--phase'],
     'trace ignore': ['--root', '--check'],

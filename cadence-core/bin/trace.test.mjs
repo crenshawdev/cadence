@@ -623,6 +623,89 @@ test('seam: --read stores what it was handed, existence unchecked', () => {
   assert.deepEqual(lines(dir)[0].read, set.split(','));
 });
 
+// --- trace close: the CLOSE half in one subcommand ---------------------------
+//
+// Ten dispatch moments used to restate two alternative `trace append` spellings
+// each - twenty lines of prose stating the family and picking the event name.
+// `trace close` takes both off the site: the family is fixed and the arm is
+// inferred from `--detail`.
+
+test('seam: a close with no --detail writes the `return` arm', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.family, 'lifecycle');
+  assert.equal(e.event, 'return');
+  assert.equal(e.role, 'cad-executor');
+  // The renderer counts it as a lifecycle event, which is what makes it close
+  // a bracket rather than sit in the record unread.
+  assert.equal(run(dir, ['trace', 'render', '--phase', '4']).counts.lifecycle, 1);
+});
+
+test('seam: a close carrying --detail writes the `checkpoint` arm', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--detail', 'x']);
+  assert.equal(r.ok, true);
+  const [e] = lines(dir);
+  assert.equal(e.event, 'checkpoint');
+  assert.equal(e.detail, 'x');
+});
+
+test('seam: a close with --tokens and no --detail is still a `return` (D-06)', () => {
+  const dir = root();
+  // The inference may NOT key on `--tokens`: 6 of the 10 shipped checkpoint
+  // sites carry a figure and 4 do not, so a token-presence classifier would
+  // bill four unusable workers as clean closes. `--detail` is the only
+  // discriminator, and this is the case that proves it.
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '146,405']);
+  const [e] = lines(dir);
+  assert.equal(e.event, 'return');
+  assert.equal(e.tokens, 146405);
+  // ...and the mirror: a figure-carrying checkpoint stays a checkpoint.
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '2',
+    '--role', 'cad-executor', '--tokens', '900', '--detail', 'came back empty']);
+  assert.equal(lines(dir)[1].event, 'checkpoint');
+});
+
+test('seam: a malformed --tokens on a close appends NOTHING at all', () => {
+  const dir = root();
+  for (const bad of ['abc', '-1', '1.5', '1,2,3']) {
+    const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+      '--role', 'cad-executor', '--tokens', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // The same rail `trace append` holds: a malformed value is a malformed
+    // CALL, never a best-effort append with the figure dropped.
+    assert.equal(traceBytes(dir), null, bad);
+  }
+});
+
+test('seam: a close pairs with the dispatch of the same --plan', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '1', '--role', 'cad-executor',
+    '--read', '.planning/phases/4/PLAN-1.md']);
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '12']);
+  const r = run(dir, ['trace', 'render', '--phase', '4']);
+  assert.deepEqual(r.unpaired, []);
+  assert.deepEqual(r.roles, { 'cad-executor': { dispatches: 1, tokens: 12 } });
+});
+
+test('seam: a close with no --phase is refused and names the subcommand', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--plan', '1', '--role', 'cad-executor']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(String(r.detail), /trace close/);
+  assert.equal(traceBytes(dir), null);
+});
+
 // --- per-role totals ----------------------------------------------------------
 
 test('render: a fully-recorded role carries a total and NO unrecorded key', () => {
