@@ -51,6 +51,97 @@ A search hazard applied throughout run 1, and no longer applies:
 are now the `\0` escape and `self-verify` check 15 fails on a literal U+0000
 anywhere under `cadence-core/bin/**`.
 
+## Run 2
+
+Swept 2026-08-14 on `cadence/v3.3.0`, in two halves: half A read the docs at
+`4602393`, half B at `b41821e`. The reports are
+`.planning/phases/5/docs-verify-run-2-a.md` (invocations 1 and 2) and
+`.planning/phases/5/docs-verify-run-2-b.md` (invocations 3, 4 and 5 plus the
+targeted `.mjs` pass). Neither half states a run-2 total; this section joins
+them.
+
+Surface: 32 files, 322,989 B across the five invocations — 14 files / 185,264 B
+in half A, 18 files / 137,725 B in half B — against run 1's 25 files /
+268,992 B. Three `.mjs` files (`cadence-core/bin/lib/trace.mjs`,
+`cadence-core/bin/planning.mjs`, `cadence-core/bin/self-verify.mjs`, 298,480 B
+between them) were NOT swept and were read only at ten cited sites; see the
+targeted pass below.
+
+Five invocations. The first three are transcribed byte-identically from `:28-30`
+above, because run 1's recorded invocations are re-run unchanged so run 2's
+counts stay comparable (D-01). New surface is reached by ADDING a named
+invocation, never by widening a recorded one: widening invocation 2 or 3's glob
+would move the surface run 1's 509/18/20 = 547 counts were taken over and make
+run 2 non-comparable by construction.
+
+1. `/cad-docs-verify README.md METHOD.md INTERNALS.md CONTRIBUTING.md`
+2. `/cad-docs-verify cadence-core/workflows/{audit,config,config-review,context,coverage,debug,decision-review,docs-verify,execute,milestone}.md`
+3. `/cad-docs-verify cadence-core/workflows/{new-project,phase,plan-gaps,plan,progress,spike,task,undo,verify-deep,verify,verify-sweep}.md`
+4. `/cad-docs-verify cadence-core/workflows/{adopt,minimalism-review,report,suggest}.md`
+5. `/cad-docs-verify cadence-core/references/{config-catalog,recall,plan-revision}.md`
+
+Invocation 4 exists because run 1 swept 21 workflow files and
+`cadence-core/workflows/` now holds 25. Two of the four (`report.md`,
+`suggest.md`) describe the run record this cycle's phase 2 rewrote, so deferring
+them would leave them unchecked for a second cycle. Everything invocation 4
+extracts is NEW claim surface: none of those four files carries a run-1 row.
+
+Invocation 5 exists because those three reference docs carry 32 ledgered rows
+between them (`config-catalog.md` 29, `recall.md` 2, `plan-revision.md` 1) and
+no recorded invocation ever named them — run 1 re-pointed claims here from the
+docs that cite them without sweeping the files. Their rows are NOT new surface;
+they join to existing rows on `doc` plus claim text. D-04 is untouched either
+way: an explicit-path invocation changes no default target set, and
+`cadence-core/workflows/docs-verify.md`'s default is not edited.
+
+**The targeted `.mjs` pass** verdicted the ten ledgered rows whose `doc` is a
+`.mjs` file — five citing `cadence-core/bin/lib/trace.mjs`, four
+`cadence-core/bin/planning.mjs`, one `cadence-core/bin/self-verify.mjs` — by
+reading each cited SITE rather than by sweeping the files. It is a per-row
+re-verdict and not a sixth invocation because a full extraction over 298,480 B
+of code to decide ten claims is a trade this project's token posture refuses.
+Its location cells carry the LIVE line, which is what the re-pin below reads.
+
+Counts, from the claim table ROWS in the two reports and never from a per-group
+headline, kept apart per invocation so that only the re-run arm is set against
+run 1:
+
+- **Invocations 1-3, the re-run arm: 562 accurate, 9 stale, 15 unverifiable —
+  586 claims.** This is the ONLY figure comparable to run 1's 509/18/20 = 547,
+  and it is taken over the same 25 files. (Half A splits 168/6/8 = 182 for invocation 1 and 188/0/1 = 189 for
+  invocation 2; invocation 3 is 206/3/6 = 215.)
+- **Invocation 4, new surface: 82 accurate, 1 stale, 2 unverifiable — 85
+  claims.** Not comparable: none of these existed in run 1's 547.
+- **Invocation 5, ledgered docs no invocation had named: 58 accurate, 2 stale,
+  2 unverifiable — 62 claims.** Not comparable either, though the rows
+  themselves join to 32 existing ledger rows.
+- **Targeted `.mjs` pass: 8 accurate, 0 stale, 2 unverifiable — 10 claims.** Not
+  comparable: a per-row re-verdict, not an extraction.
+
+743 claim rows across both reports (586 + 85 + 62 + 10).
+
+**Re-pin scope: every ledgered doc that CHANGED since `a6b8931`.** Measured with
+`git diff --quiet a6b8931 HEAD -- <doc>` per distinct `doc` value, that is 23 of
+the 31 docs the ledger cites, carrying 493 of its 548 rows. The other eight are
+byte-identical to run 1 and their 55 rows were not re-read: `config-review` 10,
+`coverage` 8, `docs-verify` 4, `phase` 13, `plan-gaps` 4, `spike` 2, `undo` 8,
+`verify-sweep` 6.
+
+The scope is the `a6b8931` baseline rather than phase 5 D-08's seven docs
+because D-08 enumerated what moved since `81bdb5d` — this cycle's own commits —
+while the phase's success criterion is written against `a6b8931` and asks that
+no row cite a line that has moved at all. Where the two disagree the criterion
+wins. D-08's saving survives whole: the same eight files are byte-identical
+under either baseline, which is what makes the wider scope cost nothing in
+re-read surface it could have skipped.
+
+**No ledgered `doc` sits outside run 2's reach.** Invocation 5 and the targeted
+`.mjs` pass exist precisely to close the 42 rows across six files that the first
+four invocations could not reach, so no row carries a run-1 verdict merely
+because nothing looked at its file. Where a row still reads `1` in the `run`
+column it is because run 2's fresh extraction produced no claim with that text
+for that doc — see `## Reading this ledger`.
+
 ## Reading this ledger
 
 **`divergence` is a RESOLUTION value here, and deliberately not a fourth
