@@ -194,9 +194,21 @@ no roadmapper agent.
 5. Map every `## Active` id to exactly one phase - full coverage, no orphans,
    no double-mapping.
 
-Present the roadmap inline (a table of phase, goal, REQ-IDs and criteria count,
-then the per-phase criteria) and take it through the approval gate (ask-user
-seam):
+Then count what you just wrote - rule 4 above is prose until a seam counts it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --roadmap-min 2 --roadmap-max 5
+```
+
+No `--phase`: one call walks every phase the roadmap declares. Each `over` entry
+names the phase, its measured count and the bound it broke. `roadmap_found:
+false` is not zero criteria - that phase's block declares none at all, so write
+them rather than report it as under the floor. A REPORT, not a gate, exactly as
+`plan-size`'s `phase-too-big` is: present it and let the approval gate decide.
+
+Present the roadmap inline (a table of phase, goal, REQ-IDs and the criteria
+count the seam just reported, then the per-phase criteria, naming every `over`
+phase and its numbers) and take it through the approval gate (ask-user seam):
 
 - header: "Roadmap"
 - question: "Does this roadmap structure work for you?"

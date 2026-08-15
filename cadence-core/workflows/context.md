@@ -338,6 +338,18 @@ Deferred on SIZE, not branch-locality (references/seams.md, File round-trip):
 this step is unconditional but reached once, at the very end, so the read folds
 into the turn that writes the file while an eager copy would ride every turn of
 the interview before it.
+
+Then count what was written against the 3-7 the `acceptance_criteria` step
+states - a ceiling nothing counts is the silent no-op this seam removes:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" criteria-size --phase {N} --context-min 3 --context-max 7
+```
+
+Report an `over` entry to the user in ONE line, its count and the bound it
+broke. A REPORT, not a gate - like `plan-size`'s `phase-too-big`, present it and
+continue. `context_found: false` is not zero: the section was never read (absent
+or near-miss heading), which is a file to fix rather than a count to report.
 </step>
 
 <step name="update_cursor">
