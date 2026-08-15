@@ -1,9 +1,12 @@
 # Recall: the result shape, and how each caller renders it
 
-Read at the one step that runs recall. Two commands call
-`planning.mjs recall` - `/cad-context` at `analyze`, `/cad-debug` at
-Hypothesize - and the return is identical for both, so the contract is stated
-here once instead of drifting in two workflows.
+Read at the one step that runs recall. Three commands call
+`planning.mjs recall` - `/cad-context` at `spend_gate`, `/cad-debug` at
+Hypothesize, `/cad-plan` at `spawn_planner` and again on the under-threshold
+`inline_plan` path - and the return is identical for all three. Two of them
+read the contract here rather than drifting it across their workflows;
+`/cad-plan` does not Read this file, it restates the return shape inline at its
+own step.
 
 What is deliberately NOT here: the `memory.backend` `builtin`/`none` gate. It
 stays inline at every calling site so a run on the `none` path learns the step
