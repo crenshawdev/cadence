@@ -19,7 +19,7 @@ Two seam calls:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>]
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads --join
 ```
 
 Everything below reads from the first return: `brackets` (one row per paired
@@ -28,9 +28,10 @@ event), `roles` (per-role dispatch and token totals), `coordinator` (the
 coordinator's own per-step residue, present only where markers were written),
 `unpaired`, `mismatched`, `capped`, `malformed`. Never ask for the raw `events`
 array: nothing here reads one, and the flag re-buys 27 KB on the one path that
-reads a record into a model's context. The second is the in-dispatch read ledger over
-`.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and takes
-no phase scoping and no flag.
+reads a record into a model's context. The second is the in-dispatch read ledger
+over `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
+`--join` ties each record to the dispatch bracket that caused it: `joined`,
+`ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved`.
 Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
@@ -50,7 +51,7 @@ Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / s
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not a measured cost): <total recorded; top role and its share; unrecorded dispatch count>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
-Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; omit the whole line when the record is empty>
+Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; omit the whole line when the record is empty>
 ```
 
 Rules, all load-bearing:
@@ -81,11 +82,19 @@ Rules, all load-bearing:
 - The reading line prices `.planning/reads.jsonl`, which carries NO phase
   scoping: `fileCalls`, `fileRedundancy` and `topFiles` span every dispatch the
   project ever recorded, so the line says so even when the report is scoped to
-  one phase - it does not price the phase. Report the three as returned,
+  one phase - it does not price the phase. Report every figure as returned,
   recomputed nowhere. When the return carries `calls: 0` or its `no reads
   recorded yet` note, say nothing about reading at all - the same silence the
   `coordinator` block gets, because zeros from an absent record read as a run
   that opened no files.
+- What the join attributes, and what it never will. `joined` is a read tied to
+  the bracket that caused it; `ambiguous` is a read inside two overlapping
+  same-role brackets, which the seam refuses to guess between rather than
+  picking one. `floor` is a permanent LIMIT, not a gap: `fork` and
+  `general-purpose` are HOST agent types with no dispatch event to join to, so
+  say so in those words. `coordinator` reads have no worker bracket by
+  construction and `unresolved` ones carried no readable agent - report either
+  only when nonzero, and never as a failed join.
 - An advisory fire whose findings file is absent AND whose return is missing
   reports as `lost before persistence shipped` when the dispatch predates the
   findings-file convention, else as `in flight`.
