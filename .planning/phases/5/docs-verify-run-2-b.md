@@ -139,9 +139,9 @@ the sweep agreed with itself.
 - [x] cadence-core/workflows/minimalism-review.md
 - [x] cadence-core/workflows/report.md
 - [x] cadence-core/workflows/suggest.md
-- [ ] cadence-core/references/config-catalog.md
-- [ ] cadence-core/references/recall.md
-- [ ] cadence-core/references/plan-revision.md
+- [x] cadence-core/references/config-catalog.md
+- [x] cadence-core/references/recall.md
+- [x] cadence-core/references/plan-revision.md
 - [ ] cadence-core/bin/lib/trace.mjs
 - [ ] cadence-core/bin/planning.mjs
 - [ ] cadence-core/bin/self-verify.mjs
@@ -545,3 +545,89 @@ it is.
 | Name no config key that `cadence-core/config.schema.json` does not carry | suggest.md:100-101 | accurate | schema present; this file names none |
 | No config file is written - not `.planning/config.json`, not the global layer | suggest.md:92-95 | accurate | the workflow's only seam call is `trace suggest`, a reader |
 | No subagent is dispatched; a suggestion cannot PASS or FAIL anything | suggest.md:96-97 | accurate | the file contains no spawn-agent call and no gate |
+
+---
+
+# Invocation 5 - `/cad-docs-verify cadence-core/references/{config-catalog,recall,plan-revision}.md`
+
+**NOT new surface.** These three files carry 32 run-1 ledger rows between them
+(`config-catalog.md` 29, `recall.md` 2, `plan-revision.md` 1) that no recorded
+invocation ever re-read. Plan 3 joins the rows below to those existing rows on
+`doc` plus claim text; nothing here goes into the post-run-1 section.
+
+## config-catalog.md
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| Read at walk step 2 of `cadence-core/workflows/config.md`'s Interactive menu, which pages through the rows 4 knobs at a time | config-catalog.md:3-5 | accurate | `config.md:39` - "Walk the catalog in order, 4 knobs per `AskUserQuestion` call"; `:54` Reads this file; `:68` names it as the catalog |
+| The source of truth is `cadence-core/config.schema.json`, enforced by the `bin/config.mjs` seam | config-catalog.md:5-7 | accurate | both present; `config.mjs validate` reads the schema |
+| `[global]` means the user-global layer only, and a repo layer setting it is stripped at the merge and named in the read face's warnings | config-catalog.md:11-13 | accurate | `lib/global-only-keys.mjs` implements exactly that, and `config.schema.json`'s `workflow.test_command` purpose states the same |
+| `granularity` enum fine/standard/coarse, default `standard`, 8-12 / 5-8 / 3-5 phases | config-catalog.md:20 | accurate | schema: enum `["fine","standard","coarse"]`, default `"standard"`, purpose states the same three ranges |
+| `stakes` enum solo/shipped/critical, default `shipped` | config-catalog.md:22 | accurate | schema: enum `["solo","shipped","critical"]`, default `"shipped"` |
+| `model.escalate_on_failure` bool, default `false` | config-catalog.md:23 | accurate | schema default `false` |
+| `workflow.research` bool, default `false` | config-catalog.md:25 | accurate | schema default `false` |
+| `workflow.plan_check` bool, default `false` | config-catalog.md:26 | accurate | schema default `false` - the catalog has this right where `new-project.md:60` and `adopt.md:55` do not |
+| `workflow.verifier` bool, default `true` | config-catalog.md:27 | accurate | schema default `true` |
+| `workflow.skip_discuss` bool, default `false`, and it skips no step | config-catalog.md:28 | accurate | schema default `false`; `progress.md:139` uses it only to pick the suggestion |
+| `workflow.inline_plan_threshold` int, default `3` | config-catalog.md:29 | accurate | schema default `3` |
+| `workflow.max_plan_tasks` int, default `8`, counted at `check_size` by `planning.mjs plan-size` | config-catalog.md:30 | accurate | schema default `8`; `plan.md:237-243` is the `check_size` step running `plan-size` |
+| `workflow.test_command` `[global]`, type `str or null`, default `null` | config-catalog.md:31 | accurate | schema `string_or_null`, default `null`, `src: global` |
+| `workflow.lint_command` `[global]`, LINT only - there is no typecheck key | config-catalog.md:32 | accurate | schema carries `workflow.lint_command` and no typecheck key at all; `planning.mjs detect-commands` is what supplies the typecheck when unset |
+| `parallelization.enabled` true, `max_concurrent_agents` 3, `min_plans_for_parallel` 2, `use_worktrees` true | config-catalog.md:34-37 | accurate | schema defaults `true`, `3`, `2`, `true` |
+| `git.protected_branches` list, default `main, master` | config-catalog.md:39 | accurate | schema `array_string`, default `["main","master"]` |
+| `git.on_protected` enum ask/refuse/allow, default `ask` | config-catalog.md:40 | accurate | schema enum and default match |
+| `git.integration_branch` enum milestone/trunk, default `milestone`; where worktrees fork FROM is the host's `worktree.baseRef` | config-catalog.md:41 | accurate | schema enum and default match; `references/worktree-executor.md:12` - "the fork point comes from the host's `worktree.baseRef` setting" |
+| `git.auto_branch` enum ask/auto/off, default `ask` | config-catalog.md:42 | accurate | schema enum and default match |
+| `git.base_branch` type `str or null`, default `null` | config-catalog.md:43 | accurate | schema `string_or_null`, default `null` |
+| `git.create_tag` true, `git.on_land_cleanup` true, `git.auto_close` false | config-catalog.md:44-46 | accurate | schema defaults `true`, `true`, `false` |
+| `git.auto_close` carries no `[src]` marker | config-catalog.md:46 | accurate | the legend makes no-marker and `[repo]` the same reading, so nothing a user reads is wrong. Noted for the ledger: the schema does carry `"src": "repo"` for this one key, so it is the single row whose marker does not mirror the schema field the legend describes |
+| `git.auto_close` halts on a surviving blocker/high `risk_surface` finding | config-catalog.md:46 | accurate | `references/review-triggers.md:299-307` - the persisted survivors are what `land-cleanup.mjs gate` unions, and that gate is the halt |
+| `planning.commit_docs` bool, default `true` | config-catalog.md:48 | accurate | schema default `true` |
+| `memory.backend` enum builtin/none, default `builtin` | config-catalog.md:50 | accurate | schema enum `["none","builtin"]`, default `"builtin"` |
+| A `**Risk**` knob category exists | config-catalog.md:51 | **stale** | the section header carries ZERO rows, and `config.schema.json` holds no key beginning `risk` at all - the whole `risk.override.*` family is retired in `lib/retired-keys.mjs` `since: 'v2.7.0'`. Correct: delete the header; there is no risk knob to page through |
+| `review.reviewers` list(enum) over claude-subagent/openai/gemini/deepseek, default `claude-subagent` | config-catalog.md:53 | accurate | schema `array_enum`, those four values, default `["claude-subagent"]` |
+| `review.mode` enum single/panel/adjudicated, default `adjudicated` | config-catalog.md:54 | accurate | schema enum and default match |
+| `review.key_file` `[global]`, type `str or null`, default `null` | config-catalog.md:55 | accurate | schema `string_or_null`, default `null`, `src: global` |
+| `review.request_timeout_ms` int, default `540000`, clamped to the 600000 host ceiling | config-catalog.md:56 | accurate | schema default `540000`; `review-provider.mjs:239` `MAX_REQUEST_TIMEOUT_MS = 600000` with `:231` naming it the host's command cap |
+| `review.max_prompt_tokens` int, default `120000`, chars/4 estimated, over-cap refused before any request, cross-model only | config-catalog.md:57 | accurate | schema default `120000`; `review-provider.mjs:29` states "chars/4 estimated, default 120000" and `:101` that `assertUnderCap`'s `over-cap` unwinds BEFORE a request is built |
+| `review.consult.enabled` false, `.tier` flagship, `.effort` high, `.attempt_threshold` 3 | config-catalog.md:58-61 | accurate | schema defaults `false`, `"flagship"`, `"high"`, `3` |
+| `review.triggers.<t>.gate` defaults: `adjudicated` for plan, `advisory` for diff/phase_diff, `blocking` for risk_surface | config-catalog.md:62 | accurate | schema: plan `adjudicated`, diff `advisory`, phase_diff `advisory`, risk_surface `blocking` |
+| `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | config-catalog.md:63 | accurate | schema: plan/risk_surface/phase_diff `flagship`, diff `balanced` |
+| `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | config-catalog.md:64 | accurate | schema: plan/risk_surface/phase_diff `high`, diff `medium` |
+| `review.triggers.risk_surface.surfaces` list(enum) over the eight surfaces, unset means all eight and the first fire asks once | config-catalog.md:65 | accurate | schema `array_enum`, default `null`, values exactly `auth`, `migrations`, `billing`, `concurrency`, `destructive`, `secrets`, `api_contract`, `untrusted_input` |
+| `<t>` is `{plan, diff, risk_surface, phase_diff}` | config-catalog.md:67-68 | accurate | those are exactly the four trigger names carrying `review.triggers.*` keys in the schema |
+| Every write goes through the Validation seam; a value outside its set is rejected, never written | config-catalog.md:69-70 | accurate | `config.mjs set` validates against the schema before writing |
+
+## recall.md
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| Two commands call `planning.mjs recall` - `/cad-context` at `analyze` and `/cad-debug` at Hypothesize - and the contract is stated here once instead of drifting in two workflows | recall.md:3-6 | **stale** | THREE commands call it. `plan.md:117` runs `planning.mjs recall` at `spawn_planner`, and `:182` runs "the same gated recall" at `inline_plan`. `plan.md` also does not Read this file: it restates the return shape inline at `:120`, which is precisely the drift this file says it prevents. Correct: three commands - `/cad-context` at `analyze`, `/cad-debug` at Hypothesize, and `/cad-plan` at `spawn_planner` and `inline_plan` |
+| The `memory.backend` `builtin`/`none` gate is deliberately NOT here - it stays inline at every calling site | recall.md:8-11 | accurate | `context.md:93` and `:101-103`, `debug.md:62`, and `plan.md:107-111` each carry the gate inline |
+| `planning.mjs recall "<terms>"` prints one JSON line `{ok, results:[{score, source, phase?, snippet}], total}` | recall.md:15-19 | accurate | `planning.mjs:1953-1962` returns exactly `score`, `source`, conditional `phase`, `snippet`, plus `total` |
+| `results` is ranked best first and BOUNDED - `--top N` returns at most N, default 5 | recall.md:21-23 | accurate | `planning.mjs:1888` `let top = 5`; `:1889-1892` validates `--top` as a positive integer |
+| `total` is how many matched, so a truncated answer reads as truncated | recall.md:23-25 | accurate | `planning.mjs:1962` returns `total: matched.length`, before the slice |
+| Unbounded, a real query returned 72 results at 55.8 KB; the same query bounded is 953 B | recall.md:26-30 | unverifiable | a one-off measurement against a `.planning/` tree at a past state; nothing in this repo lets it be re-derived |
+| `phase` is OPTIONAL - a phaseless `CAPTURE.md` item omits it; never substitute a blank or an inferred number | recall.md:34-36 | accurate | `planning.mjs:1957` emits `phase` only when `c.phase !== undefined` |
+| /cad-context renders the top results as a `<recalled_memory>` block placed right after `<search_terms>` | recall.md:40-43 | accurate | `context.md:177-178` - `<search_terms>` then `<recalled_memory>` on the next line |
+| Those snippets ride the DISPATCH PROMPT and never the `cad-assumptions-analyzer` definition | recall.md:45-49 | accurate | the block sits inside the payload at `context.md:178`; `agents/cad-assumptions-analyzer*.md` carries no recall data |
+| /cad-debug has no block and no payload - there is no debug subagent | recall.md:52-54 | accurate | `debug.md:80` states "D-02: there is no debug subagent, the main model runs the method inline" |
+| /cad-debug folds matching past deviations and UAT findings into the Hypotheses list with `source` and `phase` | recall.md:54-56 | accurate | `debug.md:91` - "deviations and UAT findings fold into the Hypotheses list" |
+
+## plan-revision.md
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| Read at `<step name="check_gate">` in `cadence-core/workflows/plan.md`, on the one arm that reaches it - `## ISSUES FOUND` with at least one BLOCKER | plan-revision.md:3-5 | accurate | `plan.md:263` is that step and `:303-305` Reads this file on the BLOCKER arm alone, calling it "one consult site - this step" |
+| ONE revision maximum, with step 3 enforcing the bound | plan-revision.md:5-6, :61-63 | accurate | step 3 ends the arm with an ask and "Never loop again"; `plan.md:412` carries the same hard cap |
+| The re-dispatch is FRESH, never a resume, and the plan on disk preserves its grounding | plan-revision.md:8-11 | accurate | `plan.md:165-166` states the same for revision mode |
+| `--attempt 2` makes the routing seam climb to the retry rung this level's cad-planner cell names | plan-revision.md:10-12 | accurate | `route.mjs:371-374` escalates when `(opts.attempt \|\| 1) > 1`, to the max of the cell's retry rung and the rung the attempt started at |
+| The bracket rides the `--attempt 2` resolve with the same read-set spawn_planner uses | plan-revision.md:14-16 | accurate | the four paths listed match `plan.md:99` byte for byte |
+| `trace close --phase <N> --plan cad-planner --role cad-planner --tokens <n>` closes it at the end of THIS step | plan-revision.md:22-24 | accurate | `planning.mjs:70` declares that flag set |
+| An empty or unmarked return carries `--detail` and the seam closes it as a checkpoint | plan-revision.md:26-28, :54-55 | accurate | `planning.mjs:75-76` - the arm is inferred from `--detail` |
+| The narrowed checker re-dispatch uses `--bracket-read ".planning/phases/{N}/PLAN*.md"`, narrower than check_gate's | plan-revision.md:29-31 | accurate | `plan.md:267`'s check_gate bracket names four paths; this one names one |
+| Its artifact is the revision's own diff, `git diff -- .planning/phases/{N}/PLAN*.md` | plan-revision.md:33-35 | accurate | a real git invocation over the plan glob |
+| Measured, a full re-read was ten minutes to convert two blockers into one | plan-revision.md:38-40 | unverifiable | a past timing measurement with no artifact in this repo to re-derive it from |
+| `trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <n>` | plan-revision.md:51 | accurate | same declared flag set |
+| The per-file census asserts one `trace close` per dispatch moment, so folding these two into one close reddens the suite | plan-revision.md:57-60 | accurate | `cadence-core/bin/trace.test.mjs:1040` opens "the producer census"; `:1252` reasons about "prose lines per dispatch moment - a `return` form and a `checkpoint`" |
+| `plan.md`'s own `review` step is the full-artifact second opinion and fires AFTER this | plan-revision.md:44-46 | accurate | `plan.md:311` `<step name="review">` follows `:263` `check_gate` |
