@@ -1,16 +1,29 @@
-# Requirements: Cadence (v3.4.1 open)
+# Requirements: Cadence (v3.5.0 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.4.1 - what the config says is what routing does`, opened 2026-08-15. Scoped
-from the Forgejo milestone rather than from a scan or the capture queue:
-milestone `v3.4.1` holds three issues, #129, #134 and #135, and the three ids
-below are their requirements. The four deferred ids - `PRS-01`, `EVD-01`,
-`RCL-06`, `CTX-02` - keep their deferral reasons and none is promoted.
+`v3.5.0 - the check that proves it ran`, opened 2026-08-15. Scoped from the
+Forgejo milestone rather than from a scan or the capture queue: milestone
+`v3.5.0` holds one issue, #130, and the two ids below split its stated fix
+shape into the seam and the enforcement that makes the seam load-bearing. The
+four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted.
 
+- **RSK-01**: An executable risk-check seam under `cadence-core/bin/` answers a
+  diff range with `{checked, categories, matches, inconclusive}` and ALWAYS
+  writes that record, match or no match. Today `risk_surface` detection is
+  `workflows/execute.md` telling the orchestrator to read a diff against eight
+  prose categories, and `lib/surface-scan.mjs` is a scoping aid that never
+  inspects source text, so no seam exists to answer this at all (#130).
+- **RSK-02**: A plan or task cannot complete without that record, so the run
+  record distinguishes "the detection step was skipped" from "it ran and matched
+  nothing". `risk_surface` is `blocking` at every level and is the only live gate
+  on a default install, and today a fire writes a lifecycle event while a
+  non-match writes nothing - an omitted check and a clean one are the same bytes
+  (#130).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
