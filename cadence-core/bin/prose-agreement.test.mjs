@@ -567,6 +567,64 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
     + `which no rung file carries - the 19 rung files carry ${bound}`);
 });
 
+// --- DOC-02: README counts its own skills, roles and rung files --------------
+
+test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {
+  // The defect this pins. That sentence is the only place the plugin states its
+  // own size, and nothing read it against the tree: the v3.1.0 correction to the
+  // skill number (README-44 in .planning/DOCS-CLAIMS.md) was found by a human
+  // doc sweep, a year of cycles apart from the commit that changed the count.
+  // Both sides are measured HERE, in the same run - a number typed into this
+  // test would pin today's tree and report a correct future count as a defect.
+  //
+  // README.md ONLY (D-06). LINEAGE.md duplicates the same two counts and still
+  // publishes a stale agents row, but it is a historical doc self-verify
+  // already excludes and it stays a queue item. And not in self-verify.mjs
+  // either: that runs against every --root fixture and any user tree it is
+  // pointed at, where a `skills/` count means nothing.
+  const stated = doc('README.md')
+    .match(/Today it is (\d+) skills and (\d+) agent roles across (\d+) rung files/);
+  assert.ok(stated, 'README.md states no "Today it is N skills and M agent roles '
+    + 'across K rung files" sentence - the counts this test compares are gone');
+
+  // Skills: the ones a USER can invoke. `user-invocable: false` marks the
+  // contract skills, which are preloaded into an agent and never appear in
+  // anyone's slash-command list, so counting them would overstate the surface.
+  // Read from the frontmatter block rather than from anywhere in the file, so
+  // prose quoting the key cannot silently drop a skill from the count.
+  const skills = readdirSync(join(REPO, 'skills'), { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name).sort()
+    .filter((name) => {
+      const front = doc('skills', name, 'SKILL.md').split(/^---$/m)[1];
+      assert.ok(front, `skills/${name}/SKILL.md has no frontmatter block`);
+      return !/^user-invocable:\s*false\s*$/m.test(front);
+    });
+
+  // Rung files: every `.md` directly under agents/. Roles: those filenames with
+  // the rung suffix stripped. The suffix VOCABULARY is read off
+  // route-table.json's `rung_order` rather than typed, so a new rung renames
+  // agent files and this keeps deriving the same six roles instead of counting
+  // the new spelling as a seventh.
+  const rungs = readdirSync(join(REPO, 'agents')).filter((f) => f.endsWith('.md'));
+  assert.ok(rungs.length, 'no agent files under agents/');
+  const order = JSON.parse(doc('cadence-core', 'route-table.json')).rung_order;
+  assert.ok(Array.isArray(order) && order.length, 'route-table.json states no rung_order');
+  const suffix = new RegExp(`-(?:${order.join('|')})$`);
+  // The analyzer's UNSUFFIXED file is its xhigh rung (route-table.json:4), so a
+  // name carrying no suffix is already the role.
+  const roles = new Set(rungs.map((f) => f.replace(/\.md$/, '').replace(suffix, '')));
+
+  const wrong = /** @type {[string, number, number][]} */ ([
+    ['skills', Number(stated[1]), skills.length],
+    ['agent roles', Number(stated[2]), roles.size],
+    ['rung files', Number(stated[3]), rungs.length],
+  ]).filter(([, said, is]) => said !== is)
+    .map(([what, said, is]) => `${what}: README says ${said}, the tree has ${is}`);
+
+  assert.deepEqual(wrong, [],
+    `README's count sentence disagrees with the tree - ${wrong.join('; ')}`);
+});
+
 // --- AC6: the executor is told the surfaces it will be judged on -------------
 
 test('the executor dispatch hands over the resolve\'s answered surfaces, and the contract says what to do with them', () => {
