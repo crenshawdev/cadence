@@ -1,27 +1,38 @@
-# Requirements: Cadence (v3.5.0 open)
+# Requirements: Cadence (v3.5.1 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.0 - the check that proves it ran`, opened 2026-08-15. Scoped from the
-Forgejo milestone rather than from a scan or the capture queue: milestone
-`v3.5.0` holds one issue, #130, and the two ids below split its stated fix
-shape into the seam and the enforcement that makes the seam load-bearing. The
-four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted.
+`v3.5.1 - authorization the repo grants, not the user`, opened 2026-08-15.
+Scoped from the Forgejo milestone rather than from a scan or the capture queue:
+milestone `v3.5.1` holds one issue, #131, and the two ids below split its stated
+fix shape into the authorization resolution and the host arm that today is
+ungated. The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep
+their deferral reasons and none is promoted.
 
-  diff range with `{checked, categories, matches, inconclusive}` and ALWAYS
-  writes that record, match or no match. Today `risk_surface` detection is
-  `workflows/execute.md` telling the orchestrator to read a diff against eight
-  prose categories, and `lib/surface-scan.mjs` is a scoping aid that never
-  inspects source text, so no seam exists to answer this at all (#130).
-  record distinguishes "the detection step was skipped" from "it ran and matched
-  nothing". `risk_surface` is `blocking` at every level and is the only live gate
-  on a default install, and today a fire writes a lifecycle event while a
-  non-match writes nothing - an omitted check and a clean one are the same bytes
-  (#130).
+- **AUT-01**: `git.auto_close` resolves as two distinct booleans rather than one
+  merged value: `autoCloseRequested` from the merged config, which is
+  presentation and what the existing close gate reads, and
+  `autoCloseAuthorized` from the repository layer alone. Today
+  `skills/cad-land/SKILL.md` reads the key through `config.mjs get` and enters
+  the no-prompt branch on the merged global-plus-repo value, while
+  `git-publish.mjs`'s `repoAutoClose` reads `.planning/config.json` directly and
+  never the merged value - so a user-global `true` speaks for a repository that
+  never opted in, against D-08 and against the schema's own stated contract. The
+  prior narrowing (`0b1c322`, reverted) aligned the two seams' values and broke
+  the skipped-ask / halt pairing `land-cleanup.mjs` depends on; this must not
+  touch that pairing (#131).
+- **AUT-02**: No unattended external mutation runs on ANY host without
+  `autoCloseAuthorized`, GitLab included. GitHub and Forgejo publish through the
+  repo-authorized seam and stop on its `ok:false`; GitLab does not reach the
+  seam at all, because `glab mr create` publishes the source branch itself, and
+  the workflow proceeds to `glab mr merge` with nothing gating it.
+  `land-cleanup.mjs` already records this discrepancy in its own source, so it
+  is a known gap rather than a discovered one. `glab` is absent on this machine,
+  so the GitLab arm is proven through the same resolved-CLI seam the other hosts
+  use rather than by a live call (#131).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -169,8 +180,8 @@ parses only the Traceability table).
 | GAT-02 (`config.mjs get` stops reporting a review gate that routing does not execute. A gate no layer set is answered from the schema default while `route.mjs resolve` answers the level's, so inspection and enforcement disagree wherever a project has not written the key - the disagreement `workflows/execute.md` already carries a paragraph to work around. Reported so a reader can tell a level's gate from a layer's, without pretending the seam knows something it does not (#129)) | 1 | Complete | v3.4.1 |
 | GAT-03 (`config.schema.json`'s prose and `route-table.json` agree on every trigger's gate per level. The schema says `phase_diff` is `advisory` at `shipped`; the route table says `off`, and the route table is what fires (#134)) | 1 | Complete | v3.4.1 |
 | ENF-02 (`self-verify.mjs` fails when a trigger's schema default or its prose disagrees with `route-table.json`. It already fails in both directions on rung files and routing cells and has never compared these at all, so the drift above was invisible to the one check whose job is catching it (#135)) | 1 | Complete | v3.4.1 |
-| RSK-01 (An executable risk-check seam under `cadence-core/bin/` answers a) | 1 | Complete | v3.5.0 |
-| RSK-02 (A plan or task cannot complete without that record, so the run) | 1 | Complete | v3.5.0 |
+| RSK-01 (an executable risk-check seam under `cadence-core/bin/` answers a diff range with `{checked, categories, matches, inconclusive}` and ALWAYS writes that record, match or no match - no such seam existed, detection being `workflows/execute.md` telling the orchestrator to read a diff against eight prose categories (#130)) | 1 | Complete | v3.5.0 |
+| RSK-02 (a plan or task cannot complete without that record, so the run record distinguishes "the detection step was skipped" from "it ran and matched nothing" - `risk_surface` blocks at every level and is the only live gate on a default install, and a non-match used to write nothing at all (#130)) | 1 | Complete | v3.5.0 |
 
 ## Deferred
 
