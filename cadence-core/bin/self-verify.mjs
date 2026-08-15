@@ -332,6 +332,7 @@ const CONTRACTS = {
     '*': ['--dir'],
     publish: ['--remote'],
     reap: ['--branch'],
+    authorized: [],
   },
   'land-cleanup.mjs': {
     '*': ['--dir'],

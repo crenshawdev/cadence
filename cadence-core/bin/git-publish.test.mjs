@@ -245,11 +245,77 @@ test('reap needs no auto_close: a close-off repo still reaps its local branch', 
   assert.equal(refExists(dir, REAP_REF), false);
 });
 
-test('usage: the detail names both subcommands', () => {
+test('usage: the detail names all three subcommands', () => {
   const d = seam(['frobnicate']);
   assert.equal(d.ok, false);
   assert.match(d.detail, /publish/);
   assert.match(d.detail, /reap/);
+  assert.match(d.detail, /authorized/);
+});
+
+// --- the two authorizations, and the sentence that tells them apart (AUT-01) --
+
+/** A user-global layer file holding `obj`. */
+function globalJson(obj) { return globalText(JSON.stringify(obj)); }
+
+/** The config pair this phase exists for: `git.auto_close` true in the user's
+ * own home directory, and this repository never setting it. */
+const GLOBAL_ON = { git: { auto_close: true } };
+
+test('publish refuse: off-everywhere and requested-globally read DIFFERENTLY', () => {
+  // Same `reason` token on both - it is asserted by equality across this file
+  // and config-seams.test.mjs - so the state the user has to act on can only
+  // reach them through the detail.
+  const off = seam(['publish', '--dir', repo({ config: { git: { auto_close: false } } }).dir]);
+  const requested = seam(['publish', '--dir', repo({ config: { git: {} } }).dir], globalJson(GLOBAL_ON));
+  assert.equal(off.reason, 'auto-close-off');
+  assert.equal(requested.reason, 'auto-close-off');
+  assert.match(requested.detail, /user-global setting cannot authorize/);
+  assert.match(requested.detail, /\.planning\/config\.json/);
+  assert.notEqual(off.detail, requested.detail);
+  assert.ok(off.detail, 'the off-everywhere arm says which authorization was missing too');
+});
+
+test('authorized: a user-global true is refused - the repository never opted in', () => {
+  // The GitLab arm's gate. On GitHub/Forgejo the chain dies at `publish`
+  // because the branch has to reach the remote through it; `glab mr create`
+  // pushes the source branch itself, so this is the only thing between a
+  // user-global setting and an unattended merge.
+  const { dir, bare } = repo({ config: { git: {} } });
+  const { d, status } = seamStatus(['authorized', '--dir', dir], globalJson(GLOBAL_ON));
+  assert.equal(status, 1);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'auto-close-off');
+  assert.equal(d.requested, true, 'the merged value is reported, and did not authorize');
+  assert.match(d.detail, /user-global setting cannot authorize/);
+  assert.match(d.detail, /\.planning\/config\.json/);
+  assert.equal(refExists(bare, INT_REF), false, 'the read-only arm published nothing');
+});
+
+test('authorized: the repository\'s own opt-in answers ok:true, and needs no git', () => {
+  const { d, status } = seamStatus(['authorized', '--dir', repo().dir]);
+  assert.equal(status, 0);
+  assert.equal(d.ok, true);
+  assert.equal(d.action, 'repo-authorized');
+  assert.equal(d.detail, undefined, 'nothing was missing, so nothing is said');
+
+  // A directory that is not a git repository at all still gets an answer: this
+  // arm reads config layers and runs no git (the marker-file proof that it
+  // spawns nothing lives beside the forge-CLI stubs).
+  const plain = mkdtempSync(join(tmpdir(), 'cad-pub-plain-'));
+  mkdirSync(join(plain, '.planning'));
+  writeFileSync(join(plain, '.planning', 'config.json'), JSON.stringify(GLOBAL_ON));
+  const bare = seamStatus(['authorized', '--dir', plain]);
+  assert.equal(bare.status, 0);
+  assert.equal(bare.d.ok, true);
+});
+
+test('authorized: off in BOTH layers refuses with the other sentence', () => {
+  const d = seam(['authorized', '--dir', repo({ config: { git: { auto_close: false } } }).dir]);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'auto-close-off');
+  assert.equal(d.requested, false);
+  assert.match(d.detail, /not true anywhere/);
 });
 
 // --- the torn-layer mutation gate -------------------------------------------
