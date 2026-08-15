@@ -721,3 +721,50 @@ test('the executor dispatch hands over the resolve\'s answered surfaces, and the
       + `review.triggers.risk_surface.surfaces does not carry (${values.join(', ')})`);
   }
 });
+
+// --- RSK-01/RSK-02: detection is the seam's answer, and completion needs it ---
+
+test('both fire sites invoke the risk-check seam rather than reading a prose list', () => {
+  // The defect: detection was execute.md and task.md telling a model to check a
+  // diff against the eight categories in references/review-triggers.md. A fire
+  // wrote a lifecycle event and a NON-match wrote nothing, so the run record
+  // could not tell "the detection step was skipped" from "it ran and matched
+  // nothing". The heuristics stay heuristics; what moved is that the answer is
+  // computed by something that always returns one and always records it.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const task = doc('cadence-core', 'workflows', 'task.md');
+  assert.match(execute, /risk-check run/,
+    "execute.md's post-plan step no longer calls the risk-check seam");
+  assert.match(task, /risk-check run/,
+    "task.md's risk_check step no longer calls the risk-check seam");
+  // An unjudged range is not a cleared one, and widening is the only safe
+  // direction on the one gate that is `blocking` at every stakes level.
+  assert.match(execute, /inconclusive/,
+    'execute.md dropped the rule that an inconclusive range fires the trigger');
+});
+
+test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
+  // Detection without enforcement is precisely the outcome RSK-02 exists to
+  // prevent, and it passes every other check in this phase. A tree carrying
+  // `risk-check run` at both fire sites and NEITHER this sentence nor task.md's
+  // `written: false` sentence must go RED here.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  assert.match(execute, /risk-check status/,
+    'execute.md detects a risk surface but never re-reads the record before reporting done');
+  assert.match(execute, /not reported done while that call refuses/i,
+    'execute.md calls risk-check status without withholding done on its refusal - '
+    + 'detection without enforcement is the outcome RSK-02 exists to prevent');
+});
+
+test('ENFORCEMENT, task.md: done is withheld on `written: false`', () => {
+  // `ok:true, written:false` - a symlinked trace, a failed stat, a full disk,
+  // the size-cap bound - is NOT a completed check. The execute path is covered
+  // by its own `risk-check status` call, which re-reads the trace and finds
+  // nothing; the task path has no status call, so this flag is its whole guard.
+  const task = doc('cadence-core', 'workflows', 'task.md');
+  assert.match(task, /`written: false`/,
+    'task.md never states the written flag, so a record that never landed reports done');
+  assert.match(task, /`written: false`[^.]*(do not|does not|never)\s+report\s+done/i,
+    "task.md's risk_check step states the written flag but not that done is withheld on it - "
+    + 'detection without enforcement is the outcome RSK-02 exists to prevent');
+});

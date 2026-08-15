@@ -245,10 +245,21 @@ Handle the executor's return:
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
-After each plan completes, first fire `risk_surface` if the plan's committed
-range touched one. Check `git diff {pre-plan HEAD}..HEAD` against the
-risk-surface list in references/review-triggers.md; on a match write that same
-diff to `<plandir>/reports/plan-<k>-risk.diff` and fire the trigger with that
+After each plan completes, ASK THE SEAM whether the plan's committed range
+touched a risk surface - never by reading the diff against a prose list, which
+left no record at all when it matched nothing:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
+```
+
+A non-empty `matches` OR `inconclusive: true` fires the trigger. An unjudged
+range is not a cleared one, and widening is the only safe direction on the one
+gate that is `blocking` at every stakes level. Each match names the category and
+the signal that found it, so the fire states a reason rather than a verdict.
+
+On a fire, write `git diff {pre-plan HEAD}..HEAD` to
+`<plandir>/reports/plan-<k>-risk.diff` and fire the trigger with that
 path - shape (c), exactly as `workflows/task.md`'s `risk_check` step does, since
 shape (a) refs is not one of the shapes the wiring table admits for
 `risk_surface`. The file is transient: never stage it, delete it once the
@@ -256,6 +267,17 @@ trigger returns. Blocking: on FAIL the findings are fixed or the user explicitly
 overrides, and the re-arm on that fix is CAPPED at ONE narrowed round per
 `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md` - RE-READ it
 before the fix lands, since this workflow does not preload it.
+
+Then, before the plan is reported done:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD
+```
+
+The plan is NOT reported done while that call refuses. It re-reads the record,
+so it also catches the run that answered `ok:true` while its append came back
+`written: false` - a check whose answer never reached the record is a check the
+next reader cannot see.
 
 Firing ONCE here rather than per risky commit is the point. Halting the executor
 mid-plan cost a fresh-context re-dispatch per match, and a continuation whose

@@ -276,6 +276,17 @@ const CONTRACTS = {
     // fires of one trigger - one cross-model, one subagent - are distinguishable
     // in the record. Nothing refuses a dispatch to a reviewer outside the
     // resolved set, so this mark is the whole enforcement.
+    // The detection the blocking `risk_surface` gate fires on, and the record
+    // that proves it ran. `--base` and `--head` are both REQUIRED - a defaulted
+    // head is a range the caller never stated - and `--surfaces` narrows the
+    // scope to the project's resolved set, refusing any token outside the
+    // eight rather than answering about a narrower one.
+    'risk-check run': ['--phase', '--plan', '--base', '--head', '--surfaces'],
+    // The completion gate. `--phase` alone keeps plan-level matching; the
+    // optional `--plan --base --head` triple requires a record for THAT range,
+    // so a record left by an earlier, narrower range of the same plan does not
+    // satisfy a later one.
+    'risk-check status': ['--phase', '--plan', '--base', '--head'],
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
       '--role', '--tokens', '--raised', '--read', '--step', '--reviewer'],
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
@@ -395,7 +406,7 @@ const CONTRACTS = {
 };
 
 // Subcommands whose first word takes a second word (sub-subcommand).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace']);
+const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
 
 // The canonical Claude Code tool vocabulary the agents-only tools lint checks
 // against - a FIXED set, not derived from the tree, so a single-agent fixture

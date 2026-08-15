@@ -105,26 +105,48 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-`v3.5.0 - the check that proves it ran`, opened 2026-08-15. Scoped off the
-Forgejo milestone, which holds one issue: #130.
+`v3.5.1 - authorization the repo grants, not the user`, opened 2026-08-15.
+Scoped off the Forgejo milestone, which holds one issue: #131.
 
-**The theme is one sentence: the only gate live on a default install fires on a
-model reading a prose list, and leaves no record either way.** `risk_surface` is
-`blocking` at every stakes level and is the sole live gate at the shipped
-default, but its firing condition is `workflows/execute.md` instructing the
-orchestrator to check a diff against the eight categories in
-`references/review-triggers.md`. A fire writes a lifecycle event; a non-match
-writes nothing. So the run record cannot tell "the detection step was skipped"
-from "it ran and matched nothing", and an omitted check is indistinguishable
-from a clean one.
+**The theme is one sentence: a user-global setting can authorize an unattended
+publish and merge that the stated policy says only the repository may
+authorize.** `git.auto_close` is documented as repo-local by design - D-08, and
+`cadence-core/bin/git-publish.mjs`'s `repoAutoClose` reads `.planning/config.json`
+directly and never the merged value, exactly so a global `true` cannot speak for
+a repository that never opted in. `skills/cad-land/SKILL.md` reads the same key
+through `config.mjs get`, which returns the merged global-plus-repo value, and a
+`true` there enters the no-prompt branch.
 
-`cadence-core/bin/lib/surface-scan.mjs` is not the missing piece - it is
-explicitly a scoping aid, returns every category unconditionally, and never
-inspects source text. No risk-check seam exists under `cadence-core/bin/` at
-all. The fix shape is an executable seam that ALWAYS records
-`{checked, categories, matches, inconclusive}` for a diff range, required before
-plan completion. Semantic detection stays heuristic on purpose; what changes is
-that "did not run" stops masquerading as "ran clean".
+On GitHub and Forgejo the chain still dies at the repo-authorized publish seam.
+On GitLab nothing gates it at all: `glab mr create` publishes the source branch
+itself, so no seam call is made, and the workflow proceeds to `glab mr merge`.
+`cadence-core/bin/land-cleanup.mjs` already records the discrepancy in its own
+source, which is the shape of a known gap rather than a discovered one.
+
+The fix shape is two distinct booleans rather than one aligned value: an
+`autoCloseRequested` read from the merged config, which is presentation and what
+the existing gate reads, and an `autoCloseAuthorized` read from the repo layer
+alone, required before any unattended external mutation on every host including
+GitLab. The prior narrowing (`0b1c322`, reverted) aligned the two seams' values
+and broke the skipped-ask / halt pairing `land-cleanup.mjs` depends on, so the
+constraint is that this fix does not touch that pairing.
+
+`v3.5.0 - the check that proves it ran` closed on 2026-08-15: two requirements
+(`RSK-01`, `RSK-02`), one phase, 13 commits, the manifest at `3.5.0`. The only
+gate live on a default install fired on a model reading a prose list and left
+identical bytes whether it ran or not. `planning.mjs risk-check` is now the
+executable seam: `run` answers a resolved commit range with
+`{checked, categories, matches, inconclusive}` and appends that record to
+`trace.jsonl` on every invocation, clean range included, so silence stopped
+being evidence. `status` is the enforcement half - both `execute.md` and
+`task.md` call the seam instead of reading a prose list, neither reports done
+without a record, and range identity is the resolved commit pair rather than the
+ref spelling. The enforcement was watched to fail against the unpatched tree
+first. Detection stayed heuristic on purpose. Carried out of the cycle: the
+detector self-matches its own test fixtures on six of eight categories, so the
+one gate that blocks at every stakes level fires falsely on any range touching
+`risk-diff.test.mjs`; and `b481fb3` plus `64900ee` are unreviewed, the capped
+one-round re-arm having been spent before either existed.
 
 `v3.4.1 - what the config says is what routing does` closed on 2026-08-15:
 three requirements (`GAT-02`, `GAT-03`, `ENF-02`), one phase, 6 commits, the
