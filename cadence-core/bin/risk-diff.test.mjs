@@ -562,6 +562,121 @@ const PRIOR_CYCLE_PHASE_1 = [
   '{"corr":"1-3a24ad9","phase":"1","ts":"2026-08-14T19:01:45.310Z","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":164326}',
 ];
 
+/**
+ * The line that CLOSES the prior cycle, frozen from the same record: phase 1's
+ * `uat_verdict` `complete` under the v3.4.x anchor. It is a separate const
+ * rather than a fourth entry in PRIOR_CYCLE_PHASE_1 because the blanket-pass
+ * row below re-stamps that array with `.slice(1)`, and a sign-off carried into
+ * THIS run's id would bound the cycle at its own timestamp.
+ */
+const PRIOR_CYCLE_SIGNOFF =
+  '{"corr":"1-3a24ad9","phase":"1","ts":"2026-08-14T20:09:19.374Z","family":"outcome","event":"uat_verdict","detail":"complete"}';
+
+/** A second `/cad-execute` invocation of the SAME cycle: a fresh anchor, taken
+ * at whatever HEAD the first invocation's commits left behind, and one
+ * completed plan under it. */
+const SECOND_INVOCATION = [
+  '{"corr":"1-bbbbbbb","phase":"1","ts":"2026-08-15T19:00:00.000Z","family":"lifecycle","event":"phase_start","sha":"bbbbbbb"}',
+  '{"corr":"1-bbbbbbb","phase":"1","ts":"2026-08-15T19:02:00.000Z","family":"lifecycle","event":"dispatch","plan":"2","role":"cad-executor","read":[".planning/phases/1/PLAN-2.md"]}',
+  '{"corr":"1-bbbbbbb","phase":"1","ts":"2026-08-15T19:10:00.000Z","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":40000}',
+];
+
+test('risk-check status: an EARLIER invocation of the same cycle is still required', () => {
+  // The regression the newest-anchor scope introduced. execute.md re-anchors at
+  // `git rev-parse --short HEAD` on every invocation, so a phase resumed after
+  // a checkpoint or a session death takes a second id once its first commits
+  // land. Scoped to that newest id alone, everything the FIRST invocation
+  // completed silently stopped being required - the same silence this gate
+  // exists to break, arriving as an exemption rather than an absence.
+  const dir = traceFixture([
+    ...FROZEN_PHASE_1,                              // invocation 1 completed plan 1
+    ...SECOND_INVOCATION,                           // invocation 2 completed plan 2
+    recordLine('2', 'bbbbbbb', 'HEAD', { corr: '1-bbbbbbb', ts: '2026-08-15T19:11:00.000Z' }),
+  ]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r._exit, 1);
+  assert.equal(r.reason, 'risk-record-missing');
+  // Plan 1, completed under the SUPERSEDED anchor, and unrecorded. Plan 2 is
+  // recorded and is not in the list.
+  assert.deepEqual(r.missing, ['1']);
+  const late = r.plans.find((/** @type {any} */ p) => p.plan === '2');
+  assert.equal(late.state, 'recorded', JSON.stringify(late));
+  // Each row names the invocation it belongs to, so a reader can see WHICH run
+  // left the range unchecked rather than only that some run did.
+  assert.equal(r.plans.find((/** @type {any} */ p) => p.plan === '1').run, '1-ae5ca09');
+});
+
+test('risk-check status: a signed-off cycle stops being required, an unsigned one does not', () => {
+  // The bound, stated as the pair it is. The ONLY difference between this row
+  // and the one above is the phase's own `uat_verdict` `complete` sitting
+  // between the two invocations: with it, invocation 1 belongs to a cycle that
+  // was already answered for and is not re-litigated; without it, invocation 1
+  // is this cycle and stays required.
+  const signoff =
+    '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:58:40.563Z","family":"outcome","event":"uat_verdict","detail":"complete"}';
+  const dir = traceFixture([
+    ...FROZEN_PHASE_1, signoff,
+    ...SECOND_INVOCATION,
+    recordLine('2', 'bbbbbbb', 'HEAD', { corr: '1-bbbbbbb', ts: '2026-08-15T19:11:00.000Z' }),
+  ]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  assert.equal(r.plans.length, 1, JSON.stringify(r.plans));
+  assert.equal(r.plans[0].plan, '2');
+});
+
+test('risk-check status: a PARTIAL verdict is not a bound', () => {
+  // A partial UAT session is the MIDDLE of a cycle, not its close. Bounding on
+  // one would exempt every range completed before the session that failed -
+  // precisely the work a partial verdict says is unfinished.
+  const partial =
+    '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:58:40.563Z","family":"outcome","event":"uat_verdict","detail":"partial"}';
+  const dir = traceFixture([
+    ...FROZEN_PHASE_1, partial,
+    ...SECOND_INVOCATION,
+    recordLine('2', 'bbbbbbb', 'HEAD', { corr: '1-bbbbbbb', ts: '2026-08-15T19:11:00.000Z' }),
+  ]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.deepEqual(r.missing, ['1']);
+});
+
+test('risk-check status: an UNREADABLE sign-off is not a bound', () => {
+  // The fail-OPEN direction, which is the only one that matters on a gate.
+  // Comparing raw `ts` strings let a sign-off stamped 'zzzz' sort above every
+  // real ISO timestamp, so every completed range in the file fell before the
+  // bound and the phase reported clean with no rows at all - the gate answering
+  // "nothing to require" because it could not read one line.
+  const junk =
+    '{"corr":"1-ae5ca09","phase":"1","ts":"zzzz","family":"outcome","event":"uat_verdict","detail":"complete"}';
+  const dir = traceFixture([...FROZEN_PHASE_1, junk]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r._exit, 1);
+  assert.deepEqual(r.missing, ['1']);
+});
+
+test('risk-check status: a return the bound cannot PLACE is still required', () => {
+  // A completed range carrying no readable timestamp cannot be shown to belong
+  // to a closed cycle, so it stays required. Dropping it instead would let any
+  // writer exempt a range by omitting one field.
+  const signoff =
+    '{"corr":"1-ae5ca09","phase":"1","ts":"2026-08-15T18:58:40.563Z","family":"outcome","event":"uat_verdict","detail":"complete"}';
+  // The dispatch half is undated too: a bracket the record cannot place at
+  // EITHER end is the case, and renderTrace pairs a return to its dispatch, so
+  // a lone return is no bracket at all and would prove nothing.
+  const undated = [
+    '{"corr":"1-bbbbbbb","phase":"1","family":"lifecycle","event":"dispatch","plan":"2","role":"cad-executor","read":[".planning/phases/1/PLAN-2.md"]}',
+    '{"corr":"1-bbbbbbb","phase":"1","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":40000}',
+  ];
+  const dir = traceFixture([...FROZEN_PHASE_1, signoff, ...undated]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.deepEqual(r.missing, ['2']);
+});
+
 test('risk-check status: a PREVIOUS cycle\'s completed range does not hold this run open', () => {
   // The whole file, as a real project's record actually reads: an old cycle's
   // phase 1 sitting above this run's phase 1. Scanning every bracket the file
@@ -569,7 +684,8 @@ test('risk-check status: a PREVIOUS cycle\'s completed range does not hold this 
   // supply, so the gate refused every time on any project with more than one
   // milestone of history - the check that exists to stop "not run" passing as
   // "ran clean" never passing at all.
-  const dir = traceFixture([...PRIOR_CYCLE_PHASE_1, ...FROZEN_PHASE_1, recordLine('1', 'ae5ca09', 'HEAD')]);
+  const dir = traceFixture([...PRIOR_CYCLE_PHASE_1, PRIOR_CYCLE_SIGNOFF,
+    ...FROZEN_PHASE_1, recordLine('1', 'ae5ca09', 'HEAD')]);
   const r = riskStatus(dir, ['--phase', '1']);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r._exit, 0);
@@ -601,7 +717,7 @@ test('risk-check status: a record left under a PREVIOUS cycle does not satisfy t
   // cycle would clear this run's plan 1 - an unsatisfiable gate traded for a
   // forgeable one.
   const stale = recordLine('1', 'ae5ca09', 'HEAD').replaceAll('1-ae5ca09', '1-3a24ad9');
-  const dir = traceFixture([...PRIOR_CYCLE_PHASE_1, stale, ...FROZEN_PHASE_1]);
+  const dir = traceFixture([...PRIOR_CYCLE_PHASE_1, PRIOR_CYCLE_SIGNOFF, stale, ...FROZEN_PHASE_1]);
   const r = riskStatus(dir, ['--phase', '1']);
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.reason, 'risk-record-missing');

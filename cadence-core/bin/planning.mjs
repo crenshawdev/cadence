@@ -3313,29 +3313,100 @@ function cmdRiskCheckStatus(dir, opts) {
    * behaviour: requiring MORE is the safe direction here, and silently matching
    * nothing would turn the whole gate into a blanket pass.
    */
-  const run = typeof r.corr === 'string' && r.corr ? r.corr : null;
-  const thisRun = (/** @type {{corr?: any}} */ e) => run === null || planKey(e.corr) === run;
+  /**
+   * THIS CYCLE, bounded by the phase's own last sign-off - not the newest
+   * anchor alone.
+   *
+   * Scoping to `renderTrace`'s `corr` alone was too narrow in the other
+   * direction. `workflows/execute.md` anchors each invocation at
+   * `git rev-parse --short HEAD`, so a phase run across more than one
+   * /cad-execute - a resumed session, a continuation after a checkpoint - takes
+   * a DIFFERENT id the moment its first commits land, and every range the
+   * earlier invocation completed fell outside the filter. That is the same
+   * silence this gate exists to break, arriving as an exemption rather than an
+   * absence.
+   *
+   * The bound is the phase's own `uat_verdict` `complete` outcome, which
+   * `workflows/verify.md` appends when the phase passes: everything after the
+   * newest one is the cycle in hand, everything at or before it belongs to a
+   * cycle that was already signed off. `partial` is deliberately not a bound -
+   * a partial UAT session is the middle of a cycle, and cutting there would
+   * exempt the work that preceded it. A phase with no sign-off at all has
+   * never completed, so its whole history IS the current cycle and nothing is
+   * dropped.
+   */
+  // EPOCH MILLISECONDS, never the raw string. A lexicographic compare over
+  // whatever `ts` happens to hold is a gate that opens on a typo: a sign-off
+  // stamped `"zzzz"` sorts above every real ISO timestamp, so every completed
+  // range in the file falls before the bound and the phase reports clean with
+  // no rows at all. An unparseable timestamp is not a later one.
+  const stamp = (/** @type {any} */ v) => {
+    if (typeof v !== 'string') return null;
+    const ms = Date.parse(v);
+    return Number.isFinite(ms) ? ms : null;
+  };
+
+  let signoff = null;
+  for (const e of r.events) {
+    if (e.family !== 'outcome' || e.event !== 'uat_verdict' || e.detail !== 'complete') continue;
+    // An unreadable sign-off is NOT a bound. It cannot say when the cycle
+    // closed, and the only safe reading of "I do not know" here is that no
+    // cycle closed - which requires more, never less.
+    const ts = stamp(e.ts);
+    if (ts === null) continue;
+    if (signoff === null || ts > signoff) signoff = ts;
+  }
+  /**
+   * Everything is in the cycle unless it can be PROVED to sit at or before a
+   * readable sign-off. The direction is the whole point: an event carrying no
+   * `ts`, an unparseable one, or one written by a clock that moved backwards
+   * stays REQUIRED rather than silently exempt, because a completed range this
+   * gate cannot place is exactly the range it must not clear. `>=`, not `>`,
+   * for the same reason - an event sharing the sign-off's own instant is
+   * ambiguous, and ambiguity resolves toward requiring the record.
+   */
+  const inCycle = (/** @type {{ts?: any}} */ e) => {
+    if (signoff === null) return true;
+    const ts = stamp(e.ts);
+    return ts === null || ts >= signoff;
+  };
+
+  /** A row identity is the RUN and the plan together. Pairing a bracket with a
+   * record under its own `corr` is what makes a multi-invocation phase answer
+   * per invocation: the ranges invocation 1 completed need invocation 1's
+   * records, and invocation 2 cannot clear them by checking its own. */
+  const rowKey = (/** @type {any} */ corr, /** @type {any} */ plan) =>
+    `${planKey(corr)}\u0000${planKey(plan)}`;
 
   /** Completed ranges, keyed by plan. A COMPLETED range is an executor bracket
    * whose terminal is a `return`; a `checkpoint` closed a dispatch that came
    * back unfinished and requires nothing. Grouping by plan is what makes a
    * checkpoint-then-return continuation count once rather than twice. */
-  /** @type {Map<string, {plan: string|null, completed: number}>} */
+  /** @type {Map<string, {run: string|null, plan: string|null, completed: number}>} */
   const completed = new Map();
-  const planRow = (k) => {
+  const planRow = (/** @type {any} */ corr, /** @type {any} */ plan) => {
+    const k = rowKey(corr, plan);
     let row = completed.get(k);
-    if (!row) { row = { plan: k === '' ? null : k, completed: 0 }; completed.set(k, row); }
+    if (!row) {
+      row = {
+        run: planKey(corr) === '' ? null : planKey(corr),
+        plan: planKey(plan) === '' ? null : planKey(plan),
+        completed: 0,
+      };
+      completed.set(k, row);
+    }
     return row;
   };
   for (const b of r.brackets) {
-    if (!thisRun(b)) continue;
+    if (!inCycle(b)) continue;
     if (b.role !== 'cad-executor' || b.event !== 'return') continue;
-    planRow(planKey(b.plan)).completed++;
+    planRow(b.corr, b.plan).completed++;
   }
   // A named range is required whether or not its return has landed yet: the
   // caller states the range it just committed, and a bracket that never paired
-  // must not turn the gate off.
-  if (wanted) planRow(planKey(wanted.plan));
+  // must not turn the gate off. It rides THIS invocation's id, which is the
+  // one the caller is reporting for.
+  if (wanted) planRow(r.corr, wanted.plan);
 
   /**
    * Every record the phase holds, keyed by plan, carrying its VERDICT fields
@@ -3360,12 +3431,20 @@ function cmdRiskCheckStatus(dir, opts) {
    *   checked: boolean, inconclusive: boolean}[]>}
    */
   const records = new Map();
+  /** The same records keyed by PLAN alone, for the named-range arm. That arm
+   * identifies a range by its resolved commit pair, which is a stronger
+   * identity than the invocation that wrote it, so a record for exactly those
+   * two commits satisfies it wherever in the cycle it was written.
+   * @type {Map<string, any[]>} */
+  const byPlan = new Map();
   for (const e of r.events) {
-    if (!thisRun(e)) continue;
+    if (!inCycle(e)) continue;
     if (e.family !== 'outcome' || e.event !== 'risk_check') continue;
-    const k = planKey(e.plan);
+    const k = rowKey(e.corr, e.plan);
     if (!records.has(k)) records.set(k, []);
-    records.get(k).push({
+    const p = planKey(e.plan);
+    if (!byPlan.has(p)) byPlan.set(p, []);
+    const rec = {
       base: e.base === undefined ? null : e.base,
       head: e.head === undefined ? null : e.head,
       // The resolved ids the range is IDENTIFIED by, null when the record does
@@ -3380,15 +3459,19 @@ function cmdRiskCheckStatus(dir, opts) {
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
       inconclusive: e.inconclusive === true,
-    });
+    };
+    records.get(k).push(rec);
+    byPlan.get(p).push(rec);
   }
 
   const rows = [...completed.entries()].map(([k, row]) => {
-    const found = records.get(k) || [];
+    const asked0 = wanted && planKey(wanted.plan) === planKey(row.plan)
+      && row.run === (planKey(r.corr) === '' ? null : planKey(r.corr));
+    const found = asked0 ? (byPlan.get(planKey(row.plan)) || []) : (records.get(k) || []);
     // Only a record whose read SUCCEEDED can satisfy the gate; the rest are
     // reported so the reader sees an attempt rather than an absence.
     const usable = found.filter((f) => f.checked);
-    const asked = wanted && planKey(wanted.plan) === k
+    const asked = asked0
       ? { base: wanted.base, head: wanted.head, base_id: wanted.base_id, head_id: wanted.head_id }
       : null;
     // COMMIT IDS on both sides. Comparing the spellings is what let a record
