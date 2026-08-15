@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 6 (The scan's correctness gaps close)
-Status: phase complete
-Next: /cad-context 4
-Updated: 2026-08-14
+Phase: 4 of 6 (Suggestions become seams)
+Status: context gathered
+Next: /cad-plan 4
+Updated: 2026-08-15

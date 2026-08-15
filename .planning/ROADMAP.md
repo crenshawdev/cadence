@@ -141,7 +141,7 @@ Success criteria:
    `adopt.md` 2-5) are counted by a seam and an out-of-range phase is reported,
    mirroring `plan-size`.
 2. One `trace close` subcommand infers return-vs-checkpoint from the return
-   shape, and the six files restating that close prose call it instead.
+   shape, and the eight files restating that close prose call it instead.
 3. `trace render`'s default response carries no unbounded `events` array - a
    bounded form measured on the live corpus, with the full array behind an
    explicit flag.

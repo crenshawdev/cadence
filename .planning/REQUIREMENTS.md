@@ -20,7 +20,7 @@ still hold their deferral reasons and none is promoted this cycle.
   `--root` refused consistently, and the copied helpers
   (`flag`/`flagValue`/`readText`, the branch reader) stated once.
 - **ENF-01**: The scan's enforcement and round-trip findings become seams:
-  criteria ceilings counted, one `trace close` replacing six files' restated
+  criteria ceilings counted, one `trace close` replacing eight files' restated
   close prose, `trace render` bounded by default, the measured unbatched
   round-trips batched, and the shipped read instrumentation proven (or proven
   absent) inside subagent dispatches and joined to its fire.
