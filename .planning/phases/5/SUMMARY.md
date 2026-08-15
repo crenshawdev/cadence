@@ -1,14 +1,17 @@
 ---
 phase: 5
 status: complete
-completed: 2026-08-14
+completed: 2026-08-15
 ---
 
 # Phase 5: What Cadence claims about itself is true - Summary
 
 A second `/cad-docs-verify` run over 32 files and 743 claims, transcribed into a
 `DOCS-CLAIMS.md` where all 933 rows carry a run number and a live line cite, plus
-the four prose corrections and two derived assertions the sweep's findings named.
+the four prose corrections and two derived assertions the sweep's findings named -
+then, after UAT refused the phase on the gap between measuring and fixing, the
+fourteen stale claims themselves corrected at source across seven shipped surfaces
+and closed in the ledger.
 
 ## What shipped
 
@@ -29,6 +32,19 @@ the four prose corrections and two derived assertions the sweep's findings named
 - Two assertions that derive both sides from the tree: README's skill/role/rung-file
   counts, and that `PROJECT.md`'s `### Active` declares its milestone before naming
   any other version - `cadence-core/bin/prose-agreement.test.mjs`
+- The four budgeted plugin surfaces corrected: `plan.md`'s review step names the
+  gate each stakes level resolves and what a `shipped` run does at the no-op,
+  `new-project.md` and `adopt.md` report the copied config's real defaults (plan
+  check off, verifier on), `config-catalog.md` drops the empty `Risk` category,
+  and `recall.md` names all three callers at the step each calls it
+- The three narrative docs corrected: `README.md:56` and `METHOD.md:309`/`:374`
+  state the plan gate as advisory / off / adjudicated, `METHOD.md`'s commit
+  protocol no longer asks the executor for a staged-diff risk check it never
+  makes, and the v2.7.0-retired risk floor and `risk.override.<surface>` waivers
+  are gone from `METHOD.md:420-427` and `INTERNALS.md:13`
+- The ledger closed against both: 112 further line re-pins, and all fourteen rows
+  re-read `corrected - <sha>` against the eight PLAN-6/PLAN-7 commits, with the
+  census re-stated to 845 accurate / 42 corrected / 45 divergence / 1 retired
 
 ## Commits
 
@@ -56,6 +72,16 @@ the four prose corrections and two derived assertions the sweep's findings named
 | 4 | 3 | 19d9965 | Name the test-seam sentinel beside the manifest override |
 | 5 | 1 | e4ba4cc | Assert README's skill, role and rung-file counts against the tree |
 | 5 | 2 | ba38c14 | Assert `PROJECT.md`'s Active milestone is the section's first version token |
+| 6 | 1 | 813f468 | Name the gate each stakes level resolves in `plan.md`'s review step |
+| 6 | 2 | ee0199b | Report the config template's real plan-check default in both setup workflows |
+| 6 | 3 | fdb2d69 | Drop the empty `Risk` knob category from the config catalog |
+| 6 | 4 | 75b1d28 | Name all three callers of `planning.mjs recall` and the step each calls it at |
+| 7 | 1 | 39583ba | Name the gate each stakes level resolves for the plan review in README |
+| 7 | 2 | ffb16a4 | Make METHOD's two plan-gate sentences agree with its own trigger table |
+| 7 | 3 | 1b4086f | Drop the staged-diff risk check from METHOD's commit protocol |
+| 7 | 4 | fa0d4b4 | Retire the dispatch-time risk floor from METHOD and INTERNALS |
+| 7 | 5 | 4c651fe | Re-pin the ledger cites this phase's gap edits moved |
+| 7 | 6 | af72e6f | Close the fourteen rows this phase fixed at source and re-state the ledger's counts |
 
 ## Deviations
 
@@ -82,20 +108,27 @@ the four prose corrections and two derived assertions the sweep's findings named
   words the row does not state. Those 20 rows are held out, keep run 1's verdict and
   read `1`; the rule and its one exception (`README-44`) are written into
   `## Reading this ledger`. (`d1ddfcf`)
+- [deviation] Plan 6, task 4: the task's verify asserts `grep -c "analyze"
+  cadence-core/references/recall.md` returns 0. It cannot - three surviving lines
+  match the substring through the live agent name (`recall.md:41`, `:44`, `:49`,
+  `cad-assumptions-analyzer` and its payload), all true and outside the one
+  paragraph the task scopes. Fixed the claim the criterion was written for and
+  left the agent name intact: `grep -n "at .analyze" recall.md` is empty. (`75b1d28`)
+- [deviation] Plan 7, task 5: the task asserts both that a doc's rows reproduce
+  its per-hunk deltas and that a row opened at its cite shows its claim. For
+  METHOD-88 the two conflict - its cite `158-159` straddles the commit-protocol
+  hunk, so the mechanical delta yields `158-158`, half the claim. Pinned to its
+  live location `157-158`, which is what the ledger's `:206-216` read rule is
+  written to. (`4c651fe`)
+- [deviation] Plan 7, task 5: five rows below a hunk were deliberately not
+  shifted, because their cite is provenance rather than an address under the
+  ledger's own rule at `:173-181` - four resolved `corrected - <sha>` (METHOD-01,
+  METHOD-02, METHOD-04, CONFIG-02) and CONFIG-29 resolved `divergence`. The
+  precedent is `a829f39`, which re-pinned 261 cells and no `corrected` row.
+  (`4c651fe`)
 
 ## Open items
 
-- Twelve stale claims the sweep found are recorded in the ledger but still stated
-  falsely in the shipped docs - plan 4's lease covered only the four surfaces the
-  roadmap named. The sharpest: three shipped surfaces (`README.md:56`,
-  `cadence-core/workflows/plan.md:331`, and `:336` for `diff`) describe a `plan`
-  gate that `route-table.json` does not resolve at the `shipped` default;
-  `new-project.md:60-61` and `adopt.md:54-56` state verbatim that a written config
-  turns "plan check and verifier on" while `workflow.plan_check` defaults to
-  `false`; `config-catalog.md:51` publishes a `**Risk**` knob category with zero
-  rows behind it and no `risk*` key left in `config.schema.json`; `recall.md:3-6`
-  says two commands call `planning.mjs recall` when `plan.md:117` and `:182` make
-  it three.
 - The ledger's 385 newly-filed rows include an unknown number of near-duplicates of
   run-1 rows whose wording drifted. Deduplicating needs a claim-level identity the
   ledger does not have. A third cycle could cut it by having `/cad-docs-verify`
@@ -111,26 +144,31 @@ the four prose corrections and two derived assertions the sweep's findings named
 
 ## Goal check
 
-The phase goal was that what Cadence claims about itself is true, and the sum of
-these 22 commits delivers the measurement and the named edits but not the whole
-claim. Five of the six roadmap criteria are met and independently checked here:
-the three head-anchored `REQ_ID` surfaces now state the surviving asymmetry
-(`req-traceability.md:50` and `:151`, `templates/REQUIREMENTS.md:62-63`, and
-`grep -c "Known limit as of v1.4.0"` returns 0); `acceptance-criteria.md:250` names
-`CADENCE_TEST_SEAM=1`; `/cad-capture --cadence` is discoverable at `COMMANDS.md:48`
-and `README.md:124` and now carries a ledger row; both derived assertions live in
-`prose-agreement.test.mjs` and `node cadence-core/bin/test.mjs prose` exits 0 at
-225 pass / 0 fail, each having been shown to redden on a seeded wrong tree
-(plan 5's report records the exact failure strings); `self-verify.mjs --root .`
-reports `problems:[]` across 21 checks. Criterion 1 - every row verdicted this
-cycle with no moved line cite - is met in substance at 933 rows with no `pending`
-and no empty cell, with two honest qualifications already listed as open items:
-eight orphan rows keep run 1's line under a `divergence` resolution, and 20
-`corrected` rows deliberately read run `1` because importing a run-2 verdict onto
-pre-correction text would misattribute it. What is missing is the gap between
-measuring and fixing: the sweep found twelve stale claims, and plan 4's lease
-covered four surfaces, so eight of them - including three that describe a review
-gate the routing table does not resolve - remain stated falsely in shipped docs
-with a dated `stale` row beside them. The claims are now true *about the ledger*
-and dated; they are not yet all true *in the docs a user reads*, and phase 6's
-voice pass runs over prose that still contains them.
+The phase goal was that what Cadence claims about itself is true, and after ten
+further commits the sum of these 32 delivers it. The measurement half was already
+met and is unchanged; what UAT refused - the gap between dating a stale claim and
+fixing it - is now closed at source. All fourteen claims the sweep found stale are
+corrected in the prose a user actually reads: `README.md:56` and `METHOD.md:309`
+and `:374` now state the plan gate as advisory at `solo`, off at `shipped`,
+adjudicated at `critical`, which is what `route-table.json:52` resolves;
+`new-project.md` and `adopt.md` carry one byte-identical sentence reporting plan
+check off and verifier on, matching `templates/config.json:6`;
+`config-catalog.md`'s zero-row `**Risk**` header is deleted and `self-verify`
+reports no `inert-config-key`; `recall.md` names three callers where `plan.md:117`
+and `:182` make three; `METHOD.md`'s commit protocol no longer asks for a
+staged-diff risk check the executor does not make; and the retired risk floor is
+gone from `METHOD.md:420-427` and `INTERNALS.md:13`, where the single surviving
+`risk.override` mention at `METHOD.md:422` is the sentence naming the v2.7.0 cut
+rather than a live claim. The ledger closed against all of it:
+`grep -ic "prose fix beyond this phase"` returns 0, every one of the fourteen rows
+reads `corrected - <sha>` against a resolving commit, and the census re-states to
+845 accurate / 42 corrected / 45 divergence / 1 retired = 933.
+`node cadence-core/bin/test.mjs prose` exits 0 at 225 pass / 0 fail with every
+edited file re-pinned in its own commit. What is left is smaller and named above
+as open items rather than hidden: one paragraph at `METHOD.md:317-319` restating
+the same gate defect one paragraph below the fix, a `plan.md:426` checkbox no
+ledger row cites, the ledger's own run-2 arithmetic gone stale against its new
+counts, and two transcription defects (INTERNALS-12, the CONFIG-CATALOG gate row)
+that are ledger bugs rather than doc claims. None of those was in a lease this
+phase held, and phase 6's voice pass runs over prose that no longer states a
+falsehood about the gates.
