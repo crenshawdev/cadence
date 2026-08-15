@@ -78,13 +78,20 @@ after it strands an unpaired bracket on every skipped phase and inverts the
 record-health signal /cad-report reads.
 
 Load prior-project memory first - BOTH arms need it. The buy arm feeds it to
-the analyzer payload; the skip arm reasons with it directly:
+the analyzer payload; the skip arm reasons with it directly. ONE call for every
+key this workflow uses, the batched form seven other sites already ship:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get memory.backend
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get \
+  memory.backend planning.commit_docs
 ```
 
-When it is `builtin` (the schema default), run recall for the phase goal:
+`planning.commit_docs` is not needed until the `commit` step at the very end;
+it is read HERE because this workflow's only other config touchpoint was a
+second Bash round-trip for one key. Carry the value forward.
+
+When `memory.backend` is `builtin` (the schema default), run recall for the
+phase goal:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" recall "<key terms from the phase goal>"
@@ -362,7 +369,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N
 </step>
 
 <step name="commit">
-If `planning.commit_docs` is true: apply the protected-branch guard
+If `planning.commit_docs` - the value read in the `spend_gate` batch, never
+re-read here - is true: apply the protected-branch guard
 (references/git-guard.md rail 1 - context is the first act of a phase), then
 commit exactly `{phase_dir}/CONTEXT.md`, `.planning/STATE.md`, and - only
 when the requirement-wording-drift step edited it - `.planning/REQUIREMENTS.md`:
