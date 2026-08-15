@@ -105,7 +105,33 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+`v3.4.0 - the tracker enters the spine`, opened 2026-08-15. One requirement,
+`LND-01`, promoted from `## Deferred` and scoped straight off the Forgejo
+milestone, which holds one issue: #121.
+
+**The theme is one sentence: nothing in the spine has ever looked at the issue
+tracker.** Cadence audits its own requirements, its own plans and its own run
+record, and then lands work without ever asking whether that work answered
+something the tracker has open. `/cad-land` step 1 already detects the remote
+host from the origin URL and already resolves a `tea` login to pick the PR
+mechanism, so the host and the CLI are in hand at exactly the point the check
+belongs - this adds a fact to a report that already runs, not a command and not
+a dependency class.
+
+Two facts land there: the open issues on the detected host, and every issue
+number the commits on this branch reference. The second is the one that earns
+its place, because "your branch references #42 and #47; #42 is still open" is a
+discrepancy that is hard to skim past where a bare list is not.
+
+The constraints are the reason this was deferred out of `v3.2.0` rather than
+rushed: it is the one remaining queued item that ADDS a mechanism, it must
+degrade in one line and never block a land, it must be bounded so a hanging
+forge CLI cannot stall one, and it must never auto-close an issue. `glab` is
+absent on this machine, so the GitLab arm ships behind the same resolved-CLI
+seam as `gh` and `tea` and is proven by a stubbed CLI path. The naming trap is
+explicit: `git.auto_close` already means "merge the integration branch
+unattended", so the new key is `git.issue_check` and the two meanings never
+share vocabulary.
 
 `v3.3.0 — the record you plan from` closed on 2026-08-15: five requirements
 (`CAP-01`, `TRC-01`, `COR-01`, `ENF-01`, `DOC-02`), five phases, 113 commits,

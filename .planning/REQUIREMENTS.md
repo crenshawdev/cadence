@@ -1,15 +1,19 @@
-# Requirements: Cadence (v3.2.0 open)
+# Requirements: Cadence (v3.4.0 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-No cycle open. `v3.3.0 - the record you plan from` closed 2026-08-15 and its
-five requirements moved to `## Shipped` below. The next milestone is scoped at
-its open; the five ids in `## Deferred` - `LND-01`, `PRS-01`, `EVD-01`,
-`RCL-06`, `CTX-02` - all still hold their deferral reasons and none has been
-promoted.
+`v3.4.0 - the tracker enters the spine`, opened 2026-08-15. Scoped from the
+Forgejo milestone rather than from a scan or the capture queue: milestone
+`v3.4.0` holds exactly one issue, #121, and `LND-01` is its requirement,
+promoted here out of `## Deferred` where it sat from 2026-08-14. The four
+remaining deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted; the next milestones already hold their
+own picks (`v3.4.1` carries #129, #134 and #135).
+
+- **LND-01**: `/cad-land` surfaces the tracker before work lands. Nothing in the spine ever looks at issues, and landing work without checking whether it addressed one is the most frequent process miss in real use. It belongs in step 1, which ALREADY detects the remote host from the origin URL and resolves a `tea` login to pick the PR mechanism (`skills/cad-land/SKILL.md:31-38`), so the host and CLI are already in hand and `gh`/`glab`/`tea` are already first-class here. Two facts: open issues on the detected host, and any issue number a commit on this branch references (`git log <base>..HEAD` for `#N`, `closes #N`, `fixes #N`). The second earns its place - "your branch references #42 and #47; #42 is still open" is a specific discrepancy, where a bare list is easy to skim past. Read-only and default on, so it does not violate the skill's "never decides how you publish" objective; closing an issue stays an explicit ask and is never implied by landing. Degrades in ONE line on no remote, unrecognized host, missing CLI, no login or a nonzero exit, never blocking the land and never fabricating a list, and bounded so a hanging forge CLI cannot stall a land. NAMING TRAP: `git.auto_close` already means "merge the integration branch unattended" across `cad-land` step 4b, `land-cleanup.mjs` and `close-decision.mjs`, so the new key must not share that vocabulary - `git.issue_check` is the suggestion. Registration in `skills/cad-help`, `README.md`, `.planning/DOCS-CLAIMS.md` and the config catalog is part of the requirement. Tracked as #121 DEFERRED 2026-08-14: cut from phase 4 before execution - the one remaining item in the v3.2.0 cycle that ADDED a mechanism, and its GitLab arm is untestable here (`glab` absent). Issue #121 stays open. PROMOTED 2026-08-15 into `v3.4.0` as its sole requirement, from Forgejo milestone `v3.4.0` (issue #121). The deferral reason is still live and is a planning constraint, not a blocker: `glab` is absent on this machine (`gh` and `tea` are present), so the GitLab arm ships behind the same resolved-CLI seam as the others and is proven by a stubbed CLI path rather than a live `glab` call.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -155,9 +159,6 @@ parses only the Traceability table).
 | DOC-02 (what Cadence claims about itself is verified this cycle or corrected: one docs-verify sweep, 933 dated ledger rows, fourteen stale claims fixed at source) | 5 | Complete | v3.3.0 |
 
 ## Deferred
-
-- **LND-01**: `/cad-land` surfaces the tracker before work lands. Nothing in the spine ever looks at issues, and landing work without checking whether it addressed one is the most frequent process miss in real use. It belongs in step 1, which ALREADY detects the remote host from the origin URL and resolves a `tea` login to pick the PR mechanism (`skills/cad-land/SKILL.md:31-38`), so the host and CLI are already in hand and `gh`/`glab`/`tea` are already first-class here. Two facts: open issues on the detected host, and any issue number a commit on this branch references (`git log <base>..HEAD` for `#N`, `closes #N`, `fixes #N`). The second earns its place - "your branch references #42 and #47; #42 is still open" is a specific discrepancy, where a bare list is easy to skim past. Read-only and default on, so it does not violate the skill's "never decides how you publish" objective; closing an issue stays an explicit ask and is never implied by landing. Degrades in ONE line on no remote, unrecognized host, missing CLI, no login or a nonzero exit, never blocking the land and never fabricating a list, and bounded so a hanging forge CLI cannot stall a land. NAMING TRAP: `git.auto_close` already means "merge the integration branch unattended" across `cad-land` step 4b, `land-cleanup.mjs` and `close-decision.mjs`, so the new key must not share that vocabulary - `git.issue_check` is the suggestion. Registration in `skills/cad-help`, `README.md`, `.planning/DOCS-CLAIMS.md` and the config catalog is part of the requirement. Tracked as #121 DEFERRED 2026-08-14: cut from phase 4 before execution - the one remaining item in the v3.2.0 cycle that ADDED a mechanism, and its GitLab arm is untestable here (`glab` absent). Issue #121 stays open. DEFERRED 2026-08-14: cut from phase 4 before execution - the one remaining item in the v3.2.0 cycle that ADDED a mechanism, and its GitLab arm is untestable here (`glab` absent). Issue #121 stays open.
-Tracked, not in the current roadmap.
 
 Deferred out of `v2.5.0` on 2026-08-08 as a block, to release the plan-size
 fix early rather than hold it behind four more phases. Nothing about these
