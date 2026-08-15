@@ -174,11 +174,14 @@ The join is `doc` plus claim text, never the id, for the reason stated below.
 claim text is what run 1 read BEFORE the fix, so a run-2 claim that looks like
 it is the corrected sentence rather than this claim; joining the two would
 overwrite a recorded correction with a verdict about different words. 20 of the
-28 rows whose resolution begins `corrected` are in that class: they keep run 1's
+42 rows whose resolution begins `corrected` are in that class: they keep run 1's
 verdict, their `corrected - <sha>` resolution, and their run-1 line, which is
-provenance rather than an address. The other eight are README-44, whose claim
+provenance rather than an address. Eight more are README-44, whose claim
 TEXT was itself rewritten to the corrected sentence (see below) so it joins like
-any other row, and the seven phase 5 rewrote to the live `trace close` call.
+any other row, and the seven phase 5 rewrote to the live `trace close` call. The
+remaining fourteen are phase 5's own source fixes, a third shape described
+below: a run-2 `stale` verdict, pre-fix claim text, and a cite that became
+provenance the moment the fix landed.
 
 **`divergence` is a RESOLUTION value here, and deliberately not a fourth
 verdict.** `docs-verify.md`'s classification vocabulary is exactly
@@ -303,11 +306,34 @@ fixes happened. The `stale` verdict is the finding and the resolution is the
 fix, which is why run 2's `accurate` verdict on the rewritten text is NOT
 imported over them.
 
+Phase 5 of `v3.3.0` fixed fourteen rows' prose AT SOURCE, in its two gaps plans,
+and closed the rows without rewriting one claim. `813f468`, `ee0199b`, `fdb2d69`
+and `75b1d28` corrected the four budgeted plugin surfaces - `plan.md`'s review
+step, the plan-check default in `new-project.md` and `adopt.md`, the empty
+`**Risk**` catalog category, and `recall.md`'s caller count - and `39583ba`,
+`ffb16a4`, `1b4086f` and `fa0d4b4` corrected the three narrative documents:
+README's plan gate, METHOD's two plan-gate sentences and its staged-diff commit
+check, and the retired risk floor in METHOD and INTERNALS. Twelve of the
+fourteen were the rows run 2 had deferred as a divergence, with the fix left to
+a later phase; the other two, METHOD-25 and NEW-PROJECT-08, were verdicted
+`accurate` over the very sentences those edits removed, so they are re-verdicted
+`stale` and closed alongside.
+
+Those fourteen are a THIRD shape, neither of the two classes above: a run-2
+`stale` verdict, the claim TEXT exactly as it was read BEFORE the fix, and a
+`corrected - <sha>` resolution naming the commit. Their claim text is
+deliberately NOT rewritten, which is this ledger's default for a `corrected`
+row rather than the README-44 and `trace close` exception - so the fix lives in
+the resolution, the `line` cell became provenance the moment its commit landed,
+and next cycle's fresh extraction of the corrected sentence files its own row
+instead of joining these. They are closed findings, and they never enter the
+next cycle's diff.
+
 **Resolution values.** Measured over all 933 rows, every cell is one of four
-forms: `accurate` on every row the sweep confirmed (847);
+forms: `accurate` on every row the sweep confirmed (845);
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
-the commit that edited it (28); `divergence - <reason>` on one deliberately left
-standing (57); and `RETIRED - <reason>` on a row whose claimed SENTENCE was cut
+the commit that edited it (42); `divergence - <reason>` on one deliberately left
+standing (45); and `RETIRED - <reason>` on a row whose claimed SENTENCE was cut
 rather than corrected, so there is nothing left to re-verify (1, PLAN-03, whose
 `line` cell reads `—` for the same reason). `pending` is a transient placeholder
 used only while a phase is executing, so that no cell is ever empty; zero rows
@@ -382,7 +408,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-22 | README.md | 52 | Effort is frozen in agent frontmatter; self-verify fails on a cell naming a rung with no file and on a rung file no cell reaches. | accurate | accurate | 2 |
 | README-23 | README.md | 54 | `model.escalate_on_failure`, on by default. | accurate | accurate | 1 |
 | README-24 | README.md | 56 | Gates are `off`, `advisory`, `blocking`, `adjudicated`. | accurate | accurate | 2 |
-| README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | stale | divergence - run 2 half A: `route-table.json` `review.shipped.plan` is `off`; prose fix beyond this phase | 2 |
+| README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | stale | corrected - 39583ba - `README.md:56` now reads advisory at `solo`, off at `shipped`, adjudicated at `critical` | 2 |
 | README-26 | README.md | 56 | `risk_surface` is blocking at every level including `solo`. | accurate | accurate | 2 |
 | README-27 | README.md | 56 | The eight surfaces are auth, billing, secrets, migrations, destructive, concurrency, API contracts, untrusted input. | accurate | accurate | 2 |
 | README-28 | README.md | 58 | `risk.override.<surface>` waives one surface, repo config only; a global waiver is ignored and warned. | stale | divergence - run 2 half A: claim stated nowhere in the file, the `risk.override` family was retired in v2.7.0; line left at run-1 provenance | 1 |
@@ -433,7 +459,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-22 | METHOD.md | 117-127 | Trivial vs structural deviation buckets; unsure means structural. | accurate | accurate | 1 |
 | METHOD-23 | METHOD.md | 143-145 | Circuit breaker is three fix attempts per task. | accurate | accurate | 2 |
 | METHOD-24 | METHOD.md | 147-152 | A failed package install is never auto-fixed and is the one deviation class with no inline path. | accurate | accurate | 2 |
-| METHOD-25 | METHOD.md | 156-157 | Commit protocol: individual staging, never `git add -A`/`.`, risk check on the staged diff, `{type}({scope}): {description}`, post-commit glance. | accurate | accurate | 2 |
+| METHOD-25 | METHOD.md | 156-157 | Commit protocol: individual staging, never `git add -A`/`.`, risk check on the staged diff, `{type}({scope}): {description}`, post-commit glance. | stale | corrected - 1b4086f - the same removal - the protocol no longer asks for a risk check, and the rest of this claim still holds | 2 |
 | METHOD-26 | METHOD.md | 160-162 | Executors never push, force-push, write STATE/ROADMAP/SUMMARY, or spawn a reviewer. | accurate | accurate | 2 |
 | METHOD-27 | METHOD.md | 166 | `cadence-core/workflows/execute.md`. | accurate | accurate | 1 |
 | METHOD-28 | METHOD.md | 168-173 | The seam intersects declared file lists pairwise; overlap forces sequential; a plan declaring no files forces sequential; a check that could not run forces it too. | accurate | accurate | 2 |
@@ -467,7 +493,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-56 | METHOD.md | 399-401 | A clean pass retargets onto the decision's own load-bearing claims and is never reported as a bare "no findings". | accurate | accurate | 1 |
 | METHOD-57 | METHOD.md | 404 | Cost is reported qualitatively, never as a token or dollar figure. | accurate | accurate | 1 |
 | METHOD-58 | METHOD.md | 409-412 | The eight risk surfaces that fire the blocking trigger. | accurate | accurate | 1 |
-| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | stale | divergence - run 2 half A: no risk floor and no `risk.override.*` key; prose fix beyond this phase | 2 |
+| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | stale | corrected - fa0d4b4 - the paragraph now states detection sets no floor and names the v2.7.0 cut of the detector and the eight `risk.override.*` waivers | 2 |
 | METHOD-60 | METHOD.md | 429-434 | The pre-filter: a destructive op drops only when `git check-ignore` matches **and** `git ls-files` is empty; a secret drops only when template-shaped **and** a stub. | accurate | accurate | 2 |
 | METHOD-61 | METHOD.md | 439-442 | The executor detects, stops and hands up; never reviews itself, never skips the gate. | accurate | accurate | 1 |
 | METHOD-62 | METHOD.md | 447-463 | `references/consult.md` and its five rules, including `review.consult.attempt_threshold` and no local-subagent consult. | accurate | accurate | 2 |
@@ -503,7 +529,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | INTERNALS-10 | INTERNALS.md | 13 | The routed vocabulary is `sonnet` and `opus`; `haiku` and `fable` are reachable only by a `model.overrides` pin. | accurate | accurate | 2 |
 | INTERNALS-11 | INTERNALS.md | 13 | An explicit pick wins; a config gate beats the level's only if it is one of the four values, else it loses and is named. | accurate | accurate | 2 |
 | INTERNALS-12 | INTERNALS.md | 13 | `model.escalate_on_failure`, on by default; false holds the retry at its start rung. | accurate | accurate | 1 |
-| INTERNALS-13 | INTERNALS.md | 13 | The risk floor only ever raises; lowering takes a named per-surface override; a project at `critical` is unaffected. | stale | divergence - run 2 half A: the same retired floor, stated as live; prose fix beyond this phase | 2 |
+| INTERNALS-13 | INTERNALS.md | 13 | The risk floor only ever raises; lowering takes a named per-surface override; a project at `critical` is unaffected. | stale | corrected - fa0d4b4 - the floor clause inside `:13` rewritten to the v2.7.0 cut, every other clause of the line left standing | 2 |
 | INTERNALS-14 | INTERNALS.md | 13 | CI refuses a retry rung that sits below the rung it started on. | accurate | accurate | 2 |
 | INTERNALS-15 | INTERNALS.md | 15 | Routing governs dispatched subagents, not the main session. | accurate | accurate | 2 |
 | INTERNALS-16 | INTERNALS.md | 17 | The five "read the code" pointers in the routing section. | accurate | accurate | 1 |
@@ -737,7 +763,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-05 | cadence-core/workflows/new-project.md | 47 | A re-run returns `written:false` with `reason:"already-ignored"`. | accurate | accurate | 2 |
 | NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 48 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate | 1 |
 | NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate | 2 |
-| NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | accurate | accurate | 1 |
+| NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | stale | corrected - ee0199b - the same sentence - the written default for `workflow.plan_check` is reported as off | 1 |
 | NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-68 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate | 2 |
 | NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 161 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate | 2 |
 | NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 173 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate | 2 |
@@ -795,7 +821,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-24 | cadence-core/workflows/plan.md | 297-298 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate | 1 |
 | PLAN-25 | cadence-core/workflows/plan.md | 299 | WARNING means quality is degraded but execution can proceed. | accurate | accurate | 1 |
 | PLAN-26 | cadence-core/references/plan-revision.md | 10-12 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate | 2 |
-| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | stale | divergence - run 2 half B: `route-table.json` `review.shipped.plan` is `off`, advisory is `solo`; prose fix beyond this phase | 2 |
+| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | stale | corrected - 813f468 - the review step now names the gate each level resolves - `off` at `shipped`, advisory at `solo`, adjudicated at `critical` | 2 |
 | PLAN-28 | cadence-core/workflows/plan.md | 354 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate | 1 |
 | PLAN-29 | cadence-core/workflows/plan.md | 368 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate | 2 |
 | PLAN-30 | cadence-core/workflows/plan.md | 376-377 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate | 1 |
@@ -951,7 +977,7 @@ mistake.
 | ADOPT-06 | cadence-core/workflows/adopt.md | 49-51 | /cad-health reports `ignored:false` and `tracked:true` as separate issues with different remedies | accurate | accurate | 2 |
 | ADOPT-07 | cadence-core/workflows/adopt.md | 50-51 | Append-if-absent, so a brownfield `.gitignore` keeps every line and a re-run adds no second line | accurate | accurate | 2 |
 | ADOPT-08 | cadence-core/workflows/adopt.md | 41, 53 | The config template is copied VERBATIM from `cadence-core/templates/config.json` | accurate | accurate | 2 |
-| ADOPT-09 | cadence-core/workflows/adopt.md | 54-56 | "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | stale | divergence - run 2 half B inv 4: the same defect as `new-project.md:60-61`, verbatim. Prose fix beyond this phase | 2 |
+| ADOPT-09 | cadence-core/workflows/adopt.md | 54-56 | "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | stale | corrected - ee0199b - the same fix, byte-identical sentence in `adopt.md` | 2 |
 | ADOPT-10 | cadence-core/workflows/adopt.md | 42-44 | The five keys read: `planning.commit_docs`, `granularity`, `git.protected_branches`, `git.on_protected`, `git.base_branch` | accurate | accurate | 2 |
 | ADOPT-11 | cadence-core/workflows/adopt.md | 61-62 | `planning.mjs detect-commands` is neither required nor extended for this | accurate | accurate | 2 |
 | ADOPT-12 | cadence-core/workflows/adopt.md | 135 | `cadence-core/templates/PROJECT.md` | accurate | accurate | 2 |
@@ -1065,17 +1091,17 @@ mistake.
 | METHOD-84 | METHOD.md | 55-57 | Verify is the task's authority: any implementation that satisfies it is authorized | accurate | accurate | 2 |
 | METHOD-85 | METHOD.md | 93-96 | The checker checks six dimensions, and proportionality asks about `workflow.max_plan_tasks` | accurate | accurate | 2 |
 | METHOD-86 | METHOD.md | 130-134 | A deviation is exactly one thing: an acceptance criterion or locked decision turned out wrong | accurate | accurate | 2 |
-| METHOD-87 | METHOD.md | 157-158 | "Then check the staged diff against the risk-surface list before committing" | stale | divergence - run 2 half A inv 1: the executor has no staged risk check; `risk_surface` fires once on the plan's commit range. Prose fix beyond this phase | 2 |
+| METHOD-87 | METHOD.md | 157-158 | "Then check the staged diff against the risk-surface list before committing" | stale | corrected - 1b4086f - the staged-diff risk check removed from the Commit protocol | 2 |
 | METHOD-88 | METHOD.md | 157-158 | Commit message shape `{type}({scope}): {description}` and a post-commit glance | accurate | accurate | 2 |
 | METHOD-89 | METHOD.md | 229-231 | Anti-pattern scan covers TODO, FIXME, XXX, HACK, "placeholder", "not implemented", `todo!()` | accurate | accurate | 2 |
 | METHOD-90 | METHOD.md | 233-235 | A `CADENCE-DEBT` marker is exempt because its ceiling and trigger fields ARE the reference | accurate | accurate | 2 |
 | METHOD-91 | METHOD.md | 288 | `risk_surface` is fired by execute, debug, task and verify | accurate | accurate | 2 |
 | METHOD-92 | METHOD.md | 291-292 | Exactly one of the four fires on its own at the default `shipped` level | accurate | accurate | 2 |
-| METHOD-93 | METHOD.md | 309-310 | "a `plan` review is advisory at `solo` and `shipped` and adjudicated at `critical`" | stale | divergence - run 2 half A inv 1: `route-table.json` `review.shipped.plan` is `off`, and this document's own trigger table says so. Prose fix beyond this phase | 2 |
+| METHOD-93 | METHOD.md | 309-310 | "a `plan` review is advisory at `solo` and `shipped` and adjudicated at `critical`" | stale | corrected - ffb16a4 - the sentence now names `off` at `shipped`, matching this document's own trigger table | 2 |
 | METHOD-94 | METHOD.md | 309-310 | An ordinary `diff` is off at `solo` and `shipped`, and blocking at `critical` | accurate | accurate | 2 |
 | METHOD-95 | METHOD.md | 310-311 | `risk_surface` is blocking at all three levels | accurate | accurate | 2 |
 | METHOD-96 | METHOD.md | 311-314 | A gate typo loses to the level's gate and is named in the warnings | accurate | accurate | 2 |
-| METHOD-97 | METHOD.md | 373-374 | "the plan review in `/cad-plan`, advisory at `shipped` and adjudicated at `critical`" | stale | divergence - run 2 half A inv 1: `off` at `shipped`, advisory is the `solo` gate. Prose fix beyond this phase | 2 |
+| METHOD-97 | METHOD.md | 373-374 | "the plan review in `/cad-plan`, advisory at `shipped` and adjudicated at `critical`" | stale | corrected - ffb16a4 - the adjudicated-list clause now names `off` at `shipped` | 2 |
 | METHOD-98 | METHOD.md | 374 | `/cad-execute`'s per-plan diff review is `off` below `critical` | accurate | accurate | 2 |
 | METHOD-99 | METHOD.md | 375-379 | `/cad-land`'s unattended close fires no review of its own and halts on a surviving blocker or high | accurate | accurate | 2 |
 | METHOD-100 | METHOD.md | 409-412 | The eight risk-detection categories named in prose | accurate | accurate | 2 |
@@ -1206,7 +1232,7 @@ mistake.
 | NEW-PROJECT-24 | cadence-core/workflows/new-project.md | 21 | `docs/DISCOVERY.md` describes how a user arrives with a brief | accurate | accurate | 2 |
 | NEW-PROJECT-25 | cadence-core/workflows/new-project.md | 23-24 | A brief is `Read` WHOLE - no parser, no schema, no seam subcommand | accurate | accurate | 2 |
 | NEW-PROJECT-26 | cadence-core/workflows/new-project.md | 50-51 | `trace ignore` is the only thing in Cadence that writes that ignore line | accurate | accurate | 2 |
-| NEW-PROJECT-27 | cadence-core/workflows/new-project.md | 60-61 | "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | stale | divergence - run 2 half B inv 3: `workflow.plan_check` defaults to `false` in both the schema and the template. Prose fix beyond this phase | 2 |
+| NEW-PROJECT-27 | cadence-core/workflows/new-project.md | 60-61 | "Config written with defaults (standard granularity, shipped stakes, research off, plan check and verifier on)" | stale | corrected - ee0199b - the sentence now reads research and plan check off, verifier on | 2 |
 | NEW-PROJECT-28 | cadence-core/workflows/new-project.md | 174-176 | A repo with no commits (`git rev-parse HEAD` fails) skips the guard | accurate | accurate | 2 |
 | NEW-PROJECT-29 | cadence-core/workflows/new-project.md | 212-213 | A wall-clock config key was its bound until v2.7.0, when it was deleted for claiming a control nothing could apply | accurate | accurate | 2 |
 | NEW-PROJECT-30 | cadence-core/workflows/new-project.md | 213 | `workflow.research` default false | accurate | accurate | 2 |
@@ -1238,7 +1264,7 @@ mistake.
 | PLAN-46 | cadence-core/workflows/plan.md | 304-305 | `cadence-core/references/plan-revision.md` is the one consult site for the BLOCKER arm | accurate | accurate | 2 |
 | PLAN-47 | cadence-core/workflows/plan.md | 312-315 | The `plan` trigger's payload is the PLAN file(s) plus ROADMAP, REQUIREMENTS and CONTEXT | accurate | accurate | 2 |
 | PLAN-48 | cadence-core/workflows/plan.md | 317-319 | All four ride the fire's `--read` bracket list (review-triggers.md step 4) | accurate | accurate | 2 |
-| PLAN-49 | cadence-core/workflows/plan.md | 336 | "the same overlap the per-plan `diff` review runs at advisory" | stale | divergence - run 2 half B inv 3: no stakes level resolves `diff` to advisory. Prose fix beyond this phase | 2 |
+| PLAN-49 | cadence-core/workflows/plan.md | 336 | "the same overlap the per-plan `diff` review runs at advisory" | stale | corrected - 813f468 - the false `diff`-at-advisory comparand dropped from the advisory bullet | 2 |
 | PLAN-50 | cadence-core/workflows/plan.md | 341-345 | The advisory tail writes findings to `.planning/phases/<N>/REVIEW-plan.md` and the reviewer closes its own bracket | accurate | accurate | 2 |
 | PLAN-51 | cadence-core/workflows/plan.md | 350-355 | Adjudicated survivors are a numbered list the user triages, NONE the default, per `references/triage-gate.md` | accurate | accurate | 2 |
 | PLAN-52 | cadence-core/workflows/plan.md | 375 | `cursor set` derives name/total from ROADMAP and stamps the date | accurate | accurate | 2 |
@@ -1300,13 +1326,13 @@ mistake.
 | CONFIG-CATALOG-04 | cadence-core/references/config-catalog.md | 32 | `workflow.lint_command` `[global]`, LINT only - there is no typecheck key | accurate | accurate | 2 |
 | CONFIG-CATALOG-05 | cadence-core/references/config-catalog.md | 46 | `git.auto_close` carries no `[src]` marker | accurate | accurate | 2 |
 | CONFIG-CATALOG-06 | cadence-core/references/config-catalog.md | 46 | `git.auto_close` halts on a surviving blocker/high `risk_surface` finding | accurate | accurate | 2 |
-| CONFIG-CATALOG-07 | cadence-core/references/config-catalog.md | 51 | A `**Risk**` knob category exists | stale | divergence - run 2 half B inv 5: the `**Risk**` header has zero rows beneath it and no `risk` key survives in the schema. Prose fix beyond this phase | 2 |
+| CONFIG-CATALOG-07 | cadence-core/references/config-catalog.md | 51 | A `**Risk**` knob category exists | stale | corrected - fdb2d69 - the empty `**Risk**` category header deleted, no surviving row moved | 2 |
 | CONFIG-CATALOG-08 | cadence-core/references/config-catalog.md | 61 | `review.triggers.<t>.gate` defaults: `adjudicated` for plan, `advisory` for diff/phase_diff, `blocking` for risk_surface | accurate | accurate | 2 |
 | CONFIG-CATALOG-09 | cadence-core/references/config-catalog.md | 62 | `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | accurate | accurate | 2 |
 | CONFIG-CATALOG-10 | cadence-core/references/config-catalog.md | 63 | `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | accurate | accurate | 2 |
 | CONFIG-CATALOG-11 | cadence-core/references/config-catalog.md | 64 | `review.triggers.risk_surface.surfaces` list(enum) over the eight surfaces, unset means all eight and the first fire asks once | accurate | accurate | 2 |
 | CONFIG-CATALOG-12 | cadence-core/references/config-catalog.md | 68-69 | Every write goes through the Validation seam; a value outside its set is rejected, never written | accurate | accurate | 2 |
-| RECALL-01 | cadence-core/references/recall.md | 3-6 | Two commands call `planning.mjs recall` - `/cad-context` at `analyze` and `/cad-debug` at Hypothesize - and the contract is stated here once instead of drifting in two workflows | stale | divergence - run 2 half B inv 5: THREE commands call it - `plan.md:117` and `:182` too. Prose fix beyond this phase | 2 |
+| RECALL-01 | cadence-core/references/recall.md | 3-6 | Two commands call `planning.mjs recall` - `/cad-context` at `analyze` and `/cad-debug` at Hypothesize - and the contract is stated here once instead of drifting in two workflows | stale | corrected - 75b1d28 - the opening paragraph now names all three callers and the step each calls recall at | 2 |
 | RECALL-02 | cadence-core/references/recall.md | 11-14 | The `memory.backend` `builtin`/`none` gate is deliberately NOT here - it stays inline at every calling site | accurate | accurate | 2 |
 | RECALL-03 | cadence-core/references/recall.md | 24-26 | `results` is ranked best first and BOUNDED - `--top N` returns at most N, default 5 | accurate | accurate | 2 |
 | RECALL-04 | cadence-core/references/recall.md | 26-28 | `total` is how many matched, so a truncated answer reads as truncated | accurate | accurate | 2 |
