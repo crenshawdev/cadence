@@ -1,6 +1,6 @@
 # State
 
-Phase: 6 of 1 (The docs speak in one voice)
+Phase: 1 of 0 (no active cycle)
 Status: ready to plan
-Next: scope the next milestone, then /cad-context 6
+Next: scope the next milestone
 Updated: 2026-08-15

@@ -120,10 +120,6 @@ source. Its five rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`,
 its narrative in `CHANGELOG.md`, and its phase record in
 `.planning/_archive-v3.3.0/` and git history.
 
-Phase 6, the tone and audience pass over user-facing prose, was scoped and not
-started. It carries forward as the only entry in `ROADMAP.md`'s `## Phases` and
-takes a requirement id when the next cycle opens.
-
 `v3.2.0 — the controls that reported success` closed on
 2026-08-14: twelve requirements (`CFG-01`, `CFG-02`, `FSW-01`, `GAT-01`,
 `EXP-01`, `VAL-01`, `RVW-01`, `RVW-02`, `CST-01`, `CST-02`, `CST-03`,

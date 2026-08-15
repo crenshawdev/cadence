@@ -11,11 +11,6 @@ its open; the five ids in `## Deferred` - `LND-01`, `PRS-01`, `EVD-01`,
 `RCL-06`, `CTX-02` - all still hold their deferral reasons and none has been
 promoted.
 
-One phase carries forward unstarted: **Phase 6, the docs speak in one voice**,
-a tone and audience pass over `README.md`, `references/COMMANDS.md` and the
-user-facing workflow prose. It keeps its `## Phases` entry in `ROADMAP.md` and
-needs a requirement id when the next cycle opens.
-
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
 

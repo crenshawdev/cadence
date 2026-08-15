@@ -47,24 +47,5 @@ failure in the scan record. `LND-01` stays `## Deferred` with issue #121 open.
 
 ## Phases
 
-- [ ] **Phase 6: The docs speak in one voice** - tone and audience pass over README, COMMANDS.md and user-facing workflow prose, after phase 5's accuracy sweep so re-voiced lines are already true
 
 ## Phase Details
-
-### Phase 6: The docs speak in one voice
-
-Tone and audience pass over the user-facing prose - README.md,
-`references/COMMANDS.md`, and the workflow/skill descriptions a user reads
-before trusting the tool. Phase 5 makes the claims true; this phase makes them
-read right: demands stated plainly (approve/triage/walk), the "not for you if"
-half kept, one voice throughout. Runs after phase 5 so re-voiced lines are
-already accurate rather than about to be rewritten.
-
-Scope is deliberately open: success criteria and requirement IDs are settled at
-`/cad-context 6` - John has further thoughts to bring when the phase gets
-close. Filed so far:
-
-- README restructure, three layers in reading order: a quick intended-use
-  statement first so a visitor can decide in seconds whether to keep reading,
-  then a short ELI5 walkthrough, then the thorough documentation for
-  engineers.
