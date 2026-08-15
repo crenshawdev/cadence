@@ -71,8 +71,21 @@ No PLAN.md, no SUMMARY.md, no state writes.
 </step>
 
 <step name="risk_check">
-If any commit's diff touched a risk surface, fire the `risk_surface` review
-trigger per references/review-triggers.md before reporting done. The commits
+ASK THE SEAM whether any commit's diff touched a risk surface - never by reading
+the diff against a prose list, which left no record at all when it matched
+nothing:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase 0 --base <parent of the task's first commit> --head HEAD
+```
+
+`--phase 0` because a task sits outside the phase spine while `--phase` is
+required: 0 is the one number no roadmap phase carries, so a task's records
+never join a phase's.
+
+A non-empty `matches` OR `inconclusive: true` fires the `risk_surface` review
+trigger per references/review-triggers.md before reporting done - an unjudged
+range is not a cleared one. The commits
 already exist, so there is no staged diff in the index: write
 `git diff <parent of the task's first commit>..HEAD` to
 `.planning/tasks/{slug}/risk-task-{slug}.diff` and fire with that path - shape (c), the
@@ -80,6 +93,16 @@ flagged-diff FILE path, since shape (a) refs is not one of the shapes the wiring
 table admits for `risk_surface`. That file is transient exactly like
 `execute.md`'s `plan-<k>-risk-task-<n>.diff`: never stage it, and delete it once
 the trigger returns.
+
+Done is reported only on an `ok:true` run whose record actually REACHED the
+trace, which the envelope states as `written: true`. On `written: false` - a
+symlinked trace, a failed stat, a full disk, or the size cap - do not report
+done: state the reason and re-run once a record can land. This path has no
+`risk-check status` call of its own the way `execute.md` does, so that flag is
+its whole guard, and `ok:true` with nothing on the record is exactly the state
+this step exists to refuse. When there is no `.planning/` at all the record has
+nowhere to go and the same rule holds - create it, or say the check is unrecorded
+rather than reporting done on it.
 
 `{slug}` is this task's own slug, and neither it nor that directory is created
 by the INLINE path - `planned_path` step 1 is the only writer of

@@ -368,8 +368,28 @@ gate and drops the loop.
 
 ## risk_surface detection (shipped defaults, configurable)
 
-Path/diff heuristics; a match in one of eight categories fires the
-`risk_surface` trigger. The token beside each is the name that category carries
+Detection is a SEAM's answer, never a model's reading of this list:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --base <ref> --head <ref>
+```
+
+maps the range's changed PATHS and its ADDED and REMOVED lines to
+`{checked, categories, matches, inconclusive}` and appends that answer to
+`.planning/trace.jsonl` whatever it is - so a range that matched nothing leaves
+the same record a matching one does, and "the detection step was skipped" stops
+reading like "it ran and matched nothing".
+
+Two files carry the word surface and they answer different questions.
+`cadence-core/bin/lib/surface-scan.mjs` answers which categories a project
+SCOPES - once, from its structure, feeding the one-time ask below, and returning
+all eight unconditionally because the narrowing is the user's.
+`cadence-core/bin/lib/risk-diff.mjs` answers whether a given RANGE touched one,
+every time a plan or a task completes, and it can and does return nothing.
+
+A match in one of eight categories fires the `risk_surface` trigger, and so does
+an `inconclusive: true` the seam could not judge: an unjudged range is not a
+cleared one. The token beside each is the name that category carries
 everywhere it is named by machine - in `review.triggers.risk_surface.surfaces`
 and in route-table.json's `risk_surface_categories`:
 
@@ -431,7 +451,8 @@ shape step 3 closed for `review.reviewers`. With the key unset the resolve
 returns all eight, so every category fires exactly as today and no existing
 project's coverage shrinks on upgrade.
 
-This is the ONE detector, and it reads the diff. A path match against a
+This is the ONE detector, and it reads the diff - through `lib/risk-diff.mjs`,
+so an answer exists whether or not it matched. A path match against a
 phase's declared `files:` list was the other one until v2.7.0; it judged a file
 by its NAME, floored a whole phase on one token, and is gone. `tests/ingest_concurrency.rs`
 raising six roles to their top rung is what it cost.
