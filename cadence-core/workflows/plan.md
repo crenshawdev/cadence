@@ -57,9 +57,9 @@ is never compared.
 
 The `plan` gate is NOT in that batch: fire(trigger) takes every gate from the
 routing bundle (`route.mjs resolve`), so the stakes level reaches this fire site
-rather than only the seam. `config.mjs get` returns the schema DEFAULT for a
-gate no layer set, which would fire at the default while the seam reported the
-level's.
+rather than only the seam. `config.mjs get` is not a source for one either way:
+for a gate no layer set it answers `null` and names `route.mjs resolve` as
+where the level's gate is resolved.
 
 `memory.backend` rides this same batch so the effective recall backend is read
 through the config touchpoint already here - no extra Bash round-trip. It gates
