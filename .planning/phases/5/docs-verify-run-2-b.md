@@ -142,9 +142,9 @@ the sweep agreed with itself.
 - [x] cadence-core/references/config-catalog.md
 - [x] cadence-core/references/recall.md
 - [x] cadence-core/references/plan-revision.md
-- [ ] cadence-core/bin/lib/trace.mjs
-- [ ] cadence-core/bin/planning.mjs
-- [ ] cadence-core/bin/self-verify.mjs
+- [x] cadence-core/bin/lib/trace.mjs
+- [x] cadence-core/bin/planning.mjs
+- [x] cadence-core/bin/self-verify.mjs
 
 ---
 
@@ -631,3 +631,35 @@ invocation ever re-read. Plan 3 joins the rows below to those existing rows on
 | `trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <n>` | plan-revision.md:51 | accurate | same declared flag set |
 | The per-file census asserts one `trace close` per dispatch moment, so folding these two into one close reddens the suite | plan-revision.md:57-60 | accurate | `cadence-core/bin/trace.test.mjs:1040` opens "the producer census"; `:1252` reasons about "prose lines per dispatch moment - a `return` form and a `checkpoint`" |
 | `plan.md`'s own `review` step is the full-artifact second opinion and fires AFTER this | plan-revision.md:44-46 | accurate | `plan.md:311` `<step name="review">` follows `:263` `check_gate` |
+
+---
+
+# Targeted `.mjs` pass - the ten ledgered rows whose `doc` is a `.mjs` file
+
+**NOT new surface.** This is the one pass in either half that reads
+`.planning/DOCS-CLAIMS.md`, and it reads it for the ROW LIST only: the ten rows'
+`doc`, `line` and claim text. Each is verdicted by opening its cited SITE, never
+by sweeping the file - the three total 298,480 B and a full extraction to decide
+ten claims is the trade this report's Context refuses.
+
+The **location cell carries the LIVE line**, not the ledger's cited one, so plan
+3 re-pins from it. Eight of the ten moved: phase 1 and phase 2 of this cycle
+edited both `trace.mjs` and `planning.mjs`. Where the claim text is unchanged and
+only the line moved, the verdict is on the CLAIM and the move is stated in the
+last column.
+
+Where the claim is a docblock assertion about behavior it was checked against the
+behavior, not against the comment agreeing with itself.
+
+| claim | location | verdict | correct value (if stale) |
+|---|---|---|---|
+| CONTEXT-09: measured token figures - analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034 | cadence-core/bin/lib/trace.mjs:58-61 (ledger cites `51-54`) | unverifiable | VERDICT FLIP from run 1's `accurate`. The text is byte-unchanged and the figures are all still there, but they are a past measurement of the HOST's subagent-return metadata on one repo at one time - nothing in this tree re-derives them, and the code adds "no hook, no seam and no capture mechanism" to obtain one (`trace.mjs:50-52`). Re-pin the line to `58-61` |
+| CONTEXT-10: a built-in agent type (`Explore`) returned no token figure at all | cadence-core/bin/lib/trace.mjs:62 (ledger cites `54-55`) | unverifiable | VERDICT FLIP from run 1's `accurate`, same reason: a runtime observation of a host agent type, unchanged in the file but not decidable from this tree. Re-pin the line to `62` |
+| CONTEXT-11: `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT | cadence-core/bin/lib/trace.mjs:64-66 (ledger cites `56-59`) | accurate | checked against the BEHAVIOR, not the comment: `trace.mjs:429-436` builds `roleTotals` as `{dispatches, tokens, recorded, figures}` and `:420-423` states `unrecorded` is emitted only as the complement of `recorded`, so it cannot be nonzero without a counted dispatch, and `dispatches` rides the same row. Re-pin the line to `64-66` |
+| CONTEXT-12: a dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere | cadence-core/bin/lib/trace.mjs:69-72 (ledger cites `60-64`) | accurate | behavior confirms it: `renderTrace` initialises `unpaired: []` (`trace.mjs:416`) and fills it from dispatch events with no terminal, so an event never appended enters neither `roles` nor `unpaired`. Re-pin the line to `69-72` |
+| CONTEXT-13: the census in `trace.test.mjs` binds these lines per file | cadence-core/bin/lib/trace.mjs:72-73 (ledger cites `64-65`) | accurate | the census is live, not just asserted: `cadence-core/bin/trace.test.mjs:1040` opens "the producer census", `:1158` is the test itself, and `:1252` reasons about "prose lines per dispatch moment - a `return` form and a `checkpoint`". Re-pin the line to `72-73` |
+| EXECUTE-10: `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files` | cadence-core/bin/planning.mjs:1990-1996 (ledger cites `1626-1635`) | accurate | `planning.mjs:1990-1992` states "This seam reads the whole staged index and has no provenance signal", and `:1995` names "every later `undeclared-files` refusal". `cmdLeaseCheck` is at `:2130`. The cited range now holds `criteria-size`'s block comment instead, so this is a real re-pin: `1990-1996` |
+| EXECUTE-22: `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold | cadence-core/bin/planning.mjs:2645-2650 (ledger cites `2094-2102`) | accurate | all three halves hold: `.gitignore:29` is `/.planning/trace.jsonl`; `new-project.md:42` runs `trace ignore --root .`; `planning.mjs:2647-2649` states "/cad-health runs the `--check` arm, so a project scaffolded before this seam existed is REPORTED rather than having its `.gitignore` edited underneath it", and `--check` writes nothing (`:2642`). The cited range now holds `parseStagedNameStatus`, so re-pin to `2645-2650` |
+| VERIFY-11: `uat init` writes `fields_version` before it looks at an item | cadence-core/bin/planning.mjs:696-700 (ledger cites `1282-1294`) | accurate | behavior, not comment: `planning.mjs:700` writes `fm: {status:'testing', phase, fields_version: UAT_FIELDS_VERSION, ...}` as the object literal is constructed, ahead of the item map. The cited range is `criteria-coverage`'s reader, a different site entirely, so re-pin to `696-700` |
+| VERIFY-12: legacy also requires a CONTEXT declaring no ids beside a fieldless checklist | cadence-core/bin/planning.mjs:1281-1283 (ledger cites `1282-1294`) | accurate | `LEGACY_REASON` at `:1281-1283` spells the full conjunction - "no `fields_version` frontmatter marker, no `criterion` or `origin` on any item, and its CONTEXT declares no AC<N> ids" - and `:1396-1401` is the code applying it. The cited range still CONTAINS the live site, so this row needs a narrowing, not a move: `1281-1283` |
+| SELFVERIFY-01: check 16 fails an `@`-included `cadence-core/references/*` or `cadence-core/templates/*` surface no eager prose of the including command names, while `cadence-core/workflows/*` includes are exempt | cadence-core/bin/self-verify.mjs:90-104 (ledger cites `90-104`) | accurate | the only row whose cited line still holds byte for byte. `self-verify.mjs:90-99` states the rule and the workflows exemption ("the workflow IS the command's process"), `:101` puts the rule and its EMPTY waiver register in `lib/include-consumers.mjs`, and `:137` and `:1299` are the live import and call site |
