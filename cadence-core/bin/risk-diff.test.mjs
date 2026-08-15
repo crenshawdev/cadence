@@ -299,15 +299,27 @@ const recordLine = (plan, base, head, extra = {}) => JSON.stringify({
   ...extra,
 });
 
-/** `risk-check status` against a fixture; its one JSON line and its exit code. */
-function riskStatus(dir, args) {
+/** `risk-check status` against a fixture; its one JSON line and its exit code.
+ * `cwd` matters on the RANGE arm alone: identity is the resolved commit pair,
+ * so that arm resolves its refs against the repository it runs in. */
+function riskStatus(dir, args, cwd) {
   let stdout;
   let code = 0;
   try {
     stdout = execFileSync('node', [PLANNING, '--dir', dir, 'risk-check', 'status', ...args],
-      { encoding: 'utf8' });
+      { encoding: 'utf8', ...(cwd ? { cwd } : {}) });
   } catch (e) { stdout = e.stdout; code = e.status; }
   return { ...JSON.parse(stdout), _exit: code };
+}
+
+/** A `.planning` fixture inside a REAL git repo, holding the given trace lines.
+ * The range arm of `status` resolves refs to commit ids, so any row naming a
+ * range needs commits to resolve against - a fixture with no repo can only
+ * exercise the phase-wide arm. */
+function repoFixture(lines) {
+  const { repo, dir } = riskRepo();
+  writeFileSync(join(dir, 'trace.jsonl'), `${lines.join('\n')}\n`);
+  return { repo, dir };
 }
 
 test('risk-check status: a completed range with no record refuses, naming the plan', () => {
@@ -332,7 +344,7 @@ test('risk-check status: appending the plan-1 record makes the identical call pa
   // The record's own refs ride the row, so a stale one is visible rather than
   // silently counted on the phase-wide arm.
   assert.deepEqual(r.plans[0].records,
-    [{ base: 'ae5ca09', head: 'HEAD', checked: true, inconclusive: false }]);
+    [{ base: 'ae5ca09', head: 'HEAD', base_id: null, head_id: null, checked: true, inconclusive: false }]);
 });
 
 test('risk-check status: a checkpoint AND a return for one plan report it once, not twice', () => {
@@ -347,18 +359,75 @@ test('risk-check status: a record from an earlier, narrower range is STALE, not 
   // execute.md's "re-dispatch the remainder" arm is exactly the case: the plan
   // number matches, the range does not, and passing on it would clear a range
   // nothing ever checked.
-  const dir = traceFixture([...FROZEN_PHASE_1, recordLine('1', 'refA', 'refB')]);
-  const stale = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refC']);
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const c = commitFile(repo, 'docs/two.md', 'two\n');
+  writeFileSync(join(dir, 'trace.jsonl'),
+    `${[...FROZEN_PHASE_1, recordLine('1', a, b, { base_id: a, head_id: b })].join('\n')}\n`);
+
+  const stale = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', c], repo);
   assert.equal(stale.ok, false, JSON.stringify(stale));
   assert.equal(stale._exit, 1);
   assert.equal(stale.plans[0].state, 'stale');
-  assert.deepEqual(stale.plans[0].wanted, { base: 'refA', head: 'refC' });
-  assert.deepEqual(stale.plans[0].records,
-    [{ base: 'refA', head: 'refB', checked: true, inconclusive: false }]);
+  assert.deepEqual(stale.plans[0].wanted, { base: a, head: c, base_id: a, head_id: c });
 
-  const matched = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refB']);
+  const matched = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', b], repo);
   assert.equal(matched.ok, true, JSON.stringify(matched));
   assert.equal(matched._exit, 0);
+});
+
+test('risk-check status: a record left under `--head HEAD` does not satisfy a LATER HEAD', () => {
+  // Range identity is the resolved COMMIT PAIR, never the ref spelling.
+  // workflows/execute.md documents `--head HEAD` for both the run and the
+  // status call, so this is the live path: a gate fix or a continuation commit
+  // landing between them was never scanned, and a spelling compare would still
+  // report `recorded`.
+  const { repo, dir } = riskRepo();
+  const a = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'docs/one.md', 'one\n');
+  const run = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '1', '--base', a, '--head', 'HEAD']);
+  assert.equal(run.ok, true, JSON.stringify(run));
+
+  const before = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', 'HEAD'], repo);
+  assert.equal(before.ok, true, JSON.stringify(before));
+
+  // The commit the record never saw.
+  commitFile(repo, 'src/auth/login.ts', 'const c = jwt.verify(raw, KEY);\n');
+  const after = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', 'HEAD'], repo);
+  assert.equal(after.ok, false,
+    `a record left under an earlier HEAD satisfied a wider one: ${JSON.stringify(after)}`);
+  assert.equal(after._exit, 1);
+  assert.equal(after.plans[0].state, 'stale');
+});
+
+test('risk-check status: a ref that cannot be resolved is a refusal, never a match', () => {
+  const { repo, dir } = riskRepo();
+  const a = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'docs/one.md', 'one\n');
+  riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', a, '--head', 'HEAD']);
+  const r = riskStatus(dir,
+    ['--phase', '1', '--plan', '1', '--base', a, '--head', 'no-such-ref'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unresolved-range', JSON.stringify(r));
+  assert.equal(r._exit, 1);
+});
+
+test('risk-check run: the record carries the resolved commit ids beside the spellings', () => {
+  const { repo, dir } = riskRepo();
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/notes.md', 'text\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', a, '--head', 'HEAD']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  // The caller's spelling stays, for the reader; the id is what identity is.
+  assert.equal(r.head, 'HEAD');
+  assert.equal(r.base_id, a, JSON.stringify(r));
+  assert.equal(r.head_id, b, JSON.stringify(r));
+  const rec = riskRecords(dir)[0];
+  assert.equal(rec.head, 'HEAD');
+  assert.equal(rec.base_id, a);
+  assert.equal(rec.head_id, b);
 });
 
 test('risk-check status: a record whose git read FAILED is not a check, and does not satisfy', () => {
@@ -379,9 +448,12 @@ test('risk-check status: a record whose git read FAILED is not a check, and does
 });
 
 test('risk-check status: a NAMED range whose only record is unchecked is refused too', () => {
-  const dir = traceFixture([...FROZEN_PHASE_1,
-    recordLine('1', 'refA', 'refB', { checked: false, inconclusive: true })]);
-  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', 'refA', '--head', 'refB']);
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  writeFileSync(join(dir, 'trace.jsonl'), `${[...FROZEN_PHASE_1,
+    recordLine('1', a, b, { base_id: a, head_id: b, checked: false, inconclusive: true })].join('\n')}\n`);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', b], repo);
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r._exit, 1);
   assert.equal(r.plans[0].state, 'unchecked',
@@ -424,8 +496,10 @@ test('risk-check status: the range triple is all three or none', () => {
 });
 
 test('risk-check status: a named range is required even when its return never landed', () => {
-  const dir = traceFixture([FROZEN_PHASE_1[0]]);
-  const r = riskStatus(dir, ['--phase', '1', '--plan', '2', '--base', 'refA', '--head', 'refB']);
+  const { repo, dir } = repoFixture([FROZEN_PHASE_1[0]]);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '2', '--base', a, '--head', b], repo);
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.deepEqual(r.missing, ['2']);
 });

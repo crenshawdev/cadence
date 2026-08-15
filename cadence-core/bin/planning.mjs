@@ -3049,6 +3049,51 @@ function riskRef(raw) {
   return t;
 }
 
+/**
+ * The repository, and the COMMIT IDS a caller's two refs name.
+ *
+ * RANGE IDENTITY IS THE COMMIT PAIR, never the ref SPELLING.
+ * `workflows/execute.md` documents `--head HEAD` for both the `run` call and
+ * the `status` call, so a string compare of spellings lets the record left
+ * under one value of `HEAD` satisfy a later, wider `HEAD`: a gate fix, a
+ * continuation commit or a concurrent write landing between the two calls was
+ * never scanned, and the gate still reports `recorded`. The caller's spelling
+ * stays on the record for the READER; the id is what is compared. A ref that
+ * cannot be resolved is a refusal at both call sites, never a match.
+ *
+ * `--verify` with a `^{commit}` suffix, so a tag resolves to the commit it
+ * names and a ref naming no commit at all is an ERROR rather than some other
+ * object's id. `riskRef` has already refused a `-`-leading spelling, so nothing
+ * reaching git here can be read as an option.
+ * ONE shape on both paths rather than an `ok`-discriminated union: this repo's
+ * CI typecheck runs `strict: false`, where narrowing a JSDoc union by its
+ * boolean literal does not happen, so the union costs every caller a cast. A
+ * failed resolve reads `{ok: false, base: '', head: '', error: <the redacted
+ * git message>}`.
+ * @param {string} base @param {string} head
+ * @returns {{ok: boolean, top: string, base: string, head: string, error: string}}
+ */
+function resolveRange(base, head) {
+  try {
+    const top = execFileSync('git', ['rev-parse', '--show-toplevel'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    const id = (/** @type {string} */ ref) => execFileSync('git',
+      ['-C', top, 'rev-parse', '--verify', `${ref}^{commit}`],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    return { ok: true, top, base: id(base), head: id(head), error: '' };
+  } catch (e) {
+    // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set` applies:
+    // a git failure detail can carry a remote URL with credentials in it.
+    return {
+      ok: false,
+      top: '',
+      base: '',
+      head: '',
+      error: redactUrl(e && e.message ? e.message : String(e)),
+    };
+  }
+}
+
 function cmdRiskCheckRun(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
@@ -3094,18 +3139,31 @@ function cmdRiskCheckRun(dir, opts) {
 
   let body = null;
   let diffError = null;
-  try {
-    const top = execFileSync('git', ['rev-parse', '--show-toplevel'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-    // `-C top`, the way cmdLeaseCheck reads its staged set, so the range is the
-    // repository's and not the cwd's. The trailing `--` ends the revision list:
-    // a ref that also names a path cannot turn into a pathspec here.
-    body = execFileSync('git', ['-C', top, 'diff', base, head, '--'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
-  } catch (e) {
-    // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set` applies:
-    // a git failure detail can carry a remote URL with credentials in it.
-    diffError = redactUrl(e && e.message ? e.message : String(e));
+  // The IDS the caller's refs name, resolved before anything is read: they are
+  // this record's range identity, and `risk-check status` compares them rather
+  // than the spellings (see resolveRange). Null when the refs did not resolve,
+  // in which case nothing was read either and the record says so.
+  let baseId = null;
+  let headId = null;
+  const range = resolveRange(base, head);
+  if (!range.ok) {
+    diffError = range.error;
+  } else {
+    baseId = range.base;
+    headId = range.head;
+    try {
+      // `-C top`, the way cmdLeaseCheck reads its staged set, so the range is
+      // the repository's and not the cwd's, and the resolved IDS rather than
+      // the spellings, so the body read is exactly the range recorded. The
+      // trailing `--` ends the revision list: a ref that also names a path
+      // cannot turn into a pathspec here.
+      body = execFileSync('git', ['-C', range.top, 'diff', baseId, headId, '--'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
+    } catch (e) {
+      // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
+      // applies: a git failure detail can carry a remote URL with credentials.
+      diffError = redactUrl(e && e.message ? e.message : String(e));
+    }
   }
 
   const scan = scanDiff(body, categories);
@@ -3126,8 +3184,14 @@ function cmdRiskCheckRun(dir, opts) {
     family: 'outcome',
     event: 'risk_check',
     ...(plan === undefined ? {} : { plan }),
+    // Both spellings AND both ids, always: the spelling is what the reader
+    // recognises, the id is the range's identity. Written even when null, so a
+    // record from a run that resolved nothing is visibly unidentifiable rather
+    // than silently absent a field.
     base,
     head,
+    base_id: baseId,
+    head_id: headId,
     checked: scan.checked,
     categories: scan.categories,
     // TOKENS on the record, the `{category, signal}` pairs on the envelope: the
@@ -3142,6 +3206,8 @@ function cmdRiskCheckRun(dir, opts) {
     ...(plan === undefined ? {} : { plan }),
     base,
     head,
+    base_id: baseId,
+    head_id: headId,
     checked: scan.checked,
     categories: scan.categories,
     matches: scan.matches,
@@ -3177,7 +3243,7 @@ function cmdRiskCheckStatus(dir, opts) {
   // half named - which reads as the phase-wide arm and passes on a record left
   // by some other range.
   const given = ['plan', 'base', 'head'].filter((f) => f in opts);
-  /** @type {{plan: number, base: string, head: string} | null} */
+  /** @type {{plan: number, base: string, head: string, base_id: string, head_id: string} | null} */
   let wanted = null;
   if (given.length) {
     if (given.length !== 3) {
@@ -3191,7 +3257,26 @@ function cmdRiskCheckStatus(dir, opts) {
     if (!base || !head) {
       return fail('bad-args', 'risk-check status needs --base <ref> and --head <ref>, neither opening with `-`');
     }
-    wanted = { plan: parsedPlan.value, base, head };
+    // The COMMIT PAIR is the identity, not the spelling (see resolveRange), so
+    // the asked range is resolved here and compared as ids below. A ref that
+    // cannot be resolved is a REFUSAL and never a match: a gate that shrugged
+    // at an unresolvable range would answer about a range nobody can point at,
+    // and the only safe answer to "which commits are these" is the one git
+    // gives.
+    const resolved = resolveRange(base, head);
+    if (!resolved.ok) {
+      return emit({
+        ok: false,
+        reason: 'unresolved-range',
+        phase: n,
+        plan: parsedPlan.value,
+        base,
+        head,
+        detail: resolved.error,
+        hint: 'name a --base and --head this repository can resolve, then re-run this check',
+      });
+    }
+    wanted = { plan: parsedPlan.value, base, head, base_id: resolved.base, head_id: resolved.head };
   }
 
   // ONE reader of the record, through renderTrace and nothing else: a second
@@ -3239,7 +3324,8 @@ function cmdRiskCheckStatus(dir, opts) {
    * Refusing here instead would make a range holding a binary file or a
    * submodule bump permanently unclearable - the caller cannot make git render
    * it - and an unclearable gate is one that gets bypassed.
-   * @type {Map<string, {base: any, head: any, checked: boolean, inconclusive: boolean}[]>}
+   * @type {Map<string, {base: any, head: any, base_id: string|null, head_id: string|null,
+   *   checked: boolean, inconclusive: boolean}[]>}
    */
   const records = new Map();
   for (const e of r.events) {
@@ -3249,6 +3335,14 @@ function cmdRiskCheckStatus(dir, opts) {
     records.get(k).push({
       base: e.base === undefined ? null : e.base,
       head: e.head === undefined ? null : e.head,
+      // The resolved ids the range is IDENTIFIED by, null when the record does
+      // not carry them - a record written before `run` resolved its refs, or by
+      // a run whose refs did not resolve. Null never matches, so such a record
+      // reports `stale` and the range is re-run: the safe direction, and the
+      // only one available, since the spelling it does carry cannot say which
+      // commits it meant.
+      base_id: typeof e.base_id === 'string' && e.base_id ? e.base_id : null,
+      head_id: typeof e.head_id === 'string' && e.head_id ? e.head_id : null,
       // `=== true`, never truthiness: a record written by an older seam carries
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
@@ -3261,9 +3355,15 @@ function cmdRiskCheckStatus(dir, opts) {
     // Only a record whose read SUCCEEDED can satisfy the gate; the rest are
     // reported so the reader sees an attempt rather than an absence.
     const usable = found.filter((f) => f.checked);
-    const asked = wanted && planKey(wanted.plan) === k ? { base: wanted.base, head: wanted.head } : null;
-    const sameRange = (/** @type {{base: any, head: any}} */ f) =>
-      f.base === asked.base && f.head === asked.head;
+    const asked = wanted && planKey(wanted.plan) === k
+      ? { base: wanted.base, head: wanted.head, base_id: wanted.base_id, head_id: wanted.head_id }
+      : null;
+    // COMMIT IDS on both sides. Comparing the spellings is what let a record
+    // left under `--head HEAD` satisfy a later, wider `--head HEAD` - the very
+    // spelling workflows/execute.md documents for both calls.
+    const sameRange = (/** @type {{base_id: string|null, head_id: string|null}} */ f) =>
+      f.base_id !== null && f.head_id !== null
+      && f.base_id === asked.base_id && f.head_id === asked.head_id;
     // STALE, not satisfied: a plan re-dispatched over a widened range
     // (execute.md's "re-dispatch the remainder" arm) is exactly the case that
     // would otherwise pass on the record its earlier, narrower range left. Both
