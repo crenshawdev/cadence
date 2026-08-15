@@ -349,10 +349,10 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-22 | README.md | 52 | Effort is frozen in agent frontmatter; self-verify fails on a cell naming a rung with no file and on a rung file no cell reaches. | accurate | accurate | 2 |
 | README-23 | README.md | 54 | `model.escalate_on_failure`, on by default. | accurate | accurate | 1 |
 | README-24 | README.md | 56 | Gates are `off`, `advisory`, `blocking`, `adjudicated`. | accurate | accurate | 2 |
-| README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | accurate | accurate | 2 |
+| README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | stale | divergence - run 2 half A: `route-table.json` `review.shipped.plan` is `off`; prose fix beyond this phase | 2 |
 | README-26 | README.md | 56 | `risk_surface` is blocking at every level including `solo`. | accurate | accurate | 2 |
 | README-27 | README.md | 56 | The eight surfaces are auth, billing, secrets, migrations, destructive, concurrency, API contracts, untrusted input. | accurate | accurate | 2 |
-| README-28 | README.md | 58 | `risk.override.<surface>` waives one surface, repo config only; a global waiver is ignored and warned. | accurate | accurate | 1 |
+| README-28 | README.md | 58 | `risk.override.<surface>` waives one surface, repo config only; a global waiver is ignored and warned. | stale | divergence - run 2 half A: claim stated nowhere in the file, the `risk.override` family was retired in v2.7.0; line left at run-1 provenance | 1 |
 | README-29 | README.md | 60 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate | 2 |
 | README-30 | README.md | 64 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate | 2 |
 | README-31 | README.md | 66-70 | The five loop commands exist as named. | accurate | accurate | 2 |
@@ -366,7 +366,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-39 | README.md | 105-130 | Every command in the three command lists exists. | accurate | accurate | 1 |
 | README-40 | README.md | 123 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate | 1 |
 | README-41 | README.md | 136 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate | 2 |
-| README-42 | README.md | 146 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | accurate | accurate | 2 |
+| README-42 | README.md | 146 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | unverifiable | divergence - run 2 half A: a measurement of an external tree this repo does not carry | 2 |
 | README-43 | README.md | 146 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate | 1 |
 | README-44 | README.md | 146 | Today it is 27 skills and 6 agent roles across 19 rung files. | accurate | corrected - fe9b9b9 | 2 |
 | README-45 | README.md | 148 | CI fails the build when the prose drifts from the code. | accurate | accurate | 2 |
@@ -386,7 +386,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-08 | METHOD.md | 38-42 | Skeleton-first ordering; a working skeleton by commit 2 or 3. | accurate | accurate | 1 |
 | METHOD-09 | METHOD.md | 44-46 | Read the actual files before writing tasks, each file once. | accurate | accurate | 1 |
 | METHOD-10 | METHOD.md | 48-57 | Every task has exactly three fields: Files, Action, Verify, with the stated rules. | accurate | accurate | 2 |
-| METHOD-11 | METHOD.md | 60 | Atomic; a task touching more than ~5 files is usually two tasks. | accurate | accurate | 2 |
+| METHOD-11 | METHOD.md | 60 | Atomic; a task touching more than ~5 files is usually two tasks. | unverifiable | divergence - run 2 half A: a prose nudge with no seam behind it | 2 |
 | METHOD-12 | METHOD.md | 60-62 | A tool the environment lacks makes Verify a `human-verify` instruction. | accurate | accurate | 1 |
 | METHOD-13 | METHOD.md | 69-74 | The prohibited scope words and the three `## PHASE TOO BIG` reasons. | accurate | accurate | 2 |
 | METHOD-14 | METHOD.md | 74-79 | Six decomposition axes (trigger, size, lifecycle, failure-resume, freshness, ownership), a nudge not a rule. | accurate | accurate | 1 |
@@ -434,7 +434,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-56 | METHOD.md | 400-402 | A clean pass retargets onto the decision's own load-bearing claims and is never reported as a bare "no findings". | accurate | accurate | 1 |
 | METHOD-57 | METHOD.md | 405 | Cost is reported qualitatively, never as a token or dollar figure. | accurate | accurate | 1 |
 | METHOD-58 | METHOD.md | 410-413 | The eight risk surfaces that fire the blocking trigger. | accurate | accurate | 1 |
-| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | accurate | accurate | 2 |
+| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | stale | divergence - run 2 half A: no risk floor and no `risk.override.*` key; prose fix beyond this phase | 2 |
 | METHOD-60 | METHOD.md | 430-435 | The pre-filter: a destructive op drops only when `git check-ignore` matches **and** `git ls-files` is empty; a secret drops only when template-shaped **and** a stub. | accurate | accurate | 2 |
 | METHOD-61 | METHOD.md | 440-443 | The executor detects, stops and hands up; never reviews itself, never skips the gate. | accurate | accurate | 1 |
 | METHOD-62 | METHOD.md | 448-464 | `references/consult.md` and its five rules, including `review.consult.attempt_threshold` and no local-subagent consult. | accurate | accurate | 2 |
@@ -470,7 +470,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | INTERNALS-10 | INTERNALS.md | 13 | The routed vocabulary is `sonnet` and `opus`; `haiku` and `fable` are reachable only by a `model.overrides` pin. | accurate | accurate | 2 |
 | INTERNALS-11 | INTERNALS.md | 13 | An explicit pick wins; a config gate beats the level's only if it is one of the four values, else it loses and is named. | accurate | accurate | 2 |
 | INTERNALS-12 | INTERNALS.md | 13 | `model.escalate_on_failure`, on by default; false holds the retry at its start rung. | accurate | accurate | 1 |
-| INTERNALS-13 | INTERNALS.md | 13 | The risk floor only ever raises; lowering takes a named per-surface override; a project at `critical` is unaffected. | accurate | accurate | 2 |
+| INTERNALS-13 | INTERNALS.md | 13 | The risk floor only ever raises; lowering takes a named per-surface override; a project at `critical` is unaffected. | stale | divergence - run 2 half A: the same retired floor, stated as live; prose fix beyond this phase | 2 |
 | INTERNALS-14 | INTERNALS.md | 13 | CI refuses a retry rung that sits below the rung it started on. | accurate | accurate | 2 |
 | INTERNALS-15 | INTERNALS.md | 15 | Routing governs dispatched subagents, not the main session. | accurate | accurate | 2 |
 | INTERNALS-16 | INTERNALS.md | 17 | The five "read the code" pointers in the routing section. | accurate | accurate | 1 |
@@ -491,7 +491,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | INTERNALS-31 | INTERNALS.md | 43,45 | "Cross-model review can call OpenAI or Gemini for a second opinion." | accurate | accurate | 1 |
 | INTERNALS-32 | INTERNALS.md | 9 | The host's override resolution order is environment -> per-invocation parameter -> frontmatter -> session, and reasoning effort cannot be overridden. | unverifiable | divergence - Claude Code host behaviour, external to this repository; the design depends on it but nothing here can decide it | 1 |
 | INTERNALS-33 | INTERNALS.md | 45-47 | Live detection actually returns what a key can reach, and a model-not-found mid-review offers re-detect. | unverifiable | divergence - requires a live provider key and network | 1 |
-| INTERNALS-34 | INTERNALS.md | 31 | The six shapes v1.4.0 found silent (`git -C`, `&`, `$(...)`, backticks, subshell, escaped quote, `bash -c`). | unverifiable | divergence - a historical claim about a reader deleted in v2.2.0; true when made and unreproducible now | 2 |
+| INTERNALS-34 | INTERNALS.md | 31 | The six shapes v1.4.0 found silent (`git -C`, `&`, `$(...)`, backticks, subshell, escaped quote, `bash -c`). | accurate | accurate | 2 |
 | INTERNALS-35 | INTERNALS.md | 35 | The old scan was O(KxN), 3.1GB at 224KB input, V8 abort at 280KB. | unverifiable | divergence - a measurement of code that no longer exists in the tree | 2 |
 | INTERNALS-36 | INTERNALS.md | 37 | The 336KB input that aborted the old hook decides in milliseconds. | unverifiable | divergence - needs a benchmark run, not attempted in this sweep | 1 |
 | INTERNALS-37 | INTERNALS.md | 73 | "Before I cut it, `/cad-land` was the heaviest in the plugin by eager bytes and the second lightest of the five I measured by reachable." | unverifiable | divergence - explicitly a pre-cut measurement over the five commands measured then; current figures are published in `docs/EVIDENCE.md` | 1 |
@@ -560,7 +560,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-13 | cadence-core/references/config-catalog.md | 26 | `workflow.plan_check` bool, default `true`. | accurate | accurate | 2 |
 | CONFIG-14 | cadence-core/references/config-catalog.md | 27 | `workflow.verifier` bool, default `true`; the stakes level decides and `--deep` forces. | accurate | accurate | 2 |
 | CONFIG-15 | cadence-core/references/config-catalog.md | 28 | `workflow.skip_discuss` bool, default `false`. | accurate | accurate | 2 |
-| CONFIG-16 | cadence-core/references/config-catalog.md | 28 | `workflow.subagent_timeout` int, default `300000`. | accurate | accurate | 1 |
+| CONFIG-16 | cadence-core/references/config-catalog.md | 28 | `workflow.subagent_timeout` int, default `300000`. | stale | divergence - run 2 half B invocation 5: `workflow.subagent_timeout` was retired in v2.7.0 and the catalog no longer carries it; line left at run-1 provenance | 1 |
 | CONFIG-17 | cadence-core/references/config-catalog.md | 29 | `workflow.inline_plan_threshold` int, default `3`. | accurate | accurate | 2 |
 | CONFIG-18 | cadence-core/references/config-catalog.md | 30 | `workflow.max_plan_tasks` int, default `8`; above it the plan must return `## PHASE TOO BIG`. | accurate | accurate | 2 |
 | CONFIG-19 | cadence-core/references/config-catalog.md | 31 | `workflow.test_command` / `workflow.lint_command` are `str\|null`, default `null`; there is no typecheck key. | accurate | accurate | 2 |
@@ -573,7 +573,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-26 | cadence-core/references/config-catalog.md | 44-46 | `git.create_tag` true, `git.on_land_cleanup` true, `git.auto_close` false. | accurate | accurate | 2 |
 | CONFIG-27 | cadence-core/references/config-catalog.md | 48 | `planning.commit_docs` bool, default `true`. | accurate | accurate | 2 |
 | CONFIG-28 | cadence-core/references/config-catalog.md | 50 | `memory.backend` enum `builtin\|none`, default `builtin`. | accurate | accurate | 2 |
-| CONFIG-29 | cadence-core/references/config-catalog.md | 52 | `risk.override.<surface>` covers exactly the eight named surfaces, default `false`, repo-scoped with a global waiver named in `warnings`. | accurate | accurate | 1 |
+| CONFIG-29 | cadence-core/references/config-catalog.md | 52 | `risk.override.<surface>` covers exactly the eight named surfaces, default `false`, repo-scoped with a global waiver named in `warnings`. | stale | divergence - run 2 half B invocation 5: the `**Risk**` category now has zero rows and no `risk.override` key is documented; line left at run-1 provenance | 1 |
 | CONFIG-30 | cadence-core/references/config-catalog.md | 53 | `review.reviewers` list(enum) of `claude-subagent\|openai\|gemini\|deepseek`, default `claude-subagent`. | accurate | accurate | 2 |
 | CONFIG-31 | cadence-core/references/config-catalog.md | 54 | `review.mode` enum `single\|panel\|adjudicated`, default `adjudicated`. | accurate | accurate | 2 |
 | CONFIG-32 | cadence-core/references/config-catalog.md | 55 | `review.key_file` `str\|null`, default `null`. | accurate | accurate | 2 |
@@ -606,11 +606,11 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONTEXT-03 | cadence-core/workflows/context.md | 84-87 | `config.mjs get memory.backend` reads the recall gate in one call. | accurate | accurate | 2 |
 | CONTEXT-04 | cadence-core/workflows/context.md | 93 | `builtin` is the schema default for `memory.backend`. | accurate | accurate | 2 |
 | CONTEXT-05 | cadence-core/references/recall.md | 15, 18, 25 | `planning.mjs recall "<terms>"` exists and returns `{ok, results:[{score, source, phase?, snippet}]}` with `phase` optional. | accurate | accurate | 1 |
-| CONTEXT-06 | cadence-core/workflows/context.md | 163-165 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate | 1 |
-| CONTEXT-07 | cadence-core/workflows/context.md | 163-165 | `--family lifecycle` is a valid family. | accurate | accurate | 1 |
+| CONTEXT-06 | cadence-core/workflows/context.md | 163-165 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | stale | divergence - run 2 half B: `4110fde` left context.md with no `trace append` call; line left at run-1 provenance | 1 |
+| CONTEXT-07 | cadence-core/workflows/context.md | 163-165 | `--family lifecycle` is a valid family. | stale | divergence - run 2 half B: `--family lifecycle` appears nowhere in context.md after `4110fde`; line left at run-1 provenance | 1 |
 | CONTEXT-08 | cadence-core/workflows/context.md | 161-163 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate | 2 |
-| CONTEXT-09 | cadence-core/bin/lib/trace.mjs | 58-61 | Measured token figures: analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034. | accurate | accurate | 2 |
-| CONTEXT-10 | cadence-core/bin/lib/trace.mjs | 62 | A built-in agent type (`Explore`) returned no token figure at all. | accurate | accurate | 2 |
+| CONTEXT-09 | cadence-core/bin/lib/trace.mjs | 58-61 | Measured token figures: analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034. | unverifiable | divergence - run 2 half B targeted `.mjs` pass: a past measurement of host metadata nothing here re-derives | 2 |
+| CONTEXT-10 | cadence-core/bin/lib/trace.mjs | 62 | A built-in agent type (`Explore`) returned no token figure at all. | unverifiable | divergence - run 2 half B targeted `.mjs` pass: a runtime observation of a host agent type | 2 |
 | CONTEXT-11 | cadence-core/bin/lib/trace.mjs | 64-66 | `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT. | accurate | accurate | 2 |
 | CONTEXT-12 | cadence-core/bin/lib/trace.mjs | 69-72 | A dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere. | accurate | accurate | 2 |
 | CONTEXT-13 | cadence-core/bin/lib/trace.mjs | 72-73 | The census in `trace.test.mjs` binds these lines per file. | accurate | accurate | 2 |
@@ -747,7 +747,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-09 | cadence-core/workflows/plan.md | 60-62 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | accurate | accurate | 2 |
 | PLAN-10 | cadence-core/workflows/plan.md | 64-66, 107-108, 180-185 | `memory.backend` gates recall in spawn_planner and inline_plan. | accurate | accurate | 2 |
 | PLAN-11 | cadence-core/workflows/plan.md | 88-89 | `workflow.inline_plan_threshold` is the inline routing threshold. | accurate | accurate | 1 |
-| PLAN-12 | cadence-core/workflows/plan.md | 86 | `trace append --phase --family lifecycle --event dispatch --plan --role --read` is a valid call. | accurate | accurate | 1 |
+| PLAN-12 | cadence-core/workflows/plan.md | 86 | `trace append --phase --family lifecycle --event dispatch --plan --role --read` is a valid call. | stale | divergence - run 2 half B: `4110fde` left plan.md with no `trace append` call; line left at run-1 provenance | 1 |
 | PLAN-13 | cadence-core/workflows/plan.md | 117 | `planning.mjs recall "<terms>"` is the recall call. | accurate | accurate | 2 |
 | PLAN-14 | cadence-core/workflows/plan.md | 120 | Recall returns `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate | 2 |
 | PLAN-15 | cadence-core/workflows/plan.md | 117,153 | seams.md states a cache discipline for dispatch prompts. | accurate | accurate | 1 |
@@ -762,7 +762,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-24 | cadence-core/workflows/plan.md | 297-298 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate | 1 |
 | PLAN-25 | cadence-core/workflows/plan.md | 299 | WARNING means quality is degraded but execution can proceed. | accurate | accurate | 1 |
 | PLAN-26 | cadence-core/references/plan-revision.md | 10-12 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate | 2 |
-| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | accurate | accurate | 2 |
+| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | stale | divergence - run 2 half B: `route-table.json` `review.shipped.plan` is `off`, advisory is `solo`; prose fix beyond this phase | 2 |
 | PLAN-28 | cadence-core/workflows/plan.md | 350 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate | 1 |
 | PLAN-29 | cadence-core/workflows/plan.md | 364 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate | 2 |
 | PLAN-30 | cadence-core/workflows/plan.md | 372-373 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate | 1 |
@@ -810,8 +810,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | UNDO-06 | cadence-core/workflows/undo.md | 48 | `planning.mjs phase-done --n <N> --undo`. | accurate | accurate | 2 |
 | UNDO-07 | cadence-core/workflows/undo.md | 49 | `cursor set --phase <N> --status <planned \| "ready to plan"> --next ...`. | accurate | accurate | 2 |
 | UNDO-08 | cadence-core/workflows/undo.md | 54-55 | `--undo` unchecks the ROADMAP box and flips traceability rows back to Pending. | accurate | accurate | 2 |
-| VERIFY-DEEP-01 | cadence-core/workflows/verify-deep.md | 13 | The dispatch bracket call with `--plan cad-verifier --role cad-verifier --read "..."` is valid. | accurate | accurate | 1 |
-| VERIFY-DEEP-02 | cadence-core/workflows/verify-deep.md | 8-11 | `--plan` is the pairing key and `--role` the per-role grouping key. | accurate | accurate | 1 |
+| VERIFY-DEEP-01 | cadence-core/workflows/verify-deep.md | 13 | The dispatch bracket call with `--plan cad-verifier --role cad-verifier --read "..."` is valid. | stale | divergence - run 2 half B: the dispatch half now rides `--bracket-read` on the resolve, no `trace append` call remains; line left at run-1 provenance | 1 |
+| VERIFY-DEEP-02 | cadence-core/workflows/verify-deep.md | 8-11 | `--plan` is the pairing key and `--role` the per-role grouping key. | stale | divergence - run 2 half B: that prose lives in execute.md now and verify-deep.md no longer states it; line left at run-1 provenance | 1 |
 | VERIFY-DEEP-03 | cadence-core/workflows/verify-deep.md | 10-13 | The verifier writes `.planning/phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
 | VERIFY-DEEP-04 | cadence-core/workflows/verify-deep.md | 13 | The verifier contract lives at `skills/cad-verifier-contract`. | accurate | accurate | 2 |
 | VERIFY-DEEP-05 | cadence-core/workflows/verify-deep.md | 15-19, 23-24 | The verifier's bracket closes with ONE `trace close --phase <N> --plan cad-verifier --role cad-verifier --tokens <n>` line the moment the return is in hand, and `--tokens` is omitted on a figureless return. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
@@ -865,7 +865,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | VERIFY-41 | cadence-core/workflows/verify.md | 302-304 | `phase-done --n <N>` checks the ROADMAP box and flips traceability rows to Complete, Deferred exempt. | accurate | accurate | 2 |
 | VERIFY-42 | cadence-core/workflows/verify.md | 305-307 | `cursor set --phase <N> --status "phase complete" --next ...` is valid. | accurate | accurate | 2 |
 | VERIFY-43 | cadence-core/workflows/verify.md | 312-315 | The commit stages UAT.md, `phases/<N>/FINDINGS.json` and `phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
-| VERIFY-44 | cadence-core/workflows/verify.md | 321 | The report distinguishes `{v} auto-verified` from `{m} model-executed`. | accurate | accurate | 2 |
+| VERIFY-44 | cadence-core/workflows/verify.md | 321 | The report distinguishes `{v} auto-verified` from `{m} model-executed`. | unverifiable | divergence - run 2 half B: no seam returns that split | 2 |
 | VERIFY-SWEEP-01 | cadence-core/workflows/verify-sweep.md | 9 | `planning.mjs status` is the one seam call. | accurate | accurate | 2 |
 | VERIFY-SWEEP-02 | cadence-core/workflows/verify-sweep.md | 11-12 | `phases[]` already carries each phase's derived state and UAT counts. | accurate | accurate | 2 |
 | VERIFY-SWEEP-03 | cadence-core/workflows/verify-sweep.md | 12-14 | A phase with status `executed` and no `uat` field was built and never verified. | accurate | accurate | 2 |
