@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,11 @@ import { fileURLToPath } from 'node:url';
 // own arms are bound to a no-op unless it is the entry file, so importing it
 // registers nothing here.
 import { gitLayers } from './config-seams.test.mjs';
+// The PATH-injected forge-CLI stub writer and its $CAD_SPAWN_MARKER convention,
+// imported for the same reason and under the same no-op binding: every stub
+// appends its own name to the marker file, which is what turns "no forge CLI
+// ran" into an assertion about the filesystem.
+import { stub } from './issue-check.test.mjs';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'git-publish.mjs');
@@ -308,6 +313,37 @@ test('authorized: the repository\'s own opt-in answers ok:true, and needs no git
   const bare = seamStatus(['authorized', '--dir', plain]);
   assert.equal(bare.status, 0);
   assert.equal(bare.d.ok, true);
+});
+
+test('authorized: the GitLab arm refuses with NO forge CLI spawned at all', () => {
+  // AC3. On GitLab `glab mr create` publishes the source branch itself, so the
+  // publish seam is never called and this answer is the only thing between a
+  // user-global setting and an unattended merge. Two things are proved here:
+  // the refusal, and that reaching it needed no forge CLI - a seam that shelled
+  // out to `glab` would put a network CLI's failure modes on the same envelope
+  // as a merge authorization. `glab` is not installed on this machine, so a
+  // stub on PATH is the only way the arm is provable either way.
+  const stubDir = mkdtempSync(join(tmpdir(), 'cad-pub-stub-'));
+  for (const name of ['gh', 'glab', 'tea']) stub(stubDir, name, { body: '[]' });
+  const marker = join(mkdtempSync(join(tmpdir(), 'cad-pub-mark-')), 'spawned.txt');
+  const { dir } = repo({ config: { git: {} } });
+
+  const env = { ...GIT_ENV, CADENCE_GLOBAL_CONFIG: globalJson(GLOBAL_ON),
+    PATH: `${stubDir}:${process.env.PATH}`, CAD_SPAWN_MARKER: marker };
+  let out; let status = 0;
+  try { out = execFileSync('node', [SEAM, 'authorized', '--dir', dir], { encoding: 'utf8', env }); }
+  catch (e) { out = e.stdout; status = e.status; }
+  const d = JSON.parse(String(out).trim());
+
+  assert.equal(status, 1);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'auto-close-off');
+  assert.match(d.detail, /user-global setting cannot authorize/);
+  assert.equal(existsSync(marker), false, 'a forge CLI was spawned to answer an authorization question');
+
+  // The marker is not vacuously absent: running one of the stubs writes it.
+  execFileSync(join(stubDir, 'glab'), ['mr', 'create'], { encoding: 'utf8', env });
+  assert.equal(readFileSync(marker, 'utf8').trim(), 'glab');
 });
 
 test('authorized: off in BOTH layers refuses with the other sentence', () => {

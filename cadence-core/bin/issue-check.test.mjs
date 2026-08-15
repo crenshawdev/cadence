@@ -10,13 +10,35 @@
 //
 // Every stub also appends its own name to $CAD_SPAWN_MARKER, so "no forge CLI
 // ran" is an assertion about the filesystem rather than about an empty list.
-import { test } from 'node:test';
+//
+// `stub` is EXPORTED for that second reason: git-publish.test.mjs proves its
+// GitLab authorization arm reaches an answer with NO forge CLI spawned, and the
+// only honest way to assert that is the same stub-on-PATH + marker-file
+// convention this file already owns. A copy of the harness there would be a
+// second thing to keep in step with the seam's resolver. Importing a test file
+// also REGISTERS its arms in the importing process, so `test` is bound to a
+// no-op unless this module IS the entry file - the discipline
+// config-seams.test.mjs states at length, for the same reason.
+import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync, statSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync, statSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+/** True iff this module is what node was told to run; realpath on both sides so
+ * a symlinked checkout still matches (config-seams.test.mjs D-19). */
+function isEntryFile() {
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== 'string' || argv1 === '') return false;
+  try {
+    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
+  } catch { return false; }
+}
+
+/** `node:test`'s `test` when run directly, a no-op when imported (see header). */
+const test = isEntryFile() ? nodeTest : () => {};
 
 const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'issue-check.mjs');
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-ic-')), 'no-global.json');
@@ -30,7 +52,7 @@ const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.co
  *  `sleep` seconds before printing proves the call bound. `login` is the body
  *  the `tea login list` probe gets, so ONE `tea` stub answers both argv shapes
  *  the seam sends it. */
-function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, stderr = '' } = {}) {
+export function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, stderr = '' } = {}) {
   // `echo`, never a `cat` heredoc: under `bare: true` the child's PATH holds
   // git and nothing else, and /bin/sh has no `cat` builtin - a heredoc stub
   // silently printed nothing there and every bare case degraded for the wrong
