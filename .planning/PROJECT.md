@@ -105,33 +105,38 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-`v3.4.0 - the tracker enters the spine`, opened 2026-08-15. One requirement,
-`LND-01`, promoted from `## Deferred` and scoped straight off the Forgejo
-milestone, which holds one issue: #121.
+`v3.4.1 - what the config says is what routing does`, opened 2026-08-15. Three
+requirements scoped straight off the Forgejo milestone, which holds three
+issues: #129, #134 and #135.
 
-**The theme is one sentence: nothing in the spine has ever looked at the issue
-tracker.** Cadence audits its own requirements, its own plans and its own run
-record, and then lands work without ever asking whether that work answered
-something the tracker has open. `/cad-land` step 1 already detects the remote
-host from the origin URL and already resolves a `tea` login to pick the PR
-mechanism, so the host and the CLI are in hand at exactly the point the check
-belongs - this adds a fact to a report that already runs, not a command and not
-a dependency class.
+**The theme is one sentence: three surfaces describe the review gates and no
+check makes them agree.** `config.mjs get` answers a gate out of the schema
+default when no layer set one, `config.schema.json`'s prose names a level's
+gate, and `route-table.json` is what actually fires. A user reading the first
+two learns what the third does not do: `config.mjs get` reports a gate routing
+never executes (#129), and the schema says `phase_diff` is `advisory` at
+`shipped` where the route table says `off` (#134). Both are the same defect
+seen from two ends, and it is the defect the last cycle already had to work
+around - `workflows/execute.md` carries a paragraph explaining why it must not
+pre-fetch a gate through `config.mjs get`, because the seam would answer the
+schema default while the fire site used the level's.
 
-Two facts land there: the open issues on the detected host, and every issue
-number the commits on this branch reference. The second is the one that earns
-its place, because "your branch references #42 and #47; #42 is still open" is a
-discrepancy that is hard to skim past where a bare list is not.
+`self-verify.mjs` is where this closes (#135). It already fails in both
+directions on rung files and routing cells, and it never compares a trigger's
+schema default or its prose to `route-table.json` at all, so the drift is
+invisible to the one check whose job is catching exactly this. The fix is a
+comparison, not a new surface: nothing here adds a key, a flag or a command.
 
-The constraints are the reason this was deferred out of `v3.2.0` rather than
-rushed: it is the one remaining queued item that ADDS a mechanism, it must
-degrade in one line and never block a land, it must be bounded so a hanging
-forge CLI cannot stall one, and it must never auto-close an issue. `glab` is
-absent on this machine, so the GitLab arm ships behind the same resolved-CLI
-seam as `gh` and `tea` and is proven by a stubbed CLI path. The naming trap is
-explicit: `git.auto_close` already means "merge the integration branch
-unattended", so the new key is `git.issue_check` and the two meanings never
-share vocabulary.
+`v3.4.0 - the tracker enters the spine` closed on 2026-08-15: one requirement
+(`LND-01`), one phase, 18 commits on the cycle branch, the manifest at
+`3.4.0`. `/cad-land` step 1
+now names the issues a branch's commits reference and whether each is still
+open, reads the tracker without ever writing to it, and degrades in exactly one
+line on all nine paths that cannot answer. The blocking `risk_surface` review
+caught three real defects before the phase closed: a forge CLI's stderr riding
+the envelope past a URL-only redactor, an off switch that still printed a
+tracker line, and a control character in an origin hostname breaking the
+one-line guarantee.
 
 `v3.3.0 — the record you plan from` closed on 2026-08-15: five requirements
 (`CAP-01`, `TRC-01`, `COR-01`, `ENF-01`, `DOC-02`), five phases, 113 commits,

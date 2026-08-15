@@ -1,18 +1,19 @@
-# Requirements: Cadence (v3.4.0 open)
+# Requirements: Cadence (v3.4.1 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.4.0 - the tracker enters the spine`, opened 2026-08-15. Scoped from the
-Forgejo milestone rather than from a scan or the capture queue: milestone
-`v3.4.0` holds exactly one issue, #121, and `LND-01` is its requirement,
-promoted here out of `## Deferred` where it sat from 2026-08-14. The four
-remaining deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted; the next milestones already hold their
-own picks (`v3.4.1` carries #129, #134 and #135).
+`v3.4.1 - what the config says is what routing does`, opened 2026-08-15. Scoped
+from the Forgejo milestone rather than from a scan or the capture queue:
+milestone `v3.4.1` holds three issues, #129, #134 and #135, and the three ids
+below are their requirements. The four deferred ids - `PRS-01`, `EVD-01`,
+`RCL-06`, `CTX-02` - keep their deferral reasons and none is promoted.
 
+- **GAT-02**: `config.mjs get` stops reporting a review gate that routing does not execute. A gate no layer set is answered from the schema default while `route.mjs resolve` answers the level's, so inspection and enforcement disagree wherever a project has not written the key - the disagreement `workflows/execute.md` already carries a paragraph to work around. Reported so a reader can tell a level's gate from a layer's, without pretending the seam knows something it does not (#129)
+- **GAT-03**: `config.schema.json`'s prose and `route-table.json` agree on every trigger's gate per level. The schema says `phase_diff` is `advisory` at `shipped`; the route table says `off`, and the route table is what fires (#134)
+- **ENF-02**: `self-verify.mjs` fails when a trigger's schema default or its prose disagrees with `route-table.json`. It already fails in both directions on rung files and routing cells and has never compared these at all, so the drift above was invisible to the one check whose job is catching it (#135)
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
