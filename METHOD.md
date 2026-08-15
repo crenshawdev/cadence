@@ -306,7 +306,7 @@ gate wins, because it is the stronger signal.
 
 That gate column is the `shipped` level, not a fixed default. Every gate is
 resolved from the project's `stakes` level, so the same trigger fires differently
-depending on what a break costs you: a `plan` review is advisory at `solo` and
+depending on what a break costs you: a `plan` review is advisory at `solo`, off at
 `shipped` and adjudicated at `critical`, an ordinary `diff` is off at `solo` and
 `shipped`, and blocking at `critical`. `risk_surface` is the one that
 does not move, blocking at all three levels. An explicit gate you set in config
@@ -371,7 +371,7 @@ the model that just spent four voices on the artifact does not also get to
 decide what happens next. One gate ends this way at every level: the fix list in
 `/cad-verify`, which has no resolved gate and is always triaged. Three more end
 this way wherever their gate resolves adjudicated: the plan review in
-`/cad-plan`, advisory at `shipped` and adjudicated at `critical`;
+`/cad-plan`, off at `shipped` and adjudicated at `critical`;
 `/cad-execute`'s per-plan diff review, `off` below `critical`; and its
 `phase_diff` review, adjudicated at `critical`. The one exception is the
 opt-in unattended close in `/cad-land`, where nothing is acted on at all - it
