@@ -540,3 +540,72 @@ against the code, because that class is exactly what the linter cannot see.
 | cad-land reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback, `resolveReapBranch` | milestone.md:167-172 | accurate | `cadence-core/bin/land-cleanup.mjs:17`, `:43`, `:118` |
 | Step 8 invokes `/cad-suggest` unscoped, with its rules in `cadence-core/workflows/suggest.md` | milestone.md:174-178 | accurate | both the skill and the workflow file exist |
 | A failed or missing retune run degrades to a one-line note, never a halt | milestone.md:180-182 | accurate | stated posture with no gate wired to it |
+
+---
+
+# Half A: the stale rows first
+
+These six are the actionable output. Each names the file, the line and the
+correct value, so the fix is mechanical. This sweep edits none of them
+(`cadence-core/workflows/docs-verify.md` step 5).
+
+1. **`README.md:56`** - "a plan review is advisory at `solo` and `shipped`,
+   adjudicated at `critical`". Correct: advisory at `solo`, **`off`** at
+   `shipped`, adjudicated at `critical`. Source:
+   `cadence-core/route-table.json` `review.shipped.plan` is `"off"`.
+2. **`METHOD.md:309-310`** - the same sentence, and this document's OWN trigger
+   table at `METHOD.md:287` already states `off` for `shipped`, so the file
+   contradicts itself. Correct: advisory at `solo`, `off` at `shipped`,
+   adjudicated at `critical`.
+3. **`METHOD.md:373-374`** - "the plan review in `/cad-plan`, advisory at
+   `shipped` and adjudicated at `critical`". Correct: `off` at `shipped`;
+   advisory is the `solo` gate.
+4. **`METHOD.md:157-158`** - "Then check the staged diff against the
+   risk-surface list before committing". The executor has no staged risk check
+   at all: `risk_surface` fires ONCE against the plan's completed commit range,
+   which `METHOD.md:415` itself states, and
+   `cadence-core/bin/prose-agreement.test.mjs:269-273` asserts the executor
+   contract carries neither a `risk_surface` checkpoint nor a
+   `git diff --cached`. Correct: stage the specific files, run the lease gate
+   (`planning.mjs lease-check`), commit, then take the post-commit glance.
+5. **`METHOD.md:421-428`** - "Detection also sets a floor... that phase's
+   `stakes` level is raised for the phase... Lowering it back takes a named
+   per-surface `risk.override.<surface>`". There is no risk floor and no
+   `risk.override.*` key. `cadence-core/bin/route.mjs:61-68` states "THERE IS NO
+   RISK FLOOR"; the waiver family is retired in `lib/retired-keys.mjs` and
+   absent from `config.schema.json`
+   (`config.mjs check 'risk.override.auth=true'` answers "retired in v2.7.0").
+   Correct: what survives is the commit-time `risk_surface` review read off the
+   diff, which moves no role's model and no role's rung.
+6. **`INTERNALS.md:13`** - the same retired floor, stated as live ("the level is
+   raised for that phase, the reason says which surface and which file
+   matched... lowering it back takes a named per-surface override"). Same
+   correction as row 5.
+
+The nine `unverifiable` rows are all one of three kinds and none is a defect:
+a host command surface this repo does not define (`README.md:14`), a
+measurement of the author's own account usage or of deleted code
+(`README.md:136`, `:140` twice, `INTERNALS.md:35`), an external tree not in
+this repo (`README.md:146`), a statement about the Claude Code host's own
+resolution order (`INTERNALS.md:9`), or a prose nudge with no seam behind it
+(`METHOD.md:60`, `coverage.md:48-49`).
+
+# Half A count
+
+**356 accurate, 6 stale, 9 unverifiable** - 371 claims.
+
+That is the ROW count, counted from the claim table rows in this file and not
+from any per-group headline. Run 1's report carried three per-group headlines
+that each undercounted their own group, and
+`.planning/DOCS-CLAIMS.md:19-23` says so; the rows are the record. Arithmetic:
+385 lines beginning `| `, minus 14 table header rows, is 371 claim rows, and
+356 + 6 + 9 = 371.
+
+Coverage: all fourteen filenames in this half's surface carry a claim table -
+`README.md`, `METHOD.md`, `INTERNALS.md`, `CONTRIBUTING.md` and
+`cadence-core/workflows/{audit,config,config-review,context,coverage,debug,decision-review,docs-verify,execute,milestone}.md`
+- and every box on the coverage checklist above is ticked. The surface was
+covered in full; nothing was closed over a partial read.
+
+Half B (`.planning/phases/5/docs-verify-run-2-b.md`) carries invocations 3 and
+4 and its own count. Neither half states a run-2 total; plan 3 joins them.
