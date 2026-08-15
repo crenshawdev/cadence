@@ -38,9 +38,12 @@
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
+// The repo-layer-only `git.auto_close` read - the value that says the
+// REPOSITORY itself authorized the unattended close, never the merged one. Its
+// module header carries why it is a raw read and why it must fail closed.
+import { repoAutoClose } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
@@ -60,16 +63,6 @@ function readRemotes(dir) {
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       .split('\n').map((s) => s.trim()).filter(Boolean);
   } catch { return []; }
-}
-
-// git.auto_close from the REPO config layer ONLY (never the merged/global value):
-// a user-global auto_close must never enable an unattended publish in an
-// unrelated project (D-08). Missing/bad/global-only -> false.
-function repoAutoClose(dir) {
-  try {
-    const repo = JSON.parse(readFileSync(join(dir, '.planning', 'config.json'), 'utf8'));
-    return repo?.git?.auto_close === true;
-  } catch { return false; }
 }
 
 /** The protected-branch list for the repo at `dir`, coerced by the ONE shared
