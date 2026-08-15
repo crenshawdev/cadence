@@ -27,6 +27,12 @@
 // Source text is not an input to this function, which is the only form that
 // rule can take that a later edit cannot quietly undo.
 //
+// THE SPLIT FROM lib/risk-diff.mjs. This file answers which categories a
+// project SCOPES, once, from its structure - and returns all eight
+// unconditionally, because narrowing is the USER's. lib/risk-diff.mjs answers
+// whether a given RANGE touched one, every time a plan completes, and is what
+// the blocking `risk_surface` gate fires on. Neither is the other's detector.
+//
 // Pure lib: no fs, no emit, no process, no Date, no randomness. The caller
 // reads the tree; this side owns the map from what was read to what it means.
 'use strict';
