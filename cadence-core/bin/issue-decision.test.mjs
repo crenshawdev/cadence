@@ -201,7 +201,7 @@ test('a RENAMED field is unreadable, not an empty record set', () => {
 
 // --- decideIssueCheck: every reason distinct --------------------------------
 
-test('all eight skip reasons are distinct strings, and only `query` proceeds', () => {
+test('all nine skip reasons are distinct strings, and only `query` proceeds', () => {
   const forgejo = { verdict: 'forgejo', host: 'git.example.com', slug: 'org/repo' };
   const cases = {
     'key off': { enabled: false },
@@ -211,6 +211,9 @@ test('all eight skip reasons are distinct strings, and only `query` proceeds', (
     'log unreadable': { enabled: true, classification: forgejo, logOk: false, bin: 'tea' },
     'cli absent': { enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: false },
     'nonzero exit': { enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: true, exitOk: false },
+    // "it hung" and "it refused" are different things to go fix, so the call
+    // bound gets its own line rather than borrowing the nonzero one.
+    'killed at the bound': { enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: true, exitOk: false, timedOut: true },
     unreadable: {
       enabled: true, classification: forgejo, logOk: true, bin: 'tea', cliPresent: true, exitOk: true,
       fetched: { complete: false, detail: 'response was not JSON' },
@@ -225,7 +228,7 @@ test('all eight skip reasons are distinct strings, and only `query` proceeds', (
     assert.ok(!reasons.has(d.reason), `${name} reuses the reason of ${reasons.get(d.reason)}`);
     reasons.set(d.reason, name);
   }
-  assert.equal(reasons.size, 8);
+  assert.equal(reasons.size, 9);
   // The key-off line says what it did NOT do, since "no forge CLI ran" is the
   // property the seam test asserts with a spawn marker.
   assert.match(cases['key off'] && decideIssueCheck(cases['key off']).reason, /issue_check is off/);

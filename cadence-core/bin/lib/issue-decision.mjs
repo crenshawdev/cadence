@@ -273,18 +273,19 @@ export function partitionIssues(numbers, fetched) {
  *
  * The eight reasons, in the order they are asked:
  *   1 the key is off        6 the resolved binary is absent from PATH
- *   2 no origin remote      7 the CLI exited nonzero
- *   3 unrecognized host     8 the CLI exited zero with a response the
- *   4 no tea login for it     normalizer could not read as complete
- *   5 the ref scan failed
+ *   2 no origin remote      7 the CLI was killed at the bound, or exited
+ *   3 unrecognized host       nonzero - two lines, because "it hung" and "it
+ *   4 no tea login for it     refused" are different things to go fix
+ *   5 the ref scan failed   8 the CLI exited zero carrying a response the
+ *                             normalizer could not read as complete
  *
  * @param {{enabled?:boolean,
  *   classification?:{verdict:string, host:string|null, slug:string|null},
  *   logOk?:boolean, bin?:string, cliPresent?:boolean, exitOk?:boolean,
- *   fetched?:{complete?:boolean, detail?:string|null}|null}} args
+ *   timedOut?:boolean, fetched?:{complete?:boolean, detail?:string|null}|null}} args
  * @returns {{action:'query'|'skip', reason:string}}
  */
-export function decideIssueCheck({ enabled, classification, logOk, bin, cliPresent, exitOk, fetched } = {}) {
+export function decideIssueCheck({ enabled, classification, logOk, bin, cliPresent, exitOk, timedOut, fetched } = {}) {
   const skip = (reason) => ({ action: /** @type {'skip'} */ ('skip'), reason });
   if (enabled !== true) {
     return skip('git.issue_check is off: no tracker report, and no forge CLI was run');
@@ -309,7 +310,9 @@ export function decideIssueCheck({ enabled, classification, logOk, bin, cliPrese
     return skip(`the ${cli} CLI is not on PATH: no tracker report`);
   }
   if (exitOk === false) {
-    return skip(`${cli} exited nonzero: no tracker report`);
+    return timedOut === true
+      ? skip(`${cli} did not answer inside the call bound and was killed: no tracker report`)
+      : skip(`${cli} exited nonzero: no tracker report`);
   }
   if (fetched && fetched.complete !== true) {
     const why = fetched.detail ? ` (${fetched.detail})` : '';

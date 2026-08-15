@@ -40,7 +40,7 @@ const GROUPS = Object.freeze({
   // Everything that touches a real repository.
   git: ['git-guard', 'git-publish', 'git-branch', 'git-segments', 'worktree-base',
     'branch-decision', 'publish-decision', 'close-decision', 'release-decision',
-    'release-bump', 'land-cleanup', 'redact-url'],
+    'release-bump', 'land-cleanup', 'redact-url', 'issue-check', 'issue-decision'],
   // The .planning grammar and the run record. `planning` alone is ~11s, which
   // is why it gets a group whose other members are cheap.
   planning: ['planning', 'planning-files', 'trace', 'bm25', 'debt-markers'],
