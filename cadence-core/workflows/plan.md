@@ -355,14 +355,21 @@ opinion, not another iteration.
 </step>
 
 <step name="commit">
-1. Seed this phase's Traceability rows through the seam, right where the plan
-   was just written:
+1. Seed this phase's Traceability rows and update the cursor - both through the
+   seam, right where the plan was just written, and both in ONE message. No
+   value flows from the first into the second, which is the only thing that
+   would serialize them:
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" seed-reqs --phase {N}
    ```
 
-   Inserts `| <id> | Phase {N} | Pending |` for exactly the declared
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
+   ```
+
+   `cursor set` derives name/total from ROADMAP and stamps the date.
+   `seed-reqs` inserts `| <id> | Phase {N} | Pending |` for exactly the declared
    `requirements:` ids that also have an `## Active` bullet in
    REQUIREMENTS.md; idempotent, so a replan or a `--gaps` plan can never
    duplicate a row. Report `orphan_ids` to the user - a declared id with no
@@ -374,14 +381,7 @@ opinion, not another iteration.
    any other status. `ok:false` is reported to the user and the workflow
    CONTINUES regardless - the plan is already on disk, seeding is not a gate.
 
-2. Update the cursor through the seam (it derives name/total from ROADMAP
-   and stamps the date):
-
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase {N} --status planned --next "/cad-execute {N}"
-   ```
-
-3. If planning.commit_docs is true: apply the protected-branch guard
+2. If planning.commit_docs is true: apply the protected-branch guard
    (references/git-guard.md rail 1), then commit the plan file(s), STATE.md, and
    `.planning/REQUIREMENTS.md` when seed-reqs reported any `seeded` ids -
    `docs: plan phase {N} - {name}` - staging exactly those files.
