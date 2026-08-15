@@ -1,0 +1,79 @@
+{
+  "status": "needs_human",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "git.auto_close resolves as two named booleans from two sources, and the AUTHORIZED value never comes from a bare `config.mjs get`",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/repo-auto-close.mjs is a raw JSON.parse of <dir>/.planning/config.json, fail-closed, and is the ONLY source of the authorized value: a tree-wide grep for repoAutoClose finds exactly two callsites, cadence-core/bin/git-publish.mjs:135 (publish) and :249 (authorized). The requested value comes from the merged read at git-publish.mjs:110-113 (`autoCloseRequested`), extending the existing readProtectedBranches mergeLayers callsite rather than adding one. Live trace of one value end to end on a divergent pair (global true / repo unset): `git-publish.mjs authorized --dir <fx>` printed {\"ok\":false,\"reason\":\"auto-close-off\",\"requested\":true,...} exit 1, and with the repo layer set to true printed {\"ok\":true,\"action\":\"repo-authorized\",\"requested\":true} exit 0. cadence-core/bin/repo-auto-close.test.mjs covers all six cases (repo true/false, key absent, file absent, truncated JSON, global-only); cadence-core/bin/config-seams.test.mjs:545-608 asserts requested true / authorized false on one fixture plus the repo-layer contrast."
+    },
+    {
+      "n": 2,
+      "truth": "The skipped-ask / halt pairing still reads one merged value, and a test goes red if the ask is repointed",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/config-seams.test.mjs:572-579 asserts on the divergent pair that `config.mjs get git.auto_close` reports true and that `land-cleanup.mjs gate` still halts with reason /auto_close on/ on a surviving blocker. The call-site half is pinned in cadence-core/bin/prose-agreement.test.mjs ('cad-land step 3: the auto_close branch takes its value from `config.mjs get`'), which asserts step 3's branch region does NOT contain a raw `.planning/config.json` read nor `git-publish.mjs\" authorized` - so repointing SKILL.md's ask at the repo layer goes red. Both arms pass in the run of `node --test cadence-core/bin/prose-agreement.test.mjs` (20/20) and the full suite."
+    },
+    {
+      "n": 3,
+      "truth": "The GitLab arm has an authorization answer it consults, it refuses with no forge CLI spawned, and neither doc surface still exempts GitLab",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/git-publish.test.mjs:318-345 ('authorized: the GitLab arm refuses with NO forge CLI spawned at all') writes gh/glab/tea stubs onto the child PATH with CAD_SPAWN_MARKER set, asserts the auto-close-off refusal and existsSync(marker) === false, then runs a stub directly to prove the absence is not vacuous. `grep -rn \"no seam call is needed\" skills/ cadence-core/` matches only the guard assertion inside prose-agreement.test.mjs:794. skills/cad-land/SKILL.md:139-151 now runs `git-publish.mjs authorized --dir <root>` ahead of the whole Open/reuse bullet; cadence-core/references/git-publish.md:24-27 restates the rule. prose-agreement.test.mjs pins ORDER, not presence: seamAt < createAt AND seamAt < viewAt (the reuse probe), so a consult moved after either goes red."
+    },
+    {
+      "n": 4,
+      "truth": "The refusal envelope names WHICH authorization was missing, from one core, with reason unchanged",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "authorizationDetail at cadence-core/bin/lib/publish-decision.mjs:54-65 is pure and total, returns null when authorized, and returns two distinct sentences; decidePublish gate 1 (:113-116) is the only refusal carrying a detail, and the JSDoc gate ladder (:72-75) states it. publish-decision.test.mjs:69-124 asserts the two details differ, that the requested-globally sentence says a user-global setting cannot authorize and names .planning/config.json, that gate 1 is the ONLY refusal with a detail, and that a bare call still words itself. Observed live: the authorized subcommand emitted reason auto-close-off with the requested-globally sentence."
+    },
+    {
+      "n": 5,
+      "truth": "Both doc surfaces where the key is set describe the two resolutions and which arm reads which, with no unstated-reach",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/config.schema.json:48 purpose carries the verbatim phrase 'repo config layer only for the unattended publish' and names publish AND authorized through lib/repo-auto-close.mjs plus the merged REQUESTED side. cadence-core/references/config-reach.md:139's consumer cell names publish, authorized, the SKILL.md 3(b) consult, and land-cleanup gate / SKILL.md / workflows/milestone.md as merged readers. `node cadence-core/bin/self-verify.mjs` -> {\"ok\":true,...,\"problems\":[]}, config-reach among the checks run."
+    },
+    {
+      "n": 6,
+      "truth": "The exploit was watched failing against the unfixed tree, recorded rather than asserted",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": ".planning/spikes/gitlab-authorization-gap/SPIKE.md (8615 B, dated 2026-08-15, run against 24411e5 before any fix). It transcribes `config.mjs get` -> true from global+repo, `land-cleanup.mjs gate` -> action:proceed with no blocker (the pre-fix state AC6 asks to watch) with the blocker halt labelled as contrast, `git-publish.mjs publish` -> auto-close-off, and the $CAD_SPAWN_MARKER contents showing `glab mr create` then `glab mr merge` with nothing between."
+    },
+    {
+      "n": 7,
+      "truth": "Suite and self-verify run clean",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node --test 'cadence-core/bin/*.test.mjs'` -> tests 1932, pass 1932, fail 0 (single full-suite run). `node cadence-core/bin/self-verify.mjs` -> ok:true, problems:[] across all 22 checks. No unreferenced debt markers on the touched goal-path files (grep for TODO/FIXME/XXX/HACK/placeholder/not implemented returned only self-verify.mjs's own <t>/<name> placeholder-expansion vocabulary and a TodoWrite tool name)."
+    },
+    {
+      "n": 8,
+      "truth": "On GitLab, an actual unattended run cannot reach `glab mr create`/`glab mr merge` without the repo-layer boolean",
+      "status": "UNCERTAIN",
+      "uat_item": null,
+      "evidence": "The enforcement on the GitLab arm is prose (skills/cad-land/SKILL.md step 3(b)) plus prose-agreement.test.mjs reading that prose - there is no runtime interlock: cadence-core/bin/land-cleanup.mjs does not refuse to proceed when the consult was skipped, so a model that departs from step 3(b) still reaches `glab mr merge`. SUMMARY.md:83-89 states this limit honestly. The ROADMAP's own success criterion 3 asks for a test showing the GitLab path refusing, which truth 3 satisfies; what no probe here can settle is the live-agent behaviour, and `glab` is absent on this machine with no GitLab remote to run against."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Divergent config pair resolves two values from two sources", "evidence": "One source for the authorized value (cadence-core/bin/lib/repo-auto-close.mjs, two callsites at git-publish.mjs:135 and :249); merged requested value at git-publish.mjs:110-113. Live on global-true/repo-unset: authorized -> ok:false requested:true exit 1; repo-true -> ok:true action:repo-authorized exit 0. Six-case lib test plus the config-seams divergence arm." },
+    { "k": 2, "name": "The skipped-ask / halt pairing still reads one value", "evidence": "config-seams.test.mjs:572-579 (get true, gate halts on a blocker on the same pair) plus the prose-agreement call-site pin that forbids step 3 branching on a raw repo read or on `authorized`." },
+    { "k": 3, "name": "GitLab refuses, and no forge CLI runs", "evidence": "git-publish.test.mjs:318-345 asserts the refusal and existsSync($CAD_SPAWN_MARKER)===false with a non-vacuous control; `no seam call is needed` survives only inside the test that forbids it; SKILL.md:139-151 and references/git-publish.md:24-27 restate the rule, order-pinned before both `glab mr create` and the `glab mr view` reuse probe." },
+    { "k": 4, "name": "The refusal envelope names which authorization was missing", "evidence": "authorizationDetail at lib/publish-decision.mjs:54-65 returns two distinct sentences and null when authorized; gate 1 at :113-116 is the only detail-carrying refusal; reason stays auto-close-off on both arms, observed live." },
+    { "k": 5, "name": "The two resolutions are documented where the key is set", "evidence": "config.schema.json:48 keeps the reach phrase verbatim and names both arms; config-reach.md:139 names authorized and the GitLab consult beside publish; self-verify problems:[] (no unstated-reach)." },
+    { "k": 6, "name": "The exploit was watched to fail first", "evidence": ".planning/spikes/gitlab-authorization-gap/SPIKE.md, run against 24411e5, with the gate PASSing and the marker recording `glab mr create` then `glab mr merge` with no refusal between." },
+    { "k": 7, "name": "Suite and self-verify run clean", "evidence": "1932 pass / 0 fail; self-verify ok:true problems:[]." }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "Walk /cad-land step 3(b) on a real GitLab repository whose .planning/config.json never sets git.auto_close while the user-global layer sets it to true, once with an MR already open for the branch and once with none.",
+      "expected": "In both runs the agent runs `node \"${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs\" authorized --dir <root>` before it touches the remote, gets ok:false, and stops - no `glab mr view`, no `glab mr create`, no `glab mr merge` - surfacing the detail sentence about a user-global setting not authorizing this repository.",
+      "why_human": "Out-of-reach resource plus live-agent behaviour: `glab` is absent on this machine and there is no GitLab remote to run against, and the GitLab enforcement is prose rather than a runtime interlock (land-cleanup.mjs does not refuse a merge whose consult was skipped), so no probe in the repo can observe whether a real run honours the ordering. The seam-level and prose-level pins are already verified (truth 3); this is the only remaining claim they cannot reach."
+    }
+  ]
+}
