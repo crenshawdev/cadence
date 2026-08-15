@@ -743,6 +743,38 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     'execute.md dropped the rule that an inconclusive range fires the trigger');
 });
 
+test('cad-land step 3: the auto_close branch takes its value from `config.mjs get`', () => {
+  // AC2's other half, at the CALL SITE. The seam-level arms in
+  // config-seams.test.mjs prove the two resolutions differ and that the gate
+  // reads the merged one - but they all still pass on a tree where THIS skill
+  // was repointed at the raw repo value, which would leave the ask and the gate
+  // reading different sources with every arm green. The pairing is: the arm
+  // that switched off the human is the arm the gate covers.
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const labelOf = regionLabels(skill);
+
+  // The ONE up-front read the whole run reuses, and the branch statement itself.
+  const upfront = /Read every config key this run needs in ONE `config\.mjs get` up front[\s\S]*?\n\n/
+    .exec(skill);
+  assert.ok(upfront, 'cad-land no longer states its ONE up-front config.mjs get');
+  assert.match(upfront[0], /git\.auto_close/,
+    'git.auto_close left the up-front `config.mjs get` list, so the branch value comes from elsewhere');
+  const branch = skill.split('\n').filter((l, i) => labelOf(i) === '3').join('\n');
+  assert.match(branch, /branch on `git\.auto_close`/,
+    'step 3 no longer states what it branches on');
+
+  // And from NO other source. A raw repo-layer read or the `authorized` seam
+  // appearing as the thing step 3 branches on is exactly the collapse 0b1c322
+  // made and had reverted: the ask would skip on one value while
+  // land-cleanup.mjs gate halts on another. `authorized` belongs INSIDE 3(b),
+  // gating the GitLab mutation - never above the branch.
+  const decides = upfront[0] + '\n' + branch;
+  assert.doesNotMatch(decides, /\.planning\/config\.json/,
+    'step 3 branches on a raw repo-layer read instead of the merged `config.mjs get`');
+  assert.doesNotMatch(decides, /git-publish\.mjs" authorized/,
+    'step 3 branches on the AUTHORIZED value; the ask and the gate must read one merged value');
+});
+
 test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it creates', () => {
   // On GitHub and Forgejo the unattended chain has to come through
   // `git-publish.mjs publish` to get the branch onto the remote, so the
