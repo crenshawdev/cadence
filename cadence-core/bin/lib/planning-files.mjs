@@ -335,6 +335,33 @@ export function isRequirementId(id) {
 }
 
 /**
+ * One phase's `### Phase <N>:` detail block, verbatim, or null when the roadmap
+ * has no such block.
+ *
+ * Extracted so the roadmap block readers - `phaseRequirements` and
+ * `phaseCriteria` - cannot disagree about where a phase's block ENDS. Two
+ * copies of this walk is how a criteria count would silently absorb the next
+ * phase's list while the requirement count stopped at the right line.
+ *
+ * @param {string} body ROADMAP bytes, already through `normalizeCrlf`
+ * @param {string|number} phase the caller's own spelling (D-02)
+ * @returns {string|null}
+ */
+function phaseDetailBlock(body, phase) {
+  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
+  const at = body.search(head);
+  if (at < 0) return null;
+  const rest = body.slice(at);
+  // Search from AFTER this block's own heading line, never from `rest[1]`:
+  // `^` under /m matches at index 0, so slicing by one character finds the
+  // heading we just matched and yields a one-character block.
+  const afterHeading = rest.indexOf('\n') + 1;
+  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
+  const nextHeading = tail.search(/^#{1,3} /m);
+  return nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+}
+
+/**
  * The requirement ids a phase's ROADMAP detail block names, and its goal line.
  *
  * The grammar is the one `/cad-new-project` writes and `references/roadmap-phases.md`
@@ -354,17 +381,8 @@ export function isRequirementId(id) {
  */
 export function phaseRequirements(text, phase) {
   const body = normalizeCrlf(String(text || ''));
-  const head = new RegExp(`^### Phase ${String(phase).replace('.', '\\.')}:`, 'm');
-  const at = body.search(head);
-  if (at < 0) return { found: false, ids: [], goal: '' };
-  const rest = body.slice(at);
-  // Search from AFTER this block's own heading line, never from `rest[1]`:
-  // `^` under /m matches at index 0, so slicing by one character finds the
-  // heading we just matched and yields a one-character block.
-  const afterHeading = rest.indexOf('\n') + 1;
-  const tail = afterHeading > 0 ? rest.slice(afterHeading) : '';
-  const nextHeading = tail.search(/^#{1,3} /m);
-  const block = nextHeading < 0 ? rest : rest.slice(0, afterHeading + nextHeading);
+  const block = phaseDetailBlock(body, phase);
+  if (block === null) return { found: false, ids: [], goal: '' };
 
   const reqLine = block.match(/^\*\*Requirements:\*\*(.*)$/m);
   const goalLine = block.match(/^\*\*Goal:\*\*(.*)$/m);
@@ -373,6 +391,56 @@ export function phaseRequirements(text, phase) {
   // said two would push a phase over a ceiling for a typo.
   const ids = [...new Set(idTokensIn(reqLine[1]).filter(isRequirementId))];
   return { found: true, ids, goal: goalLine ? goalLine[1].trim() : '' };
+}
+
+// BOTH live spellings of the roadmap criteria heading, and no third (D-02).
+// `templates/ROADMAP.md:28,36` writes the bold, capital-C form; this repo's own
+// `.planning/ROADMAP.md` writes the bare lower-c form at all five of its phase
+// blocks (10 hits tree-wide, measured 2026-08-14). A parser anchored to the
+// template alone reports "no criteria declared" for every phase of the repo
+// whose dogfooding proves the seam - and because absence is not zero, it
+// reports nothing rather than failing, so that regression would be invisible.
+// The bold markers are balanced by construction: `**Success criteria:` is a
+// half-written heading, and admitting it would be inventing a third spelling
+// nothing writes.
+const CRITERIA_HEADING = /^(?:\*\*Success Criteria:\*\*|Success Criteria:)[ \t]*$/im;
+
+// A criterion is a TOP-LEVEL ordered item under that heading. Anchored at
+// column 0 on purpose: every wrapped criterion in this repo's roadmap continues
+// on an indented line, and a pattern that admitted leading whitespace would
+// count a two-line criterion twice and an indented sub-list as criteria.
+const CRITERIA_ITEM_G = /^\d+[.)]\s+\S/gm;
+
+/**
+ * How many success criteria a phase's ROADMAP detail block declares.
+ *
+ * The second reader of the roadmap's per-phase grammar, beside
+ * `phaseRequirements` and sharing its block extraction exactly. Both heading
+ * spellings above are admitted; the items are the numbered list under the
+ * heading, bounded with the block at the next `^#{1,3} ` heading, so the
+ * following phase's criteria are never counted into this one.
+ *
+ * Pure and total: no I/O, no throw. Absence is not zero - a block with no
+ * criteria heading yields `{found: false, count: 0}`, the same contract
+ * `phaseRequirements` states above, because a phase nobody wrote criteria for
+ * is not a phase with zero criteria and must never be compared against a floor.
+ * A heading carrying its first item on the same line is out of grammar and
+ * reads as not-found for the same reason.
+ *
+ * Fence handling is `phaseRequirements`'s: none. Phase 3's D-02 left the
+ * roadmap paths fence-blind and widening that here was out of scope.
+ *
+ * @param {string} text the ROADMAP.md bytes
+ * @param {string|number} phase the caller's own spelling (D-02)
+ * @returns {{found: boolean, count: number}}
+ */
+export function phaseCriteria(text, phase) {
+  const block = phaseDetailBlock(normalizeCrlf(String(text || '')), phase);
+  if (block === null) return { found: false, count: 0 };
+  const heading = block.match(CRITERIA_HEADING);
+  if (!heading || heading.index === undefined) return { found: false, count: 0 };
+  const after = block.slice(heading.index + heading[0].length);
+  return { found: true, count: (after.match(CRITERIA_ITEM_G) || []).length };
 }
 
 /**

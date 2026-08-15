@@ -19,7 +19,7 @@ import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
-  atomicWrite, parseCaptureSnippets, captureSections,
+  atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -691,6 +691,45 @@ test('setPhaseBox: a CRLF line is flipped in place with its `\\r` intact', () =>
 
 test('setPhaseBox: a lone-CR file matches nothing - the parse path must not have let it here', () => {
   assert.equal(setPhaseBox(asCr(ROADMAP_LF), 1, true), null);
+});
+
+// --- phaseCriteria: the roadmap's per-phase success-criteria count -----------
+// One row per LIVE heading spelling, because a parser anchored to the template
+// alone reads zero criteria out of this repo's own roadmap and - absence not
+// being zero - says nothing at all about it.
+
+/** A two-phase detail section whose criteria heading is spelled `spelling`. */
+const criteriaRoadmap = (spelling) => `# Roadmap\n\n## Phase Details\n\n`
+  + `### Phase 1: A\n**Goal:** a\n**Requirements:** CAT-01\n${spelling}\n`
+  + '1. first, which wraps\n   onto a second line\n2. second\n3. third\n\n'
+  + `### Phase 2: B\n**Goal:** b\n${spelling}\n1. only one here\n`;
+
+test('phaseCriteria: the template spelling `**Success Criteria:**` is counted', () => {
+  assert.deepEqual(phaseCriteria(criteriaRoadmap('**Success Criteria:**'), 1),
+    { found: true, count: 3 });
+});
+
+test('phaseCriteria: the bare `Success criteria:` spelling reads the same count', () => {
+  assert.deepEqual(phaseCriteria(criteriaRoadmap('Success criteria:'), 1),
+    { found: true, count: 3 });
+});
+
+test('phaseCriteria: a block with no criteria heading is not-found, never zero', () => {
+  const text = '# Roadmap\n\n## Phase Details\n\n### Phase 1: A\n**Goal:** a\n'
+    + '**Requirements:** CAT-01\n';
+  assert.deepEqual(phaseCriteria(text, 1), { found: false, count: 0 });
+  // Same answer for a phase with no detail block at all - both are "nobody
+  // wrote this down", and a floor must never be compared against either.
+  assert.deepEqual(phaseCriteria(text, 9), { found: false, count: 0 });
+});
+
+test("phaseCriteria: a phase's block ends at the next heading, so the next phase's criteria are not its own", () => {
+  // Phase 1 declares 3 and phase 2 declares 1. Reading past the `### Phase 2:`
+  // heading would report 4 for phase 1 - the shape that makes an in-range phase
+  // read as over its ceiling.
+  const text = criteriaRoadmap('Success criteria:');
+  assert.equal(phaseCriteria(text, 1).count, 3);
+  assert.equal(phaseCriteria(text, 2).count, 1);
 });
 
 // --- parseActiveIds ----------------------------------------------------------
