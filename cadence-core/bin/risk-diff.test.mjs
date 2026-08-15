@@ -545,3 +545,65 @@ test('risk-check status: a named range is required even when its return never la
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.deepEqual(r.missing, ['2']);
 });
+
+/**
+ * FROZEN LITERALS from a PREVIOUS milestone's phase 1, the same way
+ * FROZEN_PHASE_1 is frozen. These are the real bytes this repository's record
+ * held on 2026-08-14, under the v3.4.x cycle's own `phase_start` anchor
+ * (`3a24ad9`): a `cad-executor` bracket for a plan 2 that closed months of
+ * commits before the `risk_check` event existed at all, and which no record can
+ * ever be written for. `.planning/trace.jsonl` is append-only for the life of
+ * the project and phase numbers restart every milestone, so these lines answer
+ * to `--phase 1` forever.
+ */
+const PRIOR_CYCLE_PHASE_1 = [
+  '{"corr":"1-3a24ad9","phase":"1","ts":"2026-08-14T18:00:17.706Z","family":"lifecycle","event":"phase_start","sha":"3a24ad9"}',
+  '{"corr":"1-3a24ad9","phase":"1","ts":"2026-08-14T18:47:43.071Z","family":"lifecycle","event":"dispatch","plan":"2","role":"cad-executor","read":[".planning/PROJECT.md",".planning/phases/1/CONTEXT.md",".planning/phases/1/PLAN-2.md"]}',
+  '{"corr":"1-3a24ad9","phase":"1","ts":"2026-08-14T19:01:45.310Z","family":"lifecycle","event":"return","plan":"2","role":"cad-executor","tokens":164326}',
+];
+
+test('risk-check status: a PREVIOUS cycle\'s completed range does not hold this run open', () => {
+  // The whole file, as a real project's record actually reads: an old cycle's
+  // phase 1 sitting above this run's phase 1. Scanning every bracket the file
+  // holds demanded a record for the v3.4.x cycle's plan 2, which nothing can
+  // supply, so the gate refused every time on any project with more than one
+  // milestone of history - the check that exists to stop "not run" passing as
+  // "ran clean" never passing at all.
+  const dir = traceFixture([...PRIOR_CYCLE_PHASE_1, ...FROZEN_PHASE_1, recordLine('1', 'ae5ca09', 'HEAD')]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  // One row, and it is THIS run's plan 1. The prior cycle's plan 2 is not a row
+  // at all - not a row that passed, which would be the same forgeable gate
+  // wearing a green result.
+  assert.equal(r.plans.length, 1, JSON.stringify(r.plans));
+  assert.equal(r.plans[0].plan, '1');
+  assert.equal(r.plans[0].state, 'recorded');
+});
+
+test('risk-check status: scoping to this run is not a blanket pass - the CURRENT corr still refuses', () => {
+  // The same two bracket lines, re-stamped under this run's id and nothing
+  // else changed, so the correlation id is the only thing between the row
+  // above and this refusal. Without this row the scope could be widened to
+  // "ignore every bracket" and the suite above would stay green.
+  const thisRun = PRIOR_CYCLE_PHASE_1.slice(1).map((l) => l.replaceAll('1-3a24ad9', '1-ae5ca09'));
+  const dir = traceFixture([...FROZEN_PHASE_1, ...thisRun, recordLine('1', 'ae5ca09', 'HEAD')]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r._exit, 1);
+  assert.equal(r.reason, 'risk-record-missing');
+  assert.deepEqual(r.missing, ['2']);
+});
+
+test('risk-check status: a record left under a PREVIOUS cycle does not satisfy this run', () => {
+  // The other half of the same scoping, and the reason both scans take it: with
+  // the brackets scoped and the records not, a plan-1 record from any earlier
+  // cycle would clear this run's plan 1 - an unsatisfiable gate traded for a
+  // forgeable one.
+  const stale = recordLine('1', 'ae5ca09', 'HEAD').replaceAll('1-ae5ca09', '1-3a24ad9');
+  const dir = traceFixture([...PRIOR_CYCLE_PHASE_1, stale, ...FROZEN_PHASE_1]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing');
+  assert.deepEqual(r.missing, ['1']);
+});

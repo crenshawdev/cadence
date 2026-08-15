@@ -3228,7 +3228,9 @@ function cmdRiskCheckRun(dir, opts) {
  * string and `risk-check run` stores the parsed number, so both sides of every
  * comparison are stringified - the rule lib/trace.mjs's own `key()` follows for
  * the same reason. A row with no plan at all keys to '' and is still carried:
- * an unidentified completed range is not an exempt one.
+ * an unidentified completed range is not an exempt one. The correlation id is
+ * compared through this too - one normalization for both identity fields, so a
+ * `corr` that arrived as a non-string cannot compare unequal to its own value.
  * @param {any} v
  */
 const planKey = (v) => (v === undefined || v === null ? '' : String(v));
@@ -3285,6 +3287,35 @@ function cmdRiskCheckStatus(dir, opts) {
   // all.
   const r = renderTrace(dir, parsedPhase.raw);
 
+  /**
+   * THIS RUN, not every cycle that ever used this phase number.
+   *
+   * `.planning/trace.jsonl` is append-only across the whole project and phase
+   * numbers restart every milestone, so `--phase 1` reaches every previous
+   * cycle's phase 1 - on this repository, seven prior runs' executor brackets,
+   * two of them for a plan 2 that predates this seam. Scanning all of them
+   * demanded a risk record for ranges committed under a v3.4.x cycle and made
+   * the gate unsatisfiable on any project with more than one milestone of
+   * history: the check built to stop "not run" passing as "ran clean" never
+   * passed at all.
+   *
+   * The scope is `renderTrace`'s own `corr` - the id derived from the phase's
+   * NEWEST anchor - which is the same identity the ONE-round re-arm cap in
+   * references/triage-gate.md keys on ("a `rearm` outcome for this trigger
+   * already recorded under that same id"), and the same id `appendEvent`
+   * stamped on the record `risk-check run` wrote moments earlier. Both scans
+   * take it, for one reason: a record left under a previous cycle's id must not
+   * satisfy this cycle's range either, or scoping the brackets alone would
+   * trade an unsatisfiable gate for a forgeable one.
+   *
+   * A trace with no readable id to scope by (`corr` null or empty, which
+   * `requirePhaseArg` should already have made impossible) keeps the unscoped
+   * behaviour: requiring MORE is the safe direction here, and silently matching
+   * nothing would turn the whole gate into a blanket pass.
+   */
+  const run = typeof r.corr === 'string' && r.corr ? r.corr : null;
+  const thisRun = (/** @type {{corr?: any}} */ e) => run === null || planKey(e.corr) === run;
+
   /** Completed ranges, keyed by plan. A COMPLETED range is an executor bracket
    * whose terminal is a `return`; a `checkpoint` closed a dispatch that came
    * back unfinished and requires nothing. Grouping by plan is what makes a
@@ -3297,6 +3328,7 @@ function cmdRiskCheckStatus(dir, opts) {
     return row;
   };
   for (const b of r.brackets) {
+    if (!thisRun(b)) continue;
     if (b.role !== 'cad-executor' || b.event !== 'return') continue;
     planRow(planKey(b.plan)).completed++;
   }
@@ -3329,6 +3361,7 @@ function cmdRiskCheckStatus(dir, opts) {
    */
   const records = new Map();
   for (const e of r.events) {
+    if (!thisRun(e)) continue;
     if (e.family !== 'outcome' || e.event !== 'risk_check') continue;
     const k = planKey(e.plan);
     if (!records.has(k)) records.set(k, []);
