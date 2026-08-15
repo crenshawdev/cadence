@@ -35,6 +35,15 @@
 // (observed in this repo, 2026-08-15). The selector is asserted directly in
 // issue-check.test.mjs against a stub that records its argv.
 //
+// NO THIRD-PARTY OUTPUT REACHES THE ENVELOPE. A failed git read and a failed
+// forge CLI are reported by their own named reason line and NOTHING else: the
+// child's stderr is discarded at the spawn, and `detail` is null on every arm
+// of `check`. redactUrl covers credentials in URL POSITION and nothing else, so
+// a diagnostic carrying a bare token (`Authorization: Bearer ...`,
+// `GLAB_TOKEN=glpat-...`) would pass through it intact onto a line /cad-land
+// prints - and the reason already says what went wrong, so the raw text buys
+// nothing to pay for that. Not a second regex; no third-party bytes at all.
+//
 // NO CADENCE ENV OVERRIDE AND NO --cli-dir. The forge binary is resolved on
 // PATH, in ONE place, because PATH is the OS's own lookup: a test injects a
 // stub by prepending a directory to the child's PATH and the PRODUCTION
@@ -69,26 +78,28 @@ const DEFAULT_TIMEOUT_MS = 10000;
  * Run a command, bounded, and never throw. `killSignal: 'SIGKILL'` because a
  * child that ignores SIGTERM would otherwise outlive its own timeout - the
  * whole point of the bound is that nothing the child does can extend it.
+ *
+ * The child's stderr is DISCARDED rather than captured (see the header): with
+ * no `stdio` given, execFileSync would pass a failing CLI's stderr straight
+ * through to /cad-land's terminal, which is the same leak as putting it on the
+ * envelope. So the failure is reported as a boolean and a signal, never as the
+ * third party's own text.
  * @param {string} bin @param {string[]} args
  * @param {{cwd:string, timeout:number}} opts
- * @returns {{ok:boolean, stdout:string, stderr:string, timedOut:boolean}}
+ * @returns {{ok:boolean, stdout:string, timedOut:boolean}}
  */
 function run(bin, args, { cwd, timeout }) {
   try {
     const stdout = execFileSync(bin, args, {
       cwd, timeout, killSignal: 'SIGKILL', encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return { ok: true, stdout, stderr: '', timedOut: false };
+    return { ok: true, stdout, timedOut: false };
   } catch (e) {
-    const err = /** @type {{stdout?:string, stderr?:string, signal?:string, message?:string}} */ (e || {});
+    const err = /** @type {{stdout?:string, signal?:string}} */ (e || {});
     return {
       ok: false,
       stdout: typeof err.stdout === 'string' ? err.stdout : '',
-      // Whatever reaches a `detail` goes through the ONE redactor (EXP-01,
-      // D-14): a forge CLI's error can echo a remote URL carrying a token, and
-      // a fifth hand-rolled regex is how the copies drift.
-      stderr: redactUrl(err.stderr || err.message || ''),
       timedOut: err.signal === 'SIGKILL',
     };
   }
@@ -131,14 +142,18 @@ function teaHosts(text) {
 }
 
 /** The one degraded shape: a named line, and NOTHING claimed about issues.
+ *
+ * `detail` is always null on this arm, and that is the security property: the
+ * reason line already names the degradation, so no git or forge-CLI stderr is
+ * carried here for it to add to. See the header.
  * @param {{reason:string}} decision
- * @param {{host?:string|null, repo?:string|null, detail?:string|null, warnings:string[]}} rest */
+ * @param {{host?:string|null, repo?:string|null, warnings:string[]}} rest */
 function skip(decision, rest) {
   emit({
     ok: true, action: 'skip', reason: decision.reason,
     host: rest.host ?? null, repo: rest.repo ?? null,
     referenced: [], open: [],
-    detail: rest.detail ?? null, warnings: rest.warnings,
+    detail: null, warnings: rest.warnings,
   });
 }
 
@@ -177,7 +192,7 @@ function check(dir, baseArg, timeout) {
   const base = baseArg !== undefined ? baseArg : (git.base_branch || resolveProtectedBranches(git)[0]);
   const log = gitRead(['log', `${base}..HEAD`, '--format=%B']);
   decision = decideIssueCheck({ enabled, classification, logOk: log.ok, bin });
-  if (decision.action === 'skip') return skip(decision, { host, repo, detail: log.stderr || null, warnings });
+  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
 
   decision = decideIssueCheck({ enabled, classification, logOk: true, bin, cliPresent: onPath(bin) });
   if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
@@ -187,7 +202,7 @@ function check(dir, baseArg, timeout) {
     enabled, classification, logOk: true, bin, cliPresent: true,
     exitOk: call.ok, timedOut: call.timedOut,
   });
-  if (decision.action === 'skip') return skip(decision, { host, repo, detail: call.stderr || null, warnings });
+  if (decision.action === 'skip') return skip(decision, { host, repo, warnings });
 
   const fetched = row.normalize(call.stdout, row.limit);
   decision = decideIssueCheck({

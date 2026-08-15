@@ -274,6 +274,9 @@ for (const [name, pattern, build] of DEGRADATIONS) {
     // (GAT-01, decideGateHalt's JSDoc).
     assert.deepEqual(envelope.referenced, [], name);
     assert.deepEqual(envelope.open, [], name);
+    // No third-party bytes ride along beside the line: neither git's stderr on
+    // the ref-scan arm nor the forge CLI's on the nonzero one.
+    assert.equal(envelope.detail, null, `${name} carried a detail: ${envelope.detail}`);
     assert.ok(!SEEN_REASONS.has(envelope.reason),
       `${name} reuses the line ${SEEN_REASONS.get(envelope.reason)} prints`);
     SEEN_REASONS.set(envelope.reason, name);
@@ -301,15 +304,31 @@ test('the key-off arm spawns NO forge CLI at all, not merely an empty report', (
   assert.match(readFileSync(marker2, 'utf8'), /tea/);
 });
 
-test('a CLI error carrying a credentialed remote URL reaches detail REDACTED', () => {
-  // EXP-01: the fifth site that could put a caught error into an envelope goes
-  // through lib/redact-url.mjs, never a new regex.
+test('a token-carrying CLI stderr never reaches the envelope, in ANY shape', () => {
+  // EXP-01, tightened: redactUrl covers a credential in URL POSITION, so the
+  // three shapes below would have travelled through it untouched. The seam
+  // therefore carries NO third-party stderr at all - the reason line already
+  // names the degradation - and this asserts that over the whole envelope
+  // rather than over the `detail` field alone.
+  const SECRETS = [
+    'ghs_notarealtoken',            // inside a credentialed URL: redactUrl's own case
+    'ghp_alsonotarealtoken',        // a bare env-var assignment
+    'glpat-stillnotarealtoken',     // a bare forge token
+    'notarealbearertokenvalue',     // an Authorization header
+  ];
   const dir = repo({ originUrl: GH_REPO, commits: COMMITS });
   const r = seam(['check', '--dir', dir, '--base', 'main'], {
-    stubs: { gh: { code: 1, stderr: 'fatal: https://x-access-token:ghs_notarealtoken@github.com/org/repo.git rejected' } },
+    stubs: { gh: { code: 1, stderr: [
+      'fatal: https://x-access-token:ghs_notarealtoken@github.com/org/repo.git rejected',
+      'GITHUB_TOKEN=ghp_alsonotarealtoken',
+      'GLAB_TOKEN=glpat-stillnotarealtoken',
+      'Authorization: Bearer notarealbearertokenvalue',
+    ].join('\n') } },
   });
   assert.equal(r.ok, true);
   assert.equal(r.action, 'skip');
-  assert.ok(r.detail.includes('<redacted>'), r.detail);
-  assert.ok(!r.detail.includes('ghs_notarealtoken'), r.detail);
+  assert.match(r.reason, /exited nonzero/);
+  assert.equal(r.detail, null, JSON.stringify(r));
+  const wire = JSON.stringify(r);
+  for (const secret of SECRETS) assert.ok(!wire.includes(secret), `${secret} reached the envelope: ${wire}`);
 });
