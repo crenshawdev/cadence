@@ -48,7 +48,6 @@ pair is one selectable option and its `description`.
 | `planning.commit_docs` | bool | Commit `.planning` docs alongside code | `true`→track docs · `false`→leave untracked | true |
 | **Memory** |||||
 | `memory.backend` `[repo]` | enum | Backend for recall over `.planning/` | `builtin`→zero-dep BM25 recall over `.planning/` · `none`→recall off | builtin |
-| **Risk** |||||
 | **Review** (providers handled separately) |||||
 | `review.reviewers` `[repo]` | list(enum) | Which reviewer backends fire() resolves (multi-select) | `claude-subagent`→local zero-dep · `openai`→cross-model · `gemini`→cross-model · `deepseek`→cross-model | claude-subagent |
 | `review.mode` `[repo]` | enum | How multiple reviewers combine | `single`→first available only · `panel`→union all · `adjudicated`→run all, main model grounds each | adjudicated |
