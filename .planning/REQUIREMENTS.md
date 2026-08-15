@@ -12,13 +12,11 @@ shape into the seam and the enforcement that makes the seam load-bearing. The
 four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted.
 
-- **RSK-01**: An executable risk-check seam under `cadence-core/bin/` answers a
   diff range with `{checked, categories, matches, inconclusive}` and ALWAYS
   writes that record, match or no match. Today `risk_surface` detection is
   `workflows/execute.md` telling the orchestrator to read a diff against eight
   prose categories, and `lib/surface-scan.mjs` is a scoping aid that never
   inspects source text, so no seam exists to answer this at all (#130).
-- **RSK-02**: A plan or task cannot complete without that record, so the run
   record distinguishes "the detection step was skipped" from "it ran and matched
   nothing". `risk_surface` is `blocking` at every level and is the only live gate
   on a default install, and today a fire writes a lifecycle event while a
@@ -171,6 +169,8 @@ parses only the Traceability table).
 | GAT-02 (`config.mjs get` stops reporting a review gate that routing does not execute. A gate no layer set is answered from the schema default while `route.mjs resolve` answers the level's, so inspection and enforcement disagree wherever a project has not written the key - the disagreement `workflows/execute.md` already carries a paragraph to work around. Reported so a reader can tell a level's gate from a layer's, without pretending the seam knows something it does not (#129)) | 1 | Complete | v3.4.1 |
 | GAT-03 (`config.schema.json`'s prose and `route-table.json` agree on every trigger's gate per level. The schema says `phase_diff` is `advisory` at `shipped`; the route table says `off`, and the route table is what fires (#134)) | 1 | Complete | v3.4.1 |
 | ENF-02 (`self-verify.mjs` fails when a trigger's schema default or its prose disagrees with `route-table.json`. It already fails in both directions on rung files and routing cells and has never compared these at all, so the drift above was invisible to the one check whose job is catching it (#135)) | 1 | Complete | v3.4.1 |
+| RSK-01 (An executable risk-check seam under `cadence-core/bin/` answers a) | 1 | Complete | v3.5.0 |
+| RSK-02 (A plan or task cannot complete without that record, so the run) | 1 | Complete | v3.5.0 |
 
 ## Deferred
 
@@ -212,8 +212,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RSK-01 | Phase 1 | Complete |
-| RSK-02 | Phase 1 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
