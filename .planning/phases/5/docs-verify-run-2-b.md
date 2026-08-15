@@ -663,3 +663,109 @@ behavior, not against the comment agreeing with itself.
 | VERIFY-11: `uat init` writes `fields_version` before it looks at an item | cadence-core/bin/planning.mjs:696-700 (ledger cites `1282-1294`) | accurate | behavior, not comment: `planning.mjs:700` writes `fm: {status:'testing', phase, fields_version: UAT_FIELDS_VERSION, ...}` as the object literal is constructed, ahead of the item map. The cited range is `criteria-coverage`'s reader, a different site entirely, so re-pin to `696-700` |
 | VERIFY-12: legacy also requires a CONTEXT declaring no ids beside a fieldless checklist | cadence-core/bin/planning.mjs:1281-1283 (ledger cites `1282-1294`) | accurate | `LEGACY_REASON` at `:1281-1283` spells the full conjunction - "no `fields_version` frontmatter marker, no `criterion` or `origin` on any item, and its CONTEXT declares no AC<N> ids" - and `:1396-1401` is the code applying it. The cited range still CONTAINS the live site, so this row needs a narrowing, not a move: `1281-1283` |
 | SELFVERIFY-01: check 16 fails an `@`-included `cadence-core/references/*` or `cadence-core/templates/*` surface no eager prose of the including command names, while `cadence-core/workflows/*` includes are exempt | cadence-core/bin/self-verify.mjs:90-104 (ledger cites `90-104`) | accurate | the only row whose cited line still holds byte for byte. `self-verify.mjs:90-99` states the rule and the workflows exemption ("the workflow IS the command's process"), `:101` puts the rule and its EMPTY waiver register in `lib/include-consumers.mjs`, and `:137` and `:1299` are the live import and call site |
+
+---
+
+# The stale rows
+
+Six, listed first because they are the actionable output. Each names the file,
+the line and the correct value; the fix is mechanical and belongs to whoever
+edits the docs, not to this sweep (`docs-verify.md` step 5).
+
+1. **`cadence-core/workflows/new-project.md:60-61`** - the config-written line
+   promises "plan check and verifier on". `workflow.plan_check` defaults to
+   `false` in BOTH `cadence-core/config.schema.json` and
+   `cadence-core/templates/config.json`, which is the very file the step just
+   copied. Correct: "plan check off, verifier on". The other three defaults in
+   that sentence (standard granularity, shipped stakes, research off) are right.
+2. **`cadence-core/workflows/adopt.md:54-56`** - the same sentence, verbatim,
+   with the same defect and the same correction. The two sites move together;
+   fixing one and not the other re-splits a line that is currently consistent.
+3. **`cadence-core/workflows/plan.md:331`** - "**advisory** (the `shipped`
+   default)" for the `plan` review trigger. `cadence-core/route-table.json`
+   `review.shipped.plan` is `"off"`. Advisory is `solo`'s value; `critical` is
+   `adjudicated`. This is the SAME defect half A recorded at `README.md:56`, so
+   three surfaces now state a gate the routing table does not resolve. Correct:
+   advisory at `solo`, off at `shipped`, adjudicated at `critical`.
+4. **`cadence-core/workflows/plan.md:336`** - "the same overlap the per-plan
+   `diff` review runs at advisory". No stakes level resolves `diff` to advisory:
+   `route-table.json` `review.*.diff` is `off` / `off` / `blocking`. Only an
+   explicitly SET `review.triggers.diff.gate=advisory` reaches it
+   (`route.mjs:435-464`), and `templates/config.json` writes no `review.triggers`
+   block at all, so a default install never sees it. Correct: cite the level the
+   parenthetical means, or drop the comparison.
+5. **`cadence-core/references/config-catalog.md:51`** - a `**Risk**` knob
+   category header with ZERO rows beneath it. `config.schema.json` holds no key
+   beginning `risk`; the whole `risk.override.*` family is retired in
+   `lib/retired-keys.mjs` `since: 'v2.7.0'`. The interactive menu that pages this
+   catalog 4 knobs at a time therefore renders a category with nothing in it.
+   Correct: delete the header.
+6. **`cadence-core/references/recall.md:3-6`** - "Two commands call
+   `planning.mjs recall` - `/cad-context` at `analyze`, `/cad-debug` at
+   Hypothesize - and the return is identical for both, so the contract is stated
+   here once instead of drifting in two workflows." THREE commands call it:
+   `plan.md:117` at `spawn_planner` and `plan.md:182` at `inline_plan`. Worse for
+   the file's own stated purpose, `plan.md` does not Read it - it restates the
+   return shape inline at `:120`, which is exactly the drift this file exists to
+   prevent. Correct: three commands, and `/cad-plan` named among them.
+
+The twelve `unverifiable` rows are all one of three kinds and none is a defect: a
+past measurement with no artifact in this tree to re-derive it from
+(`report.md:29-31`, `recall.md:26-30`, `plan-revision.md:38-40`,
+`trace.mjs:58-61`, `trace.mjs:62`); a prose rule for the model's own writing with
+no seam behind it (`spike.md:12-16`, `:19-21`, `:30-32`, `verify.md:212`,
+`report.md:101-102`); and one report field no seam returns split
+(`verify.md:321`).
+
+# Half B counts
+
+Counted from the claim table ROWS in this file, never from any per-group
+headline. Run 1's report carried three per-group headlines that each undercounted
+their own group and `.planning/DOCS-CLAIMS.md:19-23` says so; the rows are the
+record. Stated per group and kept apart on purpose, so that run 2's comparison
+against run 1's 547 is taken over the RE-RUN invocation alone and every surface
+added this cycle is added visibly rather than folded into a total.
+
+- **Invocation 3** (the eleven N-Z workflow files, re-run byte-identical):
+  **206 accurate, 3 stale, 6 unverifiable** - 215 claim rows.
+  This is the ONLY line in this report comparable to run 1.
+- **Invocation 4** (the four workflow files run 1 never swept, NEW surface):
+  **82 accurate, 1 stale, 2 unverifiable** - 85 claim rows.
+  Not comparable to run 1: none of these 85 rows existed in run 1's 547.
+- **Invocation 5** (the three reference docs no invocation ever named):
+  **58 accurate, 2 stale, 2 unverifiable** - 62 claim rows.
+  Not comparable to run 1's counts either, though the rows themselves DO join to
+  32 existing ledger rows - run 1 re-pointed those claims here from the docs that
+  cite them without ever sweeping the files.
+- **Targeted `.mjs` pass** (the ten ledgered rows citing a `.mjs` file):
+  **8 accurate, 0 stale, 2 unverifiable** - 10 claim rows.
+  Not comparable: a per-row re-verdict, not an extraction.
+
+Half B carries 372 claim rows in total. That figure is stated for completeness
+and is NOT the number to set against run 1's 547 - only invocation 3's 215 is.
+Neither half states a run-2 total; plan 3 joins them.
+
+Arithmetic: 206 + 3 + 6 = 215; 82 + 1 + 2 = 85; 58 + 2 + 2 = 62; 8 + 0 + 2 = 10;
+215 + 85 + 62 + 10 = 372.
+
+# Coverage
+
+All eighteen invocation filenames carry a claim table in this report -
+`cadence-core/workflows/{new-project,phase,plan-gaps,plan,progress,spike,task,undo,verify-deep,verify,verify-sweep}.md`
+(invocation 3), `cadence-core/workflows/{adopt,minimalism-review,report,suggest}.md`
+(invocation 4) and
+`cadence-core/references/{config-catalog,recall,plan-revision}.md`
+(invocation 5) - and all three `.mjs` files (`cadence-core/bin/lib/trace.mjs`,
+`cadence-core/bin/planning.mjs`, `cadence-core/bin/self-verify.mjs`) are covered
+by the targeted pass. Every box on the coverage checklist above is ticked and
+none is left open. The surface was covered in full; no count here was closed over
+a partial read.
+
+Taken with half A's fourteen files, no `doc` value in `.planning/DOCS-CLAIMS.md`
+is left without a run-2 verdict path: the 548 ledger rows span 31 docs, half A
+reaches 14 and this half reaches the other 17.
+
+Per `cadence-core/workflows/docs-verify.md` step 5 this sweep stops here. No
+document under `cadence-core/workflows/` or `cadence-core/references/` and no
+`.mjs` file was edited; the six stale rows above name file, line and correct
+value so the fix is mechanical for whoever makes it.
