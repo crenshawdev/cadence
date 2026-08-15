@@ -223,6 +223,13 @@ const CONTRACTS = {
     'uat status': ['--phase'],
     audit: [],
     'criteria-coverage': [],
+    // The criteria-count ceilings, as the CALLER's literal numbers. Four bounds
+    // rather than two because the two grammars have different ones - CONTEXT's
+    // acceptance criteria 3-7, ROADMAP's per-phase criteria 2-5 - and folding
+    // them onto one pair would make a workflow state a bound it does not hold.
+    // No config keys: D-04, the rule `plan-size`'s row above already follows.
+    'criteria-size': ['--phase', '--context-min', '--context-max',
+      '--roadmap-min', '--roadmap-max'],
     'plan-overlap': ['--phase'],
     'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
     'milestone-prune': ['--label', '--mode'],
