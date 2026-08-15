@@ -3538,9 +3538,8 @@ function cmdMilestonePrune(dir, opts) {
   //    clean out of the planning root and still answered ok:true. resolve()
   //    rather than the fsIdentity comparison the rest of this tree uses for
   //    paths: the archive root does not exist yet at validation time, and this
-  //    has to run before any mkdir. Stated residual - a pre-existing
-  //    `_archive-<label>` that is itself a symlink out of the tree still
-  //    resolves inside it.
+  //    has to run before any mkdir. Lexical alone is NOT enough, which is what
+  //    the type term below closes.
   const archiveRoot = join(dir, `_archive-${label}`);
   if (!resolvePath(archiveRoot).startsWith(resolvePath(dir) + sep)) {
     return fail('bad-args',
@@ -3549,6 +3548,27 @@ function cmdMilestonePrune(dir, opts) {
   const mode = opts.mode;
   if (mode !== 'delete' && mode !== 'archive') {
     return fail('bad-args', 'milestone-prune needs --mode <delete|archive> (tagged release: delete - the tag is the archive; untagged: archive)');
+  }
+  // 3. The TYPE term, and the reason the lexical test above cannot stand alone:
+  //    `resolve()` is pure string arithmetic, so a pre-existing `_archive-<label>`
+  //    that is ITSELF a symlink pointing out of the tree resolves lexically
+  //    INSIDE it, `mkdirSync(recursive)` succeeds silently against it, and
+  //    `renameSync` then follows the link and deposits the phase directories
+  //    wherever it aimed. `lstatSync` classifies the LINK rather than its
+  //    target, so a symlink fails `isDirectory()` here whatever it points at -
+  //    which is also the right answer for a regular file squatting the name.
+  //    Absent is the ordinary case and is not an error: the loop below creates
+  //    it. Archive mode only - `delete` builds no archive root.
+  if (mode === 'archive') {
+    // `throwIfNoEntry: false` rather than a try/catch, the idiom `occupied`
+    // above already uses: absent is data here, not an exception.
+    const rootStat = lstatSync(archiveRoot, { throwIfNoEntry: false });
+    if (rootStat && !rootStat.isDirectory()) {
+      return fail('archive-root-unusable',
+        `${archiveRoot} exists and is not a real directory`
+        + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
+        + ' - move or remove it, then re-run');
+    }
   }
   const roadmapFile = join(dir, 'ROADMAP.md');
   let roadmapText;
@@ -3561,24 +3581,34 @@ function cmdMilestonePrune(dir, opts) {
   }
   const warnings = [];
 
-  const pruned = pruneRoadmap(roadmapText, completed);
-  for (const n of pruned.missingSections) {
-    warnings.push(`phase ${n}: no "### Phase ${n}:" detail section found to remove`);
-  }
-
   // REQUIREMENTS.md is optional at this seam: a project without the file gets
   // the roadmap+dirs half and a warning, never a refusal - the close must not
-  // stall on a doc the project never kept.
+  // stall on a doc the project never kept. READ here, TRANSFORMED below: the
+  // read has to fail before anything is moved, but the transform has to run
+  // after, over the set the directory pass actually cleared.
   const reqFile = join(dir, 'REQUIREMENTS.md');
-  let reqResult = null;
-  try {
-    const reqText = readFileSync(reqFile, 'utf8');
-    reqResult = archiveRequirements(reqText, completed, label);
-  } catch { warnings.push(`${reqFile} is missing or unreadable; requirements were not archived`); }
+  const reqText = read(reqFile);
+  if (reqText === null) {
+    warnings.push(`${reqFile} is missing or unreadable; requirements were not archived`);
+  }
 
-  // Directories third, writes last: a rename that throws leaves both docs
-  // untouched on disk rather than half a close.
+  // Directories FIRST, and the documents describe only what this pass actually
+  // accomplished.
+  //
+  // The order this replaced was "transforms, directories, writes", defended by
+  // a comment claiming "a rename that throws leaves both docs untouched on disk
+  // rather than half a close". It never did: the throw is caught INSIDE this
+  // loop and collected as a warning, so the writes below ran unconditionally
+  // and the envelope still answered ok:true, action:"pruned". A close that
+  // could not move phases/2 still deleted its roadmap line and archived its
+  // requirement rows, and `/cad-milestone` - which relays warnings[] but halts
+  // on none of them - committed that disagreement.
+  //
+  // So the ONLY set that reaches the transforms is the set whose directory is
+  // gone from the live tree. `missing` counts as gone (it already was, which is
+  // what makes a re-run idempotent); `failed` does not.
   const dirs = { archived: [], deleted: [], missing: [] };
+  const failed = [];
   for (const n of completed) {
     const src = join(dir, 'phases', String(n));
     if (!existsSync(src)) { dirs.missing.push(n); continue; }
@@ -3586,29 +3616,66 @@ function cmdMilestonePrune(dir, opts) {
       if (mode === 'delete') { rmSync(src, { recursive: true }); dirs.deleted.push(n); }
       else {
         mkdirSync(archiveRoot, { recursive: true });
-        renameSync(src, join(archiveRoot, String(n)));
+        const dest = join(archiveRoot, String(n));
+        // Refuse a destination that already exists rather than let renameSync
+        // decide: onto an empty directory it silently succeeds, onto a
+        // non-empty one it throws ENOTEMPTY, and onto a symlink it follows.
+        // A pre-existing destination means a previous close half-ran, and
+        // clobbering it would destroy that evidence.
+        if (lstatSync(dest, { throwIfNoEntry: false })) {
+          throw new Error(`${dest} already exists - a previous close left it there`);
+        }
+        renameSync(src, dest);
         dirs.archived.push(n);
       }
     } catch (e) {
+      failed.push(n);
       warnings.push(`phase ${n}: directory ${mode} failed: ${e && e.message ? e.message : e}`);
     }
   }
 
-  atomicWrite(roadmapFile, pruned.text);
-  if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
+  // The pruned set: completed phases whose directory is no longer in the live
+  // tree. Recomputing the transforms over THIS set rather than over `completed`
+  // is the whole fix - a phase that failed keeps its roadmap line and its
+  // `## Active` requirement rows, so the tree and the documents still agree.
+  const applied = completed.filter((n) => !failed.includes(n));
 
-  return ok({
-    action: 'pruned',
+  const pruned = pruneRoadmap(roadmapText, applied);
+  for (const n of pruned.missingSections) {
+    warnings.push(`phase ${n}: no "### Phase ${n}:" detail section found to remove`);
+  }
+  const reqResult = reqText === null ? null : archiveRequirements(reqText, applied, label);
+
+  // Nothing cleared, nothing to say: skip both writes rather than rename an
+  // identical file into place.
+  if (applied.length) {
+    atomicWrite(roadmapFile, pruned.text);
+    if (reqResult && reqResult.moved.length) atomicWrite(reqFile, reqResult.text);
+  }
+
+  const envelope = {
     label,
     mode,
-    phases: completed,
+    phases: applied,
     roadmap: { removed_lines: pruned.removedLines, removed_sections: pruned.removedSections },
     requirements: reqResult
       ? { moved: reqResult.moved, created_shipped: reqResult.createdSection }
       : { moved: [], created_shipped: false },
     dirs,
     ...(warnings.length ? { warnings } : {}),
-  });
+  };
+
+  // A partial application is a REFUSAL, not a success carrying a warning. The
+  // caller has to be able to tell "the close is done" from "the close is half
+  // done and the rest needs a hand" without reading prose, and `warnings[]`
+  // could not carry that - it already carries benign diagnostics.
+  if (failed.length) {
+    return emit({ ok: false, reason: 'partial-prune', action: 'partial', failed, ...envelope,
+      hint: `phases ${failed.join(', ')} still have directories under ${join(dir, 'phases')};`
+        + ' they were left in ROADMAP.md and REQUIREMENTS.md. Fix what blocked them and re-run -'
+        + ' the phases that did clear are already pruned, so a re-run only picks up the rest.' });
+  }
+  return ok({ action: 'pruned', ...envelope });
 }
 
 // Dispatch. Adding a subcommand = one entry here + its tests.
