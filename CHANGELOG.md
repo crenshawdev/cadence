@@ -6,6 +6,84 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-08-15
+
+### Added
+
+- **The only gate live on a default install fired on a model reading a prose
+  list, and left no record either way.** `risk_surface` is `blocking` at every
+  stakes level and, at the shipped default, it is the sole review trigger that
+  fires at all. Its entire firing condition was prose: `workflows/execute.md`
+  told the orchestrator to check a diff range against the eight categories in
+  `references/review-triggers.md`, and `workflows/task.md` said the same thing a
+  second time for the task path. A match fired the trigger and wrote a lifecycle
+  event. A non-match wrote nothing at all. Those two states left identical bytes,
+  so the run record could not tell "the detection step was skipped" from "it ran
+  and matched nothing", and an omitted check was indistinguishable from a clean
+  one.
+
+  `planning.mjs risk-check` is the seam that closes it. `risk-check run` answers
+  a resolved commit range with `{checked, categories, matches, inconclusive}` and
+  appends one `{"family":"outcome","event":"risk_check"}` line to `trace.jsonl`
+  on EVERY invocation, the clean range included, so silence stops being evidence
+  of anything. `matches` names the category and the signal that found it.
+  `categories` uses exactly the eight tokens `route-table.json` and
+  `config.schema.json` already carry - no new vocabulary was introduced, and the
+  detector takes the list from its caller rather than restating one.
+
+  `inconclusive` is the honest third answer and is not collapsed into
+  `matches: []`. A binary file, a body with no readable hunk and a
+  gitlink/submodule bump all read `inconclusive: true`, distinguishable by the
+  caller from a range judged clean.
+
+- **Completion now requires the record.** `risk-check status` is the enforcement
+  half, and it is the load-bearing one: a seam that plan completion never
+  consults leaves the gate exactly as skippable as it was, just with a script
+  beside it. Both `workflows/execute.md`'s post-plan step and
+  `workflows/task.md`'s `risk_check` step call the seam instead of instructing a
+  model to read a list, and neither reports done while the record is absent -
+  including a run that answered `ok:true` while its append came back
+  `written:false`. Range identity is the RESOLVED commit pair, so a record left
+  by an earlier or narrower range of the same plan reports `stale` rather than
+  satisfying a later one.
+
+  The enforcement was watched to fail before the wiring landed: run against the
+  unpatched tree, it exited 1 and named plans 1 and 2 by number.
+
+  `lib/surface-scan.mjs` did not become a detector and keeps its scoping role -
+  it still answers "which categories does this project SCOPE" and still returns
+  all eight unconditionally. `lib/risk-diff.mjs` answers "did this RANGE touch
+  one". The header of each names the other.
+
+  Detection stays heuristic on purpose. This release does not claim to find risky
+  diffs more accurately. It claims that whether the finding step ran is now a
+  fact in the record rather than an inference from silence.
+
+### Known issues
+
+- **The detector matches its own test fixtures.** `cadence-core/bin/risk-diff.test.mjs`
+  necessarily holds, as literal fixture text, the very signals the detector hunts -
+  a fixture proving the `auth` signal fires has to contain something that fires it.
+  So `risk-check run` over any range touching that file self-matches on six of the
+  eight categories: `auth`, `migrations`, `billing`, `concurrency`, `destructive`
+  and `untrusted_input`. The gate's first live firing on this repository was a
+  false positive on itself. It breaches no criterion this release set, since
+  detection is heuristic by design, but `risk_surface` is blocking at every stakes
+  level, so the false positive lands on the one gate that always fires. Prose that
+  QUOTES a signal trips it the same way, which is why this note names categories
+  instead.
+
+- `inconclusive` is a bare boolean and does not say WHICH half made it true: a
+  binary file, an unreadable hunk, or a gitlink.
+
+- A risk record written before this release carries no `base_id`/`head_id` and can
+  never satisfy a NAMED range, reporting `stale`. A phase holding one needs a
+  single `risk-check run` to re-record before its status call passes.
+
+- `risk-check status`'s range arm resolves the refs it is given, so it must run
+  inside the repository that carries them. A caller elsewhere gets
+  `unresolved-range` rather than a wrong answer.
+
 ## [3.4.1] - 2026-08-15
 
 ### Fixed
@@ -2652,6 +2730,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.0
 [3.4.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.1
 [3.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.0
 [3.3.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.3.1
