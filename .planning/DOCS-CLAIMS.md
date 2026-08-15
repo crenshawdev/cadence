@@ -327,7 +327,7 @@ fixed, which is what makes that link answer the only question it is asked.
 |---|---|---|---|---|---|---|
 | README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected - b2bad1a | 1 |
 | README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected - b2bad1a | 1 |
-| README-03 | README.md | 10-11 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate | 2 |
+| README-03 | README.md | 10 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate | 2 |
 | README-04 | README.md | 14 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate | 2 |
 | README-05 | README.md | 26 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate | 1 |
 | README-06 | README.md | 28 | Verifier scores every claim verified/failed/uncertain and uncertain counts toward neither side. | accurate | accurate | 1 |
@@ -362,7 +362,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | README-35 | README.md | 84 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate | 1 |
 | README-36 | README.md | 92 | `/cad-verify` records in UAT.md. | accurate | accurate | 1 |
 | README-37 | README.md | 97 | `/cad-milestone` tags the release. | accurate | accurate | 1 |
-| README-38 | README.md | 97,116 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate | 2 |
+| README-38 | README.md | 97, 116 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate | 2 |
 | README-39 | README.md | 105-130 | Every command in the three command lists exists. | accurate | accurate | 1 |
 | README-40 | README.md | 123 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate | 1 |
 | README-41 | README.md | 136 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate | 2 |
@@ -380,84 +380,84 @@ fixed, which is what makes that link answer the only question it is asked.
 | METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 | 1 |
 | METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 closed f6eed02 | 1 |
 | METHOD-04 | METHOD.md | 301-303 | "Configure an OpenAI, Gemini or DeepSeek key and the identical job runs as a direct API call with the provider enforcing the output schema." | stale | corrected - b2bad1a | 1 |
-| METHOD-05 | METHOD.md | 20 | `skills/cad-planner-contract/SKILL.md` is where planning lives. | accurate | accurate | 2 |
+| METHOD-05 | METHOD.md | 20, 639 | `skills/cad-planner-contract/SKILL.md` is where planning lives. | accurate | accurate | 2 |
 | METHOD-06 | METHOD.md | 24-31 | The planner follows the five-step goal-backward order (goal, truths, artifacts, wiring, tasks). | accurate | accurate | 1 |
-| METHOD-07 | METHOD.md | 28 | 3 to 7 observable truths. | accurate | accurate | 2 |
+| METHOD-07 | METHOD.md | 26-31 | 3 to 7 observable truths. | accurate | accurate | 2 |
 | METHOD-08 | METHOD.md | 38-42 | Skeleton-first ordering; a working skeleton by commit 2 or 3. | accurate | accurate | 1 |
 | METHOD-09 | METHOD.md | 44-46 | Read the actual files before writing tasks, each file once. | accurate | accurate | 1 |
-| METHOD-10 | METHOD.md | 50-55 | Every task has exactly three fields: Files, Action, Verify, with the stated rules. | accurate | accurate | 2 |
-| METHOD-11 | METHOD.md | 57 | Atomic; a task touching more than ~5 files is usually two tasks. | accurate | accurate | 2 |
+| METHOD-10 | METHOD.md | 48-57 | Every task has exactly three fields: Files, Action, Verify, with the stated rules. | accurate | accurate | 2 |
+| METHOD-11 | METHOD.md | 60 | Atomic; a task touching more than ~5 files is usually two tasks. | accurate | accurate | 2 |
 | METHOD-12 | METHOD.md | 60-62 | A tool the environment lacks makes Verify a `human-verify` instruction. | accurate | accurate | 1 |
-| METHOD-13 | METHOD.md | 66-71 | The prohibited scope words and the three `## PHASE TOO BIG` reasons. | accurate | accurate | 2 |
+| METHOD-13 | METHOD.md | 69-74 | The prohibited scope words and the three `## PHASE TOO BIG` reasons. | accurate | accurate | 2 |
 | METHOD-14 | METHOD.md | 74-79 | Six decomposition axes (trigger, size, lifecycle, failure-resume, freshness, ownership), a nudge not a rule. | accurate | accurate | 1 |
-| METHOD-15 | METHOD.md | 83 | Plan check is on by default via `workflow.plan_check`. | accurate | accurate | 2 |
+| METHOD-15 | METHOD.md | 86 | Plan check is on by default via `workflow.plan_check`. | accurate | accurate | 2 |
 | METHOD-16 | METHOD.md | 85-88 | The checker derives must-be-trues before it is allowed to open the plan. | accurate | accurate | 1 |
-| METHOD-17 | METHOD.md | 93 | Truth with no task = BLOCKER; task no truth needs = WARNING; findings without severity are invalid. | accurate | accurate | 1 |
-| METHOD-18 | METHOD.md | 100 | `skills/cad-executor-contract/SKILL.md`. | accurate | accurate | 1 |
-| METHOD-19 | METHOD.md | 102 | For each task: implement, verify, commit. | accurate | accurate | 1 |
-| METHOD-20 | METHOD.md | 105-110 | State the expected output before running Verify; a surprise result is recorded as `[deviation] expected X, observed Y`. | accurate | accurate | 2 |
-| METHOD-21 | METHOD.md | 112-114 | Generalized from Karpathy's recipe; there is no switch for it. | accurate | accurate | 2 |
+| METHOD-17 | METHOD.md | 98-100 | Truth with no task = BLOCKER; task no truth needs = WARNING; findings without severity are invalid. | accurate | accurate | 1 |
+| METHOD-18 | METHOD.md | 106 | `skills/cad-executor-contract/SKILL.md`. | accurate | accurate | 1 |
+| METHOD-19 | METHOD.md | 108 | For each task: implement, verify, commit. | accurate | accurate | 1 |
+| METHOD-20 | METHOD.md | 111-115 | State the expected output before running Verify; a surprise result is recorded as `[deviation] expected X, observed Y`. | accurate | accurate | 2 |
+| METHOD-21 | METHOD.md | 117-119 | Generalized from Karpathy's recipe; there is no switch for it. | accurate | accurate | 2 |
 | METHOD-22 | METHOD.md | 117-127 | Trivial vs structural deviation buckets; unsure means structural. | accurate | accurate | 1 |
-| METHOD-23 | METHOD.md | 129-131 | Circuit breaker is three fix attempts per task. | accurate | accurate | 2 |
-| METHOD-24 | METHOD.md | 133-138 | A failed package install is never auto-fixed and is the one deviation class with no inline path. | accurate | accurate | 2 |
-| METHOD-25 | METHOD.md | 142-145 | Commit protocol: individual staging, never `git add -A`/`.`, risk check on the staged diff, `{type}({scope}): {description}`, post-commit glance. | accurate | accurate | 2 |
-| METHOD-26 | METHOD.md | 147-149 | Executors never push, force-push, write STATE/ROADMAP/SUMMARY, or spawn a reviewer. | accurate | accurate | 2 |
-| METHOD-27 | METHOD.md | 153 | `cadence-core/workflows/execute.md`. | accurate | accurate | 1 |
-| METHOD-28 | METHOD.md | 156-160 | The seam intersects declared file lists pairwise; overlap forces sequential; a plan declaring no files forces sequential; a check that could not run forces it too. | accurate | accurate | 2 |
-| METHOD-29 | METHOD.md | 161-166 | `phase_diff` is parallel-path only. | accurate | accurate | 2 |
-| METHOD-30 | METHOD.md | 169-173 | Worktree safety: branch check before every commit, halt on mismatch; `git stash`, `git clean`, blanket `reset --hard`, `restore .` forbidden. | accurate | accurate | 2 |
-| METHOD-31 | METHOD.md | 180 | `skills/cad-verifier-contract/SKILL.md`. | accurate | accurate | 1 |
-| METHOD-32 | METHOD.md | 185-193 | Four levels: Exists, Substantive, Wired, Behaves. | accurate | accurate | 2 |
-| METHOD-33 | METHOD.md | 195-198 | VERIFIED / FAILED / UNCERTAIN, with UNCERTAIN counting toward neither side. | accurate | accurate | 2 |
-| METHOD-34 | METHOD.md | 200-205 | SUMMARY.md is treated as claims to falsify; the goal check in `execute.md` requires a `file:line` or command output. | accurate | accurate | 2 |
-| METHOD-35 | METHOD.md | 209-212 | The four "how verifiers go soft" items. | accurate | accurate | 1 |
-| METHOD-36 | METHOD.md | 216-222 | Anti-pattern scan list, the goal-path clause, and the `CADENCE-DEBT` exemption via required ceiling + trigger. | accurate | accurate | 1 |
-| METHOD-37 | METHOD.md | 227-230 | Spot-checks: 2-4, ~10s each, no servers/state/network; `cargo test -- --list`, `pytest --collect-only -q`; at most one full-suite run. | accurate | accurate | 2 |
-| METHOD-38 | METHOD.md | 235 | `cadence-core/workflows/coverage.md`. | accurate | accurate | 2 |
-| METHOD-39 | METHOD.md | 239-241 | The Covered definition quoted verbatim. | accurate | accurate | 1 |
-| METHOD-40 | METHOD.md | 244-247 | Reads assertions not file counts; prefers a RED check; test kind in the project's own framework. | accurate | accurate | 1 |
-| METHOD-41 | METHOD.md | 250-252 | A heavy new dependency is flagged; the plan is approved first; a red test is never committed and goes to `/cad-debug`. | accurate | accurate | 1 |
-| METHOD-42 | METHOD.md | 260 | `cadence-core/references/review-triggers.md`. | accurate | accurate | 1 |
-| METHOD-43 | METHOD.md | 265-267 | One `fire(trigger)` procedure, no embedded reviewer loops; that rule lives in `references/conventions.md`. | accurate | accurate | 2 |
-| METHOD-44 | METHOD.md | 272-277 | Trigger table rows for `plan`, `diff`, `risk_surface`, `phase_diff` (fired-by, when, gate at `shipped`). Re-stated v3.2.0: `pre_ship` was deleted and `plan`/`phase_diff` are `off` at `shipped`. | accurate | accurate | 2 |
-| METHOD-45 | METHOD.md | 281-283 | Gate vocabulary (4) and `review.mode` vocabulary (`single`, `panel`, `adjudicated`). | accurate | accurate | 2 |
-| METHOD-46 | METHOD.md | 286-292 | Gates resolve from `stakes`; `diff` is off/advisory/blocking across the three levels; `risk_surface` does not move; a typo loses to the level's gate and is named in warnings. | accurate | accurate | 1 |
-| METHOD-47 | METHOD.md | 300-301 | The default reviewer is a fresh-context Claude subagent needing no key. | accurate | accurate | 1 |
-| METHOD-48 | METHOD.md | 308 | The finding schema `{file, line, severity: blocker\|high\|medium\|low, claim, failure_scenario}`. | accurate | accurate | 2 |
-| METHOD-49 | METHOD.md | 318 | `skills/cad-reviewer-contract/SKILL.md`. | accurate | accurate | 2 |
-| METHOD-50 | METHOD.md | 320-331 | Reviewer stance: refute not bless, line + concrete failure, approach differences are not findings, no inflation or softening, empty result valid after a genuine attempt. | accurate | accurate | 1 |
-| METHOD-51 | METHOD.md | 336-342 | Adjudication: all reviewers run independently, main session grounds and owns the verdict; convergence is the one strong signal. | accurate | accurate | 1 |
-| METHOD-52 | METHOD.md | 344-355 | Survivors are a numbered list with none as the default; three gates ship that way; the auto_close pre-ship arm triages none and halts on blocker/high. | accurate | accurate | 1 |
-| METHOD-53 | METHOD.md | 359-362 | `cadence-core/workflows/decision-review.md` never auto-fires. | accurate | accurate | 1 |
-| METHOD-54 | METHOD.md | 365-366 | Rulings are `survives`, `partial`, `refuted`, and a `refuted` must state its grounding. | accurate | accurate | 2 |
-| METHOD-55 | METHOD.md | 369-373 | Grounding is mandatory and typed: Context7 for library/API claims, the real repo for factual ones, one of each per run or an explicit statement of none. | accurate | accurate | 1 |
-| METHOD-56 | METHOD.md | 376-378 | A clean pass retargets onto the decision's own load-bearing claims and is never reported as a bare "no findings". | accurate | accurate | 1 |
-| METHOD-57 | METHOD.md | 380-381 | Cost is reported qualitatively, never as a token or dollar figure. | accurate | accurate | 1 |
-| METHOD-58 | METHOD.md | 385-388 | The eight risk surfaces that fire the blocking trigger. | accurate | accurate | 1 |
-| METHOD-59 | METHOD.md | 390-397 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | accurate | accurate | 2 |
-| METHOD-60 | METHOD.md | 399-406 | The pre-filter: a destructive op drops only when `git check-ignore` matches **and** `git ls-files` is empty; a secret drops only when template-shaped **and** a stub. | accurate | accurate | 2 |
-| METHOD-61 | METHOD.md | 411-413 | The executor detects, stops and hands up; never reviews itself, never skips the gate. | accurate | accurate | 1 |
-| METHOD-62 | METHOD.md | 418-433 | `references/consult.md` and its five rules, including `review.consult.attempt_threshold` and no local-subagent consult. | accurate | accurate | 2 |
-| METHOD-63 | METHOD.md | 437-440 | The review -> revise -> review convergence loop was considered and cut. | accurate | accurate | 2 |
-| METHOD-64 | METHOD.md | 447-457 | The "nothing silently passes" bullets (dropped reviewer names its reason, empty set falls back to the local subagent, pre-filter drop noted, etc.). | accurate | accurate | 1 |
-| METHOD-65 | METHOD.md | 467-478 | `cadence-core/workflows/audit.md` and the six break codes `no-phase`, `no-plan`, `unpicked`, `phase-missing`, `not-verified`, `drift`, with `not-verified` expected mid-cycle. | accurate | accurate | 2 |
-| METHOD-66 | METHOD.md | 480-482 | Plan frontmatter naming unknown requirement IDs is an orphan, weighed more lightly. | accurate | accurate | 2 |
-| METHOD-67 | METHOD.md | 489-501 | `cadence-core/workflows/debug.md` and the four-step loop; 2 to 5 hypotheses, ranked most-likely-first, tested risk-first. | accurate | accurate | 1 |
-| METHOD-68 | METHOD.md | 503-504 | `memory.backend: builtin` gates the hypothesize-step recall. | accurate | accurate | 2 |
-| METHOD-69 | METHOD.md | 510-516 | `references/git-guard.md`; before the first commit the guard reads `git.protected_branches`, applies `git.on_protected`, and checks base integrity in the same pass. | accurate | accurate | 1 |
-| METHOD-70 | METHOD.md | 518-525 | A command counts when its first word is `git` and the verb is the first non-flag word; `bash -c`, `$(...)`, `sudo git` are invisible; rail 3 lists what it misses. | accurate | accurate | 1 |
-| METHOD-71 | METHOD.md | 527-531 | Two decisions are marked in `references/seams.md` as deliberately undefaulted: the publish mechanism and the protected-branch guard. | accurate | accurate | 2 |
-| METHOD-72 | METHOD.md | 533-539 | Two tiers: an integration branch merged into per `git.auto_branch`, named by `git.integration_branch` (`milestone` default, `trunk` escape hatch); worktrees fork from the host's `worktree.baseRef`, required at `head`; `git.on_land_cleanup` returns to base, pulls, reaps. | accurate | accurate | 2 |
-| METHOD-73 | METHOD.md | 542-547 | One conventional commit per task; publishing flows through a single sanctioned seam; `git.auto_close` runs audit through merge with no per-step prompts and halts on a surviving blocker/high `risk_surface` finding. Re-stated v3.2.0: the halt's producer moved off the deleted `pre_ship`. | accurate | accurate | 1 |
-| METHOD-74 | METHOD.md | 554-558 | `references/conventions.md`; `STATE.md` is a four-line cursor, overwritten in place, seam is the only correct writer. | accurate | accurate | 2 |
-| METHOD-75 | METHOD.md | 560 | No audit logs, activity tables or session narratives. | accurate | accurate | 1 |
-| METHOD-76 | METHOD.md | 562-564 | Config is read only through the config seam, one call per key. | accurate | accurate | 2 |
-| METHOD-77 | METHOD.md | 570-573 | `cadence-core/bin/self-verify.mjs` lints config keys, script invocations and file paths, and fails on agent prose reaching for an undeclared tool. | accurate | accurate | 2 |
-| METHOD-78 | METHOD.md | 575-581 | The concurrency-phrasing check: a block claiming a concurrent set must issue it in one message, judged per issuing sentence, explanatory moods left alone. | accurate | accurate | 2 |
-| METHOD-79 | METHOD.md | 584-589 | Five surface sets weighed against `cadence-core/bin/weight-budgets.json`: agents, SKILL.md, workflows, `references/`, `templates/`. | accurate | accurate | 2 |
-| METHOD-80 | METHOD.md | 593 | `/cad-docs-verify` checks factual claims against the live codebase. | accurate | accurate | 1 |
-| METHOD-81 | METHOD.md | 600-614 | Every path in the "Where each rule lives" table. | accurate | accurate | 2 |
-| METHOD-82 | METHOD.md | 258 | "This is the largest subsystem and the one that most shapes the output quality." | unverifiable | divergence - a judgment about which subsystem most shapes output quality; no byte count settles it, and the subsystem spans several files | 1 |
+| METHOD-23 | METHOD.md | 143-145 | Circuit breaker is three fix attempts per task. | accurate | accurate | 2 |
+| METHOD-24 | METHOD.md | 147-152 | A failed package install is never auto-fixed and is the one deviation class with no inline path. | accurate | accurate | 2 |
+| METHOD-25 | METHOD.md | 156-157 | Commit protocol: individual staging, never `git add -A`/`.`, risk check on the staged diff, `{type}({scope}): {description}`, post-commit glance. | accurate | accurate | 2 |
+| METHOD-26 | METHOD.md | 161-163 | Executors never push, force-push, write STATE/ROADMAP/SUMMARY, or spawn a reviewer. | accurate | accurate | 2 |
+| METHOD-27 | METHOD.md | 167 | `cadence-core/workflows/execute.md`. | accurate | accurate | 1 |
+| METHOD-28 | METHOD.md | 169-174 | The seam intersects declared file lists pairwise; overlap forces sequential; a plan declaring no files forces sequential; a check that could not run forces it too. | accurate | accurate | 2 |
+| METHOD-29 | METHOD.md | 176-180 | `phase_diff` is parallel-path only. | accurate | accurate | 2 |
+| METHOD-30 | METHOD.md | 184-187 | Worktree safety: branch check before every commit, halt on mismatch; `git stash`, `git clean`, blanket `reset --hard`, `restore .` forbidden. | accurate | accurate | 2 |
+| METHOD-31 | METHOD.md | 193 | `skills/cad-verifier-contract/SKILL.md`. | accurate | accurate | 1 |
+| METHOD-32 | METHOD.md | 199-207 | Four levels: Exists, Substantive, Wired, Behaves. | accurate | accurate | 2 |
+| METHOD-33 | METHOD.md | 210-212 | VERIFIED / FAILED / UNCERTAIN, with UNCERTAIN counting toward neither side. | accurate | accurate | 2 |
+| METHOD-34 | METHOD.md | 216-219 | SUMMARY.md is treated as claims to falsify; the goal check in `execute.md` requires a `file:line` or command output. | accurate | accurate | 2 |
+| METHOD-35 | METHOD.md | 223 | The four "how verifiers go soft" items. | accurate | accurate | 1 |
+| METHOD-36 | METHOD.md | 230-236 | Anti-pattern scan list, the goal-path clause, and the `CADENCE-DEBT` exemption via required ceiling + trigger. | accurate | accurate | 1 |
+| METHOD-37 | METHOD.md | 240-243 | Spot-checks: 2-4, ~10s each, no servers/state/network; `cargo test -- --list`, `pytest --collect-only -q`; at most one full-suite run. | accurate | accurate | 2 |
+| METHOD-38 | METHOD.md | 249, 646 | `cadence-core/workflows/coverage.md`. | accurate | accurate | 2 |
+| METHOD-39 | METHOD.md | 251-253 | The Covered definition quoted verbatim. | accurate | accurate | 1 |
+| METHOD-40 | METHOD.md | 257-260 | Reads assertions not file counts; prefers a RED check; test kind in the project's own framework. | accurate | accurate | 1 |
+| METHOD-41 | METHOD.md | 263-266 | A heavy new dependency is flagged; the plan is approved first; a red test is never committed and goes to `/cad-debug`. | accurate | accurate | 1 |
+| METHOD-42 | METHOD.md | 274 | `cadence-core/references/review-triggers.md`. | accurate | accurate | 1 |
+| METHOD-43 | METHOD.md | 278-281 | One `fire(trigger)` procedure, no embedded reviewer loops; that rule lives in `references/conventions.md`. | accurate | accurate | 2 |
+| METHOD-44 | METHOD.md | 287-290 | Trigger table rows for `plan`, `diff`, `risk_surface`, `phase_diff` (fired-by, when, gate at `shipped`). Re-stated v3.2.0: `pre_ship` was deleted and `plan`/`phase_diff` are `off` at `shipped`. | accurate | accurate | 2 |
+| METHOD-45 | METHOD.md | 302-305 | Gate vocabulary (4) and `review.mode` vocabulary (`single`, `panel`, `adjudicated`). | accurate | accurate | 2 |
+| METHOD-46 | METHOD.md | 311-314 | Gates resolve from `stakes`; `diff` is off/advisory/blocking across the three levels; `risk_surface` does not move; a typo loses to the level's gate and is named in warnings. | accurate | accurate | 1 |
+| METHOD-47 | METHOD.md | 323 | The default reviewer is a fresh-context Claude subagent needing no key. | accurate | accurate | 1 |
+| METHOD-48 | METHOD.md | 329-333 | The finding schema `{file, line, severity: blocker\|high\|medium\|low, claim, failure_scenario}`. | accurate | accurate | 2 |
+| METHOD-49 | METHOD.md | 342-355 | `skills/cad-reviewer-contract/SKILL.md`. | accurate | accurate | 2 |
+| METHOD-50 | METHOD.md | 344-352 | Reviewer stance: refute not bless, line + concrete failure, approach differences are not findings, no inflation or softening, empty result valid after a genuine attempt. | accurate | accurate | 1 |
+| METHOD-51 | METHOD.md | 359-362 | Adjudication: all reviewers run independently, main session grounds and owns the verdict; convergence is the one strong signal. | accurate | accurate | 1 |
+| METHOD-52 | METHOD.md | 368-372 | Survivors are a numbered list with none as the default; three gates ship that way; the auto_close pre-ship arm triages none and halts on blocker/high. | accurate | accurate | 1 |
+| METHOD-53 | METHOD.md | 384-386 | `cadence-core/workflows/decision-review.md` never auto-fires. | accurate | accurate | 1 |
+| METHOD-54 | METHOD.md | 384-398 | Rulings are `survives`, `partial`, `refuted`, and a `refuted` must state its grounding. | accurate | accurate | 2 |
+| METHOD-55 | METHOD.md | 394-397 | Grounding is mandatory and typed: Context7 for library/API claims, the real repo for factual ones, one of each per run or an explicit statement of none. | accurate | accurate | 1 |
+| METHOD-56 | METHOD.md | 400-402 | A clean pass retargets onto the decision's own load-bearing claims and is never reported as a bare "no findings". | accurate | accurate | 1 |
+| METHOD-57 | METHOD.md | 405 | Cost is reported qualitatively, never as a token or dollar figure. | accurate | accurate | 1 |
+| METHOD-58 | METHOD.md | 410-413 | The eight risk surfaces that fire the blocking trigger. | accurate | accurate | 1 |
+| METHOD-59 | METHOD.md | 421-428 | Detection sets a floor that only ever raises; lowering takes a named `risk.override.<surface>` read from the repo config alone, a global one is ignored and named. | accurate | accurate | 2 |
+| METHOD-60 | METHOD.md | 430-435 | The pre-filter: a destructive op drops only when `git check-ignore` matches **and** `git ls-files` is empty; a secret drops only when template-shaped **and** a stub. | accurate | accurate | 2 |
+| METHOD-61 | METHOD.md | 440-443 | The executor detects, stops and hands up; never reviews itself, never skips the gate. | accurate | accurate | 1 |
+| METHOD-62 | METHOD.md | 448-464 | `references/consult.md` and its five rules, including `review.consult.attempt_threshold` and no local-subagent consult. | accurate | accurate | 2 |
+| METHOD-63 | METHOD.md | 468-470 | The review -> revise -> review convergence loop was considered and cut. | accurate | accurate | 2 |
+| METHOD-64 | METHOD.md | 480-483 | The "nothing silently passes" bullets (dropped reviewer names its reason, empty set falls back to the local subagent, pre-filter drop noted, etc.). | accurate | accurate | 1 |
+| METHOD-65 | METHOD.md | 500-509 | `cadence-core/workflows/audit.md` and the six break codes `no-phase`, `no-plan`, `unpicked`, `phase-missing`, `not-verified`, `drift`, with `not-verified` expected mid-cycle. | accurate | accurate | 2 |
+| METHOD-66 | METHOD.md | 511-513 | Plan frontmatter naming unknown requirement IDs is an orphan, weighed more lightly. | accurate | accurate | 2 |
+| METHOD-67 | METHOD.md | 521-523 | `cadence-core/workflows/debug.md` and the four-step loop; 2 to 5 hypotheses, ranked most-likely-first, tested risk-first. | accurate | accurate | 1 |
+| METHOD-68 | METHOD.md | 533-535 | `memory.backend: builtin` gates the hypothesize-step recall. | accurate | accurate | 2 |
+| METHOD-69 | METHOD.md | 544-546 | `references/git-guard.md`; before the first commit the guard reads `git.protected_branches`, applies `git.on_protected`, and checks base integrity in the same pass. | accurate | accurate | 1 |
+| METHOD-70 | METHOD.md | 549-552 | A command counts when its first word is `git` and the verb is the first non-flag word; `bash -c`, `$(...)`, `sudo git` are invisible; rail 3 lists what it misses. | accurate | accurate | 1 |
+| METHOD-71 | METHOD.md | 558-562 | Two decisions are marked in `references/seams.md` as deliberately undefaulted: the publish mechanism and the protected-branch guard. | accurate | accurate | 2 |
+| METHOD-72 | METHOD.md | 567-570 | Two tiers: an integration branch merged into per `git.auto_branch`, named by `git.integration_branch` (`milestone` default, `trunk` escape hatch); worktrees fork from the host's `worktree.baseRef`, required at `head`; `git.on_land_cleanup` returns to base, pulls, reaps. | accurate | accurate | 2 |
+| METHOD-73 | METHOD.md | 572-578 | One conventional commit per task; publishing flows through a single sanctioned seam; `git.auto_close` runs audit through merge with no per-step prompts and halts on a surviving blocker/high `risk_surface` finding. Re-stated v3.2.0: the halt's producer moved off the deleted `pre_ship`. | accurate | accurate | 1 |
+| METHOD-74 | METHOD.md | 586-589 | `references/conventions.md`; `STATE.md` is a four-line cursor, overwritten in place, seam is the only correct writer. | accurate | accurate | 2 |
+| METHOD-75 | METHOD.md | 591 | No audit logs, activity tables or session narratives. | accurate | accurate | 1 |
+| METHOD-76 | METHOD.md | 594-595 | Config is read only through the config seam, one call per key. | accurate | accurate | 2 |
+| METHOD-77 | METHOD.md | 603-605 | `cadence-core/bin/self-verify.mjs` lints config keys, script invocations and file paths, and fails on agent prose reaching for an undeclared tool. | accurate | accurate | 2 |
+| METHOD-78 | METHOD.md | 606-612 | The concurrency-phrasing check: a block claiming a concurrent set must issue it in one message, judged per issuing sentence, explanatory moods left alone. | accurate | accurate | 2 |
+| METHOD-79 | METHOD.md | 614-620 | Five surface sets weighed against `cadence-core/bin/weight-budgets.json`: agents, SKILL.md, workflows, `references/`, `templates/`. | accurate | accurate | 2 |
+| METHOD-80 | METHOD.md | 630 | `/cad-docs-verify` checks factual claims against the live codebase. | accurate | accurate | 1 |
+| METHOD-81 | METHOD.md | 637-651 | Every path in the "Where each rule lives" table. | accurate | accurate | 2 |
+| METHOD-82 | METHOD.md | 272 | "This is the largest subsystem and the one that most shapes the output quality." | unverifiable | divergence - a judgment about which subsystem most shapes output quality; no byte count settles it, and the subsystem spans several files | 1 |
 | INTERNALS-01 | INTERNALS.md | 55 | "The API enforces the output shape (OpenAI `response_format`, Gemini `responseSchema`)." | stale | corrected - b2bad1a | 1 |
 | INTERNALS-02 | INTERNALS.md | 11 | 19 files cover the six roles. | accurate | accurate | 2 |
 | INTERNALS-03 | INTERNALS.md | 11 | `cad-plan-checker-medium` and `cad-plan-checker-high` are the same contract at two depths. | accurate | accurate | 1 |
@@ -483,7 +483,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | INTERNALS-23 | INTERNALS.md | 45 | Detection intersects the live provider list with a shipped hint table; unknown ids fall through to manual placement rather than erroring. | accurate | accurate | 1 |
 | INTERNALS-24 | INTERNALS.md | 49 | The three "read the code" pointers in the detection section. | accurate | accurate | 1 |
 | INTERNALS-25 | INTERNALS.md | 55 | Gemini's schema enforcement is `responseSchema`. | accurate | accurate | 1 |
-| INTERNALS-26 | INTERNALS.md | 61,65 | Four pure decision cores - `close-decision`, `publish-decision`, `branch-decision`, `release-decision` - each with a unit test per branch. | accurate | accurate | 2 |
+| INTERNALS-26 | INTERNALS.md | 61, 65 | Four pure decision cores - `close-decision`, `publish-decision`, `branch-decision`, `release-decision` - each with a unit test per branch. | accurate | accurate | 2 |
 | INTERNALS-27 | INTERNALS.md | 71 | Eager bytes are the skill plus its `@`-includes; reachable is eager plus one hop. | accurate | accurate | 2 |
 | INTERNALS-28 | INTERNALS.md | 75 | Dispatch weight is a third number that never sums with the other two (agent file plus preloaded contracts). | accurate | accurate | 2 |
 | INTERNALS-29 | INTERNALS.md | 79 | `node cadence-core/bin/weight.mjs resident --root <repo root>` works. | accurate | accurate | 2 |
@@ -501,45 +501,45 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONTRIBUTING-04 | CONTRIBUTING.md | 19 | `node cadence-core/bin/self-verify.mjs` - the prose<->code drift linter. | accurate | accurate | 2 |
 | CONTRIBUTING-05 | CONTRIBUTING.md | 20 | `npx tsc -p tsconfig.ci.json` - honors the `@ts-check` pragmas. | stale | corrected - phase 4 UAT | 1 |
 | CONTRIBUTING-06 | CONTRIBUTING.md | 13 | `node` and `git` on your PATH are what the three checks need. | accurate | accurate | 2 |
-| CONTRIBUTING-07 | CONTRIBUTING.md | 21 | self-verify: every config key, script invocation and file path named in the workflows has to exist or the build fails. | accurate | accurate | 2 |
-| CONTRIBUTING-08 | CONTRIBUTING.md | 21 | It weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`. | accurate | accurate | 2 |
-| CONTRIBUTING-09 | CONTRIBUTING.md | 21 | It fails when one outgrows its byte budget. | accurate | accurate | 2 |
-| CONTRIBUTING-10 | CONTRIBUTING.md | 21 | It fails when an agent's prose reaches for a tool its frontmatter never declared. | accurate | accurate | 2 |
+| CONTRIBUTING-07 | CONTRIBUTING.md | 23 | self-verify: every config key, script invocation and file path named in the workflows has to exist or the build fails. | accurate | accurate | 2 |
+| CONTRIBUTING-08 | CONTRIBUTING.md | 23 | It weighs every agent file, every SKILL.md, every workflow, and every file under `cadence-core/references/` and `cadence-core/templates/`. | accurate | accurate | 2 |
+| CONTRIBUTING-09 | CONTRIBUTING.md | 23 | It fails when one outgrows its byte budget. | accurate | accurate | 2 |
+| CONTRIBUTING-10 | CONTRIBUTING.md | 23 | It fails when an agent's prose reaches for a tool its frontmatter never declared. | accurate | accurate | 2 |
 | CONTRIBUTING-11 | CONTRIBUTING.md | 21 | "the build will run it for you either way." | accurate | accurate | 1 |
 | CONTRIBUTING-12 | CONTRIBUTING.md | 9,29 | The MIT license, and contributions landing under it. | accurate | accurate | 1 |
-| CONTRIBUTING-13 | CONTRIBUTING.md | 29 | Cadence is a derivative of GSD at `https://github.com/open-gsd/gsd-core`, spelled out in `NOTICE.md` and `LINEAGE.md`. | accurate | accurate | 2 |
+| CONTRIBUTING-13 | CONTRIBUTING.md | 31 | Cadence is a derivative of GSD at `https://github.com/open-gsd/gsd-core`, spelled out in `NOTICE.md` and `LINEAGE.md`. | accurate | accurate | 2 |
 | CONTRIBUTING-14 | CONTRIBUTING.md | 3 | `MANIFESTO.md` link. | accurate | accurate | 2 |
 | CONTRIBUTING-15 | CONTRIBUTING.md | 5,7,9 | "Bug reports are welcome... doc fixes land fast"; the feature-PR policy. | unverifiable | divergence - maintainer intent, no code surface to check it against | 1 |
 | CONTRIBUTING-16 | CONTRIBUTING.md | 21 | "The self-verify step is the one that catches most drift." | unverifiable | divergence - a relative-yield judgment across three checks; nothing measures it | 1 |
 | CONTRIBUTING-17 | CONTRIBUTING.md | 25 | What a good bug report contains (Claude Code version, `node --version`, the relevant `.planning/` slice). | unverifiable | divergence - process guidance rather than a code claim; `.github/ISSUE_TEMPLATE/bug_report.md` exists but enforces no field | 1 |
 | AUDIT-01 | cadence-core/workflows/audit.md | 31-34 | A digit-leading category like `2FA-01` is not admitted, so it appears in neither `unseeded` nor `counts` and is reported only in `active_issues`. | stale | corrected - 044806c | 1 |
 | AUDIT-02 | cadence-core/workflows/audit.md | 136-140 | On an `active-non-id-bullet`, a span holding nothing but the id that is still reported means the id failed the admission test (a digit-leading category), and no rewrite will count it. | stale | corrected - 044806c | 1 |
-| AUDIT-03 | cadence-core/workflows/audit.md | 19 | `planning.mjs audit` exists and returns one JSON line. | accurate | accurate | 2 |
+| AUDIT-03 | cadence-core/workflows/audit.md | 18-22 | `planning.mjs audit` exists and returns one JSON line. | accurate | accurate | 2 |
 | AUDIT-04 | cadence-core/workflows/audit.md | 23-24 | Break codes are `no-phase \| phase-missing \| no-plan \| not-verified \| drift \| unpicked`. | accurate | accurate | 2 |
 | AUDIT-05 | cadence-core/workflows/audit.md | 25 | `orphans.plan_ids` holds plan frontmatter referencing unknown REQ-IDs. | accurate | accurate | 1 |
-| AUDIT-06 | cadence-core/workflows/audit.md | 27-28 | `frontmatter_issues` exists; `references/plan-frontmatter.md` states the grammar. | accurate | accurate | 1 |
+| AUDIT-06 | cadence-core/workflows/audit.md | 27-29 | `frontmatter_issues` exists; `references/plan-frontmatter.md` states the grammar. | accurate | accurate | 1 |
 | AUDIT-07 | cadence-core/workflows/audit.md | 29-30 | `unseeded` names `## Active` ids with no Traceability row, each also carrying an `unpicked` break. | accurate | accurate | 1 |
 | AUDIT-08 | cadence-core/workflows/audit.md | 35-36 | `active_issues` holds lines inside `## Active` outside the bullet grammar; `references/req-traceability.md` exists. | accurate | accurate | 1 |
 | AUDIT-09 | cadence-core/workflows/audit.md | 36-37 | `nonconforming_plans` names a `PLAN*.md` no seam reads, e.g. `PLAN-gaps.md`. | accurate | accurate | 1 |
 | AUDIT-10 | cadence-core/workflows/audit.md | 37-38 | `deferred` holds rows whose Status is `Deferred`. | accurate | accurate | 1 |
-| AUDIT-11 | cadence-core/workflows/audit.md | 39-40 | `version_drift` is `{doc_version, published_as, cycle_state}` and is omitted when there is nothing to report. | accurate | accurate | 2 |
-| AUDIT-12 | cadence-core/workflows/audit.md | 41-42 | `counts.total` is Traceability rows plus unpicked ids, so `total = traced + broken + deferred`. | accurate | accurate | 2 |
-| AUDIT-13 | cadence-core/workflows/audit.md | 50 | `planning.mjs criteria-coverage` exists. | accurate | accurate | 2 |
-| AUDIT-14 | cadence-core/workflows/audit.md | 53 | `version` (`{plugin, uat_fields}`) is the first key of the coverage envelope. | accurate | accurate | 2 |
+| AUDIT-11 | cadence-core/workflows/audit.md | 40-41 | `version_drift` is `{doc_version, published_as, cycle_state}` and is omitted when there is nothing to report. | accurate | accurate | 2 |
+| AUDIT-12 | cadence-core/workflows/audit.md | 41-43 | `counts.total` is Traceability rows plus unpicked ids, so `total = traced + broken + deferred`. | accurate | accurate | 2 |
+| AUDIT-13 | cadence-core/workflows/audit.md | 50-52 | `planning.mjs criteria-coverage` exists. | accurate | accurate | 2 |
+| AUDIT-14 | cadence-core/workflows/audit.md | 53-56 | `version` (`{plugin, uat_fields}`) is the first key of the coverage envelope. | accurate | accurate | 2 |
 | AUDIT-15 | cadence-core/workflows/audit.md | 56-57 | `phases` entries are `{phase, criteria, items}`. | accurate | accurate | 1 |
-| AUDIT-16 | cadence-core/workflows/audit.md | 58-59 | `breaks` entries are `{phase, id, break:"uncovered"}` or `{phase, break:"fieldless-checklist", file}`. | accurate | accurate | 2 |
+| AUDIT-16 | cadence-core/workflows/audit.md | 59-61 | `breaks` entries are `{phase, id, break:"uncovered"}` or `{phase, break:"fieldless-checklist", file}`. | accurate | accurate | 2 |
 | AUDIT-17 | cadence-core/workflows/audit.md | 59-60 | `untraced` is an item with no `criterion` and no exempting `origin`. | accurate | accurate | 1 |
 | AUDIT-18 | cadence-core/workflows/audit.md | 60 | `legacy` entries are `{phase, reason}` with the exemption's reason stated. | accurate | accurate | 1 |
-| AUDIT-19 | cadence-core/workflows/audit.md | 62 | Coverage `counts` satisfies `criteria = covered + uncovered`. | accurate | accurate | 2 |
-| AUDIT-20 | cadence-core/workflows/audit.md | 63 | `references/acceptance-criteria.md` holds the grammar and field semantics. | accurate | accurate | 2 |
-| AUDIT-21 | cadence-core/workflows/audit.md | 66-68 | `milestone.md` step 3 prunes completed phases from ROADMAP `## Phases`, so `parseRoadmapPhases` only holds the current cycle. | accurate | accurate | 2 |
+| AUDIT-19 | cadence-core/workflows/audit.md | 63 | Coverage `counts` satisfies `criteria = covered + uncovered`. | accurate | accurate | 2 |
+| AUDIT-20 | cadence-core/workflows/audit.md | 64 | `references/acceptance-criteria.md` holds the grammar and field semantics. | accurate | accurate | 2 |
+| AUDIT-21 | cadence-core/workflows/audit.md | 66-69 | `milestone.md` step 3 prunes completed phases from ROADMAP `## Phases`, so `parseRoadmapPhases` only holds the current cycle. | accurate | accurate | 2 |
 | AUDIT-22 | cadence-core/workflows/audit.md | 68-70 | An unchecked phase contributes its `uncovered` count but no `uncovered` or `missing-uat` break. | accurate | accurate | 1 |
-| AUDIT-23 | cadence-core/workflows/audit.md | 70-73 | `fieldless-checklist` is not box-gated; `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
-| AUDIT-24 | cadence-core/workflows/audit.md | 101-103 | Repair form `uat record --phase <N> --item <k> --result <...> --criterion AC<N>`; `--origin criterion` names no id. | accurate | accurate | 2 |
+| AUDIT-23 | cadence-core/workflows/audit.md | 71-73 | `fieldless-checklist` is not box-gated; `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
+| AUDIT-24 | cadence-core/workflows/audit.md | 102 | Repair form `uat record --phase <N> --item <k> --result <...> --criterion AC<N>`; `--origin criterion` names no id. | accurate | accurate | 2 |
 | AUDIT-25 | cadence-core/workflows/audit.md | 107-108 | `version_drift` is issue #87's failure mode: a cycle planned/branched under an already-tagged number. | accurate | accurate | 1 |
 | AUDIT-26 | cadence-core/workflows/audit.md | 164-166 | A phase whose checklist holds only passes, skipped-with-reason and `blocked` items no longer holds the cycle open. | accurate | accurate | 1 |
-| AUDIT-27 | cadence-core/workflows/audit.md | 167-168 | The test is membership in the tag list, not sort order. | accurate | accurate | 2 |
-| AUDIT-28 | cadence-core/workflows/audit.md | 170-176 | `pluginVersion()` resolves relative to the SCRIPT, so the manifest is deliberately not the comparand. | accurate | accurate | 2 |
+| AUDIT-27 | cadence-core/workflows/audit.md | 168-169 | The test is membership in the tag list, not sort order. | accurate | accurate | 2 |
+| AUDIT-28 | cadence-core/workflows/audit.md | 171-177 | `pluginVersion()` resolves relative to the SCRIPT, so the manifest is deliberately not the comparand. | accurate | accurate | 2 |
 | AUDIT-29 | cadence-core/workflows/audit.md | 173-174 | `skills/cad-health/SKILL.md` already settled that tags are the publication evidence. | accurate | accurate | 1 |
 | AUDIT-30 | cadence-core/workflows/audit.md | 183-190 | `legacy` exempts only on all five terms, the fifth being a CONTEXT declaring no `AC<N>` ids. | accurate | accurate | 1 |
 | AUDIT-31 | cadence-core/workflows/audit.md | 194-196 | An absent UAT.md under a present CONTEXT breaks every declared criterion as `missing-uat` on a checked box. | accurate | accurate | 1 |
@@ -553,18 +553,18 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-06 | cadence-core/workflows/config.md | 31 | `model.effort` carries six per-role start rungs. | accurate | accurate | 1 |
 | CONFIG-07 | cadence-core/workflows/config.md | 32 | `review.decision_review` has two keys. | accurate | accurate | 1 |
 | CONFIG-08 | cadence-core/workflows/config.md | 27-33 | The four edit-the-file-only sets have no catalog row. | accurate | accurate | 1 |
-| CONFIG-09 | cadence-core/references/config-catalog.md | 19 | `granularity` enum `fine\|standard\|coarse`, default `standard`, split sizes 8-12 / 5-8 / 3-5. | accurate | accurate | 2 |
-| CONFIG-10 | cadence-core/references/config-catalog.md | 21 | `stakes` enum `solo\|shipped\|critical`, default `shipped`. | accurate | accurate | 2 |
-| CONFIG-11 | cadence-core/references/config-catalog.md | 22 | `model.escalate_on_failure` bool, default `true`. | accurate | accurate | 2 |
-| CONFIG-12 | cadence-core/references/config-catalog.md | 24 | `workflow.research` bool, default `false`. | accurate | accurate | 2 |
-| CONFIG-13 | cadence-core/references/config-catalog.md | 25 | `workflow.plan_check` bool, default `true`. | accurate | accurate | 2 |
-| CONFIG-14 | cadence-core/references/config-catalog.md | 26 | `workflow.verifier` bool, default `true`; the stakes level decides and `--deep` forces. | accurate | accurate | 2 |
-| CONFIG-15 | cadence-core/references/config-catalog.md | 27 | `workflow.skip_discuss` bool, default `false`. | accurate | accurate | 2 |
+| CONFIG-09 | cadence-core/references/config-catalog.md | 20 | `granularity` enum `fine\|standard\|coarse`, default `standard`, split sizes 8-12 / 5-8 / 3-5. | accurate | accurate | 2 |
+| CONFIG-10 | cadence-core/references/config-catalog.md | 22 | `stakes` enum `solo\|shipped\|critical`, default `shipped`. | accurate | accurate | 2 |
+| CONFIG-11 | cadence-core/references/config-catalog.md | 23 | `model.escalate_on_failure` bool, default `true`. | accurate | accurate | 2 |
+| CONFIG-12 | cadence-core/references/config-catalog.md | 25 | `workflow.research` bool, default `false`. | accurate | accurate | 2 |
+| CONFIG-13 | cadence-core/references/config-catalog.md | 26 | `workflow.plan_check` bool, default `true`. | accurate | accurate | 2 |
+| CONFIG-14 | cadence-core/references/config-catalog.md | 27 | `workflow.verifier` bool, default `true`; the stakes level decides and `--deep` forces. | accurate | accurate | 2 |
+| CONFIG-15 | cadence-core/references/config-catalog.md | 28 | `workflow.skip_discuss` bool, default `false`. | accurate | accurate | 2 |
 | CONFIG-16 | cadence-core/references/config-catalog.md | 28 | `workflow.subagent_timeout` int, default `300000`. | accurate | accurate | 1 |
 | CONFIG-17 | cadence-core/references/config-catalog.md | 29 | `workflow.inline_plan_threshold` int, default `3`. | accurate | accurate | 2 |
 | CONFIG-18 | cadence-core/references/config-catalog.md | 30 | `workflow.max_plan_tasks` int, default `8`; above it the plan must return `## PHASE TOO BIG`. | accurate | accurate | 2 |
-| CONFIG-19 | cadence-core/references/config-catalog.md | 31-32 | `workflow.test_command` / `workflow.lint_command` are `str\|null`, default `null`; there is no typecheck key. | accurate | accurate | 2 |
-| CONFIG-20 | cadence-core/references/config-catalog.md | 35-37 | `parallelization.max_concurrent_agents` 3, `min_plans_for_parallel` 2, `use_worktrees` true. | accurate | accurate | 2 |
+| CONFIG-19 | cadence-core/references/config-catalog.md | 31 | `workflow.test_command` / `workflow.lint_command` are `str\|null`, default `null`; there is no typecheck key. | accurate | accurate | 2 |
+| CONFIG-20 | cadence-core/references/config-catalog.md | 34-37 | `parallelization.max_concurrent_agents` 3, `min_plans_for_parallel` 2, `use_worktrees` true. | accurate | accurate | 2 |
 | CONFIG-21 | cadence-core/references/config-catalog.md | 39 | `git.protected_branches` default `main, master`. | accurate | accurate | 2 |
 | CONFIG-22 | cadence-core/references/config-catalog.md | 40 | `git.on_protected` enum `ask\|refuse\|allow`, default `ask`. | accurate | accurate | 2 |
 | CONFIG-23 | cadence-core/references/config-catalog.md | 41 | `git.integration_branch` enum `milestone\|trunk`, default `milestone`. | accurate | accurate | 2 |
@@ -574,23 +574,23 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-27 | cadence-core/references/config-catalog.md | 48 | `planning.commit_docs` bool, default `true`. | accurate | accurate | 2 |
 | CONFIG-28 | cadence-core/references/config-catalog.md | 50 | `memory.backend` enum `builtin\|none`, default `builtin`. | accurate | accurate | 2 |
 | CONFIG-29 | cadence-core/references/config-catalog.md | 52 | `risk.override.<surface>` covers exactly the eight named surfaces, default `false`, repo-scoped with a global waiver named in `warnings`. | accurate | accurate | 1 |
-| CONFIG-30 | cadence-core/references/config-catalog.md | 54 | `review.reviewers` list(enum) of `claude-subagent\|openai\|gemini\|deepseek`, default `claude-subagent`. | accurate | accurate | 2 |
-| CONFIG-31 | cadence-core/references/config-catalog.md | 55 | `review.mode` enum `single\|panel\|adjudicated`, default `adjudicated`. | accurate | accurate | 2 |
-| CONFIG-32 | cadence-core/references/config-catalog.md | 56 | `review.key_file` `str\|null`, default `null`. | accurate | accurate | 2 |
-| CONFIG-33 | cadence-core/references/config-catalog.md | 57 | `review.request_timeout_ms` default `540000`, clamped to a 600000 host ceiling. | accurate | accurate | 2 |
-| CONFIG-34 | cadence-core/references/config-catalog.md | 58 | `review.max_prompt_tokens` default `120000`; over-cap refused before any request, cross-model only. | accurate | accurate | 2 |
-| CONFIG-35 | cadence-core/references/config-catalog.md | 59-62 | `review.consult.{enabled,tier,effort,attempt_threshold}` = false / flagship / high / 3. | accurate | accurate | 2 |
-| CONFIG-36 | cadence-core/references/config-catalog.md | 67 | Trigger set is `{plan, diff, risk_surface, phase_diff}`. Re-stated v3.2.0: `pre_ship` was deleted from the vocabulary. | accurate | accurate | 2 |
-| CONFIG-37 | cadence-core/workflows/config.md | 141-145 | `config.mjs` subcommands are `validate \| check \| set \| get \| keys`. | accurate | accurate | 1 |
-| CONFIG-38 | cadence-core/workflows/config.md | 154-157 | `--file <path>` overrides `.planning/config.json`; `--global` targets `~/.claude/cadence/config.json`, relocatable via `CADENCE_GLOBAL_CONFIG`, auto-created by `set`. | accurate | accurate | 2 |
-| CONFIG-39 | cadence-core/workflows/config.md | 160-163 | `route.mjs` deep-merges global under repo (repo > global > defaults); nested objects merge, arrays replace wholesale. | accurate | accurate | 2 |
-| CONFIG-40 | cadence-core/workflows/config.md | 168-169 | A `worktree.baseRef=...` pair is rejected by the seam as an unknown key. | accurate | accurate | 2 |
-| CONFIG-41 | cadence-core/workflows/config.md | 174-178 | `set` rejects unknown key / bad value / non-object top level / a dotted path through a non-object, atomically, and echoes `{ok:true, changed:[...]}`. | accurate | accurate | 1 |
-| CONFIG-42 | cadence-core/workflows/config.md | 180-182 | A key retired by a release carries a `detail` naming the replacement. | accurate | accurate | 2 |
-| CONFIG-43 | cadence-core/workflows/config.md | 183-189 | A `(root)` detail means the target file's top level is not a JSON object; `cannot set through "..."` means a container holds an array or scalar. | accurate | accurate | 2 |
-| CONFIG-44 | cadence-core/workflows/config.md | 194-202 | `worktree.baseRef` is absent from `config.schema.json`, never goes through `config.mjs`, `"fresh"` is its default and `"head"` is the parallel-safe value. | accurate | accurate | 1 |
-| CONFIG-45 | cadence-core/workflows/config.md | 214-217 | `worktree-base.mjs resolve` reports `parallelSafe` and the file the value came from. | accurate | accurate | 2 |
-| CONFIG-46 | cadence-core/workflows/config.md | 237-238 | `workflows/config-review.md` holds the detect/classify/assign/write flow. | accurate | accurate | 1 |
+| CONFIG-30 | cadence-core/references/config-catalog.md | 53 | `review.reviewers` list(enum) of `claude-subagent\|openai\|gemini\|deepseek`, default `claude-subagent`. | accurate | accurate | 2 |
+| CONFIG-31 | cadence-core/references/config-catalog.md | 54 | `review.mode` enum `single\|panel\|adjudicated`, default `adjudicated`. | accurate | accurate | 2 |
+| CONFIG-32 | cadence-core/references/config-catalog.md | 55 | `review.key_file` `str\|null`, default `null`. | accurate | accurate | 2 |
+| CONFIG-33 | cadence-core/references/config-catalog.md | 56 | `review.request_timeout_ms` default `540000`, clamped to a 600000 host ceiling. | accurate | accurate | 2 |
+| CONFIG-34 | cadence-core/references/config-catalog.md | 57 | `review.max_prompt_tokens` default `120000`; over-cap refused before any request, cross-model only. | accurate | accurate | 2 |
+| CONFIG-35 | cadence-core/references/config-catalog.md | 58-61 | `review.consult.{enabled,tier,effort,attempt_threshold}` = false / flagship / high / 3. | accurate | accurate | 2 |
+| CONFIG-36 | cadence-core/references/config-catalog.md | 67-68 | Trigger set is `{plan, diff, risk_surface, phase_diff}`. Re-stated v3.2.0: `pre_ship` was deleted from the vocabulary. | accurate | accurate | 2 |
+| CONFIG-37 | cadence-core/workflows/config.md | 85-88 | `config.mjs` subcommands are `validate \| check \| set \| get \| keys`. | accurate | accurate | 1 |
+| CONFIG-38 | cadence-core/workflows/config.md | 97-100 | `--file <path>` overrides `.planning/config.json`; `--global` targets `~/.claude/cadence/config.json`, relocatable via `CADENCE_GLOBAL_CONFIG`, auto-created by `set`. | accurate | accurate | 2 |
+| CONFIG-39 | cadence-core/workflows/config.md | 103-105 | `route.mjs` deep-merges global under repo (repo > global > defaults); nested objects merge, arrays replace wholesale. | accurate | accurate | 2 |
+| CONFIG-40 | cadence-core/workflows/config.md | 111-113, 137-138 | A `worktree.baseRef=...` pair is rejected by the seam as an unknown key. | accurate | accurate | 2 |
+| CONFIG-41 | cadence-core/workflows/config.md | 117-120 | `set` rejects unknown key / bad value / non-object top level / a dotted path through a non-object, atomically, and echoes `{ok:true, changed:[...]}`. | accurate | accurate | 1 |
+| CONFIG-42 | cadence-core/workflows/config.md | 123-125 | A key retired by a release carries a `detail` naming the replacement. | accurate | accurate | 2 |
+| CONFIG-43 | cadence-core/workflows/config.md | 129-133 | A `(root)` detail means the target file's top level is not a JSON object; `cannot set through "..."` means a container holds an array or scalar. | accurate | accurate | 2 |
+| CONFIG-44 | cadence-core/workflows/config.md | 137-140 | `worktree.baseRef` is absent from `config.schema.json`, never goes through `config.mjs`, `"fresh"` is its default and `"head"` is the parallel-safe value. | accurate | accurate | 1 |
+| CONFIG-45 | cadence-core/workflows/config.md | 154-160 | `worktree-base.mjs resolve` reports `parallelSafe` and the file the value came from. | accurate | accurate | 2 |
+| CONFIG-46 | cadence-core/workflows/config.md | 180 | `workflows/config-review.md` holds the detect/classify/assign/write flow. | accurate | accurate | 1 |
 | CONFIG-REVIEW-01 | cadence-core/workflows/config-review.md | 8 | `review.providers.<name>.tiers.{flagship,balanced,cheap}` are the target keys. | accurate | accurate | 2 |
 | CONFIG-REVIEW-02 | cadence-core/workflows/config-review.md | 9 | DESIGN section 6 carries the three-layer detection decision. | accurate | accurate | 1 |
 | CONFIG-REVIEW-03 | cadence-core/workflows/config-review.md | 20 | Providers under `review.providers` are openai, gemini, deepseek. | accurate | accurate | 2 |
@@ -601,23 +601,23 @@ fixed, which is what makes that link answer the only question it is asked.
 | CONFIG-REVIEW-08 | cadence-core/workflows/config-review.md | 72-76 | `config.mjs set 'review.providers.<name>.tiers.<pos>=<id>'` is the write path. | accurate | accurate | 2 |
 | CONFIG-REVIEW-09 | cadence-core/workflows/config-review.md | 80-82 | Adding a provider to `review.reviewers` via `set 'review.reviewers=["claude-subagent","openai"]'` is what enrolls it. | accurate | accurate | 1 |
 | CONFIG-REVIEW-10 | cadence-core/workflows/config-review.md | 78-80 | `claude-subagent` is the always-available fallback when a tier is `null`. | accurate | accurate | 2 |
-| CONTEXT-01 | cadence-core/workflows/context.md | 34-35 | `planning.mjs cursor get` returns `no-cursor` when STATE.md is absent. | accurate | accurate | 2 |
-| CONTEXT-02 | cadence-core/workflows/context.md | 12 | Output path `.planning/phases/{N}/CONTEXT.md`. | accurate | accurate | 2 |
-| CONTEXT-03 | cadence-core/workflows/context.md | 97 | `config.mjs get memory.backend` reads the recall gate in one call. | accurate | accurate | 2 |
-| CONTEXT-04 | cadence-core/workflows/context.md | 100 | `builtin` is the schema default for `memory.backend`. | accurate | accurate | 2 |
+| CONTEXT-01 | cadence-core/workflows/context.md | 19-21 | `planning.mjs cursor get` returns `no-cursor` when STATE.md is absent. | accurate | accurate | 2 |
+| CONTEXT-02 | cadence-core/workflows/context.md | 12-13 | Output path `.planning/phases/{N}/CONTEXT.md`. | accurate | accurate | 2 |
+| CONTEXT-03 | cadence-core/workflows/context.md | 84-87 | `config.mjs get memory.backend` reads the recall gate in one call. | accurate | accurate | 2 |
+| CONTEXT-04 | cadence-core/workflows/context.md | 93 | `builtin` is the schema default for `memory.backend`. | accurate | accurate | 2 |
 | CONTEXT-05 | cadence-core/references/recall.md | 15, 18, 25 | `planning.mjs recall "<terms>"` exists and returns `{ok, results:[{score, source, phase?, snippet}]}` with `phase` optional. | accurate | accurate | 1 |
 | CONTEXT-06 | cadence-core/workflows/context.md | 163-165 | `trace append --phase --family lifecycle --event dispatch --plan --role --read "..."` - every flag exists. | accurate | accurate | 1 |
 | CONTEXT-07 | cadence-core/workflows/context.md | 163-165 | `--family lifecycle` is a valid family. | accurate | accurate | 1 |
-| CONTEXT-08 | cadence-core/workflows/context.md | 168 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate | 2 |
-| CONTEXT-09 | cadence-core/bin/lib/trace.mjs | 51-54 | Measured token figures: analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034. | accurate | accurate | 2 |
-| CONTEXT-10 | cadence-core/bin/lib/trace.mjs | 54-55 | A built-in agent type (`Explore`) returned no token figure at all. | accurate | accurate | 2 |
-| CONTEXT-11 | cadence-core/bin/lib/trace.mjs | 56-59 | `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT. | accurate | accurate | 2 |
-| CONTEXT-12 | cadence-core/bin/lib/trace.mjs | 60-64 | A dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere. | accurate | accurate | 2 |
-| CONTEXT-13 | cadence-core/bin/lib/trace.mjs | 64-65 | The census in `trace.test.mjs` binds these lines per file. | accurate | accurate | 2 |
+| CONTEXT-08 | cadence-core/workflows/context.md | 161-163 | The analyzer's contract lives at `skills/cad-assumptions-analyzer-contract`. | accurate | accurate | 2 |
+| CONTEXT-09 | cadence-core/bin/lib/trace.mjs | 58-61 | Measured token figures: analyzer 186,577, planner 146,405, executor 154,523, plan-checker 47,717, verifier 78,034. | accurate | accurate | 2 |
+| CONTEXT-10 | cadence-core/bin/lib/trace.mjs | 62 | A built-in agent type (`Explore`) returned no token figure at all. | accurate | accurate | 2 |
+| CONTEXT-11 | cadence-core/bin/lib/trace.mjs | 64-66 | `unrecorded` can only be nonzero where a dispatch was counted, and sits beside a dispatch COUNT. | accurate | accurate | 2 |
+| CONTEXT-12 | cadence-core/bin/lib/trace.mjs | 69-72 | A dispatch written and never closed is `unpaired`; a bracket never appended appears nowhere. | accurate | accurate | 2 |
+| CONTEXT-13 | cadence-core/bin/lib/trace.mjs | 72-73 | The census in `trace.test.mjs` binds these lines per file. | accurate | accurate | 2 |
 | CONTEXT-14 | cadence-core/workflows/context.md | 183-188 | The analyzer's bracket closes with ONE `trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <n>` line, and `--detail "<what failed>"` on the failed-or-timed-out arm makes the seam close a `checkpoint` instead of a `return`. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
-| CONTEXT-15 | cadence-core/workflows/context.md | 367 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate | 2 |
-| CONTEXT-16 | cadence-core/workflows/context.md | 304-306 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate | 2 |
-| CONTEXT-17 | cadence-core/workflows/context.md | 413-414 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate | 2 |
+| CONTEXT-15 | cadence-core/workflows/context.md | 366-368 | `cursor set --phase {N} --status "context gathered" --next "/cad-plan {N}"`. | accurate | accurate | 2 |
+| CONTEXT-16 | cadence-core/workflows/context.md | 294-295 | `/cad-audit` FAILs on a criterion that reached no UAT item. | accurate | accurate | 2 |
+| CONTEXT-17 | cadence-core/workflows/context.md | 414-415 | No review trigger fires here per `references/review-triggers.md`'s wiring table. | accurate | accurate | 2 |
 | COVERAGE-01 | cadence-core/workflows/coverage.md | 12-13 | `planning.mjs status` reports per-phase status. | accurate | accurate | 2 |
 | COVERAGE-02 | cadence-core/workflows/coverage.md | 13-19 | Statuses include `complete` and `executed` (and `unplanned` / `planned`). | accurate | accurate | 1 |
 | COVERAGE-03 | cadence-core/workflows/coverage.md | 14-15 | `ok:false` reasons include `no-planning-dir` and `no-roadmap`, each carrying a `hint`. | accurate | accurate | 2 |
@@ -626,27 +626,27 @@ fixed, which is what makes that link answer the only question it is asked.
 | COVERAGE-06 | cadence-core/workflows/coverage.md | 35, 63 | `workflow.test_command` is the runner config key. | accurate | accurate | 2 |
 | COVERAGE-07 | cadence-core/workflows/coverage.md | 73 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
 | COVERAGE-08 | cadence-core/workflows/coverage.md | 72 | Commit form `test(phase-<N>): cover <requirements>`. | accurate | accurate | 2 |
-| DEBUG-01 | cadence-core/workflows/debug.md | 7 | State file lives at `.planning/debug/<slug>.md`. | accurate | accurate | 2 |
-| DEBUG-02 | cadence-core/workflows/debug.md | 59 | `config.mjs get memory.backend review.consult.attempt_threshold` reads both in one call. | accurate | accurate | 2 |
+| DEBUG-01 | cadence-core/workflows/debug.md | 7-9 | State file lives at `.planning/debug/<slug>.md`. | accurate | accurate | 2 |
+| DEBUG-02 | cadence-core/workflows/debug.md | 58-60 | `config.mjs get memory.backend review.consult.attempt_threshold` reads both in one call. | accurate | accurate | 2 |
 | DEBUG-03 | cadence-core/workflows/debug.md | 70-72 | `references/bug-patterns.md` exists and is frequency-ordered. | accurate | accurate | 1 |
-| DEBUG-04 | cadence-core/references/recall.md | 15, 18 | `planning.mjs recall` exists; its JSON is `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate | 2 |
+| DEBUG-04 | cadence-core/references/recall.md | 15-19 | `planning.mjs recall` exists; its JSON is `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate | 2 |
 | DEBUG-05 | cadence-core/workflows/debug.md | 85-87 | A `none` backend makes recall's own backend-off return a backstop, not this workflow's gate. | accurate | accurate | 1 |
-| DEBUG-06 | cadence-core/workflows/debug.md | 110-117 | The `risk_surface` trigger is `blocking` and its re-arm is capped at ONE narrowed round in `references/triage-gate.md`. | accurate | accurate | 2 |
+| DEBUG-06 | cadence-core/workflows/debug.md | 113-116 | The `risk_surface` trigger is `blocking` and its re-arm is capped at ONE narrowed round in `references/triage-gate.md`. | accurate | accurate | 2 |
 | DEBUG-07 | cadence-core/workflows/debug.md | 111-114 | The fix's artifact is shape (b), the staged-diff scope, and the reviewer runs `git diff --cached` in the inherited cwd. | accurate | accurate | 1 |
 | DEBUG-08 | cadence-core/workflows/debug.md | 126-127 | `review.consult.attempt_threshold` default is 3. | accurate | accurate | 1 |
-| DEBUG-09 | cadence-core/workflows/debug.md | 123, 137 | `references/consult.md` defines `offer_consult`. | accurate | accurate | 2 |
+| DEBUG-09 | cadence-core/workflows/debug.md | 136 | `references/consult.md` defines `offer_consult`. | accurate | accurate | 2 |
 | DEBUG-10 | cadence-core/workflows/debug.md | 110 | `cad-debug` is one of the skills that fires `risk_surface`. | accurate | accurate | 1 |
 | DECISION-REVIEW-01 | cadence-core/workflows/decision-review.md | 120-121, 162-163 | D-09: the runtime exposes no per-turn token/dollar figures, so cost reporting stays qualitative. | unverifiable | divergence - needs runtime introspection of the hosts per-turn accounting; phase 4s CONTEXT already adjudicated this against that phases subagent-return figures and ruled them a different claim | 1 |
-| DECISION-REVIEW-02 | cadence-core/workflows/decision-review.md | 54-55 | The cross-model arm rests on the Phase-1 REV-01 seam repair - a symlinked install must run this seam for real, not no-op. | unverifiable | divergence - a claim about a past repairs effect under a symlinked install; needs an installed-plugin runtime to test | 1 |
-| DECISION-REVIEW-03 | cadence-core/workflows/decision-review.md | 2-5, 24-26 | The target is a `- D-NN (...)` line under `## Durable decisions` / `## Decisions`, or a PROJECT.md `## Key Decisions` row. | accurate | accurate | 2 |
-| DECISION-REVIEW-04 | cadence-core/workflows/decision-review.md | 11-12, 152-154 | This workflow has no entry in `references/review-triggers.md`'s wiring table. | accurate | accurate | 2 |
+| DECISION-REVIEW-02 | cadence-core/workflows/decision-review.md | 73-74 | The cross-model arm rests on the Phase-1 REV-01 seam repair - a symlinked install must run this seam for real, not no-op. | unverifiable | divergence - a claim about a past repairs effect under a symlinked install; needs an installed-plugin runtime to test | 1 |
+| DECISION-REVIEW-03 | cadence-core/workflows/decision-review.md | 2-4, 24-26 | The target is a `- D-NN (...)` line under `## Durable decisions` / `## Decisions`, or a PROJECT.md `## Key Decisions` row. | accurate | accurate | 2 |
+| DECISION-REVIEW-04 | cadence-core/workflows/decision-review.md | 10-11, 171-173 | This workflow has no entry in `references/review-triggers.md`'s wiring table. | accurate | accurate | 2 |
 | DECISION-REVIEW-05 | cadence-core/workflows/decision-review.md | 43-44 | The reviewer set resolves from `review.reviewers[]` exactly as review-triggers.md step 3 does. | accurate | accurate | 1 |
-| DECISION-REVIEW-06 | cadence-core/workflows/decision-review.md | 47-50 | No routing cell resolves a model for the `claude-subagent` arm; it is base `cad-reviewer` at the session default. | accurate | accurate | 2 |
-| DECISION-REVIEW-07 | cadence-core/workflows/decision-review.md | 58-62 | `review-provider.mjs review --provider <name> --model <id> --effort <level> [--key-file <path>]` with `{instruction, artifact}` on stdin. | accurate | accurate | 2 |
-| DECISION-REVIEW-08 | cadence-core/workflows/decision-review.md | 62-64 | `ok:false` drops that reviewer, same degradation rule as review-triggers.md step 4. | accurate | accurate | 2 |
-| DECISION-REVIEW-09 | cadence-core/workflows/decision-review.md | 49-50, 180-182 | `review.decision_review.{tier,effort}` reach the cross-model arm only. | accurate | accurate | 2 |
-| DECISION-REVIEW-10 | cadence-core/workflows/decision-review.md | 86-88 | Context7 is on this skill's main-model surface; the read-only `cad-reviewer` subagent has no MCP tools. | accurate | accurate | 2 |
-| DECISION-REVIEW-11 | cadence-core/workflows/decision-review.md | 157-161 | `review-provider.mjs`'s `FINDING_SCHEMA` and self-verify's `CONTRACTS` table are unchanged, and refute still returns `{findings:[...]}`. | accurate | accurate | 2 |
+| DECISION-REVIEW-06 | cadence-core/workflows/decision-review.md | 66-68 | No routing cell resolves a model for the `claude-subagent` arm; it is base `cad-reviewer` at the session default. | accurate | accurate | 2 |
+| DECISION-REVIEW-07 | cadence-core/workflows/decision-review.md | 77-81 | `review-provider.mjs review --provider <name> --model <id> --effort <level> [--key-file <path>]` with `{instruction, artifact}` on stdin. | accurate | accurate | 2 |
+| DECISION-REVIEW-08 | cadence-core/workflows/decision-review.md | 81-83 | `ok:false` drops that reviewer, same degradation rule as review-triggers.md step 4. | accurate | accurate | 2 |
+| DECISION-REVIEW-09 | cadence-core/workflows/decision-review.md | 68-69, 78 | `review.decision_review.{tier,effort}` reach the cross-model arm only. | accurate | accurate | 2 |
+| DECISION-REVIEW-10 | cadence-core/workflows/decision-review.md | 100-107 | Context7 is on this skill's main-model surface; the read-only `cad-reviewer` subagent has no MCP tools. | accurate | accurate | 2 |
+| DECISION-REVIEW-11 | cadence-core/workflows/decision-review.md | 176-180 | `review-provider.mjs`'s `FINDING_SCHEMA` and self-verify's `CONTRACTS` table are unchanged, and refute still returns `{findings:[...]}`. | accurate | accurate | 2 |
 | DOCS-VERIFY-01 | cadence-core/workflows/docs-verify.md | 4 | The writer is cut, per DESIGN section 2. | accurate | accurate | 2 |
 | DOCS-VERIFY-02 | cadence-core/workflows/docs-verify.md | 10-11 | The default target set is `README.md` plus `docs/**`. | accurate | accurate | 2 |
 | DOCS-VERIFY-03 | cadence-core/workflows/docs-verify.md | 46 | The report table columns are `claim \| location \| verdict \| correct value (if stale)`. | accurate | accurate | 2 |
@@ -654,49 +654,49 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-01 | cadence-core/workflows/execute.md | 174-176 | `cad-executor.md` already carries the executor's standing rules (atomic commit per task, deviation recording, checkpoints, never writing STATE/ROADMAP/SUMMARY, the report format) as its stable, cached definition. | stale | corrected - 044806c | 1 |
 | EXECUTE-02 | cadence-core/workflows/execute.md | 360-361 | The `phase_diff` trigger is "Off by default (opt-in)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 | 1 |
 | EXECUTE-03 | cadence-core/workflows/execute.md | 365-366 | `phase_diff` is "`adjudicated` wherever it is on at all (critical only)". | stale | corrected - 044806c + DFC-02 closed 98be3d2 | 1 |
-| EXECUTE-04 | cadence-core/workflows/execute.md | 11-17 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate | 2 |
+| EXECUTE-04 | cadence-core/workflows/execute.md | 10-12 | `planning.mjs status` returns `current`, `ok:false` with `reason`/`hint`, and `cycle:"none"` with an empty `phases[]` on a closed milestone. | accurate | accurate | 2 |
 | EXECUTE-05 | cadence-core/workflows/execute.md | 17-18 | Plan files are `PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... in numeric order. | accurate | accurate | 2 |
-| EXECUTE-06 | cadence-core/workflows/execute.md | 28-32 | The nine config keys in the single `config.mjs get` all exist (`workflow.test_command` left the batch in v2.6.2 and is read at its only consumer, `execute_parallel` step 5). | accurate | accurate | 1 |
-| EXECUTE-07 | cadence-core/workflows/execute.md | 34-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | accurate | accurate | 2 |
-| EXECUTE-08 | cadence-core/workflows/execute.md | 43-44 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
-| EXECUTE-09 | cadence-core/workflows/execute.md | 61-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate | 2 |
-| EXECUTE-10 | cadence-core/bin/planning.mjs | 1626-1635 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
-| EXECUTE-11 | cadence-core/workflows/execute.md | 93-97 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate | 2 |
-| EXECUTE-12 | cadence-core/workflows/execute.md | 98-100 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate | 2 |
-| EXECUTE-13 | cadence-core/workflows/execute.md | 112-121 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate | 2 |
-| EXECUTE-14 | cadence-core/workflows/execute.md | 129-136 | `worktree-base.mjs resolve` reports `parallelSafe`, with `baseRef:"fresh"` the default. | accurate | accurate | 2 |
-| EXECUTE-15 | cadence-core/workflows/execute.md | 179-181 | An executor writes its task table to `<plandir>/reports/plan-<k>.md` and returns a five-field digest. | accurate | accurate | 2 |
-| EXECUTE-16 | cadence-core/workflows/execute.md | 188-189 | `git worktree list --porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`. | accurate | accurate | 2 |
+| EXECUTE-06 | cadence-core/workflows/execute.md | 27-33 | The nine config keys in the single `config.mjs get` all exist (`workflow.test_command` left the batch in v2.6.2 and is read at its only consumer, `execute_parallel` step 5). | accurate | accurate | 1 |
+| EXECUTE-07 | cadence-core/workflows/execute.md | 35-39 | `fire(trigger)` takes gates from the routing bundle, and a `config.mjs get` of a gate returns the schema default when no layer set it. | accurate | accurate | 2 |
+| EXECUTE-08 | cadence-core/workflows/execute.md | 70 | `references/git-guard.md` holds the protected-branch guard. | accurate | accurate | 1 |
+| EXECUTE-09 | cadence-core/workflows/execute.md | 59-66 | `git diff --cached --quiet` / `--name-status` and `git stash push --staged` (git 2.35+). | accurate | accurate | 2 |
+| EXECUTE-10 | cadence-core/bin/planning.mjs | 1990-1996 | `lease-check` reads the whole staged index and has no provenance signal; its refusal code is `undeclared-files`. | accurate | accurate | 2 |
+| EXECUTE-11 | cadence-core/workflows/execute.md | 89-94 | `trace append --phase <N> --family lifecycle --event phase_start --sha <PHASE_START>` anchors the correlation id. | accurate | accurate | 2 |
+| EXECUTE-12 | cadence-core/workflows/execute.md | 97-100 | An append returning `written:false` (size cap, unwritable root) changes nothing on the execute path. | accurate | accurate | 2 |
+| EXECUTE-13 | cadence-core/workflows/execute.md | 112-114 | `planning.mjs plan-overlap --phase <N>` returns `overlaps`, `undeclared` and `frontmatter_issues`. | accurate | accurate | 2 |
+| EXECUTE-14 | cadence-core/workflows/execute.md | 124-153 | `worktree-base.mjs resolve` reports `parallelSafe`, with `baseRef:"fresh"` the default. | accurate | accurate | 2 |
+| EXECUTE-15 | cadence-core/workflows/execute.md | 183-187 | An executor writes its task table to `<plandir>/reports/plan-<k>.md` and returns a five-field digest. | accurate | accurate | 2 |
+| EXECUTE-16 | cadence-core/workflows/execute.md | 191-193 | `git worktree list --porcelain` gives the worktree root for branch `cadence/phase-<N>-plan-<k>`. | accurate | accurate | 2 |
 | EXECUTE-17 | cadence-core/workflows/execute.md | 196-207 | The executor bracket is two halves: the dispatch rides the spawn-agent seam's `--bracket-plan <k>` / `--bracket-read "..."` flags, and the close is ONE `trace close --phase <N> --plan <k> --role cad-executor --tokens <n> --detail "<one line>"` line. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | EXECUTE-18 | cadence-core/workflows/execute.md | 209-213 | `--detail` omitted closes a `return` and carried closes a `checkpoint`; an `escalation` is not inferred and stays on `trace append`; a worker with none of the three is what `trace render` reports as unpaired. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | EXECUTE-19 | cadence-core/workflows/execute.md | 209-214 | `--role` is a separate key from `--plan`; `--plan` pairs the bracket, `--role` groups the per-role totals. | accurate | accurate | 1 |
 | EXECUTE-20 | cadence-core/workflows/execute.md | 216-219 | `--tokens 0` would claim a dispatch that cost nothing, so the flag is omitted when no figure is returned. | accurate | accurate | 1 |
-| EXECUTE-21 | cadence-core/workflows/execute.md | 222-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate | 2 |
-| EXECUTE-22 | cadence-core/bin/planning.mjs | 2094-2102 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
-| EXECUTE-23 | cadence-core/workflows/execute.md | 248-251 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate | 1 |
-| EXECUTE-24 | cadence-core/workflows/execute.md | 263-269, 290-291 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate | 2 |
-| EXECUTE-25 | cadence-core/workflows/execute.md | 282-285 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate | 1 |
-| EXECUTE-26 | cadence-core/workflows/execute.md | 395-397 | `SUMMARY.md` is written from `cadence-core/templates/SUMMARY.md`. | accurate | accurate | 2 |
-| EXECUTE-27 | cadence-core/workflows/execute.md | 410-415 | `planning.mjs debt-harvest --root .` rewrites `.planning/CAPTURE.md`'s own `## Debt markers` section only. | accurate | accurate | 2 |
-| EXECUTE-28 | cadence-core/workflows/execute.md | 422 | `cursor set --phase <N> --status executed --next "/cad-verify <N>"`. | accurate | accurate | 2 |
-| EXECUTE-29 | cadence-core/workflows/execute.md | 428-430 | `plan-<k>-risk-task-<n>.diff` is the transient flagged diff and must never be staged. | accurate | accurate | 1 |
-| EXECUTE-30 | cadence-core/workflows/execute.md | 452-453, 468 | STATE.md is exactly the 4-line cursor, overwritten, and this workflow is its only writer. | accurate | accurate | 2 |
-| MILESTONE-01 | cadence-core/workflows/milestone.md | 7-8 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | accurate | accurate | 2 |
-| MILESTONE-02 | cadence-core/workflows/milestone.md | 13-16 | `/cad-audit` is the requirement/phase/plan/verified FAIL gate invoked here. | accurate | accurate | 2 |
-| MILESTONE-03 | cadence-core/workflows/milestone.md | 33-36 | `release-bump.mjs bump --dir <root> --version <version>`, with `--version` REQUIRED. | accurate | accurate | 2 |
-| MILESTONE-04 | cadence-core/workflows/milestone.md | 39-40 | The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"` when absent. | accurate | accurate | 2 |
-| MILESTONE-05 | cadence-core/workflows/milestone.md | 40-44 | It bumps the manifest `version` and any versioned sibling, scaffolds the dated `## [<version>]` heading + link reference, and promotes `## [Unreleased]`. | accurate | accurate | 2 |
-| MILESTONE-06 | cadence-core/workflows/milestone.md | 49-54 | `ok:false` reasons are `no-target-version`, `unparseable-version`, `unreadable-manifest`, `downgrade`, `not-an-upgrade`, with nothing written and exit 1. | accurate | accurate | 2 |
-| MILESTONE-07 | cadence-core/workflows/milestone.md | 55-57 | A `siblings[]` entry with `action:"refuse"` leaves top-level `ok` true. | accurate | accurate | 2 |
-| MILESTONE-08 | cadence-core/workflows/milestone.md | 58-60 | `changelog.section_empty: true` means the dated heading has no body. | accurate | accurate | 2 |
+| EXECUTE-21 | cadence-core/workflows/execute.md | 221-224 | The `phase_start` line takes no `--role`, `--tokens` or `--read`. | accurate | accurate | 2 |
+| EXECUTE-22 | cadence-core/bin/planning.mjs | 2645-2650 | `.planning/trace.jsonl` is gitignored; `/cad-new-project` writes the line via `planning.mjs trace ignore` and `/cad-health` only reports a pre-seam scaffold. | accurate | accurate | 2 |
+| EXECUTE-23 | cadence-core/workflows/execute.md | 267-270 | The `diff` trigger's artifact is shape (a) refs `{base_ref, head_ref}` and its default at `shipped` is advisory. | accurate | accurate | 1 |
+| EXECUTE-24 | cadence-core/workflows/execute.md | 255-258 | `references/triage-gate.md` makes NONE the default and caps the blocking re-arm at ONE round. | accurate | accurate | 2 |
+| EXECUTE-25 | cadence-core/workflows/execute.md | 252-254 | The `risk_surface` checkpoint artifact is shape (c), a flagged-diff FILE path. | accurate | accurate | 1 |
+| EXECUTE-26 | cadence-core/workflows/execute.md | 367-369 | `SUMMARY.md` is written from `cadence-core/templates/SUMMARY.md`. | accurate | accurate | 2 |
+| EXECUTE-27 | cadence-core/workflows/execute.md | 396-401 | `planning.mjs debt-harvest --root .` rewrites `.planning/CAPTURE.md`'s own `## Debt markers` section only. | accurate | accurate | 2 |
+| EXECUTE-28 | cadence-core/workflows/execute.md | 404-409 | `cursor set --phase <N> --status executed --next "/cad-verify <N>"`. | accurate | accurate | 2 |
+| EXECUTE-29 | cadence-core/workflows/execute.md | 415-416 | `plan-<k>-risk-task-<n>.diff` is the transient flagged diff and must never be staged. | accurate | accurate | 1 |
+| EXECUTE-30 | cadence-core/workflows/execute.md | 438-439 | STATE.md is exactly the 4-line cursor, overwritten, and this workflow is its only writer. | accurate | accurate | 2 |
+| MILESTONE-01 | cadence-core/workflows/milestone.md | 9-12 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | accurate | accurate | 2 |
+| MILESTONE-02 | cadence-core/workflows/milestone.md | 16-20 | `/cad-audit` is the requirement/phase/plan/verified FAIL gate invoked here. | accurate | accurate | 2 |
+| MILESTONE-03 | cadence-core/workflows/milestone.md | 33-39 | `release-bump.mjs bump --dir <root> --version <version>`, with `--version` REQUIRED. | accurate | accurate | 2 |
+| MILESTONE-04 | cadence-core/workflows/milestone.md | 41-42 | The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"` when absent. | accurate | accurate | 2 |
+| MILESTONE-05 | cadence-core/workflows/milestone.md | 43-45 | It bumps the manifest `version` and any versioned sibling, scaffolds the dated `## [<version>]` heading + link reference, and promotes `## [Unreleased]`. | accurate | accurate | 2 |
+| MILESTONE-06 | cadence-core/workflows/milestone.md | 52-54 | `ok:false` reasons are `no-target-version`, `unparseable-version`, `unreadable-manifest`, `downgrade`, `not-an-upgrade`, with nothing written and exit 1. | accurate | accurate | 2 |
+| MILESTONE-07 | cadence-core/workflows/milestone.md | 57-59 | A `siblings[]` entry with `action:"refuse"` leaves top-level `ok` true. | accurate | accurate | 2 |
+| MILESTONE-08 | cadence-core/workflows/milestone.md | 60-62 | `changelog.section_empty: true` means the dated heading has no body. | accurate | accurate | 2 |
 | MILESTONE-09 | cadence-core/workflows/milestone.md | 67-68 | An annotated tag at HEAD (`git tag -a <version> -m ...`), unpushed. | accurate | accurate | 1 |
-| MILESTONE-10 | cadence-core/workflows/milestone.md | 71-76 | A surviving `### Phase N:` detail section is the signature of an interrupted close. | accurate | accurate | 2 |
-| MILESTONE-11 | cadence-core/workflows/milestone.md | 95-104 | Requirement rows must stay as rows so `/cad-audit` can trace shipped scope; `## Active` bullets take the `- **<ID>**: <one line>` form. | accurate | accurate | 2 |
-| MILESTONE-12 | cadence-core/workflows/milestone.md | 111-113 | `cursor set --phase 1 --status "ready to plan" --next "/cad-phase add"`. | accurate | accurate | 2 |
-| MILESTONE-13 | cadence-core/workflows/milestone.md | 115-124 | On a fully pruned roadmap the seam derives `of 0 (no active cycle)`; passing `--name`/`--total` is needed when work was deferred, else it returns `cannot-derive`. | accurate | accurate | 1 |
-| MILESTONE-14 | cadence-core/workflows/milestone.md | 117-119 | `/cad-phase add` is the only workflow that appends a phase line to an existing roadmap. | accurate | accurate | 2 |
-| MILESTONE-15 | cadence-core/workflows/milestone.md | 128-131 | `git.auto_close` false is the default, so the tag stays unpushed and publishing is a separate `/cad-land`. | accurate | accurate | 2 |
-| MILESTONE-16 | cadence-core/workflows/milestone.md | 138-142 | The chain reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback (`resolveReapBranch`). | accurate | accurate | 2 |
+| MILESTONE-10 | cadence-core/workflows/milestone.md | 88-91 | A surviving `### Phase N:` detail section is the signature of an interrupted close. | accurate | accurate | 2 |
+| MILESTONE-11 | cadence-core/workflows/milestone.md | 126-128 | Requirement rows must stay as rows so `/cad-audit` can trace shipped scope; `## Active` bullets take the `- **<ID>**: <one line>` form. | accurate | accurate | 2 |
+| MILESTONE-12 | cadence-core/workflows/milestone.md | 135-140 | `cursor set --phase 1 --status "ready to plan" --next "/cad-phase add"`. | accurate | accurate | 2 |
+| MILESTONE-13 | cadence-core/workflows/milestone.md | 139-140 | On a fully pruned roadmap the seam derives `of 0 (no active cycle)`; passing `--name`/`--total` is needed when work was deferred, else it returns `cannot-derive`. | accurate | accurate | 1 |
+| MILESTONE-14 | cadence-core/workflows/milestone.md | 141-143 | `/cad-phase add` is the only workflow that appends a phase line to an existing roadmap. | accurate | accurate | 2 |
+| MILESTONE-15 | cadence-core/workflows/milestone.md | 152-154 | `git.auto_close` false is the default, so the tag stays unpushed and publishing is a separate `/cad-land`. | accurate | accurate | 2 |
+| MILESTONE-16 | cadence-core/workflows/milestone.md | 167-172 | The chain reaps via `land-cleanup.mjs`'s `cadence/*`-merged fallback (`resolveReapBranch`). | accurate | accurate | 2 |
 | NEW-PROJECT-01 | cadence-core/workflows/new-project.md | 60 | The written defaults are "interactive, research off, plan check and verifier on". | stale | corrected - 044806c | 1 |
 | NEW-PROJECT-02 | cadence-core/workflows/new-project.md | 121-122 | Structured-question headers are capped at 12 characters. | unverifiable | divergence - a host `AskUserQuestion` constraint, stated nowhere in this repo except that file and its own `:209` | 1 |
 | NEW-PROJECT-03 | cadence-core/workflows/new-project.md | 38 | Skipping init when `git rev-parse --git-dir` fails identifies a non-repo. | accurate | accurate | 1 |
@@ -705,20 +705,20 @@ fixed, which is what makes that link answer the only question it is asked.
 | NEW-PROJECT-06 | cadence-core/workflows/new-project.md | 48 | A project ignoring `.planning/` wholesale is detected and left alone. | accurate | accurate | 1 |
 | NEW-PROJECT-07 | cadence-core/workflows/new-project.md | 56 | `cadence-core/templates/config.json` is the engine template. | accurate | accurate | 2 |
 | NEW-PROJECT-08 | cadence-core/workflows/new-project.md | 61 | Defaults are research off, plan check on, verifier on. | accurate | accurate | 1 |
-| NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-69 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate | 2 |
+| NEW-PROJECT-09 | cadence-core/workflows/new-project.md | 66-68 | The seven keys read via `config.mjs get` all resolve. | accurate | accurate | 2 |
 | NEW-PROJECT-10 | cadence-core/workflows/new-project.md | 161 | `cadence-core/templates/PROJECT.md` exists. | accurate | accurate | 2 |
 | NEW-PROJECT-11 | cadence-core/workflows/new-project.md | 173 | The protected-branch guard lives in `references/git-guard.md`. | accurate | accurate | 2 |
 | NEW-PROJECT-12 | cadence-core/workflows/new-project.md | 188 | Dispatch via the spawn-agent seam with timeout `workflow.subagent_timeout`. | accurate | accurate | 1 |
-| NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 206-208 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate | 2 |
-| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 209-210 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate | 2 |
+| NEW-PROJECT-13 | cadence-core/workflows/new-project.md | 206-207 | The research agent is the only Cadence dispatch path with no `maxTurns` bound, and `maxTurns` is per-FILE frontmatter. | accurate | accurate | 2 |
+| NEW-PROJECT-14 | cadence-core/workflows/new-project.md | 207-210 | A 20th rung file would cost a `route-table.json` rung row plus both directions of self-verify's rung checks. | accurate | accurate | 2 |
 | NEW-PROJECT-15 | cadence-core/workflows/new-project.md | 244-245 | Category questions batch up to 4 per AskUserQuestion call. | accurate | accurate | 1 |
 | NEW-PROJECT-16 | cadence-core/workflows/new-project.md | 268 | `cadence-core/templates/REQUIREMENTS.md` exists. | accurate | accurate | 2 |
-| NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 271,298 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate | 2 |
-| NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 286-287 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate | 2 |
+| NEW-PROJECT-17 | cadence-core/workflows/new-project.md | 270-271, 298-300 | Traceability rows are seeded per phase by `/cad-plan`. | accurate | accurate | 2 |
+| NEW-PROJECT-18 | cadence-core/workflows/new-project.md | 287-288 | `granularity`: coarse 3-5, standard 5-8, fine 8-12. | accurate | accurate | 2 |
 | NEW-PROJECT-19 | cadence-core/workflows/new-project.md | 297 | `cadence-core/templates/ROADMAP.md` exists. | accurate | accurate | 2 |
-| NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 324-325 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate | 2 |
-| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 328-330 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate | 2 |
-| NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 389 | STATE.md is a 4-line cursor. | accurate | accurate | 2 |
+| NEW-PROJECT-20 | cadence-core/workflows/new-project.md | 337-338 | `cursor set --phase 1 --status "ready to plan" --next "/cad-context 1"` is a valid call. | accurate | accurate | 2 |
+| NEW-PROJECT-21 | cadence-core/workflows/new-project.md | 341-345 | A phase directory is `.planning/phases/<N>/` with no zero-padding and no slug suffix. | accurate | accurate | 2 |
+| NEW-PROJECT-22 | cadence-core/workflows/new-project.md | 374-375, 402 | STATE.md is a 4-line cursor. | accurate | accurate | 2 |
 | PHASE-01 | cadence-core/workflows/phase.md | 4-6 | A phase number appears in four places: ROADMAP list, `.planning/phases/<N>/`, the REQUIREMENTS Phase column, the STATE cursor. | accurate | accurate | 2 |
 | PHASE-02 | cadence-core/workflows/phase.md | 7 | The renumber mechanics live in the planning seam's `renumber` subcommand. | accurate | accurate | 2 |
 | PHASE-03 | cadence-core/workflows/phase.md | 18-20 | `cursor set` requires `--phase` and does not preserve the prior one, so `cursor get` first is not optional. | accurate | accurate | 2 |
@@ -736,59 +736,59 @@ fixed, which is what makes that link answer the only question it is asked.
 | PLAN-GAPS-02 | cadence-core/workflows/plan-gaps.md | 13 | A missing checklist returns `no-uat`. | accurate | accurate | 2 |
 | PLAN-GAPS-03 | cadence-core/workflows/plan-gaps.md | 15 | `.planning/phases/<N>/UAT.md` holds the item detail. | accurate | accurate | 1 |
 | PLAN-GAPS-04 | cadence-core/workflows/plan-gaps.md | 19 | plan.md has a `spawn_planner` step to rejoin. | accurate | accurate | 1 |
-| PLAN-01 | cadence-core/workflows/plan.md | 100 | `(D-03)` names the decision that recall's backend-off return is a backstop, not this workflow's gate. | unverifiable | divergence - a bare decision id naming no phase or file; the CONTEXT that held it is in neither the live `.planning/` tree nor any `_archive-*` milestone, so it cannot be resolved mechanically | 1 |
-| PLAN-02 | cadence-core/workflows/plan.md | 116 | `(D-01 / cache discipline)` names the decision that recall snippets ride the dispatch prompt. | unverifiable | divergence - same for the `D-01` half; the `cache discipline` half resolves at `references/seams.md:191` | 1 |
+| PLAN-01 | cadence-core/workflows/plan.md | 109-110 | `(D-03)` names the decision that recall's backend-off return is a backstop, not this workflow's gate. | unverifiable | divergence - a bare decision id naming no phase or file; the CONTEXT that held it is in neither the live `.planning/` tree nor any `_archive-*` milestone, so it cannot be resolved mechanically | 1 |
+| PLAN-02 | cadence-core/workflows/plan.md | 124-125 | `(D-01 / cache discipline)` names the decision that recall snippets ride the dispatch prompt. | unverifiable | divergence - same for the `D-01` half; the `cache discipline` half resolves at `references/seams.md:191` | 1 |
 | PLAN-03 | cadence-core/workflows/plan.md | — | 4 flags, not ~20. | accurate | RETIRED - the sentence was cut in v2.6.2 (phase 2, CTW-03) as design-history contrast; nothing left to re-verify | 1 |
-| PLAN-04 | cadence-core/workflows/plan.md | 17-19 | `planning.mjs status` returns `current` and a `phases[]` showing which phases still need plans. | accurate | accurate | 2 |
+| PLAN-04 | cadence-core/workflows/plan.md | 17-18 | `planning.mjs status` returns `current` and a `phases[]` showing which phases still need plans. | accurate | accurate | 2 |
 | PLAN-05 | cadence-core/workflows/plan.md | 20-22 | `ok:true` with `cycle: "none"` and an empty `phases[]` is a derived closed milestone. | accurate | accurate | 2 |
-| PLAN-06 | cadence-core/workflows/plan.md | 28 | `--gaps` loads `cadence-core/workflows/plan-gaps.md`. | accurate | accurate | 2 |
+| PLAN-06 | cadence-core/workflows/plan.md | 28-29 | `--gaps` loads `cadence-core/workflows/plan-gaps.md`. | accurate | accurate | 2 |
 | PLAN-07 | cadence-core/workflows/plan.md | 34-38 | The eight-key `config.mjs get` batch is valid. | accurate | accurate | 2 |
-| PLAN-08 | cadence-core/workflows/plan.md | 41-43 | `fire(trigger)` takes gates from the routing bundle (`route.mjs resolve`). | accurate | accurate | 2 |
-| PLAN-09 | cadence-core/workflows/plan.md | 44-45 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | accurate | accurate | 2 |
-| PLAN-10 | cadence-core/workflows/plan.md | 48-49 | `memory.backend` gates recall in spawn_planner and inline_plan. | accurate | accurate | 2 |
-| PLAN-11 | cadence-core/workflows/plan.md | 72 | `workflow.inline_plan_threshold` is the inline routing threshold. | accurate | accurate | 1 |
+| PLAN-08 | cadence-core/workflows/plan.md | 58-59 | `fire(trigger)` takes gates from the routing bundle (`route.mjs resolve`). | accurate | accurate | 2 |
+| PLAN-09 | cadence-core/workflows/plan.md | 60-62 | `config.mjs get` returns the schema DEFAULT for a gate no layer set. | accurate | accurate | 2 |
+| PLAN-10 | cadence-core/workflows/plan.md | 64-66, 107-108, 180-185 | `memory.backend` gates recall in spawn_planner and inline_plan. | accurate | accurate | 2 |
+| PLAN-11 | cadence-core/workflows/plan.md | 88-89 | `workflow.inline_plan_threshold` is the inline routing threshold. | accurate | accurate | 1 |
 | PLAN-12 | cadence-core/workflows/plan.md | 86 | `trace append --phase --family lifecycle --event dispatch --plan --role --read` is a valid call. | accurate | accurate | 1 |
-| PLAN-13 | cadence-core/workflows/plan.md | 108 | `planning.mjs recall "<terms>"` is the recall call. | accurate | accurate | 2 |
-| PLAN-14 | cadence-core/workflows/plan.md | 111 | Recall returns `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate | 2 |
+| PLAN-13 | cadence-core/workflows/plan.md | 117 | `planning.mjs recall "<terms>"` is the recall call. | accurate | accurate | 2 |
+| PLAN-14 | cadence-core/workflows/plan.md | 120 | Recall returns `{ok, results:[{score, source, phase?, snippet}]}`. | accurate | accurate | 2 |
 | PLAN-15 | cadence-core/workflows/plan.md | 117,153 | seams.md states a cache discipline for dispatch prompts. | accurate | accurate | 1 |
-| PLAN-16 | cadence-core/workflows/plan.md | 130 | `workflow.max_plan_tasks` is the ceiling and the planner returns `## PHASE TOO BIG` above it. | accurate | accurate | 1 |
-| PLAN-17 | cadence-core/workflows/plan.md | 141 | `cadence-core/templates/PLAN.md` exists. | accurate | accurate | 2 |
+| PLAN-16 | cadence-core/workflows/plan.md | 139 | `workflow.max_plan_tasks` is the ceiling and the planner returns `## PHASE TOO BIG` above it. | accurate | accurate | 1 |
+| PLAN-17 | cadence-core/workflows/plan.md | 150 | `cadence-core/templates/PLAN.md` exists. | accurate | accurate | 2 |
 | PLAN-18 | cadence-core/workflows/plan.md | 193-196 | The planner's return closes with ONE `trace close --phase <N> --plan cad-planner --role cad-planner --tokens <n>` line, and `--tokens` is omitted on a figureless return. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | PLAN-19 | cadence-core/workflows/plan.md | 191-192 | On the empty-or-unmarked arm `--detail "<empty or unmarked return>"` is added and the seam closes it as a checkpoint instead. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
 | PLAN-20 | cadence-core/workflows/plan.md | 198 | `## PLANNING COMPLETE` is a planner return marker. | accurate | accurate | 1 |
-| PLAN-21 | cadence-core/workflows/plan.md | 202-206 | `plan-overlap` means plans sharing a file cannot run concurrently. | accurate | accurate | 2 |
-| PLAN-22 | cadence-core/workflows/plan.md | 207 | `offer_consult` is defined in `references/consult.md`. | accurate | accurate | 2 |
-| PLAN-23 | cadence-core/workflows/plan.md | 229 | The Task ceiling feeds the checker's dimension 6. | accurate | accurate | 1 |
-| PLAN-24 | cadence-core/workflows/plan.md | 237-238 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate | 1 |
-| PLAN-25 | cadence-core/workflows/plan.md | 260-261 | WARNING means quality is degraded but execution can proceed. | accurate | accurate | 1 |
-| PLAN-26 | cadence-core/references/plan-revision.md | 10-13,51-52 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate | 2 |
-| PLAN-27 | cadence-core/workflows/plan.md | 340-341 | The `plan` gate defaults to adjudicated. | accurate | accurate | 2 |
-| PLAN-28 | cadence-core/workflows/plan.md | 347 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate | 1 |
-| PLAN-29 | cadence-core/workflows/plan.md | 358 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate | 2 |
-| PLAN-30 | cadence-core/workflows/plan.md | 362-365 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate | 1 |
-| PLAN-31 | cadence-core/workflows/plan.md | 365-370 | It reports `orphan_ids`, `no_active_section: true`, and always Pending status. | accurate | accurate | 1 |
-| PLAN-32 | cadence-core/workflows/plan.md | 377 | `cursor set --phase {N} --status planned --next "/cad-execute {N}"` is valid. | accurate | accurate | 2 |
-| PLAN-33 | cadence-core/workflows/plan.md | 381 | `references/git-guard.md` rail 1 is the protected-branch guard. | accurate | accurate | 2 |
+| PLAN-21 | cadence-core/workflows/plan.md | 224-227 | `plan-overlap` means plans sharing a file cannot run concurrently. | accurate | accurate | 2 |
+| PLAN-22 | cadence-core/workflows/plan.md | 230 | `offer_consult` is defined in `references/consult.md`. | accurate | accurate | 2 |
+| PLAN-23 | cadence-core/workflows/plan.md | 275 | The Task ceiling feeds the checker's dimension 6. | accurate | accurate | 1 |
+| PLAN-24 | cadence-core/workflows/plan.md | 297-298 | The checker returns `## VERIFICATION PASSED` or `## ISSUES FOUND` with BLOCKER/WARNING findings. | accurate | accurate | 1 |
+| PLAN-25 | cadence-core/workflows/plan.md | 299 | WARNING means quality is degraded but execution can proceed. | accurate | accurate | 1 |
+| PLAN-26 | cadence-core/references/plan-revision.md | 10-12 | `--attempt 2` makes the routing seam climb to the retry rung the cell names. | accurate | accurate | 2 |
+| PLAN-27 | cadence-core/workflows/plan.md | 331 | The `plan` gate defaults to adjudicated. | accurate | accurate | 2 |
+| PLAN-28 | cadence-core/workflows/plan.md | 350 | `cadence-core/references/triage-gate.md` exists. | accurate | accurate | 1 |
+| PLAN-29 | cadence-core/workflows/plan.md | 364 | `planning.mjs seed-reqs --phase {N}` exists. | accurate | accurate | 2 |
+| PLAN-30 | cadence-core/workflows/plan.md | 372-373 | seed-reqs inserts `\| <id> \| Phase {N} \| Pending \|` for `## Active`-bounded declared ids, idempotently. | accurate | accurate | 1 |
+| PLAN-31 | cadence-core/workflows/plan.md | 375-376 | It reports `orphan_ids`, `no_active_section: true`, and always Pending status. | accurate | accurate | 1 |
+| PLAN-32 | cadence-core/workflows/plan.md | 368 | `cursor set --phase {N} --status planned --next "/cad-execute {N}"` is valid. | accurate | accurate | 2 |
+| PLAN-33 | cadence-core/workflows/plan.md | 385 | `references/git-guard.md` rail 1 is the protected-branch guard. | accurate | accurate | 2 |
 | PROGRESS-01 | cadence-core/workflows/progress.md | 172-173 | The trace file is written by the seams and by the execute and verify workflows. | stale | corrected - 044806c | 1 |
-| PROGRESS-02 | cadence-core/workflows/progress.md | 18 | `planning.mjs status` is the derivation. | accurate | accurate | 1 |
+| PROGRESS-02 | cadence-core/workflows/progress.md | 180 | `planning.mjs status` is the derivation. | accurate | accurate | 1 |
 | PROGRESS-03 | cadence-core/workflows/progress.md | 23-25 | Derived statuses are unplanned -> planned -> executed -> complete, with UAT counts. | accurate | accurate | 2 |
 | PROGRESS-04 | cadence-core/workflows/progress.md | 26 | `current` is the lowest non-complete phase, null when all complete. | accurate | accurate | 2 |
-| PROGRESS-05 | cadence-core/workflows/progress.md | 28-30 | `cycle` is present and `"none"` only for a derived closed milestone. | accurate | accurate | 2 |
+| PROGRESS-05 | cadence-core/workflows/progress.md | 27-30 | `cycle` is present and `"none"` only for a derived closed milestone. | accurate | accurate | 2 |
 | PROGRESS-06 | cadence-core/workflows/progress.md | 31 | `references/roadmap-phases.md` holds the grammar. | accurate | accurate | 1 |
-| PROGRESS-07 | cadence-core/workflows/progress.md | 32-34 | `cursor` carries `agrees`, already computed. | accurate | accurate | 2 |
+| PROGRESS-07 | cadence-core/workflows/progress.md | 32-33 | `cursor` carries `agrees`, already computed. | accurate | accurate | 2 |
 | PROGRESS-08 | cadence-core/workflows/progress.md | 36-37 | `drift[]` kinds are `cursor`, `roadmap-box`, `req-status`, `phase-dir`, `phase-dir-grammar`. | accurate | accurate | 2 |
-| PROGRESS-09 | cadence-core/workflows/progress.md | 39-40 | `ok:false` with `no-planning-dir` is the no-project reason. | accurate | accurate | 2 |
-| PROGRESS-10 | cadence-core/workflows/progress.md | 56-59 | Cursor drift is repaired through `cursor set`. | accurate | accurate | 2 |
+| PROGRESS-09 | cadence-core/workflows/progress.md | 39-41 | `ok:false` with `no-planning-dir` is the no-project reason. | accurate | accurate | 2 |
+| PROGRESS-10 | cadence-core/workflows/progress.md | 58-59 | Cursor drift is repaired through `cursor set`. | accurate | accurate | 2 |
 | PROGRESS-11 | cadence-core/workflows/progress.md | 61-64 | Status mapping unplanned/planned/executed/all-complete are legal cursor statuses. | accurate | accurate | 1 |
 | PROGRESS-12 | cadence-core/workflows/progress.md | 65-68 | A closed-milestone cursor set with no `--name`/`--total` derives "no active cycle" and 0. | accurate | accurate | 2 |
-| PROGRESS-13 | cadence-core/workflows/progress.md | 92 | `trace render --phase <current>`. | accurate | accurate | 2 |
+| PROGRESS-13 | cadence-core/workflows/progress.md | 93 | `trace render --phase <current>`. | accurate | accurate | 2 |
 | PROGRESS-14 | cadence-core/workflows/progress.md | 95 | Four family counts `routing`, `provider`, `lifecycle`, `outcome` under one `corr`. | accurate | accurate | 2 |
-| PROGRESS-15 | cadence-core/workflows/progress.md | 96-102 | The `roles` block carries a token total, a dispatch count, and `unrecorded` when present; an absent total prints `unrecorded`, never 0. | accurate | accurate | 2 |
+| PROGRESS-15 | cadence-core/workflows/progress.md | 96-99 | The `roles` block carries a token total, a dispatch count, and `unrecorded` when present; an absent total prints `unrecorded`, never 0. | accurate | accurate | 2 |
 | PROGRESS-16 | cadence-core/workflows/progress.md | 104 | A render carrying no `roles` key prints nothing for it. | accurate | accurate | 1 |
 | PROGRESS-17 | cadence-core/workflows/progress.md | 105-107 | `unpaired` names a worker with no return, checkpoint or escalation. | accurate | accurate | 2 |
 | PROGRESS-18 | cadence-core/workflows/progress.md | 107-109 | `capped` true means the record hit its size bound. | accurate | accurate | 2 |
-| PROGRESS-19 | cadence-core/workflows/progress.md | 109-110 | An absent trace file returns `ok:true` with empty counts. | accurate | accurate | 2 |
-| PROGRESS-20 | cadence-core/workflows/progress.md | 138 | `workflow.skip_discuss` selects /cad-plan over /cad-context. | accurate | accurate | 2 |
+| PROGRESS-19 | cadence-core/workflows/progress.md | 109-111 | An absent trace file returns `ok:true` with empty counts. | accurate | accurate | 2 |
+| PROGRESS-20 | cadence-core/workflows/progress.md | 139 | `workflow.skip_discuss` selects /cad-plan over /cad-context. | accurate | accurate | 2 |
 | SPIKE-01 | cadence-core/workflows/spike.md | 20-21,45 | The spike record lives at `.planning/spikes/<slug>/SPIKE.md`. | accurate | accurate | 1 |
 | SPIKE-02 | cadence-core/workflows/spike.md | 51 | The SPIKE.md commit honors the protected-branch guard. | accurate | accurate | 2 |
 | TASK-01 | cadence-core/workflows/task.md | 75-77 | The `risk_surface` fire's artifact is refs, shape (a) `{base_ref: parent of the task's first commit, head_ref: HEAD}`. | stale | corrected - 044806c + DFC-04 closed 98be3d2 | 1 |
@@ -796,12 +796,12 @@ fixed, which is what makes that link answer the only question it is asked.
 | TASK-03 | cadence-core/workflows/task.md | 23 | `cadence-core/references/git-guard.md` exists. | accurate | accurate | 1 |
 | TASK-04 | cadence-core/workflows/task.md | 46 | `workflow.test_command` is a config key. | accurate | accurate | 2 |
 | TASK-05 | cadence-core/workflows/task.md | 48 | Rail 2 is atomic conventional commits of specific files. | accurate | accurate | 2 |
-| TASK-06 | cadence-core/workflows/task.md | 57 | Planned tasks write `.planning/tasks/{slug}/PLAN.md`. | accurate | accurate | 2 |
+| TASK-06 | cadence-core/workflows/task.md | 54 | Planned tasks write `.planning/tasks/{slug}/PLAN.md`. | accurate | accurate | 2 |
 | TASK-07 | cadence-core/workflows/task.md | 63-64 | cad-executor is dispatched via the spawn-agent seam. | accurate | accurate | 1 |
 | TASK-08 | cadence-core/workflows/task.md | 66-68 | The executor's report is `.planning/tasks/{slug}/reports/plan-1.md` and it returns a digest, not a table. | accurate | accurate | 2 |
 | TASK-09 | cadence-core/workflows/task.md | 69 | `planning.commit_docs` gates the plan-file commit. | accurate | accurate | 2 |
-| TASK-10 | cadence-core/workflows/task.md | 80 | `risk_surface` is blocking at every level. | accurate | accurate | 2 |
-| TASK-11 | cadence-core/workflows/task.md | 80-83 | Its re-arm is capped at ONE narrowed round, and that cap lives only in `triage-gate.md`. | accurate | accurate | 2 |
+| TASK-10 | cadence-core/workflows/task.md | 90, 107 | `risk_surface` is blocking at every level. | accurate | accurate | 2 |
+| TASK-11 | cadence-core/workflows/task.md | 107-110 | Its re-arm is capped at ONE narrowed round, and that cap lives only in `triage-gate.md`. | accurate | accurate | 2 |
 | UNDO-01 | cadence-core/workflows/undo.md | 4-5 | SUMMARY.md is the manifest - cad-execute writes commits-per-task with hashes there. | accurate | accurate | 2 |
 | UNDO-02 | cadence-core/workflows/undo.md | 10 | The phase's docs commit is `docs(<N>): ...`. | accurate | accurate | 1 |
 | UNDO-03 | cadence-core/workflows/undo.md | 20-21 | The dirty guard offers a stash through the ask-user seam. | accurate | accurate | 1 |
@@ -812,59 +812,59 @@ fixed, which is what makes that link answer the only question it is asked.
 | UNDO-08 | cadence-core/workflows/undo.md | 54-55 | `--undo` unchecks the ROADMAP box and flips traceability rows back to Pending. | accurate | accurate | 2 |
 | VERIFY-DEEP-01 | cadence-core/workflows/verify-deep.md | 13 | The dispatch bracket call with `--plan cad-verifier --role cad-verifier --read "..."` is valid. | accurate | accurate | 1 |
 | VERIFY-DEEP-02 | cadence-core/workflows/verify-deep.md | 8-11 | `--plan` is the pairing key and `--role` the per-role grouping key. | accurate | accurate | 1 |
-| VERIFY-DEEP-03 | cadence-core/workflows/verify-deep.md | 21 | The verifier writes `.planning/phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
-| VERIFY-DEEP-04 | cadence-core/workflows/verify-deep.md | 23 | The verifier contract lives at `skills/cad-verifier-contract`. | accurate | accurate | 2 |
+| VERIFY-DEEP-03 | cadence-core/workflows/verify-deep.md | 10-13 | The verifier writes `.planning/phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
+| VERIFY-DEEP-04 | cadence-core/workflows/verify-deep.md | 13 | The verifier contract lives at `skills/cad-verifier-contract`. | accurate | accurate | 2 |
 | VERIFY-DEEP-05 | cadence-core/workflows/verify-deep.md | 15-19, 23-24 | The verifier's bracket closes with ONE `trace close --phase <N> --plan cad-verifier --role cad-verifier --tokens <n>` line the moment the return is in hand, and `--tokens` is omitted on a figureless return. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
-| VERIFY-DEEP-06 | cadence-core/workflows/verify-deep.md | 46-48 | `uat merge --phase <N> --payload <file>`. | accurate | accurate | 2 |
-| VERIFY-DEEP-07 | cadence-core/workflows/verify-deep.md | 52-54 | Verifier results only fill `pending` items; a conflicting finding is skipped and counted. | accurate | accurate | 2 |
-| VERIFY-DEEP-08 | cadence-core/workflows/verify-deep.md | 54-55 | Unmatched gaps append as new failed items; human checks append as pending. | accurate | accurate | 1 |
-| VERIFY-DEEP-09 | cadence-core/workflows/verify-deep.md | 55-56 | An entry resolving to no usable item name is rejected and counted, never appended. | accurate | accurate | 2 |
-| VERIFY-DEEP-10 | cadence-core/workflows/verify-deep.md | 59 | The seam's summary carries `auto_passed`, `gaps`, `added`, `skipped`, `rejected`. | accurate | accurate | 2 |
-| VERIFY-DEEP-11 | cadence-core/workflows/verify-deep.md | 62-68 | The seam writes `.planning/phases/<N>/FINDINGS.json` with those counters plus `rejected_entries` and `skipped_entries`, overwriting on every successful merge. | accurate | accurate | 2 |
+| VERIFY-DEEP-06 | cadence-core/workflows/verify-deep.md | 36-37 | `uat merge --phase <N> --payload <file>`. | accurate | accurate | 2 |
+| VERIFY-DEEP-07 | cadence-core/workflows/verify-deep.md | 42-45 | Verifier results only fill `pending` items; a conflicting finding is skipped and counted. | accurate | accurate | 2 |
+| VERIFY-DEEP-08 | cadence-core/workflows/verify-deep.md | 44-45 | Unmatched gaps append as new failed items; human checks append as pending. | accurate | accurate | 1 |
+| VERIFY-DEEP-09 | cadence-core/workflows/verify-deep.md | 45-46 | An entry resolving to no usable item name is rejected and counted, never appended. | accurate | accurate | 2 |
+| VERIFY-DEEP-10 | cadence-core/workflows/verify-deep.md | 48-49 | The seam's summary carries `auto_passed`, `gaps`, `added`, `skipped`, `rejected`. | accurate | accurate | 2 |
+| VERIFY-DEEP-11 | cadence-core/workflows/verify-deep.md | 54-57 | The seam writes `.planning/phases/<N>/FINDINGS.json` with those counters plus `rejected_entries` and `skipped_entries`, overwriting on every successful merge. | accurate | accurate | 2 |
 | VERIFY-DEEP-12 | cadence-core/workflows/verify-deep.md | 22-23 | Carrying `--detail` on a failed, empty or timed-out dispatch closes a `checkpoint`; omitting it on a usable return closes a `return`. | stale | corrected - 4110fde - claim rewritten to the live `trace close` call | 2 |
-| VERIFY-01 | cadence-core/workflows/verify.md | 6-10 | The seam owns first_pass set-once, verifier-never-overwrites-user, counts recomputed every write. | accurate | accurate | 2 |
-| VERIFY-02 | cadence-core/workflows/verify.md | 11-12,19,124 | `--sweep` cold branch is `workflows/verify-sweep.md`; `--deep` is `workflows/verify-deep.md`. | accurate | accurate | 2 |
-| VERIFY-03 | cadence-core/workflows/verify.md | 23 | `planning.mjs cursor get` supplies the current phase. | accurate | accurate | 2 |
-| VERIFY-04 | cadence-core/workflows/verify.md | 30,33 | `uat status --phase <N>` is the state check and returns `counts`. | accurate | accurate | 2 |
-| VERIFY-05 | cadence-core/workflows/verify.md | 39-40 | `uat refresh --phase <N>` takes a stdin array of `{name, expected, criterion}`. | accurate | accurate | 2 |
-| VERIFY-06 | cadence-core/workflows/verify.md | 42-44 | Refresh appends only genuinely new names and never touches recorded results. | accurate | accurate | 2 |
+| VERIFY-01 | cadence-core/workflows/verify.md | 7-8 | The seam owns first_pass set-once, verifier-never-overwrites-user, counts recomputed every write. | accurate | accurate | 2 |
+| VERIFY-02 | cadence-core/workflows/verify.md | 10-11, 19-20 | `--sweep` cold branch is `workflows/verify-sweep.md`; `--deep` is `workflows/verify-deep.md`. | accurate | accurate | 2 |
+| VERIFY-03 | cadence-core/workflows/verify.md | 22 | `planning.mjs cursor get` supplies the current phase. | accurate | accurate | 2 |
+| VERIFY-04 | cadence-core/workflows/verify.md | 30 | `uat status --phase <N>` is the state check and returns `counts`. | accurate | accurate | 2 |
+| VERIFY-05 | cadence-core/workflows/verify.md | 39-41 | `uat refresh --phase <N>` takes a stdin array of `{name, expected, criterion}`. | accurate | accurate | 2 |
+| VERIFY-06 | cadence-core/workflows/verify.md | 43-45 | Refresh appends only genuinely new names and never touches recorded results. | accurate | accurate | 2 |
 | VERIFY-07 | cadence-core/workflows/verify.md | 47 | A missing checklist reports `no-uat`. | accurate | accurate | 2 |
-| VERIFY-08 | cadence-core/workflows/verify.md | 65-68 | An item from a CONTEXT criterion carries `"criterion":"AC<N>"`. | accurate | accurate | 2 |
+| VERIFY-08 | cadence-core/workflows/verify.md | 64-68 | An item from a CONTEXT criterion carries `"criterion":"AC<N>"`. | accurate | accurate | 2 |
 | VERIFY-09 | cadence-core/workflows/verify.md | 69-70 | /cad-audit FAILs on a criterion no item names. | accurate | accurate | 2 |
-| VERIFY-10 | cadence-core/workflows/verify.md | 71-74 | Other-source items carry `"origin"`; the smoke item sends `"origin":"smoke"`. | accurate | accurate | 2 |
-| VERIFY-11 | cadence-core/bin/planning.mjs | 1282-1294 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
-| VERIFY-12 | cadence-core/bin/planning.mjs | 1282-1294 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate | 2 |
+| VERIFY-10 | cadence-core/workflows/verify.md | 72 | Other-source items carry `"origin"`; the smoke item sends `"origin":"smoke"`. | accurate | accurate | 2 |
+| VERIFY-11 | cadence-core/bin/planning.mjs | 696-700 | `uat init` writes `fields_version` before it looks at an item. | accurate | accurate | 2 |
+| VERIFY-12 | cadence-core/bin/planning.mjs | 1281-1283 | Legacy also requires a CONTEXT declaring no ids beside a fieldless checklist. | accurate | accurate | 2 |
 | VERIFY-13 | cadence-core/workflows/verify.md | 80 | CONTEXT criteria may carry a `(human-verify: needs <tool/service>)` tag. | accurate | accurate | 1 |
 | VERIFY-14 | cadence-core/workflows/verify.md | 94-95 | `uat init --phase <N>` takes the item array on stdin. | accurate | accurate | 2 |
-| VERIFY-15 | cadence-core/workflows/verify.md | 102-103 | `workflow.verifier: false` always skips the deep pass. | accurate | accurate | 2 |
+| VERIFY-15 | cadence-core/workflows/verify.md | 103 | `workflow.verifier: false` always skips the deep pass. | accurate | accurate | 2 |
 | VERIFY-16 | cadence-core/workflows/verify.md | 108 | `route.mjs resolve --role cad-verifier` is the stakes probe. | accurate | accurate | 2 |
-| VERIFY-17 | cadence-core/workflows/verify.md | 111-112 | Every `warnings[]` entry must be relayed. | accurate | accurate | 2 |
+| VERIFY-17 | cadence-core/workflows/verify.md | 112 | Every `warnings[]` entry must be relayed. | accurate | accurate | 2 |
 | VERIFY-18 | cadence-core/workflows/verify.md | 114 | `verify` on that line is `on` or `off`. | accurate | accurate | 2 |
-| VERIFY-19 | cadence-core/workflows/verify.md | 114-116 | The seam refuses a resolve with no role. | accurate | accurate | 2 |
-| VERIFY-20 | cadence-core/workflows/verify.md | 120-122 | At stakes solo the deep verify pass is off. | accurate | accurate | 2 |
+| VERIFY-19 | cadence-core/workflows/verify.md | 115-117 | The seam refuses a resolve with no role. | accurate | accurate | 2 |
+| VERIFY-20 | cadence-core/workflows/verify.md | 120-121 | At stakes solo the deep verify pass is off. | accurate | accurate | 2 |
 | VERIFY-21 | cadence-core/workflows/verify.md | 138-140,155 | A suffix-tagged `(human-verify: ...)` item goes straight to pass 2. | accurate | accurate | 1 |
 | VERIFY-22 | cadence-core/workflows/verify.md | 145-148 | The deep pass writes `why_human` for every UNCERTAIN truth as well as every human-only check. | accurate | accurate | 1 |
-| VERIFY-23 | cadence-core/workflows/verify.md | 157-158 | `blocked` is terminal: `next` offers only `pending`. | accurate | accurate | 2 |
+| VERIFY-23 | cadence-core/workflows/verify.md | 156-159 | `blocked` is terminal: `next` offers only `pending`. | accurate | accurate | 2 |
 | VERIFY-24 | cadence-core/workflows/verify.md | 158 | `refresh` appends only unseen names. | accurate | accurate | 1 |
 | VERIFY-25 | cadence-core/workflows/verify.md | 159 | `route_failures`' reset is scoped to `status: fail`. | accurate | accurate | 1 |
 | VERIFY-26 | cadence-core/workflows/verify.md | 159-160 | Completion refuses a `blocked` item. | accurate | accurate | 1 |
 | VERIFY-27 | cadence-core/workflows/verify.md | 167-169 | `uat status` returns `status`, `counts`, `result` and `first_pending` alone. | accurate | accurate | 2 |
-| VERIFY-28 | cadence-core/workflows/verify.md | 176-178 | `uat record --phase <N> --item <k> --result <r> --evidence "..." --source model` is valid. | accurate | accurate | 2 |
-| VERIFY-29 | cadence-core/workflows/verify.md | 182-185 | `uat merge` atomically overwrites `phases/<N>/FINDINGS.json` on every success. | accurate | accurate | 2 |
+| VERIFY-28 | cadence-core/workflows/verify.md | 177-179 | `uat record --phase <N> --item <k> --result <r> --evidence "..." --source model` is valid. | accurate | accurate | 2 |
+| VERIFY-29 | cadence-core/workflows/verify.md | 181-184 | `uat merge` atomically overwrites `phases/<N>/FINDINGS.json` on every success. | accurate | accurate | 2 |
 | VERIFY-30 | cadence-core/workflows/verify.md | 214-219 | The reply/result mapping uses only legal results (pass/skipped/blocked/fail). | accurate | accurate | 1 |
 | VERIFY-31 | cadence-core/workflows/verify.md | 229-231 | `uat record ... [--reported] [--severity] [--reason]` are recorded fields. | accurate | accurate | 2 |
-| VERIFY-32 | cadence-core/workflows/verify.md | 233 | The output's `next` field is the next pending item. | accurate | accurate | 2 |
-| VERIFY-33 | cadence-core/workflows/verify.md | 239-241 | A re-record with `--cause` adds the field and leaves first_pass safe. | accurate | accurate | 2 |
-| VERIFY-34 | cadence-core/workflows/verify.md | 245-250 | The verifier's gap carries `missing` and its human check carries `why_human`. | accurate | accurate | 2 |
+| VERIFY-32 | cadence-core/workflows/verify.md | 233-234 | The output's `next` field is the next pending item. | accurate | accurate | 2 |
+| VERIFY-33 | cadence-core/workflows/verify.md | 241-242 | A re-record with `--cause` adds the field and leaves first_pass safe. | accurate | accurate | 2 |
+| VERIFY-34 | cadence-core/workflows/verify.md | 243-247 | The verifier's gap carries `missing` and its human check carries `why_human`. | accurate | accurate | 2 |
 | VERIFY-35 | cadence-core/workflows/verify.md | 250-253 | The route_failures review fire uses shape (c), file paths. | accurate | accurate | 1 |
-| VERIFY-36 | cadence-core/workflows/verify.md | 256-258 | `cadence-core/references/triage-gate.md` exists and holds the triage rules. | accurate | accurate | 1 |
-| VERIFY-37 | cadence-core/workflows/verify.md | 264-270 | The commit-time `risk_surface` fire is shape (b), the staged-diff scope, blocking, re-arm capped at one narrowed round. | accurate | accurate | 2 |
-| VERIFY-38 | cadence-core/workflows/verify.md | 271 | `uat record --item <k> --result pending --fix "{hash}, retest"` is valid. | accurate | accurate | 2 |
-| VERIFY-39 | cadence-core/workflows/verify.md | 287-288 | `result: complete` means every item passed or was skipped with a reason. | accurate | accurate | 2 |
+| VERIFY-36 | cadence-core/workflows/verify.md | 257 | `cadence-core/references/triage-gate.md` exists and holds the triage rules. | accurate | accurate | 1 |
+| VERIFY-37 | cadence-core/workflows/verify.md | 268-269 | The commit-time `risk_surface` fire is shape (b), the staged-diff scope, blocking, re-arm capped at one narrowed round. | accurate | accurate | 2 |
+| VERIFY-38 | cadence-core/workflows/verify.md | 270-272 | `uat record --item <k> --result pending --fix "{hash}, retest"` is valid. | accurate | accurate | 2 |
+| VERIFY-39 | cadence-core/workflows/verify.md | 286-288 | `result: complete` means every item passed or was skipped with a reason. | accurate | accurate | 2 |
 | VERIFY-40 | cadence-core/workflows/verify.md | 294 | `trace append --phase <N> --family outcome --event uat_verdict --detail "..."` is valid. | accurate | accurate | 2 |
 | VERIFY-41 | cadence-core/workflows/verify.md | 302-304 | `phase-done --n <N>` checks the ROADMAP box and flips traceability rows to Complete, Deferred exempt. | accurate | accurate | 2 |
 | VERIFY-42 | cadence-core/workflows/verify.md | 305-307 | `cursor set --phase <N> --status "phase complete" --next ...` is valid. | accurate | accurate | 2 |
-| VERIFY-43 | cadence-core/workflows/verify.md | 311-315 | The commit stages UAT.md, `phases/<N>/FINDINGS.json` and `phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
+| VERIFY-43 | cadence-core/workflows/verify.md | 312-315 | The commit stages UAT.md, `phases/<N>/FINDINGS.json` and `phases/<N>/verifier-findings.json`. | accurate | accurate | 2 |
 | VERIFY-44 | cadence-core/workflows/verify.md | 321 | The report distinguishes `{v} auto-verified` from `{m} model-executed`. | accurate | accurate | 2 |
 | VERIFY-SWEEP-01 | cadence-core/workflows/verify-sweep.md | 9 | `planning.mjs status` is the one seam call. | accurate | accurate | 2 |
 | VERIFY-SWEEP-02 | cadence-core/workflows/verify-sweep.md | 11-12 | `phases[]` already carries each phase's derived state and UAT counts. | accurate | accurate | 2 |
