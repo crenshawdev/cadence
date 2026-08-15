@@ -20,15 +20,12 @@ is where that bound is enforced.
    checker's close below:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
    ```
 
-   An empty or unmarked return closes as a checkpoint instead, the same two
-   arms handle_return uses:
-
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-planner --role cad-planner --detail "<empty or unmarked revision return>"
-   ```
+   ONE line, the same arms handle_return uses: an empty or unmarked return
+   carries `--detail "<empty or unmarked revision return>"` and the seam closes
+   it as a checkpoint.
 2. Re-dispatch the checker once, NARROWED. Its bracket rides its own resolve
    with a NARROWER read-set than check_gate's - the plan files whose diff is
    its whole artifact: `--bracket-read ".planning/phases/{N}/PLAN*.md"`.
@@ -51,19 +48,16 @@ is where that bound is enforced.
    verdict:
 
    ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
+   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
    ```
 
-   An empty or unmarked return closes as a checkpoint instead:
+   An empty or unmarked return carries
+   `--detail "<empty or unmarked narrowed return>"` and closes as a checkpoint.
 
-   ```
-   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-plan-checker --role cad-plan-checker --detail "<empty or unmarked narrowed return>"
-   ```
-
-   Both re-dispatches close on their own, at their own step. An open bracket
-   here is invisible to a census that counts SOME terminal in the file - it
-   has several - and leaving the narrowed re-dispatch unclosed leaves a paid
-   dispatch unmeasured on exactly the path this record exists to measure.
+   Both re-dispatches close on their own, at their own step: the per-file
+   census asserts one `trace close` per dispatch moment, so folding these two
+   into one close leaves a paid dispatch unmeasured on exactly the path this
+   record exists to measure - and reddens the suite rather than going quiet.
 3. No BLOCKER left -> continue. Still a BLOCKER -> present the remaining
    blockers and ask (ask-user seam): proceed to execution anyway, or stop
    and revise by hand. Never loop again.

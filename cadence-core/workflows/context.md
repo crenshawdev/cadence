@@ -173,10 +173,12 @@ Analyze the codebase for Phase {N}: {phase_name}.
 Follow your output format exactly.
 ```
 
-The dispatch came back, so close its bracket before anything else:
+The dispatch came back, so close its bracket before anything else. ONE line,
+whichever way it ended - add `--detail "<what failed>"` when the agent failed or
+timed out and the seam closes it as a `checkpoint` instead of a `return`:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return>
 ```
 
 Wait for the result. Parse:
@@ -185,17 +187,9 @@ Wait for the result. Parse:
   (Likely/Unclear items only)
 - `needs_research[]` - topics the codebase alone could not settle (often empty)
 
-If the agent fails or times out, close the bracket on THIS arm instead - it is
-the only other way this dispatch can end, and an unclosed bracket is what
-`trace render` reports as a worker that never came back:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --detail "<what failed>"
-```
-
-Then say so and continue with a plain conversational pass: derive 2-4 gray areas
-from the phase goal yourself and treat each as Unclear below. Do not silently
-degrade.
+If the agent fails or times out, say so and continue with a plain
+conversational pass: derive 2-4 gray areas from the phase goal yourself and
+treat each as Unclear below. Do not silently degrade.
 </step>
 
 <step name="close_gray_areas">

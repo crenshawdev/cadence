@@ -199,14 +199,15 @@ phase re-reads, plus that plan's own file. Once that executor comes back,
 append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan <k> --role cad-executor --tokens <the token count on the subagent return>
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
 ```
 
-The closing event is `return` for a `PLAN COMPLETE` or `PLAN PARTIAL`,
-`checkpoint` for any checkpoint return, and `escalation` when a plan is moved to
-another path or rung. All three close a bracket; a worker with none of them is
-what `trace render` reports as unpaired. `--plan`/`--bracket-plan` is the
+ONE line per executor. OMIT `--detail` for a `PLAN COMPLETE` or `PLAN PARTIAL`
+and the seam closes a `return`; carry it for any checkpoint return and the seam
+closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
+which the seam does not infer - it stays on `trace append`. All three close a
+bracket; a worker with none of them is what `trace render` reports as unpaired.
+`--plan`/`--bracket-plan` is the
 WORKER key that pairs a dispatch with its close; `--role` is what the per-role
 totals group on, and keyed on the plan number alone `cad-executor` - the single
 largest spender in a phase - is the one line the totals could never print.

@@ -1013,13 +1013,21 @@ const BRACKETING = new Map([
 ]);
 
 /**
- * Every `trace append` invocation in one text, as
- * `{family, event, plan, role, read, tokens, step}`. Shell line continuations
- * are joined first so a wrapped invocation is read whole rather than read as a
- * flagless fragment.
+ * Every `trace <verb>` INVOCATION in one text, as
+ * `{family, event, plan, role, read, tokens, step, detail}`. Shell line
+ * continuations are joined first so a wrapped invocation is read whole rather
+ * than read as a flagless fragment.
+ *
+ * An invocation is a line that also names `planning.mjs`. Prose MENTIONING a
+ * subcommand in backticks is not one, and the difference is load-bearing now
+ * that the close half has a subcommand of its own: `seams.md` states where
+ * `escalation` still lives and `plan-revision.md` states what the per-file
+ * census asserts, and counting either sentence as a call would make the
+ * equality below fail on prose that is exactly right.
  * @param {string} text
+ * @param {'append'|'close'} verb
  */
-function traceAppends(text) {
+function traceCalls(text, verb) {
   const joined = text.replace(/\\\r?\n\s*/g, ' ');
   const out = [];
   // Quoted form FIRST for --read: its value is a comma-separated list that may
@@ -1034,8 +1042,9 @@ function traceAppends(text) {
     const bare = new RegExp(`--${name}\\s+(\\S+)`).exec(line);
     return bare ? bare[1] : null;
   };
+  const call = new RegExp(`\\btrace\\s+${verb}\\b`);
   for (const line of joined.split('\n')) {
-    if (!/\btrace\s+append\b/.test(line)) continue;
+    if (!call.test(line) || !line.includes('planning.mjs')) continue;
     out.push({
       family: flag(line, 'family', false),
       event: flag(line, 'event', false),
@@ -1044,6 +1053,7 @@ function traceAppends(text) {
       read: flag(line, 'read', true),
       tokens: flag(line, 'tokens', false),
       step: flag(line, 'step', true),
+      detail: flag(line, 'detail', true),
     });
   }
   return out;
@@ -1054,16 +1064,28 @@ test('census: every trace family has a producer, and every producer speaks the r
   const producers = new Map(FAMILIES.map((f) => [f, []]));
   /** @type {{family: string|null, event: string|null, where: string}[]} */
   const prose = [];
+  /** @type {{plan: string|null, role: string|null, tokens: string|null, detail: string|null, where: string}[]} */
+  const closes = [];
 
   for (const file of proseSurfaces()) {
     const where = relative(REPO, file);
-    for (const a of traceAppends(readFileSync(file, 'utf8'))) {
+    const text = readFileSync(file, 'utf8');
+    for (const a of traceCalls(text, 'append')) {
       prose.push({ ...a, where });
       assert.ok(a.family, `${where}: a \`trace append\` with no --family`);
       assert.ok(a.event, `${where}: a \`trace append\` with no --event`);
       assert.ok(FAMILIES.includes(String(a.family)),
         `${where}: --family ${a.family} is not one of ${FAMILIES.join(', ')}`);
       producers.get(String(a.family)).push(where);
+    }
+    // `trace close` states neither, by construction: the seam fixes the family
+    // to `lifecycle` and picks the TERMINAL arm off `--detail`. So it is a
+    // lifecycle producer on the strength of the subcommand alone, and a close
+    // line that stated a family would be caught by self-verify's flag lint
+    // rather than here.
+    for (const c of traceCalls(text, 'close')) {
+      closes.push({ ...c, where });
+      producers.get('lifecycle').push(where);
     }
   }
 
@@ -1097,8 +1119,16 @@ test('census: every trace family has a producer, and every producer speaks the r
   assert.ok(events.includes(ANCHOR), `no prose producer writes the anchor \`${ANCHOR}\`. ${found()}`);
   assert.ok(events.includes(DISPATCH),
     `no prose producer writes \`${DISPATCH}\`, so no bracket ever opens. ${found()}`);
-  assert.ok(events.some((e) => TERMINAL.includes(e)),
-    `no prose producer writes any of ${TERMINAL.join(', ')}, so no bracket ever closes. ${found()}`);
+  // ...and the close half, now that no prose writes a TERMINAL event NAME at
+  // all. The assertion is the same one - some producer must close a bracket or
+  // none of them ever pairs - stated against the spelling that closes it. Which
+  // TERMINAL member lands is the SEAM's guarantee (`--detail` present ->
+  // `checkpoint`, absent -> `return`, both proved at the seam tests above), so
+  // the prose can no longer get the arm wrong and there is nothing per-arm left
+  // for a prose census to count.
+  assert.ok(closes.length > 0,
+    'no prose producer writes a `trace close`, so no bracket ever closes. '
+    + `${found()}`);
 
   // --- per-FILE bracket coverage (see BRACKETING) -----------------------------
   //
@@ -1117,38 +1147,39 @@ test('census: every trace family has a producer, and every producer speaks the r
     const folded = (readFileSync(join(REPO, file), 'utf8')
       .match(/--bracket-read\s/g) || []).length;
     const dispatched = own.filter((p) => String(p.event) === DISPATCH).length + folded;
-    const closed = own.filter((p) => TERMINAL.includes(String(p.event)));
+    const closed = closes.filter((c) => c.where === file);
     assert.ok(dispatched >= minDispatch,
       `${file}: expected at least ${minDispatch} written \`--event ${DISPATCH}\` bracket(s), `
       + `found ${dispatched}. A dispatch site with no bracket is a paid worker whose `
       + 'cost never reaches the run record.');
-    assert.ok(closed.length >= dispatched,
-      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but only ${closed.length} closing `
-      + `event(s) (${TERMINAL.join(' / ')}). At least one bracket is left open.`);
-    // ...and the PRIMARY close counted on its own. A site writes its arms as
-    // alternatives - a `return` form AND a `checkpoint` form for the same one
-    // dispatch - so a file with four dispatches carries eight closing lines,
-    // and the count above keeps passing while a whole site loses both of its
-    // arms. Every dispatch moment in every bracketing file writes exactly one
-    // `return` form, so counting that form is what actually says "no bracket
-    // here is left open".
-    const returned = own.filter((p) => String(p.event) === 'return');
-    assert.ok(returned.length >= dispatched,
-      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but only ${returned.length} `
-      + '`--event return` close(s). Each dispatch moment writes its own; one of them is '
-      + 'unclosed on its success path.');
-    // ...and the FAILURE arm counted the same way. The two assertions above
-    // both stay green when every `checkpoint` close is deleted - four
-    // dispatches, four returns, four terminals - so neither of them protects
-    // the arm that closes a dispatch which came back unusable. That arm is the
-    // load-bearing one for this phase's whole point: a worker that burned its
-    // budget and returned nothing parseable is exactly the cost that must
-    // still reach the record, and its `return` form never fires.
-    const checkpointed = own.filter((p) => String(p.event) === 'checkpoint');
-    assert.ok(checkpointed.length >= dispatched,
-      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but only ${checkpointed.length} `
-      + '`--event checkpoint` close(s). Each dispatch moment writes its own; one of them is '
-      + 'unclosed on its FAILURE path, so a worker that came back unusable goes unbilled.');
+    // EQUALS, never "at least". The close half used to be two alternative
+    // prose lines per dispatch moment - a `return` form and a `checkpoint`
+    // form - so the census had to count each arm separately to notice a site
+    // that lost one. `trace close` collapses those into ONE line whose arm the
+    // seam picks, which makes the honest count exact: one close per dispatch
+    // moment. An "at least" here would pass a mechanical conversion that left
+    // both old lines as two closes, and two closes on one moment is a runtime
+    // branch appending duplicate terminals - `renderTrace`'s replay guard
+    // drops the byte-identical second one and PAIRS the merely-similar one,
+    // funding a dispatch twice or stranding the next worker in `unpaired`.
+    assert.equal(closed.length, dispatched,
+      `${file}: ${dispatched} \`${DISPATCH}\` bracket(s) but ${closed.length} `
+      + '`trace close` call(s). Exactly one close per dispatch moment: fewer leaves a '
+      + 'paid worker unbilled, more appends a duplicate terminal.');
+    // ...and ZERO raw appends of a terminal. This is the assertion that keeps
+    // the eight converted files converted: putting a
+    // `trace append --family lifecycle --event return` line back into any of
+    // them reddens this row, whatever the counts above say. It replaces the
+    // deleted per-arm counts, and it is why the FAILURE arm no longer needs
+    // one of its own - a worker that burned its budget and came back unusable
+    // still reaches the record because `trace close --detail` is the same
+    // line as the success close, and the seam, not the prose, picks
+    // `checkpoint`.
+    const raw = own.filter((p) => TERMINAL.includes(String(p.event)));
+    assert.deepEqual(raw.map((p) => p.event), [],
+      `${file}: ${raw.length} raw \`trace append --family lifecycle --event `
+      + `${TERMINAL.join('|')}\` invocation(s) left. The close half is `
+      + '`trace close`; a restated raw append is the spelling this census exists to refuse.');
   }
 
   // --- every bracket half is keyed, and every dispatch names what it caused ---
@@ -1158,6 +1189,14 @@ test('census: every trace family has a producer, and every producer speaks the r
   // terminal ALONE would file every token figure under the "" key while
   // dispatch counts stayed keyed by role - each role reported fully
   // `unrecorded` beside a nonzero unkeyed total, with the whole suite green.
+  for (const c of closes) {
+    assert.ok(c.role && c.role.trim(),
+      `${c.where}: a \`trace close\` with no \`--role\` - its worker cannot be grouped `
+      + 'into the per-role totals at all.');
+    assert.ok(c.plan && c.plan.trim(),
+      `${c.where}: a \`trace close\` with no \`--plan\` - the worker key is what pairs it `
+      + 'with its dispatch, so without one the bracket never closes.');
+  }
   for (const p of lifecycle) {
     const event = String(p.event);
     if (event === ANCHOR) continue;   // the correlation-id anchor is not a worker

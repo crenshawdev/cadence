@@ -186,20 +186,14 @@ plan's truths and tasks, citing each recalled item's `source` file and `phase`
 </step>
 
 <step name="handle_return">
-The dispatch came back, so close its bracket before anything else. OMIT
-`--tokens` on a figureless return (seams.md's bracket rule - the one statement
-of why):
+The dispatch came back, so close its bracket before anything else - ONE line,
+always exactly one, or `trace render` reports a worker that never came back. On
+the empty-or-unmarked arm below add `--detail "<empty or unmarked return>"` and
+the seam closes it as a checkpoint instead. OMIT `--tokens` on a figureless
+return (seams.md's bracket rule - the one statement of why):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
-```
-
-On the empty-or-unmarked arm below, close it as a checkpoint instead - one of
-the two, always exactly one, or `trace render` reports a worker that never came
-back:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-planner --role cad-planner --detail "<empty or unmarked return>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
 ```
 
 - `## PLANNING COMPLETE` - confirm the listed files exist on disk, continue.
@@ -291,16 +285,12 @@ Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
 ```
 
 Close its bracket the moment the return is in hand, before reading a single
-severity. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
+severity. ONE line: an empty or unmarked return carries
+`--detail "<empty or unmarked return>"` and the seam closes it as a checkpoint.
+OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
-```
-
-An empty or unmarked return closes as a checkpoint instead:
-
-```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-plan-checker --role cad-plan-checker --detail "<empty or unmarked return>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
 ```
 
 Handle the return:

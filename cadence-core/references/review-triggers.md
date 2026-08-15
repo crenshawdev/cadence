@@ -128,17 +128,13 @@ set never does. Per backend:
   OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event return --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return>
   ```
 
   A dispatch that failed, returned nothing, or returned an unparseable object
-  closes as `--event checkpoint` with the same keys and a `--detail` line
-  instead - a reviewer that burned its budget and came back unusable is exactly
-  the dispatch whose cost must still reach the record:
-
-  ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event checkpoint --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return> --detail "<what failed>"
-  ```
+  adds `--detail "<what failed>"` to that same line and the seam closes it as a
+  checkpoint - a reviewer that burned its budget and came back unusable is
+  exactly the dispatch whose cost must still reach the record.
 
   **An `advisory` gate inverts the bracket's writer.** No fire site halts on an
   advisory return, and the overlapped fires (`plan`'s advisory arm, `diff`'s
