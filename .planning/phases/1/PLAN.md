@@ -11,6 +11,7 @@ files:
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/self-verify.mjs
   - cadence-core/bin/prose-agreement.test.mjs
+  - cadence-core/bin/planning.test.mjs
   - cadence-core/workflows/execute.md
   - cadence-core/workflows/task.md
   - cadence-core/references/review-triggers.md
