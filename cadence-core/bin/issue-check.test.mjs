@@ -50,9 +50,13 @@ const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.co
 
 /** A shell stub on PATH: records its argv, then prints `body` and exits `code`.
  *  `sleep` seconds before printing proves the call bound. `login` is the body
- *  the `tea login list` probe gets, so ONE `tea` stub answers both argv shapes
- *  the seam sends it. */
-export function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, stderr = '' } = {}) {
+ *  the `tea login list` probe gets, so ONE `tea` stub answers every argv shape
+ *  the seam sends it. `issue` is the OPTIONAL third shape - a `{number: body}`
+ *  map answering `tea issues <index>`, where a number the map does not hold
+ *  exits 1 with no output, which is what tea does for an issue that is not
+ *  there. Both extras default to null, so the existing callers (including
+ *  git-publish.test.mjs, which imports this) are untouched. */
+export function stub(dir, name, { body = '', login = null, issue = null, code = 0, sleep = 0, stderr = '' } = {}) {
   // `echo`, never a `cat` heredoc: under `bare: true` the child's PATH holds
   // git and nothing else, and /bin/sh has no `cat` builtin - a heredoc stub
   // silently printed nothing there and every bare case degraded for the wrong
@@ -62,6 +66,14 @@ export function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, 
     '[ -n "$CAD_SPAWN_MARKER" ] && echo "' + name + '" >> "$CAD_SPAWN_MARKER"',
     '[ -n "$CAD_ARGV_LOG" ] && echo "' + name + ' $*" >> "$CAD_ARGV_LOG"',
     login === null ? '' : `if [ "$1" = "login" ]; then\n${heredoc(login)}\nexit 0\nfi`,
+    issue === null ? '' : [
+      'if [ "$1" = "issues" ] && [ "$2" != "list" ]; then',
+      'case "$2" in',
+      ...Object.entries(issue).map(([n, b]) => `${n}) ${heredoc(b)}; exit 0 ;;`),
+      '*) exit 1 ;;',
+      'esac',
+      'fi',
+    ].join('\n'),
     sleep ? `sleep ${sleep}` : '',
     stderr ? `printf '%s' ${JSON.stringify(stderr)} >&2` : '',
     body ? heredoc(body) : '',
@@ -360,6 +372,65 @@ test('an origin sharing no registrable domain with any login skips, and queries 
   assert.deepEqual(readFileSync(marker, 'utf8').trim().split('\n'), ['tea']);
   assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'),
     ['tea login list --output json'], readFileSync(argvLog, 'utf8'));
+});
+
+// --- the open list plus a bounded per-issue resolve (the forgejo row alone) --
+//
+// The list call names only OPEN issues: the server clamps a `--state all` page
+// at 50 rows whatever `--limit` asks for, so on a real tracker the read was
+// honestly incomplete and the whole report degraded (D-08). What that costs is
+// that a referenced number missing from the list is closed OR absent, and one
+// bounded `tea issues <index>` per unanswered number tells those apart.
+
+const TEA_OPEN_BODY = '[{"index":"42","state":"open"},{"index":"99","state":"open"}]';
+
+test('forgejo: a number the open list missed resolves, or is named unresolved', () => {
+  const dir = repo({
+    originUrl: FORGE_REPO,
+    commits: [...COMMITS, 'chore: mentions #4242, which never existed'],
+  });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: TEA_OPEN_BODY, login: TEA_LOGINS, issue: { 47: '{"index":47,"state":"closed"}' } } },
+    bare: true, argvLog,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced, [
+    { number: 42, state: 'open' },
+    { number: 47, state: 'closed' },       // from a resolve; the list never named it
+    { number: 99, state: 'open' },
+    // tea exits nonzero for an absent issue AND for a failed read, and this
+    // seam discards child stderr - so this may never be reported not-found.
+    { number: 4242, state: 'unresolved' },
+  ], JSON.stringify(r));
+  assert.deepEqual(r.open, [42, 99]);
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  const list = lines.filter((l) => l.startsWith('tea issues list'));
+  assert.equal(list.length, 1, lines.join('\n'));
+  assert.match(list[0], /--state open/, list[0]);
+  // Exactly one resolve per unanswered number, and none for an answered one.
+  assert.deepEqual(lines.filter((l) => /^tea issues \d/.test(l)), [
+    'tea issues 47 --repo org/repo --fields index,state --output json',
+    'tea issues 4242 --repo org/repo --fields index,state --output json',
+  ], lines.join('\n'));
+});
+
+test('forgejo: the resolve stops at its cap, and the remainder are unresolved', () => {
+  const refs = [201, 202, 203, 204, 205, 206, 207, 208];
+  // The stub would answer `closed` for ALL eight, so the cap is the only thing
+  // that can make the last three unresolved.
+  const issue = Object.fromEntries(refs.map((n) => [n, `{"index":${n},"state":"closed"}`]));
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: '[{"index":"42","state":"open"}]', login: TEA_LOGINS, issue } },
+    bare: true, argvLog,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced,
+    refs.map((n, i) => ({ number: n, state: i < 5 ? 'closed' : 'unresolved' })), JSON.stringify(r));
+  const resolves = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => /^tea issues \d/.test(l));
+  assert.equal(resolves.length, 5, resolves.join('\n'));
 });
 
 test('the key-off arm spawns NO forge CLI at all, not merely an empty report', () => {

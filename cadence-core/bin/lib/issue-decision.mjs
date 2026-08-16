@@ -19,9 +19,11 @@
 //        number,state`, `-R/--repo [HOST/]OWNER/REPO`, `-L/--limit int
 //        (default 30)`. Live sample: [{"number":14156,"state":"OPEN"}].
 //        `--limit` pages internally, so 60 rows come back for `--limit 60`.
-//   tea  `tea issues list --help` on tea 0.9.x here: `--state all`, `--fields
-//        index,state`, `--output json`, `--repo`, `--limit int (default 30)`.
-//        Live sample: [{"index":"171","state":"open"}] - `index` is a STRING.
+//   tea  `tea issues list --help` on tea 0.9.x here: `--state all|open`,
+//        `--fields index,state`, `--output json`, `--repo`, `--limit int
+//        (default 30)`. Live sample: [{"index":"171","state":"open"}] - `index`
+//        is a STRING. `tea issues <index> --repo <slug> --fields index,state
+//        --output json` reads one issue, and prints its `index` as a NUMBER.
 //   glab `glab issue list` published docs (gitlab-org/cli, docs/source/issue/
 //        list.md, read 2026-08-15): `-A/--all` (both states), `-O/--output
 //        json`, `-P/--per-page int (default 30)`, `-R/--repo OWNER/REPO`. The
@@ -45,6 +47,11 @@
 // caller degrades to one line instead of answering. That is deliberate and it
 // is the conservative direction: a truncated page and an empty tracker produce
 // the same records, and only one of them means "#42 does not exist".
+//
+// tea's clamp is the reason the forgejo row asks `--state open` and carries a
+// per-issue `resolve`: at `--state all` a real tracker fills the 50-row page,
+// so the honest incomplete read was the only thing this seam ever produced on
+// the repository it was built in. See HOST_TABLE's own header.
 
 /** open / closed, normalized across the three CLIs' spellings.
  * @param {string} raw @returns {'open'|'closed'|null} */
@@ -52,6 +59,17 @@ function normalizeState(raw) {
   const s = raw.toLowerCase();
   if (s === 'open' || s === 'opened') return 'open';
   if (s === 'closed') return 'closed';
+  return null;
+}
+
+/** An issue number however its CLI spells it: `tea issues list` prints `index`
+ * as a STRING and `tea issues <index>` prints it as a NUMBER (both measured
+ * 2026-08-15), so the two readers below share one normalization rather than
+ * disagreeing about which `42` is the referenced one.
+ * @param {unknown} raw @returns {number|null} */
+function normalizeNumber(raw) {
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string' && /^\d+$/.test(raw)) return Number(raw);
   return null;
 }
 
@@ -80,10 +98,8 @@ function normalizeList(text, limit, numberKey) {
   const records = [];
   for (const row of parsed) {
     if (!row || typeof row !== 'object') return bad('a row was not an object');
-    const rawNumber = /** @type {Record<string, unknown>} */ (row)[numberKey];
     const rawState = /** @type {Record<string, unknown>} */ (row).state;
-    const number = typeof rawNumber === 'number' ? rawNumber
-      : (typeof rawNumber === 'string' && /^\d+$/.test(rawNumber) ? Number(rawNumber) : null);
+    const number = normalizeNumber(/** @type {Record<string, unknown>} */ (row)[numberKey]);
     const state = typeof rawState === 'string' ? normalizeState(rawState) : null;
     // A renamed or missing field fails the WHOLE read rather than dropping the
     // row: dropping it is how a renamed field becomes a not-found verdict.
@@ -95,13 +111,55 @@ function normalizeList(text, limit, numberKey) {
 }
 
 /**
- * Host -> the ONE bounded call that lists issues in EVERY state with number and
- * state, and the reader for its response. One call per land covering both facts
- * the report needs; never one call per referenced number.
+ * ONE issue's state out of a per-issue response, or null when the response does
+ * not answer for THAT number. Accepts a single object or a one-element array,
+ * because the CLI has printed both shapes.
+ *
+ * NULL IS THE ONLY FAILURE ANSWER, and the caller renders it `unresolved` -
+ * never `not-found`. `tea` exits nonzero both for an issue that does not exist
+ * and for a read that failed, and this seam discards child stderr by contract,
+ * so a not-found here would be an affirmative answer about input it could not
+ * read - the failure `partitionIssues` was written to refuse.
+ * @param {unknown} text @param {number} number
+ * @returns {'open'|'closed'|null}
+ */
+function readOneIssue(text, number) {
+  if (typeof text !== 'string') return null;
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return null; }
+  if (Array.isArray(parsed)) {
+    if (parsed.length !== 1) return null;
+    parsed = parsed[0];
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const row = /** @type {Record<string, unknown>} */ (parsed);
+  if (normalizeNumber(row.index) !== number) return null;
+  return typeof row.state === 'string' ? normalizeState(row.state) : null;
+}
+
+/**
+ * Host -> the ONE bounded list call this seam makes per land, and the reader for
+ * its response. Never one call per referenced number.
  *
  * `argv(slug, limit)` is byte-exact apart from the two interpolations, and the
  * repo slug is always present: `gh` and `glab` would otherwise infer the repo
  * from the process cwd, and `tea` infers nothing at all.
+ *
+ * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
+ * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
+ * (`--limit 50`, `100` and `200` each returned exactly 50 against this repo's
+ * tracker of 180+, and Codeberg - a different instance under different
+ * administration - clamps identically), so `--state all` filled its page on any
+ * real tracker, `normalizeList` correctly reported the read incomplete, and the
+ * whole report degraded to a skip line. `--state open` returned 19 rows here: a
+ * complete read. What that costs is that a referenced number missing from the
+ * list is now closed OR absent rather than absent, so the row carries
+ * `resolve` - one bounded `tea issues <index>` per unanswered number, capped at
+ * the caller's own constant. Paging the list was rejected: it widens the seam
+ * past its stated one bounded call per land and puts more network latency on
+ * the land path. `github` and `gitlab` keep `--state all` and get no resolve -
+ * `gh` pages internally to its `--limit`, and inventing argv for a `glab` that
+ * is absent from this machine would ship an untestable change.
  */
 export const HOST_TABLE = Object.freeze({
   github: Object.freeze({
@@ -126,10 +184,19 @@ export const HOST_TABLE = Object.freeze({
     bin: 'tea',
     limit: 50,
     /** @param {string} slug @param {number} limit @returns {string[]} */
-    argv: (slug, limit) => ['issues', 'list', '--repo', slug, '--state', 'all',
+    argv: (slug, limit) => ['issues', 'list', '--repo', slug, '--state', 'open',
       '--fields', 'index,state', '--output', 'json', '--limit', String(limit)],
     /** @param {unknown} text @param {number} limit */
     normalize: (text, limit) => normalizeList(text, limit, 'index'),
+    // All four flags exist on the installed tea (`tea issues --help`,
+    // 2026-08-15). No `--state`: the number is named directly.
+    resolve: Object.freeze({
+      /** @param {string} slug @param {number} number @returns {string[]} */
+      argv: (slug, number) => ['issues', String(number), '--repo', slug,
+        '--fields', 'index,state', '--output', 'json'],
+      /** @param {unknown} text @param {number} number */
+      read: (text, number) => readOneIssue(text, number),
+    }),
   }),
 });
 

@@ -225,8 +225,36 @@ test('the github and forgejo normalizers read their CLIs own captured shapes', (
   // tea, live sample 2026-08-15: `index` is a STRING, state lowercase.
   const tea = HOST_TABLE.forgejo.normalize('[{"index":"171","state":"open"},{"index":"115","state":"closed"}]', 50);
   assert.deepEqual(tea.records, [{ number: 171, state: 'open' }, { number: 115, state: 'closed' }]);
+  // `--state open`, not `all`: the server clamps the page at 50 rows whatever
+  // --limit asks, so `all` filled it on any real tracker and the read was
+  // honestly incomplete (D-08).
   assert.deepEqual(HOST_TABLE.forgejo.argv('org/repo', 50),
-    ['issues', 'list', '--repo', 'org/repo', '--state', 'all', '--fields', 'index,state', '--output', 'json', '--limit', '50']);
+    ['issues', 'list', '--repo', 'org/repo', '--state', 'open', '--fields', 'index,state', '--output', 'json', '--limit', '50']);
+});
+
+test('the forgejo row resolves ONE issue, and reads both shapes tea prints', () => {
+  const { resolve } = HOST_TABLE.forgejo;
+  assert.deepEqual(resolve.argv('org/repo', 47),
+    ['issues', '47', '--repo', 'org/repo', '--fields', 'index,state', '--output', 'json']);
+  // `tea issues <index>` prints `index` as a NUMBER where the list prints a
+  // STRING, and it has printed both a bare object and a one-element array.
+  assert.equal(resolve.read('{"index":47,"state":"closed"}', 47), 'closed');
+  assert.equal(resolve.read('[{"index":"47","state":"open"}]', 47), 'open');
+  // Anything that does not answer for THAT number is null, which the caller
+  // renders `unresolved` - never `not-found`.
+  for (const bad of ['', 'not json', '[]', '[{"index":47,"state":"open"},{"index":48,"state":"open"}]',
+    '{"index":48,"state":"closed"}', '{"index":47}', '{"index":47,"state":"merged"}', null, 42]) {
+    assert.equal(resolve.read(bad, 47), null, JSON.stringify(bad));
+  }
+});
+
+test('only the forgejo row carries a resolve; the other two still list every state', () => {
+  // `gh` pages internally to its --limit and `glab` is absent from this
+  // machine, so neither trades a working arm for an untestable one (D-08).
+  assert.equal(HOST_TABLE.github.resolve, undefined);
+  assert.equal(HOST_TABLE.gitlab.resolve, undefined);
+  assert.ok(HOST_TABLE.github.argv('org/repo', 200).join(' ').includes('--state all'));
+  assert.ok(HOST_TABLE.gitlab.argv('org/repo', 100).includes('--all'));
 });
 
 test('a response TRUNCATED at the limit is unreadable, never an issue list', () => {
