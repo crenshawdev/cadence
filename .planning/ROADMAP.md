@@ -68,6 +68,8 @@ window go unrecorded.
 ## Phases
 
 - [x] **Phase 1: The controls that never reached their path** - recall survives a milestone close, the parallel branch runs the same risk sequence the sequential one does, and `risk-check status` stops accepting a matched range with no fire behind it
+- [ ] **Phase 2: The record learns to see the run** - `trace close` records the tool-call count the return already carries, and `/cad-report` / `/cad-suggest` price a run from a record that can see the whole window instead of worker-return tokens alone
+
 
 ## Phase Details
 
@@ -131,3 +133,54 @@ move applied to the one gate that never got it.
 - A check fails against the unpatched code first for each of the three, and the
   watched FAIL is recorded with its SHA.
 
+### Phase 2: The record learns to see the run
+**Goal:** The two terms the bill is actually made of - turns and window - stop
+being absent from `trace.jsonl`, so a run's price can be argued from the record
+rather than from a figure that structurally cannot include the orchestrator.
+**Depends on:** Nothing
+**Requirements:** MSR-01, MSR-02
+
+This phase is the measurement, not the cut. `## Active` states the ordering it
+comes from: MSR-01 or MSR-02 unblocks MSR-03 and PLN-01, and neither of those is
+arguable while turns and window go unrecorded. Budgeting a live window (MSR-03)
+and re-deciding `workflow.max_plan_tasks` against cold-prefix cost (PLN-01) are
+both arguments from figures this record does not hold yet, so planning them
+first would be planning against the same blind spot this phase exists to close.
+
+The gap is structural rather than a bug, which is why it needs a phase rather
+than a fix. Measured on this repo 2026-08-16: `trace.jsonl` recorded 795,845
+tokens for the whole `v3.5.2` milestone across 6 dispatches, against burnrate's
+16,261,487 billed-equivalent for the project on that one day. The trace records
+a figure on a subagent RETURN only, so the orchestrator - 59% of actual spend -
+contributes zero to it by construction. No key carries a cache field across all
+833 events. And neither turns nor window size is recorded anywhere, which is
+what makes the ~20x unrecoverable from the file: `cost ~= turns x window x 0.10`,
+and the record holds neither factor.
+
+Cache hit rate is deliberately NOT the target. Decomposed over 7 days,
+cache-read is 62.5% of spend and cache-write 37.5%, with fresh input rounding to
+0.0% - and the hit rate is already 96.1%, at the cheap rate. The lever is turns
+against a 121,250-token average window, which is exactly the pair this phase
+makes visible.
+
+`MSR-01` (#199) is the cheaper half and the one with no new plumbing: the
+tool-call count is already on the subagent return that `trace close` reads, and
+Cadence discards it. Recording it makes turns per dispatch and per role visible
+without changing what any worker does.
+
+`MSR-02` (#198) is the reader half. `/cad-report` and `/cad-suggest` price a run
+today from worker-return tokens, the one figure that provably excludes the
+majority of spend, and both present that price to the user as the run's cost.
+
+**Success criteria:**
+- `trace close` persists the tool-call count the subagent return carried, and a
+  render of that phase's record reports turns per dispatch and per role rather
+  than tokens alone.
+- A dispatch whose return carries no tool-call figure is recorded as unrecorded
+  rather than as zero, so a silent return is never priced as a free one.
+- `/cad-report` and `/cad-suggest` state what their figure does and does not
+  include, and no longer present a worker-return token sum as the run's cost.
+- The measured ~20x gap is reported against a named external figure rather than
+  asserted, so a later phase can argue MSR-03 and PLN-01 from it.
+- A check fails against the unpatched code first for each requirement, and the
+  watched FAIL is recorded with its SHA.
