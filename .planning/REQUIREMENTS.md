@@ -5,11 +5,16 @@
 
 ## Active
 
-`v3.5.3 - the bounds the review path never stated`, opened 2026-08-16. Scoped
-off the Forgejo milestone, which holds three issues: #168, #143 and #141. All
-three came from the same external deep dive, two adjudicated AGREE-low and one
-narrowed from a finding closed as not-a-Cadence-defect. None is a trust
-boundary; each is a bound the code was supposed to state and never did.
+`v3.5.3 - bounds not stated, costs not counted`, opened 2026-08-16. Scoped off
+the Forgejo milestone, which holds eight issues: #168, #143, #141, #198, #199,
+#200, #201 and #202.
+
+Two halves of one shape: Cadence asserts a control it does not actually hold.
+The review path states bounds it never enforces, and the run record claims to
+price a run it cannot see.
+
+**Bounds the review path never stated** (from the external deep dive, two
+AGREE-low and one narrowed from a finding closed as not-a-Cadence-defect):
 
 - **RVP-01**: A provider response is bounded by bytes, destroying the request
   once the ceiling is crossed, and an HTTP failure envelope carries a capped
@@ -21,10 +26,33 @@ boundary; each is a bound the code was supposed to state and never did.
   produces that state or the word goes, and the default reviewer stops being
   the one unbounded arm beside it (#168).
 
+**Costs the record never counted.** Measured on this repo 2026-08-16: the trace
+recorded 795,845 tokens for the whole `v3.5.2` milestone while burnrate recorded
+16,261,487 billed-equivalent for the project on that one day. The trace prices a
+run ~20x low, carries no cache fields at all, and records neither turns nor
+window - the two terms that multiply out to the bill (cache-read alone is 62.5%
+of spend, at an average 121,250-token window).
+
+- **MSR-01**: `trace close` records the tool-call count the subagent return
+  already carries, so turns per dispatch and per role become visible (#199).
+- **MSR-02**: `/cad-report` and `/cad-suggest` price a run from a record that
+  can see the whole window, rather than from worker-return tokens alone (#198).
+- **MSR-03**: A dispatch's live context window is budgeted and a crossing is
+  reported, the way shipped prose surfaces already are (#202).
+- **TRN-02**: Bulk tool OUTPUT rides a file the way caller-derived text now
+  does, with the rule stated once, a register of the sites, and a self-verify
+  check that reads it (#200).
+- **PLN-01**: `workflow.max_plan_tasks` is re-decided against cold-prefix cost
+  as well as context risk, on measured evidence rather than one of the two
+  forces (#201).
+
+MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither can be argued while turns
+and window go unrecorded.
+
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
-close (#181 through #187) and the seven filed at the `v3.5.2` close (#189
-through #195) are unassigned and are not scoped here.
+close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
+through #197) are unassigned and are not scoped here.
 
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
