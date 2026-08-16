@@ -4120,7 +4120,17 @@ function cmdDebtHarvest(root) {
 // touches only what is mechanical.
 // ---------------------------------------------------------------------------
 function cmdMilestonePrune(dir, opts) {
-  const label = typeof opts.label === 'string' ? opts.label.trim() : '';
+  // `--label-file` is the path transport, and this label is caller-derived by
+  // construction: an untagged close takes it from PROJECT.md's milestone NAME,
+  // which is repository content going into a double-quoted shell word
+  // (lib/text-flag-file.mjs, references/conventions.md). The transport changes
+  // only HOW the label arrives - both terms below still run on the resolved
+  // value, in the same order, before any read, mkdir or rename and in both
+  // modes.
+  const resolvedLabel = resolveTextFlag(opts, 'label', 'milestone-prune');
+  if (!resolvedLabel.ok) return fail('bad-args', resolvedLabel.detail);
+  const raw = resolvedLabel.value !== undefined ? resolvedLabel.value : opts.label;
+  const label = typeof raw === 'string' ? raw.trim() : '';
   if (!label) return fail('bad-args', 'milestone-prune needs --label <version or milestone name>');
   // Two independent terms, both here at the point the label is read - before
   // any read, mkdir or rename, and in BOTH modes: `--mode delete` builds no

@@ -254,7 +254,12 @@ const CONTRACTS = {
       '--roadmap-min', '--roadmap-max'],
     'plan-overlap': ['--phase'],
     'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
-    'milestone-prune': ['--label', '--mode'],
+    // `--label-file` is `--label`'s path transport: an untagged close takes the
+    // label from PROJECT.md's milestone NAME, which is repository content. The
+    // table term (`|` or a newline) and the containment term run on the
+    // resolved value either way - the transport changes how it arrives, never
+    // what it must satisfy.
+    'milestone-prune': ['--label', '--label-file', '--mode'],
     'seed-reqs': ['--phase'],
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, mkdirSync, readFileSync, existsSync, symlinkSync, readdirSync, chmodSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -622,6 +622,81 @@ test('seam: bad args are refused - label required, mode must be delete|archive',
   assert.equal(run(dir, ['--label', 'v1', '--mode', 'prune']).reason, 'bad-args');
   // ...and a refusal writes nothing.
   assert.ok(readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'));
+});
+
+// --- --label-file: the path transport for a label the repo supplies ----------
+//
+// An untagged close takes the label from PROJECT.md's milestone NAME, so this
+// is repository content going into a double-quoted shell word. The transport
+// changes only how the label ARRIVES: both terms still run on the resolved
+// value, before any read, mkdir or rename.
+
+/** A file holding `body` beside the planning root, and its path. */
+function labelFile(dir, body, name = 'label.txt') {
+  const file = join(dirname(dir), name);
+  writeFileSync(file, body);
+  return file;
+}
+
+test('seam: a label from a file archives exactly where the inline label does', () => {
+  const inlineDir = scaffold();
+  const fileDir = scaffold();
+  const a = run(inlineDir, ['--label', 'v1.2.0', '--mode', 'archive']);
+  const b = run(fileDir, ['--label-file', labelFile(fileDir, 'v1.2.0\n'), '--mode', 'archive']);
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  assert.ok(existsSync(join(fileDir, '_archive-v1.2.0', '1', 'SUMMARY.md')));
+  assert.ok(existsSync(join(fileDir, '_archive-v1.2.0', '2.1', 'SUMMARY.md')));
+  // The same `## Shipped` rows, byte for byte - the label reaches the table
+  // cell through the same code either way.
+  assert.equal(readFileSync(join(fileDir, 'REQUIREMENTS.md'), 'utf8'),
+    readFileSync(join(inlineDir, 'REQUIREMENTS.md'), 'utf8'));
+});
+
+test('seam: both label terms still run on a label that arrived in a FILE', () => {
+  for (const [name, body, pattern] of [
+    ['the containment term', '../../../outside-tree', /must stay inside the planning root/],
+    ['the table term', 'v1.2.0 | rc', /"\|" or a newline/],
+  ]) {
+    const dir = scaffold();
+    const r = run(dir, ['--label-file', labelFile(dir, body), '--mode', 'archive']);
+    assert.equal(r.ok, false, name);
+    assert.equal(r.reason, 'bad-args', name);
+    assert.match(String(r.detail), pattern, name);
+    // Refused before any read, mkdir or rename.
+    assert.ok(readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'), name);
+    assert.ok(existsSync(join(dir, 'phases', '1', 'SUMMARY.md')), name);
+  }
+});
+
+test('seam: every --label-file refusal is bad-args and leaves the tree untouched', () => {
+  const dir = scaffold();
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const good = labelFile(dir, 'v1.2.0');
+  const cases = [
+    { name: 'valueless', args: ['--label-file'] },
+    { name: 'missing path', args: ['--label-file', join(dirname(dir), 'absent.txt')] },
+    { name: 'empty file', args: ['--label-file', labelFile(dir, '\n \n', 'blank.txt')] },
+    { name: 'both forms', args: ['--label', 'v1.2.0', '--label-file', good] },
+  ];
+  const locked = labelFile(dir, 'v1.2.0', 'locked.txt');
+  chmodSync(locked, 0o000);
+  try {
+    // Running as root defeats the mode bits, so that arm is added only when it
+    // can assert something.
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--label-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(dir, [...c.args, '--mode', 'archive']);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before, `${c.name} wrote`);
+      assert.ok(existsSync(join(dir, 'phases', '1', 'SUMMARY.md')), c.name);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
 });
 
 // rm helper without importing rmSync at top (test file stays minimal).
