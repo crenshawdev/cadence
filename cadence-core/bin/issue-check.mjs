@@ -133,41 +133,22 @@ function onPath(bin) {
 }
 
 /**
- * Every login a `tea login list --output json` reading names, as its NAME plus
- * the hosts that identify it - the login's own name, its API url's hostname and
- * its ssh host, because a login identifies its forge by all three and
- * cad-land's rule is "a matching login". Returns null when the reading cannot
- * be parsed at all, which classifyOrigin reads as "tea could not be consulted"
- * rather than "no login".
+ * The logins a `tea login list --output json` reading names, as tea printed
+ * them. Null when the reading cannot be parsed as a list at all, which
+ * classifyOrigin reads as "tea could not be consulted" rather than "no login".
  *
- * The NAME rides along rather than being flattened into the host list because
- * matching a login is only half the seam's guard: `tea` resolves an unqualified
- * `--repo <owner>/<name>` in config file order, so the call has to be bound
- * back to the login that matched with `--login <name>` (D-07). A reading that
- * names hosts but no name is therefore dropped by classifyOrigin - a login
- * whose call cannot be bound may not decide the verdict. The hosts are
- * lowercased for comparison; the name is kept EXACTLY as tea reports it,
- * because it is spent as an argv value.
- * @param {string} text @returns {{name:string, hosts:string[]}[]|null}
+ * Nothing is extracted from a login record here, because nothing needs to be:
+ * classifyOrigin asks this reading for its LENGTH, and the query is bound to
+ * the checkout's remote by `--remote origin` rather than to a login this seam
+ * picked. The name/url/ssh_host parsing that stood here served a host-matching
+ * rule that could not be made correct (see classifyOrigin), and it went with it.
+ * @param {string} text @returns {unknown[]|null}
  */
 function teaLogins(text) {
-  let parsed;
-  try { parsed = JSON.parse(text); } catch { return null; }
-  if (!Array.isArray(parsed)) return null;
-  const logins = [];
-  for (const login of parsed) {
-    if (!login || typeof login !== 'object') continue;
-    const hosts = [];
-    for (const field of ['name', 'ssh_host']) {
-      if (typeof login[field] === 'string') hosts.push(login[field].toLowerCase());
-    }
-    if (typeof login.url === 'string') {
-      const m = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)/.exec(login.url);
-      if (m) hosts.push(m[1].toLowerCase());
-    }
-    logins.push({ name: typeof login.name === 'string' ? login.name : '', hosts });
-  }
-  return logins;
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
 }
 
 /** The one not-reporting shape: a named line, and NOTHING claimed about issues.
@@ -233,11 +214,7 @@ function check(dir, baseArg, timeout) {
   decision = decideIssueCheck({ enabled, classification, logOk: true, bin, cliPresent: onPath(bin) });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  // The matched login is spent on every call this row makes: classifyOrigin
-  // named it, and an unqualified --repo would let tea answer from whichever
-  // login sits first in the user's config instead (D-07).
-  const login = classification.login;
-  const call = run(bin, row.argv(repo, row.limit, login), { cwd: dir, timeout });
+  const call = run(bin, row.argv(repo, row.limit), { cwd: dir, timeout });
   decision = decideIssueCheck({
     enabled, classification, logOk: true, bin, cliPresent: true,
     exitOk: call.ok, timedOut: call.timedOut,
@@ -270,7 +247,7 @@ function check(dir, baseArg, timeout) {
     for (const n of part.notFound) {
       if (spent >= MAX_RESOLVES) break;
       spent++;
-      const one = run(bin, row.resolve.argv(repo, n, login), { cwd: dir, timeout });
+      const one = run(bin, row.resolve.argv(repo, n), { cwd: dir, timeout });
       if (one.timedOut) break;
       const s = one.ok ? row.resolve.read(one.stdout, n) : null;
       if (s) resolved.set(n, s);

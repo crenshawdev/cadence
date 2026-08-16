@@ -141,19 +141,9 @@ function readOneIssue(text, number) {
  * Host -> the ONE bounded list call this seam makes per land, and the reader for
  * its response. Never one call per referenced number.
  *
- * `argv(slug, limit, login)` is byte-exact apart from its interpolations, and
- * the repo slug is always present: `gh` and `glab` would otherwise infer the
- * repo from the process cwd, and `tea` infers nothing at all.
- *
- * `login` is the THIRD interpolation and only the forgejo row reads it: a
- * `--repo <owner>/<name>` that names no login is resolved by `tea` in config
- * FILE ORDER, so the first login in the user's config answers for a repository
- * classified against a different one, exit 0 and all (D-07). classifyOrigin
- * names the login its match was made on, and the row binds the call to it with
- * `--login` (a documented global flag on the installed tea 0.15.1, taking the
- * name `tea login list` reports). `gh` and `glab` get no equivalent: neither is
- * multi-account-ambiguous the way tea's `--repo` fallback is, and `glab` is
- * absent from this machine, so inventing one would ship an untestable change.
+ * `argv(slug, limit)` is byte-exact apart from its interpolations, and the repo
+ * slug is always present: `gh` and `glab` would otherwise infer the repo from
+ * the process cwd, and `tea` infers nothing at all.
  *
  * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
  * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
@@ -193,22 +183,17 @@ export const HOST_TABLE = Object.freeze({
   forgejo: Object.freeze({
     bin: 'tea',
     limit: 50,
-    /** @param {string} slug @param {number} limit @param {string} login the
-     * matched login's NAME, which classifyOrigin's forgejo verdict always
-     * carries - the slug alone would let tea answer from another login.
-     * @returns {string[]} */
-    argv: (slug, limit, login) => ['issues', 'list', '--repo', slug,
-      '--login', String(login), '--state', 'open',
+    /** @param {string} slug @param {number} limit @returns {string[]} */
+    argv: (slug, limit) => ['issues', 'list', '--repo', slug, '--state', 'open',
       '--fields', 'index,state', '--output', 'json', '--limit', String(limit)],
     /** @param {unknown} text @param {number} limit */
     normalize: (text, limit) => normalizeList(text, limit, 'index'),
-    // All five flags exist on the installed tea (`tea issues --help`,
+    // All four flags exist on the installed tea (`tea issues --help`,
     // 2026-08-15). No `--state`: the number is named directly.
     resolve: Object.freeze({
-      /** @param {string} slug @param {number} number @param {string} login
-       * @returns {string[]} */
-      argv: (slug, number, login) => ['issues', String(number), '--repo', slug,
-        '--login', String(login), '--fields', 'index,state', '--output', 'json'],
+      /** @param {string} slug @param {number} number @returns {string[]} */
+      argv: (slug, number) => ['issues', String(number), '--repo', slug,
+        '--fields', 'index,state', '--output', 'json'],
       /** @param {unknown} text @param {number} number */
       read: (text, number) => readOneIssue(text, number),
     }),
@@ -245,109 +230,29 @@ function splitOrigin(url) {
 }
 
 /**
- * Two-label suffixes that are themselves PUBLIC: two hosts sharing one are two
- * unrelated registrants, not one forge. `git.acme.co.za` and `git.other.co.za`
- * are two companies, and a set that stopped at the handful of suffixes an
- * English-speaking reader thinks of first would call them one - so the ccTLD
- * second-level registries a git host plausibly sits on are all listed, not just
- * `co.uk`. A miss here is the failure; a suffix listed that no registry
- * actually operates costs only a skip nobody was going to need.
+ * Classify the origin URL into the forge whose tracker can be read, using a
+ * `tea login list` reading for everything that is not github or gitlab.
  *
- * Frozen and curated: a vendored public-suffix list is out of proportion for a
- * zero-dep repo (D-07), and every denied pair falls back to today's `no-login`
- * answer, which is the safe direction - the seam refuses the call rather than
- * querying a forge it cannot show is this repository's. That is the second of
- * the two guards and it is not redundant with the first: binding the call to
- * the matched login (see classifyOrigin) stops an answer arriving from a login
- * nothing was checked against, and this stops the wrong login being the one
- * that matched in the first place.
- */
-const PUBLIC_TWO_LABEL = Object.freeze(new Set([
-  // Hosting suffixes: one registrant per SUBDOMAIN, so the suffix itself is
-  // shared by everyone with an account.
-  'github.io', 'gitlab.io', 'codeberg.page', 'sourceforge.io', 'pages.dev',
-  'workers.dev', 'netlify.app', 'vercel.app', 'herokuapp.com', 'fly.dev',
-  'onrender.com', 'glitch.me',
-  // ccTLD second-level registries, by country.
-  'co.za', 'org.za', 'net.za', 'web.za', 'ac.za',
-  'co.in', 'net.in', 'org.in', 'firm.in', 'gen.in',
-  'co.kr', 'or.kr', 'ne.kr', 're.kr', 'pe.kr',
-  'co.il', 'org.il', 'net.il', 'ac.il',
-  'com.tr', 'net.tr', 'org.tr', 'gen.tr', 'web.tr',
-  'com.mx', 'org.mx', 'net.mx',
-  'co.id', 'or.id', 'net.id', 'web.id', 'my.id',
-  'com.sg', 'net.sg', 'org.sg', 'edu.sg',
-  'co.th', 'in.th', 'or.th', 'ac.th',
-  'com.tw', 'net.tw', 'org.tw', 'idv.tw',
-  'com.cn', 'net.cn', 'org.cn', 'ac.cn',
-  'co.nz', 'net.nz', 'org.nz', 'geek.nz', 'kiwi.nz',
-  'com.au', 'net.au', 'org.au', 'id.au', 'asn.au',
-  'co.uk', 'org.uk', 'me.uk', 'net.uk', 'ltd.uk', 'plc.uk', 'ac.uk',
-  'co.jp', 'ne.jp', 'or.jp', 'gr.jp', 'ac.jp',
-  'com.br', 'net.br', 'org.br', 'eti.br',
-  'com.ru', 'net.ru', 'org.ru', 'pp.ru',
-  'com.ua', 'net.ua', 'org.ua', 'in.ua', 'kiev.ua',
-  'com.hk', 'net.hk', 'org.hk', 'idv.hk',
-  'com.my', 'net.my', 'org.my',
-  'com.ph', 'net.ph', 'org.ph',
-  'com.pl', 'net.pl', 'org.pl',
-  'com.ar', 'net.ar', 'org.ar',
-  'com.co', 'net.co', 'nom.co',
-  'com.ng', 'net.ng', 'org.ng',
-  'com.vn', 'net.vn', 'org.vn',
-  'com.pk', 'net.pk', 'org.pk',
-]));
-
-/**
- * A host's registrable domain: its last two labels - null when it has fewer
- * than two, and null when those two are a public suffix on their own. A null
- * on either side means the pair can only match by exact equality.
- * @param {string} host @returns {string|null}
- */
-function registrableDomain(host) {
-  const labels = host.split('.');
-  if (labels.length < 2) return null;
-  const domain = labels.slice(-2).join('.');
-  return PUBLIC_TWO_LABEL.has(domain) ? null : domain;
-}
-
-/**
- * Classify the origin URL into the forge whose tracker can be read, using the
- * logins a `tea login list` reading names for everything that is not github or
- * gitlab - and, on the forgejo verdict, NAME the login the match was made on.
+ * THE FORGEJO-VS-NO-LOGIN RULE IS A COUNT, NOT A HOST COMPARISON. A reading
+ * that names at least one login answers `forgejo`; a reading that names none
+ * answers `no-login`; no reading at all answers `unrecognized`. WHICH of the
+ * configured logins serves this origin is tea's own question, and tea is the
+ * one asked it: every call HOST_TABLE's forgejo row makes carries
+ * `--remote origin`, so tea reads the checkout's own remote and picks the login
+ * from it. That header states the binding and the one limit of delegating it.
  *
- * A login matches the origin when it names the origin host or shares its
- * registrable domain - not by host equality alone. A forge's SSH endpoint is
- * routinely a different name from its web host (this repository's origin is
- * `ssh://git@ssh.jcrenshaw.dev:2222/...` against a login whose name, api url
- * and `ssh_host` are all `git.jcrenshaw.dev`), which is a normal deployment
- * shape and not a misconfiguration - under host equality it took the `no-login`
- * arm on every land, so the report shipped in v3.4.0 never once ran on the
- * repository it was built in.
- *
- * THE MATCH IS ONLY HALF THE GUARD, and the returned `login` is the other half.
- * A shared-domain test proves that SOME configured login could serve this
- * origin; it does not make tea use that one. tea resolves an unqualified
- * `--repo <owner>/<name>` in config FILE ORDER, so with an evil login first and
- * the matching one second, the predicate passes on the second while the query
- * answers from the first - another server's issues reported as this
- * repository's, exit 0 and all. So the verdict carries the matched login's
- * name, HOST_TABLE's forgejo row spends it as `--login`, and the widening below
- * cannot reach a login it did not itself pick. The domain test is guarded in
- * turn: the registrable domain is the last two labels, so a two-label public
- * suffix cannot be the thing two hosts have in common (see PUBLIC_TWO_LABEL),
- * and a host with fewer than two labels matches only by exact equality.
- *
- * Where more than one login matches, the pick is DETERMINISTIC: a login naming
- * the origin host exactly wins over one that only shares its domain, and within
- * either class the first in the reading order wins - that order is tea's own
- * config order, so the binding never resolves to a login sitting behind the one
- * tea would have picked unqualified.
- *
- * A login the reading could not NAME is dropped before any of this: its call
- * could not be bound, and an unbindable login is exactly the fallthrough this
- * function exists to refuse. Dropping it falls back to `no-login`, the answer
- * that ships today.
+ * This file used to answer that question itself, by matching the origin host
+ * against each login's hosts - first by equality, then by a shared registrable
+ * domain guarded with a curated public-suffix denylist - and it was wrong in
+ * both shapes. Under equality this repository (`ssh://git@ssh.jcrenshaw.dev:
+ * 2222/...` against a login named `git.jcrenshaw.dev`; a web host and an SSH
+ * endpoint under different names is a normal deployment, not a
+ * misconfiguration) took the `no-login` arm on every land, so the report
+ * shipped in v3.4.0 never once ran on the repository it was built in. Under the
+ * widening, any second-level registry the denylist missed - `git.acme.co.ke`
+ * against `git.other.co.ke` - read two unrelated companies as one forge. Being
+ * right about that needs the public suffix list a zero-dep repo refuses to
+ * vendor (D-07), so the rule is deleted rather than tuned a third time.
  *
  * The verdicts are FIVE, not three, because the degradations are not
  * interchangeable (LND-01, criterion 3):
@@ -370,38 +275,31 @@ function registrableDomain(host) {
  * this file has no way to be right about.
  *
  * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
- * @param {{name:string, hosts:string[]}[]|null|undefined} teaLogins the logins a
- *   `tea login list` reading named - each its `--login` name plus the hosts that
- *   identify it - or null/undefined when tea could not be consulted at all
+ * @param {unknown[]|null|undefined} teaLogins the logins a `tea login list`
+ *   reading named, consulted for ONE fact - whether tea holds any login at all -
+ *   or null/undefined when tea could not be consulted
  * @returns {{verdict:'github'|'gitlab'|'forgejo'|'no-login'|'no-remote'|'unrecognized',
- *   host:string|null, slug:string|null, login:string|null}} `login` is the
- *   matched login's name on the forgejo verdict and null on every other one
+ *   host:string|null, slug:string|null}}
  */
 export function classifyOrigin(originUrl, teaLogins) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
-  if (!url) return { verdict: 'no-remote', host: null, slug: null, login: null };
+  if (!url) return { verdict: 'no-remote', host: null, slug: null };
   const parts = splitOrigin(url);
-  if (!parts) return { verdict: 'unrecognized', host: null, slug: null, login: null };
+  if (!parts) return { verdict: 'unrecognized', host: null, slug: null };
   const segments = parts.path.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   // Two segments minimum: without owner AND name there is no repo selector to
   // bind the call to, and an unbound call reports another project's tracker.
   const slug = segments.length >= 2 ? segments.join('/') : null;
   const host = parts.hostname;
-  if (!slug) return { verdict: 'unrecognized', host, slug: null, login: null };
-  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug, login: null };
-  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug, login: null };
-  if (!Array.isArray(teaLogins)) return { verdict: 'unrecognized', host, slug, login: null };
-  // A login with no readable name is unbindable, so it may not decide a verdict.
-  const named = teaLogins.filter((l) => l && typeof l === 'object'
-    && typeof l.name === 'string' && l.name !== '' && Array.isArray(l.hosts));
-  const hostsOf = (l) => l.hosts.filter((h) => typeof h === 'string').map((h) => h.toLowerCase());
-  const originDomain = registrableDomain(host);
-  // Exact before shared, first-in-order within each: see the header's pick rule.
-  const matched = named.find((l) => hostsOf(l).includes(host))
-    || (originDomain === null ? undefined
-      : named.find((l) => hostsOf(l).some((h) => registrableDomain(h) === originDomain)));
-  if (!matched) return { verdict: 'no-login', host, slug, login: null };
-  return { verdict: 'forgejo', host, slug, login: matched.name };
+  if (!slug) return { verdict: 'unrecognized', host, slug: null };
+  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug };
+  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug };
+  if (!Array.isArray(teaLogins)) return { verdict: 'unrecognized', host, slug };
+  // The reading is consulted for its LENGTH and nothing else: a tea holding no
+  // login has no tracker this seam could read, and which login serves this
+  // origin is decided at the call by `--remote origin`, never here.
+  if (teaLogins.length === 0) return { verdict: 'no-login', host, slug };
+  return { verdict: 'forgejo', host, slug };
 }
 
 /**
