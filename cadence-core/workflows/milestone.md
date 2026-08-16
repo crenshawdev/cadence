@@ -108,8 +108,9 @@ interrupted close or the wrong milestone; stop and look rather than continue.
 
 The seam also writes `.planning/ARCHIVE.md` BEFORE it removes anything: the
 pruned phases' SUMMARY deviations, UAT items and CONTEXT decisions, which
-`recall` can index only while `phases/<N>/` is live. Relay `residue_rows` - `0`
-means nothing under those phases was indexable, not that the write failed.
+`recall` can index only while `phases/<N>/` is live. Relay `residue_rows`. `0`
+is an answer, not a failure: either nothing under those phases was indexable, or
+a re-run found this milestone's heading already carrying their rows.
 
 `ok:false` STOPS the close - do not commit, do not chain to `/cad-land`.
 `partial-prune` means `failed`'s phases did not clear and were left in BOTH
