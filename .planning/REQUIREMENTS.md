@@ -1,20 +1,37 @@
-# Requirements: Cadence (v3.5.1 open)
+# Requirements: Cadence (v3.5.2 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.1 - authorization the repo grants, not the user`, opened 2026-08-15.
-Scoped from the Forgejo milestone rather than from a scan or the capture queue:
-milestone `v3.5.1` holds three issues. #131 is the theme, and `AUT-01`/`AUT-02`
-split its stated fix shape into the authorization resolution and the host arm
-that today is ungated. #179 and #180 were both hit live during the `v3.5.0`
-close itself and are carried in as `PRN-01` and `TRK-01`: two shipped seams that
-degrade silently on this repository, which is the repository they were built in.
-The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted.
+`v3.5.2 - one reader, one transport`, opened 2026-08-16. Scoped off the Forgejo
+milestone, which holds two issues: #133 and #132. Both came out of an external
+deep dive against `v3.3.0` and were adjudicated AGREE-high; both are surfaces
+where this tree already concedes the correct rule in one place and prescribes
+the wrong one elsewhere. The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`,
+`CTX-02` - keep their deferral reasons and none is promoted. The open items
+filed at the `v3.5.1` close (#181 through #187) are unassigned and are not
+scoped here.
 
+- **TRN-01**: Caller-derived text reaches a seam through a transport that cannot
+  execute it. `planning.mjs` already concedes the rule for one command - prose
+  carrying `$(...)` or a backtick inside a double-quoted shell word executes
+  before Node starts, and a path cannot - while roughly sixteen other workflow
+  sites still prescribe the unsafe form for values derived from agent output or
+  repository content. The rule is stated once and applied everywhere it governs,
+  rather than sixteen local escapes, and a self-verify check is what keeps a
+  seventeenth site from reintroducing it (#133).
+- **LSE-01**: `plan-overlap` and `lease-check` read one declaration grammar
+  through one module. Today the first intersects declared `files:` by exact
+  string equality and the second reads a trailing slash as a directory prefix,
+  so a phase declaring `src/` in one plan and `src/auth.js` in another produces
+  an empty `overlaps`, passes the parallel-safety gate, and then authorizes both
+  plans to stage the same file. Nested declarations (`src/` and `src/auth/`)
+  have the same defect. `references/plan-frontmatter.md` documents no
+  trailing-slash form, which bounds the likelihood and not the validity, since
+  `lease-check` honours it. Whether the form becomes documented or refused is a
+  decision the phase makes rather than an assumption it inherits (#132).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -216,4 +233,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-10 v2.6.2 closed with all five requirements delivered and verified (5/5 traced, 21/21 acceptance criteria covered); CTW-01..05 move to `## Shipped` as rows and `## Traceability` starts clean. No next cycle scoped yet*
+*Last updated: 2026-08-16 v3.5.1 closed with all four requirements delivered and verified (4/4 traced, 14/14 acceptance criteria covered); AUT-01, AUT-02, PRN-01 and TRK-01 move to `## Shipped` as rows and `## Traceability` starts clean. `v3.5.2 - one reader, one transport` scoped as TRN-01 and LSE-01*
