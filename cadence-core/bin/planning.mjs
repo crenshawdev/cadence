@@ -138,7 +138,7 @@ import {
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
   sectionBound, phaseRequirements, phaseCriteria, planTaskTitles,
   captureSections, CAPTURE_WALK_SECTIONS,
-  parseArchiveRows,
+  parseArchiveRows, appendArchiveRows,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
@@ -4283,6 +4283,60 @@ function cmdMilestonePrune(dir, opts) {
     warnings.push(`${reqFile} is missing or unreadable; requirements were not archived`);
   }
 
+  // The recall residue, and the reason it is written HERE (RCL-07, D-01).
+  //
+  // Below this point the completed phases' directories leave the live tree, and
+  // with them every SUMMARY deviation, UAT item and CONTEXT decision `recall`
+  // indexes: the corpus Cadence writes in order to be remembered was reachable
+  // only while the directory was. So the rows are read and APPENDED before the
+  // loop, not after it. Emitting for the post-loop `applied` set would put the
+  // write after the removal, where an interrupt between the two deletes the
+  // directories, writes nothing, and reopens the reachability hole with no live
+  // artifact left to recover it from.
+  //
+  // The rows are the SAME snippets the live walk indexes, from the SAME three
+  // parsers `cmdRecall` runs, in the same fixed order (phases ascending, then
+  // SUMMARY, UAT, CONTEXT within a phase) - never a model-authored distillation
+  // (D-03). A prose-authored write puts the residue in the coordinator's hands,
+  // where an interrupted close writes nothing and nothing says so.
+  //
+  // The cost of moving the write ahead of the loop is that idempotence stops
+  // being free: a phase whose removal then FAILS is still live on a re-run and
+  // would be read a second time. So the candidate set is filtered by what this
+  // milestone's heading already contains - one containment test keyed on the
+  // label, read back through the grammar's own parser, rather than a dedup pass
+  // over the file or a written-labels sidecar. It is deliberately NOT in
+  // `appendArchiveRows`: "already present" is a PHASE-level judgment this seam
+  // can make and a pure text appender cannot, and folding it in there would
+  // refuse a second artifact from a phase the same call already landed one for.
+  const archiveFile = join(dir, 'ARCHIVE.md');
+  const archiveText = read(archiveFile) ?? '';
+  const alreadyArchived = new Set(parseArchiveRows(archiveText)
+    .filter((r) => r.source.startsWith(`${label}/`))
+    .map((r) => r.phase));
+  const residue = [];
+  for (const n of [...completed].sort((a, b) => a - b)) {
+    if (alreadyArchived.has(n)) continue;
+    const pdir = join(dir, 'phases', String(n));
+    const summary = read(join(pdir, 'SUMMARY.md'));
+    if (summary) for (const text of parseSummarySnippets(summary)) {
+      residue.push({ origin: `phases/${n}/SUMMARY.md`, text });
+    }
+    const uatText = read(join(pdir, 'UAT.md'));
+    if (uatText) for (const it of parseUat(uatText).items) {
+      const text = `${it.name || ''} ${it.expected || ''}`.trim();
+      if (text) residue.push({ origin: `phases/${n}/UAT.md`, text });
+    }
+    const context = read(join(pdir, 'CONTEXT.md'));
+    if (context) for (const text of parseContextDecisions(context)) {
+      residue.push({ origin: `phases/${n}/CONTEXT.md`, text });
+    }
+  }
+  // Nothing to say, no file: a project with no readable artifacts under its
+  // completed phases gets no ARCHIVE.md at all, the way the two document writes
+  // below already skip on an empty set.
+  if (residue.length) atomicWrite(archiveFile, appendArchiveRows(archiveText, label, residue));
+
   // Directories FIRST, and the documents describe only what this pass actually
   // accomplished.
   //
@@ -4353,6 +4407,11 @@ function cmdMilestonePrune(dir, opts) {
       ? { moved: reqResult.moved, created_shipped: reqResult.createdSection }
       : { moved: [], created_shipped: false },
     dirs,
+    // How many residue rows this invocation landed in ARCHIVE.md. Always
+    // present, including as 0: absence and silence are different answers here
+    // as everywhere, and a close that wrote nothing has to be legible as one
+    // rather than as a field the caller forgot to look for.
+    residue_rows: residue.length,
     ...(warnings.length ? { warnings } : {}),
   };
 

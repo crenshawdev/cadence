@@ -699,6 +699,154 @@ test('seam: every --label-file refusal is bad-args and leaves the tree untouched
   }
 });
 
+// --- the recall residue: what a close leaves behind (RCL-07) ----------------
+// The residue is written BEFORE the directories go, so every assertion here is
+// about ordering as much as content: the rows have to be on disk in the arm
+// where the removal FAILED, and they have to be there exactly once after the
+// re-run that clears it.
+//
+// This block reads ARCHIVE.md with a local regex and imports nothing new. That
+// is deliberate: the end-to-end falsifier below runs this same FILE against the
+// unpatched tree, where an import of a not-yet-written export would fail the
+// file on load instead of on its assertion.
+
+/** The origin paths an ARCHIVE.md carries, in document order. */
+const originsIn = (text) => [...text.matchAll(/^- `([^`]+)`: /gm)].map((m) => m[1]);
+
+/** The `## ` milestone headings an ARCHIVE.md carries, in document order. */
+const labelsIn = (text) => [...text.matchAll(/^## (.*)$/gm)].map((m) => m[1]);
+
+const PHASE1_SUMMARY = `---
+phase: 1
+status: complete
+---
+
+## Deviations
+
+- [deviation] the zarquon guard fired on a range it did not own
+
+## Open items
+
+- None.
+`;
+
+const PHASE1_UAT = `---
+status: complete
+phase: 1
+---
+
+## Items
+
+### 1. Walk the zarquon install
+expected: a cold clone reaches the plugin
+status: pass
+
+## Summary
+
+total: 1
+`;
+
+const PHASE1_CONTEXT = `# Phase 1 Context
+
+## Durable decisions
+
+- D-01 (RCL-07): the zarquon residue is written before the dirs go
+
+## Decisions
+
+- D-02 (RCL-07): a phase-local note that is not durable
+`;
+
+/**
+ * The scaffold, with phase 1 carrying one real artifact of each indexed kind.
+ * Phase 2.1 keeps its section-less `patched` SUMMARY, which is how these rows
+ * assert that only a parsed snippet lands - not every completed phase.
+ */
+function scaffoldWithArtifacts() {
+  const dir = scaffold();
+  writeFileSync(join(dir, 'phases', '1', 'SUMMARY.md'), PHASE1_SUMMARY);
+  writeFileSync(join(dir, 'phases', '1', 'UAT.md'), PHASE1_UAT);
+  writeFileSync(join(dir, 'phases', '1', 'CONTEXT.md'), PHASE1_CONTEXT);
+  return dir;
+}
+
+const RESIDUE_ORIGINS = ['phases/1/SUMMARY.md', 'phases/1/UAT.md', 'phases/1/CONTEXT.md'];
+
+test('seam: a delete-mode close writes its residue before the directories go', () => {
+  const dir = scaffoldWithArtifacts();
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 3, 'the envelope states the count, so a no-op is legible');
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(labelsIn(text), ['v3.5.2'], 'one heading for one milestone');
+  assert.deepEqual(originsIn(text), RESIDUE_ORIGINS,
+    'SUMMARY then UAT then CONTEXT, the order the live walk uses');
+  assert.match(text, /- `phases\/1\/SUMMARY\.md`: the zarquon guard fired on a range it did not own$/m,
+    'the `[deviation]` tag is stripped exactly as the live walk strips it');
+  assert.match(text, /- `phases\/1\/UAT\.md`: Walk the zarquon install a cold clone reaches the plugin$/m);
+  assert.match(text, /- `phases\/1\/CONTEXT\.md`: D-01 \(RCL-07\): the zarquon residue/m);
+  assert.ok(!/D-02/.test(text), 'a phase-local ## Decisions row is not durable and does not land');
+  // And the directories the rows describe are gone, which is the whole point.
+  assert.ok(!existsSync(join(dir, 'phases', '1')));
+});
+
+test('seam: the archive arm writes the same rows the delete arm does', () => {
+  const dir = scaffoldWithArtifacts();
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'archive']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 3);
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(originsIn(text), RESIDUE_ORIGINS);
+  assert.ok(existsSync(join(dir, '_archive-v3.5.2', '1', 'SUMMARY.md')));
+});
+
+test('seam: a second identical run adds no row and leaves ARCHIVE.md byte-identical', () => {
+  const dir = scaffoldWithArtifacts();
+  run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  const before = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  const again = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(again.action, 'skip');
+  assert.equal(readFileSync(join(dir, 'ARCHIVE.md'), 'utf8'), before);
+});
+
+test('seam: an interrupted close keeps its rows, and the re-run neither duplicates nor drops them', () => {
+  const dir = scaffoldWithArtifacts();
+  // Block phase 1's move the way the partial-prune tests above do. The residue
+  // is written before that failure, which is exactly the interrupt D-01 exists
+  // for: the directory is still live and its rows are already on disk.
+  mkdirSync(join(dir, '_archive-v3.5.2', '1', 'squatter'), { recursive: true });
+  const first = run(dir, ['--label', 'v3.5.2', '--mode', 'archive']);
+  assert.equal(first.ok, false);
+  assert.equal(first.reason, 'partial-prune');
+  assert.deepEqual(first.failed, [1]);
+  assert.equal(first.residue_rows, 3, 'the rows were written ahead of the removal that failed');
+  const after = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(originsIn(after), RESIDUE_ORIGINS);
+  assert.ok(existsSync(join(dir, 'phases', '1', 'SUMMARY.md')), 'the failed phase is still live');
+
+  // Clear what blocked it and re-run: phase 1 is a candidate again and its
+  // artifacts are readable again, so without the containment guard this run
+  // writes a second copy of all three rows.
+  rmDirHack(join(dir, '_archive-v3.5.2', '1'));
+  const second = run(dir, ['--label', 'v3.5.2', '--mode', 'archive']);
+  assert.equal(second.ok, true);
+  assert.deepEqual(second.phases, [1]);
+  assert.equal(second.residue_rows, 0, 'a phase already under this heading is skipped, not re-read');
+  assert.equal(readFileSync(join(dir, 'ARCHIVE.md'), 'utf8'), after, 'byte-identical after the re-run');
+  assert.deepEqual(originsIn(after), RESIDUE_ORIGINS, 'present exactly once');
+  assert.ok(existsSync(join(dir, '_archive-v3.5.2', '1', 'SUMMARY.md')), 'and the phase finally moved');
+});
+
+test('seam: phases holding no readable artifact write no ARCHIVE.md at all', () => {
+  // The bare scaffold: both completed SUMMARYs are section-less prose, so the
+  // three parsers return nothing and there is no residue to write.
+  const dir = scaffold();
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 0);
+  assert.ok(!existsSync(join(dir, 'ARCHIVE.md')), 'no rows, no file');
+});
+
 // rm helper without importing rmSync at top (test file stays minimal).
 function rmDirHack(p) {
   execFileSync('rm', ['-rf', p]);
