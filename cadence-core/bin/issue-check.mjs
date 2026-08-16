@@ -133,20 +133,31 @@ function onPath(bin) {
 }
 
 /**
- * Every host a `tea login list --output json` reading names - the login's own
- * name, its API url's hostname and its ssh host, because a login identifies its
- * forge by all three and cad-land's rule is "a matching login". Returns null
- * when the reading cannot be parsed at all, which classifyOrigin reads as "tea
- * could not be consulted" rather than "no login".
- * @param {string} text @returns {string[]|null}
+ * Every login a `tea login list --output json` reading names, as its NAME plus
+ * the hosts that identify it - the login's own name, its API url's hostname and
+ * its ssh host, because a login identifies its forge by all three and
+ * cad-land's rule is "a matching login". Returns null when the reading cannot
+ * be parsed at all, which classifyOrigin reads as "tea could not be consulted"
+ * rather than "no login".
+ *
+ * The NAME rides along rather than being flattened into the host list because
+ * matching a login is only half the seam's guard: `tea` resolves an unqualified
+ * `--repo <owner>/<name>` in config file order, so the call has to be bound
+ * back to the login that matched with `--login <name>` (D-07). A reading that
+ * names hosts but no name is therefore dropped by classifyOrigin - a login
+ * whose call cannot be bound may not decide the verdict. The hosts are
+ * lowercased for comparison; the name is kept EXACTLY as tea reports it,
+ * because it is spent as an argv value.
+ * @param {string} text @returns {{name:string, hosts:string[]}[]|null}
  */
-function teaHosts(text) {
+function teaLogins(text) {
   let parsed;
   try { parsed = JSON.parse(text); } catch { return null; }
   if (!Array.isArray(parsed)) return null;
-  const hosts = [];
+  const logins = [];
   for (const login of parsed) {
     if (!login || typeof login !== 'object') continue;
+    const hosts = [];
     for (const field of ['name', 'ssh_host']) {
       if (typeof login[field] === 'string') hosts.push(login[field].toLowerCase());
     }
@@ -154,8 +165,9 @@ function teaHosts(text) {
       const m = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)/.exec(login.url);
       if (m) hosts.push(m[1].toLowerCase());
     }
+    logins.push({ name: typeof login.name === 'string' ? login.name : '', hosts });
   }
-  return hosts;
+  return logins;
 }
 
 /** The one not-reporting shape: a named line, and NOTHING claimed about issues.
@@ -204,7 +216,7 @@ function check(dir, baseArg, timeout) {
   let classification = classifyOrigin(origin.ok ? origin.stdout.trim() : '', null);
   if (classification.verdict === 'unrecognized' && classification.slug && onPath('tea')) {
     const probe = run('tea', ['login', 'list', '--output', 'json'], { cwd: dir, timeout });
-    classification = classifyOrigin(origin.stdout.trim(), probe.ok ? teaHosts(probe.stdout) : null);
+    classification = classifyOrigin(origin.stdout.trim(), probe.ok ? teaLogins(probe.stdout) : null);
   }
   const host = classification.host;
   const repo = classification.slug;
@@ -221,7 +233,11 @@ function check(dir, baseArg, timeout) {
   decision = decideIssueCheck({ enabled, classification, logOk: true, bin, cliPresent: onPath(bin) });
   if (decision.action !== 'query') return skip(decision, { host, repo, warnings });
 
-  const call = run(bin, row.argv(repo, row.limit), { cwd: dir, timeout });
+  // The matched login is spent on every call this row makes: classifyOrigin
+  // named it, and an unqualified --repo would let tea answer from whichever
+  // login sits first in the user's config instead (D-07).
+  const login = classification.login;
+  const call = run(bin, row.argv(repo, row.limit, login), { cwd: dir, timeout });
   decision = decideIssueCheck({
     enabled, classification, logOk: true, bin, cliPresent: true,
     exitOk: call.ok, timedOut: call.timedOut,
@@ -254,7 +270,7 @@ function check(dir, baseArg, timeout) {
     for (const n of part.notFound) {
       if (spent >= MAX_RESOLVES) break;
       spent++;
-      const one = run(bin, row.resolve.argv(repo, n), { cwd: dir, timeout });
+      const one = run(bin, row.resolve.argv(repo, n, login), { cwd: dir, timeout });
       if (one.timedOut) break;
       const s = one.ok ? row.resolve.read(one.stdout, n) : null;
       if (s) resolved.set(n, s);

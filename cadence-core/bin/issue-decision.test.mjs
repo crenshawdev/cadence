@@ -11,7 +11,12 @@ import {
 
 // --- classifyOrigin ---------------------------------------------------------
 
-const TEA_HOSTS = ['git.jcrenshaw.dev'];
+/** A `tea login list` reading as classifyOrigin now takes it: the login's
+ *  `--login` NAME plus the hosts that identify it (its own name, its api url's
+ *  hostname, its ssh host). Hosts default to the name, which is the single-host
+ *  login shape. */
+const login = (name, ...hosts) => ({ name, hosts: hosts.length ? hosts : [name] });
+const TEA_HOSTS = [login('git.jcrenshaw.dev')];
 
 test('classifyOrigin reads BOTH url shapes for github and gitlab', () => {
   for (const [url, verdict] of [
@@ -41,6 +46,7 @@ test('classifyOrigin: a tea-login host is forgejo in both url shapes', () => {
     assert.equal(c.verdict, 'forgejo', url);
     assert.equal(c.slug, 'crenshawdev/cadence');
     assert.equal(c.host, 'git.jcrenshaw.dev');
+    assert.equal(c.login, 'git.jcrenshaw.dev', 'the verdict names the login it matched');
   }
 });
 
@@ -56,6 +62,36 @@ test('classifyOrigin: a login sharing the origin\'s registrable domain is forgej
     assert.equal(c.verdict, 'forgejo', url);
     assert.equal(c.host, 'ssh.jcrenshaw.dev', 'the ORIGIN host is reported, not the login\'s');
     assert.equal(c.slug, 'crenshawdev/cadence');
+    assert.equal(c.login, 'git.jcrenshaw.dev', 'and the LOGIN the call must be bound to');
+  }
+});
+
+test('classifyOrigin NAMES the matched login, and never one that only sits first', () => {
+  // The whole guard, not half of it. `tea` resolves an unqualified `--repo` in
+  // config FILE ORDER, so a predicate that only proved SOME login could serve
+  // this origin would pass here on the second login while the query answered
+  // from the first - another server's issues, reported as this repository's.
+  const logins = [login('evil.example.net'), login('git.example.com')];
+  const c = classifyOrigin('ssh://git@ssh.example.com:2222/org/repo.git', logins);
+  assert.equal(c.verdict, 'forgejo');
+  assert.equal(c.login, 'git.example.com', 'the login that MATCHED, not the first configured');
+  // Exact beats shared, whichever order they sit in, and first wins inside a class.
+  assert.equal(classifyOrigin('https://git.example.com/org/repo.git',
+    [login('other.example.com'), login('git.example.com')]).login, 'git.example.com');
+  assert.equal(classifyOrigin('https://ssh.example.com/org/repo.git',
+    [login('a.example.com'), login('b.example.com')]).login, 'a.example.com');
+  // A login the reading could not NAME is unbindable, so it decides nothing.
+  assert.equal(classifyOrigin('https://git.example.com/org/repo.git',
+    [{ name: '', hosts: ['git.example.com'] }]).verdict, 'no-login');
+  // Every other verdict carries a null login - there is no call to bind.
+  for (const [url, hosts] of [
+    ['https://github.com/org/repo.git', TEA_HOSTS],
+    ['https://gitlab.com/org/repo.git', TEA_HOSTS],
+    ['https://forge.example.com/org/repo.git', TEA_HOSTS],   // no-login
+    ['https://forge.example.com/org/repo.git', null],        // unrecognized
+    ['', TEA_HOSTS],                                         // no-remote
+  ]) {
+    assert.equal(classifyOrigin(url, hosts).login, null, url);
   }
 });
 
@@ -64,17 +100,17 @@ test('classifyOrigin: a shared PUBLIC two-label suffix is not a shared domain', 
   // would query whichever login tea's config-file order picks (D-07). Each of
   // these falls back to the answer that ships today.
   for (const [url, hosts] of [
-    ['https://acme.github.io/org/repo.git', ['other.github.io']],
-    ['https://acme.gitlab.io/org/repo.git', ['other.gitlab.io']],
-    ['https://acme.pages.dev/org/repo.git', ['other.pages.dev']],
-    ['https://git.acme.co.uk/org/repo.git', ['git.other.co.uk']],
-    ['https://git.acme.com.au/org/repo.git', ['git.other.com.au']],
+    ['https://acme.github.io/org/repo.git', [login('other.github.io')]],
+    ['https://acme.gitlab.io/org/repo.git', [login('other.gitlab.io')]],
+    ['https://acme.pages.dev/org/repo.git', [login('other.pages.dev')]],
+    ['https://git.acme.co.uk/org/repo.git', [login('git.other.co.uk')]],
+    ['https://git.acme.com.au/org/repo.git', [login('git.other.com.au')]],
   ]) {
     assert.equal(classifyOrigin(url, hosts).verdict, 'no-login', url);
   }
   // ...and a host with fewer than two labels matches only by exact equality.
-  assert.equal(classifyOrigin('https://forge/org/repo.git', ['forge']).verdict, 'forgejo');
-  assert.equal(classifyOrigin('https://forge/org/repo.git', ['forge.example.com']).verdict, 'no-login');
+  assert.equal(classifyOrigin('https://forge/org/repo.git', [login('forge')]).verdict, 'forgejo');
+  assert.equal(classifyOrigin('https://forge/org/repo.git', [login('forge.example.com')]).verdict, 'no-login');
 });
 
 test('classifyOrigin: no-login and unrecognized are DIFFERENT verdicts', () => {
@@ -182,7 +218,7 @@ test('partitionIssues answers NOTHING over a fetch that is not complete', () => 
 test('every row carries its own paging flag with the limit it states', () => {
   const paging = { github: '--limit', gitlab: '--per-page', forgejo: '--limit' };
   for (const [host, row] of Object.entries(HOST_TABLE)) {
-    const argv = row.argv('org/repo', row.limit);
+    const argv = row.argv('org/repo', row.limit, 'the-login');
     const i = argv.indexOf(paging[host]);
     assert.ok(i >= 0, `${host} argv must carry ${paging[host]}: ${argv.join(' ')}`);
     assert.equal(argv[i + 1], String(row.limit), `${host} paging flag must carry the row's limit`);
@@ -228,14 +264,19 @@ test('the github and forgejo normalizers read their CLIs own captured shapes', (
   // `--state open`, not `all`: the server clamps the page at 50 rows whatever
   // --limit asks, so `all` filled it on any real tracker and the read was
   // honestly incomplete (D-08).
-  assert.deepEqual(HOST_TABLE.forgejo.argv('org/repo', 50),
-    ['issues', 'list', '--repo', 'org/repo', '--state', 'open', '--fields', 'index,state', '--output', 'json', '--limit', '50']);
+  // `--login` binds the call to the login classifyOrigin matched: tea resolves
+  // an unqualified `--repo` in config FILE ORDER, so without it the answer can
+  // come from a login this repository was never classified against (D-07).
+  assert.deepEqual(HOST_TABLE.forgejo.argv('org/repo', 50, 'git.jcrenshaw.dev'),
+    ['issues', 'list', '--repo', 'org/repo', '--login', 'git.jcrenshaw.dev', '--state', 'open',
+      '--fields', 'index,state', '--output', 'json', '--limit', '50']);
 });
 
 test('the forgejo row resolves ONE issue, and reads both shapes tea prints', () => {
   const { resolve } = HOST_TABLE.forgejo;
-  assert.deepEqual(resolve.argv('org/repo', 47),
-    ['issues', '47', '--repo', 'org/repo', '--fields', 'index,state', '--output', 'json']);
+  assert.deepEqual(resolve.argv('org/repo', 47, 'git.jcrenshaw.dev'),
+    ['issues', '47', '--repo', 'org/repo', '--login', 'git.jcrenshaw.dev',
+      '--fields', 'index,state', '--output', 'json']);
   // `tea issues <index>` prints `index` as a NUMBER where the list prints a
   // STRING, and it has printed both a bare object and a one-element array.
   assert.equal(resolve.read('{"index":47,"state":"closed"}', 47), 'closed');
@@ -255,6 +296,10 @@ test('only the forgejo row carries a resolve; the other two still list every sta
   assert.equal(HOST_TABLE.gitlab.resolve, undefined);
   assert.ok(HOST_TABLE.github.argv('org/repo', 200).join(' ').includes('--state all'));
   assert.ok(HOST_TABLE.gitlab.argv('org/repo', 100).includes('--all'));
+  // ...and neither gets a `--login`: tea's config-order `--repo` fallback is
+  // what that flag answers, and `gh`/`glab` have no equivalent to invent here.
+  assert.ok(!HOST_TABLE.github.argv('org/repo', 200, 'x').includes('--login'));
+  assert.ok(!HOST_TABLE.gitlab.argv('org/repo', 100, 'x').includes('--login'));
 });
 
 test('a response TRUNCATED at the limit is unreadable, never an issue list', () => {

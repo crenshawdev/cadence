@@ -141,9 +141,19 @@ function readOneIssue(text, number) {
  * Host -> the ONE bounded list call this seam makes per land, and the reader for
  * its response. Never one call per referenced number.
  *
- * `argv(slug, limit)` is byte-exact apart from the two interpolations, and the
- * repo slug is always present: `gh` and `glab` would otherwise infer the repo
- * from the process cwd, and `tea` infers nothing at all.
+ * `argv(slug, limit, login)` is byte-exact apart from its interpolations, and
+ * the repo slug is always present: `gh` and `glab` would otherwise infer the
+ * repo from the process cwd, and `tea` infers nothing at all.
+ *
+ * `login` is the THIRD interpolation and only the forgejo row reads it: a
+ * `--repo <owner>/<name>` that names no login is resolved by `tea` in config
+ * FILE ORDER, so the first login in the user's config answers for a repository
+ * classified against a different one, exit 0 and all (D-07). classifyOrigin
+ * names the login its match was made on, and the row binds the call to it with
+ * `--login` (a documented global flag on the installed tea 0.15.1, taking the
+ * name `tea login list` reports). `gh` and `glab` get no equivalent: neither is
+ * multi-account-ambiguous the way tea's `--repo` fallback is, and `glab` is
+ * absent from this machine, so inventing one would ship an untestable change.
  *
  * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
  * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
@@ -183,17 +193,22 @@ export const HOST_TABLE = Object.freeze({
   forgejo: Object.freeze({
     bin: 'tea',
     limit: 50,
-    /** @param {string} slug @param {number} limit @returns {string[]} */
-    argv: (slug, limit) => ['issues', 'list', '--repo', slug, '--state', 'open',
+    /** @param {string} slug @param {number} limit @param {string} login the
+     * matched login's NAME, which classifyOrigin's forgejo verdict always
+     * carries - the slug alone would let tea answer from another login.
+     * @returns {string[]} */
+    argv: (slug, limit, login) => ['issues', 'list', '--repo', slug,
+      '--login', String(login), '--state', 'open',
       '--fields', 'index,state', '--output', 'json', '--limit', String(limit)],
     /** @param {unknown} text @param {number} limit */
     normalize: (text, limit) => normalizeList(text, limit, 'index'),
-    // All four flags exist on the installed tea (`tea issues --help`,
+    // All five flags exist on the installed tea (`tea issues --help`,
     // 2026-08-15). No `--state`: the number is named directly.
     resolve: Object.freeze({
-      /** @param {string} slug @param {number} number @returns {string[]} */
-      argv: (slug, number) => ['issues', String(number), '--repo', slug,
-        '--fields', 'index,state', '--output', 'json'],
+      /** @param {string} slug @param {number} number @param {string} login
+       * @returns {string[]} */
+      argv: (slug, number, login) => ['issues', String(number), '--repo', slug,
+        '--login', String(login), '--fields', 'index,state', '--output', 'json'],
       /** @param {unknown} text @param {number} number */
       read: (text, number) => readOneIssue(text, number),
     }),
@@ -258,25 +273,41 @@ function registrableDomain(host) {
 
 /**
  * Classify the origin URL into the forge whose tracker can be read, using the
- * hosts a `tea login list` reading names for everything that is not github or
- * gitlab.
+ * logins a `tea login list` reading names for everything that is not github or
+ * gitlab - and, on the forgejo verdict, NAME the login the match was made on.
  *
- * A login matches the origin when it NAMES the origin host or shares its
+ * A login matches the origin when it names the origin host or shares its
  * registrable domain - not by host equality alone. A forge's SSH endpoint is
  * routinely a different name from its web host (this repository's origin is
  * `ssh://git@ssh.jcrenshaw.dev:2222/...` against a login whose name, api url
  * and `ssh_host` are all `git.jcrenshaw.dev`), which is a normal deployment
  * shape and not a misconfiguration - under host equality it took the `no-login`
  * arm on every land, so the report shipped in v3.4.0 never once ran on the
- * repository it was built in. The widening is GUARDED both ways: the registrable
- * domain is the last two labels, so a two-label public suffix cannot be the
- * thing two hosts have in common (see PUBLIC_TWO_LABEL), and a host with fewer
- * than two labels still matches only by exact equality. An unguarded
- * fallthrough would be the worse failure by far: tea's `--repo` resolution is
- * config-FILE-ORDER rather than repo-aware, so it answers from whichever login
- * sits first in the user's config, and a server holding a repo at the same
- * `owner/name` returns exit 0 with real JSON - another project's issues reported
- * as this one's, silently.
+ * repository it was built in.
+ *
+ * THE MATCH IS ONLY HALF THE GUARD, and the returned `login` is the other half.
+ * A shared-domain test proves that SOME configured login could serve this
+ * origin; it does not make tea use that one. tea resolves an unqualified
+ * `--repo <owner>/<name>` in config FILE ORDER, so with an evil login first and
+ * the matching one second, the predicate passes on the second while the query
+ * answers from the first - another server's issues reported as this
+ * repository's, exit 0 and all. So the verdict carries the matched login's
+ * name, HOST_TABLE's forgejo row spends it as `--login`, and the widening below
+ * cannot reach a login it did not itself pick. The domain test is guarded in
+ * turn: the registrable domain is the last two labels, so a two-label public
+ * suffix cannot be the thing two hosts have in common (see PUBLIC_TWO_LABEL),
+ * and a host with fewer than two labels matches only by exact equality.
+ *
+ * Where more than one login matches, the pick is DETERMINISTIC: a login naming
+ * the origin host exactly wins over one that only shares its domain, and within
+ * either class the first in the reading order wins - that order is tea's own
+ * config order, so the binding never resolves to a login sitting behind the one
+ * tea would have picked unqualified.
+ *
+ * A login the reading could not NAME is dropped before any of this: its call
+ * could not be bound, and an unbindable login is exactly the fallthrough this
+ * function exists to refuse. Dropping it falls back to `no-login`, the answer
+ * that ships today.
  *
  * The verdicts are FIVE, not three, because the degradations are not
  * interchangeable (LND-01, criterion 3):
@@ -299,33 +330,38 @@ function registrableDomain(host) {
  * this file has no way to be right about.
  *
  * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
- * @param {string[]|null|undefined} teaHosts hosts a `tea login list` reading
- *   named, or null/undefined when tea could not be consulted at all
+ * @param {{name:string, hosts:string[]}[]|null|undefined} teaLogins the logins a
+ *   `tea login list` reading named - each its `--login` name plus the hosts that
+ *   identify it - or null/undefined when tea could not be consulted at all
  * @returns {{verdict:'github'|'gitlab'|'forgejo'|'no-login'|'no-remote'|'unrecognized',
- *   host:string|null, slug:string|null}}
+ *   host:string|null, slug:string|null, login:string|null}} `login` is the
+ *   matched login's name on the forgejo verdict and null on every other one
  */
-export function classifyOrigin(originUrl, teaHosts) {
+export function classifyOrigin(originUrl, teaLogins) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
-  if (!url) return { verdict: 'no-remote', host: null, slug: null };
+  if (!url) return { verdict: 'no-remote', host: null, slug: null, login: null };
   const parts = splitOrigin(url);
-  if (!parts) return { verdict: 'unrecognized', host: null, slug: null };
+  if (!parts) return { verdict: 'unrecognized', host: null, slug: null, login: null };
   const segments = parts.path.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   // Two segments minimum: without owner AND name there is no repo selector to
   // bind the call to, and an unbound call reports another project's tracker.
   const slug = segments.length >= 2 ? segments.join('/') : null;
   const host = parts.hostname;
-  if (!slug) return { verdict: 'unrecognized', host, slug: null };
-  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug };
-  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug };
-  if (!Array.isArray(teaHosts)) return { verdict: 'unrecognized', host, slug };
+  if (!slug) return { verdict: 'unrecognized', host, slug: null, login: null };
+  if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug, login: null };
+  if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug, login: null };
+  if (!Array.isArray(teaLogins)) return { verdict: 'unrecognized', host, slug, login: null };
+  // A login with no readable name is unbindable, so it may not decide a verdict.
+  const named = teaLogins.filter((l) => l && typeof l === 'object'
+    && typeof l.name === 'string' && l.name !== '' && Array.isArray(l.hosts));
+  const hostsOf = (l) => l.hosts.filter((h) => typeof h === 'string').map((h) => h.toLowerCase());
   const originDomain = registrableDomain(host);
-  const named = teaHosts.some((h) => {
-    if (typeof h !== 'string') return false;
-    const login = h.toLowerCase();
-    if (login === host) return true;
-    return originDomain !== null && registrableDomain(login) === originDomain;
-  });
-  return { verdict: named ? 'forgejo' : 'no-login', host, slug };
+  // Exact before shared, first-in-order within each: see the header's pick rule.
+  const matched = named.find((l) => hostsOf(l).includes(host))
+    || (originDomain === null ? undefined
+      : named.find((l) => hostsOf(l).some((h) => registrableDomain(h) === originDomain)));
+  if (!matched) return { verdict: 'no-login', host, slug, login: null };
+  return { verdict: 'forgejo', host, slug, login: matched.name };
 }
 
 /**

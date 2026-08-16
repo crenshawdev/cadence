@@ -384,6 +384,40 @@ test('an origin sharing no registrable domain with any login skips, and queries 
 
 const TEA_OPEN_BODY = '[{"index":"42","state":"open"},{"index":"99","state":"open"}]';
 
+// Matching a login is only half the guard. `tea` resolves an unqualified
+// `--repo <owner>/<name>` in config FILE ORDER (D-07), so a seam that proved
+// only that SOME login could serve this origin would send its query to
+// whichever login sits first - here a deliberately unrelated one - and report
+// another server's issues as this repository's, exit 0 and all.
+const TWO_LOGINS = JSON.stringify([
+  { name: 'evil.example.net', url: 'https://evil.example.net', ssh_host: 'evil.example.net', user: 't' },
+  { name: 'forge.example.com', url: 'https://forge.example.com', ssh_host: 'forge.example.com', user: 't' },
+]);
+
+test('forgejo: every call is bound with --login to the login that matched', () => {
+  const dir = repo({
+    originUrl: SPLIT_ORIGIN,
+    commits: [...COMMITS, 'chore: mentions #4242, which never existed'],
+  });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: TEA_OPEN_BODY, login: TWO_LOGINS, issue: { 47: '{"index":47,"state":"closed"}' } } },
+    bare: true, argvLog,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.equal(r.host, 'ssh.example.com');
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  // The list call and EVERY resolve name the second login - the one that shares
+  // the origin's registrable domain - never the first one in the config.
+  const queries = lines.filter((l) => l.startsWith('tea issues'));
+  assert.equal(queries.length, 3, lines.join('\n'));
+  for (const q of queries) {
+    assert.match(q, /--login forge\.example\.com(\s|$)/, q);
+    assert.ok(!q.includes('evil.example.net'), q);
+  }
+  assert.equal(queries.filter((q) => q.startsWith('tea issues list')).length, 1, lines.join('\n'));
+});
+
 test('forgejo: a number the open list missed resolves, or is named unresolved', () => {
   const dir = repo({
     originUrl: FORGE_REPO,
@@ -410,8 +444,8 @@ test('forgejo: a number the open list missed resolves, or is named unresolved', 
   assert.match(list[0], /--state open/, list[0]);
   // Exactly one resolve per unanswered number, and none for an answered one.
   assert.deepEqual(lines.filter((l) => /^tea issues \d/.test(l)), [
-    'tea issues 47 --repo org/repo --fields index,state --output json',
-    'tea issues 4242 --repo org/repo --fields index,state --output json',
+    'tea issues 47 --repo org/repo --login forge.example.com --fields index,state --output json',
+    'tea issues 4242 --repo org/repo --login forge.example.com --fields index,state --output json',
   ], lines.join('\n'));
 });
 
