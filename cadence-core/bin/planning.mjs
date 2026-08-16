@@ -3671,6 +3671,15 @@ function cmdRiskCheckStatus(dir, opts) {
       // blocking `risk_surface` gate on. A non-array (an older seam, a
       // hand-edited line) reads as no tokens, never as a match nobody can name.
       matches: Array.isArray(e.matches) ? e.matches.filter((m) => typeof m === 'string') : [],
+      // A non-empty `matches` whose elements are not strings is a range the
+      // detector MATCHED and this reader cannot name. Filtering it to `[]`
+      // silently turned a fired range into a clean one, so the two cases are
+      // separated: `matches` stays the tokens that can be reported, and this
+      // flag carries "something matched" independently. Widening is the only
+      // safe direction on the one gate that is blocking at every stakes level,
+      // which is the same rule `inconclusive` already encodes.
+      matched_unnamed: Array.isArray(e.matches) && e.matches.length > 0
+        && e.matches.filter((m) => typeof m === 'string').length === 0,
     };
     records.get(k).push(rec);
     byPlan.get(p).push(rec);
@@ -3699,13 +3708,58 @@ function cmdRiskCheckStatus(dir, opts) {
    * identical one on another.
    * @type {Set<string>}
    */
-  const receipts = new Set();
+  const receipts = [];
   for (const e of r.events) {
     if (!inCycle(e)) continue;
     if (e.family !== 'outcome' || !FIRE_RECEIPTS.includes(e.event)) continue;
     if (e.trigger !== RISK_TRIGGER) continue;
-    receipts.add(rowKey(e.corr, e.plan));
+    // An `override` is the one receipt a coordinator writes on its OWN say-so
+    // rather than as the settled outcome of a review, so it is the one that has
+    // to carry a reason. Without this, `trace append --family outcome --event
+    // override --trigger risk_surface --plan k` with no detail at all mints a
+    // clear for a fire nobody made - the same manufactured-receipt shape the
+    // structured `--trigger` field exists to refuse (D-12).
+    if (e.event === 'override') {
+      const why = typeof e.detail === 'string' ? e.detail.trim() : '';
+      if (!why) continue;
+    }
+    receipts.push({ key: rowKey(e.corr, e.plan), sha: typeof e.sha === 'string' ? e.sha : null });
   }
+
+  /**
+   * Does a receipt settle THIS range?
+   *
+   * The join used to be `rowKey(corr, plan)` alone, and that cleared every later
+   * matched range for the plan on the strength of one earlier fire: run the
+   * detector, fire once, fix something, re-run the detector on the widened
+   * range, skip the second fire - and status still answered `ok:true`. That is
+   * the defect GAT-04 exists to close, one level up inside the control itself.
+   *
+   * So a receipt names the range it settles, with `trace append --sha <head>`.
+   * Short and full spellings both resolve to the same commit, so the comparison
+   * is prefix-wise in whichever direction is shorter, exactly as a caller who
+   * passed `git rev-parse --short HEAD` would expect.
+   *
+   * A receipt carrying NO sha settles nothing. That is the transition cost,
+   * stated rather than hidden: a receipt that cannot say which range it judged
+   * is the ambiguity this fix removes, and accepting it as a wildcard would
+   * leave the hole open under a different name.
+   */
+  const shaMatches = (/** @type {string|null} */ a, /** @type {string|null} */ b) => {
+    if (!a || !b) return false;
+    const [x, y] = a.length <= b.length ? [a, b] : [b, a];
+    return x.length >= 7 && y.startsWith(x);
+  };
+  const settles = (/** @type {string} */ k, /** @type {any[]} */ satisfying) =>
+    receipts.some((rc) => rc.key === k
+      // A record that carries no `head_id` has no range identity to bind to -
+      // it predates the resolved-ref fields, or its refs did not resolve - so
+      // the join falls back to the run and the plan for that record alone. The
+      // alternative is a range no receipt can ever settle, and an unclearable
+      // gate is one that gets bypassed. Every record `risk-check run` writes
+      // today carries the ids, so this arm is the legacy one, not the ordinary
+      // path, and it is exactly as wide as the records that lack the field.
+      && satisfying.some((f) => (f.head_id === null ? true : shaMatches(rc.sha, f.head_id))));
 
   const rows = [...completed.entries()].map(([k, row]) => {
     const asked0 = wanted && planKey(wanted.plan) === planKey(row.plan)
@@ -3740,7 +3794,7 @@ function cmdRiskCheckStatus(dir, opts) {
     // workflows/execute.md fires the blocking `risk_surface` gate on. Anything
     // else is a range the gate had no reason to fire on, and demanding a
     // receipt for it would refuse a clean phase.
-    const fired = satisfying.some((f) => f.matches.length > 0 || f.inconclusive);
+    const fired = satisfying.some((f) => f.matches.length > 0 || f.inconclusive || f.matched_unnamed);
     // UNFIRED is the fifth state, and it sits ON TOP of the four above rather
     // than in place of any of them: a record that never read its range is still
     // `unchecked`, a stale one is still `stale`. This one is reached only where
@@ -3749,12 +3803,16 @@ function cmdRiskCheckStatus(dir, opts) {
     // `rowKey(corr, plan)`, which for the asked row is the
     // `planRow(r.corr, wanted.plan)` this invocation registered.
     const state = asked
-      ? (usable.some(sameRange) ? (fired && !receipts.has(k) ? 'unfired' : 'recorded')
+      ? (usable.some(sameRange) ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
         : found.some(sameRange) ? 'unchecked'
           : found.length ? 'stale' : 'missing')
-      : (usable.length ? (fired && !receipts.has(k) ? 'unfired' : 'recorded')
+      : (usable.length ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
         : (found.length ? 'unchecked' : 'missing'));
-    return { ...row, state, records: found, ...(asked ? { wanted: asked } : {}) };
+    // `matched_unnamed` is this reader's own conservative flag, not part of the
+    // record a caller wrote, so it stays out of the reported shape - the rows
+    // report what the trace holds.
+    const pub = found.map(({ matched_unnamed: _u, ...rest }) => rest);
+    return { ...row, state, records: pub, ...(asked ? { wanted: asked } : {}) };
   });
 
   const offending = rows.filter((row) => row.state !== 'recorded');
