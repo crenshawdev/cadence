@@ -128,6 +128,20 @@
 //                    config.schema.json, the side that moves. The rule is
 //                    lib/gate-agreement.mjs; it takes no CONTRACTS row, for the
 //                    reason check 14 states about `lib/*.mjs`.
+//  19. text          a prose site that hands a seam a value derived from agent
+//      transport     output or repository content must hand it a PATH: a
+//                    double-quoted shell word carrying `$(...)` or a backtick
+//                    executes before Node starts. That reasoning was conceded
+//                    for one flag and re-derived nowhere, so sixteen other
+//                    sites still prescribed the unsafe form. The register of
+//                    every examined site, its classification and the reason on
+//                    every out-of-scope row live in lib/text-transport.mjs, and
+//                    a site the register does not classify is REPORTED - the
+//                    check cannot be a whitelist that goes quiet on the
+//                    seventeenth site. It is deliberately NOT built on check
+//                    2's invocation parser: thirty of the qualifying mentions
+//                    sit in prose fragments with no `<script>.mjs <word>`
+//                    prefix, which that parser skips.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -151,6 +165,7 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
+import { textTransportIssues } from './lib/text-transport.mjs';
 // The throwing `--root` reader, shared with weight.mjs: ABSENT and
 // PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
 // it used to fall back to the plugin's own tree so this linter returned ok:true
@@ -791,6 +806,16 @@ function run(root) {
     for (const { code, detail } of relayIssues(text)) {
       problems.push({ kind: code, file: rel, detail });
     }
+
+    // 19. text transport: a prose site that hands a seam a CALLER-DERIVED value
+    // must hand it a path, not a double-quoted shell word. Every surface this
+    // walk yields, for the reason check 11 states about its own scope: a
+    // dispatch site in skills/ interpolates the same agent output a workflow
+    // does. The register of sites, the classification and the three reported
+    // kinds live in lib/text-transport.mjs; this side only decides that it
+    // applies to every prose surface. It takes no CONTRACTS row, for the reason
+    // check 14 states about `lib/*.mjs`.
+    problems.push(...textTransportIssues(rel, text));
   }
 
   // 3b. INTERNALS repo-path citations: every backticked repo path in
@@ -1382,7 +1407,7 @@ try {
   const argv = process.argv.slice(2);
   const root = flagValue(argv, '--root') || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport', problems });
 } catch (e) {
   // The seam arm lands WITH flagValue: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
