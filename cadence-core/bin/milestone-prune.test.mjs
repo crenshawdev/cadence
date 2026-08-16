@@ -389,7 +389,10 @@ test('a `## Active` heading inside a code fence is not the section', () => {
   assert.ok(r.text.includes('- **STOR-01**: an example bullet inside a code fence'),
     'a bullet inside a fenced example is documentation, not a bullet');
   assert.ok(!r.text.includes('- **STOR-01**: bytes survive'), 'the real bullet is the one removed');
-  assert.ok(!r.text.includes('across a restart.'));
+  // Line-wise: the continuation's text survives inside the archived row, so a
+  // substring test here would assert against the fix rather than the defect.
+  assert.ok(!r.text.split('\n').includes('  across a restart.'),
+    'the real bullet\'s continuation line is gone from ## Active');
   assert.ok(r.text.includes('| STOR-01 (bytes survive across a restart.) | 1 | Complete | v9.9.0 |'),
     'the summary comes from the real section, not the fenced example');
   // Both ends come from the same reader, so the created section lands after the

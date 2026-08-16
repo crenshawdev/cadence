@@ -12,7 +12,7 @@
 // malformed input - a section that cannot be found is reported, never
 // invented. Everything not explicitly removed or inserted is byte-preserved.
 
-import { parseRoadmapPhases, parseRequirements } from './planning-files.mjs';
+import { parseRoadmapPhases, parseRequirements, sectionSpan } from './planning-files.mjs';
 
 /** Decimal-safe phase number in a RegExp (`2.1` must not match `291`).
  * @param {number} n */
@@ -150,12 +150,15 @@ export function archiveRequirements(text, completed, label) {
   //    template-shaped project broken. A file with no `## Active` heading
   //    removes no bullet and captures no summary - the same answer it already
   //    gives for an id with no bullet.
-  const activeAt = lines.findIndex((l) => /^## Active\s*$/.test(l));
+  //
+  //    BOTH ends come from `sectionSpan` (D-02), the fence-aware reader
+  //    `classifyActiveSection` already uses on this same section, because "a
+  //    start found fence-blind cannot be repaired by a fence-aware end". The
+  //    hand-rolled `findIndex` this replaces took a fenced `## Active` - which
+  //    the shipped `templates/REQUIREMENTS.md` carries as its own example - for
+  //    the section, and deleted a bullet out of somebody's code block.
+  const { start: activeAt, end: activeEnd } = sectionSpan(lines, '## Active');
   if (activeAt !== -1) {
-    let activeEnd = lines.length;
-    for (let i = activeAt + 1; i < lines.length; i++) {
-      if (/^## /.test(lines[i])) { activeEnd = i; break; }
-    }
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
       const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
@@ -204,16 +207,15 @@ export function archiveRequirements(text, completed, label) {
   let createdSection = false;
   if (headingAt === -1) {
     // Create the section right after `## Active`'s span (before the next
-    // `## `), or at end of file when there is no Active section at all.
+    // `## `), or at end of file when there is no Active section at all. Read
+    // through the SAME `sectionSpan` the removal above used, re-run because
+    // `lines` has shifted since - two readers of one section must not be able
+    // to disagree about where it is. `end` is `lines.length` for a section
+    // running to EOF and -1 only when there is no `## Active` outside a fence,
+    // which is the no-Active-heading case's answer already.
     createdSection = true;
-    let insertAt = lines.length;
-    const activeAt = lines.findIndex((l) => /^## Active\s*$/.test(l));
-    if (activeAt !== -1) {
-      insertAt = lines.length;
-      for (let i = activeAt + 1; i < lines.length; i++) {
-        if (/^## /.test(lines[i])) { insertAt = i; break; }
-      }
-    }
+    const { end: afterActive } = sectionSpan(lines, '## Active');
+    const insertAt = afterActive === -1 ? lines.length : afterActive;
     lines.splice(insertAt, 0, '## Shipped', ...SHIPPED_PREAMBLE, ...newRows, '');
   } else {
     // Append after the last table row inside the section.
