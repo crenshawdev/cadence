@@ -1537,6 +1537,7 @@ function traceCalls(text, verb) {
       // `read` and so can never match `--read-file`.
       read: flag(line, 'read', true) ?? flag(line, 'read-file', false),
       tokens: flag(line, 'tokens', false),
+      turns: flag(line, 'turns', false),
       step: flag(line, 'step', true),
       detail: flag(line, 'detail', true),
     });
@@ -1681,6 +1682,16 @@ test('census: every trace family has a producer, and every producer speaks the r
     assert.ok(c.plan && c.plan.trim(),
       `${c.where}: a \`trace close\` with no \`--plan\` - the worker key is what pairs it `
       + 'with its dispatch, so without one the bracket never closes.');
+    // ...and the TURN count, which is what holds the all-ten conversion (D-04)
+    // mechanically. The per-file map above already requires closes to EQUAL
+    // dispatches, so it sees a lost bracket - but nothing saw a site quietly
+    // shedding this flag, and turns per role would then read as LOW rather than
+    // as partial, which is the zero/unrecorded/recorded conflation the separate
+    // `turns_unrecorded` counter exists to prevent.
+    assert.ok(c.turns && c.turns.trim(),
+      `${c.where}: a \`trace close\` with no \`--turns\` - its dispatch's tool-call count `
+      + 'never reaches the record, and the role\'s turn total then reads as low rather '
+      + 'than as partial. All ten close sites carry it or none of them should.');
   }
   for (const p of lifecycle) {
     const event = String(p.event);
