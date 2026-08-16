@@ -404,11 +404,25 @@ test('a `## Active` heading inside a code fence is not the section', () => {
 
 // --- the corpus: this repository's own planning documents -------------------
 
-test('corpus: pruning this repository\'s own REQUIREMENTS.md needs no hand repair', () => {
+// This arm reads the LIVE planning documents, so its subject exists only while
+// the cycle holds a completed phase. Between a close and the next verified
+// phase the roadmap is legitimately empty - `milestone.md` step 3 prunes it -
+// and there is nothing to transform. That is a state of the repository, not a
+// result, so it SKIPS with the reason said out loud rather than asserting a
+// precondition the milestone cycle owns. Asserting it made the suite red at
+// every close and kept it red until the next phase was verified, which is
+// exactly when someone installs the release and runs the tests.
+test('corpus: pruning this repository\'s own REQUIREMENTS.md needs no hand repair', (t) => {
   const roadmap = readFileSync(join(REPO, '.planning', 'ROADMAP.md'), 'utf8');
   const reqs = readFileSync(join(REPO, '.planning', 'REQUIREMENTS.md'), 'utf8');
-  const r = archiveRequirements(reqs, completedPhases(roadmap), 'v9.9.9');
-  assert.ok(r.moved.length > 0, 'the corpus must have a completed phase to move');
+  const completed = completedPhases(roadmap);
+  if (completed.length === 0) {
+    t.skip('no completed phase in the live roadmap: between milestones, nothing to archive');
+    return;
+  }
+  const r = archiveRequirements(reqs, completed, 'v9.9.9');
+  assert.ok(r.moved.length > 0,
+    'the roadmap names a completed phase, so its requirements must move');
 
   const before = new Set(shippedRows(reqs));
   const out = r.text.split('\n');
