@@ -118,8 +118,10 @@ role name (an executor's plan number). The CLOSE half stays with the caller,
 which alone sees the return: ONE `trace close` per dispatch moment, keyed
 `--plan <the worker key>` and `--role <name>`, carrying
 `--tokens <the figure on the subagent return>`. The seam fixes the family and
-picks the arm off `--detail`: absent means `return`, present means `checkpoint`
-(the worker came back empty, unmarked or unusable). `escalation` on a path
+picks the arm off the DETAIL, whichever flag carried it (`--detail`, or
+`--detail-file <path>` when the text is the worker's own): absent means
+`return`, present means `checkpoint` (the worker came back empty, unmarked or
+unusable). `escalation` on a path
 change is NOT inferred and stays on `trace append`. OMIT `--tokens` when the
 return carries no figure - never `--tokens 0`, which would claim a dispatch
 that cost nothing. A
