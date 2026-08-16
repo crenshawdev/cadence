@@ -46,10 +46,12 @@ does, from `review.reviewers[]`:
   run record first - it was the one paid dispatch in the spine that never
   reached the record. `<N>` is the phase whose CONTEXT.md holds the D-NN; for
   a PROJECT.md row it is the STATE cursor's phase (the rule review-triggers.md
-  step 4 already states for a milestone-scoped trigger):
+  step 4 already states for a milestone-scoped trigger). The read-set is the
+  decision doc the USER named, so write that reference to a scratch file and
+  pass the path (caller-derived text - references/conventions.md):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<the decision doc path>"
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
   ```
 
   Then dispatch `cad-reviewer` through the
@@ -61,8 +63,9 @@ does, from `review.reviewers[]`:
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
   ```
 
-  A dispatch that failed or returned nothing parseable adds
-  `--detail "<what failed>"` to that same line and closes as a checkpoint, so
+  A dispatch that failed or returned nothing parseable writes what failed to a
+  scratch file and adds `--detail-file <path>` to that same line
+  (caller-derived text - references/conventions.md), closing as a checkpoint, so
   the burned budget still reaches the record. No routing cell resolves a model for this arm - it is the
   base `cad-reviewer` at the session default, at every stakes level - and
   `review.decision_review.tier` and `.effort` reach the cross-model arm below

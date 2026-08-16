@@ -94,11 +94,12 @@ leave the live tree, and their requirements move from `## Active` and
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" milestone-prune \
-  --label <label> --mode <delete|archive>
+  --label-file <path> --mode <delete|archive>
 ```
 
-`<label>` = the version on a release, else the milestone name from PROJECT.md.
-`--mode delete` on a release milestone (the tag cut at land is their archive);
+`<label>` = the version on a release, else the milestone name from PROJECT.md -
+repository content either way, so write it to a scratch file and pass the PATH
+(caller-derived text - references/conventions.md). `--mode delete` on a release milestone (the tag cut at land is their archive);
 `--mode archive` on an untagged one - there is no tag to name them by, so the
 dirs MOVE to `_archive-<label>/` rather than delete, and git history is not
 the only copy. Relay `warnings[]` (a missing detail section, an unreadable

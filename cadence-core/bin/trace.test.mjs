@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
-  copyFileSync, symlinkSync, lstatSync,
+  copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -802,6 +802,154 @@ test('seam: a close with no --phase is refused and names the subcommand', () => 
   assert.equal(traceBytes(dir), null);
 });
 
+// --- --detail-file: the path transport for a caller-derived detail -----------
+//
+// `--detail "<text>"` puts the value inside a double-quoted shell word, so a
+// detail carrying `$(...)` or a backtick executes before Node starts - and a
+// close detail is exactly the caller-derived kind (a reviewer's verdict, a
+// worker's reason for coming back). The path transport is the fix; the inline
+// form stays for a human typing at a shell. The reader and its four refusals
+// live in lib/text-flag-file.mjs and are unit-tested there; these rows assert
+// what the SEAM does with them - above all that a refusal appends nothing.
+
+/** A file holding `body` inside the planning root, and its path. */
+function valueFile(dir, body, name = 'detail.txt') {
+  const file = join(dir, name);
+  writeFileSync(file, body);
+  return file;
+}
+
+test('seam: --detail-file carries a detail no shell could expand', () => {
+  const dir = root();
+  const payload = 'reviewer said $(touch /tmp/cad-trace-should-not-exist) and `id`';
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'outcome',
+    '--event', 'adjudication', '--detail-file', valueFile(dir, `${payload}\n`)]);
+  assert.equal(r.ok, true);
+  // Byte-equal to the file's trimmed contents: nothing between the file and the
+  // record may touch the value.
+  assert.equal(lines(dir)[0].detail, payload);
+  assert.equal(existsSync('/tmp/cad-trace-should-not-exist'), false, 'the payload executed');
+});
+
+test('seam: --detail-file and --detail write the SAME record for the same value', () => {
+  const dir = root();
+  const text = 'came back empty';
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '1', '--role', 'cad-executor',
+    '--detail', text]);
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '2', '--role', 'cad-executor',
+    '--detail-file', valueFile(dir, text)]);
+  const [inline, viaFile] = lines(dir);
+  assert.equal(viaFile.detail, inline.detail);
+  assert.equal(viaFile.event, inline.event);
+});
+
+test('seam: a close carrying --detail-file writes the `checkpoint` arm', () => {
+  const dir = root();
+  // The inference reads the RESOLVED detail. Left on `opts.detail` alone, every
+  // converted checkpoint site would bill as a clean `return` - the one arm the
+  // record exists to keep separate.
+  const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--detail-file', valueFile(dir, 'blocked on a package install')]);
+  assert.equal(r.ok, true);
+  assert.equal(lines(dir)[0].event, 'checkpoint');
+  // ...and the mirror still holds: a close carrying NEITHER form is a `return`.
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '2', '--role', 'cad-executor']);
+  assert.equal(lines(dir)[1].event, 'return');
+});
+
+test('seam: every --detail-file refusal is bad-args and appends NOTHING at all', () => {
+  const dir = root();
+  const present = valueFile(dir, 'a real detail');
+  const cases = [
+    // valueless: `--detail-file "$F"` with F unset parses as boolean true
+    { name: 'valueless', args: ['--detail-file'] },
+    { name: 'missing path', args: ['--detail-file', join(dir, 'absent.txt')] },
+    { name: 'empty file', args: ['--detail-file', valueFile(dir, '\n \n', 'blank.txt')] },
+    { name: 'both forms', args: ['--detail', 'from the flag', '--detail-file', present] },
+  ];
+  for (const c of cases) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'return', '--plan', '1', ...c.args]);
+    assert.equal(r.ok, false, c.name);
+    assert.equal(r.reason, 'bad-args', c.name);
+    assert.equal(traceBytes(dir), null, `${c.name} wrote to the record`);
+  }
+});
+
+test('seam: an UNREADABLE --detail-file is refused and NAMES the read error', () => {
+  const dir = root();
+  const file = valueFile(dir, 'a real detail');
+  chmodSync(file, 0o000);
+  try {
+    // Running as root defeats the mode bits; the row would then assert nothing.
+    try { accessSync(file, constants.R_OK); return; } catch { /* not root, carry on */ }
+    const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1', '--detail-file', file]);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(String(r.detail), /EACCES/, 'the read error was swallowed');
+    assert.equal(traceBytes(dir), null);
+  } finally {
+    chmodSync(file, 0o600);
+  }
+});
+
+// --- --read-file: the same comma grammar through the path transport ----------
+
+test('seam: --read-file produces the identical array the same value produces inline', () => {
+  const dir = root();
+  const set = 'a.md, ,b.md,';
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '1', '--read', set]);
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '2', '--read-file', valueFile(dir, `${set}\n`, 'reads.txt')]);
+  const [inline, viaFile] = lines(dir);
+  // The same grammar, including the trim-and-drop of blank segments: one
+  // list-builder, so the two transports cannot disagree about what an element is.
+  assert.deepEqual(viaFile.read, inline.read);
+  assert.deepEqual(viaFile.read, ['a.md', 'b.md']);
+});
+
+test('seam: --read-file stores a ref range and a glob verbatim, existence unchecked', () => {
+  const dir = root();
+  const set = '.planning/does-not-exist.md,.planning/phases/*/PLAN*.md,abc1234..def5678';
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--read-file', valueFile(dir, set, 'reads.txt')]);
+  assert.deepEqual(lines(dir)[0].read, set.split(','));
+});
+
+test('seam: every --read-file refusal is bad-args and appends NOTHING at all', () => {
+  const dir = root();
+  const present = valueFile(dir, 'a.md,b.md', 'reads.txt');
+  const cases = [
+    { name: 'valueless', args: ['--read-file'] },
+    { name: 'missing path', args: ['--read-file', join(dir, 'absent.txt')] },
+    { name: 'empty file', args: ['--read-file', valueFile(dir, '\n \n', 'blank.txt')] },
+    // The all-blank arm the inline `--read` already refuses: a file holding
+    // only separators is non-empty to the reader and still names no element.
+    { name: 'all-blank file', args: ['--read-file', valueFile(dir, ' , ,', 'blanks.txt')] },
+    { name: 'both forms', args: ['--read', 'a.md', '--read-file', present] },
+  ];
+  // The unreadable arm, unless the suite runs as root (where mode bits assert
+  // nothing) - built here so it rides the same nothing-was-written assertion.
+  const locked = valueFile(dir, 'a.md', 'locked.txt');
+  chmodSync(locked, 0o000);
+  try {
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--read-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+        '--event', 'dispatch', '--plan', '1', ...c.args]);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(traceBytes(dir), null, `${c.name} wrote to the record`);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
+});
+
 // --- per-role totals ----------------------------------------------------------
 
 test('render: a fully-recorded role carries a total and NO unrecorded key', () => {
@@ -1146,7 +1294,13 @@ function traceCalls(text, verb) {
       event: flag(line, 'event', false),
       plan: flag(line, 'plan', false),
       role: flag(line, 'role', false),
-      read: flag(line, 'read', true),
+      // `--read-file <path>` carries the same read-set through the path
+      // transport (references/conventions.md), so it satisfies every rule
+      // this census states about `--read` - the invariant is that a dispatch
+      // NAMES what it caused, not which spelling named it. The fallback is
+      // unambiguous because the inline reader requires whitespace after
+      // `read` and so can never match `--read-file`.
+      read: flag(line, 'read', true) ?? flag(line, 'read-file', false),
       tokens: flag(line, 'tokens', false),
       step: flag(line, 'step', true),
       detail: flag(line, 'detail', true),

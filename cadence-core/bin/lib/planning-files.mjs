@@ -7,6 +7,7 @@
 'use strict';
 
 import { writeFileSync, renameSync, lstatSync } from 'node:fs';
+import { isRefusedSpelling } from './lease-grammar.mjs';
 
 // The cursor's only permitted Status values (references/conventions.md).
 export const CURSOR_STATUSES = [
@@ -1903,6 +1904,44 @@ export function parsePlanRequirements(text) {
 }
 
 /**
+ * Where the frontmatter `files:` list is written, for a diagnostic that has to
+ * name a line: the key line itself (`line`/`text`), plus `lines`, the list's
+ * own declaring lines - the key line alone for the inline form
+ * (`files: [a, b]`), the block's ITEM lines for the block form.
+ *
+ * A LOCATOR and never a second parser: values are `parseFrontmatter`'s to
+ * resolve and this returns none, so the two cannot disagree about what a plan
+ * declared. It answers only "which line was that written on", which
+ * `parseFrontmatter` does not expose per item, and it is bounded to one key's
+ * region so no other key's value can claim a line.
+ * @param {string} text
+ * @returns {{line: number, text: string, lines: {line: number, text: string}[]}}
+ */
+function filesListRegion(text) {
+  const empty = { line: 1, text: '', lines: [] };
+  const lines = normalize(text).split('\n');
+  let i = 0;
+  while (i < lines.length && BLANK_LINE.test(lines[i])) i++;
+  if (i >= lines.length || !FENCE_LINE.test(lines[i])) return empty;
+  let j = i + 1;
+  while (j < lines.length && !FENCE_LINE.test(lines[j])) j++;
+  if (j >= lines.length) return empty;
+  for (let k = i + 1; k < j; k++) {
+    const km = lines[k].match(KEY_LINE);
+    if (!km || km[1] !== 'files') continue; // first occurrence wins, as the parse does
+    const here = { line: k + 1, text: lines[k] };
+    // A non-empty remainder is the inline or scalar arm: one line holds it all.
+    if (lines[k].slice(km[1].length + 1).trim() !== '') return { ...here, lines: [here] };
+    const block = [];
+    for (let m = k + 1; m < j && !KEY_LINE.test(lines[m]); m++) {
+      if (ITEM_LINE.test(lines[m])) block.push({ line: m + 1, text: lines[m] });
+    }
+    return { ...here, lines: block };
+  }
+  return empty;
+}
+
+/**
  * Extract the file paths a plan declares it touches: the frontmatter
  * `files:` list unioned with every task's `- **Files:** a, b` line (either
  * source alone can go stale; the union is what the parallel-safety overlap
@@ -1939,17 +1978,67 @@ export function parsePlanRequirements(text) {
  */
 export function parsePlanFiles(text) {
   const files = new Set();
-  const add = (raw) => {
-    const f = raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
-    if (f && !f.startsWith('{')) files.add(f);
-  };
+  /** The task-line arm's normalization, D-19: backticks and one trailing parenthetical. */
+  const normalizeTaskItem = (raw) => raw.replace(/`/g, '').replace(/\s*\(.*\)\s*$/, '').trim();
   const { items, issues } = readFrontmatterList(text, 'files');
-  for (const f of items) if (f) files.add(f); // verbatim - no post-grammar rewriting (D-19)
+
+  // The lease-spelling refusal, on BOTH arms of the union (D-02). `./a.txt`,
+  // `src/./a.txt` and `src//a.txt` each name the same file as their plain
+  // spelling, and lib/lease-grammar.mjs reads them as different files - so they
+  // are dropped here, before either reader sees them, and the author is told by
+  // name. Refusing on the frontmatter arm alone would leave the spelling
+  // reaching `lease-check` through the task-line door with no diagnostic.
+  //
+  // NOT pushed down into parseFrontmatter or readFrontmatterList: those serve
+  // `requirements:` too, where `//` and a leading `./` are not path syntax at
+  // all, and `cmdAudit` reads requirement ids through the same pass.
+  const region = filesListRegion(text);
+  let row = 0;
+  let col = 0;
+  /**
+   * The `files:` list line a refused item was declared on. A cursor advances
+   * past each match, so `./a.txt` written TWICE reports its OWN line each time
+   * instead of both diagnostics pointing at the first occurrence. The search is
+   * bounded to the list's own item lines: scanning the whole frontmatter block
+   * would let a `requirements:` value carrying the same text claim the line.
+   */
+  const refuseFrontmatter = (item) => {
+    for (; row < region.lines.length; row++, col = 0) {
+      const at = region.lines[row].text.indexOf(item, col);
+      if (at === -1) continue;
+      col = at + item.length;
+      return region.lines[row];
+    }
+    return region; // the `files:` key line - D-19 makes this unreachable
+  };
+
+  for (const f of items) {
+    if (!f) continue;
+    if (isRefusedSpelling(f)) {
+      const at = refuseFrontmatter(f);
+      issues.push({ line: at.line, code: 'redundant-path-segment', text: issueText(at.text) });
+      continue;
+    }
+    files.add(f); // verbatim - no post-grammar rewriting (D-19)
+  }
   for (const m of text.matchAll(/^\s*-\s*\*\*Files:\*\*\s*(.+)$/gm)) {
+    // Measured to the `**Files:**` MARKER, not to `m.index`: the pattern's
+    // leading `\s*` matches newlines too, so the match begins at the start of
+    // whatever blank run precedes the task line and `m.index` names an earlier
+    // line than the one the declaration is written on.
+    const line = text.slice(0, (m.index ?? 0) + m[0].indexOf('**Files:**')).split('\n').length;
     for (const raw of m[1].split(',')) {
-      add(raw); // the normalized form, D-19's task-line arm
-      const trimmed = raw.trim();
-      if (trimmed && !trimmed.startsWith('{')) files.add(trimmed); // + the raw form, the cross-arm bridge
+      const f = normalizeTaskItem(raw); // the normalized form, D-19's task-line arm
+      const trimmed = raw.trim(); // + the raw form, the cross-arm bridge
+      // ONE issue per refused comma element, whichever of its two forms carries
+      // the spelling - and neither form is added, so the second door is shut on
+      // the same declaration the first one refused.
+      if (isRefusedSpelling(f) || isRefusedSpelling(trimmed)) {
+        issues.push({ line, code: 'redundant-path-segment', text: issueText(m[0]) });
+        continue;
+      }
+      if (f && !f.startsWith('{')) files.add(f);
+      if (trimmed && !trimmed.startsWith('{')) files.add(trimmed);
     }
   }
   return { files: [...files], issues };

@@ -40,9 +40,9 @@ else's project has to leave that project to reach Cadence:
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind <kind> --text-file <path> --phase <N>
    ```
 
-   Write the sentence to a scratch file and pass the PATH, never interpolate it:
-   `--text "<text>"` shell-expands a `$(...)` in a sentence that is often lifted
-   from a file rather than typed. `--text` remains for a human at a shell.
+   Write the sentence to a scratch file and pass the PATH, never interpolate it
+   (caller-derived text - `cadence-core/references/conventions.md`). `--text`
+   remains for a human at a shell.
 
    Pass `--phase` only with `--kind todo`, and leave it off entirely when step 1
    found no phase. The seam owns every byte: it creates the file with its

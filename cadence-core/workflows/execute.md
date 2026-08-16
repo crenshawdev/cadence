@@ -203,12 +203,14 @@ phase re-reads, plus that plan's own file. Once that executor comes back,
 append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail "<one line>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail-file <path>
 ```
 
-ONE line per executor. OMIT `--detail` for a `PLAN COMPLETE` or `PLAN PARTIAL`
-and the seam closes a `return`; carry it for any checkpoint return and the seam
-closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
+ONE line per executor, and the detail is the executor's own return line - write
+it to a scratch file and pass the PATH (caller-derived text -
+references/conventions.md). OMIT the detail entirely for a `PLAN COMPLETE` or
+`PLAN PARTIAL` and the seam closes a `return`; carry it for any checkpoint
+return and the seam closes a `checkpoint`. A plan moved to another path or rung is an `escalation`,
 which the seam does not infer - it stays on `trace append`. All three close a
 bracket; a worker with none of them is what `trace render` reports as unpaired.
 `--plan`/`--bracket-plan` is the
@@ -405,8 +407,8 @@ scope or adds work touches nothing here; only a refuted D-NN does.
 File each open item into `.planning/CAPTURE.md` through the seam, one call per
 item - it creates the file when absent and owns the bullet's format, so this
 step states neither:
-Write the sentence to a scratch file and name the PATH - an open item is project
-text, and `--text "<item>"` would shell-expand a `$(...)` in it:
+Write the sentence to a scratch file and name the PATH (caller-derived text -
+references/conventions.md):
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text-file <path> --phase <N>`
 SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
 deferred item routed here resurfaces on its phase instead of surviving only

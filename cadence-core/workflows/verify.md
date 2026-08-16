@@ -171,11 +171,15 @@ chain starts, so the "no UAT.md re-reads between items" rule is unchanged and
 still governs pass 2.
 
 Then, before offering ANY item, run the check for every pending item that
-clears the bar and record each the moment it is settled:
+clears the bar and record each the moment it is settled. The evidence is
+composed from what the check printed, so write
+`{"evidence": "<the command and the output that settles it>"}` to a scratch
+file and pass its PATH (caller-derived text - references/conventions.md); the
+enum flags stay inline on the same call:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat record --phase <N> --item <k> --result <r> \
-  --evidence "<the command and the output that settles it>" --source model
+  --fields-file <path> --source model
 ```
 
 One call per item, never a `uat merge` payload: merge atomically overwrites
@@ -223,11 +227,15 @@ doesn't work/wrong/missing -> major; slow/weird/small -> minor;
 color/spacing/visual -> cosmetic.
 
 Record each reply through the seam - it updates the item, the counts, the
-timestamp, and first_pass (set once, structurally) in one atomic write:
+timestamp, and first_pass (set once, structurally) in one atomic write. The
+reply and the reason are the user's own words, so both ride ONE scratch file -
+`{"reported": "<verbatim reply>", "reason": "<why>"}`, either key left out when
+there is nothing to record - and the call carries its PATH (caller-derived text
+- references/conventions.md):
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" uat record --phase <N> --item <k> --result <r> \
-  [--reported "<verbatim reply>"] [--severity <s>] [--reason "<why>"]
+  [--fields-file <path>] [--severity <s>]
 ```
 
 The output's `next` field is the next pending item - present it, or
@@ -238,8 +246,10 @@ continue to `route_failures` when `next` is null or the user stops.
 For each item with `status: fail` and no recorded cause:
 
 1. **Diagnose inline** - read the relevant code, find the root cause, and
-   record it: `uat record ... --result fail --cause "<root cause>"` (a
-   re-record of the same result adds the field; first_pass is safe). When the
+   record it: `uat record ... --result fail --fields-file <path>`, the file
+   holding `{"cause": "<root cause>"}` (caller-derived text -
+   references/conventions.md; a re-record of the same result adds the field;
+   first_pass is safe). When the
    item was recorded by the deep pass, open
    `.planning/phases/<N>/verifier-findings.json` AT THIS POINT - the only
    place this workflow opens it - and read the gap's `missing` (or the human

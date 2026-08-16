@@ -1,6 +1,9 @@
 // The helper-definition census (COR-01, AC4): each of the four helpers phase 3
 // extracted is DEFINED exactly once under cadence-core/bin/, and the census
-// names where that one home is.
+// names where that one home is. A fifth row joined them when the lease grammar
+// got one home: same contract, arrived at from the other direction - not a
+// helper extracted out of copies, but a rule two seams had each written their
+// own way until they disagreed about a declaration.
 //
 // TREE-WIDE, over every .mjs file under cadence-core/bin/ - bins, lib/ and test
 // files alike. That is a deliberate deviation from the per-file `redactUrl`
@@ -44,7 +47,7 @@ function everyModule(dir) {
 }
 
 /**
- * The four extracted helpers, each as the body idiom of its own contract, the
+ * The helpers, each as the body idiom of its own contract, the
  * ONE file that may hold it, and what a failure means. `note` is appended to
  * the assertion message so a contributor who tripped it is told where to import
  * from - and, for readText, why a second reader elsewhere is not an oversight.
@@ -94,6 +97,22 @@ const HELPERS = [
       + 'that swallows every throw (D-05); a reader that threw would make the '
       + 'guard stop guarding in silence.',
   },
+  {
+    name: 'the lease-grammar containment predicate (covers)',
+    home: 'lib/lease-grammar.mjs',
+    // The directory-lease arm's body, which is the whole containment
+    // expression's distinguishing half - the other arm is a bare equality any
+    // file may write. Matching the BODY and not the name is what makes a
+    // paste-back under a new name fail here: `plan-overlap` and `lease-check`
+    // each carried their own copy of this rule until they disagreed about a
+    // declaration, which is the defect a second copy re-opens.
+    re: new RegExp('return path\\.startsWith\\(declaration\\);', 'g'),
+    note: 'Import { covers, intersects } from ./lib/lease-grammar.mjs. A '
+      + 'second copy of this rule is what let plan-overlap admit a plan pair '
+      + 'lease-check then refused to separate: the pre-flight gate compared '
+      + 'declarations by exact equality while enforcement read a trailing '
+      + 'slash as a directory prefix. Ask the module, do not re-derive it.',
+  },
 ];
 
 const MODULES = everyModule(BIN);
@@ -103,7 +122,7 @@ test('the census walks the whole bin tree, lib/ and test files included', () => 
   // A walk that silently reached nothing would make every arm below vacuous.
   assert.ok(MODULES.length > 60, `only ${MODULES.length} .mjs files found`);
   for (const expected of ['lib/seam-input.mjs', 'lib/git-head.mjs', 'git-guard.mjs',
-    'helper-census.test.mjs']) {
+    'lib/lease-grammar.mjs', 'helper-census.test.mjs']) {
     assert.ok(MODULES.includes(expected), `${expected} missing from the walk`);
   }
 });

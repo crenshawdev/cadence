@@ -132,9 +132,10 @@ set never does. Per backend:
   ```
 
   A dispatch that failed, returned nothing, or returned an unparseable object
-  adds `--detail "<what failed>"` to that same line and the seam closes it as a
-  checkpoint - a reviewer that burned its budget and came back unusable is
-  exactly the dispatch whose cost must still reach the record.
+  writes what failed to a scratch file and adds `--detail-file <path>` to that
+  same line (caller-derived text - references/conventions.md), and the seam
+  closes it as a checkpoint - a reviewer that burned its budget and came back
+  unusable is exactly the dispatch whose cost must still reach the record.
 
   **An `advisory` gate inverts the bracket's writer.** No fire site halts on an
   advisory return, and the overlapped fires (`plan`'s advisory arm, `diff`'s
@@ -275,8 +276,12 @@ fires keep writing exactly what they write today, and the stated cost is that
 at `solo`, where `plan` stays advisory, `trace suggest` gets no rows about the
 gate that fires most often there.
 
+Write the detail - `<trigger>: <n> survivors; voices <the reviewers that
+actually ran>` - to a scratch file and pass its path; the voice list is composed
+from what actually ran (caller-derived text - references/conventions.md):
+
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --raised <findings the reviewers raised before adjudication> --detail "<trigger>: <n> survivors; voices <the reviewers that actually ran>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --raised <findings the reviewers raised before adjudication> --detail-file <path>
 ```
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line

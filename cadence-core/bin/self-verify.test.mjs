@@ -2173,3 +2173,53 @@ test('check 2: a script with no bare form still reports one', () => {
   assert.ok(p.some((x) => x.kind === 'unknown-subcommand' && /bare form/.test(x.detail)),
     JSON.stringify(p));
 });
+
+// --- check 19: one transport for caller-derived text -------------------------
+// The CLI wiring only. The rule itself, the three kinds and the register's
+// shape are text-transport.test.mjs's; what has to be true HERE is that the
+// walk reaches the rule, that the envelope names it, and that a site the
+// register does not classify comes back as a problem rather than as silence.
+
+test('check 19: a prescribed value no register row classifies is reported', () => {
+  // `cadence-core/workflows/x.md` is a synthetic surface, so nothing in the
+  // shipped register speaks for it - which is exactly site seventeen.
+  const root = fixture('close it with `--detail "<whatever the agent said>"` on that line\n');
+  const j = run(['--root', root]);
+  assert.match(j.checked, /text-transport/);
+  const hits = j.problems.filter((p) => p.kind === 'text-transport-unregistered');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+  assert.match(hits[0].detail, /whatever the agent said/);
+});
+
+test('check 19: a registered caller-derived site reports the inline form', () => {
+  // Synthetic prose at a REGISTERED path: the row is the shipped one, so this
+  // proves the register the CLI reads is the register the module ships - not a
+  // fixture's own copy of it.
+  const root = fixture('nothing to see\n');
+  writeFileSync(join(root, 'cadence-core', 'workflows', 'verify-deep.md'),
+    'close the bracket with --detail "<what failed>" when it failed\n');
+  const hits = run(['--root', root]).problems
+    .filter((p) => p.kind === 'text-transport-inline');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, 'cadence-core/workflows/verify-deep.md');
+  assert.match(hits[0].detail, /conventions\.md/);
+});
+
+test('check 19: prose that merely names a flag stays green through the CLI', () => {
+  const root = fixture('OMIT `--detail` for a `PLAN COMPLETE` return; carry it otherwise.\n');
+  assert.deepEqual(run(['--root', root]).problems
+    .filter((p) => p.kind.startsWith('text-transport-')), []);
+});
+
+test('check 19: the LIVE tree is clean of all three text-transport codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the half a fixture can never state - and it is
+  // what makes a reintroduced inline site redden the suite as well as the
+  // linter, so a site that goes back to `--detail "<...>"` cannot ship on a
+  // green `node --test`.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'text-transport-inline'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'text-transport-unregistered'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'text-transport-unclear'), []);
+});

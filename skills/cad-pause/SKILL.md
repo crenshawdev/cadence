@@ -31,11 +31,13 @@ Tiny by design - no Stop hook, no handoff document, no activity log.
 
    ```
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
-     --phase <current> --status paused --next "<resume pointer>"
+     --phase <current> --status paused --next-file <path>
    ```
 
    The resume pointer is a one-line "where I was" naming the next concrete
-   action (from `$ARGUMENTS`, or ask via the ask-user seam if not given).
+   action (from `$ARGUMENTS`, or ask via the ask-user seam if not given) -
+   the user's own sentence, so write it to a scratch file and pass the PATH
+   (caller-derived text - references/conventions.md).
    This line IS the pause note /cad-progress surfaces. `--phase <current>` is
    required - the seam does NOT preserve a prior `Phase:` (it fails `bad-args`
    without it); supply the current phase from `cursor get`, which goes in one

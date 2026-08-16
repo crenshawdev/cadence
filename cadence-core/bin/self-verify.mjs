@@ -128,6 +128,20 @@
 //                    config.schema.json, the side that moves. The rule is
 //                    lib/gate-agreement.mjs; it takes no CONTRACTS row, for the
 //                    reason check 14 states about `lib/*.mjs`.
+//  19. text          a prose site that hands a seam a value derived from agent
+//      transport     output or repository content must hand it a PATH: a
+//                    double-quoted shell word carrying `$(...)` or a backtick
+//                    executes before Node starts. That reasoning was conceded
+//                    for one flag and re-derived nowhere, so sixteen other
+//                    sites still prescribed the unsafe form. The register of
+//                    every examined site, its classification and the reason on
+//                    every out-of-scope row live in lib/text-transport.mjs, and
+//                    a site the register does not classify is REPORTED - the
+//                    check cannot be a whitelist that goes quiet on the
+//                    seventeenth site. It is deliberately NOT built on check
+//                    2's invocation parser: thirty of the qualifying mentions
+//                    sit in prose fragments with no `<script>.mjs <word>`
+//                    prefix, which that parser skips.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -151,6 +165,7 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
+import { textTransportIssues } from './lib/text-transport.mjs';
 // The throwing `--root` reader, shared with weight.mjs: ABSENT and
 // PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
 // it used to fall back to the plugin's own tree so this linter returned ok:true
@@ -228,13 +243,22 @@ const CONTRACTS = {
     '*': ['--dir'],
     status: [],
     'cursor get': [],
-    'cursor set': ['--phase', '--status', '--next', '--name', '--total'],
+    // `--next-file` is `--next`'s path transport, for the two sites that COMPOSE
+    // a resume pointer (/cad-pause, `progress`) rather than authoring a literal
+    // `/cad-<command> N`. The seven literal sites keep the inline form.
+    'cursor set': ['--phase', '--status', '--next', '--next-file', '--name', '--total'],
     'phase-done': ['--n', '--reqs', '--undo'],
     'uat init': ['--phase', '--sources'],
     'uat refresh': ['--phase'],
+    // `--fields-file` is the path transport for the five FREE-TEXT fields
+    // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
+    // one file per failing item rather than three, on the workflow whose
+    // per-item round-trip discipline is explicit. The enum-validated flags gain
+    // no file form: a value that must survive `UAT_RESULTS.includes()` or an
+    // `AC<N>` test is not caller-derived prose.
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--source', '--origin',
-      '--criterion'],
+      '--severity', '--cause', '--fix', '--evidence', '--fields-file', '--source',
+      '--origin', '--criterion'],
     'uat merge': ['--phase', '--payload'],
     'uat status': ['--phase'],
     audit: [],
@@ -248,7 +272,12 @@ const CONTRACTS = {
       '--roadmap-min', '--roadmap-max'],
     'plan-overlap': ['--phase'],
     'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
-    'milestone-prune': ['--label', '--mode'],
+    // `--label-file` is `--label`'s path transport: an untagged close takes the
+    // label from PROJECT.md's milestone NAME, which is repository content. The
+    // table term (`|` or a newline) and the containment term run on the
+    // resolved value either way - the transport changes how it arrives, never
+    // what it must satisfy.
+    'milestone-prune': ['--label', '--label-file', '--mode'],
     'seed-reqs': ['--phase'],
     'lease-check': ['--phase', '--plan'],
     'detect-commands': ['--root'],
@@ -287,14 +316,25 @@ const CONTRACTS = {
     // so a record left by an earlier, narrower range of the same plan does not
     // satisfy a later one.
     'risk-check status': ['--phase', '--plan', '--base', '--head'],
+    // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
+    // derived: the inline form puts that text in a double-quoted shell word,
+    // where `$(...)` and a backtick execute before Node starts. Additive - the
+    // inline form stays for a human typing at a shell (lib/text-flag-file.mjs).
+    // `--read-file` is `--read`'s path transport, split by the same comma
+    // grammar. It is NOT on the close row below: `--read` is not either, and
+    // the transport never widens what a subcommand accepts.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
-      '--role', '--tokens', '--raised', '--read', '--step', '--reviewer'],
+      '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
+      '--step', '--reviewer'],
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from
     // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
     // states what it closes and nothing about how the record spells it. A row
     // that listed them would let the restated spelling back in through the lint.
-    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail', '--reviewer'],
+    // The inference reads the RESOLVED detail, so `--detail-file` selects the
+    // checkpoint arm exactly as the inline form does.
+    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail',
+      '--detail-file', '--reviewer'],
     // `--events` asks for the RAW event array. The default response carries the
     // paired `brackets` rows plus every `outcome` event instead, which is what
     // the two shipped readers (triage-gate's `rearm` lookup, report.md's
@@ -766,6 +806,16 @@ function run(root) {
     for (const { code, detail } of relayIssues(text)) {
       problems.push({ kind: code, file: rel, detail });
     }
+
+    // 19. text transport: a prose site that hands a seam a CALLER-DERIVED value
+    // must hand it a path, not a double-quoted shell word. Every surface this
+    // walk yields, for the reason check 11 states about its own scope: a
+    // dispatch site in skills/ interpolates the same agent output a workflow
+    // does. The register of sites, the classification and the three reported
+    // kinds live in lib/text-transport.mjs; this side only decides that it
+    // applies to every prose surface. It takes no CONTRACTS row, for the reason
+    // check 14 states about `lib/*.mjs`.
+    problems.push(...textTransportIssues(rel, text));
   }
 
   // 3b. INTERNALS repo-path citations: every backticked repo path in
@@ -1357,7 +1407,7 @@ try {
   const argv = process.argv.slice(2);
   const root = flagValue(argv, '--root') || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport', problems });
 } catch (e) {
   // The seam arm lands WITH flagValue: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".

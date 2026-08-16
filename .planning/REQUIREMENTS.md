@@ -1,37 +1,31 @@
-# Requirements: Cadence (v3.5.2 open)
+# Requirements: Cadence (v3.5.3 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.2 - one reader, one transport`, opened 2026-08-16. Scoped off the Forgejo
-milestone, which holds two issues: #133 and #132. Both came out of an external
-deep dive against `v3.3.0` and were adjudicated AGREE-high; both are surfaces
-where this tree already concedes the correct rule in one place and prescribes
-the wrong one elsewhere. The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`,
-`CTX-02` - keep their deferral reasons and none is promoted. The open items
-filed at the `v3.5.1` close (#181 through #187) are unassigned and are not
-scoped here.
+`v3.5.3 - the bounds the review path never stated`, opened 2026-08-16. Scoped
+off the Forgejo milestone, which holds three issues: #168, #143 and #141. All
+three came from the same external deep dive, two adjudicated AGREE-low and one
+narrowed from a finding closed as not-a-Cadence-defect. None is a trust
+boundary; each is a bound the code was supposed to state and never did.
 
-- **TRN-01**: Caller-derived text reaches a seam through a transport that cannot
-  execute it. `planning.mjs` already concedes the rule for one command - prose
-  carrying `$(...)` or a backtick inside a double-quoted shell word executes
-  before Node starts, and a path cannot - while roughly sixteen other workflow
-  sites still prescribe the unsafe form for values derived from agent output or
-  repository content. The rule is stated once and applied everywhere it governs,
-  rather than sixteen local escapes, and a self-verify check is what keeps a
-  seventeenth site from reintroducing it (#133).
-- **LSE-01**: `plan-overlap` and `lease-check` read one declaration grammar
-  through one module. Today the first intersects declared `files:` by exact
-  string equality and the second reads a trailing slash as a directory prefix,
-  so a phase declaring `src/` in one plan and `src/auth.js` in another produces
-  an empty `overlaps`, passes the parallel-safety gate, and then authorizes both
-  plans to stage the same file. Nested declarations (`src/` and `src/auth/`)
-  have the same defect. `references/plan-frontmatter.md` documents no
-  trailing-slash form, which bounds the likelihood and not the validity, since
-  `lease-check` honours it. Whether the form becomes documented or refused is a
-  decision the phase makes rather than an assumption it inherits (#132).
+- **RVP-01**: A provider response is bounded by bytes, destroying the request
+  once the ceiling is crossed, and an HTTP failure envelope carries a capped
+  sanitized excerpt rather than the whole body (#143).
+- **RVP-02**: Local validation of provider findings refuses what the canonical
+  schema refuses - `line <= 0`, empty `file`/`claim`/`failure_scenario`,
+  unknown keys, and unbounded finding counts and field lengths (#141).
+- **WIR-01**: `execute.md`'s "timeout or no report" arm either names what
+  produces that state or the word goes, and the default reviewer stops being
+  the one unbounded arm beside it (#168).
+
+The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted. The open items filed at the `v3.5.1`
+close (#181 through #187) and the seven filed at the `v3.5.2` close (#189
+through #195) are unassigned and are not scoped here.
+
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -185,6 +179,8 @@ parses only the Traceability table).
 | AUT-02 (No unattended external mutation runs on ANY host without `autoCloseAuthorized`, GitLab included. GitHub and Forgejo publish through the repo-authorized seam and stop on its `ok:false`; GitLab does not reach the seam at all, because `glab mr create` publishes the source branch itself, and the workflow proceeds to `glab mr merge` with nothing gating it. `land-cleanup.mjs` already records this discrepancy in its own source, so it is a known gap rather than a discovered one. `glab` is absent on this machine, so the GitLab arm is proven through the same resolved-CLI seam the other hosts use rather than by a live call (#131).) | 1 | Complete | v3.5.1 |
 | PRN-01 (`milestone-prune` transforms a WRAPPED requirement bullet correctly in both halves - the `## Active` removal takes the whole bullet span (lead line plus its indented continuation lines) rather than the lead line alone, and `archiveRequirements` builds the archived row's parenthetical from that same span rather than truncating at the first physical line. Today it does neither, so every close leaves orphaned prose fragments under `## Active` and rows cut mid-sentence under `## Shipped` (`\| RSK-01 (An executable risk-check seam under \`cadence-core/bin/\` answers a) \|`). Hand-repaired at the v3.3.0, v3.4.1 and v3.5.0 closes. Requirement bullets in this repo wrap by default, so this is the common path, not an edge case, and `lib/milestone-prune.mjs`'s own header says these surgeries were made deterministic precisely because the hand-performed version kept leaving a tree that failed its own audit. Regression cover needs a fixture whose bullets wrap (#179).) | 2 | Complete | v3.5.1 |
 | TRK-01 (`issue-check.mjs` resolves the tracker by repository rather than by origin-URL host equality, so a Forgejo remote whose SSH endpoint differs from its web host still reports. Today the host parsed off `ssh://git@ssh.jcrenshaw.dev:2222/...` is matched against a `tea` login keyed on `git.jcrenshaw.dev`, nothing matches, and the seam takes its skip arm - by its own contract, which is why LND-01 has never once produced a report on this repository. A separate SSH endpoint on a non-standard port is a normal deployment shape, not a misconfiguration, and `tea --repo <owner>/<name>` already works against the same login. The one-line read-only degradation stays; what changes is that a correctly configured remote stops hitting it (#180).) | 2 | Complete | v3.5.1 |
+| TRN-01 (Caller-derived text reaches a seam through a transport that cannot execute it. `planning.mjs` already concedes the rule for one command - prose carrying `$(...)` or a backtick inside a double-quoted shell word executes before Node starts, and a path cannot - while roughly sixteen other workflow sites still prescribe the unsafe form for values derived from agent output or repository content. The rule is stated once and applied everywhere it governs, rather than sixteen local escapes, and a self-verify check is what keeps a seventeenth site from reintroducing it (#133).) | 1 | Complete | v3.5.2 |
+| LSE-01 (`plan-overlap` and `lease-check` read one declaration grammar through one module. Today the first intersects declared `files:` by exact string equality and the second reads a trailing slash as a directory prefix, so a phase declaring `src/` in one plan and `src/auth.js` in another produces an empty `overlaps`, passes the parallel-safety gate, and then authorizes both plans to stage the same file. Nested declarations (`src/` and `src/auth/`) have the same defect. `references/plan-frontmatter.md` documents no trailing-slash form, which bounds the likelihood and not the validity, since `lease-check` honours it. Whether the form becomes documented or refused is a decision the phase makes rather than an assumption it inherits (#132).) | 2 | Complete | v3.5.2 |
 
 ## Deferred
 

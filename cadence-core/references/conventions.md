@@ -73,6 +73,21 @@ It layers repo (.planning/config.json) over the user-global file over the
 schema defaults, so a raw file read sees at most one layer and lies about the
 rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 
+## Caller-derived text
+
+- The derivation test, asked once per value: is it derived from agent output or
+  repository content, rather than authored by the workflow itself? If yes, it
+  reaches the seam as a PATH - write it to a scratch file and pass
+  `--<field>-file <path>` (or `-F <path>` at the one `git tag` site). A
+  double-quoted shell word carrying `$(...)` or a backtick executes before Node
+  starts, and a path cannot.
+- If no, it stays inline: a slash command, an enum word, a template the workflow
+  composed itself. The inline form also stays for a human typing at a shell,
+  where the text is the user's own to begin with.
+- No site decides this for itself. Every one is classified in
+  `cadence-core/bin/lib/text-transport.mjs`, and self-verify reports a site the
+  register does not classify - so a NEW site is registered, not argued.
+
 ## Parallel work
 
 The coordinator walks a workflow's steps in order, but ordering the STEPS does

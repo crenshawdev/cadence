@@ -159,7 +159,9 @@ import { suggestFromRender } from './lib/trace-suggest.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
+import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
+import { covers, intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
@@ -466,7 +468,27 @@ function cmdCursorSet(dir, opts) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
   }
   const phase = parsedPhase.value;
-  if (!opts.status || !opts.next) return fail('bad-args', 'cursor set needs --status and --next');
+  // `--next-file` is the path transport for a resume pointer the CALLER
+  // composed - /cad-pause and `progress` build theirs from what the run was
+  // doing, which is agent-derived text in a double-quoted shell word
+  // (lib/text-flag-file.mjs, references/conventions.md). The seven sites that
+  // pass a literal `/cad-<command> N` keep the inline form; nothing is deleted.
+  const resolvedNext = resolveTextFlag(opts, 'next', 'cursor set');
+  if (!resolvedNext.ok) return fail('bad-args', resolvedNext.detail);
+  const next = resolvedNext.value !== undefined ? resolvedNext.value : opts.next;
+  if (!opts.status || !next) return fail('bad-args', 'cursor set needs --status and --next');
+  // ONE refusal the inline form never needed: `renderCursor` writes `next` into
+  // the cursor's `Next:` line unflattened, and references/conventions.md states
+  // the cursor is always exactly four lines - a wrapped resume pointer would
+  // produce a fifth line `parseCursor` cannot read back, so the very next
+  // `cursor get` would answer `unparseable-cursor`. A file is the transport
+  // that can carry a newline, so this is where the structural term belongs. It
+  // REFUSES rather than flattening, mirroring `milestone-prune --label`'s table
+  // term: a malformed value is a malformed CALL and nothing is written.
+  if (typeof next === 'string' && /[\r\n]/.test(next)) {
+    return fail('bad-args',
+      'cursor set --next cannot contain a newline - the cursor is exactly four lines');
+  }
   if (!CURSOR_STATUSES.includes(opts.status)) {
     return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`);
   }
@@ -524,7 +546,7 @@ function cmdCursorSet(dir, opts) {
   }
 
   const cursor = {
-    phase, total, name, status: opts.status, next: opts.next,
+    phase, total, name, status: opts.status, next,
     updated: new Date().toISOString().slice(0, 10),
   };
   atomicWrite(join(dir, 'STATE.md'), renderCursor(cursor));
@@ -662,6 +684,13 @@ function writeUat(dir, n, uat) {
 // untouched by that reset - it only ever records the first pass/fail verdict.
 const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending'];
 
+// The FREE-TEXT half of `uat record`'s fields, and exactly what `--fields-file`
+// may carry. Every other field the subcommand takes is validated against a
+// closed enum, an `AC<N>` shape or an integer grammar at its own guard, so it is
+// not caller-derived prose and gains nothing from a path transport - and
+// admitting one here would route it around the guard that validates it.
+const UAT_TEXT_FIELDS = ['reason', 'reported', 'cause', 'fix', 'evidence'];
+
 function cmdUat(dir, sub, opts) {
   // The shared reader, replacing a bare `Number()` + NaN test: a malformed
   // `--phase` is now refused in the same words on every seam, and `n` is the
@@ -790,6 +819,57 @@ function cmdUat(dir, sub, opts) {
     if (opts.criterion !== undefined && !/^AC\d+$/.test(String(opts.criterion))) {
       return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
     }
+    // `--fields-file`: the FREE-TEXT fields through the path transport, because
+    // every one of them is caller-derived - a failing item's reason, what the
+    // user reported, the cause, the fix, the evidence - and the inline form puts
+    // that prose inside a double-quoted shell word where `$(...)` executes
+    // before Node starts (lib/text-flag-file.mjs, references/conventions.md).
+    //
+    // ONE flag holding a JSON OBJECT, never per-field `-file` flags (D-05):
+    // verify.md passes two or three text flags on a single call, so per-field
+    // files would cost up to three extra Write calls per failed item on the one
+    // workflow whose per-item round-trip discipline is explicit.
+    //
+    // A key outside the five is REFUSED, never dropped. `severity`, `origin`,
+    // `criterion`, `result` and `source` are enum-validated at their own guards
+    // above, so admitting them here would either bypass those guards or
+    // silently discard a field the caller believes was recorded. Every refusal
+    // lands BEFORE any mutation of the item, so a rejected call leaves UAT.md
+    // byte-unchanged - the standing posture at those same guards.
+    const resolvedFields = resolveTextFlag(opts, 'fields', 'uat record');
+    if (!resolvedFields.ok) return fail('bad-args', resolvedFields.detail);
+    /** @type {Record<string, string>} */
+    let fileFields = {};
+    if (resolvedFields.value !== undefined) {
+      let payload;
+      try {
+        payload = JSON.parse(resolvedFields.value);
+      } catch (e) {
+        return fail('bad-args',
+          `uat record --fields-file is not JSON: ${e && e.message ? e.message : String(e)}`);
+      }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return fail('bad-args',
+          `uat record --fields-file must hold a JSON object of ${UAT_TEXT_FIELDS.join(' | ')}`);
+      }
+      for (const [key, value] of Object.entries(payload)) {
+        if (!UAT_TEXT_FIELDS.includes(key)) {
+          return fail('bad-args', `uat record --fields-file carries "${key}", which is not one of:`
+            + ` ${UAT_TEXT_FIELDS.join(' | ')}`);
+        }
+        if (typeof value !== 'string') {
+          return fail('bad-args', `uat record --fields-file "${key}" must be a string`);
+        }
+        // The same refusal the reader makes for one flag's two forms, per FIELD:
+        // a precedence rule would silently discard one of two values the caller
+        // believes was recorded.
+        if (opts[key] !== undefined) {
+          return fail('bad-args',
+            `uat record takes "${key}" inline or in --fields-file, never both`);
+        }
+      }
+      fileFields = payload;
+    }
     item.status = opts.result;
     // `user` stays IMPLICIT - never written onto the item - so every existing
     // checklist stays byte-identical; `verifier` and `model` are the two values
@@ -800,7 +880,10 @@ function cmdUat(dir, sub, opts) {
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
       ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence'],
       ['origin', 'origin'], ['criterion', 'criterion']]) {
-      if (opts[flag] !== undefined) item[field] = opts[flag];
+      // The file form feeds THIS loop and nothing else, so an identical value
+      // through either transport writes a byte-identical UAT.md.
+      const value = opts[flag] !== undefined ? opts[flag] : fileFields[flag];
+      if (value !== undefined) item[field] = value;
     }
     // Invariant: first_pass is the FIRST pass/fail verdict, set once, never after.
     if (item.first_pass === undefined && (opts.result === 'pass' || opts.result === 'fail')) {
@@ -1782,10 +1865,34 @@ function cmdPlanOverlap(dir, opts) {
       ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
     });
   }
+  // Containment is `lib/lease-grammar.mjs`'s to answer, never this function's:
+  // exact string equality here is what let a phase declaring `src/` in one plan
+  // and `src/auth.js` in another report an EMPTY overlap, pass this gate, and
+  // then be refused plan by plan at `lease-check`, which reads the trailing
+  // slash as a directory prefix. Two readers of one declaration, one module.
+  //
+  // BOTH spellings of a collision ride `files` as separate strings (D-06): the
+  // covering declaration and the covered one are different strings and the
+  // caller needs to see the pair it must resolve. An exact match contributes
+  // ONE string, because `seen` is shared across the two passes.
+  //
+  // The emission ORDER is plan i's declarations in declaration order, then plan
+  // j's, so the reported list is the same on every run.
+  const collect = (from, against, into, seen) => {
+    for (const f of from) {
+      if (!against.some((g) => intersects(f, g))) continue;
+      if (seen.has(f)) continue;
+      seen.add(f);
+      into.push(f);
+    }
+  };
   const overlaps = [];
   for (let i = 0; i < declared.length; i++) {
     for (let j = i + 1; j < declared.length; j++) {
-      const shared = declared[i].files.filter((x) => declared[j].files.includes(x));
+      const shared = [];
+      const seen = new Set();
+      collect(declared[i].files, declared[j].files, shared, seen);
+      collect(declared[j].files, declared[i].files, shared, seen);
       if (shared.length) overlaps.push({ plans: [declared[i].plan, declared[j].plan], files: shared });
     }
   }
@@ -1989,8 +2096,15 @@ function cmdRecall(dir, query, opts) {
 // that fires wrong gets deleted, not tuned. The seam form covers the sequential
 // path too, which the criterion does not require but gets free.
 //
-// The reader is `parsePlanFiles`, the SAME one cmdPlanOverlap uses, so a path
+// The reader is `parsePlanFiles`, the SAME one cmdPlanOverlap uses, and
+// containment is `lib/lease-grammar.mjs`, the same module it asks - so a path
 // the pre-flight overlap gate admitted cannot be refused here and vice versa.
+// That claim used to be made of the READER alone, and it was false of the
+// comparison: the gate intersected two declared lists by exact string equality
+// while this step read a trailing slash as a directory prefix, so a phase
+// declaring `src/` in one plan and `src/auth.js` in another passed the
+// parallel-safety gate and was then refused right here. One module makes it
+// true of both halves.
 // `declaredPhaseFiles` is the wrong reader: it unions across the PHASE, which
 // would let plan 2 stage a file only plan 1 declared.
 //
@@ -2211,13 +2325,20 @@ function cmdLeaseCheck(dir, opts) {
   // the contract requires the executor to write and which no plan declares.
   const reportFile = repoRel(top, join(pdir, 'reports', `plan-${k}.md`));
 
-  // A declared path ending in `/` is a directory lease and matches by prefix;
-  // everything else matches exactly. Substring matching would let `src/auth`
-  // license `src/authority.rs`.
-  const exact = new Set(declared.filter((f) => !f.endsWith('/')));
-  const prefixes = declared.filter((f) => f.endsWith('/'));
+  // What a declaration covers is `lib/lease-grammar.mjs`'s answer and not this
+  // function's - the same module `cmdPlanOverlap` asks, which is the whole
+  // point. The grammar itself (directory lease by trailing slash, everything
+  // else byte-identical, and why `src/auth` must never license
+  // `src/authority.rs`) is stated in that module's header, once: a second copy
+  // here is exactly how the two seams came to disagree, with the pre-flight
+  // gate admitting a plan pair this step then refused to separate.
+  //
+  // The staged side is NOT re-normalized on its way in (D-08): it arrives
+  // canonical through `repoRel`, and a second transform over paths that
+  // round-tripped through the byte-level guard above is how the non-ASCII hard
+  // block gets re-broken.
   const undeclared = staged.filter((p) => p !== reportFile
-    && !exact.has(p) && !prefixes.some((d) => p.startsWith(d)));
+    && !declared.some((d) => covers(d, p)));
 
   const common = {
     phase: n,
@@ -2768,6 +2889,15 @@ function cmdTrace(dir, sub, opts) {
   if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
     if (!parsedPhase.ok) return fail('bad-args', `trace ${sub} needs --phase <N>`);
+    // `--detail-file` is the SAFE transport for a detail the CALLER derived -
+    // a reviewer's verdict, a checkpoint's reason - and the reasoning lives in
+    // lib/text-flag-file.mjs and references/conventions.md, not restated here.
+    // Resolved BEFORE the close arm's inference below, which reads the detail:
+    // left on `opts.detail` alone, every converted checkpoint site would bill
+    // as a clean `return`, the one arm the record exists to keep separate.
+    const resolvedDetail = resolveTextFlag(opts, 'detail', `trace ${sub}`);
+    if (!resolvedDetail.ok) return fail('bad-args', resolvedDetail.detail);
+    const detail = resolvedDetail.value !== undefined ? resolvedDetail.value : opts.detail;
     let family;
     let event;
     if (sub === 'close') {
@@ -2787,7 +2917,7 @@ function cmdTrace(dir, sub, opts) {
       // member with zero prose producers, so a three-way inference would be
       // flexibility nothing exercises. It stays reachable through
       // `trace append --event escalation`.
-      event = typeof opts.detail === 'string' && opts.detail.trim() ? 'checkpoint' : 'return';
+      event = typeof detail === 'string' && detail.trim() ? 'checkpoint' : 'return';
     } else {
       family = typeof opts.family === 'string' ? opts.family : '';
       if (!FAMILIES.includes(family)) {
@@ -2859,16 +2989,28 @@ function cmdTrace(dir, sub, opts) {
     // no existence check, no normalization and no byte measurement, so a reader
     // converting the set to bytes must resolve each element BY KIND rather than
     // assume a plain path.
+    //
+    // `--read-file` is the same value through the path transport, for a site
+    // whose read-set is composed from what the worker was handed rather than
+    // typed by a human. It is split by the SAME grammar and refused by the SAME
+    // all-blank test - one list-builder below, so the two transports cannot
+    // disagree about what an element is.
     let read;
-    if ('read' in opts) {
-      const list = typeof opts.read === 'string'
-        ? opts.read.split(',').map((s) => s.trim()).filter(Boolean)
+    const resolvedRead = resolveTextFlag(opts, 'read', `trace ${sub}`);
+    if (!resolvedRead.ok) return fail('bad-args', resolvedRead.detail);
+    if ('read' in opts || 'read-file' in opts) {
+      const raw = resolvedRead.value !== undefined ? resolvedRead.value : opts.read;
+      const list = typeof raw === 'string'
+        ? raw.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
       // A bare `--read`, an empty string, or an all-blank value is almost
       // always an unset `"$PATHS"`, and a complete-looking dispatch with no
-      // read-set is the failure this refusal exists against.
+      // read-set is the failure this refusal exists against. The file form
+      // reaches this same test with a file holding only separators - a
+      // whitespace-only file is already refused by the reader as empty.
       if (!list.length) {
-        return fail('bad-args', `trace ${sub} --read needs a comma-separated path list`);
+        return fail('bad-args',
+          `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`);
       }
       read = list;
     }
@@ -2922,7 +3064,7 @@ function cmdTrace(dir, sub, opts) {
       event,
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
       ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
-      ...(typeof opts.detail === 'string' && opts.detail ? { detail: opts.detail } : {}),
+      ...(typeof detail === 'string' && detail ? { detail } : {}),
       // A bare `--role` parses as boolean `true`; the same guard `--plan` and
       // `--sha` use records nothing rather than the literal `true`.
       ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
@@ -4037,7 +4179,17 @@ function cmdDebtHarvest(root) {
 // touches only what is mechanical.
 // ---------------------------------------------------------------------------
 function cmdMilestonePrune(dir, opts) {
-  const label = typeof opts.label === 'string' ? opts.label.trim() : '';
+  // `--label-file` is the path transport, and this label is caller-derived by
+  // construction: an untagged close takes it from PROJECT.md's milestone NAME,
+  // which is repository content going into a double-quoted shell word
+  // (lib/text-flag-file.mjs, references/conventions.md). The transport changes
+  // only HOW the label arrives - both terms below still run on the resolved
+  // value, in the same order, before any read, mkdir or rename and in both
+  // modes.
+  const resolvedLabel = resolveTextFlag(opts, 'label', 'milestone-prune');
+  if (!resolvedLabel.ok) return fail('bad-args', resolvedLabel.detail);
+  const raw = resolvedLabel.value !== undefined ? resolvedLabel.value : opts.label;
+  const label = typeof raw === 'string' ? raw.trim() : '';
   if (!label) return fail('bad-args', 'milestone-prune needs --label <version or milestone name>');
   // Two independent terms, both here at the point the label is read - before
   // any read, mkdir or rename, and in BOTH modes: `--mode delete` builds no

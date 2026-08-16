@@ -181,8 +181,10 @@ Follow your output format exactly.
 ```
 
 The dispatch came back, so close its bracket before anything else. ONE line,
-whichever way it ended - add `--detail "<what failed>"` when the agent failed or
-timed out and the seam closes it as a `checkpoint` instead of a `return`:
+whichever way it ended - when the agent failed or timed out, write what failed
+to a scratch file and add `--detail-file <path>` (caller-derived text -
+references/conventions.md), and the seam closes it as a `checkpoint` instead of
+a `return`:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-assumptions-analyzer --role cad-assumptions-analyzer --tokens <the token count on the subagent return>

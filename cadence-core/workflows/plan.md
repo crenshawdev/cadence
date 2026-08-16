@@ -188,7 +188,8 @@ plan's truths and tasks, citing each recalled item's `source` file and `phase`
 <step name="handle_return">
 The dispatch came back, so close its bracket before anything else - ONE line,
 always exactly one, or `trace render` reports a worker that never came back. On
-the empty-or-unmarked arm below add `--detail "<empty or unmarked return>"` and
+the empty-or-unmarked arm below, write that return to a scratch file and add
+`--detail-file <path>` (caller-derived text - references/conventions.md), and
 the seam closes it as a checkpoint instead. OMIT `--tokens` on a figureless
 return (seams.md's bracket rule - the one statement of why):
 
@@ -285,8 +286,9 @@ Will these plans achieve the phase goal? Return ## VERIFICATION PASSED or
 ```
 
 Close its bracket the moment the return is in hand, before reading a single
-severity. ONE line: an empty or unmarked return carries
-`--detail "<empty or unmarked return>"` and the seam closes it as a checkpoint.
+severity. ONE line: an empty or unmarked return is written to a scratch file and
+carried on `--detail-file <path>` (caller-derived text -
+references/conventions.md), and the seam closes it as a checkpoint.
 OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
 ```

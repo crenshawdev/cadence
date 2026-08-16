@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -628,6 +628,95 @@ test('cursor set: no ROADMAP and no flags cannot derive', () => {
   assert.equal(r.reason, 'cannot-derive');
 });
 
+// --- cursor set --next-file: the path transport for a COMPOSED resume pointer
+//
+// /cad-pause and `progress` build their pointer from what the run was doing,
+// which is agent-derived text; the seven sites passing a literal
+// `/cad-<command> N` keep the inline form, which is why nothing is deleted.
+
+test('cursor set: --next-file writes the STATE.md the inline value writes', () => {
+  const inlineDir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const fileDir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const pointer = '/cad-execute 1 - resume at task 3, the reader is half-wired';
+  const src = join(fileDir, 'next.txt');
+  writeFileSync(src, `${pointer}\n`);
+  const a = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', pointer, '--total', '4'], inlineDir);
+  const b = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next-file', src, '--total', '4'], fileDir);
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  assert.equal(readFileSync(join(fileDir, 'STATE.md'), 'utf8'),
+    readFileSync(join(inlineDir, 'STATE.md'), 'utf8'));
+  assert.equal(run(['cursor', 'get'], fileDir).next, pointer);
+});
+
+test('cursor set: a --next-file value no shell could expand lands verbatim', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const pointer = '/cad-execute 1 after $(touch /tmp/cad-cursor-should-not-exist) and `id`';
+  const src = join(dir, 'next.txt');
+  writeFileSync(src, pointer);
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next-file', src, '--total', '4'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(run(['cursor', 'get'], dir).next, pointer);
+  assert.equal(existsSync('/tmp/cad-cursor-should-not-exist'), false, 'the payload executed');
+});
+
+test('cursor set: a TWO-LINE --next-file is bad-args - the cursor is four lines', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const seed = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--total', '4'], dir);
+  assert.equal(seed.ok, true);
+  const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  const src = join(dir, 'next.txt');
+  writeFileSync(src, 'resume at task 3\nand mind the reader');
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next-file', src, '--total', '4'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /newline/);
+  assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before);
+  // The regression this refusal exists against: a fifth line the parser cannot
+  // read back, which would make the very next `cursor get` unparseable.
+  assert.equal(run(['cursor', 'get'], dir).ok, true);
+});
+
+test('cursor set: every --next-file refusal is bad-args, STATE.md byte-unchanged', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--total', '4'], dir);
+  const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  const write = (name, body) => {
+    const f = join(dir, name);
+    writeFileSync(f, body);
+    return f;
+  };
+  const good = write('next.txt', '/cad-execute 1');
+  const cases = [
+    { name: 'valueless', args: ['--next-file'] },
+    { name: 'missing path', args: ['--next-file', join(dir, 'absent.txt')] },
+    { name: 'empty file', args: ['--next-file', write('blank.txt', '\n \n')] },
+    { name: 'both forms', args: ['--next', '/cad-execute 1', '--next-file', good] },
+  ];
+  const locked = write('locked.txt', '/cad-execute 1');
+  chmodSync(locked, 0o000);
+  try {
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--next-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+        ...c.args, '--total', '4'], dir);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before, `${c.name} wrote`);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
+});
+
 test('usage: unknown subcommand degrades, never crashes', () => {
   const r = run(['nonsense'], makeTree({}));
   assert.equal(r.ok, false);
@@ -859,6 +948,96 @@ test('uat record: a normal --item still records, with counts and first_pass', ()
   assert.deepEqual(r.item, { k: 1, status: 'pass' });
   assert.equal(r.counts.pass, 1);
   assert.match(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), /first_pass: pass/);
+});
+
+// --- uat record --fields-file: the free-text fields through the path transport
+//
+// Every one of the five is caller-derived - a failing item's reason, what the
+// user reported, the cause, the fix, the evidence - so the inline form puts
+// that prose in a double-quoted shell word where `$(...)` executes before Node
+// starts. ONE flag holding a JSON object, never per-field files (D-05).
+
+/** The five free-text fields, as one object and as inline flag pairs. */
+const FIVE_FIELDS = {
+  reason: 'the redirect never fires',
+  reported: 'user sees a blank page',
+  cause: 'the session cookie is dropped',
+  fix: 'abc1234, retest',
+  evidence: '.planning/phases/1/FINDINGS.json',
+};
+const FIVE_INLINE = Object.entries(FIVE_FIELDS).flatMap(([k, v]) => [`--${k}`, v]);
+const uatBytes = (dir) => readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+
+test('uat record: --fields-file writes the SAME UAT.md the five inline flags write', () => {
+  const inlineDir = uatTree();
+  const fileDir = uatTree();
+  const a = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    ...FIVE_INLINE], inlineDir);
+  const src = join(fileDir, 'fields.json');
+  writeFileSync(src, JSON.stringify(FIVE_FIELDS));
+  const b = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--fields-file', src], fileDir);
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  // Byte-identical, so a field the reader silently dropped fails this row
+  // rather than passing it.
+  assert.equal(uatBytes(fileDir), uatBytes(inlineDir));
+  for (const value of Object.values(FIVE_FIELDS)) {
+    assert.ok(uatBytes(fileDir).includes(value), `"${value}" never reached the file`);
+  }
+});
+
+test('uat record: a --fields-file value no shell could expand lands verbatim', () => {
+  const dir = uatTree();
+  const src = join(dir, 'fields.json');
+  const reason = 'it printed $(touch /tmp/cad-uat-should-not-exist) and `id`';
+  writeFileSync(src, JSON.stringify({ reason }));
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--fields-file', src], dir);
+  assert.equal(r.ok, true);
+  assert.ok(uatBytes(dir).includes(reason), 'the reason did not land verbatim');
+  assert.equal(existsSync('/tmp/cad-uat-should-not-exist'), false, 'the payload executed');
+});
+
+test('uat record: every --fields-file refusal is bad-args, UAT.md byte-unchanged', () => {
+  const dir = uatTree();
+  const before = uatBytes(dir);
+  const write = (name, body) => {
+    const f = join(dir, name);
+    writeFileSync(f, body);
+    return f;
+  };
+  const good = write('good.json', JSON.stringify({ reason: 'from the file' }));
+  const cases = [
+    { name: 'valueless', args: ['--fields-file'] },
+    { name: 'missing path', args: ['--fields-file', join(dir, 'absent.json')] },
+    { name: 'empty file', args: ['--fields-file', write('blank.json', '\n \n')] },
+    { name: 'not JSON', args: ['--fields-file', write('bad.json', 'reason: x')] },
+    // A JSON ARRAY parses, and `typeof [] === 'object'` - the arm that catches it.
+    { name: 'a JSON array', args: ['--fields-file', write('arr.json', '[{"reason":"x"}]')] },
+    { name: 'a non-string value', args: ['--fields-file', write('num.json', '{"reason":3}')] },
+    // Refused rather than dropped: `severity` is enum-validated at its own
+    // guard, so admitting it here would route it around that guard.
+    { name: 'an out-of-set key', args: ['--fields-file', write('sev.json', '{"severity":"high"}')] },
+    { name: 'a field given both ways', args: ['--reason', 'from the flag', '--fields-file', good] },
+  ];
+  // The unreadable arm, unless the suite runs as root (mode bits assert nothing).
+  const locked = write('locked.json', JSON.stringify({ reason: 'x' }));
+  chmodSync(locked, 0o000);
+  try {
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--fields-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+        ...c.args], dir);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(uatBytes(dir), before, `${c.name} wrote to UAT.md`);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
 });
 
 test('uat merge: matches by k, and a verifier pass never rewrites first_pass', () => {
@@ -3791,6 +3970,34 @@ test('plan-overlap: a shared file is reported with both plan names', () => {
   assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
 });
 
+// The two defective pairs the lease grammar's two readers disagree about: the
+// pre-flight gate compares declarations by exact string equality, while
+// `lease-check` reads a trailing slash as a directory prefix. A phase declaring
+// `src/` in one plan and `src/auth.js` in another therefore passes the
+// parallel-safety gate and is then refused, plan by plan, at the commit step.
+// Both spellings ride `overlaps[].files` as separate strings (D-06); the ORDER
+// is not pinned here, because it is not this pair's subject.
+
+test('plan-overlap: a directory lease src/ overlaps the file src/auth.js the other plan declares', () => {
+  const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/'], ['src/auth.js']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.overlaps.length, 1, JSON.stringify(r));
+  assert.deepEqual(r.overlaps[0].plans, ['PLAN-1.md', 'PLAN-2.md']);
+  assert.ok(r.overlaps[0].files.includes('src/'), JSON.stringify(r.overlaps[0]));
+  assert.ok(r.overlaps[0].files.includes('src/auth.js'), JSON.stringify(r.overlaps[0]));
+  assert.equal(r.overlaps[0].files.length, 2, JSON.stringify(r.overlaps[0]));
+});
+
+test('plan-overlap: a directory lease src/ overlaps the nested directory lease src/auth/', () => {
+  const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/'], ['src/auth/']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.overlaps.length, 1, JSON.stringify(r));
+  assert.deepEqual(r.overlaps[0].plans, ['PLAN-1.md', 'PLAN-2.md']);
+  assert.ok(r.overlaps[0].files.includes('src/'), JSON.stringify(r.overlaps[0]));
+  assert.ok(r.overlaps[0].files.includes('src/auth/'), JSON.stringify(r.overlaps[0]));
+  assert.equal(r.overlaps[0].files.length, 2, JSON.stringify(r.overlaps[0]));
+});
+
 test('plan-overlap: task **Files:** lines count even when frontmatter omits them', () => {
   // PLAN-2 frontmatter declares nothing, but its task line touches src/a.rs.
   const r = run(['plan-overlap', '--phase', '1'],
@@ -3855,6 +4062,77 @@ test('plan-overlap: a frontmatter backtick-bearing path overlaps its raw twin de
   const r = run(['plan-overlap', '--phase', '1'], dir);
   assert.equal(r.ok, true);
   assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['lib/a`b.mjs'] }]);
+});
+
+// --- the refused lease spellings, through BOTH declaration doors -------------
+//
+// `./a.txt` and `src//a.txt` name the same file as their plain spelling, which
+// lib/lease-grammar.mjs reads as a different file. They are refused at
+// declaration time and never reach either reader. The matrix below is FULL -
+// two spellings by two doors - because a wiring defect on one arm passes
+// happily on the diagonal: refusing on the frontmatter arm alone leaves the
+// spelling reaching `lease-check` through the task line with no diagnostic.
+
+/**
+ * A two-plan phase where PLAN-1 declares `bad` through ONE door plus a plain
+ * `keep.txt`, and PLAN-2 declares `plain` - the same file, spelled legally -
+ * plus `keep.txt`. So the legitimate overlap survives while the refused
+ * declaration is absent from it. Returns the tree and the line `bad` is
+ * declared on.
+ */
+function refusalTree(bad, plain, door) {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  const one = door === 'frontmatter'
+    ? `---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - ${bad}\n  - keep.txt\n---\n# Plan 1\n`
+    : `---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - keep.txt\n---\n# Plan 1\n\n`
+      + `### Task 1: t\n\n- **Files:** ${bad}\n- **Action:** x\n- **Verify:** y\n`;
+  writeFileSync(join(pdir, 'PLAN-1.md'), one);
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    `---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - ${plain}\n  - keep.txt\n---\n# Plan 2\n`);
+  return { dir, line: one.split('\n').findIndex((l) => l.includes(bad)) + 1 };
+}
+
+for (const [bad, plain] of [['./a.txt', 'a.txt'], ['src//a.txt', 'src/a.txt']]) {
+  for (const door of ['frontmatter', 'task line']) {
+    test(`plan-overlap: ${bad} declared on the ${door} is refused as redundant-path-segment and reaches neither reader`, () => {
+      const { dir, line } = refusalTree(bad, plain, door);
+      const r = run(['plan-overlap', '--phase', '1'], dir);
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.deepEqual(r.frontmatter_issues,
+        [{ plan: 'PLAN-1.md', issues: [{ line, code: 'redundant-path-segment', text: r.frontmatter_issues[0].issues[0].text }] }],
+        JSON.stringify(r.frontmatter_issues));
+      assert.ok(r.frontmatter_issues[0].issues[0].text.includes(bad),
+        r.frontmatter_issues[0].issues[0].text);
+      // The refused declaration is absent from the overlap; the legitimate one
+      // is still there, so this is a DROP and not a dead gate.
+      assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['keep.txt'] }]);
+      assert.equal(r.undeclared, undefined);
+    });
+  }
+}
+
+test('plan-overlap: the same refused spelling twice in one files: list reports two issues on their OWN lines', () => {
+  // A cursor advances past each match, so the second diagnostic does not point
+  // back at the first occurrence's line.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: ["#41"]\nfiles:\n  - ./a.txt\n  - keep.txt\n  - ./a.txt\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - keep.txt\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.frontmatter_issues[0].issues.map((i) => [i.line, i.code]),
+    [[6, 'redundant-path-segment'], [8, 'redundant-path-segment']],
+    JSON.stringify(r.frontmatter_issues));
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['keep.txt'] }]);
 });
 
 test('plan-overlap: a plan with no declared files is flagged undeclared', () => {
@@ -4661,6 +4939,34 @@ test('lease-check: a declared directory ends in / and matches by PREFIX', () => 
   assert.equal(leaseCheck(b.repo, b.dir, ['--phase', '1', '--plan', '1']).ok, false);
 });
 
+// Both readers now reach containment through lib/lease-grammar.mjs. These two
+// pin the half that must NOT have moved: for a declaration that was already
+// unambiguous, the verdict and both counts are what they were before the
+// shared predicate existed, and an empty lease still licenses nothing.
+
+test('lease-check: a two-file clean lease still reports staged: 2, declared: 2 through the shared predicate', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt', 'src/b.js'] });
+  stage(repo, 'a.txt');
+  stage(repo, 'src/b.js');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.staged, 2);
+  assert.equal(r.declared, 2);
+  assert.equal(r.undeclared, undefined);
+  assert.equal(r._exit, 0);
+});
+
+test('lease-check: a plan whose files: list is empty is still refused as undeclared-files, exit 1', () => {
+  const { repo, dir } = leaseRepo({ files: [] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['a.txt']);
+  assert.equal(r.declared, 0);
+  assert.equal(r._exit, 1);
+});
+
 test('lease-check: PLAN-<k>.md is selected by --plan', () => {
   const { repo, dir, pdir } = leaseRepo({ plan: 'PLAN-1.md', files: ['a.txt'] });
   writeFileSync(join(pdir, 'PLAN-2.md'), '---\nphase: 1\nfiles:\n  - b.txt\n---\n# Plan 2\n');
@@ -4669,6 +4975,23 @@ test('lease-check: PLAN-<k>.md is selected by --plan', () => {
   const one = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
   assert.equal(one.ok, false);
   assert.deepEqual(one.undeclared, ['b.txt']);
+});
+
+test('lease-check: a sole declaration of ./a.txt licenses nothing - the spelling reached neither reader', () => {
+  // The other half of the two-door refusal, at the enforcement end: the
+  // declaration is dropped before this seam sees it, so staging the file it
+  // MEANT is undeclared, and the named diagnostic rides the same envelope that
+  // tells the author why.
+  const { repo, dir } = leaseRepo({ files: ['./a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['a.txt']);
+  assert.equal(r.declared, 0);
+  assert.deepEqual(r.frontmatter_issues.map((i) => [i.line, i.code]),
+    [[4, 'redundant-path-segment']], JSON.stringify(r.frontmatter_issues));
+  assert.equal(r._exit, 1);
 });
 
 test('lease-check: a missing plan is ok:false, never an empty-lease pass', () => {
@@ -4721,10 +5044,11 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // The census, so a site added later fails here rather than shipping a
   // credential. planning.mjs carries FIVE other caught-error details this
   // requirement does not cover - partial-apply, write-failed, the
-  // dispatch-level internal catch, `capture --text-file`'s read failure and
-  // `capture-sections`' unreadable-capture - so the pin is by COUNT: eight uses
-  // of the idiom, exactly three of them wrapped. Adding a site moves the first
-  // number whether or not the author remembered the helper.
+  // dispatch-level internal catch, `capture --text-file`'s read failure,
+  // `capture-sections`' unreadable-capture and `uat record --fields-file`'s
+  // JSON parse failure - so the pin is by COUNT: nine uses of the idiom,
+  // exactly three of them wrapped. Adding a site moves the first number whether
+  // or not the author remembered the helper.
   //
   // The three wrapped sites, all git failures on the same EXP-01 rail:
   // `cmdLeaseCheck`'s `no-staged-set` detail; `resolveRange`, where a failing
@@ -4739,11 +5063,15 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // detail is an `fs` error over a path the CALLER just named, so the only
   // string it can echo is one the caller already holds. `redactUrl` targets a
   // credential arriving from a remote the user never typed, which a local path
-  // read cannot be.
+  // read cannot be. `uat record --fields-file`'s parse failure is the same
+  // class one step further in: a JSON syntax error over the caller's own file.
+  // The `-file` transports' READ failures are not counted here at all - they
+  // live in lib/text-flag-file.mjs, which this file-scoped census does not
+  // walk, and they are the same caller-named-path class.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 8, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 9, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 3,
     'a git-failure detail (no-staged-set, resolveRange, or risk-check run\'s diff catch) is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
