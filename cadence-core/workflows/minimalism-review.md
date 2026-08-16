@@ -86,7 +86,7 @@ Parse the returned `{findings:[...]}` and close the bracket the moment you have
 it. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
 ```
 
 A dispatch that failed or returned nothing parseable writes what failed to a
