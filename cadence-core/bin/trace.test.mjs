@@ -1932,3 +1932,86 @@ test('appendEvent: an ordinary trace file still appends and reports written', ()
   assert.equal(lines(dir).length, 2);
   assert.equal(lstatSync(tracePath(dir)).isSymbolicLink(), false);
 });
+
+// --- the falsifier: a run's turns reach the record end to end (MSR-01) -------
+//
+// WATCHED FAILING AT 97eaf03, the tip of this plan's unpatched tree. Observed
+// there:
+//
+//   $ node cadence-core/bin/planning.mjs --dir <tmp>/.planning \
+//       trace close --phase 1 --plan 1 --role cad-executor --tokens 154523 --turns 83
+//   {"ok":true,"written":true,"corr":"1"}
+//
+//   $ tail -1 <tmp>/.planning/trace.jsonl
+//   {"corr":"1","phase":"1","ts":"...","family":"lifecycle","event":"return",
+//    "plan":"1","role":"cad-executor","tokens":154523}
+//
+//   $ node cadence-core/bin/planning.mjs --dir <tmp>/.planning trace render --phase 1
+//   ..."roles":{"cad-executor":{"dispatches":1,"tokens":154523}}...
+//
+// The seam ACCEPTED `--turns 83` and reported `written:true`, the line it wrote
+// carries no `turns` key at all, and the render prices the dispatch by tokens
+// alone. The same silence swallows a malformed value: `--turns -1` returned
+// `ok:true` there, which is the assertion this test dies on first
+// (`true !== false` at the `-1` case).
+//
+// The record priced a run from what a worker RETURNED, which is one of the two
+// terms the bill is made of; the other, the tool-call count the host already
+// puts on that return, was discarded at every one of the ten close sites.
+//
+// The case below is that absence as a check: the seams are reached through the
+// CLI ONLY and nothing this plan added is imported, so against 97eaf03 it fails
+// on its assertions rather than on a missing export - the unpatched seam
+// silently IGNORES `--turns`, writes the close anyway, and renders a role row
+// with no turn figure and no counter. To re-watch it:
+// `git worktree add --detach <tmp> 97eaf03`, copy this file into that
+// checkout's `cadence-core/bin/`, `node --test` it there, then remove the
+// worktree.
+
+test('falsifier: turns persist onto the close and reach both the bracket and the role row (MSR-01)', () => {
+  const dir = root();
+  for (const k of ['1', '2']) {
+    run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+      '--event', 'dispatch', '--plan', k, '--role', 'cad-executor',
+      '--read', `.planning/phases/1/PLAN-${k}.md`]);
+  }
+
+  // 1. A close carrying a turn figure is accepted and persists it.
+  const closed = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '154523', '--turns', '83']);
+  assert.equal(closed.ok, true);
+  assert.equal(closed.written, true);
+
+  // 2. ...and a close carrying none is the ROUTINE case, not an error.
+  const bare = run(dir, ['trace', 'close', '--phase', '1', '--plan', '2',
+    '--role', 'cad-executor', '--tokens', '47717']);
+  assert.equal(bare.ok, true);
+
+  // 3. A malformed value is a malformed CALL: nothing at all is appended.
+  const before = readFileSync(tracePath(dir), 'utf8');
+  for (const bad of ['-1', '1.5', 'abc', '1,234']) {
+    const r = run(dir, ['trace', 'close', '--phase', '1', '--plan', '3',
+      '--role', 'cad-executor', '--tokens', '900', '--turns', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(readFileSync(tracePath(dir), 'utf8'), before,
+      `a malformed --turns ${bad} still wrote to the record`);
+  }
+
+  const r = run(dir, ['trace', 'render', '--phase', '1']);
+
+  // The BRACKET row carries the figure, and the figureless close carries no
+  // turn key at all rather than a zero.
+  assert.equal(r.brackets.length, 2);
+  const [withTurns, without] = r.brackets;
+  assert.equal(withTurns.turns, 83);
+  assert.equal('turns' in without, false, JSON.stringify(without));
+
+  // The ROLE row carries the total and its OWN unrecorded counter. Both
+  // dispatches reported tokens, so the token `unrecorded` is absent - which is
+  // the whole point of the second counter: one shared counter could not have
+  // said "measured for cost, unmeasured for turns" about the same pair.
+  assert.deepEqual(r.roles, {
+    'cad-executor': { dispatches: 2, tokens: 202240, turns: 83, turns_unrecorded: 1 },
+  });
+});
