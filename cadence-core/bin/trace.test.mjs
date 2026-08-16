@@ -676,6 +676,59 @@ test('seam: a bare or blank --reviewer appends NOTHING at all', () => {
   assert.equal(traceBytes(dir), null);
 });
 
+test('seam: --trigger stores the review trigger an event belongs to, as a string', () => {
+  // GAT-04/D-12: an `outcome` receipt is only joinable to the fire that
+  // produced it if the trigger it names is STRUCTURED. Measured on this
+  // repository's 35 `outcome/adjudication` events the trigger is spelled four
+  // different ways inside the free-text `--detail`, and lib/trace-suggest.mjs
+  // discards that text entirely.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--plan', '2', '--trigger', 'risk_surface',
+    '--detail', 'risk_surface plan-2: 1 survivor']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const [e] = lines(dir);
+  assert.equal(e.trigger, 'risk_surface');
+  assert.equal(typeof e.trigger, 'string');
+  // Beside `--detail`, never instead of it: the detail stays the human's line
+  // and lib/trace-suggest.mjs still parses its own trigger out of it.
+  assert.equal(e.detail, 'risk_surface plan-2: 1 survivor');
+  assert.equal(e.plan, '2');
+});
+
+test('seam: --trigger is stored VERBATIM, trimmed, with no vocabulary of its own', () => {
+  // Event-agnostic like every other flag on this seam: no coupling to an event
+  // NAME and no refusal keyed to one. A trigger the seam does not recognise is
+  // the caller's business, exactly as `--reviewer` treats a backend name.
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'gate_pass', '--trigger', '  risk_surface  ']);
+  assert.equal(lines(dir)[0].trigger, 'risk_surface');
+});
+
+test('seam: a bare or blank --trigger appends NOTHING at all', () => {
+  // A bare flag parses as boolean `true` and would store the literal `true` as
+  // a trigger name - a receipt that joins to a fire nobody made, which is worse
+  // than the missing field it stands in for. Nothing is appended, the rule
+  // `--tokens`, `--raised` and `--reviewer` already hold.
+  const dir = root();
+  for (const args of [['--trigger'], ['--trigger', ''], ['--trigger', '  ']]) {
+    const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+      '--event', 'adjudication', '--plan', '2', ...args]);
+    assert.equal(r.ok, false, JSON.stringify(args));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(args));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: an append with no --trigger is byte-identical to today\'s', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+  const [e] = lines(dir);
+  assert.equal('trigger' in e, false, JSON.stringify(e));
+});
+
 test('seam: --read stores a comma-separated set as an array, verbatim', () => {
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',

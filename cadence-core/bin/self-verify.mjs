@@ -323,9 +323,16 @@ const CONTRACTS = {
     // `--read-file` is `--read`'s path transport, split by the same comma
     // grammar. It is NOT on the close row below: `--read` is not either, and
     // the transport never widens what a subcommand accepts.
+    // `--trigger` names WHICH review trigger an event belongs to, structured so
+    // an `outcome` receipt can be joined to the fire that produced it -
+    // `risk-check status` demands one for a matched range (GAT-04/D-12). It is
+    // listed here or check 2 reports `unknown-flag` against correct prose. Not
+    // on the `close` row below, for the reason `--read` is not: `close` fixes
+    // its own family and event, and a flag row never widens what a subcommand
+    // accepts.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
       '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
-      '--step', '--reviewer'],
+      '--step', '--reviewer', '--trigger'],
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from
     // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site

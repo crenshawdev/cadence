@@ -3063,6 +3063,29 @@ function cmdTrace(dir, sub, opts) {
       reviewer = raw;
     }
 
+    // --trigger: WHICH review trigger this event belongs to, stored verbatim as
+    // one non-empty string, so an `outcome` event can be JOINED to the fire that
+    // produced it without reading prose. `risk-check status` is the first
+    // consumer: it demands a receipt for the `risk_surface` fire on a range its
+    // detector matched, and a receipt is only a receipt if the trigger it names
+    // is structured (D-12).
+    // Measured on this repository's 35 `outcome/adjudication` events, the
+    // trigger is spelled four different ways inside the free-text `--detail` -
+    // `risk_surface`, `risk_surface re-arm`, `risk_surface rearm`,
+    // `risk_surface plan-1` - and lib/trace-suggest.mjs discards that text
+    // entirely, so parsing it back out is exactly the substitution the `--raised`
+    // and `--reviewer` flags were added to avoid.
+    // Refused when present but bare or blank, the refusal `--step` and
+    // `--reviewer` make two paragraphs above and for the identical reason: a
+    // bare `--trigger` parses as boolean `true`, which would store the literal
+    // `true` as a trigger name and satisfy a join for a fire nobody made.
+    let trigger;
+    if ('trigger' in opts) {
+      const raw = typeof opts.trigger === 'string' ? opts.trigger.trim() : '';
+      if (!raw) return fail('bad-args', `trace ${sub} --trigger needs a trigger name after it: --trigger <name>`);
+      trigger = raw;
+    }
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
     // `escalation` store tokens identically. `--step` does not change that: the
@@ -3091,6 +3114,7 @@ function cmdTrace(dir, sub, opts) {
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
+      ...(trigger === undefined ? {} : { trigger }),
     });
     return ok({
       written: res.written,
