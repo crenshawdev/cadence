@@ -340,7 +340,15 @@ const CONTRACTS = {
     // that listed them would let the restated spelling back in through the lint.
     // The inference reads the RESOLVED detail, so `--detail-file` selects the
     // checkpoint arm exactly as the inline form does.
-    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail',
+    // `--turns` is the tool-call count on the same subagent return `--tokens`
+    // is read off - the second of the two terms a run's price is made of, and
+    // the reason it is a STRUCTURED flag rather than a phrase inside `--detail`
+    // is that `--detail` is not a machine-join surface (one trigger name was
+    // spelled four different ways across 35 shipped events). Listed on the
+    // CLOSE row only, exactly as `--raised` is listed on `append` only: the
+    // flag is validated in the ONE shared `append|close` body, and this row is
+    // a prose allowlist that never widens what a subcommand accepts.
+    'trace close': ['--phase', '--plan', '--role', '--tokens', '--turns', '--detail',
       '--detail-file', '--reviewer'],
     // `--events` asks for the RAW event array. The default response carries the
     // paired `brackets` rows plus every `outcome` event instead, which is what

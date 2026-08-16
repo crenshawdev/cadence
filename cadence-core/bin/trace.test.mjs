@@ -834,6 +834,84 @@ test('seam: a malformed --tokens on a close appends NOTHING at all', () => {
   }
 });
 
+// --- the OTHER term the bill is made of: --turns (MSR-01) --------------------
+//
+// A run's price is turns times window, and the record carried only what a
+// worker RETURNED. `--turns` is the tool-call count on the same subagent return
+// `--tokens` is read off, so the two travel together at every close site.
+
+test('seam: --turns rides a close beside --tokens, as a NUMBER', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '12', '--turns', '83']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.turns, 83);
+  // A NUMBER for the same reason `--tokens` is one: the per-role render sums
+  // the field without type-checking it first.
+  assert.equal(typeof e.turns, 'number');
+  assert.match(traceBytes(dir), /"turns":83/);
+  assert.equal(e.tokens, 12);
+});
+
+test('seam: --turns lands on a `trace append` through the same shared body', () => {
+  // One body serves both subcommands, so the flag cannot be validated twice and
+  // cannot drift between them. `append` is where a hand-written or replayed
+  // event still enters the record.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-planner', '--turns', '7']);
+  assert.equal(r.ok, true);
+  assert.equal(lines(dir)[0].turns, 7);
+});
+
+test('seam: a malformed --turns appends NOTHING at all', () => {
+  const dir = root();
+  // No comma-grouping exception, unlike `--tokens`: a tool-call count is never
+  // PRINTED grouped, so `1,234` is a typo rather than a transcription - the
+  // same rule `--raised` states.
+  for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+      '--role', 'cad-executor', '--tokens', '12', '--turns', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // Byte-identical (or still absent): a best-effort append with the count
+    // dropped would render the role turn-unrecorded while the caller believed
+    // a figure was recorded.
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--turns` (parsed as boolean true) is refused the same way -
+  // `requireInt` refuses a non-string, so the guard falls out of it.
+  const bare = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--turns']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: a close with no --turns writes no turns key at all', () => {
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '12']);
+  const [e] = lines(dir);
+  // OMITTED, never `0`: a zero would claim a dispatch that used no tools, and
+  // a trace written before this flag existed must stay byte-identical.
+  assert.equal('turns' in e, false, JSON.stringify(e));
+});
+
+test('seam: --turns 0 is a recorded figure, not an omission', () => {
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--turns', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.turns, 0);
+  assert.ok('turns' in e);
+  assert.match(traceBytes(dir), /"turns":0/);
+});
+
 test('seam: a close pairs with the dispatch of the same --plan', () => {
   const dir = root();
   run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',

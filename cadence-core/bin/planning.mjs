@@ -2972,6 +2972,32 @@ function cmdTrace(dir, sub, opts) {
       tokens = parsed.value;
     }
 
+    // --turns: how many TOOL CALLS the dispatch made, read off the same subagent
+    // return metadata `--tokens` is (lib/trace.mjs's TOKEN PROVENANCE header
+    // states that provenance once, for both). Tokens alone cannot price a run -
+    // the bill is turns times window - so a record carrying only the token half
+    // can describe what a worker returned and never what it cost to get there.
+    // Structured, and never parsed back out of `--detail`: that slot is not a
+    // machine-join surface (one trigger was spelled four different ways across
+    // 35 shipped `outcome/adjudication` events), so a figure recovered from it
+    // is exactly as trustworthy as the substitution that condemned it.
+    // Validated the way `--raised` is, and for the same reason: a malformed
+    // value is a malformed CALL and NOTHING is appended, never a best-effort
+    // append with the field dropped - a dropped count renders the role
+    // turn-unrecorded while the caller believes a figure landed, which is the
+    // zero/unrecorded/recorded conflation the per-role block exists to prevent.
+    // No comma-grouping exception: that one exists because this plugin PRINTS
+    // token figures grouped, and a tool-call count never is, so accepting
+    // `1,234` would only widen what can be mistyped.
+    let turns;
+    if ('turns' in opts) {
+      const parsed = requireInt(opts.turns);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`);
+      }
+      turns = parsed.value;
+    }
+
     // --raised: how many findings the reviewers RAISED before adjudication, so
     // the record can tell a gate that found nothing (0 of 0) from a reviewer
     // whose every finding was refuted (0 of 9). Structured, because the
@@ -3116,6 +3142,11 @@ function cmdTrace(dir, sub, opts) {
       // `--sha` use records nothing rather than the literal `true`.
       ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
       ...(tokens === undefined ? {} : { tokens }),
+      // OMITTED when the return carried no count, never sent as `0`: a zero
+      // claims a dispatch that used no tools, while an absent key is readable
+      // as "this host reported none". A real `--turns 0` still records a 0,
+      // exactly as `--tokens 0` already does.
+      ...(turns === undefined ? {} : { turns }),
       ...(raised === undefined ? {} : { raised }),
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
