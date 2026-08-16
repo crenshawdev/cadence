@@ -281,17 +281,25 @@ actually ran>` - to a scratch file and pass its path; the voice list is composed
 from what actually ran (caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --detail-file <path>
 ```
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
 that makes a nine-findings-all-killed fire visible in the session and not only
 in the record.
 
-`--base <base> --sha <head>` names the RANGE this adjudication settled, and it is what lets
-`risk-check status` tell an adjudication of THIS range from one of an earlier,
-narrower range for the same plan. A receipt with no `--sha` settles nothing, so
-omitting it leaves a matched range reading as never fired.
+`--plan <k>` is required whenever the fire was per-plan: `risk-check status`
+joins a receipt to a record on the run AND the plan, so a receipt written
+without it keys to no plan and joins nothing, leaving a range that WAS fired and
+adjudicated reading as never fired. Omit it only for a fire that is not per-plan
+(`/cad-debug`, `/cad-task`, `/cad-verify`).
+
+`--base <base> --sha <head>` name the RANGE this adjudication settled - BOTH
+ends, since two ranges can share a head and differ at the base and are then
+different diffs over different surfaces. That is what lets `risk-check status`
+tell an adjudication of THIS range from one of an earlier, narrower range for
+the same plan. A receipt missing either end settles nothing, so omitting one
+leaves a matched range reading as never fired.
 
 The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
 figure parsed back out of that free-text slot would be exactly as trustworthy

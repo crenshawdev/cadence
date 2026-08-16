@@ -3773,7 +3773,11 @@ function cmdRiskCheckStatus(dir, opts) {
   const settledBy = (/** @type {any} */ rc, /** @type {any} */ f) => (
     f.head_id === null && f.base_id === null
       ? true
-      : shaMatches(rc.sha, f.head_id) && (rc.base ? shaMatches(rc.base, f.base_id) : true));
+      // Both ends REQUIRED, never "matched if supplied". Letting a receipt with
+      // no `--base` pass on the head alone reopened the widened-range bypass
+      // under a different name: a fire over `B..C` would settle `A..C`, which
+      // is a different diff over a different surface.
+      : shaMatches(rc.sha, f.head_id) && shaMatches(rc.base, f.base_id));
   /**
    * EVERY fired record this row answers for needs its own receipt.
    *

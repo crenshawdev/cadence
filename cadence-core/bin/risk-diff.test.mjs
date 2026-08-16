@@ -897,7 +897,7 @@ test('risk-check status: a NAMED range that matched is refused until its fire is
   assert.equal(unbound.plans[0].state, 'unfired');
 
   writeFileSync(join(dir, 'trace.jsonl'),
-    `${[...FROZEN_PHASE_1, matched, receiptLine('gate_pass', '1', { sha: b })].join('\n')}\n`);
+    `${[...FROZEN_PHASE_1, matched, receiptLine('gate_pass', '1', { sha: b, base: a })].join('\n')}\n`);
   const after = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', b], repo);
   assert.equal(after.ok, true, JSON.stringify(after));
   assert.equal(after._exit, 0);
@@ -948,7 +948,7 @@ test('risk-check status: an earlier fire\'s receipt does not clear a LATER match
   const c = commitFile(repo, 'docs/two.md', 'two\n');
   const first = recordLine('1', a, b, { base_id: a, head_id: b, matches: ['secrets'] });
   const widened = recordLine('1', a, c, { base_id: a, head_id: c, matches: ['secrets'] });
-  const fired = receiptLine('gate_pass', '1', { sha: b });
+  const fired = receiptLine('gate_pass', '1', { sha: b, base: a });
 
   // The first range is settled by its own receipt.
   writeFileSync(join(dir, 'trace.jsonl'), `${[...FROZEN_PHASE_1, first, fired].join('\n')}\n`);
@@ -964,7 +964,7 @@ test('risk-check status: an earlier fire\'s receipt does not clear a LATER match
 
   // ...until its own fire is recorded against it.
   writeFileSync(join(dir, 'trace.jsonl'),
-    `${[...FROZEN_PHASE_1, first, fired, widened, receiptLine('gate_pass', '1', { sha: c })].join('\n')}\n`);
+    `${[...FROZEN_PHASE_1, first, fired, widened, receiptLine('gate_pass', '1', { sha: c, base: a })].join('\n')}\n`);
   const three = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', c], repo);
   assert.equal(three.ok, true, JSON.stringify(three));
 });
@@ -1035,6 +1035,39 @@ test('risk-check status: a receipt for another BASE over the same head settles n
   const narrowFire = receiptLine('gate_pass', '1', { sha: c, base: b });
   writeFileSync(join(dir, 'trace.jsonl'), `${[...FROZEN_PHASE_1, wide, narrowFire].join('\n')}\n`);
   const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', c], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'unfired');
+});
+
+test('risk-check status: a receipt with no --base settles nothing when the record has ids', () => {
+  // "Matched if supplied" reopened the widened-range bypass under another name:
+  // a fire over B..C would settle A..C on the head alone.
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const c = commitFile(repo, 'docs/two.md', 'two\n');
+  assert.ok(b);
+  const wide = recordLine('1', a, c, { base_id: a, head_id: c, matches: ['secrets'] });
+  writeFileSync(join(dir, 'trace.jsonl'),
+    `${[...FROZEN_PHASE_1, wide, receiptLine('gate_pass', '1', { sha: c })].join('\n')}\n`);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', c], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'unfired');
+});
+
+test('risk-check status: a receipt written with no --plan joins nothing', () => {
+  // The documented adjudication command in review-triggers.md omitted `--plan`,
+  // so a per-plan fire's receipt keyed to no plan and the range stayed unfired.
+  // The defect was in the PROSE and the fix is there; this row pins the
+  // behaviour that fix relies on, so a later reader cannot decide a plan-less
+  // receipt should join loosely and quietly reopen it.
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'ae5ca09', 'HEAD', { matches: ['secrets'] }),
+    JSON.stringify({
+      corr: '1-ae5ca09', phase: '1', ts: '2026-08-15T18:47:00.000Z',
+      family: 'outcome', event: 'adjudication', trigger: 'risk_surface',
+    })]);
+  const r = riskStatus(dir, ['--phase', '1']);
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.plans[0].state, 'unfired');
 });
