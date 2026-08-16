@@ -56,9 +56,12 @@ prior call's output is serialized.
 
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set \
-    --phase <current> --status <derived> --next "<routed action from below>"
+    --phase <current> --status <derived> --next-file <path>
   ```
 
+  The routed action comes from the table below, and on a `paused` row that is
+  the user's own pause note carried forward - so write it to a scratch file and
+  pass the PATH (caller-derived text - references/conventions.md).
   Status mapping: unplanned -> `ready to plan`, planned -> `planned`,
   executed -> `executed`; all complete -> `phase complete` (with `--phase`
   = the last phase). A `paused` cursor always agrees - leave it.

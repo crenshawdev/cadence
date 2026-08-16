@@ -2211,3 +2211,15 @@ test('check 19: prose that merely names a flag stays green through the CLI', () 
   assert.deepEqual(run(['--root', root]).problems
     .filter((p) => p.kind.startsWith('text-transport-')), []);
 });
+
+test('check 19: the LIVE tree is clean of all three text-transport codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the half a fixture can never state - and it is
+  // what makes a reintroduced inline site redden the suite as well as the
+  // linter, so a site that goes back to `--detail "<...>"` cannot ship on a
+  // green `node --test`.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'text-transport-inline'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'text-transport-unregistered'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'text-transport-unclear'), []);
+});
