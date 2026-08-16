@@ -847,6 +847,121 @@ test('seam: phases holding no readable artifact write no ARCHIVE.md at all', () 
   assert.ok(!existsSync(join(dir, 'ARCHIVE.md')), 'no rows, no file');
 });
 
+// --- the falsifier: close a milestone, then recall out of it (RCL-07) -------
+//
+// WATCHED FAILING AT 182d2e1, the tip of this plan's unpatched tree. Observed
+// there, on this repository's own live corpus:
+//
+//   $ node cadence-core/bin/planning.mjs recall --root . b912d06
+//   {"ok":true,"results":[],"total":0}
+//
+// `b912d06` is a commit hash that appears only in the v3.5.2 phase-1 SUMMARY
+// this project pruned at its close - a deviation Cadence wrote down in order to
+// remember it, unreachable from the corpus the moment the phase retired. Every
+// hit `recall` returned on that tree, for any query, came from CAPTURE.md.
+//
+// The two cases below are that observation as a check: the seams are reached
+// through the CLI ONLY and nothing task 1 exported is imported, so against
+// 182d2e1 these fail on their assertion rather than on a missing export. To
+// re-watch it: `git worktree add --detach <tmp> 182d2e1`, copy this file into
+// that checkout's `cadence-core/bin/`, `node --test` it there, then remove the
+// worktree.
+
+const FALSIFIER_ROADMAP = `# Roadmap: Falsifier
+
+## Overview
+
+Prose.
+
+## Phases
+
+- [x] **Phase 1: Closed** - the milestone that retired
+- [ ] **Phase 2: Open** - still live
+
+## Phase Details
+
+### Phase 1: Closed
+**Goal:** retire
+
+### Phase 2: Open
+**Goal:** continue
+`;
+
+/**
+ * A `.planning` holding one completed phase with one artifact of each indexed
+ * kind. `quixotrope` appears in the SUMMARY deviation and NOWHERE else in the
+ * fixture; `zarquon` appears once in each of the three, which is what makes the
+ * three sources separable in one result list.
+ */
+function falsifierTree() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-rcl07-'));
+  const dir = join(root, '.planning');
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  mkdirSync(join(dir, 'phases', '2'), { recursive: true });
+  writeFileSync(join(dir, 'ROADMAP.md'), FALSIFIER_ROADMAP);
+  writeFileSync(join(dir, 'phases', '1', 'SUMMARY.md'),
+    '---\nphase: 1\nstatus: complete\n---\n\n## Deviations\n\n'
+    + '- [deviation] the quixotrope guard fired on a zarquon range it did not own\n');
+  writeFileSync(join(dir, 'phases', '1', 'UAT.md'),
+    '---\nstatus: complete\nphase: 1\n---\n\n## Items\n\n'
+    + '### 1. Walk the zarquon install\nexpected: a cold clone reaches the plugin\nstatus: pass\n'
+    + '\n## Summary\n\ntotal: 1\n');
+  writeFileSync(join(dir, 'phases', '1', 'CONTEXT.md'),
+    '# Phase 1 Context\n\n## Durable decisions\n\n'
+    + '- D-01 (RCL-07): the zarquon residue is written before the directories go\n');
+  writeFileSync(join(dir, 'phases', '2', 'CONTEXT.md'), '# Phase 2 Context\n');
+  return dir;
+}
+
+/**
+ * `planning.mjs recall` over a fixture. The global config layer is pinned off a
+ * nonexistent path the way planning.test.mjs pins it: a developer's real
+ * ~/.claude/cadence/config.json setting `memory.backend: none` would otherwise
+ * empty these results locally while CI stayed green.
+ */
+function recallIn(dir, query) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, 'recall', query, '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
+    }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+for (const mode of ['delete', 'archive']) {
+  test(`falsifier: a close in \`${mode}\` mode leaves its phase recallable (RCL-07)`, () => {
+    const dir = falsifierTree();
+
+    // It is recallable BEFORE the close - otherwise this case could pass on a
+    // fixture that never had a corpus at all.
+    assert.equal(recallIn(dir, 'quixotrope').results.length, 1, 'live before the close');
+
+    const pruned = run(dir, ['--label', 'v9.9.9', '--mode', mode]);
+    assert.equal(pruned.ok, true, JSON.stringify(pruned));
+    assert.ok(!existsSync(join(dir, 'phases', '1')),
+      'the phase directory is out of the live walk, whichever arm ran');
+
+    // The SUMMARY deviation, by a term that exists nowhere else in the fixture.
+    const one = recallIn(dir, 'quixotrope');
+    assert.equal(one.ok, true);
+    assert.equal(one.results.length, 1, JSON.stringify(one.results));
+    assert.equal(one.results[0].source, 'v9.9.9/phases/1/SUMMARY.md',
+      'the milestone that retired it AND the artifact it came from');
+    assert.equal(one.results[0].phase, 1);
+    assert.match(one.results[0].snippet, /the quixotrope guard fired/);
+
+    // And the three artifacts stay separable from each other in one result set.
+    const all = recallIn(dir, 'zarquon');
+    assert.deepEqual(all.results.map((r) => r.source).sort(), [
+      'v9.9.9/phases/1/CONTEXT.md',
+      'v9.9.9/phases/1/SUMMARY.md',
+      'v9.9.9/phases/1/UAT.md',
+    ], JSON.stringify(all.results));
+  });
+}
+
 // rm helper without importing rmSync at top (test file stays minimal).
 function rmDirHack(p) {
   execFileSync('rm', ['-rf', p]);
