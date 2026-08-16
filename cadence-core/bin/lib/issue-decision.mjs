@@ -145,6 +145,33 @@ function readOneIssue(text, number) {
  * slug is always present: `gh` and `glab` would otherwise infer the repo from
  * the process cwd, and `tea` infers nothing at all.
  *
+ * THE FORGEJO ROW BINDS EVERY CALL WITH `--remote origin`, and that IS the
+ * binding. `--repo <owner>/<name>` names the repository but not the login, and
+ * tea resolves an unqualified one in config FILE ORDER - so the first login in
+ * the user's config could answer for a repository it has never heard of, exit 0
+ * and all (D-07). `--remote origin` tells tea to discover the login from the
+ * checkout's own `origin` remote instead (`--remote string, -R string: Discover
+ * Gitea login from remote`, tea 0.15.1). The two flags compose - measured
+ * 2026-08-15: with `--repo forgejo/forgejo --remote origin` in a checkout whose
+ * origin is codeberg.org, tea answered from the codeberg login even though it
+ * sits SECOND in the config. The seam always spawns with `cwd` set to the
+ * repository `--dir` names, which is what makes `origin` resolvable at all.
+ *
+ * THE ONE LIMIT OF DELEGATING IT, stated because it cannot be guarded here:
+ * when NO login's host names the remote's host, tea does not refuse. It prints
+ * `NOTE: no login matched this repository, falling back to login '<first>' in
+ * non-interactive mode.` on STDERR, exits 0, and answers from config order -
+ * i.e. a stranger's tracker, reported as this repository's. This seam cannot
+ * see that happen: the NOTE is on stderr, which the caller discards by contract
+ * (issue-check.mjs's header), tea 0.15.1 offers no strict/no-fallback flag, and
+ * no subcommand reports which login answered. The fix is a login whose
+ * `ssh_host` names the remote's host, and it is the user's to make in
+ * `tea logins`. A host rule HERE was tried twice and could not be made correct
+ * without a vendored public suffix list (see classifyOrigin); delegating to tea
+ * and being honest about tea's fallback beats a curated rule this file would
+ * keep getting wrong. `gh` and `glab` need no equivalent: neither is
+ * multi-account-ambiguous the way tea's `--repo` fallback is.
+ *
  * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
  * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
  * (`--limit 50`, `100` and `200` each returned exactly 50 against this repo's
@@ -184,16 +211,19 @@ export const HOST_TABLE = Object.freeze({
     bin: 'tea',
     limit: 50,
     /** @param {string} slug @param {number} limit @returns {string[]} */
-    argv: (slug, limit) => ['issues', 'list', '--repo', slug, '--state', 'open',
+    argv: (slug, limit) => ['issues', 'list', '--repo', slug,
+      '--remote', 'origin', '--state', 'open',
       '--fields', 'index,state', '--output', 'json', '--limit', String(limit)],
     /** @param {unknown} text @param {number} limit */
     normalize: (text, limit) => normalizeList(text, limit, 'index'),
-    // All four flags exist on the installed tea (`tea issues --help`,
-    // 2026-08-15). No `--state`: the number is named directly.
+    // All five flags exist on the installed tea, and `--remote` on the
+    // single-issue form as well as on `list` (`tea issues --help` and
+    // `tea issues list --help`, 2026-08-15). No `--state`: the number is named
+    // directly.
     resolve: Object.freeze({
       /** @param {string} slug @param {number} number @returns {string[]} */
       argv: (slug, number) => ['issues', String(number), '--repo', slug,
-        '--fields', 'index,state', '--output', 'json'],
+        '--remote', 'origin', '--fields', 'index,state', '--output', 'json'],
       /** @param {unknown} text @param {number} number */
       read: (text, number) => readOneIssue(text, number),
     }),
