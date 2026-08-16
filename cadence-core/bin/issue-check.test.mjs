@@ -170,6 +170,35 @@ for (const [name, originUrl, host, stubs] of HOSTS) {
   });
 }
 
+// --- the SSH endpoint that is not the web host ------------------------------
+//
+// This repository's own shape (TRK-01, D-12): origin
+// `ssh://git@ssh.jcrenshaw.dev:2222/...` while `tea login list` names
+// `git.jcrenshaw.dev` in all three of its host fields, so nothing matches by
+// host equality and every land skips. The HOSTS table above cannot cover it -
+// all three of its forgejo login fields EQUAL the origin host - which is why
+// the suite stayed green while the repository the seam was built in skipped.
+// A separate SSH endpoint on a non-standard port is a normal deployment shape.
+
+const SPLIT_ORIGIN = 'ssh://git@ssh.example.com:2222/org/repo.git';
+
+test('forgejo: an SSH host that differs from the login host still reports', () => {
+  const dir = repo({ originUrl: SPLIT_ORIGIN, commits: COMMITS });
+  const r = seam(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  // The envelope names the ORIGIN's own host, never the login's: it is what the
+  // user configured, and it is what a degradation line would have had to name.
+  assert.equal(r.host, 'ssh.example.com');
+  assert.equal(r.repo, 'org/repo');
+  assert.deepEqual(r.referenced, [
+    { number: 42, state: 'open' }, { number: 47, state: 'closed' }, { number: 99, state: 'open' },
+  ], JSON.stringify(r));
+  assert.deepEqual(r.open, [42, 99]);
+  assert.deepEqual(r.warnings, []);
+});
+
 test('a branch referencing NO issue still reports the open list as the fallback', () => {
   const dir = repo({ originUrl: 'https://github.com/org/repo.git', commits: ['chore: no refs here'] });
   const r = seam(['check', '--dir', dir, '--base', 'main'], { stubs: { gh: { body: GH_BODY } } });
@@ -307,6 +336,31 @@ for (const [name, pattern, build, action = 'skip'] of DEGRADATIONS) {
     SEEN_REASONS.set(envelope.reason, name);
   });
 }
+
+// Beside the matrix rather than inside it: the matrix keeps ONE row per
+// degradation class (AC5), and this is the same `no-login` class asserted from
+// the other side - what the seam must NOT do once host equality stops being the
+// test. tea's `--repo` fallback is config-FILE-ORDER, not repo-aware (D-07), so
+// an unguarded call resolves to whichever login sits first in the user's config
+// and can return another project's issues as this one's, exit 0 and all.
+test('an origin sharing no registrable domain with any login skips, and queries nothing', () => {
+  const dir = repo({ originUrl: 'https://git.stranger.org/org/repo.git', commits: COMMITS });
+  const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, marker, argvLog });
+  assert.equal(status, 0, 'a stranger host must not fail the land');
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+  assert.equal(envelope.reason, 'tea holds no login for git.stranger.org: no tracker report');
+  assert.deepEqual(envelope.referenced, []);
+  assert.deepEqual(envelope.open, []);
+  // One tea spawn, and its argv is the login probe alone - no issue query went
+  // out against a forge that shares nothing with this remote.
+  assert.deepEqual(readFileSync(marker, 'utf8').trim().split('\n'), ['tea']);
+  assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'),
+    ['tea login list --output json'], readFileSync(argvLog, 'utf8'));
+});
 
 test('the key-off arm spawns NO forge CLI at all, not merely an empty report', () => {
   // A test reading only the reason and the empty list also passes an
