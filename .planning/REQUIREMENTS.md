@@ -6,8 +6,8 @@
 ## Active
 
 `v3.5.3 - bounds not stated, costs not counted`, opened 2026-08-16. Scoped off
-the Forgejo milestone, which holds eight issues: #168, #143, #141, #198, #199,
-#200, #201 and #202.
+the Forgejo milestone, which holds eleven issues: #168, #143, #141, #198, #199,
+#200, #201, #202, #203, #204 and #205.
 
 Two halves of one shape: Cadence asserts a control it does not actually hold.
 The review path states bounds it never enforces, and the run record claims to
@@ -48,6 +48,30 @@ of spend, at an average 121,250-token window).
 
 MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither can be argued while turns
 and window go unrecorded.
+
+**Controls that do not reach their own paths.** From the external strict
+re-review of 2026-08-16, adjudicated here: five of its ten findings were killed
+as already-filed, already-deferred or by-design, and three survived verification.
+
+- **RCL-07**: The recall corpus survives a milestone close. `milestone-prune`
+  deletes (or archives) `phases/<N>/`, and the corpus walker
+  (`planning.mjs:2036-2064`) reads only live phase dirs plus `CAPTURE.md`, so
+  every shipped SUMMARY, UAT and CONTEXT decision goes unreachable at the close.
+  Reproduced live on this repo hours after the `v3.5.2` close (#203).
+- **PAR-01**: The parallel execute path runs the same risk sequence the
+  sequential one does. `execute.md` calls `risk-check` twice; `execute-parallel.md`
+  calls it zero times, so the one gate that is `blocking` at every stakes level
+  does not exist there and the two branches disagree about what "done" means
+  (#204).
+- **GAT-04**: `risk-check status` refuses a matched or inconclusive range that
+  carries no corresponding outcome event, so proving the detector RAN stops
+  standing in for proving the blocking fire HAPPENED (#205).
+
+RCL-07 is the one that falsifies a stated claim rather than a documented rail:
+`PROJECT.md`'s Core Value says what Cadence writes down "must come back on its
+own at the moment it matters", and after a close three of its four categories
+cannot.
+
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`

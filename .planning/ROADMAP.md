@@ -67,5 +67,67 @@ MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither is arguable while turns and
 window go unrecorded.
 ## Phases
 
+- [ ] **Phase 1: The controls that never reached their path** - recall survives a milestone close, the parallel branch runs the same risk sequence the sequential one does, and `risk-check status` stops accepting a matched range with no fire behind it
 
 ## Phase Details
+
+### Phase 1: The controls that never reached their path
+**Goal:** Three controls Cadence already has stop being unreachable from the
+path that needs them: the recall corpus survives a milestone close, the parallel
+execute branch runs the same risk sequence the sequential one does, and
+`risk-check status` refuses a matched range carrying no outcome event.
+**Depends on:** Nothing
+**Requirements:** RCL-07, PAR-01, GAT-04
+
+Adjudicated from the external strict re-review of 2026-08-16. Ten findings in,
+five killed as already-filed, already-deferred or by-design, three survived
+verification against the code, one fixed inline as a doc contradiction
+(`docs/WORKFLOW.md` said the shipped `plan` gate was `off` when the route table
+says `blocking`), and one - the append-only caps - left open at 17% and 19% of
+its ceilings.
+
+The three that survived share a shape: the control EXISTS, is correct, and does
+not reach the path that needs it.
+
+`RCL-07` is the one that falsifies a stated claim rather than a documented rail.
+`PROJECT.md`'s Core Value says what Cadence writes down "must come back on its
+own at the moment it matters". `milestone-prune` deletes `phases/<N>/` at the
+close and the corpus walker (`planning.mjs:2036-2064`) reads only live phase
+dirs plus `CAPTURE.md`, so every shipped SUMMARY, UAT and CONTEXT decision goes
+unreachable. Reproduced live here hours after the `v3.5.2` close: a recall for
+this milestone's own lease-grammar decisions returns `CAPTURE.md` hits and
+nothing else. Nothing is LOST - git holds it - so this is reachability, not
+durability, and the fix shape the tree already chose for the same problem one
+layer up is the `## Shipped` residue that keeps requirement rows traceable after
+the dirs are gone.
+
+`PAR-01` is arithmetic: `grep -c risk-check` returns 2 for
+`workflows/execute.md` and 0 for `references/execute-parallel.md`. The one gate
+that is `blocking` at every stakes level does not exist on the parallel path,
+and `risk-check status` - which the sequential branch requires before a plan may
+be reported done - is never called there, so the two branches disagree about
+what "done" means. This repo's move to `stakes: critical` buys compensating
+`diff` and `phase_diff` cover but not the detector receipt.
+
+`GAT-04` is the same argument one step out. `risk-check status` proves a range
+was READ and RECORDED; it does not prove the blocking fire happened. A
+coordinator can run the detector, skip the fire, and still receive `ok:true`.
+Cadence's stated failure model is a fallible coordinator, and the tree
+repeatedly replaces "the prose says to" with "the seam refuses" - this is that
+move applied to the one gate that never got it.
+
+**Success criteria:**
+- A recall query for a decision, UAT item or deviation from a CLOSED milestone
+  returns it, on both the `delete` and `archive` prune arms, with the corpus
+  source named in the result.
+- `references/execute-parallel.md` reaches the same risk sequence
+  `workflows/execute.md` states - detector, conditional fire, status - without
+  restating it as a second copy, and a parallel plan cannot be reported done
+  while `risk-check status` refuses.
+- `risk-check status` refuses a range recorded as `matches` non-empty or
+  `inconclusive: true` that carries no adjudication, re-arm or explicit-override
+  outcome event under the same correlation id, and an explicit user override
+  records an event of its own so a deliberately cleared range still passes.
+- A check fails against the unpatched code first for each of the three, and the
+  watched FAIL is recorded with its SHA.
+
