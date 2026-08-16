@@ -33,7 +33,7 @@ Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
 whose fire found no blocker becomes permanently unclearable:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --base <base> --sha <head>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --plan <k> --base <base> --sha <head>
 ```
 
 The user explicitly overrides a FAIL - record that instead. The reason is the
@@ -44,7 +44,7 @@ review's settled outcome, so it is REFUSED as a receipt when that reason is
 empty - a blank override is indistinguishable from a manufactured clear:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --base <base> --sha <head> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --detail-file <path>
 ```
 
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
@@ -79,7 +79,7 @@ same id means the one round is SPENT - do not fire again, go straight to the
 STOP-and-ask arm above. No such event -> record the round as you fire it:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --base <base> --sha <head> --detail "<trigger>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --plan <k> --base <base> --sha <head> --detail "<trigger>"
 ```
 
 The `--sha` is what makes this round a receipt for the range it re-armed on as

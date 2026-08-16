@@ -932,3 +932,56 @@ test('PAR-01: both parallel risk-check calls name that plan\'s OWN merge range',
     'the fire and the completion gate name DIFFERENT ranges, so the gate can clear on a '
     + 'record for a range nobody fired on');
 });
+
+// --- GAT-04: the receipt a coordinator COPIES joins on the key status uses ---
+//
+// Watched FAILING at dd3920e, where three of the four fenced `trace append`
+// blocks - `gate_pass`, `override` and `rearm` in
+// cadence-core/references/triage-gate.md - carried no `--plan <k>`, against
+// cadence-core/references/review-triggers.md's `adjudication`, which did.
+// `risk-check status` joins a receipt to a record on `rowKey(corr, plan)`, so
+// a receipt appended exactly as those blocks read keys to no plan and settles
+// nothing: the range stays `unfired` and the blocking gate cannot be cleared
+// by following its own instructions.
+//
+// The rule was already stated in prose at triage-gate.md's receipt paragraph.
+// This file's whole premise is that prose copying a machine-readable fact must
+// still match it, and a prose RULE beside a command that disobeys it is that
+// drift in its purest form - the copied line is what a coordinator runs.
+//
+// Nothing else pinned it: risk-diff.test.mjs's `receiptLine` helper builds its
+// fixtures with a plan every time, so the seam's own tests are handed what
+// these documents omit.
+
+test('GAT-04: every fenced outcome receipt names its trigger, plan and both range ends', () => {
+  const files = [
+    ['cadence-core', 'references', 'triage-gate.md'],
+    ['cadence-core', 'references', 'review-triggers.md'],
+  ];
+  /** @type {string[]} */
+  const seen = [];
+  for (const parts of files) {
+    const text = doc(...parts);
+    const where = parts.slice(1).join('/');
+    for (const line of text.split('\n')) {
+      // The command LINE, not the prose: only a fenced invocation is a thing a
+      // coordinator copies and runs. Prose that names one of these flags while
+      // discussing it is never scanned as an argument list.
+      if (!line.includes('trace append') || !line.includes('--family outcome')) continue;
+      const event = /--event\s+(\S+)/.exec(line);
+      assert.ok(event, `${where}: an outcome receipt command names no --event`);
+      seen.push(event[1]);
+      for (const flag of ['--trigger', '--plan', '--base', '--sha']) {
+        assert.ok(line.includes(flag),
+          `${where}: the \`${event[1]}\` receipt drops ${flag} - risk-check status joins a `
+          + 'receipt on the run, the plan and BOTH ends of the range, so a receipt written as '
+          + 'this line reads settles nothing and leaves a fired range reading as unfired');
+      }
+    }
+  }
+  // All four settle points, so a receipt block DELETED fails here too rather
+  // than passing vacuously: adjudication (review-triggers.md) plus the three
+  // in triage-gate.md.
+  assert.deepEqual(seen.sort(), ['adjudication', 'gate_pass', 'override', 'rearm'],
+    'the four blocking settle points no longer print one fenced receipt command each');
+});
