@@ -893,6 +893,63 @@ test('seam: an UNREADABLE --detail-file is refused and NAMES the read error', ()
   }
 });
 
+// --- --read-file: the same comma grammar through the path transport ----------
+
+test('seam: --read-file produces the identical array the same value produces inline', () => {
+  const dir = root();
+  const set = 'a.md, ,b.md,';
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '1', '--read', set]);
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', '2', '--read-file', valueFile(dir, `${set}\n`, 'reads.txt')]);
+  const [inline, viaFile] = lines(dir);
+  // The same grammar, including the trim-and-drop of blank segments: one
+  // list-builder, so the two transports cannot disagree about what an element is.
+  assert.deepEqual(viaFile.read, inline.read);
+  assert.deepEqual(viaFile.read, ['a.md', 'b.md']);
+});
+
+test('seam: --read-file stores a ref range and a glob verbatim, existence unchecked', () => {
+  const dir = root();
+  const set = '.planning/does-not-exist.md,.planning/phases/*/PLAN*.md,abc1234..def5678';
+  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'dispatch', '--plan', 'cad-reviewer', '--role', 'cad-reviewer',
+    '--read-file', valueFile(dir, set, 'reads.txt')]);
+  assert.deepEqual(lines(dir)[0].read, set.split(','));
+});
+
+test('seam: every --read-file refusal is bad-args and appends NOTHING at all', () => {
+  const dir = root();
+  const present = valueFile(dir, 'a.md,b.md', 'reads.txt');
+  const cases = [
+    { name: 'valueless', args: ['--read-file'] },
+    { name: 'missing path', args: ['--read-file', join(dir, 'absent.txt')] },
+    { name: 'empty file', args: ['--read-file', valueFile(dir, '\n \n', 'blank.txt')] },
+    // The all-blank arm the inline `--read` already refuses: a file holding
+    // only separators is non-empty to the reader and still names no element.
+    { name: 'all-blank file', args: ['--read-file', valueFile(dir, ' , ,', 'blanks.txt')] },
+    { name: 'both forms', args: ['--read', 'a.md', '--read-file', present] },
+  ];
+  // The unreadable arm, unless the suite runs as root (where mode bits assert
+  // nothing) - built here so it rides the same nothing-was-written assertion.
+  const locked = valueFile(dir, 'a.md', 'locked.txt');
+  chmodSync(locked, 0o000);
+  try {
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--read-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+        '--event', 'dispatch', '--plan', '1', ...c.args]);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(traceBytes(dir), null, `${c.name} wrote to the record`);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
+});
+
 // --- per-role totals ----------------------------------------------------------
 
 test('render: a fully-recorded role carries a total and NO unrecorded key', () => {

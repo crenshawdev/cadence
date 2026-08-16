@@ -2869,16 +2869,28 @@ function cmdTrace(dir, sub, opts) {
     // no existence check, no normalization and no byte measurement, so a reader
     // converting the set to bytes must resolve each element BY KIND rather than
     // assume a plain path.
+    //
+    // `--read-file` is the same value through the path transport, for a site
+    // whose read-set is composed from what the worker was handed rather than
+    // typed by a human. It is split by the SAME grammar and refused by the SAME
+    // all-blank test - one list-builder below, so the two transports cannot
+    // disagree about what an element is.
     let read;
-    if ('read' in opts) {
-      const list = typeof opts.read === 'string'
-        ? opts.read.split(',').map((s) => s.trim()).filter(Boolean)
+    const resolvedRead = resolveTextFlag(opts, 'read', `trace ${sub}`);
+    if (!resolvedRead.ok) return fail('bad-args', resolvedRead.detail);
+    if ('read' in opts || 'read-file' in opts) {
+      const raw = resolvedRead.value !== undefined ? resolvedRead.value : opts.read;
+      const list = typeof raw === 'string'
+        ? raw.split(',').map((s) => s.trim()).filter(Boolean)
         : [];
       // A bare `--read`, an empty string, or an all-blank value is almost
       // always an unset `"$PATHS"`, and a complete-looking dispatch with no
-      // read-set is the failure this refusal exists against.
+      // read-set is the failure this refusal exists against. The file form
+      // reaches this same test with a file holding only separators - a
+      // whitespace-only file is already refused by the reader as empty.
       if (!list.length) {
-        return fail('bad-args', `trace ${sub} --read needs a comma-separated path list`);
+        return fail('bad-args',
+          `trace ${sub} --read${'read-file' in opts ? '-file' : ''} needs a comma-separated path list`);
       }
       read = list;
     }

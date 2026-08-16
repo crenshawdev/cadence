@@ -291,9 +291,12 @@ const CONTRACTS = {
     // derived: the inline form puts that text in a double-quoted shell word,
     // where `$(...)` and a backtick execute before Node starts. Additive - the
     // inline form stays for a human typing at a shell (lib/text-flag-file.mjs).
+    // `--read-file` is `--read`'s path transport, split by the same comma
+    // grammar. It is NOT on the close row below: `--read` is not either, and
+    // the transport never widens what a subcommand accepts.
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
-      '--detail-file', '--role', '--tokens', '--raised', '--read', '--step',
-      '--reviewer'],
+      '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
+      '--step', '--reviewer'],
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from
     // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
