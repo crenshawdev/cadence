@@ -92,8 +92,9 @@ const SHIPPED_PREAMBLE = [
  * Move the shipped milestone's requirements under `## Shipped`. Shipped =
  * every `## Traceability` row whose phase is in `completed` AND whose status
  * is not `Deferred`. For each id:
- * its `## Active` bullet (`- **ID**: summary`) is removed, its Traceability
- * row is removed, and one `| ID (summary) | phase | Complete | label |` row
+ * its `## Active` bullet (`- **ID**: summary`) is removed WHOLE - lead line
+ * plus its indented continuation lines - its Traceability row is removed, and
+ * one `| ID (summary) | phase | Complete | label |` row
  * lands in `## Shipped` - created after `## Active` when absent, appended
  * after the table's last row when present.
  *
@@ -120,10 +121,22 @@ export function archiveRequirements(text, completed, label) {
   let lines = text.split('\n');
   const summaries = new Map();
 
-  // 1. Pull each shipped id's Active bullet (capturing its one-line summary)
-  //    and its Traceability row. Bullet form is the seeding convention
+  // 1. Pull each shipped id's Active bullet (capturing its summary) and its
+  //    Traceability row. Bullet form is the seeding convention
   //    (`- **ID**: line`); the row match is bounded to the Traceability
   //    section so a same-shaped row under `## Shipped` is never re-removed.
+  //
+  //    What is pulled is the bullet's SPAN, never its lead line alone (D-01):
+  //    the lead line plus every following non-blank line that begins with
+  //    whitespace, ended by a blank line or a column-0 line. Requirement
+  //    bullets in a real project WRAP - all four in this repo's own
+  //    `## Active` do - and the lead-line reader left the continuation lines
+  //    behind as orphaned prose while archiving a row cut mid-sentence. It was
+  //    hand-repaired at three consecutive closes before it was made to read the
+  //    span. The lead-line match itself stays the narrow `- **<ID>**:` form
+  //    built from `escId` (D-03), NOT `ACTIVE_BULLET` from planning-files.mjs,
+  //    which reads any bold span as an id and would delete a `- **Note**:`
+  //    prose bullet whose id happened to collide with a shipped one.
   //
   //    The bullet scan is bounded the same way, to `## Active` - heading to the
   //    next `^## `, the cut parseRequirements and lib/planning-files.mjs:388-391
@@ -146,11 +159,26 @@ export function archiveRequirements(text, completed, label) {
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
       const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
-      body = body.filter((line) => {
-        const m = line.match(bulletRe);
-        if (m) { summaries.set(id, m[1].trim()); return false; }
-        return true;
-      });
+      const kept = [];
+      for (let i = 0; i < body.length; i++) {
+        const m = body[i].match(bulletRe);
+        if (!m) { kept.push(body[i]); continue; }
+        // The captured summary is that same span with each line trimmed and
+        // joined on single spaces - no length cap (D-09) and no lowercasing of
+        // the first letter (D-05), so the archived text is byte-faithful to the
+        // bullet apart from the whitespace join. A heuristic that lowercased the
+        // lead word to match past hand repairs would mangle a span opening on a
+        // proper noun or an identifier, which is the worse failure.
+        const parts = [m[1].trim()];
+        let j = i + 1;
+        while (j < body.length && body[j].trim() && /^\s/.test(body[j])) {
+          parts.push(body[j].trim());
+          j++;
+        }
+        summaries.set(id, parts.filter(Boolean).join(' '));
+        i = j - 1;
+      }
+      body = kept;
     }
     lines = [...lines.slice(0, activeAt + 1), ...body, ...lines.slice(activeEnd)];
   }
