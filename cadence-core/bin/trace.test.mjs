@@ -1294,7 +1294,13 @@ function traceCalls(text, verb) {
       event: flag(line, 'event', false),
       plan: flag(line, 'plan', false),
       role: flag(line, 'role', false),
-      read: flag(line, 'read', true),
+      // `--read-file <path>` carries the same read-set through the path
+      // transport (references/conventions.md), so it satisfies every rule
+      // this census states about `--read` - the invariant is that a dispatch
+      // NAMES what it caused, not which spelling named it. The fallback is
+      // unambiguous because the inline reader requires whitespace after
+      // `read` and so can never match `--read-file`.
+      read: flag(line, 'read', true) ?? flag(line, 'read-file', false),
       tokens: flag(line, 'tokens', false),
       step: flag(line, 'step', true),
       detail: flag(line, 'detail', true),

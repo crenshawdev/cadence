@@ -67,10 +67,12 @@ that does not say the subject changed gets a correctness review back.
 Bracket the worker in the joined run record first. `<N>` is the target phase
 when the target IS a phase, and the STATE cursor's phase
 (`node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor get`)
-for a path or directory target:
+for a path or directory target. The read-set is the target the USER named,
+resolved, so write that reference to a scratch file and pass the path
+(caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read "<the resolved target reference>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family lifecycle --event dispatch --plan cad-reviewer --role cad-reviewer --read-file <path>
 ```
 
 Then dispatch `cad-reviewer` through the spawn-agent seam with the payload above
@@ -87,9 +89,10 @@ it. OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --tokens <the token count on the subagent return>
 ```
 
-A dispatch that failed or returned nothing parseable adds
-`--detail "<what failed>"` to that same line and closes as a checkpoint, so the
-burned budget still reaches the record.
+A dispatch that failed or returned nothing parseable writes what failed to a
+scratch file and adds `--detail-file <path>` to that same line (caller-derived
+text - references/conventions.md), closing as a checkpoint, so the burned budget
+still reaches the record.
 
 That arm reports NO LIST, never an empty one: an unusable return and a clean
 sweep are opposite results and must not read alike.

@@ -23,9 +23,10 @@ is where that bound is enforced.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-planner --role cad-planner --tokens <the token count on the subagent return>
    ```
 
-   ONE line, the same arms handle_return uses: an empty or unmarked return
-   carries `--detail "<empty or unmarked revision return>"` and the seam closes
-   it as a checkpoint.
+   ONE line, the same arms handle_return uses: an empty or unmarked return is
+   written to a scratch file and carried on `--detail-file <path>`
+   (caller-derived text - references/conventions.md), and the seam closes it as
+   a checkpoint.
 2. Re-dispatch the checker once, NARROWED. Its bracket rides its own resolve
    with a NARROWER read-set than check_gate's - the plan files whose diff is
    its whole artifact: `--bracket-read ".planning/phases/{N}/PLAN*.md"`.
@@ -51,8 +52,9 @@ is where that bound is enforced.
    node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-plan-checker --role cad-plan-checker --tokens <the token count on the subagent return>
    ```
 
-   An empty or unmarked return carries
-   `--detail "<empty or unmarked narrowed return>"` and closes as a checkpoint.
+   An empty or unmarked return goes to a scratch file and rides
+   `--detail-file <path>` (caller-derived text - references/conventions.md),
+   closing as a checkpoint.
 
    Both re-dispatches close on their own, at their own step: the per-file
    census asserts one `trace close` per dispatch moment, so folding these two
