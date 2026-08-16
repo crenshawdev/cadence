@@ -9,7 +9,11 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pruneRoadmap, archiveRequirements, completedPhases } from './lib/milestone-prune.mjs';
 
-const PLANNING = join(dirname(fileURLToPath(import.meta.url)), 'planning.mjs');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PLANNING = join(HERE, 'planning.mjs');
+// This repository's own root, computed the way prose-agreement.test.mjs
+// computes its REPO - the corpus test below reads the live planning documents.
+const REPO = join(HERE, '..', '..');
 
 const ROADMAP = `# Roadmap: Fixture
 
@@ -215,6 +219,221 @@ test('no ## Active heading: no bullet removed, no summary captured, the row stil
   const r = archiveRequirements(noActive, [1], 'v9.9.0');
   assert.ok(r.text.includes('- **STOR-01**: bytes survive'), 'the out-of-section bullet stays');
   assert.ok(r.text.includes('| STOR-01 | 1 | Complete | v9.9.0 |'), 'no summary to parenthesize');
+});
+
+// --- wrapped bullets: the shape this repository's own documents have --------
+// Every `## Active` bullet in `.planning/REQUIREMENTS.md` wraps, so the wrapped
+// path is the common one, not an edge case. The helpers below state D-01's span
+// rule and D-04's escape INDEPENDENTLY of lib/milestone-prune.mjs, so what they
+// pin is the rule rather than whatever the implementation happens to do.
+
+/** The bullet SPAN (D-01) read out of `## Active`: the lead `- **ID**:` line
+ *  plus every following non-blank line beginning with whitespace. A blank line
+ *  or a column-0 line ends it. Returns `[]` when the id has no bullet. */
+function activeSpan(text, id) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => l.trim() === '## Active');
+  if (start === -1) return [];
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^## /.test(lines[i])) { end = i; break; }
+  }
+  const body = lines.slice(start + 1, end);
+  const lead = body.findIndex((l) => new RegExp(`^- \\*\\*${id}\\*\\*:`).test(l));
+  if (lead === -1) return [];
+  const span = [body[lead]];
+  for (let i = lead + 1; i < body.length; i++) {
+    if (!body[i].trim() || !/^\s/.test(body[i])) break;
+    span.push(body[i]);
+  }
+  return span;
+}
+
+/** That span as the archived parenthetical must read: each line trimmed and
+ *  joined on single spaces, the `- **ID**: ` marker dropped, every `|` escaped
+ *  for the table cell (D-04). No lowercasing - D-05 makes the archived text
+ *  byte-faithful to the bullet apart from the whitespace join. */
+function parenthetical(span) {
+  return span.map((l) => l.trim()).join(' ')
+    .replace(/^- \*\*[^*]+\*\*:\s*/, '')
+    .replace(/\|/g, '\\|');
+}
+
+/** Every `|`-leading line inside `## Shipped`, header and delimiter included. */
+function shippedRows(text) {
+  const lines = text.split('\n');
+  const at = lines.findIndex((l) => l.trim() === '## Shipped');
+  if (at === -1) return [];
+  const out = [];
+  for (let i = at + 1; i < lines.length; i++) {
+    if (/^## /.test(lines[i])) break;
+    if (/^\|/.test(lines[i])) out.push(lines[i]);
+  }
+  return out;
+}
+
+/** Pipes that still divide a GFM cell - a `\|` renders the character instead. */
+const unescapedPipes = (row) => (row.match(/(?<!\\)\|/g) || []).length;
+
+// Bullets that WRAP, one carrying a `|` in its text, the section closing with a
+// column-0 prose paragraph after a blank line: the exact shape
+// `.planning/REQUIREMENTS.md` has.
+const WRAPPED = `# Requirements: Fixture
+
+## Active
+
+- **STOR-01**: Bytes survive a restart, and the reader that proves it reads
+  the same span the writer wrote, so a partial write is reported rather than
+  repaired.
+- **STOR-02**: The patch holds under a config union spelled \`mode: fast|slow\`
+  in the bullet's own text.
+- **REC-01**: bytes are findable
+  by the recall walk, which no phase has shipped.
+
+\`/cad-plan\` seeds each requirement's Traceability row as its phase is planned -
+rows are never hand-populated here.
+
+## Out of Scope
+
+- Sync.
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+| STOR-02 | Phase 2.1 | Complete |
+| REC-01 | Phase 3 | Pending |
+`;
+
+test('a wrapped bullet is removed whole - no orphaned continuation line survives', () => {
+  const r = archiveRequirements(WRAPPED, [1, 2.1], 'v1.2.0');
+  const out = r.text.split('\n');
+  for (const id of ['STOR-01', 'STOR-02']) {
+    const span = activeSpan(WRAPPED, id);
+    assert.ok(span.length > 1, `${id} must wrap for this fixture to bite`);
+    for (const line of span) {
+      assert.ok(!out.includes(line), `orphaned fragment survived: ${line}`);
+    }
+  }
+});
+
+test('a wrapped-bullet prune leaves the section\'s trailing paragraph and the unshipped bullet', () => {
+  const r = archiveRequirements(WRAPPED, [1, 2.1], 'v1.2.0');
+  const out = r.text.split('\n');
+  // The column-0 paragraph after the last bullet is prose, not span.
+  assert.ok(r.text.includes("`/cad-plan` seeds each requirement's Traceability row as its phase is planned -"));
+  assert.ok(r.text.includes('rows are never hand-populated here.'));
+  // ...and an unshipped id keeps its WHOLE wrapped bullet.
+  const span = activeSpan(WRAPPED, 'REC-01');
+  assert.equal(span.length, 2);
+  for (const line of span) {
+    assert.ok(out.includes(line), `an unshipped bullet's line was eaten: ${line}`);
+  }
+});
+
+test('the archived parenthetical is the whole span joined, first letter as authored', () => {
+  const r = archiveRequirements(WRAPPED, [1, 2.1], 'v1.2.0');
+  const one = parenthetical(activeSpan(WRAPPED, 'STOR-01'));
+  // D-05: byte-faithful, so the assertion may NOT expect a lowercased lead word.
+  assert.ok(one.startsWith('Bytes survive a restart'), 'the fixture pins the capital');
+  assert.ok(r.text.includes(`| STOR-01 (${one}) | 1 | Complete | v1.2.0 |`),
+    `expected the whole span: ${one}`);
+  const two = parenthetical(activeSpan(WRAPPED, 'STOR-02'));
+  assert.ok(r.text.includes(`| STOR-02 (${two}) | 2.1 | Complete | v1.2.0 |`),
+    `expected the whole span: ${two}`);
+});
+
+test('a `|` inside a bullet is escaped before it reaches the Shipped cell', () => {
+  const r = archiveRequirements(WRAPPED, [1, 2.1], 'v1.2.0');
+  const rows = shippedRows(r.text);
+  assert.equal(rows.length, 4, 'header, delimiter and the two shipped rows');
+  for (const row of rows) {
+    assert.equal(unescapedPipes(row), 5, `a shifted Shipped column: ${row}`);
+  }
+  const cell = rows.find((l) => l.startsWith('| STOR-02'));
+  assert.ok(cell.includes('fast\\|slow'), 'the character still renders in the cell');
+});
+
+// A fenced `## Active` ABOVE the real one - the shape the shipped
+// templates/REQUIREMENTS.md has, which made a fence-blind reader operate on a
+// template's own example.
+const FENCED = `# Requirements: Fixture
+
+## Template
+
+The shipped template carries its own example of the section:
+
+\`\`\`markdown
+## Active
+
+- **STOR-01**: an example bullet inside a code fence
+\`\`\`
+
+## Active
+
+- **STOR-01**: bytes survive
+  across a restart.
+- **REC-01**: bytes are findable
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+| REC-01 | Phase 3 | Pending |
+`;
+
+test('a `## Active` heading inside a code fence is not the section', () => {
+  const r = archiveRequirements(FENCED, [1], 'v9.9.0');
+  assert.ok(r.text.includes('- **STOR-01**: an example bullet inside a code fence'),
+    'a bullet inside a fenced example is documentation, not a bullet');
+  assert.ok(!r.text.includes('- **STOR-01**: bytes survive'), 'the real bullet is the one removed');
+  assert.ok(!r.text.includes('across a restart.'));
+  assert.ok(r.text.includes('| STOR-01 (bytes survive across a restart.) | 1 | Complete | v9.9.0 |'),
+    'the summary comes from the real section, not the fenced example');
+  // Both ends come from the same reader, so the created section lands after the
+  // REAL `## Active` span rather than before it.
+  assert.ok(r.text.indexOf('## Shipped') > r.text.indexOf('- **REC-01**: bytes are findable'),
+    '## Shipped was created inside/above the real Active section');
+  assert.ok(r.text.indexOf('## Shipped') < r.text.indexOf('## Traceability'));
+});
+
+// --- the corpus: this repository's own planning documents -------------------
+
+test('corpus: pruning this repository\'s own REQUIREMENTS.md needs no hand repair', () => {
+  const roadmap = readFileSync(join(REPO, '.planning', 'ROADMAP.md'), 'utf8');
+  const reqs = readFileSync(join(REPO, '.planning', 'REQUIREMENTS.md'), 'utf8');
+  const r = archiveRequirements(reqs, completedPhases(roadmap), 'v9.9.9');
+  assert.ok(r.moved.length > 0, 'the corpus must have a completed phase to move');
+
+  const before = new Set(shippedRows(reqs));
+  const out = r.text.split('\n');
+  const after = shippedRows(r.text);
+
+  for (const { id, phase } of r.moved) {
+    const span = activeSpan(reqs, id);
+    assert.ok(span.length > 1, `${id} must be a wrapped bullet for this corpus to bite`);
+    // No line of a moved bullet's original span survives anywhere in the text.
+    for (const line of span) {
+      assert.ok(!out.includes(line), `${id} left an orphan: ${line}`);
+    }
+    // ...and its new parenthetical is that whole span.
+    assert.equal(
+      after.find((l) => l.startsWith(`| ${id} `)),
+      `| ${id} (${parenthetical(span)}) | ${phase} | Complete | v9.9.9 |`);
+  }
+
+  // Every row this run ADDED is five-piped. The rows it did not add are
+  // byte-preserved - including `CFG-01` and `RVW-01`, the two scars this phase
+  // deliberately leaves unrepaired, which is why the count is scoped to new rows.
+  for (const row of after) {
+    if (before.has(row)) continue;
+    assert.equal(unescapedPipes(row), 5, `a shifted Shipped column: ${row}`);
+  }
+  for (const row of before) {
+    assert.ok(after.includes(row), `a pre-existing Shipped row was rewritten: ${row}`);
+  }
 });
 
 // --- the seam ---------------------------------------------------------------
