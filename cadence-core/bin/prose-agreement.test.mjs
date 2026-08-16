@@ -1024,3 +1024,82 @@ test('MSR-01: seams.md\'s close-half rule states the turn count, its omission an
   assert.equal((text.match(/ONE statement/g) || []).length, 1,
     'seams.md now holds more than one `ONE statement` marker - the rule was copied, not extended');
 });
+
+// --- MSR-02: the report's spend line and the seam make ONE claim ------------
+//
+// WATCHED FAILING AT 4b1d659, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/prose-agreement.test.mjs
+//   x MSR-02: report.md names the seam's three excluded sources where it prints the spend figure
+//     AssertionError [ERR_ASSERTION]: report.md's spend line does not name `the
+//     orchestrator's own turns`, so it presents a worker-return token sum as the
+//     run's cost. Got: Tokens on subagent returns (the host's own per-dispatch
+//     figure, not a measured cost): <total recorded; top role and its share;
+//     unrecorded dispatch count>
+//   i pass 25
+//   i fail 1
+//
+// The recipe uses the GUARDED-READ arm below rather than copying this phase's
+// `lib/trace-suggest.mjs` into the old checkout, and it has to: the export is
+// absent there, a named import would die at module link, and the recorded FAIL
+// would then prove only that a new helper does not exist yet. With the guard,
+// the old tree reaches the assertion and fails on the CLAIM - the exact
+// sentence unpatched `/cad-report` composes.
+//
+// To re-watch: `git worktree add --detach <tmp> 4b1d659`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/prose-agreement.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+// This is the half of MSR-02 that lives in prose nothing executes.
+// `workflows/report.md` has no executor at all - moving the caveat into the
+// seam envelope was rejected for exactly that reason, because the file would
+// still be relaying a sentence no check reads. So the sentence is read here,
+// and the three names are IMPORTED from `lib/trace-suggest.mjs` rather than
+// restated: the subject of this check is that the seam and the prose claim the
+// same thing, and a literal copy in this file would assert nothing about
+// agreement - it would go green on the day the two lists diverged.
+//
+// The import is a NAMESPACE import for the same reason the seam-half check
+// uses one: a named import would die at module link against an unpatched
+// checkout, and a FAIL that only proves a new export does not exist yet says
+// nothing about whether unpatched `/cad-report` makes the wrong cost claim.
+//
+// Both sites are asserted by their NAMED anchors - the shape block's spend line
+// and the `What that token line EXCLUDES` rule - never by the shape of the
+// sentences around them, so a rewrap that changed no fact stays green.
+import * as traceSuggestModule from './lib/trace-suggest.mjs';
+
+const REPORT_EXCLUDES = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
+  ? traceSuggestModule.SPEND_EXCLUDES
+  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+
+test('MSR-02: report.md names the seam\'s three excluded sources where it prints the spend figure', () => {
+  const text = doc('cadence-core', 'workflows', 'report.md');
+  assert.equal(REPORT_EXCLUDES.length, 3,
+    'the exported exclusion list is no longer the three sources the caveat is written about');
+
+  // 1. The shape block's own spend line - the point at which the figure is
+  //    PRINTED. A caveat further down the file is a caveat a reader can compose
+  //    the line without.
+  const lineStart = text.indexOf('Tokens on subagent returns (');
+  assert.ok(lineStart >= 0, 'report.md has no `Tokens on subagent returns (` line');
+  const spendLine = text.slice(lineStart, text.indexOf('\n', lineStart));
+  for (const name of REPORT_EXCLUDES) {
+    assert.ok(spendLine.includes(name),
+      `report.md's spend line does not name \`${name}\`, so it presents a `
+      + `worker-return token sum as the run's cost. Got: ${spendLine}`);
+  }
+
+  // 2. The rule that states them, read from its named anchor to the next
+  //    top-level bullet.
+  const ruleStart = text.indexOf('- What that token line EXCLUDES');
+  assert.ok(ruleStart >= 0, 'report.md has no `What that token line EXCLUDES` rule');
+  const next = text.indexOf('\n- ', ruleStart + 1);
+  const rule = text.slice(ruleStart, next > ruleStart ? next : text.length);
+  for (const name of REPORT_EXCLUDES) {
+    assert.ok(rule.includes(name),
+      `report.md's EXCLUDES rule does not name \`${name}\` - the prose and the `
+      + 'seam are claiming different things about one figure');
+  }
+});
