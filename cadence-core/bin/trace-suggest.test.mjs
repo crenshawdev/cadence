@@ -465,3 +465,73 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- MSR-02: the shipped shape of the spend receipt's evidence string --------
+//
+// WATCHED FAILING AT 4b1d659, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/trace-suggest.test.mjs
+//   x MSR-02: the spend receipt names all three excluded sources, from the one exported list
+//     AssertionError [ERR_ASSERTION]: the spend receipt does not name `the
+//     orchestrator's own turns` - a /cad-suggest reader is told a worker-return
+//     token sum is the run's cost. Got: largest recorded spend: 300,000 of
+//     400,000 recorded tokens (75%)
+//   i pass 23
+//   i fail 2
+//
+// The recipe uses the GUARDED-READ arm, not the copy-the-export arm, and the
+// distinction is the whole watch: copying this phase's `lib/trace-suggest.mjs`
+// into the old checkout would carry the fixed evidence string in with it and
+// the check would go GREEN there, proving nothing. So only this file is copied,
+// the old seam emits the old string, and the fallback list below supplies the
+// three names the absent export would have.
+//
+// The second failure in that run is the committed-fixture deepEqual, which is
+// the same fact read from the other end - the old seam's literal string against
+// this phase's re-pinned one - and it is expected there.
+//
+// To re-watch: `git worktree add --detach <tmp> 4b1d659`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/trace-suggest.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+// The subject is the RULE, not the committed fixture: the assertion runs over a
+// render built by this file's own `render()` helper, so a fixture re-pin can
+// never carry this check green. And the three names are READ from the frozen
+// export rather than copied here - a test holding its own copy of the list goes
+// green on the day the seam and `workflows/report.md` stop agreeing about what
+// the figure excludes, which is the one failure this check exists to catch.
+//
+// The read is GUARDED, and that guard is what makes the re-watch above possible
+// at all. A named `import { SPEND_EXCLUDES }` would die at module LINK against
+// an unpatched checkout, and a recorded FAIL that only proves a new export does
+// not exist yet says nothing about whether unpatched `/cad-suggest` makes the
+// wrong cost claim. A namespace import never fails on an absent name, so the
+// old tree reaches the assertion and fails on the CLAIM.
+import * as traceSuggestModule from './lib/trace-suggest.mjs';
+
+const SPEND_EXCLUDES_READ = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
+  ? traceSuggestModule.SPEND_EXCLUDES
+  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+
+test('MSR-02: the spend receipt names all three excluded sources, from the one exported list', () => {
+  const out = suggestFromRender(render([], {
+    'cad-executor': { dispatches: 2, tokens: 300000 },
+    'cad-planner': { dispatches: 1, tokens: 100000 },
+  }));
+  const s = out.find((x) => x.evidence.includes('largest recorded spend'));
+  assert.ok(s, 'the spend receipt no longer fires on a render carrying token figures');
+
+  assert.equal(SPEND_EXCLUDES_READ.length, 3,
+    'the exclusion list is no longer the three sources the caveat is written about');
+  for (const name of SPEND_EXCLUDES_READ) {
+    assert.ok(s.evidence.includes(name),
+      `the spend receipt does not name \`${name}\` - a /cad-suggest reader is told a`
+      + ` worker-return token sum is the run's cost. Got: ${s.evidence}`);
+  }
+
+  // Still a receipt, not a suggestion: D-11 forbids the /cad-suggest half
+  // growing a flag, an envelope key or anything to act on.
+  assert.equal(s.kind, 'info');
+  assert.equal(s.action, null);
+});
