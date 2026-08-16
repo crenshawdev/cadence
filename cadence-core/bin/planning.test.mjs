@@ -4868,6 +4868,34 @@ test('lease-check: a declared directory ends in / and matches by PREFIX', () => 
   assert.equal(leaseCheck(b.repo, b.dir, ['--phase', '1', '--plan', '1']).ok, false);
 });
 
+// Both readers now reach containment through lib/lease-grammar.mjs. These two
+// pin the half that must NOT have moved: for a declaration that was already
+// unambiguous, the verdict and both counts are what they were before the
+// shared predicate existed, and an empty lease still licenses nothing.
+
+test('lease-check: a two-file clean lease still reports staged: 2, declared: 2 through the shared predicate', () => {
+  const { repo, dir } = leaseRepo({ files: ['a.txt', 'src/b.js'] });
+  stage(repo, 'a.txt');
+  stage(repo, 'src/b.js');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.staged, 2);
+  assert.equal(r.declared, 2);
+  assert.equal(r.undeclared, undefined);
+  assert.equal(r._exit, 0);
+});
+
+test('lease-check: a plan whose files: list is empty is still refused as undeclared-files, exit 1', () => {
+  const { repo, dir } = leaseRepo({ files: [] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['a.txt']);
+  assert.equal(r.declared, 0);
+  assert.equal(r._exit, 1);
+});
+
 test('lease-check: PLAN-<k>.md is selected by --plan', () => {
   const { repo, dir, pdir } = leaseRepo({ plan: 'PLAN-1.md', files: ['a.txt'] });
   writeFileSync(join(pdir, 'PLAN-2.md'), '---\nphase: 1\nfiles:\n  - b.txt\n---\n# Plan 2\n');

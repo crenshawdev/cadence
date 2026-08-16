@@ -161,7 +161,7 @@ import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
 import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
-import { intersects } from './lib/lease-grammar.mjs';
+import { covers, intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
@@ -2096,8 +2096,15 @@ function cmdRecall(dir, query, opts) {
 // that fires wrong gets deleted, not tuned. The seam form covers the sequential
 // path too, which the criterion does not require but gets free.
 //
-// The reader is `parsePlanFiles`, the SAME one cmdPlanOverlap uses, so a path
+// The reader is `parsePlanFiles`, the SAME one cmdPlanOverlap uses, and
+// containment is `lib/lease-grammar.mjs`, the same module it asks - so a path
 // the pre-flight overlap gate admitted cannot be refused here and vice versa.
+// That claim used to be made of the READER alone, and it was false of the
+// comparison: the gate intersected two declared lists by exact string equality
+// while this step read a trailing slash as a directory prefix, so a phase
+// declaring `src/` in one plan and `src/auth.js` in another passed the
+// parallel-safety gate and was then refused right here. One module makes it
+// true of both halves.
 // `declaredPhaseFiles` is the wrong reader: it unions across the PHASE, which
 // would let plan 2 stage a file only plan 1 declared.
 //
@@ -2318,13 +2325,20 @@ function cmdLeaseCheck(dir, opts) {
   // the contract requires the executor to write and which no plan declares.
   const reportFile = repoRel(top, join(pdir, 'reports', `plan-${k}.md`));
 
-  // A declared path ending in `/` is a directory lease and matches by prefix;
-  // everything else matches exactly. Substring matching would let `src/auth`
-  // license `src/authority.rs`.
-  const exact = new Set(declared.filter((f) => !f.endsWith('/')));
-  const prefixes = declared.filter((f) => f.endsWith('/'));
+  // What a declaration covers is `lib/lease-grammar.mjs`'s answer and not this
+  // function's - the same module `cmdPlanOverlap` asks, which is the whole
+  // point. The grammar itself (directory lease by trailing slash, everything
+  // else byte-identical, and why `src/auth` must never license
+  // `src/authority.rs`) is stated in that module's header, once: a second copy
+  // here is exactly how the two seams came to disagree, with the pre-flight
+  // gate admitting a plan pair this step then refused to separate.
+  //
+  // The staged side is NOT re-normalized on its way in (D-08): it arrives
+  // canonical through `repoRel`, and a second transform over paths that
+  // round-tripped through the byte-level guard above is how the non-ASCII hard
+  // block gets re-broken.
   const undeclared = staged.filter((p) => p !== reportFile
-    && !exact.has(p) && !prefixes.some((d) => p.startsWith(d)));
+    && !declared.some((d) => covers(d, p)));
 
   const common = {
     phase: n,
