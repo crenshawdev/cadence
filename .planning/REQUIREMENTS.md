@@ -15,51 +15,6 @@ degrade silently on this repository, which is the repository they were built in.
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted.
 
-- **AUT-01**: `git.auto_close` resolves as two distinct booleans rather than one
-  merged value: `autoCloseRequested` from the merged config, which is
-  presentation and what the existing close gate reads, and
-  `autoCloseAuthorized` from the repository layer alone. Today
-  `skills/cad-land/SKILL.md` reads the key through `config.mjs get` and enters
-  the no-prompt branch on the merged global-plus-repo value, while
-  `git-publish.mjs`'s `repoAutoClose` reads `.planning/config.json` directly and
-  never the merged value - so a user-global `true` speaks for a repository that
-  never opted in, against D-08 and against the schema's own stated contract. The
-  prior narrowing (`0b1c322`, reverted) aligned the two seams' values and broke
-  the skipped-ask / halt pairing `land-cleanup.mjs` depends on; this must not
-  touch that pairing (#131).
-- **AUT-02**: No unattended external mutation runs on ANY host without
-  `autoCloseAuthorized`, GitLab included. GitHub and Forgejo publish through the
-  repo-authorized seam and stop on its `ok:false`; GitLab does not reach the
-  seam at all, because `glab mr create` publishes the source branch itself, and
-  the workflow proceeds to `glab mr merge` with nothing gating it.
-  `land-cleanup.mjs` already records this discrepancy in its own source, so it
-  is a known gap rather than a discovered one. `glab` is absent on this machine,
-  so the GitLab arm is proven through the same resolved-CLI seam the other hosts
-  use rather than by a live call (#131).
-- **PRN-01**: `milestone-prune` transforms a WRAPPED requirement bullet
-  correctly in both halves - the `## Active` removal takes the whole bullet span
-  (lead line plus its indented continuation lines) rather than the lead line
-  alone, and `archiveRequirements` builds the archived row's parenthetical from
-  that same span rather than truncating at the first physical line. Today it
-  does neither, so every close leaves orphaned prose fragments under `## Active`
-  and rows cut mid-sentence under `## Shipped`
-  (`| RSK-01 (An executable risk-check seam under \`cadence-core/bin/\` answers a) |`).
-  Hand-repaired at the v3.3.0, v3.4.1 and v3.5.0 closes. Requirement bullets in
-  this repo wrap by default, so this is the common path, not an edge case, and
-  `lib/milestone-prune.mjs`'s own header says these surgeries were made
-  deterministic precisely because the hand-performed version kept leaving a tree
-  that failed its own audit. Regression cover needs a fixture whose bullets wrap
-  (#179).
-- **TRK-01**: `issue-check.mjs` resolves the tracker by repository rather than
-  by origin-URL host equality, so a Forgejo remote whose SSH endpoint differs
-  from its web host still reports. Today the host parsed off
-  `ssh://git@ssh.jcrenshaw.dev:2222/...` is matched against a `tea` login keyed
-  on `git.jcrenshaw.dev`, nothing matches, and the seam takes its skip arm - by
-  its own contract, which is why LND-01 has never once produced a report on this
-  repository. A separate SSH endpoint on a non-standard port is a normal
-  deployment shape, not a misconfiguration, and `tea --repo <owner>/<name>`
-  already works against the same login. The one-line read-only degradation stays;
-  what changes is that a correctly configured remote stops hitting it (#180).
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -209,6 +164,10 @@ parses only the Traceability table).
 | ENF-02 (`self-verify.mjs` fails when a trigger's schema default or its prose disagrees with `route-table.json`. It already fails in both directions on rung files and routing cells and has never compared these at all, so the drift above was invisible to the one check whose job is catching it (#135)) | 1 | Complete | v3.4.1 |
 | RSK-01 (an executable risk-check seam under `cadence-core/bin/` answers a diff range with `{checked, categories, matches, inconclusive}` and ALWAYS writes that record, match or no match - no such seam existed, detection being `workflows/execute.md` telling the orchestrator to read a diff against eight prose categories (#130)) | 1 | Complete | v3.5.0 |
 | RSK-02 (a plan or task cannot complete without that record, so the run record distinguishes "the detection step was skipped" from "it ran and matched nothing" - `risk_surface` blocks at every level and is the only live gate on a default install, and a non-match used to write nothing at all (#130)) | 1 | Complete | v3.5.0 |
+| AUT-01 (`git.auto_close` resolves as two distinct booleans rather than one merged value: `autoCloseRequested` from the merged config, which is presentation and what the existing close gate reads, and `autoCloseAuthorized` from the repository layer alone. Today `skills/cad-land/SKILL.md` reads the key through `config.mjs get` and enters the no-prompt branch on the merged global-plus-repo value, while `git-publish.mjs`'s `repoAutoClose` reads `.planning/config.json` directly and never the merged value - so a user-global `true` speaks for a repository that never opted in, against D-08 and against the schema's own stated contract. The prior narrowing (`0b1c322`, reverted) aligned the two seams' values and broke the skipped-ask / halt pairing `land-cleanup.mjs` depends on; this must not touch that pairing (#131).) | 1 | Complete | v3.5.1 |
+| AUT-02 (No unattended external mutation runs on ANY host without `autoCloseAuthorized`, GitLab included. GitHub and Forgejo publish through the repo-authorized seam and stop on its `ok:false`; GitLab does not reach the seam at all, because `glab mr create` publishes the source branch itself, and the workflow proceeds to `glab mr merge` with nothing gating it. `land-cleanup.mjs` already records this discrepancy in its own source, so it is a known gap rather than a discovered one. `glab` is absent on this machine, so the GitLab arm is proven through the same resolved-CLI seam the other hosts use rather than by a live call (#131).) | 1 | Complete | v3.5.1 |
+| PRN-01 (`milestone-prune` transforms a WRAPPED requirement bullet correctly in both halves - the `## Active` removal takes the whole bullet span (lead line plus its indented continuation lines) rather than the lead line alone, and `archiveRequirements` builds the archived row's parenthetical from that same span rather than truncating at the first physical line. Today it does neither, so every close leaves orphaned prose fragments under `## Active` and rows cut mid-sentence under `## Shipped` (`\| RSK-01 (An executable risk-check seam under \`cadence-core/bin/\` answers a) \|`). Hand-repaired at the v3.3.0, v3.4.1 and v3.5.0 closes. Requirement bullets in this repo wrap by default, so this is the common path, not an edge case, and `lib/milestone-prune.mjs`'s own header says these surgeries were made deterministic precisely because the hand-performed version kept leaving a tree that failed its own audit. Regression cover needs a fixture whose bullets wrap (#179).) | 2 | Complete | v3.5.1 |
+| TRK-01 (`issue-check.mjs` resolves the tracker by repository rather than by origin-URL host equality, so a Forgejo remote whose SSH endpoint differs from its web host still reports. Today the host parsed off `ssh://git@ssh.jcrenshaw.dev:2222/...` is matched against a `tea` login keyed on `git.jcrenshaw.dev`, nothing matches, and the seam takes its skip arm - by its own contract, which is why LND-01 has never once produced a report on this repository. A separate SSH endpoint on a non-standard port is a normal deployment shape, not a misconfiguration, and `tea --repo <owner>/<name>` already works against the same login. The one-line read-only degradation stays; what changes is that a correctly configured remote stops hitting it (#180).) | 2 | Complete | v3.5.1 |
 
 ## Deferred
 
@@ -250,10 +209,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUT-01 | Phase 1 | Complete |
-| AUT-02 | Phase 1 | Complete |
-| PRN-01 | Phase 2 | Complete |
-| TRK-01 | Phase 2 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
