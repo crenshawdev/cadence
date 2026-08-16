@@ -197,9 +197,19 @@ export function archiveRequirements(text, completed, label) {
   });
 
   // 2. Build the shipped rows, summary parenthesized when the bullet had one.
+  //
+  //    A `|` in the summary is escaped as `\|` HERE, at the interpolation, not
+  //    at capture (D-04): `summaries` keeps the bullet's own bytes, and the
+  //    escape is a property of the table cell it is about to become. Unescaped,
+  //    a bullet quoting a config union (`review.mode: panel|single`) or a
+  //    markdown row shifts the table's columns silently, and `Milestone` reads
+  //    `Complete`. This is the guard planning.mjs `cmdMilestonePrune` already
+  //    applies to `--label` for the identical stated reason, one interpolation
+  //    over, which is why the row keeps exactly five unescaped pipes.
+  const cell = (s) => s.replace(/\|/g, '\\|');
   const newRows = shipped.map(({ id, phase }) => {
     const s = summaries.get(id);
-    return `| ${id}${s ? ` (${s})` : ''} | ${phase} | Complete | ${label} |`;
+    return `| ${id}${s ? ` (${cell(s)})` : ''} | ${phase} | Complete | ${label} |`;
   });
 
   // 3. Land them under `## Shipped`.
