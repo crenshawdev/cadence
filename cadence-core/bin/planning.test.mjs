@@ -628,6 +628,95 @@ test('cursor set: no ROADMAP and no flags cannot derive', () => {
   assert.equal(r.reason, 'cannot-derive');
 });
 
+// --- cursor set --next-file: the path transport for a COMPOSED resume pointer
+//
+// /cad-pause and `progress` build their pointer from what the run was doing,
+// which is agent-derived text; the seven sites passing a literal
+// `/cad-<command> N` keep the inline form, which is why nothing is deleted.
+
+test('cursor set: --next-file writes the STATE.md the inline value writes', () => {
+  const inlineDir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const fileDir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const pointer = '/cad-execute 1 - resume at task 3, the reader is half-wired';
+  const src = join(fileDir, 'next.txt');
+  writeFileSync(src, `${pointer}\n`);
+  const a = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', pointer, '--total', '4'], inlineDir);
+  const b = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next-file', src, '--total', '4'], fileDir);
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  assert.equal(readFileSync(join(fileDir, 'STATE.md'), 'utf8'),
+    readFileSync(join(inlineDir, 'STATE.md'), 'utf8'));
+  assert.equal(run(['cursor', 'get'], fileDir).next, pointer);
+});
+
+test('cursor set: a --next-file value no shell could expand lands verbatim', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const pointer = '/cad-execute 1 after $(touch /tmp/cad-cursor-should-not-exist) and `id`';
+  const src = join(dir, 'next.txt');
+  writeFileSync(src, pointer);
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next-file', src, '--total', '4'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(run(['cursor', 'get'], dir).next, pointer);
+  assert.equal(existsSync('/tmp/cad-cursor-should-not-exist'), false, 'the payload executed');
+});
+
+test('cursor set: a TWO-LINE --next-file is bad-args - the cursor is four lines', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  const seed = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--total', '4'], dir);
+  assert.equal(seed.ok, true);
+  const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  const src = join(dir, 'next.txt');
+  writeFileSync(src, 'resume at task 3\nand mind the reader');
+  const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next-file', src, '--total', '4'], dir);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /newline/);
+  assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before);
+  // The regression this refusal exists against: a fifth line the parser cannot
+  // read back, which would make the very next `cursor get` unparseable.
+  assert.equal(run(['cursor', 'get'], dir).ok, true);
+});
+
+test('cursor set: every --next-file refusal is bad-args, STATE.md byte-unchanged', () => {
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }] });
+  run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+    '--next', '/cad-execute 1', '--total', '4'], dir);
+  const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  const write = (name, body) => {
+    const f = join(dir, name);
+    writeFileSync(f, body);
+    return f;
+  };
+  const good = write('next.txt', '/cad-execute 1');
+  const cases = [
+    { name: 'valueless', args: ['--next-file'] },
+    { name: 'missing path', args: ['--next-file', join(dir, 'absent.txt')] },
+    { name: 'empty file', args: ['--next-file', write('blank.txt', '\n \n')] },
+    { name: 'both forms', args: ['--next', '/cad-execute 1', '--next-file', good] },
+  ];
+  const locked = write('locked.txt', '/cad-execute 1');
+  chmodSync(locked, 0o000);
+  try {
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--next-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(['cursor', 'set', '--phase', '1', '--status', 'planned',
+        ...c.args, '--total', '4'], dir);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before, `${c.name} wrote`);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
+});
+
 test('usage: unknown subcommand degrades, never crashes', () => {
   const r = run(['nonsense'], makeTree({}));
   assert.equal(r.ok, false);

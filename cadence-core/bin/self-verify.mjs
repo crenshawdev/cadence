@@ -228,7 +228,10 @@ const CONTRACTS = {
     '*': ['--dir'],
     status: [],
     'cursor get': [],
-    'cursor set': ['--phase', '--status', '--next', '--name', '--total'],
+    // `--next-file` is `--next`'s path transport, for the two sites that COMPOSE
+    // a resume pointer (/cad-pause, `progress`) rather than authoring a literal
+    // `/cad-<command> N`. The seven literal sites keep the inline form.
+    'cursor set': ['--phase', '--status', '--next', '--next-file', '--name', '--total'],
     'phase-done': ['--n', '--reqs', '--undo'],
     'uat init': ['--phase', '--sources'],
     'uat refresh': ['--phase'],

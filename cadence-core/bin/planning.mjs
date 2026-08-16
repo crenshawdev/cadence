@@ -467,7 +467,27 @@ function cmdCursorSet(dir, opts) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
   }
   const phase = parsedPhase.value;
-  if (!opts.status || !opts.next) return fail('bad-args', 'cursor set needs --status and --next');
+  // `--next-file` is the path transport for a resume pointer the CALLER
+  // composed - /cad-pause and `progress` build theirs from what the run was
+  // doing, which is agent-derived text in a double-quoted shell word
+  // (lib/text-flag-file.mjs, references/conventions.md). The seven sites that
+  // pass a literal `/cad-<command> N` keep the inline form; nothing is deleted.
+  const resolvedNext = resolveTextFlag(opts, 'next', 'cursor set');
+  if (!resolvedNext.ok) return fail('bad-args', resolvedNext.detail);
+  const next = resolvedNext.value !== undefined ? resolvedNext.value : opts.next;
+  if (!opts.status || !next) return fail('bad-args', 'cursor set needs --status and --next');
+  // ONE refusal the inline form never needed: `renderCursor` writes `next` into
+  // the cursor's `Next:` line unflattened, and references/conventions.md states
+  // the cursor is always exactly four lines - a wrapped resume pointer would
+  // produce a fifth line `parseCursor` cannot read back, so the very next
+  // `cursor get` would answer `unparseable-cursor`. A file is the transport
+  // that can carry a newline, so this is where the structural term belongs. It
+  // REFUSES rather than flattening, mirroring `milestone-prune --label`'s table
+  // term: a malformed value is a malformed CALL and nothing is written.
+  if (typeof next === 'string' && /[\r\n]/.test(next)) {
+    return fail('bad-args',
+      'cursor set --next cannot contain a newline - the cursor is exactly four lines');
+  }
   if (!CURSOR_STATUSES.includes(opts.status)) {
     return fail('bad-status', `"${opts.status}" is not in the lifecycle: ${CURSOR_STATUSES.join(' | ')}`);
   }
@@ -525,7 +545,7 @@ function cmdCursorSet(dir, opts) {
   }
 
   const cursor = {
-    phase, total, name, status: opts.status, next: opts.next,
+    phase, total, name, status: opts.status, next,
     updated: new Date().toISOString().slice(0, 10),
   };
   atomicWrite(join(dir, 'STATE.md'), renderCursor(cursor));
