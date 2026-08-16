@@ -48,6 +48,37 @@ export const MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2;
 export const MIN_RESIDUE_MS_FOR_COORDINATOR_INFO = 600000;
 
 /**
+ * The three sources the recorded token total DOES NOT include, in the words
+ * every reader of that total states.
+ *
+ * Exported and frozen for the reason `lib/trace.mjs` exports
+ * `DISPATCH`/`TERMINAL`/`ANCHOR` rather than letting the bracket census hold
+ * its own copy of them: this claim has TWO readers - R5's `evidence` string
+ * below, which `/cad-suggest` relays unchanged, and the spend line in
+ * `cadence-core/workflows/report.md` - and a second copy of the list is green
+ * on the day the two stop claiming the same thing. `prose-agreement.test.mjs`
+ * reads THIS array to check the prose, so there is one list and one claim.
+ *
+ * Why these three, and why they are not a hedge:
+ *   1. the orchestrator's own turns - a figure is read off a subagent RETURN
+ *      and the coordinator has no return, so it contributes nothing to a total
+ *      that most of the run's spend belongs to;
+ *   2. cross-model provider calls - no lifecycle bracket and no token field on
+ *      that arm at all, by design;
+ *   3. figureless returns - a close that carried no `--tokens`, the advisory
+ *      fire among them, counted under `unrecorded` rather than as a zero.
+ *
+ * No fourth entry is a ratio or a correction factor, and none is coming: the
+ * terms are what MSR-03 and PLN-01 need, and a stored product is the
+ * maintenance loop `v2.7.0` deleted.
+ */
+export const SPEND_EXCLUDES = Object.freeze([
+  "the orchestrator's own turns",
+  'cross-model provider calls',
+  'figureless returns',
+]);
+
+/**
  * A duration in whole minutes, the unit a run record is read in.
  * @param {number} ms
  */
@@ -279,7 +310,13 @@ export function suggestFromRender(render) {
     });
   }
 
-  // R5: the spend receipt. Names where the tokens went; asks for nothing.
+  // R5: the spend receipt. Names where the recorded tokens went and what that
+  // total is NOT - the three `SPEND_EXCLUDES` names ride the evidence string
+  // rather than the envelope, because `workflows/suggest.md` relays evidence
+  // unchanged and adds no flag, so this is the only way the caveat reaches a
+  // `/cad-suggest` reader at all. Asks for nothing: still `kind: 'info'`,
+  // still `action: null`, still silent when no role carried a figure, and the
+  // only arithmetic is the share it already computed.
   const roles = render.roles && typeof render.roles === 'object' ? render.roles : {};
   let top = null;
   let total = 0;
@@ -292,7 +329,7 @@ export function suggestFromRender(render) {
     out.push({
       kind: 'info',
       subject: top.role,
-      evidence: `largest recorded spend: ${top.tokens.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} recorded tokens (${Math.round((top.tokens / total) * 100)}%)`,
+      evidence: `largest recorded spend: ${top.tokens.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} recorded tokens (${Math.round((top.tokens / total) * 100)}%); excludes ${SPEND_EXCLUDES.join(', ')}`,
       action: null,
     });
   }

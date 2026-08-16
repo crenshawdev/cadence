@@ -425,6 +425,17 @@ test('seam: a real trace written through appendEvent reads back through `trace s
 // recomputed from the fixture would agree with itself no matter what the rules
 // did. Any new rule that speaks on a trace carrying no coordinator markers
 // fails here, which is D-06 made falsifiable.
+//
+// RE-PINNED ONCE, in the MSR-02 commit that made R5 name what its total is not.
+// The arithmetic did NOT move and that is the point of recording it here: the
+// receipt still reads `423,846 of 968,705 recorded tokens (44%)`, the same
+// three figures this literal has carried since it was measured, because the
+// change appends `SPEND_EXCLUDES` to the evidence and computes nothing new -
+// no ratio and no second total. Only the trailing `; excludes ...`
+// clause is new, and it is a `join(', ')` over the frozen array in
+// `lib/trace-suggest.mjs`, so this literal moves again only when that array
+// does. D-12: a necessary re-pin carries its arithmetic rather than being
+// quietly edited until it agrees.
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'verbatim.trace.jsonl');
 
@@ -439,7 +450,8 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
       {
         kind: 'info',
         subject: 'cad-executor',
-        evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)',
+        evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)'
+          + '; excludes the orchestrator\'s own turns, cross-model provider calls, figureless returns',
         action: null,
       },
       {
