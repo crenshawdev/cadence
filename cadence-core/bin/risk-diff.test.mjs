@@ -998,3 +998,43 @@ test('risk-check status: a reasonless override is not a receipt', () => {
     receiptLine('override', '1', { detail: '   ' })]);
   assert.equal(riskStatus(blank, ['--phase', '1']).ok, false, 'whitespace is not a reason');
 });
+
+test('risk-check status: the PHASE-WIDE arm needs a receipt per fired range too', () => {
+  // The blocker's second half. The named arm bound the receipt to its range;
+  // the unscoped arm still cleared the plan on any one satisfying record, so a
+  // later matched range rode in on an earlier fire's receipt.
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const c = commitFile(repo, 'docs/two.md', 'two\n');
+  const first = recordLine('1', a, b, { base_id: a, head_id: b, matches: ['secrets'] });
+  const widened = recordLine('1', a, c, { base_id: a, head_id: c, matches: ['secrets'] });
+  const fired = receiptLine('gate_pass', '1', { sha: b, base: a });
+
+  writeFileSync(join(dir, 'trace.jsonl'),
+    `${[...FROZEN_PHASE_1, first, fired, widened].join('\n')}\n`);
+  const r = riskStatus(dir, ['--phase', '1'], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'unfired');
+
+  writeFileSync(join(dir, 'trace.jsonl'),
+    `${[...FROZEN_PHASE_1, first, fired, widened,
+      receiptLine('gate_pass', '1', { sha: c, base: a })].join('\n')}\n`);
+  assert.equal(riskStatus(dir, ['--phase', '1'], repo).ok, true);
+});
+
+test('risk-check status: a receipt for another BASE over the same head settles nothing', () => {
+  // Two records can share a head and differ at the base; they are different
+  // diffs over different surfaces, so one's fire says nothing about the other.
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  const a = commitFile(repo, 'README.md', 'start\n');
+  const b = commitFile(repo, 'docs/one.md', 'one\n');
+  const c = commitFile(repo, 'docs/two.md', 'two\n');
+  const wide = recordLine('1', a, c, { base_id: a, head_id: c, matches: ['secrets'] });
+  // The fire judged the NARROW range b..c only.
+  const narrowFire = receiptLine('gate_pass', '1', { sha: c, base: b });
+  writeFileSync(join(dir, 'trace.jsonl'), `${[...FROZEN_PHASE_1, wide, narrowFire].join('\n')}\n`);
+  const r = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', c], repo);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.plans[0].state, 'unfired');
+});

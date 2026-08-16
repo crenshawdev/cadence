@@ -20,8 +20,9 @@ detail - a trigger parsed back out of free text clears a range on one spelling
 and refuses an identical one on another - plus `--plan <k>` when the fire is
 per-plan, omitted when it is not (`/cad-debug`, `/cad-task`, `/cad-verify`).
 
-**Every receipt names the RANGE it settles**, on `--sha <the head the fire
-judged>`. A receipt keyed on the run and the plan alone clears every LATER
+**Every receipt names the RANGE it settles**, on `--base <base> --sha <head>` -
+BOTH ends, since two ranges can share a head and differ at the base, and they
+are then different diffs over different surfaces. A receipt keyed on the run and the plan alone clears every LATER
 matched range for that plan in the same cycle, so a coordinator could fire once,
 re-run the detector on a widened range after a fix, skip the second fire, and
 still be told the gate was satisfied. `risk-check status` therefore joins a
@@ -32,7 +33,7 @@ Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
 whose fire found no blocker becomes permanently unclearable:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --sha <head>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --base <base> --sha <head>
 ```
 
 The user explicitly overrides a FAIL - record that instead. The reason is the
@@ -43,7 +44,7 @@ review's settled outcome, so it is REFUSED as a receipt when that reason is
 empty - a blank override is indistinguishable from a manufactured clear:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --sha <head> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --base <base> --sha <head> --detail-file <path>
 ```
 
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
@@ -78,7 +79,7 @@ same id means the one round is SPENT - do not fire again, go straight to the
 STOP-and-ask arm above. No such event -> record the round as you fire it:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --sha <head> --detail "<trigger>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --base <base> --sha <head> --detail "<trigger>"
 ```
 
 The `--sha` is what makes this round a receipt for the range it re-armed on as

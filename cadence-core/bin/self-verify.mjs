@@ -330,7 +330,7 @@ const CONTRACTS = {
     // on the `close` row below, for the reason `--read` is not: `close` fixes
     // its own family and event, and a flag row never widens what a subcommand
     // accepts.
-    'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
+    'trace append': ['--phase', '--family', '--event', '--plan', '--base', '--sha', '--detail',
       '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
       '--step', '--reviewer', '--trigger'],
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the

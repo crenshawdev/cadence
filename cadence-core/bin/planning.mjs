@@ -69,7 +69,7 @@
 //                                   when one carries none; the optional triple
 //                                   requires a record for THAT range, so an
 //                                   earlier narrower one does not satisfy it
-//   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
+//   trace append --phase N --family <f> --event <e> [--plan k] [--base b] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
 //                                   one line onto .planning/trace.jsonl.
@@ -3105,6 +3105,12 @@ function cmdTrace(dir, sub, opts) {
       event,
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
       ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
+      // `--base` beside `--sha`: a fire RECEIPT names both ends of the range it
+      // settled, because two ranges can share a head and differ at the base and
+      // are then different diffs over different surfaces. Same bare-flag guard
+      // as `--plan` and `--sha` - a bare `--base` parses as boolean `true` and
+      // records nothing rather than the literal.
+      ...(typeof opts.base === 'string' && opts.base ? { base: opts.base } : {}),
       ...(typeof detail === 'string' && detail ? { detail } : {}),
       // A bare `--role` parses as boolean `true`; the same guard `--plan` and
       // `--sha` use records nothing rather than the literal `true`.
@@ -3723,7 +3729,7 @@ function cmdRiskCheckStatus(dir, opts) {
       const why = typeof e.detail === 'string' ? e.detail.trim() : '';
       if (!why) continue;
     }
-    receipts.push({ key: rowKey(e.corr, e.plan), sha: typeof e.sha === 'string' ? e.sha : null });
+    receipts.push({ key: rowKey(e.corr, e.plan), sha: typeof e.sha === 'string' ? e.sha : null, base: typeof e.base === 'string' ? e.base : null });
   }
 
   /**
@@ -3750,16 +3756,36 @@ function cmdRiskCheckStatus(dir, opts) {
     const [x, y] = a.length <= b.length ? [a, b] : [b, a];
     return x.length >= 7 && y.startsWith(x);
   };
+  /**
+   * Does a receipt settle THIS ONE record?
+   *
+   * Both ends of the range, not the head alone: two records can share a head
+   * and differ at the base, and they are then different diffs over different
+   * risk surfaces. A receipt for `B..C` must not settle `A..C`.
+   *
+   * A record that carries no resolved ids has no range identity to bind to - it
+   * predates those fields, or its refs did not resolve - so the join falls back
+   * to the run and the plan for THAT record alone. The alternative is a range
+   * no receipt can ever settle, and an unclearable gate is one that gets
+   * bypassed. Every record `risk-check run` writes today carries the ids, so
+   * this is the legacy arm, exactly as wide as the records that lack them.
+   */
+  const settledBy = (/** @type {any} */ rc, /** @type {any} */ f) => (
+    f.head_id === null && f.base_id === null
+      ? true
+      : shaMatches(rc.sha, f.head_id) && (rc.base ? shaMatches(rc.base, f.base_id) : true));
+  /**
+   * EVERY fired record this row answers for needs its own receipt.
+   *
+   * `.some()` here was the blocker's second half: on the phase-wide arm
+   * `satisfying` is every usable record for the plan, so one receipted range
+   * cleared a later unreceipted one - the same defect the range binding closed
+   * on the named arm, still open one branch over.
+   */
   const settles = (/** @type {string} */ k, /** @type {any[]} */ satisfying) =>
-    receipts.some((rc) => rc.key === k
-      // A record that carries no `head_id` has no range identity to bind to -
-      // it predates the resolved-ref fields, or its refs did not resolve - so
-      // the join falls back to the run and the plan for that record alone. The
-      // alternative is a range no receipt can ever settle, and an unclearable
-      // gate is one that gets bypassed. Every record `risk-check run` writes
-      // today carries the ids, so this arm is the legacy one, not the ordinary
-      // path, and it is exactly as wide as the records that lack the field.
-      && satisfying.some((f) => (f.head_id === null ? true : shaMatches(rc.sha, f.head_id))));
+    satisfying
+      .filter((f) => f.matches.length > 0 || f.inconclusive || f.matched_unnamed)
+      .every((f) => receipts.some((rc) => rc.key === k && settledBy(rc, f)));
 
   const rows = [...completed.entries()].map(([k, row]) => {
     const asked0 = wanted && planKey(wanted.plan) === planKey(row.plan)
