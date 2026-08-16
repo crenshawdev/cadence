@@ -91,8 +91,10 @@ dispatching a role harder means dispatching a different file.
 
 ![Escalation: a plan check on a shipped project starts at the medium rung, which dispatches the cad-plan-checker-medium file; on failure attempt two climbs to the high rung, which is a different file, cad-plan-checker-high.](figures/effort-ladder.svg)
 
-*Escalation is unconditional across every stakes level, fires whenever
-`attempt > 1`, and can only climb. CI refuses any table that would demote a
+*Escalation is opt-in: `model.escalate_on_failure` is `false` by default,
+because a retry is usually a narrower job than the pass that failed it. Turned
+on it applies at every stakes level, fires whenever `attempt > 1`, and can only
+climb. CI refuses any table that would demote a
 rung, and refuses any rung file whose declared effort disagrees with the slot it
 is filed under.*
 
@@ -145,7 +147,7 @@ not a convenience.*
 
 | Trigger | Fired by | What gets reviewed | solo | shipped | critical |
 |---|---|---|---|---|---|
-| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | off | adjudicated |
+| `plan` | `/cad-plan`, and `/cad-plan-review` on demand | the phase plan, before any code | advisory | blocking | adjudicated |
 | `diff` | `/cad-execute` | the diff for one completed plan | off | off | blocking |
 | `risk_surface` | `/cad-execute`, `/cad-debug`, `/cad-task`, `/cad-verify` | the matching diff, once per plan on the committed range | blocking | blocking | blocking |
 | `phase_diff` | `/cad-execute`, parallel path only | the whole phase, once worktrees merge | off | off | adjudicated |
