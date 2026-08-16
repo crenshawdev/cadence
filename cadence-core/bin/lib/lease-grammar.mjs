@@ -76,3 +76,34 @@ export function covers(declaration, path) {
 export function intersects(a, b) {
   return covers(a, b) || covers(b, a);
 }
+
+/**
+ * Does this declaration carry a spelling the lease grammar REFUSES?
+ *
+ * Exactly three forms, and deliberately nothing else: a declaration beginning
+ * `./`, a declaration carrying a `/./` segment, and a declaration carrying
+ * `//`. Each names the same file as its plain spelling, so admitting it would
+ * put ONE file into the declared set under two strings the grammar above reads
+ * as two different files - the covering half of the same divergence this module
+ * closes, arriving through the plan author's keyboard instead of through a
+ * second reader.
+ *
+ * REFUSED at declaration time rather than normalized away, because normalizing
+ * can only ever WIDEN what a plan leases, and widening a lease is the one thing
+ * a parallel-safety gate must not do quietly. The caller drops the declaration
+ * and files a named diagnostic, so the author is told rather than silently
+ * given a lease they did not write.
+ *
+ * `..` is NOT in the set. A declaration climbing out of the repo root is an
+ * out-of-repo-lease defect, a different question from two spellings of one
+ * path, and widening this rule to reach it would refuse declarations that name
+ * real files.
+ *
+ * @param {unknown} declaration @returns {boolean}
+ */
+export function isRefusedSpelling(declaration) {
+  if (typeof declaration !== 'string') return false;
+  return declaration.startsWith('./')
+    || declaration.includes('/./')
+    || declaration.includes('//');
+}

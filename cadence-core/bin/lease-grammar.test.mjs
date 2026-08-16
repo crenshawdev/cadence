@@ -6,7 +6,7 @@
 // planning.test.mjs prove the two seams reach it. Only node: builtins.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { covers, intersects } from './lib/lease-grammar.mjs';
+import { covers, intersects, isRefusedSpelling } from './lib/lease-grammar.mjs';
 
 /** [declaration, path, covered, why] */
 const COVERS = [
@@ -58,4 +58,37 @@ test('a non-path string answers, it never throws', () => {
     assert.equal(typeof intersects(odd, 'src/'), 'boolean', JSON.stringify(odd));
   }
   assert.equal(covers('src/a.rs (edit)', 'src/a.rs (edit)'), true);
+});
+
+// --- the refused spellings ---------------------------------------------------
+//
+// `./a.txt`, `src/./a.txt` and `src//a.txt` each name the same file as their
+// plain spelling, which the grammar above reads as a DIFFERENT file. They are
+// refused at declaration time rather than normalized, because normalizing can
+// only widen a lease.
+
+/** [declaration, refused, why] */
+const SPELLINGS = [
+  ['./a.txt', true, 'a leading ./ names the same file as its plain spelling'],
+  ['src/./a.txt', true, 'and so does an interior /./ segment'],
+  ['src//a.txt', true, 'and so does a doubled separator'],
+  ['//a.txt', true, 'a leading doubled separator is the same form'],
+  ['src/a.txt', false, 'the plain spelling is the one the grammar wants'],
+  ['src/', false, 'a directory lease is not a refused spelling'],
+  ['a.txt', false, 'a bare basename is fine'],
+  ['src/a.rs (edit)', false, 'the annotated task-line form is not refused either'],
+  ['src/a.b.c.txt', false, 'a basename merely CONTAINING a dot is not a ./ segment'],
+  ['./', true, 'the shortest refused form there is'],
+  ['src/../a.txt', false, '.. is out of scope by the phase boundary, not refused here'],
+];
+
+test('isRefusedSpelling: exactly three forms, and nothing else', () => {
+  for (const [declaration, expected, why] of SPELLINGS) {
+    assert.equal(isRefusedSpelling(declaration), expected,
+      `isRefusedSpelling(${JSON.stringify(declaration)}) - ${why}`);
+  }
+  // A non-string answers rather than throwing, like the two predicates above.
+  for (const odd of [undefined, null, 42, {}, []]) {
+    assert.equal(isRefusedSpelling(odd), false, JSON.stringify(odd));
+  }
 });

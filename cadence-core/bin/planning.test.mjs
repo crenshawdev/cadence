@@ -4064,6 +4064,77 @@ test('plan-overlap: a frontmatter backtick-bearing path overlaps its raw twin de
   assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['lib/a`b.mjs'] }]);
 });
 
+// --- the refused lease spellings, through BOTH declaration doors -------------
+//
+// `./a.txt` and `src//a.txt` name the same file as their plain spelling, which
+// lib/lease-grammar.mjs reads as a different file. They are refused at
+// declaration time and never reach either reader. The matrix below is FULL -
+// two spellings by two doors - because a wiring defect on one arm passes
+// happily on the diagonal: refusing on the frontmatter arm alone leaves the
+// spelling reaching `lease-check` through the task line with no diagnostic.
+
+/**
+ * A two-plan phase where PLAN-1 declares `bad` through ONE door plus a plain
+ * `keep.txt`, and PLAN-2 declares `plain` - the same file, spelled legally -
+ * plus `keep.txt`. So the legitimate overlap survives while the refused
+ * declaration is absent from it. Returns the tree and the line `bad` is
+ * declared on.
+ */
+function refusalTree(bad, plain, door) {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  const one = door === 'frontmatter'
+    ? `---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - ${bad}\n  - keep.txt\n---\n# Plan 1\n`
+    : `---\nphase: 1\nplan: 1\nrequirements: []\nfiles:\n  - keep.txt\n---\n# Plan 1\n\n`
+      + `### Task 1: t\n\n- **Files:** ${bad}\n- **Action:** x\n- **Verify:** y\n`;
+  writeFileSync(join(pdir, 'PLAN-1.md'), one);
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    `---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - ${plain}\n  - keep.txt\n---\n# Plan 2\n`);
+  return { dir, line: one.split('\n').findIndex((l) => l.includes(bad)) + 1 };
+}
+
+for (const [bad, plain] of [['./a.txt', 'a.txt'], ['src//a.txt', 'src/a.txt']]) {
+  for (const door of ['frontmatter', 'task line']) {
+    test(`plan-overlap: ${bad} declared on the ${door} is refused as redundant-path-segment and reaches neither reader`, () => {
+      const { dir, line } = refusalTree(bad, plain, door);
+      const r = run(['plan-overlap', '--phase', '1'], dir);
+      assert.equal(r.ok, true, JSON.stringify(r));
+      assert.deepEqual(r.frontmatter_issues,
+        [{ plan: 'PLAN-1.md', issues: [{ line, code: 'redundant-path-segment', text: r.frontmatter_issues[0].issues[0].text }] }],
+        JSON.stringify(r.frontmatter_issues));
+      assert.ok(r.frontmatter_issues[0].issues[0].text.includes(bad),
+        r.frontmatter_issues[0].issues[0].text);
+      // The refused declaration is absent from the overlap; the legitimate one
+      // is still there, so this is a DROP and not a dead gate.
+      assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['keep.txt'] }]);
+      assert.equal(r.undeclared, undefined);
+    });
+  }
+}
+
+test('plan-overlap: the same refused spelling twice in one files: list reports two issues on their OWN lines', () => {
+  // A cursor advances past each match, so the second diagnostic does not point
+  // back at the first occurrence's line.
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: { 1: { plan: ['PLAN-1.md', 'PLAN-2.md'] } },
+  });
+  const pdir = join(dir, 'phases', '1');
+  writeFileSync(join(pdir, 'PLAN-1.md'),
+    '---\nphase: 1\nplan: 1\nrequirements: ["#41"]\nfiles:\n  - ./a.txt\n  - keep.txt\n  - ./a.txt\n---\n# Plan 1\n');
+  writeFileSync(join(pdir, 'PLAN-2.md'),
+    '---\nphase: 1\nplan: 2\nrequirements: []\nfiles:\n  - keep.txt\n---\n# Plan 2\n');
+  const r = run(['plan-overlap', '--phase', '1'], dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.frontmatter_issues[0].issues.map((i) => [i.line, i.code]),
+    [[6, 'redundant-path-segment'], [8, 'redundant-path-segment']],
+    JSON.stringify(r.frontmatter_issues));
+  assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['keep.txt'] }]);
+});
+
 test('plan-overlap: a plan with no declared files is flagged undeclared', () => {
   const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/a.rs'], []));
   assert.deepEqual(r.overlaps, []);
@@ -4904,6 +4975,23 @@ test('lease-check: PLAN-<k>.md is selected by --plan', () => {
   const one = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
   assert.equal(one.ok, false);
   assert.deepEqual(one.undeclared, ['b.txt']);
+});
+
+test('lease-check: a sole declaration of ./a.txt licenses nothing - the spelling reached neither reader', () => {
+  // The other half of the two-door refusal, at the enforcement end: the
+  // declaration is dropped before this seam sees it, so staging the file it
+  // MEANT is undeclared, and the named diagnostic rides the same envelope that
+  // tells the author why.
+  const { repo, dir } = leaseRepo({ files: ['./a.txt'] });
+  stage(repo, 'a.txt');
+  const r = leaseCheck(repo, dir, ['--phase', '1', '--plan', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'undeclared-files');
+  assert.deepEqual(r.undeclared, ['a.txt']);
+  assert.equal(r.declared, 0);
+  assert.deepEqual(r.frontmatter_issues.map((i) => [i.line, i.code]),
+    [[4, 'redundant-path-segment']], JSON.stringify(r.frontmatter_issues));
+  assert.equal(r._exit, 1);
 });
 
 test('lease-check: a missing plan is ok:false, never an empty-lease pass', () => {
