@@ -4311,25 +4311,41 @@ function cmdMilestonePrune(dir, opts) {
   // refuse a second artifact from a phase the same call already landed one for.
   const archiveFile = join(dir, 'ARCHIVE.md');
   const archiveText = read(archiveFile) ?? '';
+  // Two properties this test must hold, both of them data-loss bugs when it
+  // does not, because a suppressed write is followed by the directory removal
+  // that makes the omission permanent:
+  //
+  // The label matches EXACTLY, never as a prefix of the composed source. A
+  // milestone label is free text; `source.startsWith(label + '/')` answers true
+  // for a row under a heading named `v1/anything` when the label is `v1`, so a
+  // section this close does not own could mark this close's phases done.
+  //
+  // The key is the ARTIFACT, not the phase. One row for a phase does not prove
+  // its other two were written: a close whose UAT.md was absent or unreadable
+  // on the first pass lands SUMMARY and CONTEXT only, and keyed on the phase
+  // number a retry - after the file is restored - skips the phase whole and
+  // then removes the directory, dropping the row it re-ran to land.
   const alreadyArchived = new Set(parseArchiveRows(archiveText)
-    .filter((r) => r.source.startsWith(`${label}/`))
-    .map((r) => r.phase));
+    .filter((r) => r.label === label)
+    .map((r) => r.origin));
   const residue = [];
   for (const n of [...completed].sort((a, b) => a - b)) {
-    if (alreadyArchived.has(n)) continue;
     const pdir = join(dir, 'phases', String(n));
-    const summary = read(join(pdir, 'SUMMARY.md'));
+    const summaryOrigin = `phases/${n}/SUMMARY.md`;
+    const summary = alreadyArchived.has(summaryOrigin) ? null : read(join(pdir, 'SUMMARY.md'));
     if (summary) for (const text of parseSummarySnippets(summary)) {
-      residue.push({ origin: `phases/${n}/SUMMARY.md`, text });
+      residue.push({ origin: summaryOrigin, text });
     }
-    const uatText = read(join(pdir, 'UAT.md'));
+    const uatOrigin = `phases/${n}/UAT.md`;
+    const uatText = alreadyArchived.has(uatOrigin) ? null : read(join(pdir, 'UAT.md'));
     if (uatText) for (const it of parseUat(uatText).items) {
       const text = `${it.name || ''} ${it.expected || ''}`.trim();
-      if (text) residue.push({ origin: `phases/${n}/UAT.md`, text });
+      if (text) residue.push({ origin: uatOrigin, text });
     }
-    const context = read(join(pdir, 'CONTEXT.md'));
+    const contextOrigin = `phases/${n}/CONTEXT.md`;
+    const context = alreadyArchived.has(contextOrigin) ? null : read(join(pdir, 'CONTEXT.md'));
     if (context) for (const text of parseContextDecisions(context)) {
-      residue.push({ origin: `phases/${n}/CONTEXT.md`, text });
+      residue.push({ origin: contextOrigin, text });
     }
   }
   // Nothing to say, no file: a project with no readable artifacts under its

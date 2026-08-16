@@ -1895,7 +1895,8 @@ test('archive: a written row round-trips its snippet byte-identically', () => {
   const snippet = ARCHIVE_ROWS[0].text;
   const text = appendArchiveRows('', 'v3.5.2', [ARCHIVE_ROWS[0]]);
   assert.deepEqual(parseArchiveRows(text),
-    [{ text: snippet, source: 'v3.5.2/phases/1/SUMMARY.md', phase: 1 }]);
+    [{ text: snippet, source: 'v3.5.2/phases/1/SUMMARY.md', phase: 1,
+       label: 'v3.5.2', origin: 'phases/1/SUMMARY.md' }]);
 });
 
 test('archive: each origin filename keeps its own source', () => {
@@ -1911,7 +1912,8 @@ test('archive: a decimal phase number parses to the decimal, never to 21', () =>
   const text = appendArchiveRows('', 'v3.5.2',
     [{ origin: 'phases/2.1/SUMMARY.md', text: 'the hotfix phase' }]);
   assert.deepEqual(parseArchiveRows(text),
-    [{ text: 'the hotfix phase', source: 'v3.5.2/phases/2.1/SUMMARY.md', phase: 2.1 }]);
+    [{ text: 'the hotfix phase', source: 'v3.5.2/phases/2.1/SUMMARY.md', phase: 2.1,
+       label: 'v3.5.2', origin: 'phases/2.1/SUMMARY.md' }]);
 });
 
 test('archive: a snippet carrying a colon, a backtick and a pipe survives whole', () => {
@@ -1980,4 +1982,18 @@ test('archive: an empty row set changes nothing; a newline is flattened on write
 test('archive: a CRLF residue parses exactly as its plain-LF twin', () => {
   const text = appendArchiveRows('', 'v3.5.2', ARCHIVE_ROWS);
   assert.deepEqual(parseArchiveRows(text.replace(/\n/g, '\r\n')), parseArchiveRows(text));
+});
+
+test('archive: label and origin ride beside source, never recovered by splitting it', () => {
+  // The containment guard in cmdMilestonePrune keys on these two. A label
+  // carrying a `/` makes `source` ambiguous about where the label stops, which
+  // is why the caller is handed both halves whole.
+  const text = appendArchiveRows('', 'v1/forged', [ARCHIVE_ROWS[0]]);
+  const [row] = parseArchiveRows(text);
+  assert.equal(row.label, 'v1/forged');
+  assert.equal(row.origin, 'phases/1/SUMMARY.md');
+  assert.equal(row.source, 'v1/forged/phases/1/SUMMARY.md');
+  // The prefix test this replaced answered true here; the exact test must not.
+  assert.ok(row.source.startsWith('v1/'));
+  assert.notEqual(row.label, 'v1');
 });

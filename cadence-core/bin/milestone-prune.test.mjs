@@ -966,3 +966,42 @@ for (const mode of ['delete', 'archive']) {
 function rmDirHack(p) {
   execFileSync('rm', ['-rf', p]);
 }
+
+// --- the two containment defects the risk_surface gate caught ----------------
+//
+// Both are data-loss shapes rather than dirty-output shapes: a false "already
+// archived" suppresses the residue write, and the directory removal right after
+// it makes the omission permanent. Both assert on ORIGINS, because the phase
+// number alone is exactly the resolution that was too coarse.
+
+test('seam: a foreign heading that prefixes this label does not suppress the write', () => {
+  const dir = scaffoldWithArtifacts();
+  // A section this close does not own, named so the old
+  // `source.startsWith(label + "/")` test answers true for it.
+  writeFileSync(join(dir, 'ARCHIVE.md'),
+    '## v3.5.2/forged\n\n- `phases/1/SUMMARY.md`: a row from somewhere else\n');
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 3, 'phase 1 is unarchived under THIS label, so all three land');
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(labelsIn(text), ['v3.5.2/forged', 'v3.5.2'], 'the foreign section is untouched');
+  const own = text.slice(text.indexOf('## v3.5.2\n'));
+  assert.deepEqual(originsIn(own), RESIDUE_ORIGINS);
+});
+
+test('seam: a partial section re-runs the artifacts it is missing, not the phase whole', () => {
+  const dir = scaffoldWithArtifacts();
+  // What a close that landed SUMMARY and CONTEXT but could not read UAT.md
+  // leaves behind. Keyed on the phase number, the retry skips all three.
+  writeFileSync(join(dir, 'ARCHIVE.md'),
+    '## v3.5.2\n\n- `phases/1/SUMMARY.md`: already landed\n'
+    + '- `phases/1/CONTEXT.md`: already landed\n');
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 1, 'only the missing artifact is re-read');
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(originsIn(text),
+    ['phases/1/SUMMARY.md', 'phases/1/CONTEXT.md', 'phases/1/UAT.md'],
+    'the UAT row lands; neither pre-existing row is duplicated');
+  assert.equal(originsIn(text).filter((o) => o === 'phases/1/SUMMARY.md').length, 1);
+});

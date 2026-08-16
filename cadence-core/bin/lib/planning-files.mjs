@@ -1021,7 +1021,7 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
  * CR) exactly as `captureSections` does: a CRLF checkout must index as its
  * plain-LF twin.
  * @param {string} text
- * @returns {Array<{text: string, source: string, phase: number}>}
+ * @returns {Array<{text: string, source: string, phase: number, label: string, origin: string}>}
  */
 export function parseArchiveRows(text) {
   const out = [];
@@ -1033,7 +1033,16 @@ export function parseArchiveRows(text) {
     if (label === null) continue;
     const m = line.match(ARCHIVE_ROW);
     if (!m) continue;
-    out.push({ text: m[3], source: `${label}/${m[1]}`, phase: Number(m[2]) });
+    // `label` and `origin` ride ALONGSIDE the composed `source` rather than
+    // being recovered from it by the caller. A milestone label is free text, so
+    // a label carrying a `/` makes `source` ambiguous about where the label
+    // ends and the path begins, and a caller testing membership with
+    // `source.startsWith(label + '/')` then matches a row from a DIFFERENT
+    // section (heading `v1/forged` answers a `v1/` test). That test is the
+    // containment guard in `cmdMilestonePrune`, and a false positive there
+    // suppresses a phase's residue write and then removes its directory. Give
+    // the caller the two fields whole; never make it re-split a composed one.
+    out.push({ text: m[3], source: `${label}/${m[1]}`, phase: Number(m[2]), label, origin: m[1] });
   }
   return out;
 }
