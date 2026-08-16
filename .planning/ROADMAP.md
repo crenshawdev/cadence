@@ -67,7 +67,7 @@ MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither is arguable while turns and
 window go unrecorded.
 ## Phases
 
-- [ ] **Phase 1: The controls that never reached their path** - recall survives a milestone close, the parallel branch runs the same risk sequence the sequential one does, and `risk-check status` stops accepting a matched range with no fire behind it
+- [x] **Phase 1: The controls that never reached their path** - recall survives a milestone close, the parallel branch runs the same risk sequence the sequential one does, and `risk-check status` stops accepting a matched range with no fire behind it
 
 ## Phase Details
 
