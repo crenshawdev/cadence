@@ -3712,7 +3712,9 @@ function cmdRiskCheckStatus(dir, opts) {
    * events the trigger is spelled four different ways in that free text, so a
    * reader that parsed it would clear a range on a spelling and refuse an
    * identical one on another.
-   * @type {Set<string>}
+   * Each receipt carries the row identity it was written under plus the RANGE
+   * it settled, so a later matched range cannot ride in on an earlier fire.
+   * @type {{key: string, sha: string|null, base: string|null}[]}
    */
   const receipts = [];
   for (const e of r.events) {
