@@ -1127,6 +1127,110 @@ test('render: two roles in one phase are grouped separately', () => {
   });
 });
 
+// --- per-role TURNS, and their own unrecorded counter (MSR-01, D-03) ---------
+
+test('render: a role\'s turn total rides beside its tokens with a counter of its own', () => {
+  const dir = root();
+  for (const n of [1, 2]) {
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: String(n), role: 'cad-executor' });
+  }
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10, turns: 4 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 10 });
+  const row = renderTrace(dir, 4).roles['cad-executor'];
+  // Both dispatches reported TOKENS, so `unrecorded` is absent - and exactly
+  // one reported TURNS, so the turn counter is 1. One shared counter could only
+  // have said one of those two things.
+  assert.deepEqual(row, { dispatches: 2, tokens: 20, turns: 4, turns_unrecorded: 1 });
+  assert.equal('unrecorded' in row, false);
+});
+
+test('render: reporting tokens without turns is a different row from the reverse', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'tokens-only' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'tokens-only', tokens: 10 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'turns-only' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'turns-only', turns: 4 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.roles['tokens-only'], { dispatches: 1, tokens: 10 });
+  assert.deepEqual(r.roles['turns-only'], { dispatches: 1, turns: 4, unrecorded: 1 });
+  // The whole point of the second counter: these two are not the same row, and
+  // with one shared `unrecorded` they would have been.
+  assert.notDeepEqual(r.roles['tokens-only'], r.roles['turns-only']);
+});
+
+test('render: a role whose every close carried no turn figure shows NO turn keys', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-planner' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-planner', tokens: 900 });
+  const row = renderTrace(dir, 4).roles['cad-planner'];
+  // Never a `0`, and never a `turns_unrecorded` either: a role absent from the
+  // turn accounting is what makes a record written before the flag render
+  // exactly as it always did (D-12).
+  assert.deepEqual(row, { dispatches: 1, tokens: 900 });
+  assert.equal('turns' in row, false);
+  assert.equal('turns_unrecorded' in row, false);
+});
+
+test('render: a bracket carries the turn figure only where one exists', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10, turns: 4 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 10 });
+  const [withTurns, without] = renderTrace(dir, 4).brackets;
+  assert.equal(withTurns.turns, 4);
+  // NO key rather than `null`: a null would put a new key on every bracket of
+  // every trace written before the flag existed.
+  assert.equal('turns' in without, false, JSON.stringify(without));
+  assert.equal(without.tokens, 10, 'the token half of the same row is untouched');
+});
+
+test('render: a bracket falls back to a turn figure the DISPATCH half carried', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', turns: 7 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor' });
+  const [b] = renderTrace(dir, 4).brackets;
+  assert.equal(b.turns, 7);
+  // ...and it funds the dispatch exactly once, so the terminal cannot re-fund it.
+  assert.deepEqual(renderTrace(dir, 4).roles,
+    { 'cad-executor': { dispatches: 1, turns: 7, unrecorded: 1 } });
+});
+
+test('render: two closes differing ONLY in their turn count are two closes', () => {
+  const dir = root();
+  const at1 = '2026-08-16T10:00:00.000Z';
+  const at2 = '2026-08-16T11:00:00.000Z';
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: at1 });
+  const close = { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', ts: at2 };
+  appendEvent(dir, { ...close, turns: 4 });
+  appendEvent(dir, { ...close, turns: 5 });
+  // The replay identity discriminates on the turn figure the way it already
+  // does on the token figure: folding these two would drop a real figure.
+  assert.deepEqual(renderTrace(dir, 4).roles,
+    { 'cad-executor': { dispatches: 1, turns: 9, unrecorded: 1 } });
+  // ...and the byte-identical repeat IS still a replay.
+  const same = root();
+  appendEvent(same, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: at1 });
+  appendEvent(same, { ...close, turns: 4 });
+  appendEvent(same, { ...close, turns: 4 });
+  assert.deepEqual(renderTrace(same, 4).roles,
+    { 'cad-executor': { dispatches: 1, turns: 4, unrecorded: 1 } });
+});
+
+test('render: a non-numeric turn figure contributes NOTHING', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  // A hand-edited or foreign-producer line: the same posture `tokens` takes,
+  // never string-concatenated onto a total.
+  appendFileSync(tracePath(dir), `${JSON.stringify({
+    ts: '2026-08-16T10:00:00.000Z', corr: '4', phase: 4, family: 'lifecycle',
+    event: 'return', plan: '1', role: 'cad-executor', turns: '4',
+  })}\n`);
+  const row = renderTrace(dir, 4).roles['cad-executor'];
+  assert.deepEqual(row, { dispatches: 1, unrecorded: 1 });
+  assert.equal('turns' in row, false);
+});
+
 test('render: tokens on checkpoint and escalation aggregate as on return', () => {
   for (const event of TERMINAL) {
     const dir = root();
