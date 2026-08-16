@@ -407,8 +407,8 @@ scope or adds work touches nothing here; only a refuted D-NN does.
 File each open item into `.planning/CAPTURE.md` through the seam, one call per
 item - it creates the file when absent and owns the bullet's format, so this
 step states neither:
-Write the sentence to a scratch file and name the PATH - an open item is project
-text, and `--text "<item>"` would shell-expand a `$(...)` in it:
+Write the sentence to a scratch file and name the PATH (caller-derived text -
+references/conventions.md):
 `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" capture --kind todo --text-file <path> --phase <N>`
 SUMMARY is the phase's record; CAPTURE is the live phase-linked queue - a
 deferred item routed here resurfaces on its phase instead of surviving only
