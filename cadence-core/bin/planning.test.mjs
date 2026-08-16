@@ -4649,6 +4649,93 @@ test('recall: memory.backend none reports off with empty results, exit 0', () =>
   assert.equal(r._exit, 0);
 });
 
+// --- recall: the archived corpus a closed milestone leaves behind (RCL-07) ----
+// The residue file is read beside CAPTURE.md, LAST in the corpus, so a tree
+// with no ARCHIVE.md emits exactly the bytes it emitted before this walk
+// existed - that byte-identity is the first assertion below, not a remark.
+
+/** Write an ARCHIVE.md into a fixture tree; `rows` are raw grammar lines. */
+function archive(dir, label, rows) {
+  writeFileSync(join(dir, 'ARCHIVE.md'),
+    `# Archive\n\n## ${label}\n\n${rows.map((r) => `- ${r}`).join('\n')}\n`);
+  return dir;
+}
+
+test('recall: an archived row comes back with its milestone label and its origin', () => {
+  const dir = makeTree({ phases: { 1: { summaryBody: { deviations: ['a live deviation'] } } } });
+  archive(dir, 'v3.5.2', [
+    '`phases/2/SUMMARY.md`: the zarquon guard fired on a range it did not own',
+    '`phases/2.1/UAT.md`: walk the zarquon install from a cold clone',
+    '`phases/2/CONTEXT.md`: D-04 (RCL-07): each zarquon row names its origin',
+  ]);
+  const r = recall('zarquon', dir);
+  assert.equal(r.json.ok, true);
+  assert.equal(r._exit, 0);
+  const hits = r.json.results;
+  assert.equal(hits.length, 3, JSON.stringify(hits));
+  // Distinguishable from each other AND from a live row: the label leads, the
+  // origin artifact follows, and `phase` keeps the meaning a live row gives it.
+  assert.deepEqual(new Set(hits.map((h) => h.source)), new Set([
+    'v3.5.2/phases/2/SUMMARY.md',
+    'v3.5.2/phases/2.1/UAT.md',
+    'v3.5.2/phases/2/CONTEXT.md',
+  ]));
+  const uat = hits.find((h) => h.source.endsWith('UAT.md'));
+  assert.equal(uat.phase, 2.1, 'a decimal phase survives the round trip');
+  assert.deepEqual(Object.keys(uat).sort(), ['phase', 'score', 'snippet', 'source'],
+    'the result contract stays exactly four fields wide');
+});
+
+test('recall: a tree with no ARCHIVE.md answers byte-identically to one that never had it', () => {
+  const spec = {
+    phases: { 1: { summaryBody: { deviations: ['alpha beta gamma'] } } },
+    capture: [{ section: 'Todos', text: 'wire the beta recall path', phase: 1 }],
+  };
+  const bare = recall('beta gamma', makeTree(spec));
+  const empty = recall('beta gamma', archive(makeTree(spec), 'v3.5.2', []));
+  assert.equal(bare.raw, empty.raw, 'an ARCHIVE.md with no rows changes no byte');
+  // And the archived rows land AFTER the live ones, so no existing corpus INDEX
+  // moved: the live hits come back in the same order, the same rows.
+  //
+  // Their SCORES do move, and deliberately not asserted: BM25 is corpus-
+  // relative, so any new document shifts N, avgdl and every idf term. Pinning
+  // the numbers here would make an unrelated row added to a project's residue
+  // redden this file. What the position guarantees is the tie-break - equal
+  // scores resolve by corpus position - which is why the append goes last.
+  const withRows = recall('beta gamma', archive(makeTree(spec), 'v3.5.2',
+    ['`phases/9/SUMMARY.md`: an unrelated retired note']));
+  assert.deepEqual(withRows.json.results.map((r) => [r.source, r.snippet]),
+    bare.json.results.map((r) => [r.source, r.snippet]));
+});
+
+test('recall: two runs over a corpus holding live AND archived rows are byte-identical', () => {
+  const dir = makeTree({
+    phases: { 1: { summaryBody: { deviations: ['alpha beta gamma'] } } },
+    capture: [{ section: 'Seeds', text: 'gamma indexing idea' }],
+  });
+  archive(dir, 'v3.5.2', [
+    '`phases/1/SUMMARY.md`: beta gamma from the closed milestone',
+    '`phases/1/CONTEXT.md`: D-01 (REC-01): gamma stays flat-ranked',
+  ]);
+  const a = recall('beta gamma', dir);
+  const b = recall('beta gamma', dir);
+  assert.equal(a.raw, b.raw);
+  assert.ok(a.json.results.length >= 3, JSON.stringify(a.json.results));
+});
+
+test('recall: memory.backend none reads no ARCHIVE.md either', () => {
+  const dir = makeTree({
+    phases: { 1: { summaryBody: { deviations: ['a live deviation'] } } },
+    config: { memory: { backend: 'none' } },
+  });
+  archive(dir, 'v3.5.2', ['`phases/2/SUMMARY.md`: the zarquon guard, retired']);
+  const r = recall('zarquon', dir);
+  assert.equal(r.json.backend, 'none');
+  assert.deepEqual(r.json.results, []);
+  assert.equal(r.json.total, 0);
+  assert.equal(r._exit, 0);
+});
+
 // --- detect-commands: the unconfigured static-analysis path (QW-01) ----------
 
 /** A project root holding exactly the named files, one directory deep. */

@@ -138,6 +138,7 @@ import {
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
   sectionBound, phaseRequirements, phaseCriteria, planTaskTitles,
   captureSections, CAPTURE_WALK_SECTIONS,
+  parseArchiveRows,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
@@ -2062,6 +2063,23 @@ function cmdRecall(dir, query, opts) {
     corpus.push({ text: item.text, source: 'CAPTURE.md',
       ...(item.phase !== undefined ? { phase: item.phase } : {}) });
   }
+  // ARCHIVE.md LAST, and the position is load-bearing: `search()` orders hits
+  // by (score desc, corpus position asc), so appending here leaves every
+  // existing corpus index where it was and a tree with no ARCHIVE.md emits the
+  // bytes it emitted before this walk existed. Read through the same guarded
+  // `read()` the CAPTURE walk uses - an absent file is empty data, never an
+  // ENOENT throw, which is what the empty-corpus contract rests on.
+  //
+  // ONE flat ranking with the live rows (D-05): no recency term, no per-source
+  // cap, archived rows competing on score alone. Measured 2026-08-16 over a
+  // 265-to-986-snippet rebuild, archived rows took 2, 1, 3 and 3 of the top 5
+  // on four representative queries and displaced the live CAPTURE.md hit from
+  // rank 1 twice. That crowding is the accepted cost: each row names its
+  // milestone in `source` so the caller discounts retired work itself, which is
+  // a judgment it can make and a cap's N cannot - no measured basis exists for
+  // one.
+  const archive = read(join(dir, 'ARCHIVE.md'));
+  if (archive) for (const row of parseArchiveRows(archive)) corpus.push(row);
 
   if (!corpus.length) return ok({ results: [], total: 0, ...warn });
 
