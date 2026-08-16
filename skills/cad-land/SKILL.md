@@ -185,9 +185,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    version PROJECT.md says just shipped - has no tag yet (`git tag`
    membership), cut it HERE: write the milestone label to a scratch file and run
    `git tag -a <version> -F <path>` on the now-current base - the label is a
-   PROJECT.md milestone name, and repository content does not go in a
-   double-quoted shell word (caller-derived text -
-   references/conventions.md). Then ask separately whether to push it
+   PROJECT.md milestone name, so it reaches git as a PATH (caller-derived text
+   - references/conventions.md). Then ask separately whether to push it
    (references/git-publish.md rails; never auto-push a tag). This is
    deliberately NOT done at /cad-milestone: a tag cut at close names a
    pre-merge commit on the integration branch, and a non-fast-forward merge
