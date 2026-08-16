@@ -103,127 +103,40 @@ context-gathering, and debugging — without any external memory system.
 - ✓ `v2.6.0 — the reconciliation cycle`: the capture queue triaged from 213 open items to 28 with the rest archived out of the recall corpus (REC-01, REC-02); the verify walk, the unbounded re-arm and version drift (FRI-01..03); named phase dirs, an ignored run record, `REQ_ID_EXACT` and the debt-marker harvest (FLD-01, FLD-02, PRS-02, DBT-01); per-role token accounting with every phase dispatch bracketed (TOK-03, TOK-04); and the first end-to-end doc sweep, 547 claims with a committed ledger (DOC-02, DOC-03, EVD-02) — v2.6.0
 - ✓ `v3.2.0 - the controls that reported success`: a hostile repo config layer stopped reparenting the merged config and inspection stopped disagreeing with enforcement (CFG-01, CFG-02); the symlinked temp write, the gate that could not read its findings, the valueless flag and the credential-carrying failure detail all fail safe now (FSW-01, GAT-01, VAL-01, EXP-01); adjudication records kills as well as survivors and the reviewer set is resolved in the seam rather than by prose (RVW-01, RVW-02); three triggers that blocked nothing turned off or deleted, and `risk_surface` scoped to the surfaces a project has (CST-01, CST-02); the dispatch bound tuned 400 to 200 with the audit's low-severity tail deleted rather than carried (CST-03, HYG-01) - v3.2.0
 
+- ✓ `v3.5.1 - authorization the repo grants, not the user`: `git.auto_close` resolved as two booleans so a user-global `true` stops speaking for a repository that never opted in, with the GitLab arm gated ahead of its reuse probe (AUT-01, AUT-02); `milestone-prune` reading a whole wrapped bullet span through a fence-aware bound with its pipes escaped, proved on this repo's own close (PRN-01); and the tracker report binding by `tea --remote origin` behind a guard that declines to ask when no login names the remote's host, after the login-matching surface FAILed its blocking gate twice and was deleted (TRK-01) - v3.5.1
+
 ### Active
 
-`v3.5.1 - authorization the repo grants, not the user`, opened 2026-08-15.
-Scoped off the Forgejo milestone, which holds one issue: #131.
+`v3.5.2 - one reader, one transport`, opened 2026-08-16. Scoped off the Forgejo
+milestone, which holds two issues: #133 and #132.
 
-**The theme is one sentence: a user-global setting can authorize an unattended
-publish and merge that the stated policy says only the repository may
-authorize.** `git.auto_close` is documented as repo-local by design - D-08, and
-`cadence-core/bin/git-publish.mjs`'s `repoAutoClose` reads `.planning/config.json`
-directly and never the merged value, exactly so a global `true` cannot speak for
-a repository that never opted in. `skills/cad-land/SKILL.md` reads the same key
-through `config.mjs get`, which returns the merged global-plus-repo value, and a
-`true` there enters the no-prompt branch.
+**The theme is one sentence: two places that must agree about the same thing
+were written twice, and the copies drifted.** Both issues came out of an
+external deep dive against `v3.3.0`, both were adjudicated AGREE-high, and
+neither is a bug a user has hit yet - they are surfaces where the tree already
+concedes the correct rule in one place and prescribes the wrong one elsewhere.
 
-On GitHub and Forgejo the chain still dies at the repo-authorized publish seam.
-On GitLab nothing gates it at all: `glab mr create` publishes the source branch
-itself, so no seam call is made, and the workflow proceeds to `glab mr merge`.
-`cadence-core/bin/land-cleanup.mjs` already records the discrepancy in its own
-source, which is the shape of a known gap rather than a discovered one.
+`#133` is the shell transport. `planning.mjs` already states why caller-derived
+prose cannot ride in a double-quoted shell word: an item carrying `$(...)` or a
+backtick executes before Node starts, and a path cannot. That reasoning is
+conceded for one command, and roughly sixteen other workflow sites still
+prescribe the unsafe form for values derived from agent output or repository
+content. The fix is the transport stated once and applied everywhere it
+governs, not sixteen local escapes.
 
-The fix shape is two distinct booleans rather than one aligned value: an
-`autoCloseRequested` read from the merged config, which is presentation and what
-the existing gate reads, and an `autoCloseAuthorized` read from the repo layer
-alone, required before any unattended external mutation on every host including
-GitLab. The prior narrowing (`0b1c322`, reverted) aligned the two seams' values
-and broke the skipped-ask / halt pairing `land-cleanup.mjs` depends on, so the
-constraint is that this fix does not touch that pairing.
+`#132` is the lease. `plan-overlap` intersects declared `files:` by exact string
+equality while `lease-check` reads a trailing slash as a directory prefix, so a
+phase declaring `src/` in one plan and `src/auth.js` in another produces an
+empty overlap, passes the parallel-safety gate, and then authorizes both plans
+to stage the same file. `plan-frontmatter.md` never documents the trailing-slash
+form, which bounds the likelihood and not the validity: `lease-check` honours it,
+so it is live. The fix shape is one shared lease-normalization module both
+readers call.
 
-`v3.5.0 - the check that proves it ran` closed on 2026-08-15: two requirements
-(`RSK-01`, `RSK-02`), one phase, 13 commits, the manifest at `3.5.0`. The only
-gate live on a default install fired on a model reading a prose list and left
-identical bytes whether it ran or not. `planning.mjs risk-check` is now the
-executable seam: `run` answers a resolved commit range with
-`{checked, categories, matches, inconclusive}` and appends that record to
-`trace.jsonl` on every invocation, clean range included, so silence stopped
-being evidence. `status` is the enforcement half - both `execute.md` and
-`task.md` call the seam instead of reading a prose list, neither reports done
-without a record, and range identity is the resolved commit pair rather than the
-ref spelling. The enforcement was watched to fail against the unpatched tree
-first. Detection stayed heuristic on purpose. Carried out of the cycle: the
-detector self-matches its own test fixtures on six of eight categories, so the
-one gate that blocks at every stakes level fires falsely on any range touching
-`risk-diff.test.mjs`; and `b481fb3` plus `64900ee` are unreviewed, the capped
-one-round re-arm having been spent before either existed.
+The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted. The phase-2 open items filed at the
+`v3.5.1` close (#181 through #187) are unassigned and are not scoped here.
 
-`v3.4.1 - what the config says is what routing does` closed on 2026-08-15:
-three requirements (`GAT-02`, `GAT-03`, `ENF-02`), one phase, 6 commits, the
-manifest at `3.4.1`. Three surfaces described the review gates and nothing had
-ever compared them - `config.mjs get` answered a gate from the schema default
-when no layer set one, and the schema called `phase_diff` `advisory` at
-`shipped` where the route table fires `off`. All four gate defaults are now the
-`null` sentinel with per-level prose read off the grid, an unset gate reads back
-`null` plus a warning naming `route.mjs resolve`, and `self-verify.mjs` check 18
-(`gate-agreement`) compares all three surfaces and was watched to FAIL against
-the unpatched tree before the fix landed. The workaround paragraph came out of
-`workflows/execute.md` and `workflows/plan.md` with the defect. One gap filed
-rather than papered over: the check compares the default against the cells, not
-against the `null` sentinel, so a trigger whose three cells agree could regress
-its default and stay green.
-
-`v3.4.0 - the tracker enters the spine` closed on 2026-08-15: one requirement
-(`LND-01`), one phase, 18 commits on the cycle branch, the manifest at
-`3.4.0`. `/cad-land` step 1
-now names the issues a branch's commits reference and whether each is still
-open, reads the tracker without ever writing to it, and degrades in exactly one
-line on all nine paths that cannot answer. The blocking `risk_surface` review
-caught three real defects before the phase closed: a forge CLI's stderr riding
-the envelope past a URL-only redactor, an off switch that still printed a
-tracker line, and a control character in an origin hostname breaking the
-one-line guarantee.
-
-`v3.3.0 — the record you plan from` closed on 2026-08-15: five requirements
-(`CAP-01`, `TRC-01`, `COR-01`, `ENF-01`, `DOC-02`), five phases, 113 commits,
-the manifest at `3.3.0`, tagged `v3.3.0` and released. The theme was that the
-evidence Cadence plans and reports from is itself unchecked, a queue that
-silently dropped five filed items because they were appended below a heading
-the recall walk does not visit, and a run record that could not join a provider
-call to the fire that made it. Both are closed, and a second `/cad-docs-verify`
-sweep over 32 files and 743 claims left a ledger where all 933 rows carry a run
-number and a live cite with the fourteen stale claims corrected at their
-source. Its five rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`,
-its narrative in `CHANGELOG.md`, and its phase record in
-`.planning/_archive-v3.3.0/` and git history.
-
-`v3.2.0 — the controls that reported success` closed on
-2026-08-14: twelve requirements (`CFG-01`, `CFG-02`, `FSW-01`, `GAT-01`,
-`EXP-01`, `VAL-01`, `RVW-01`, `RVW-02`, `CST-01`, `CST-02`, `CST-03`,
-`HYG-01`), four phases, 104 commits, the audit green (12/12 traced, 0 broken;
-36/36 acceptance criteria covered), the manifest at `3.2.0`. Its twelve rows
-sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in
-`CHANGELOG.md`, and its phase record in git history at the pruning commit -
-this close ran `--mode delete`, so there is no `_archive-v3.2.0/`. The merge and
-the release tag both landed: `81bdb5d` is the tip of `main` and the annotated
-tag `v3.2.0` points at it.
-
-What it delivered: the controls that reported success without doing the work.
-A `.planning/config.json` arriving with a clone could reparent the merged
-config through `__proto__` and reach every enforcement surface, and
-`config.mjs validate` returned `{"ok":true,"checked":0,"errors":[]}` over the
-same file, so the tool you would use to check a config was the one thing blind
-to the attack. `atomicWrite` wrote through a symlinked temp path. The
-unattended-close gate could not tell "no findings" from "could not read the
-findings" and returned `proceed` for both. Git failure details carried
-credentials from a remote URL. Each of those now fails safe and says which
-failure it saw. The review arm learned to prove itself in the same cycle: the
-record distinguishes a gate that found nothing from one whose findings were all
-refuted, the reviewer SET is resolved in the seam beside the gate rather than
-by prose that could be skipped without a trace, and an external reviewer is
-handed the same stance and severity bar as the local one. Three review triggers
-that blocked nothing were turned off or deleted, `risk_surface` learned the
-eight categories a project actually has, and every dispatch is bounded at 200
-turns instead of a nominal 400.
-
-Carried, not scoped into `v3.3.0`: the five deferred requirements `LND-01`
-(the `/cad-land` tracker check, cut from v3.2.0 phase 4 before execution, issue
-#121 still open), `PRS-01`, `EVD-01`, `RCL-06` and `CTX-02`, each still holding
-its deferral reason; and two process items open since the last close -
-`/cad-milestone` has no close-only arm, and that close was the fourth to
-hand-write one. `### Validated` above stops at `v2.6.0`; `v2.7.0`, `v3.0.0`,
-`v3.1.0` and `v3.2.0` were never added to it, so that hole is now four
-milestones deep rather than three.
 
 ## Key Decisions
 

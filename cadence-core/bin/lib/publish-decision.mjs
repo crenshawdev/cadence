@@ -28,11 +28,51 @@ const SAFE_BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]*$/;
 const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
+ * Which authorization was missing, as a sentence the user can act on - or null
+ * when the repository did authorize the unattended close. PURE and TOTAL: any
+ * non-`true` input reads as off, nothing throws.
+ *
+ * One key, `git.auto_close`, now has TWO resolutions, and the reason this
+ * function exists is that a single refusal token cannot tell them apart:
+ *
+ *   requested  - the MERGED global+repo value. It is presentation: `/cad-land`
+ *                skips the publish ask on it, and `land-cleanup.mjs gate` reads
+ *                the same value so its halt covers the runs that skipped the
+ *                human.
+ *   authorized - the REPOSITORY layer alone (lib/repo-auto-close.mjs). Only it
+ *                may unlock a mutation of somebody else's project.
+ *
+ * The interesting state is the one where they disagree: a `true` in the user's
+ * own home directory means the run believes it is unattended while nothing in
+ * the repository ever said so. `reason` stays the token `auto-close-off` for
+ * both states (it is asserted by equality across the seam tests and changing
+ * its text buys no behaviour), so the distinction has to live in a sentence.
+ *
+ * @param {{ requested?: unknown, authorized?: unknown }} [args]
+ * @returns {string|null}
+ */
+export function authorizationDetail({ requested, authorized } = {}) {
+  if (authorized === true) return null;
+  if (requested === true) {
+    return 'git.auto_close is true in the merged config, but this repository never set it: '
+      + 'a user-global setting cannot authorize an unattended publish or merge in a repository '
+      + 'that did not opt in. Set "git": {"auto_close": true} in this repository\'s own '
+      + '.planning/config.json to authorize it here.';
+  }
+  return 'git.auto_close is not true anywhere, so no unattended publish or merge is authorized. '
+    + 'A repository opts in by setting "git": {"auto_close": true} in its own '
+    + '.planning/config.json; a user-global setting cannot opt in on its behalf.';
+}
+
+/**
  * Decide whether the seam may publish the current branch, and build the exact
  * argv if so. PURE and TOTAL: non-array `protectedBranches`/`configuredRemotes`
  * coerce to [], a non-string `currentBranch`/`remote` yields a refuse, nothing
  * throws. Gates run FIRST-FAILING-WINS; every refuse is total (`argv:[]`):
- *   1. autoClose !== true                       -> 'auto-close-off'
+ *   1. autoClose !== true    -> 'auto-close-off', plus the `detail` sentence
+ *      `authorizationDetail` words from the requested/authorized pair - the ONE
+ *      gate that carries a detail, so every other refusal's envelope is
+ *      unchanged
  *   2. no branch / detached HEAD                 -> 'no-branch'
  *   3. branch fails SAFE_BRANCH                   -> 'bad-branch'
  *   4. branch is protected                        -> 'protected-branch'
@@ -47,23 +87,33 @@ const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
  * regression reopening option injection):
  * `['push','--set-upstream','--',remote,'refs/heads/<b>:refs/heads/<b>']`.
  *
- * @param {{ autoClose?: boolean, currentBranch?: unknown, protectedBranches?: unknown,
- *   remote?: unknown, configuredRemotes?: unknown }} args
- * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string }}
+ * `autoClose` is the AUTHORIZED value (repo layer only); `autoCloseRequested` is
+ * the merged one and is optional, carrying no verdict at all - it only tells
+ * gate 1's sentence which of the two off-states the caller is in.
+ *
+ * @param {{ autoClose?: boolean, autoCloseRequested?: unknown, currentBranch?: unknown,
+ *   protectedBranches?: unknown, remote?: unknown, configuredRemotes?: unknown }} args
+ * @returns {{ action:'publish'|'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }}
  */
-export function decidePublish({ autoClose, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
+export function decidePublish({ autoClose, autoCloseRequested, currentBranch, protectedBranches, remote, configuredRemotes } = {}) {
   const protectedList = Array.isArray(protectedBranches) ? protectedBranches : [];
   const remotes = Array.isArray(configuredRemotes) ? configuredRemotes : [];
   const branch = typeof currentBranch === 'string' ? currentBranch : null;
   const rem = typeof remote === 'string' ? remote : null;
 
   /** @param {string} reason
-   *  @returns {{ action:'refuse', argv:string[], branch:string|null, remote:string|null, reason:string }} */
+   *  @returns {{ action:'refuse', argv:string[], branch:string|null, remote:string|null, reason:string, detail?:string }} */
   const refuse = (reason) => ({ action: 'refuse', argv: [], branch, remote: rem, reason });
 
   // 1. auto_close must be explicitly on (repo layer only; the seam enforces the
   //    layer). Preserves D-08: an off / global-only auto_close never publishes.
-  if (autoClose !== true) return refuse('auto-close-off');
+  //    The reason token stays `auto-close-off` whichever off-state this is; the
+  //    detail is what tells "off everywhere" from "requested globally, never
+  //    authorized here".
+  if (autoClose !== true) {
+    return { ...refuse('auto-close-off'),
+      detail: /** @type {string} */ (authorizationDetail({ requested: autoCloseRequested, authorized: autoClose })) };
+  }
   // 2. A branch must exist and not be the detached-HEAD sentinel.
   if (!branch || branch === 'HEAD') return refuse('no-branch');
   // 3. The branch must be interpolation-safe (no leading '-', ':', or metachars).

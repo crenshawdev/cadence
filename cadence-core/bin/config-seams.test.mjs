@@ -544,17 +544,26 @@ const BLOCKER = JSON.stringify({ findings: [{ severity: 'blocker' }] });
 
 test('git-publish + land-cleanup: one git.auto_close, two questions, two layer reads', () => {
   // The EXPECTED divergence, and why it is not an inconsistency to eliminate.
-  // The two seams ask different things of one key. git-publish.mjs:56-61
-  // (`repoAutoClose`) asks "am I authorized to push unattended HERE", which D-08
-  // answers repo-layer-only so a user-global value starts no close in an
-  // unrelated project. land-cleanup.mjs's gate() asks "is anybody WATCHING", and
-  // that must match what the prose branched on - skills/cad-land/SKILL.md:24
-  // reads the MERGED value and skips the publish ask under it, so the gate's
-  // halt is what replaces the human it switched off.
+  // ONE key, TWO resolutions, and this fixture is the pair on which they
+  // DISAGREE - which is what makes them two resolutions rather than one value.
+  //
+  //   AUTHORIZED - lib/repo-auto-close.mjs, read by git-publish.mjs `publish`
+  //                and `authorized`. It asks "may I mutate somebody else's
+  //                project unattended HERE", which D-08 answers repo-layer-only
+  //                so a value in the user's home directory starts no close in a
+  //                repository that never opted in.
+  //   REQUESTED  - the MERGED value. land-cleanup.mjs's gate() asks "is anybody
+  //                WATCHING", and that must match what the prose branched on:
+  //                skills/cad-land/SKILL.md reads the MERGED value and skips the
+  //                publish ask under it, so the gate's halt is what replaces the
+  //                human it switched off.
   //
   // Collapsing the two onto the repo layer (0b1c322, reverted) aligned the
   // values and disarmed the pairing: ask skipped, gate proceeding, and on
   // the GitLab arm - where no publish seam gates the chain - a blocker merged.
+  // So a future reader finding these two answers different must NOT re-align
+  // them; the divergence is the design, and the fix for the GitLab hole was a
+  // second REPO-layer consult on that arm, never a merged one here.
   const fx = gitLayers({
     branch: 'cadence/v9.9.9', origin: true,
     global: { git: { auto_close: true } },
@@ -569,6 +578,17 @@ test('git-publish + land-cleanup: one git.auto_close, two questions, two layer r
   assert.equal(g.action, 'halt', 'the gate reads the merged value the prose suppressed triage on');
   assert.match(g.reason, /auto_close on/);
 
+  // The authorization question asked by name, on the same pair. This is the
+  // arm the GitLab chain consults, where no publish seam sits in the path.
+  const a = seam('git-publish.mjs', ['authorized', '--dir', fx.root], fx);
+  assert.equal(a.ok, false, 'the repository never opted in, so nothing is authorized');
+  assert.equal(a.reason, 'auto-close-off');
+  assert.equal(a.requested, true, 'the seam saw the same merged value `get` reports');
+  // The two resolutions on ONE config pair: requested true, authorized false.
+  assert.notEqual(getValue('git.auto_close', fx), a.ok);
+  assert.match(a.detail, /user-global setting cannot authorize/,
+    'the refusal does not say WHICH authorization was missing');
+
   // The contrast that makes both halves about the LAYER rather than about an
   // absent key: the same value in the REPO layer turns both seams on, and a
   // global `false` cannot turn either back off.
@@ -582,6 +602,9 @@ test('git-publish + land-cleanup: one git.auto_close, two questions, two layer r
   assert.equal(refExists(repoFx.bare, 'refs/heads/cadence/v9.9.9'), true);
   const g2 = seam('land-cleanup.mjs', ['gate', '--dir', repoFx.root], { ...repoFx, stdin: BLOCKER });
   assert.equal(g2.action, 'halt');
+  const a2 = seam('git-publish.mjs', ['authorized', '--dir', repoFx.root], repoFx);
+  assert.equal(a2.ok, true, 'the repository\'s OWN opt-in authorizes, and a global false cannot withdraw it');
+  assert.equal(a2.action, 'repo-authorized');
 });
 
 test('git-publish: the protected list it refuses on IS the merged one get reports', () => {

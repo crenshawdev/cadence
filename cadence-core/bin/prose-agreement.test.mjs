@@ -743,6 +743,79 @@ test('both fire sites invoke the risk-check seam rather than reading a prose lis
     'execute.md dropped the rule that an inconclusive range fires the trigger');
 });
 
+test('cad-land step 3: the auto_close branch takes its value from `config.mjs get`', () => {
+  // AC2's other half, at the CALL SITE. The seam-level arms in
+  // config-seams.test.mjs prove the two resolutions differ and that the gate
+  // reads the merged one - but they all still pass on a tree where THIS skill
+  // was repointed at the raw repo value, which would leave the ask and the gate
+  // reading different sources with every arm green. The pairing is: the arm
+  // that switched off the human is the arm the gate covers.
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const labelOf = regionLabels(skill);
+
+  // The ONE up-front read the whole run reuses, and the branch statement itself.
+  const upfront = /Read every config key this run needs in ONE `config\.mjs get` up front[\s\S]*?\n\n/
+    .exec(skill);
+  assert.ok(upfront, 'cad-land no longer states its ONE up-front config.mjs get');
+  assert.match(upfront[0], /git\.auto_close/,
+    'git.auto_close left the up-front `config.mjs get` list, so the branch value comes from elsewhere');
+  const branch = skill.split('\n').filter((l, i) => labelOf(i) === '3').join('\n');
+  assert.match(branch, /branch on `git\.auto_close`/,
+    'step 3 no longer states what it branches on');
+
+  // And from NO other source. A raw repo-layer read or the `authorized` seam
+  // appearing as the thing step 3 branches on is exactly the collapse 0b1c322
+  // made and had reverted: the ask would skip on one value while
+  // land-cleanup.mjs gate halts on another. `authorized` belongs INSIDE 3(b),
+  // gating the GitLab mutation - never above the branch.
+  const decides = upfront[0] + '\n' + branch;
+  assert.doesNotMatch(decides, /\.planning\/config\.json/,
+    'step 3 branches on a raw repo-layer read instead of the merged `config.mjs get`');
+  assert.doesNotMatch(decides, /git-publish\.mjs" authorized/,
+    'step 3 branches on the AUTHORIZED value; the ask and the gate must read one merged value');
+});
+
+test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it creates', () => {
+  // On GitHub and Forgejo the unattended chain has to come through
+  // `git-publish.mjs publish` to get the branch onto the remote, so the
+  // repo-layer refusal stops it. On GitLab `glab mr create` publishes the source
+  // branch itself: no seam call happened, and an unattended merge proceeded on a
+  // `git.auto_close` the repository never set. The enforcement on that host IS
+  // this prose, so a seam test alone proves nothing.
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const rails = doc('cadence-core', 'references', 'git-publish.md');
+  const labelOf = regionLabels(skill);
+  // The 3(b) region alone, blanked elsewhere so line ORDER is preserved: the
+  // same notion of "inside the anchor" the deferred-read check uses.
+  const region = skill.split('\n').map((l, i) => (labelOf(i) === '3(b)' ? l : '')).join('\n');
+
+  for (const [name, text] of [['skills/cad-land/SKILL.md', skill],
+    ['cadence-core/references/git-publish.md', rails]]) {
+    assert.doesNotMatch(text, /no seam call is needed/,
+      `${name} states the GitLab non-gating as correct again`);
+  }
+
+  const seamAt = region.indexOf('git-publish.mjs" authorized');
+  const createAt = region.indexOf('glab mr create --source-branch');
+  assert.ok(createAt > -1, 'step 3(b) no longer spells the glab mr create invocation');
+  assert.ok(seamAt > -1, 'step 3(b) does not call git-publish.mjs authorized on the GitLab arm');
+  // ORDER, not presence. A tree that keeps the seam call but moves it after the
+  // create has already published the branch by the time it asks - which is the
+  // whole failure this closes.
+  assert.ok(seamAt < createAt,
+    'the authorization consult comes AFTER glab mr create, which publishes the branch itself');
+  // The reuse arm, not the create, is the one this ordering exists for: an MR
+  // already open for the branch skips the create entirely, so a consult placed
+  // beside `glab mr create` never runs and `glab mr merge` lands unauthorized.
+  const viewAt = region.indexOf('glab mr view <branch>');
+  assert.ok(viewAt > -1, 'step 3(b) no longer spells the glab mr view reuse probe');
+  assert.ok(seamAt < viewAt,
+    'the authorization consult comes AFTER the glab mr view reuse probe, so an '
+    + 'already-open MR reaches glab mr merge with no seam call behind it');
+  assert.match(region, /ok:false/,
+    'step 3(b) never says what the GitLab arm does when the seam refuses');
+});
+
 test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
   // Detection without enforcement is precisely the outcome RSK-02 exists to
   // prevent, and it passes every other check in this phase. A tree carrying

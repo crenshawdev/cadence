@@ -77,6 +77,21 @@ import {
 const DEFAULT_TIMEOUT_MS = 10000;
 
 /**
+ * The most per-issue resolves one land may make, on the hosts whose HOST_TABLE
+ * row carries a `resolve` (forgejo alone today). The list call there names only
+ * OPEN issues, because the server clamps a `--state all` page at 50 rows and an
+ * honest incomplete read is all this seam could return otherwise - so a
+ * referenced number the list did not answer needs one extra bounded call to
+ * tell "closed" from "never existed".
+ *
+ * A named constant beside DEFAULT_TIMEOUT_MS rather than a config key, for the
+ * same reason the bound above is one: a value reachable at the call site is
+ * directly testable, and this requirement licenses no new key. Anything past
+ * the cap reports `unresolved`, which is an honest non-answer.
+ */
+const MAX_RESOLVES = 5;
+
+/**
  * Run a command, bounded, and never throw. `killSignal: 'SIGKILL'` because a
  * child that ignores SIGTERM would otherwise outlive its own timeout - the
  * whole point of the bound is that nothing the child does can extend it.
@@ -118,29 +133,22 @@ function onPath(bin) {
 }
 
 /**
- * Every host a `tea login list --output json` reading names - the login's own
- * name, its API url's hostname and its ssh host, because a login identifies its
- * forge by all three and cad-land's rule is "a matching login". Returns null
- * when the reading cannot be parsed at all, which classifyOrigin reads as "tea
- * could not be consulted" rather than "no login".
- * @param {string} text @returns {string[]|null}
+ * The logins a `tea login list --output json` reading names, as tea printed
+ * them. Null when the reading cannot be parsed as a list at all, which
+ * classifyOrigin reads as "tea could not be consulted" rather than "no login".
+ *
+ * Nothing is extracted from a login record here, because nothing needs to be:
+ * classifyOrigin asks this reading for its LENGTH, and the query is bound to
+ * the checkout's remote by `--remote origin` rather than to a login this seam
+ * picked. The name/url/ssh_host parsing that stood here served a host-matching
+ * rule that could not be made correct (see classifyOrigin), and it went with it.
+ * @param {string} text @returns {unknown[]|null}
  */
-function teaHosts(text) {
-  let parsed;
-  try { parsed = JSON.parse(text); } catch { return null; }
-  if (!Array.isArray(parsed)) return null;
-  const hosts = [];
-  for (const login of parsed) {
-    if (!login || typeof login !== 'object') continue;
-    for (const field of ['name', 'ssh_host']) {
-      if (typeof login[field] === 'string') hosts.push(login[field].toLowerCase());
-    }
-    if (typeof login.url === 'string') {
-      const m = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)/.exec(login.url);
-      if (m) hosts.push(m[1].toLowerCase());
-    }
-  }
-  return hosts;
+function teaLogins(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch { return null; }
 }
 
 /** The one not-reporting shape: a named line, and NOTHING claimed about issues.
@@ -189,7 +197,7 @@ function check(dir, baseArg, timeout) {
   let classification = classifyOrigin(origin.ok ? origin.stdout.trim() : '', null);
   if (classification.verdict === 'unrecognized' && classification.slug && onPath('tea')) {
     const probe = run('tea', ['login', 'list', '--output', 'json'], { cwd: dir, timeout });
-    classification = classifyOrigin(origin.stdout.trim(), probe.ok ? teaHosts(probe.stdout) : null);
+    classification = classifyOrigin(origin.stdout.trim(), probe.ok ? teaLogins(probe.stdout) : null);
   }
   const host = classification.host;
   const repo = classification.slug;
@@ -228,7 +236,34 @@ function check(dir, baseArg, timeout) {
     return skip({ action: 'skip', reason: `${bin} returned a response this seam could not read as a complete issue list: no tracker report` },
       { host, repo, warnings });
   }
-  const state = (n) => (part.open.includes(n) ? 'open' : part.closed.includes(n) ? 'closed' : 'not-found');
+  // Numbers the list itself could not answer, resolved one bounded call each on
+  // the rows that carry a resolver. The loop STOPS at the first resolve killed
+  // at the call bound rather than continuing: a hung CLI must not be able to
+  // multiply the bound by the cap and put five timeouts on the land path.
+  /** @type {Map<number, string>} */
+  const resolved = new Map();
+  if (row.resolve && repo) {
+    let spent = 0;
+    for (const n of part.notFound) {
+      if (spent >= MAX_RESOLVES) break;
+      spent++;
+      const one = run(bin, row.resolve.argv(repo, n), { cwd: dir, timeout });
+      if (one.timedOut) break;
+      const s = one.ok ? row.resolve.read(one.stdout, n) : null;
+      if (s) resolved.set(n, s);
+    }
+  }
+  // `unresolved`, never `not-found`, for anything the resolver did not answer:
+  // the CLI exits nonzero both for an absent issue and for a failed read, and
+  // this seam discards child stderr, so not-found would be an affirmative claim
+  // about input it could not read. A host with no resolver keeps emitting
+  // `not-found`, which its `--state all` list is evidence for.
+  const state = (n) => {
+    if (part.open.includes(n)) return 'open';
+    if (part.closed.includes(n)) return 'closed';
+    if (!row.resolve) return 'not-found';
+    return resolved.get(n) || 'unresolved';
+  };
   emit({
     ok: true, action: 'report', reason: decision.reason, host, repo,
     referenced: numbers.map((n) => ({ number: n, state: state(n) })),

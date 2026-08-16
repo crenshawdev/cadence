@@ -19,9 +19,11 @@
 //        number,state`, `-R/--repo [HOST/]OWNER/REPO`, `-L/--limit int
 //        (default 30)`. Live sample: [{"number":14156,"state":"OPEN"}].
 //        `--limit` pages internally, so 60 rows come back for `--limit 60`.
-//   tea  `tea issues list --help` on tea 0.9.x here: `--state all`, `--fields
-//        index,state`, `--output json`, `--repo`, `--limit int (default 30)`.
-//        Live sample: [{"index":"171","state":"open"}] - `index` is a STRING.
+//   tea  `tea issues list --help` on tea 0.9.x here: `--state all|open`,
+//        `--fields index,state`, `--output json`, `--repo`, `--limit int
+//        (default 30)`. Live sample: [{"index":"171","state":"open"}] - `index`
+//        is a STRING. `tea issues <index> --repo <slug> --fields index,state
+//        --output json` reads one issue, and prints its `index` as a NUMBER.
 //   glab `glab issue list` published docs (gitlab-org/cli, docs/source/issue/
 //        list.md, read 2026-08-15): `-A/--all` (both states), `-O/--output
 //        json`, `-P/--per-page int (default 30)`, `-R/--repo OWNER/REPO`. The
@@ -45,6 +47,11 @@
 // caller degrades to one line instead of answering. That is deliberate and it
 // is the conservative direction: a truncated page and an empty tracker produce
 // the same records, and only one of them means "#42 does not exist".
+//
+// tea's clamp is the reason the forgejo row asks `--state open` and carries a
+// per-issue `resolve`: at `--state all` a real tracker fills the 50-row page,
+// so the honest incomplete read was the only thing this seam ever produced on
+// the repository it was built in. See HOST_TABLE's own header.
 
 /** open / closed, normalized across the three CLIs' spellings.
  * @param {string} raw @returns {'open'|'closed'|null} */
@@ -52,6 +59,17 @@ function normalizeState(raw) {
   const s = raw.toLowerCase();
   if (s === 'open' || s === 'opened') return 'open';
   if (s === 'closed') return 'closed';
+  return null;
+}
+
+/** An issue number however its CLI spells it: `tea issues list` prints `index`
+ * as a STRING and `tea issues <index>` prints it as a NUMBER (both measured
+ * 2026-08-15), so the two readers below share one normalization rather than
+ * disagreeing about which `42` is the referenced one.
+ * @param {unknown} raw @returns {number|null} */
+function normalizeNumber(raw) {
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string' && /^\d+$/.test(raw)) return Number(raw);
   return null;
 }
 
@@ -80,10 +98,8 @@ function normalizeList(text, limit, numberKey) {
   const records = [];
   for (const row of parsed) {
     if (!row || typeof row !== 'object') return bad('a row was not an object');
-    const rawNumber = /** @type {Record<string, unknown>} */ (row)[numberKey];
     const rawState = /** @type {Record<string, unknown>} */ (row).state;
-    const number = typeof rawNumber === 'number' ? rawNumber
-      : (typeof rawNumber === 'string' && /^\d+$/.test(rawNumber) ? Number(rawNumber) : null);
+    const number = normalizeNumber(/** @type {Record<string, unknown>} */ (row)[numberKey]);
     const state = typeof rawState === 'string' ? normalizeState(rawState) : null;
     // A renamed or missing field fails the WHOLE read rather than dropping the
     // row: dropping it is how a renamed field becomes a not-found verdict.
@@ -95,13 +111,89 @@ function normalizeList(text, limit, numberKey) {
 }
 
 /**
- * Host -> the ONE bounded call that lists issues in EVERY state with number and
- * state, and the reader for its response. One call per land covering both facts
- * the report needs; never one call per referenced number.
+ * ONE issue's state out of a per-issue response, or null when the response does
+ * not answer for THAT number. Accepts a single object or a one-element array,
+ * because the CLI has printed both shapes.
  *
- * `argv(slug, limit)` is byte-exact apart from the two interpolations, and the
- * repo slug is always present: `gh` and `glab` would otherwise infer the repo
- * from the process cwd, and `tea` infers nothing at all.
+ * NULL IS THE ONLY FAILURE ANSWER, and the caller renders it `unresolved` -
+ * never `not-found`. `tea` exits nonzero both for an issue that does not exist
+ * and for a read that failed, and this seam discards child stderr by contract,
+ * so a not-found here would be an affirmative answer about input it could not
+ * read - the failure `partitionIssues` was written to refuse.
+ * @param {unknown} text @param {number} number
+ * @returns {'open'|'closed'|null}
+ */
+function readOneIssue(text, number) {
+  if (typeof text !== 'string') return null;
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return null; }
+  if (Array.isArray(parsed)) {
+    if (parsed.length !== 1) return null;
+    parsed = parsed[0];
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const row = /** @type {Record<string, unknown>} */ (parsed);
+  if (normalizeNumber(row.index) !== number) return null;
+  return typeof row.state === 'string' ? normalizeState(row.state) : null;
+}
+
+/**
+ * Host -> the ONE bounded list call this seam makes per land, and the reader for
+ * its response. Never one call per referenced number.
+ *
+ * `argv(slug, limit)` is byte-exact apart from its interpolations, and the repo
+ * slug is always present: `gh` and `glab` would otherwise infer the repo from
+ * the process cwd, and `tea` infers nothing at all.
+ *
+ * THE FORGEJO ROW BINDS EVERY CALL WITH `--remote origin`, and that IS the
+ * binding. `--repo <owner>/<name>` names the repository but not the login, and
+ * tea resolves an unqualified one in config FILE ORDER - so the first login in
+ * the user's config could answer for a repository it has never heard of, exit 0
+ * and all (D-07). `--remote origin` tells tea to discover the login from the
+ * checkout's own `origin` remote instead (`--remote string, -R string: Discover
+ * Gitea login from remote`, tea 0.15.1). The two flags compose - measured
+ * 2026-08-15: with `--repo forgejo/forgejo --remote origin` in a checkout whose
+ * origin is codeberg.org, tea answered from the codeberg login even though it
+ * sits SECOND in the config. The seam always spawns with `cwd` set to the
+ * repository `--dir` names, which is what makes `origin` resolvable at all.
+ *
+ * THE ONE LIMIT OF DELEGATING IT, and why the call is guarded rather than the
+ * binding: when NO login's host names the remote's host, tea does not refuse.
+ * It prints `NOTE: no login matched this repository, falling back to login
+ * '<first>' in non-interactive mode.` on STDERR, exits 0, and answers from
+ * config order - i.e. a stranger's tracker, reported as this repository's. This
+ * seam cannot SEE that happen: the NOTE is on stderr, which the caller discards
+ * by contract (issue-check.mjs's header), tea 0.15.1 offers no
+ * strict/no-fallback flag, and no subcommand reports which login answered.
+ *
+ * So it does not try to see it - it declines to ASK. `classifyOrigin` answers
+ * `no-login` unless some login NAMES the origin host exactly, which is the same
+ * condition tea itself falls back on, read from the same login list. That is a
+ * precondition on making the call, NOT a rule for picking a login: which login
+ * serves this remote is still tea's answer via `--remote origin`, and this file
+ * makes no host judgment beyond equality. The distinction matters because the
+ * PICKING rule was tried twice and could not be made correct without a vendored
+ * public suffix list (see classifyOrigin); the guard needs no such list, because
+ * exact equality guesses at nothing. The fix for a remote that fails it is a
+ * login whose `ssh_host` names the remote's host, and the `no-login` line says
+ * so. `gh` and `glab` need no equivalent: neither is multi-account-ambiguous
+ * the way tea's `--repo` fallback is.
+ *
+ * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
+ * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
+ * (`--limit 50`, `100` and `200` each returned exactly 50 against this repo's
+ * tracker of 180+, and Codeberg - a different instance under different
+ * administration - clamps identically), so `--state all` filled its page on any
+ * real tracker, `normalizeList` correctly reported the read incomplete, and the
+ * whole report degraded to a skip line. `--state open` returned 19 rows here: a
+ * complete read. What that costs is that a referenced number missing from the
+ * list is now closed OR absent rather than absent, so the row carries
+ * `resolve` - one bounded `tea issues <index>` per unanswered number, capped at
+ * the caller's own constant. Paging the list was rejected: it widens the seam
+ * past its stated one bounded call per land and puts more network latency on
+ * the land path. `github` and `gitlab` keep `--state all` and get no resolve -
+ * `gh` pages internally to its `--limit`, and inventing argv for a `glab` that
+ * is absent from this machine would ship an untestable change.
  */
 export const HOST_TABLE = Object.freeze({
   github: Object.freeze({
@@ -126,10 +218,22 @@ export const HOST_TABLE = Object.freeze({
     bin: 'tea',
     limit: 50,
     /** @param {string} slug @param {number} limit @returns {string[]} */
-    argv: (slug, limit) => ['issues', 'list', '--repo', slug, '--state', 'all',
+    argv: (slug, limit) => ['issues', 'list', '--repo', slug,
+      '--remote', 'origin', '--state', 'open',
       '--fields', 'index,state', '--output', 'json', '--limit', String(limit)],
     /** @param {unknown} text @param {number} limit */
     normalize: (text, limit) => normalizeList(text, limit, 'index'),
+    // All five flags exist on the installed tea, and `--remote` on the
+    // single-issue form as well as on `list` (`tea issues --help` and
+    // `tea issues list --help`, 2026-08-15). No `--state`: the number is named
+    // directly.
+    resolve: Object.freeze({
+      /** @param {string} slug @param {number} number @returns {string[]} */
+      argv: (slug, number) => ['issues', String(number), '--repo', slug,
+        '--remote', 'origin', '--fields', 'index,state', '--output', 'json'],
+      /** @param {unknown} text @param {number} number */
+      read: (text, number) => readOneIssue(text, number),
+    }),
   }),
 });
 
@@ -163,9 +267,29 @@ function splitOrigin(url) {
 }
 
 /**
- * Classify the origin URL into the forge whose tracker can be read, using the
- * hosts a `tea login list` reading names for everything that is not github or
- * gitlab - the rule skills/cad-land/SKILL.md step 1 already states.
+ * Classify the origin URL into the forge whose tracker can be read, using a
+ * `tea login list` reading for everything that is not github or gitlab.
+ *
+ * THE FORGEJO-VS-NO-LOGIN RULE IS A COUNT, NOT A HOST COMPARISON. A reading
+ * that names at least one login answers `forgejo`; a reading that names none
+ * answers `no-login`; no reading at all answers `unrecognized`. WHICH of the
+ * configured logins serves this origin is tea's own question, and tea is the
+ * one asked it: every call HOST_TABLE's forgejo row makes carries
+ * `--remote origin`, so tea reads the checkout's own remote and picks the login
+ * from it. That header states the binding and the one limit of delegating it.
+ *
+ * This file used to answer that question itself, by matching the origin host
+ * against each login's hosts - first by equality, then by a shared registrable
+ * domain guarded with a curated public-suffix denylist - and it was wrong in
+ * both shapes. Under equality this repository (`ssh://git@ssh.jcrenshaw.dev:
+ * 2222/...` against a login named `git.jcrenshaw.dev`; a web host and an SSH
+ * endpoint under different names is a normal deployment, not a
+ * misconfiguration) took the `no-login` arm on every land, so the report
+ * shipped in v3.4.0 never once ran on the repository it was built in. Under the
+ * widening, any second-level registry the denylist missed - `git.acme.co.ke`
+ * against `git.other.co.ke` - read two unrelated companies as one forge. Being
+ * right about that needs the public suffix list a zero-dep repo refuses to
+ * vendor (D-07), so the rule is deleted rather than tuned a third time.
  *
  * The verdicts are FIVE, not three, because the degradations are not
  * interchangeable (LND-01, criterion 3):
@@ -188,12 +312,36 @@ function splitOrigin(url) {
  * this file has no way to be right about.
  *
  * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
- * @param {string[]|null|undefined} teaHosts hosts a `tea login list` reading
- *   named, or null/undefined when tea could not be consulted at all
+ * @param {unknown[]|null|undefined} teaLogins the logins a `tea login list`
+ *   reading named, consulted for ONE fact - whether any of them NAMES this
+ *   origin's host - or null/undefined when tea could not be consulted
  * @returns {{verdict:'github'|'gitlab'|'forgejo'|'no-login'|'no-remote'|'unrecognized',
  *   host:string|null, slug:string|null}}
  */
-export function classifyOrigin(originUrl, teaHosts) {
+/**
+ * Does one `tea login list` record NAME this host? The three fields a login
+ * identifies its forge by - its own `name`, its API `url`'s hostname and its
+ * `ssh_host` - compared lowercased and EXACTLY. No suffix, subdomain or
+ * registrable-domain reading: this is the guard's whole vocabulary, and the
+ * reason it needs no public suffix list is that it never asks what two hosts
+ * have in common.
+ * @param {unknown} login @param {string} host @returns {boolean}
+ */
+function loginNamesHost(login, host) {
+  if (!login || typeof login !== 'object') return false;
+  const rec = /** @type {Record<string, unknown>} */ (login);
+  for (const field of ['name', 'ssh_host']) {
+    const v = rec[field];
+    if (typeof v === 'string' && v.toLowerCase() === host) return true;
+  }
+  if (typeof rec.url === 'string') {
+    const m = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)/.exec(rec.url);
+    if (m && m[1].toLowerCase() === host) return true;
+  }
+  return false;
+}
+
+export function classifyOrigin(originUrl, teaLogins) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
   if (!url) return { verdict: 'no-remote', host: null, slug: null };
   const parts = splitOrigin(url);
@@ -206,9 +354,17 @@ export function classifyOrigin(originUrl, teaHosts) {
   if (!slug) return { verdict: 'unrecognized', host, slug: null };
   if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug };
   if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug };
-  if (!Array.isArray(teaHosts)) return { verdict: 'unrecognized', host, slug };
-  const named = teaHosts.some((h) => typeof h === 'string' && h.toLowerCase() === host);
-  return { verdict: named ? 'forgejo' : 'no-login', host, slug };
+  if (!Array.isArray(teaLogins)) return { verdict: 'unrecognized', host, slug };
+  // The GUARD, not a picker: unless some login names this host exactly, tea
+  // would fall back to config order and answer for a repository it has never
+  // heard of, exit 0, with its NOTE on the stderr this seam discards. Equality
+  // is the whole rule - it is the same condition tea falls back on, and it
+  // guesses at nothing, which is what the two deleted host rules could not say.
+  // WHICH login serves this remote stays tea's answer, via `--remote origin`.
+  if (!teaLogins.some((login) => loginNamesHost(login, host))) {
+    return { verdict: 'no-login', host, slug };
+  }
+  return { verdict: 'forgejo', host, slug };
 }
 
 /**

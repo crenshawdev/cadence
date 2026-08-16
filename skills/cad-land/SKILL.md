@@ -30,9 +30,8 @@ across the steps below rather than re-reading per step.
    `git.base_branch`, else the first `git.protected_branches` entry that
    exists here (references/git-guard.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
    changes; and the remote host detected from the origin URL (gitlab -> MR,
-   github -> PR, any other host where the `tea` CLI has a matching login ->
-   Forgejo/Gitea PR via `tea` (`tea login list` names the host), none of those
-   -> local only). Show this plainly before doing anything.
+   github -> PR, any other host where `tea` holds a login -> Forgejo/Gitea PR
+   via `tea`, else local only). Show this plainly before doing anything.
 
    **Then the tracker, in the same report.** Run it here, before any publish
    ask, on both step-3 arms:
@@ -44,7 +43,8 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
    Branch on `action` alone. On `report`: say in ONE sentence which issues this
    branch's commits reference and which of them are still open ("your branch
    references #42 and #47; #42 is still open"), naming a `not-found` number as
-   not found rather than as closed. Print the `open` list ONLY when
+   not found and an `unresolved` one unresolved, never closed or not found.
+   Print the `open` list ONLY when
    `referenced` is empty - it is the fallback, never the headline, because a
    bare list is what a reader skims past. On `skip`: print `reason` verbatim as
    ONE line and carry on - never block, never retry, never ask, and never list
@@ -70,8 +70,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
      GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
      <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
      branch itself, so push it first as part of this same chosen action). If
-     no remote, or an unrecognized host with no `tea` login, this option is
-     absent.
+     no remote, or `tea` holds no login at all, this option is absent.
    - **Tag** - create an annotated tag (ask the name); ask separately
      whether to push it.
    - **Leave local** - do nothing further.
@@ -135,15 +134,28 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
      a config layer that could carry `protected_branches` did not parse, so the
      branch was checked against the DEFAULT list - fix the file, never retry
      past it.
-   - **Open (or reuse) the PR/MR.** Reuse an existing open one when
+   - **Open (or reuse) the PR/MR.**
+     On GitLab EVERY arm of this bullet mutates the remote: `glab mr create`
+     pushes the source branch itself, and the reuse arm hands an already-open
+     MR straight to the merge below with no create at all. So the GitLab arm
+     asks BEFORE it probes, on its own physical line:
+     `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-publish.mjs" authorized --dir <root>`
+     On `ok:false` do not touch the remote at all - no view, no create, no merge -
+     stop and surface the `detail`, which says which authorization was missing
+     (a `git.auto_close` the user set globally does not authorize a repository
+     that never set it in its own `.planning/config.json`). That is the same
+     stop the GitHub/Forgejo arm makes on the publish seam's `ok:false`. ONE
+     consult, ahead of the whole bullet and not beside the create: the reuse
+     arm is what would otherwise reach `glab mr merge` unasked, so placed here
+     no second check is needed there.
+     Then reuse an existing open one when
      `gh pr view <branch>` / `glab mr view <branch>` / `tea pr list --state
-     open` (filtered by head branch) finds it, else create:
-     GitHub `gh pr create --base <base> --head <branch> --fill`, GitLab
+     open` (filtered by head branch) finds it, else create: GitHub
+     `gh pr create --base <base> --head <branch> --fill`,
+     GitLab
      `glab mr create --source-branch <branch> --target-branch <base> --fill`,
      Forgejo `tea pr create --base <base> --head <branch>` (record the index
      it prints - tea addresses PRs by index, not branch).
-     On GitLab `glab mr create` publishes the source branch itself, so no seam
-     call is needed there.
    - **Merge on the platform.** GitHub `gh pr merge <branch> --merge
      --delete-branch` (an explicit merge strategy is required or gh
      errors/prompts; `--delete-branch` removes the remote+local source). GitLab

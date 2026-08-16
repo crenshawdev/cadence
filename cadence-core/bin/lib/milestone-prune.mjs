@@ -12,7 +12,7 @@
 // malformed input - a section that cannot be found is reported, never
 // invented. Everything not explicitly removed or inserted is byte-preserved.
 
-import { parseRoadmapPhases, parseRequirements } from './planning-files.mjs';
+import { parseRoadmapPhases, parseRequirements, sectionSpan } from './planning-files.mjs';
 
 /** Decimal-safe phase number in a RegExp (`2.1` must not match `291`).
  * @param {number} n */
@@ -92,8 +92,9 @@ const SHIPPED_PREAMBLE = [
  * Move the shipped milestone's requirements under `## Shipped`. Shipped =
  * every `## Traceability` row whose phase is in `completed` AND whose status
  * is not `Deferred`. For each id:
- * its `## Active` bullet (`- **ID**: summary`) is removed, its Traceability
- * row is removed, and one `| ID (summary) | phase | Complete | label |` row
+ * its `## Active` bullet (`- **ID**: summary`) is removed WHOLE - lead line
+ * plus its indented continuation lines - its Traceability row is removed, and
+ * one `| ID (summary) | phase | Complete | label |` row
  * lands in `## Shipped` - created after `## Active` when absent, appended
  * after the table's last row when present.
  *
@@ -120,10 +121,22 @@ export function archiveRequirements(text, completed, label) {
   let lines = text.split('\n');
   const summaries = new Map();
 
-  // 1. Pull each shipped id's Active bullet (capturing its one-line summary)
-  //    and its Traceability row. Bullet form is the seeding convention
+  // 1. Pull each shipped id's Active bullet (capturing its summary) and its
+  //    Traceability row. Bullet form is the seeding convention
   //    (`- **ID**: line`); the row match is bounded to the Traceability
   //    section so a same-shaped row under `## Shipped` is never re-removed.
+  //
+  //    What is pulled is the bullet's SPAN, never its lead line alone (D-01):
+  //    the lead line plus every following non-blank line that begins with
+  //    whitespace, ended by a blank line or a column-0 line. Requirement
+  //    bullets in a real project WRAP - all four in this repo's own
+  //    `## Active` do - and the lead-line reader left the continuation lines
+  //    behind as orphaned prose while archiving a row cut mid-sentence. It was
+  //    hand-repaired at three consecutive closes before it was made to read the
+  //    span. The lead-line match itself stays the narrow `- **<ID>**:` form
+  //    built from `escId` (D-03), NOT `ACTIVE_BULLET` from planning-files.mjs,
+  //    which reads any bold span as an id and would delete a `- **Note**:`
+  //    prose bullet whose id happened to collide with a shipped one.
   //
   //    The bullet scan is bounded the same way, to `## Active` - heading to the
   //    next `^## `, the cut parseRequirements and lib/planning-files.mjs:388-391
@@ -137,20 +150,38 @@ export function archiveRequirements(text, completed, label) {
   //    template-shaped project broken. A file with no `## Active` heading
   //    removes no bullet and captures no summary - the same answer it already
   //    gives for an id with no bullet.
-  const activeAt = lines.findIndex((l) => /^## Active\s*$/.test(l));
+  //
+  //    BOTH ends come from `sectionSpan` (D-02), the fence-aware reader
+  //    `classifyActiveSection` already uses on this same section, because "a
+  //    start found fence-blind cannot be repaired by a fence-aware end". The
+  //    hand-rolled `findIndex` this replaces took a fenced `## Active` - which
+  //    the shipped `templates/REQUIREMENTS.md` carries as its own example - for
+  //    the section, and deleted a bullet out of somebody's code block.
+  const { start: activeAt, end: activeEnd } = sectionSpan(lines, '## Active');
   if (activeAt !== -1) {
-    let activeEnd = lines.length;
-    for (let i = activeAt + 1; i < lines.length; i++) {
-      if (/^## /.test(lines[i])) { activeEnd = i; break; }
-    }
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
       const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
-      body = body.filter((line) => {
-        const m = line.match(bulletRe);
-        if (m) { summaries.set(id, m[1].trim()); return false; }
-        return true;
-      });
+      const kept = [];
+      for (let i = 0; i < body.length; i++) {
+        const m = body[i].match(bulletRe);
+        if (!m) { kept.push(body[i]); continue; }
+        // The captured summary is that same span with each line trimmed and
+        // joined on single spaces - no length cap (D-09) and no lowercasing of
+        // the first letter (D-05), so the archived text is byte-faithful to the
+        // bullet apart from the whitespace join. A heuristic that lowercased the
+        // lead word to match past hand repairs would mangle a span opening on a
+        // proper noun or an identifier, which is the worse failure.
+        const parts = [m[1].trim()];
+        let j = i + 1;
+        while (j < body.length && body[j].trim() && /^\s/.test(body[j])) {
+          parts.push(body[j].trim());
+          j++;
+        }
+        summaries.set(id, parts.filter(Boolean).join(' '));
+        i = j - 1;
+      }
+      body = kept;
     }
     lines = [...lines.slice(0, activeAt + 1), ...body, ...lines.slice(activeEnd)];
   }
@@ -166,9 +197,19 @@ export function archiveRequirements(text, completed, label) {
   });
 
   // 2. Build the shipped rows, summary parenthesized when the bullet had one.
+  //
+  //    A `|` in the summary is escaped as `\|` HERE, at the interpolation, not
+  //    at capture (D-04): `summaries` keeps the bullet's own bytes, and the
+  //    escape is a property of the table cell it is about to become. Unescaped,
+  //    a bullet quoting a config union (`review.mode: panel|single`) or a
+  //    markdown row shifts the table's columns silently, and `Milestone` reads
+  //    `Complete`. This is the guard planning.mjs `cmdMilestonePrune` already
+  //    applies to `--label` for the identical stated reason, one interpolation
+  //    over, which is why the row keeps exactly five unescaped pipes.
+  const cell = (s) => s.replace(/\|/g, '\\|');
   const newRows = shipped.map(({ id, phase }) => {
     const s = summaries.get(id);
-    return `| ${id}${s ? ` (${s})` : ''} | ${phase} | Complete | ${label} |`;
+    return `| ${id}${s ? ` (${cell(s)})` : ''} | ${phase} | Complete | ${label} |`;
   });
 
   // 3. Land them under `## Shipped`.
@@ -176,16 +217,15 @@ export function archiveRequirements(text, completed, label) {
   let createdSection = false;
   if (headingAt === -1) {
     // Create the section right after `## Active`'s span (before the next
-    // `## `), or at end of file when there is no Active section at all.
+    // `## `), or at end of file when there is no Active section at all. Read
+    // through the SAME `sectionSpan` the removal above used, re-run because
+    // `lines` has shifted since - two readers of one section must not be able
+    // to disagree about where it is. `end` is `lines.length` for a section
+    // running to EOF and -1 only when there is no `## Active` outside a fence,
+    // which is the no-Active-heading case's answer already.
     createdSection = true;
-    let insertAt = lines.length;
-    const activeAt = lines.findIndex((l) => /^## Active\s*$/.test(l));
-    if (activeAt !== -1) {
-      insertAt = lines.length;
-      for (let i = activeAt + 1; i < lines.length; i++) {
-        if (/^## /.test(lines[i])) { insertAt = i; break; }
-      }
-    }
+    const { end: afterActive } = sectionSpan(lines, '## Active');
+    const insertAt = afterActive === -1 ? lines.length : afterActive;
     lines.splice(insertAt, 0, '## Shipped', ...SHIPPED_PREAMBLE, ...newRows, '');
   } else {
     // Append after the last table row inside the section.

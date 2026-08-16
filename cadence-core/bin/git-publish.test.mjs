@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,11 @@ import { fileURLToPath } from 'node:url';
 // own arms are bound to a no-op unless it is the entry file, so importing it
 // registers nothing here.
 import { gitLayers } from './config-seams.test.mjs';
+// The PATH-injected forge-CLI stub writer and its $CAD_SPAWN_MARKER convention,
+// imported for the same reason and under the same no-op binding: every stub
+// appends its own name to the marker file, which is what turns "no forge CLI
+// ran" into an assertion about the filesystem.
+import { stub } from './issue-check.test.mjs';
 
 const BIN = dirname(fileURLToPath(import.meta.url));
 const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'git-publish.mjs');
@@ -245,11 +250,108 @@ test('reap needs no auto_close: a close-off repo still reaps its local branch', 
   assert.equal(refExists(dir, REAP_REF), false);
 });
 
-test('usage: the detail names both subcommands', () => {
+test('usage: the detail names all three subcommands', () => {
   const d = seam(['frobnicate']);
   assert.equal(d.ok, false);
   assert.match(d.detail, /publish/);
   assert.match(d.detail, /reap/);
+  assert.match(d.detail, /authorized/);
+});
+
+// --- the two authorizations, and the sentence that tells them apart (AUT-01) --
+
+/** A user-global layer file holding `obj`. */
+function globalJson(obj) { return globalText(JSON.stringify(obj)); }
+
+/** The config pair this phase exists for: `git.auto_close` true in the user's
+ * own home directory, and this repository never setting it. */
+const GLOBAL_ON = { git: { auto_close: true } };
+
+test('publish refuse: off-everywhere and requested-globally read DIFFERENTLY', () => {
+  // Same `reason` token on both - it is asserted by equality across this file
+  // and config-seams.test.mjs - so the state the user has to act on can only
+  // reach them through the detail.
+  const off = seam(['publish', '--dir', repo({ config: { git: { auto_close: false } } }).dir]);
+  const requested = seam(['publish', '--dir', repo({ config: { git: {} } }).dir], globalJson(GLOBAL_ON));
+  assert.equal(off.reason, 'auto-close-off');
+  assert.equal(requested.reason, 'auto-close-off');
+  assert.match(requested.detail, /user-global setting cannot authorize/);
+  assert.match(requested.detail, /\.planning\/config\.json/);
+  assert.notEqual(off.detail, requested.detail);
+  assert.ok(off.detail, 'the off-everywhere arm says which authorization was missing too');
+});
+
+test('authorized: a user-global true is refused - the repository never opted in', () => {
+  // The GitLab arm's gate. On GitHub/Forgejo the chain dies at `publish`
+  // because the branch has to reach the remote through it; `glab mr create`
+  // pushes the source branch itself, so this is the only thing between a
+  // user-global setting and an unattended merge.
+  const { dir, bare } = repo({ config: { git: {} } });
+  const { d, status } = seamStatus(['authorized', '--dir', dir], globalJson(GLOBAL_ON));
+  assert.equal(status, 1);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'auto-close-off');
+  assert.equal(d.requested, true, 'the merged value is reported, and did not authorize');
+  assert.match(d.detail, /user-global setting cannot authorize/);
+  assert.match(d.detail, /\.planning\/config\.json/);
+  assert.equal(refExists(bare, INT_REF), false, 'the read-only arm published nothing');
+});
+
+test('authorized: the repository\'s own opt-in answers ok:true, and needs no git', () => {
+  const { d, status } = seamStatus(['authorized', '--dir', repo().dir]);
+  assert.equal(status, 0);
+  assert.equal(d.ok, true);
+  assert.equal(d.action, 'repo-authorized');
+  assert.equal(d.detail, undefined, 'nothing was missing, so nothing is said');
+
+  // A directory that is not a git repository at all still gets an answer: this
+  // arm reads config layers and runs no git (the marker-file proof that it
+  // spawns nothing lives beside the forge-CLI stubs).
+  const plain = mkdtempSync(join(tmpdir(), 'cad-pub-plain-'));
+  mkdirSync(join(plain, '.planning'));
+  writeFileSync(join(plain, '.planning', 'config.json'), JSON.stringify(GLOBAL_ON));
+  const bare = seamStatus(['authorized', '--dir', plain]);
+  assert.equal(bare.status, 0);
+  assert.equal(bare.d.ok, true);
+});
+
+test('authorized: the GitLab arm refuses with NO forge CLI spawned at all', () => {
+  // AC3. On GitLab `glab mr create` publishes the source branch itself, so the
+  // publish seam is never called and this answer is the only thing between a
+  // user-global setting and an unattended merge. Two things are proved here:
+  // the refusal, and that reaching it needed no forge CLI - a seam that shelled
+  // out to `glab` would put a network CLI's failure modes on the same envelope
+  // as a merge authorization. `glab` is not installed on this machine, so a
+  // stub on PATH is the only way the arm is provable either way.
+  const stubDir = mkdtempSync(join(tmpdir(), 'cad-pub-stub-'));
+  for (const name of ['gh', 'glab', 'tea']) stub(stubDir, name, { body: '[]' });
+  const marker = join(mkdtempSync(join(tmpdir(), 'cad-pub-mark-')), 'spawned.txt');
+  const { dir } = repo({ config: { git: {} } });
+
+  const env = { ...GIT_ENV, CADENCE_GLOBAL_CONFIG: globalJson(GLOBAL_ON),
+    PATH: `${stubDir}:${process.env.PATH}`, CAD_SPAWN_MARKER: marker };
+  let out; let status = 0;
+  try { out = execFileSync('node', [SEAM, 'authorized', '--dir', dir], { encoding: 'utf8', env }); }
+  catch (e) { out = e.stdout; status = e.status; }
+  const d = JSON.parse(String(out).trim());
+
+  assert.equal(status, 1);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'auto-close-off');
+  assert.match(d.detail, /user-global setting cannot authorize/);
+  assert.equal(existsSync(marker), false, 'a forge CLI was spawned to answer an authorization question');
+
+  // The marker is not vacuously absent: running one of the stubs writes it.
+  execFileSync(join(stubDir, 'glab'), ['mr', 'create'], { encoding: 'utf8', env });
+  assert.equal(readFileSync(marker, 'utf8').trim(), 'glab');
+});
+
+test('authorized: off in BOTH layers refuses with the other sentence', () => {
+  const d = seam(['authorized', '--dir', repo({ config: { git: { auto_close: false } } }).dir]);
+  assert.equal(d.ok, false);
+  assert.equal(d.reason, 'auto-close-off');
+  assert.equal(d.requested, false);
+  assert.match(d.detail, /not true anywhere/);
 });
 
 // --- the torn-layer mutation gate -------------------------------------------

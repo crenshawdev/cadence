@@ -10,13 +10,35 @@
 //
 // Every stub also appends its own name to $CAD_SPAWN_MARKER, so "no forge CLI
 // ran" is an assertion about the filesystem rather than about an empty list.
-import { test } from 'node:test';
+//
+// `stub` is EXPORTED for that second reason: git-publish.test.mjs proves its
+// GitLab authorization arm reaches an answer with NO forge CLI spawned, and the
+// only honest way to assert that is the same stub-on-PATH + marker-file
+// convention this file already owns. A copy of the harness there would be a
+// second thing to keep in step with the seam's resolver. Importing a test file
+// also REGISTERS its arms in the importing process, so `test` is bound to a
+// no-op unless this module IS the entry file - the discipline
+// config-seams.test.mjs states at length, for the same reason.
+import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync, statSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync, statSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+/** True iff this module is what node was told to run; realpath on both sides so
+ * a symlinked checkout still matches (config-seams.test.mjs D-19). */
+function isEntryFile() {
+  const argv1 = process.argv[1];
+  if (typeof argv1 !== 'string' || argv1 === '') return false;
+  try {
+    return pathToFileURL(realpathSync(argv1)).href === pathToFileURL(realpathSync(fileURLToPath(import.meta.url))).href;
+  } catch { return false; }
+}
+
+/** `node:test`'s `test` when run directly, a no-op when imported (see header). */
+const test = isEntryFile() ? nodeTest : () => {};
 
 const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'issue-check.mjs');
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-ic-')), 'no-global.json');
@@ -24,13 +46,20 @@ const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-ic-')), 'no-global.json')
 const GH_BODY = '[{"number":42,"state":"OPEN"},{"number":47,"state":"CLOSED"},{"number":99,"state":"OPEN"}]';
 const GLAB_BODY = '[{"id":1,"iid":42,"state":"opened"},{"id":2,"iid":47,"state":"closed"},{"id":3,"iid":99,"state":"opened"}]';
 const TEA_BODY = '[{"index":"42","state":"open"},{"index":"47","state":"closed"},{"index":"99","state":"open"}]';
-const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.com","ssh_host":"forge.example.com","user":"t"}]';
+// A login whose `ssh_host` names the SSH endpoint while its name and url name
+// the web host - the split-endpoint shape this repository has, and the shape
+// the guard in classifyOrigin needs before it will let the call be made.
+const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.com","ssh_host":"ssh.example.com","user":"t"}]';
 
 /** A shell stub on PATH: records its argv, then prints `body` and exits `code`.
  *  `sleep` seconds before printing proves the call bound. `login` is the body
- *  the `tea login list` probe gets, so ONE `tea` stub answers both argv shapes
- *  the seam sends it. */
-function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, stderr = '' } = {}) {
+ *  the `tea login list` probe gets, so ONE `tea` stub answers every argv shape
+ *  the seam sends it. `issue` is the OPTIONAL third shape - a `{number: body}`
+ *  map answering `tea issues <index>`, where a number the map does not hold
+ *  exits 1 with no output, which is what tea does for an issue that is not
+ *  there. Both extras default to null, so the existing callers (including
+ *  git-publish.test.mjs, which imports this) are untouched. */
+export function stub(dir, name, { body = '', login = null, issue = null, code = 0, sleep = 0, stderr = '' } = {}) {
   // `echo`, never a `cat` heredoc: under `bare: true` the child's PATH holds
   // git and nothing else, and /bin/sh has no `cat` builtin - a heredoc stub
   // silently printed nothing there and every bare case degraded for the wrong
@@ -40,6 +69,14 @@ function stub(dir, name, { body = '', login = null, code = 0, sleep = 0, stderr 
     '[ -n "$CAD_SPAWN_MARKER" ] && echo "' + name + '" >> "$CAD_SPAWN_MARKER"',
     '[ -n "$CAD_ARGV_LOG" ] && echo "' + name + ' $*" >> "$CAD_ARGV_LOG"',
     login === null ? '' : `if [ "$1" = "login" ]; then\n${heredoc(login)}\nexit 0\nfi`,
+    issue === null ? '' : [
+      'if [ "$1" = "issues" ] && [ "$2" != "list" ]; then',
+      'case "$2" in',
+      ...Object.entries(issue).map(([n, b]) => `${n}) ${heredoc(b)}; exit 0 ;;`),
+      '*) exit 1 ;;',
+      'esac',
+      'fi',
+    ].join('\n'),
     sleep ? `sleep ${sleep}` : '',
     stderr ? `printf '%s' ${JSON.stringify(stderr)} >&2` : '',
     body ? heredoc(body) : '',
@@ -148,6 +185,35 @@ for (const [name, originUrl, host, stubs] of HOSTS) {
   });
 }
 
+// --- the SSH endpoint that is not the web host ------------------------------
+//
+// This repository's own shape (TRK-01, D-12): origin
+// `ssh://git@ssh.jcrenshaw.dev:2222/...` while `tea login list` names
+// `git.jcrenshaw.dev` in all three of its host fields, so nothing matches by
+// host equality and every land skips. The HOSTS table above cannot cover it -
+// all three of its forgejo login fields EQUAL the origin host - which is why
+// the suite stayed green while the repository the seam was built in skipped.
+// A separate SSH endpoint on a non-standard port is a normal deployment shape.
+
+const SPLIT_ORIGIN = 'ssh://git@ssh.example.com:2222/org/repo.git';
+
+test('forgejo: an SSH host that differs from the login host still reports', () => {
+  const dir = repo({ originUrl: SPLIT_ORIGIN, commits: COMMITS });
+  const r = seam(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  // The envelope names the ORIGIN's own host, never the login's: it is what the
+  // user configured, and it is what a degradation line would have had to name.
+  assert.equal(r.host, 'ssh.example.com');
+  assert.equal(r.repo, 'org/repo');
+  assert.deepEqual(r.referenced, [
+    { number: 42, state: 'open' }, { number: 47, state: 'closed' }, { number: 99, state: 'open' },
+  ], JSON.stringify(r));
+  assert.deepEqual(r.open, [42, 99]);
+  assert.deepEqual(r.warnings, []);
+});
+
 test('a branch referencing NO issue still reports the open list as the fallback', () => {
   const dir = repo({ originUrl: 'https://github.com/org/repo.git', commits: ['chore: no refs here'] });
   const r = seam(['check', '--dir', dir, '--base', 'main'], { stubs: { gh: { body: GH_BODY } } });
@@ -174,6 +240,26 @@ test('the forge call names the --dir repo, not the one the process cwd sits in',
   assert.ok(!recorded.includes('other-org'), recorded);
   // The paging flag rides the real call, not just the table's unit test.
   assert.match(recorded, /--limit 200/, recorded);
+});
+
+// The cut that gave the forgejo row `--remote origin` touched no other row, and
+// this is the assertion that says so in the strongest available form: the whole
+// recorded command line, byte for byte, for the two hosts whose binding did not
+// change. A regression here is a flag that leaked across rows.
+
+test('the github and gitlab argv are byte-identical to what they were', () => {
+  for (const [originUrl, stubs, expected] of [
+    ['https://github.com/org/repo.git', { gh: { body: GH_BODY } },
+      'gh issue list --repo org/repo --state all --json number,state --limit 200'],
+    ['git@gitlab.com:org/repo.git', { glab: { body: GLAB_BODY } },
+      'glab issue list --repo org/repo --all --output json --per-page 100'],
+  ]) {
+    const dir = repo({ originUrl, commits: COMMITS });
+    const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+    const r = seam(['check', '--dir', dir, '--base', 'main'], { stubs, argvLog });
+    assert.equal(r.action, 'report', JSON.stringify(r));
+    assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'), [expected]);
+  }
 });
 
 // --- the call bound ---------------------------------------------------------
@@ -285,6 +371,176 @@ for (const [name, pattern, build, action = 'skip'] of DEGRADATIONS) {
     SEEN_REASONS.set(envelope.reason, name);
   });
 }
+
+// Beside the matrix rather than inside it: the matrix keeps ONE row per
+// degradation class (AC5), and these two are the `no-login` class asserted from
+// both sides - what the seam must do when tea holds no login at all, and what
+// it must do for an origin no login names.
+
+test('an EMPTY tea login list skips on the existing line, and queries nothing', () => {
+  const dir = repo({ originUrl: FORGE_REPO, commits: COMMITS });
+  const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: '[]' } }, bare: true, marker, argvLog });
+  assert.equal(status, 0, 'a tea holding no login must not fail the land');
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+  assert.equal(envelope.reason, 'tea holds no login for forge.example.com: no tracker report');
+  assert.deepEqual(envelope.referenced, []);
+  assert.deepEqual(envelope.open, []);
+  // One tea spawn, and its argv is the login probe alone - a tea with no login
+  // has no tracker to ask about, so no issue query goes out at all.
+  assert.deepEqual(readFileSync(marker, 'utf8').trim().split('\n'), ['tea']);
+  assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'),
+    ['tea login list --output json'], readFileSync(argvLog, 'utf8'));
+});
+
+test('an origin NO login names skips, and asks tea nothing about it', () => {
+  // The guard, and the reason it is not the host rule that was deleted twice.
+  // `--remote origin` binds tea to the checkout's own remote ("Discover Gitea
+  // login from remote"), but tea does NOT refuse when no login matches: it
+  // falls back to config order, exits 0, and says so only on the stderr this
+  // seam discards - so an unguarded call reports a stranger's tracker as this
+  // repository's, which is the exact failure the phase goal names. The seam
+  // therefore declines to ask unless some login NAMES this host. That question
+  // is equality, never a shared-suffix reading, which is why it needs no
+  // vendored public suffix list.
+  const dir = repo({ originUrl: 'https://git.stranger.org/org/repo.git', commits: COMMITS });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, argvLog });
+  assert.equal(status, 0, 'a stranger host must not fail the land');
+  assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+  assert.equal(envelope.reason, 'tea holds no login for git.stranger.org: no tracker report');
+  assert.equal(envelope.host, 'git.stranger.org', 'the ORIGIN host, never a login\'s');
+  assert.deepEqual(envelope.referenced, []);
+  assert.deepEqual(envelope.open, []);
+  // The login probe ran; no issue query did. A skip that still queried would be
+  // the affirmative answer this arm exists to refuse.
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  assert.equal(lines.filter((l) => l.startsWith('tea issues')).length, 0, lines.join('\n'));
+  assert.equal(lines.filter((l) => l.startsWith('tea login list')).length, 1, lines.join('\n'));
+});
+
+test('a split-endpoint origin a login NAMES is bound to the REMOTE, not to a login picked here', () => {
+  // The other side of the guard: it clears, and the seam still picks no login.
+  // What a PATH stub can prove is that `--remote origin` rides every call and
+  // that no login name does; that tea honours it is measured live and recorded
+  // in lib/issue-decision.mjs's HOST_TABLE header.
+  const dir = repo({ originUrl: SPLIT_ORIGIN, commits: COMMITS });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, argvLog });
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'report', JSON.stringify(envelope));
+  assert.equal(envelope.host, 'ssh.example.com', 'the ORIGIN host, never a login\'s');
+  const queries = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => l.startsWith('tea issues'));
+  assert.equal(queries.length, 1, queries.join('\n'));
+  assert.match(queries[0], /--remote origin(\s|$)/, queries[0]);
+  assert.ok(!queries[0].includes('--login'), queries[0]);
+  assert.ok(!queries[0].includes('forge.example.com'), queries[0]);
+});
+
+// --- the open list plus a bounded per-issue resolve (the forgejo row alone) --
+//
+// The list call names only OPEN issues: the server clamps a `--state all` page
+// at 50 rows whatever `--limit` asks for, so on a real tracker the read was
+// honestly incomplete and the whole report degraded (D-08). What that costs is
+// that a referenced number missing from the list is closed OR absent, and one
+// bounded `tea issues <index>` per unanswered number tells those apart.
+
+const TEA_OPEN_BODY = '[{"index":"42","state":"open"},{"index":"99","state":"open"}]';
+
+// Matching a login is only half the guard. `tea` resolves an unqualified
+// `--repo <owner>/<name>` in config FILE ORDER (D-07), so a seam that proved
+// only that SOME login could serve this origin would send its query to
+// whichever login sits first - here a deliberately unrelated one - and report
+// another server's issues as this repository's, exit 0 and all.
+const TWO_LOGINS = JSON.stringify([
+  { name: 'evil.example.net', url: 'https://evil.example.net', ssh_host: 'evil.example.net', user: 't' },
+  { name: 'forge.example.com', url: 'https://forge.example.com', ssh_host: 'ssh.example.com', user: 't' },
+]);
+
+test('forgejo: every call is bound with --remote origin, and none with --login', () => {
+  // Two logins configured, neither of them chosen HERE. tea resolves an
+  // unqualified `--repo <owner>/<name>` in config FILE ORDER (D-07), so an
+  // unbound query would answer from the first - another server's issues,
+  // reported as this repository's, exit 0 and all. `--remote origin` hands that
+  // pick to tea, which reads the checkout's own remote; the seam's job is to
+  // put the flag on EVERY call it makes, list and resolve alike.
+  const dir = repo({
+    originUrl: SPLIT_ORIGIN,
+    commits: [...COMMITS, 'chore: mentions #4242, which never existed'],
+  });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: TEA_OPEN_BODY, login: TWO_LOGINS, issue: { 47: '{"index":47,"state":"closed"}' } } },
+    bare: true, argvLog,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.equal(r.host, 'ssh.example.com');
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  const queries = lines.filter((l) => l.startsWith('tea issues'));
+  assert.equal(queries.length, 3, lines.join('\n'));
+  for (const q of queries) {
+    assert.match(q, /--remote origin(\s|$)/, q);
+    assert.ok(!q.includes('--login'), q);
+    // Neither configured login is named: the seam picks none of them.
+    assert.ok(!q.includes('evil.example.net'), q);
+    assert.ok(!q.includes('forge.example.com'), q);
+  }
+  assert.equal(queries.filter((q) => q.startsWith('tea issues list')).length, 1, lines.join('\n'));
+});
+
+test('forgejo: a number the open list missed resolves, or is named unresolved', () => {
+  const dir = repo({
+    originUrl: FORGE_REPO,
+    commits: [...COMMITS, 'chore: mentions #4242, which never existed'],
+  });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: TEA_OPEN_BODY, login: TEA_LOGINS, issue: { 47: '{"index":47,"state":"closed"}' } } },
+    bare: true, argvLog,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced, [
+    { number: 42, state: 'open' },
+    { number: 47, state: 'closed' },       // from a resolve; the list never named it
+    { number: 99, state: 'open' },
+    // tea exits nonzero for an absent issue AND for a failed read, and this
+    // seam discards child stderr - so this may never be reported not-found.
+    { number: 4242, state: 'unresolved' },
+  ], JSON.stringify(r));
+  assert.deepEqual(r.open, [42, 99]);
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  const list = lines.filter((l) => l.startsWith('tea issues list'));
+  assert.equal(list.length, 1, lines.join('\n'));
+  assert.match(list[0], /--state open/, list[0]);
+  // Exactly one resolve per unanswered number, and none for an answered one.
+  assert.deepEqual(lines.filter((l) => /^tea issues \d/.test(l)), [
+    'tea issues 47 --repo org/repo --remote origin --fields index,state --output json',
+    'tea issues 4242 --repo org/repo --remote origin --fields index,state --output json',
+  ], lines.join('\n'));
+});
+
+test('forgejo: the resolve stops at its cap, and the remainder are unresolved', () => {
+  const refs = [201, 202, 203, 204, 205, 206, 207, 208];
+  // The stub would answer `closed` for ALL eight, so the cap is the only thing
+  // that can make the last three unresolved.
+  const issue = Object.fromEntries(refs.map((n) => [n, `{"index":${n},"state":"closed"}`]));
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: { body: '[{"index":"42","state":"open"}]', login: TEA_LOGINS, issue } },
+    bare: true, argvLog,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced,
+    refs.map((n, i) => ({ number: n, state: i < 5 ? 'closed' : 'unresolved' })), JSON.stringify(r));
+  const resolves = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => /^tea issues \d/.test(l));
+  assert.equal(resolves.length, 5, resolves.join('\n'));
+});
 
 test('the key-off arm spawns NO forge CLI at all, not merely an empty report', () => {
   // A test reading only the reason and the empty list also passes an

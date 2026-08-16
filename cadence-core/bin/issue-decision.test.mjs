@@ -11,7 +11,20 @@ import {
 
 // --- classifyOrigin ---------------------------------------------------------
 
-const TEA_HOSTS = ['git.jcrenshaw.dev'];
+/** A `tea login list` reading as classifyOrigin takes it: the login records
+ *  exactly as tea printed them. Three fields are read, and only to answer
+ *  whether some login NAMES the origin's host - the guard that keeps the seam
+ *  from asking a question tea would answer by falling back to config order.
+ *  WHICH login serves a matched origin is still tea's own question, and the
+ *  forgejo row's `--remote origin` is what asks it.
+ *
+ *  `ssh_host` names the SSH endpoint and not the web host on purpose: that is
+ *  this repository's real shape (corrected 2026-08-15), and it is what makes a
+ *  split-endpoint remote reportable at all. A login that omits it fails the
+ *  guard, and the `no-login` line is what tells the user to add it. */
+const TEA_LOGINS = [
+  { name: 'git.jcrenshaw.dev', url: 'https://git.jcrenshaw.dev', ssh_host: 'ssh.jcrenshaw.dev', user: 'john' },
+];
 
 test('classifyOrigin reads BOTH url shapes for github and gitlab', () => {
   for (const [url, verdict] of [
@@ -20,7 +33,7 @@ test('classifyOrigin reads BOTH url shapes for github and gitlab', () => {
     ['https://gitlab.com/org/team/repo.git', 'gitlab'],
     ['git@gitlab.com:org/team/repo.git', 'gitlab'],
   ]) {
-    const c = classifyOrigin(url, TEA_HOSTS);
+    const c = classifyOrigin(url, TEA_LOGINS);
     assert.equal(c.verdict, verdict, url);
     assert.ok(c.slug && c.slug.endsWith('repo') || c.slug === 'crenshawdev/cadence', `${url} -> ${c.slug}`);
   }
@@ -31,38 +44,83 @@ test('classifyOrigin reads BOTH url shapes for github and gitlab', () => {
   assert.equal(classifyOrigin('ssh://git@github.com:22/org/repo.git', []).verdict, 'github');
 });
 
-test('classifyOrigin: a tea-login host is forgejo in both url shapes', () => {
+test('classifyOrigin: with tea naming ANY login, a non-github host is forgejo', () => {
   for (const url of [
     'https://git.jcrenshaw.dev/crenshawdev/cadence.git',
     'git@git.jcrenshaw.dev:crenshawdev/cadence.git',
     'ssh://git@git.jcrenshaw.dev:2222/crenshawdev/cadence.git',
   ]) {
-    const c = classifyOrigin(url, TEA_HOSTS);
+    const c = classifyOrigin(url, TEA_LOGINS);
     assert.equal(c.verdict, 'forgejo', url);
     assert.equal(c.slug, 'crenshawdev/cadence');
     assert.equal(c.host, 'git.jcrenshaw.dev');
   }
 });
 
+test('classifyOrigin: an SSH endpoint a login NAMES is forgejo, and tea binds it', () => {
+  // The shape this repository has: an SSH endpoint on its own subdomain, on a
+  // non-standard port. Host equality against the login's NAME took the no-login
+  // arm here on every land (TRK-01); the login's `ssh_host` is what names the
+  // endpoint, and reading all three fields is what makes this reportable
+  // without any comparison beyond equality. The registrable-domain match that
+  // was tried in between could not be made correct without a public suffix list
+  // this repo refuses to vendor, and it is gone. The verdict is forgejo, and
+  // `--remote origin` is what makes tea answer from the right login.
+  for (const url of [
+    'ssh://git@ssh.jcrenshaw.dev:2222/crenshawdev/cadence.git',
+    'git@ssh.jcrenshaw.dev:crenshawdev/cadence.git',
+  ]) {
+    const c = classifyOrigin(url, TEA_LOGINS);
+    assert.equal(c.verdict, 'forgejo', url);
+    assert.equal(c.host, 'ssh.jcrenshaw.dev', 'the ORIGIN host is reported, not the login\'s');
+    assert.equal(c.slug, 'crenshawdev/cadence');
+  }
+  // A host NO login names does NOT read the same way, and this is the guard:
+  // tea would not refuse it, it would fall back to config order and answer for
+  // a repository it has never heard of, exit 0, with its NOTE on the stderr
+  // this seam discards. So the seam declines to ask. This is a precondition on
+  // making the call, not a rule for picking a login - the difference is that
+  // equality asks what a login IS NAMED, never what two hosts have in common,
+  // which is the question no curated suffix list could answer correctly.
+  const stranger = classifyOrigin('https://git.stranger.org/org/repo.git', TEA_LOGINS);
+  assert.equal(stranger.verdict, 'no-login');
+  assert.equal(stranger.host, 'git.stranger.org');
+  // And nothing on the return names a login - there is no login pick to carry.
+  assert.deepEqual(Object.keys(stranger).sort(), ['host', 'slug', 'verdict']);
+});
+
 test('classifyOrigin: no-login and unrecognized are DIFFERENT verdicts', () => {
   const url = 'https://forge.example.com/org/repo.git';
-  // tea WAS consulted and named no login for this host: the fix is a login, and
-  // the line has to be able to say so.
-  assert.equal(classifyOrigin(url, TEA_HOSTS).verdict, 'no-login');
+  // tea WAS consulted and named no login FOR THIS HOST: the fix is a login, and
+  // the line has to be able to say so. Both an empty reading and a reading whose
+  // logins name other hosts answer here, on the line it always printed - one
+  // verdict, because the user's move is the same in both.
   assert.equal(classifyOrigin(url, []).verdict, 'no-login');
+  assert.equal(classifyOrigin(url, TEA_LOGINS).verdict, 'no-login');
+  assert.equal(decideIssueCheck({ enabled: true, classification: classifyOrigin(url, []) }).reason,
+    'tea holds no login for forge.example.com: no tracker report');
   // tea could not be consulted at all - no reading exists to recognize it.
   assert.equal(classifyOrigin(url, null).verdict, 'unrecognized');
   assert.equal(classifyOrigin(url, undefined).verdict, 'unrecognized');
+  // ...and a reading that NAMES this host answers forgejo, by any of the three
+  // fields a login identifies its forge with.
+  for (const login of [
+    { name: 'forge.example.com', url: 'https://other.example', ssh_host: 'other.example' },
+    { name: 'work', url: 'https://forge.example.com', ssh_host: 'other.example' },
+    { name: 'work', url: 'https://other.example', ssh_host: 'forge.example.com' },
+  ]) {
+    assert.equal(classifyOrigin(url, [login]).verdict, 'forgejo', JSON.stringify(login));
+  }
 });
 
 test('classifyOrigin: an absent origin is no-remote, and garbage is unrecognized', () => {
   for (const absent of ['', '   ', null, undefined, 42]) {
-    assert.equal(classifyOrigin(absent, TEA_HOSTS).verdict, 'no-remote', String(absent));
+    assert.equal(classifyOrigin(absent, TEA_LOGINS).verdict, 'no-remote', String(absent));
   }
   // Parses as no host/path pair at all.
-  assert.equal(classifyOrigin('not-a-url', TEA_HOSTS).verdict, 'unrecognized');
+  assert.equal(classifyOrigin('not-a-url', TEA_LOGINS).verdict, 'unrecognized');
   // Parses, but names no owner/repo - so no selector could bind the call.
-  const bare = classifyOrigin('https://github.com/cadence.git', TEA_HOSTS);
+  const bare = classifyOrigin('https://github.com/cadence.git', TEA_LOGINS);
   assert.equal(bare.verdict, 'unrecognized');
   assert.equal(bare.slug, null);
 });
@@ -80,7 +138,7 @@ test('a hostname carrying a control character never reaches the ONE-line reason'
       `https://evil.example${evil}:2222/org/repo.git`, // schemed and ported
       `git@evil.example${evil}:org/repo.git`,          // scp-shaped
     ]) {
-      const c = classifyOrigin(url, TEA_HOSTS);
+      const c = classifyOrigin(url, TEA_LOGINS);
       assert.equal(c.verdict, 'unrecognized', url);
       // Rejected, never cleaned: nothing about that host is reported back.
       assert.equal(c.host, null, url);
@@ -93,8 +151,8 @@ test('a hostname carrying a control character never reaches the ONE-line reason'
   }
   // The control character is the ONLY thing that changed: the same hosts
   // without it still classify, so the guard is not rejecting everything.
-  assert.equal(classifyOrigin('https://github.com/org/repo.git', TEA_HOSTS).verdict, 'github');
-  assert.equal(classifyOrigin('git@github.com:org/repo.git', TEA_HOSTS).verdict, 'github');
+  assert.equal(classifyOrigin('https://github.com/org/repo.git', TEA_LOGINS).verdict, 'github');
+  assert.equal(classifyOrigin('git@github.com:org/repo.git', TEA_LOGINS).verdict, 'github');
 });
 
 // --- scanIssueRefs ----------------------------------------------------------
@@ -192,8 +250,51 @@ test('the github and forgejo normalizers read their CLIs own captured shapes', (
   // tea, live sample 2026-08-15: `index` is a STRING, state lowercase.
   const tea = HOST_TABLE.forgejo.normalize('[{"index":"171","state":"open"},{"index":"115","state":"closed"}]', 50);
   assert.deepEqual(tea.records, [{ number: 171, state: 'open' }, { number: 115, state: 'closed' }]);
+  // `--state open`, not `all`: the server clamps the page at 50 rows whatever
+  // --limit asks, so `all` filled it on any real tracker and the read was
+  // honestly incomplete (D-08).
+  // `--remote origin` is the binding: tea resolves an unqualified `--repo` in
+  // config FILE ORDER, so without it the answer can come from whichever login
+  // sits first in the user's config (D-07). It names the REMOTE, never a login
+  // this file picked - that pick is what the cut deleted.
   assert.deepEqual(HOST_TABLE.forgejo.argv('org/repo', 50),
-    ['issues', 'list', '--repo', 'org/repo', '--state', 'all', '--fields', 'index,state', '--output', 'json', '--limit', '50']);
+    ['issues', 'list', '--repo', 'org/repo', '--remote', 'origin', '--state', 'open',
+      '--fields', 'index,state', '--output', 'json', '--limit', '50']);
+});
+
+test('the forgejo row resolves ONE issue, and reads both shapes tea prints', () => {
+  const { resolve } = HOST_TABLE.forgejo;
+  assert.deepEqual(resolve.argv('org/repo', 47),
+    ['issues', '47', '--repo', 'org/repo', '--remote', 'origin',
+      '--fields', 'index,state', '--output', 'json']);
+  // `tea issues <index>` prints `index` as a NUMBER where the list prints a
+  // STRING, and it has printed both a bare object and a one-element array.
+  assert.equal(resolve.read('{"index":47,"state":"closed"}', 47), 'closed');
+  assert.equal(resolve.read('[{"index":"47","state":"open"}]', 47), 'open');
+  // Anything that does not answer for THAT number is null, which the caller
+  // renders `unresolved` - never `not-found`.
+  for (const bad of ['', 'not json', '[]', '[{"index":47,"state":"open"},{"index":48,"state":"open"}]',
+    '{"index":48,"state":"closed"}', '{"index":47}', '{"index":47,"state":"merged"}', null, 42]) {
+    assert.equal(resolve.read(bad, 47), null, JSON.stringify(bad));
+  }
+});
+
+test('only the forgejo row carries a resolve; the other two still list every state', () => {
+  // `gh` pages internally to its --limit and `glab` is absent from this
+  // machine, so neither trades a working arm for an untestable one (D-08).
+  assert.equal(HOST_TABLE.github.resolve, undefined);
+  assert.equal(HOST_TABLE.gitlab.resolve, undefined);
+  assert.ok(HOST_TABLE.github.argv('org/repo', 200).join(' ').includes('--state all'));
+  assert.ok(HOST_TABLE.gitlab.argv('org/repo', 100).includes('--all'));
+  // ...and no row anywhere names a `--login`. tea's config-order `--repo`
+  // fallback is answered by `--remote origin` on the forgejo row alone, and
+  // `gh`/`glab` are not multi-account-ambiguous the way tea's `--repo` is.
+  for (const [host, row] of Object.entries(HOST_TABLE)) {
+    assert.ok(!row.argv('org/repo', row.limit).includes('--login'), host);
+    assert.ok(!(row.resolve ? row.resolve.argv('org/repo', 47) : []).includes('--login'), host);
+  }
+  assert.ok(!HOST_TABLE.github.argv('org/repo', 200).includes('--remote'));
+  assert.ok(!HOST_TABLE.gitlab.argv('org/repo', 100).includes('--remote'));
 });
 
 test('a response TRUNCATED at the limit is unreadable, never an issue list', () => {
