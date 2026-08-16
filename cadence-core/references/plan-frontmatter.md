@@ -147,6 +147,54 @@ grammar detects an escape shape without implementing one. A `'` inside a
 is the correct spelling of that path, and must NOT trigger this code); a `"`
 inside one could only have been escaped and is not.
 
+## What a declared file covers (the lease grammar)
+
+The list above says what a plan DECLARED. This says what a declaration
+LICENSES, and it is one statement read by two seams:
+`cadence-core/bin/lib/lease-grammar.mjs`, asked by `plan-overlap` before a
+phase runs in parallel and by `lease-check` at every executor commit. Two
+copies of this rule is exactly how the pre-flight gate came to admit a plan
+pair the enforcement then refused to separate, so there is one.
+
+A declaration ending in `/` is a DIRECTORY LEASE and covers every path
+beneath it: `src/` covers `src/auth.js` and `src/auth/session.js`, and it
+overlaps another plan's `src/auth.js` or `src/auth/`.
+
+Every other declaration covers only the BYTE-IDENTICAL path. That narrowness
+is deliberate: matching by substring would let a plan declaring `src/auth`
+license `src/authority.js`, a different file another plan may have declared
+and this one may then destroy. A plan that means the directory writes the
+slash.
+
+Three spellings are REFUSED at declaration time rather than normalized, on
+BOTH arms of the declared-files union - the `files:` list here and the
+task-line arm - because a refusal on one arm alone leaves the spelling
+reaching `lease-check` through the other door with no diagnostic:
+
+| Written | Why it is refused |
+|---|---|
+| `./a.txt` | Names the same file as `a.txt`, which the rule above reads as a different one. |
+| `src/./a.txt` | The same, one segment in. |
+| `src//a.txt` | The same, through a doubled separator. |
+
+Refusal and not normalization, because normalizing a declaration can only
+ever WIDEN what a plan leases, and a parallel-safety gate must not widen a
+lease quietly. The declaration is dropped and `redundant-path-segment` says
+so by line. Write the plain spelling.
+
+Three things the resolver deliberately does NOT normalize, each for its own
+reason:
+
+- **Symlinks.** Resolving one needs filesystem access at gate time, and
+  `plan-overlap` runs against declarations naming files that may not exist
+  yet - a plan declares what it is about to create.
+- **Case.** Whether `SRC/a.js` and `src/a.js` are one path is a property of
+  the filesystem, so folding here would make two identical declarations
+  resolve differently on two machines.
+- **`..` traversal.** A declaration climbing out of the repo root is an
+  out-of-repo-lease defect, a different thing from two spellings of one path,
+  and it is not made safe by two readers agreeing about it.
+
 ## Diagnostic codes
 
 Every code below is appended to the pass's `frontmatter_issues` (via the
@@ -188,12 +236,18 @@ so in their own row and are marked CONDITIONAL. Read the row, not the class.
 | `unknown-line` | A frontmatter-block line is neither a key line, a block item, a comment, blank, nor a terminator. | CONDITIONAL - the one code whose payload behavior depends on the line: drops nothing when the line was never data (a stray prose line between items leaves the items above and below intact), but drops a whole key's worth of ids when the line WAS malformed data that fell through here, e.g. `1requirements: ["#41"]` (fails `malformed-key-line`'s own `/^[A-Za-z_]/` start) or a block-item line missing its `- ` under an open key. | Turn it into a `- item`, a `# comment`, or a valid key line. |
 | `trailing-value-content` | Non-whitespace follows a resolved scalar or block-item value. | Preserves the value resolved before it. | Remove the trailing content, quote the whole value, or move the extra text into a comment. |
 | `residual-quote` | The resolved value still contains a backslash, or the same quote character that wrapped it. | Preserves the payload (D-20: escapes are detected, never implemented). | Remove the stray quote/backslash, or rewrite the value without needing one. |
+| `redundant-path-segment` | A `files:` declaration carries a refused lease spelling: it begins `./`, carries a `/./` segment, or carries `//`. The one code that fires on BOTH arms of the declared-files union - the `files:` list and a `- **Files:**` task line - because a refusal on one arm alone lets the spelling reach `lease-check` through the other door undiagnosed. | Drops that declaration. Normalizing it instead could only WIDEN what the plan leases, which is the one direction a parallel-safety gate must not move quietly. | Write the plain spelling (`a.txt`, `src/a.txt`). |
 | `backtick-wrapped-value` | The resolved value STARTS or ENDS with a backtick - markdown formatting that leaked into data. Boundary, not containment and not a matched pair: a backtick INSIDE a value (`` lib/a`b.mjs ``) is a legal path character and is NOT reported, while every near-miss wrap is (`` `src/a.rs `` half-wrapped, `` `src/a.rs`, `` wrap-plus-punctuation, and a lone `` ` `` left when the `#` rule cut `` `#41` `` down to it). | CONDITIONAL, and this code never REPAIRS what it reports. It adds no truncation of its own, but it frequently fires on a value an EARLIER rule already cut: the `#` rule reduces `` `#41` `` to a lone `` ` `` and the whitespace rule reduces `` `src/my file.rs` `` to `` `src/my `` before this test runs, so the delivered payload is that fragment, not the bytes the author wrote. Whatever survives is passed on unrewritten (D-19). Counts follow from that: a fragment is not a real id, so on `requirements:` the requirement goes untraced and `counts.broken` moves. `files:` never feeds `counts` for ANY code, so read the `requirements:` behavior as the code's real signature. | Remove the backticks. |
 
 ## What is out of scope
 
 The task-line arm (`- **Files:** a, b`, `parsePlanFiles`' second source) is a
-separate, already CRLF-tolerant regex and is not part of this grammar. The
+separate, already CRLF-tolerant regex and is not part of this grammar - of
+this PARSING grammar, which is what that says. The one rule that deliberately
+spans both arms is the lease-spelling refusal above: it is not a parsing rule
+but a rule about what a declaration may MEAN, and confining it to this arm
+would leave the spelling reaching `lease-check` through the task line with no
+diagnostic. The
 roadmap's `## Phases` list (`PHASE_LINE` / `parseRoadmapPhases` /
 `classifyPhaseList`) has its own grammar, stated at
 `cadence-core/references/roadmap-phases.md` - same `{line, code, text}` issue
