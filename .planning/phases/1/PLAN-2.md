@@ -7,6 +7,7 @@ files:
   - cadence-core/bin/text-transport.test.mjs
   - cadence-core/bin/self-verify.mjs
   - cadence-core/bin/self-verify.test.mjs
+  - cadence-core/bin/trace.test.mjs
   - cadence-core/bin/weight-budgets.json
   - cadence-core/references/conventions.md
   - cadence-core/references/plan-revision.md
