@@ -97,13 +97,20 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase 
 ```
 
 Print the four family counts (`routing`, `provider`, `lifecycle`, `outcome`)
-under the record's one `corr`; then the `roles` block, one line per role key
-carrying its token total, its dispatch count, and its `unrecorded` count when
-present - what each worker in this phase COST. Read it by this rule, which is
+over the events the phase filter admitted - the filter reads `phase` alone and
+never `corr`, so those counts can span several runs of the same phase number;
+then the `roles` block, one line per role key carrying its dispatch count, the
+host's own token figure off the subagent returns, its turn count, and each of
+`unrecorded` and `turns_unrecorded` when present. That block is what each
+worker's returns REPORTED, never the run's price - for the reason `/cad-report`
+now states where it prints the same figure. Read it by this rule, which is
 the distinction the block exists to protect: an absent token total means NO
 dispatch of that role reported a figure, and is printed as `unrecorded`, never
 as `0` - a role that was never measured and a role that spent nothing are
-different answers. An `unrecorded` count BESIDE a real total means that many of
+different answers. The same rule governs the turn total under its own
+`turns_unrecorded` counter: a role whose returns carried no tool-call count is
+turn-unrecorded, not a role that took zero turns. An `unrecorded` count BESIDE a
+real total means that many of
 that role's dispatches came back without one, so the total is real but short. A
 render carrying no `roles` key prints nothing for it, exactly as an absent trace
 file already prints empty counts. Then every `unpaired` entry, which names a worker
