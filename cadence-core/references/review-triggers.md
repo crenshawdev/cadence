@@ -281,7 +281,7 @@ actually ran>` - to a scratch file and pass its path; the voice list is composed
 from what actually ran (caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --raised <findings the reviewers raised before adjudication> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --raised <findings the reviewers raised before adjudication> --detail-file <path>
 ```
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
@@ -291,7 +291,10 @@ in the record.
 The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
 figure parsed back out of that free-text slot would be exactly as trustworthy
 as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in.
+helpfully fold it back in. The TRIGGER travels the same way, on `--trigger`,
+and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
+range to its receipt on those two structured fields and never on the detail
+(`references/triage-gate.md` states the rule at all four settle points).
 
 `<N>` is the phase in hand, or the STATE cursor's phase for a trigger whose
 range spans phases. The VOICE LIST is load-bearing, not decoration: a

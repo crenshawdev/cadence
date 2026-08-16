@@ -11,6 +11,30 @@ What each gate arm does once a review's findings are in hand. The gate is one of
   PASS - report that the gate could not be evaluated and ask. The re-arm on that
   fix is CAPPED - see below.
 
+**Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
+status` refuses a range its detector matched until an outcome event says the
+fire happened, so all four settle points append one: `adjudication`
+(`references/review-triggers.md` step 5), `rearm` below, and the two here. Each
+carries `--trigger <trigger>` in that structured flag rather than inside a
+detail - a trigger parsed back out of free text clears a range on one spelling
+and refuses an identical one on another - plus `--plan <k>` when the fire is
+per-plan, omitted when it is not (`/cad-debug`, `/cad-task`, `/cad-verify`).
+
+Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
+whose fire found no blocker becomes permanently unclearable:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger>
+```
+
+The user explicitly overrides a FAIL - record that instead. The reason is the
+user's own words, so it rides `--detail-file <path>` and never an inline
+`--detail` (references/conventions.md states the transport):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --detail-file <path>
+```
+
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
 FAIL is itself reviewable work, so the trigger re-arms on it; unbounded, that is
 a loop with no terminal state. It is bounded in the vocabulary the spine's other
@@ -43,7 +67,7 @@ same id means the one round is SPENT - do not fire again, go straight to the
 STOP-and-ask arm above. No such event -> record the round as you fire it:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --detail "<trigger>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --detail "<trigger>"
 ```
 
 A fresh `phase_start` (a genuine re-run) derives a new id and gets a fresh
