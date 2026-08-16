@@ -94,6 +94,18 @@ export const CODES = Object.freeze({
  * absent: `--phase`, `--status`, `--result`, `--severity`, `--origin`,
  * `--family`, `--event` and `--tokens` carry values that cannot be arbitrary
  * repository prose, so no transport can protect them from anything (D-01).
+ *
+ * PATH-CSV FLAGS ARE EXCLUDED BY CONSTRUCTION, and this is the record of it.
+ * `--bracket-read` (eight prose sites) and `--payload` (one) take a path or a
+ * comma-separated path list the WORKFLOW builds - a plan file it named, a
+ * scratch file it just wrote - never a value lifted from agent output or
+ * repository content. They are already the file transport, so there is nothing
+ * for a `-file` sibling to move them onto, and watching them would report every
+ * site as unsafe against a rule none of them can break. `--read` is watched and
+ * NOT by contradiction: its inline form takes the read-set as prose the caller
+ * composed, which is why the register carries out-of-scope rows for the
+ * workflow-authored ones rather than omitting them. The test is the VALUE's
+ * provenance, never the flag's shape.
  */
 export const TEXT_FLAGS = Object.freeze([
   'detail', 'read', 'text', 'label', 'next',
