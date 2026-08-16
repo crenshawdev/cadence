@@ -142,7 +142,7 @@ import {
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
-  appendCapture, replaceSection, withCaptureLock, CAPTURE_KINDS, EMPTY_CAPTURE,
+  appendCapture, replaceSection, withPlanningFileLock, CAPTURE_KINDS, EMPTY_CAPTURE,
 } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
@@ -4152,7 +4152,7 @@ function cmdDebtHarvest(root) {
     // and a capture running at the same moment would otherwise each read the
     // same bytes and the second rename would erase the first one's work. That
     // is the whole point of naming all three writers.
-    guarded = withCaptureLock(captureFile, () => {
+    guarded = withPlanningFileLock(captureFile, () => {
       const existing = read(captureFile);
       const next = existing === null
         // Created with the same three headings /cad-capture creates - the same
@@ -4310,6 +4310,16 @@ function cmdMilestonePrune(dir, opts) {
   // can make and a pure text appender cannot, and folding it in there would
   // refuse a second artifact from a phase the same call already landed one for.
   const archiveFile = join(dir, 'ARCHIVE.md');
+  const residue = [];
+  // The read, the containment test and the write are ONE critical section, held
+  // under the same sibling lock `/cad-capture` takes on CAPTURE.md. Unserialized,
+  // two closes running with different labels both read the same text, each
+  // writes only its own rows, and the later `atomicWrite` wins - and this seam
+  // removes the phase directories immediately after, so the clobbered rows have
+  // no live source left. That consequence is why ARCHIVE.md takes a lock the
+  // ROADMAP and REQUIREMENTS writes below do not: those lose an edit git still
+  // holds, this loses the only remaining copy.
+  const archiveGuard = withPlanningFileLock(archiveFile, () => {
   const archiveText = read(archiveFile) ?? '';
   // Two properties this test must hold, both of them data-loss bugs when it
   // does not, because a suppressed write is followed by the directory removal
@@ -4328,7 +4338,6 @@ function cmdMilestonePrune(dir, opts) {
   const alreadyArchived = new Set(parseArchiveRows(archiveText)
     .filter((r) => r.label === label)
     .map((r) => r.origin));
-  const residue = [];
   for (const n of [...completed].sort((a, b) => a - b)) {
     const pdir = join(dir, 'phases', String(n));
     const summaryOrigin = `phases/${n}/SUMMARY.md`;
@@ -4352,6 +4361,11 @@ function cmdMilestonePrune(dir, opts) {
   // completed phases gets no ARCHIVE.md at all, the way the two document writes
   // below already skip on an empty set.
   if (residue.length) atomicWrite(archiveFile, appendArchiveRows(archiveText, label, residue));
+  }, 'archive-locked');
+  // A refused lock stops the close BEFORE any directory moves. Proceeding would
+  // remove the phases whose residue this run could not write, which is the exact
+  // permanent loss the lock exists to prevent.
+  if (archiveGuard.ok === false) return fail(archiveGuard.reason, archiveGuard.detail);
 
   // Directories FIRST, and the documents describe only what this pass actually
   // accomplished.

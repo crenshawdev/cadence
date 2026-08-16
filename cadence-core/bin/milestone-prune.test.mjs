@@ -1005,3 +1005,17 @@ test('seam: a partial section re-runs the artifacts it is missing, not the phase
     'the UAT row lands; neither pre-existing row is duplicated');
   assert.equal(originsIn(text).filter((o) => o === 'phases/1/SUMMARY.md').length, 1);
 });
+
+test('seam: a held ARCHIVE.md lock refuses the close before any directory moves', () => {
+  // The blocking `diff` gate's finding: unserialized, two closes clobber each
+  // other's rows and then remove the directories that were the only other copy.
+  // A refused lock must therefore stop BEFORE the removal, not after it.
+  const dir = scaffoldWithArtifacts();
+  writeFileSync(join(dir, 'ARCHIVE.md.lock'), ''); // a fresh mtime: a live writer holds it
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'archive-locked');
+  assert.match(r.detail, /ARCHIVE\.md\.lock/, 'the reason must name the lock');
+  assert.ok(existsSync(join(dir, 'phases', '1')), 'the phase directory must survive a refused close');
+  assert.ok(!existsSync(join(dir, 'ARCHIVE.md')), 'and nothing was written');
+});

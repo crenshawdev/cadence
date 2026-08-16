@@ -284,15 +284,24 @@ function takeLock(lockPath) {
  *
  * A throw from `fn` PROPAGATES (the lock is still released): the caller owns
  * how a write failure is reported, and this function's own failure arm is the
- * lock alone. Refusing the lock is `ok:false` with `reason: 'capture-locked'`.
+ * lock alone. Refusing the lock is `ok:false` with `reason`, which defaults to
+ * `'capture-locked'`.
+ *
+ * The lock itself was never CAPTURE-specific - it is an exclusive-create
+ * sibling around one file's whole read-modify-write - and `ARCHIVE.md` needs
+ * the identical guarantee for a worse consequence: a milestone close removes
+ * the phase directories right after its write, so a clobbered residue has no
+ * live source left to recover from. So the name says what it guards (one
+ * planning file) rather than which caller reached it first, and the refusal
+ * `reason` is the caller's word, since that string reaches a user envelope.
  * @template T
- * @param {string} file @param {() => T} fn
+ * @param {string} file @param {() => T} fn @param {string} [reason]
  * @returns {{ok: true, value: T} | {ok: false, reason: string, detail: string}}
  */
-export function withCaptureLock(file, fn) {
+export function withPlanningFileLock(file, fn, reason = 'capture-locked') {
   const lockPath = `${file}${LOCK_SUFFIX}`;
   const taken = takeLock(lockPath);
-  if (taken.ok === false) return { ok: false, reason: 'capture-locked', detail: taken.detail };
+  if (taken.ok === false) return { ok: false, reason, detail: taken.detail };
   try {
     return { ok: true, value: fn() };
   } finally {
@@ -339,7 +348,7 @@ export function appendCapture(file, kind, text, phase) {
   const bullet = renderBullet(kind, text, phase);
   let created = false;
   for (let attempt = 1; attempt <= APPEND_ATTEMPTS; attempt++) {
-    // Spelled out rather than `ReturnType<typeof withCaptureLock>`: that helper
+    // Spelled out rather than `ReturnType<typeof withPlanningFileLock>`: that helper
     // is generic in what its callback returns, and ReturnType erases the
     // argument, so the `value` half would come back `unknown`.
     /** @type {{ok: true, value: boolean} | {ok: false, reason: string, detail: string}} */
@@ -353,7 +362,7 @@ export function appendCapture(file, kind, text, phase) {
       // The READ is inside the lock with the write. Reading outside it is
       // exactly the lost update: two writers each read the same bytes, each
       // append their own bullet, and the second rename erases the first one's.
-      guarded = withCaptureLock(file, () => {
+      guarded = withPlanningFileLock(file, () => {
         const existing = read(file);
         const base = existing === null ? EMPTY_CAPTURE : existing;
         atomicWrite(file, insertBullet(base, heading, bullet));
