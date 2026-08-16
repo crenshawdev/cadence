@@ -1,4 +1,5 @@
 {
+  "stakes": "critical",
   "git": {
     "auto_branch": "auto",
     "base_branch": "main",
