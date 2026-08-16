@@ -6,6 +6,65 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.2] - 2026-08-16
+
+Two surfaces where the tree already conceded the correct rule in one place and
+prescribed the wrong one somewhere else. Neither is a bug anyone hit yet. Both
+came out of an external deep dive against `v3.3.0`.
+
+### Fixed
+
+- **The pre-flight overlap gate could admit a plan pair the commit-time
+  enforcement would then refuse to separate.** `plan-overlap` and `lease-check`
+  each carried their own comparison over declared paths, so they disagreed about
+  what a directory lease covers. Plan 1 declaring `files: [src/]` beside plan 2
+  declaring `files: [src/auth.js]` passed the parallel-safety check, and then the
+  executor's own lease gate refused the commit. Same for `src/` against
+  `src/auth/`.
+
+  Containment now has exactly one definition. `cadence-core/bin/lib/lease-grammar.mjs`
+  exports `covers`, `intersects` and `isRefusedSpelling`, and both readers ask it.
+  A census test in `helper-census.test.mjs` goes red if the comparison is pasted
+  back anywhere under `cadence-core/bin/`, test files included, which is the live
+  failure mode in this tree rather than a hypothetical one.
+
+  `cadence-core/references/plan-frontmatter.md` now states the trailing-slash
+  directory-prefix form and says outright that `src/auth` does not license
+  `src/authority.js`.
+
+### Added
+
+- **A file-path transport for every seam flag that carries caller-derived free
+  text.** A capture item, a UAT reply or a milestone label holding `$(...)` or a
+  backtick could not ride safely in a double-quoted shell word. `planning.mjs`
+  already said so in one place and eleven other sites did it anyway.
+
+  Five new flags, one reader behind all of them
+  (`cadence-core/bin/lib/text-flag-file.mjs`, four refusals: valueless flag,
+  unreadable path, empty file, both forms given):
+
+  - `trace append|close --detail-file`
+  - `trace append --read-file`
+  - `uat record --fields-file`
+  - `milestone-prune --label-file`
+  - `cursor set --next-file`
+
+  The rule is stated once, in `cadence-core/references/conventions.md` under
+  `## Caller-derived text`, and a committed 36-row register
+  (`cadence-core/bin/lib/text-transport.mjs`) records every site with its verdict,
+  20 caller-derived and 16 out of scope with a reason each. `self-verify` check 19
+  `text-transport` reads that register, so a seventeenth inline site is refused
+  rather than noticed later. 13 prose surfaces across `workflows/`, `references/`
+  and `skills/` moved onto the transport, and the tag site now uses
+  `git tag -a <version> -F <path>`.
+
+- **`./a.txt` and `src//a.txt` are refused with a named `redundant-path-segment`
+  diagnostic at both declaration doors**, the frontmatter `files:` list and a
+  `- **Files:**` task line. The diagnostic reaches `plan-overlap`'s
+  `frontmatter_issues` and the spelling reaches neither reader. Note that a
+  refused declaration drops out of the set, so `lease-check`'s `declared` count
+  falls by one for each, with the diagnostic beside it naming why.
+
 ## [3.5.1] - 2026-08-16
 
 ### Fixed
@@ -2787,6 +2846,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.2
 [3.5.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.1
 [3.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.0
 [3.4.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.1
