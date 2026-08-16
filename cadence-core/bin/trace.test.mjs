@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
   mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, readdirSync,
-  copyFileSync, symlinkSync, lstatSync,
+  copyFileSync, symlinkSync, lstatSync, existsSync, chmodSync, accessSync, constants,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, relative } from 'node:path';
@@ -800,6 +800,97 @@ test('seam: a close with no --phase is refused and names the subcommand', () => 
   assert.equal(r.reason, 'bad-args');
   assert.match(String(r.detail), /trace close/);
   assert.equal(traceBytes(dir), null);
+});
+
+// --- --detail-file: the path transport for a caller-derived detail -----------
+//
+// `--detail "<text>"` puts the value inside a double-quoted shell word, so a
+// detail carrying `$(...)` or a backtick executes before Node starts - and a
+// close detail is exactly the caller-derived kind (a reviewer's verdict, a
+// worker's reason for coming back). The path transport is the fix; the inline
+// form stays for a human typing at a shell. The reader and its four refusals
+// live in lib/text-flag-file.mjs and are unit-tested there; these rows assert
+// what the SEAM does with them - above all that a refusal appends nothing.
+
+/** A file holding `body` inside the planning root, and its path. */
+function valueFile(dir, body, name = 'detail.txt') {
+  const file = join(dir, name);
+  writeFileSync(file, body);
+  return file;
+}
+
+test('seam: --detail-file carries a detail no shell could expand', () => {
+  const dir = root();
+  const payload = 'reviewer said $(touch /tmp/cad-trace-should-not-exist) and `id`';
+  const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'outcome',
+    '--event', 'adjudication', '--detail-file', valueFile(dir, `${payload}\n`)]);
+  assert.equal(r.ok, true);
+  // Byte-equal to the file's trimmed contents: nothing between the file and the
+  // record may touch the value.
+  assert.equal(lines(dir)[0].detail, payload);
+  assert.equal(existsSync('/tmp/cad-trace-should-not-exist'), false, 'the payload executed');
+});
+
+test('seam: --detail-file and --detail write the SAME record for the same value', () => {
+  const dir = root();
+  const text = 'came back empty';
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '1', '--role', 'cad-executor',
+    '--detail', text]);
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '2', '--role', 'cad-executor',
+    '--detail-file', valueFile(dir, text)]);
+  const [inline, viaFile] = lines(dir);
+  assert.equal(viaFile.detail, inline.detail);
+  assert.equal(viaFile.event, inline.event);
+});
+
+test('seam: a close carrying --detail-file writes the `checkpoint` arm', () => {
+  const dir = root();
+  // The inference reads the RESOLVED detail. Left on `opts.detail` alone, every
+  // converted checkpoint site would bill as a clean `return` - the one arm the
+  // record exists to keep separate.
+  const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1',
+    '--role', 'cad-executor', '--detail-file', valueFile(dir, 'blocked on a package install')]);
+  assert.equal(r.ok, true);
+  assert.equal(lines(dir)[0].event, 'checkpoint');
+  // ...and the mirror still holds: a close carrying NEITHER form is a `return`.
+  run(dir, ['trace', 'close', '--phase', '4', '--plan', '2', '--role', 'cad-executor']);
+  assert.equal(lines(dir)[1].event, 'return');
+});
+
+test('seam: every --detail-file refusal is bad-args and appends NOTHING at all', () => {
+  const dir = root();
+  const present = valueFile(dir, 'a real detail');
+  const cases = [
+    // valueless: `--detail-file "$F"` with F unset parses as boolean true
+    { name: 'valueless', args: ['--detail-file'] },
+    { name: 'missing path', args: ['--detail-file', join(dir, 'absent.txt')] },
+    { name: 'empty file', args: ['--detail-file', valueFile(dir, '\n \n', 'blank.txt')] },
+    { name: 'both forms', args: ['--detail', 'from the flag', '--detail-file', present] },
+  ];
+  for (const c of cases) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'return', '--plan', '1', ...c.args]);
+    assert.equal(r.ok, false, c.name);
+    assert.equal(r.reason, 'bad-args', c.name);
+    assert.equal(traceBytes(dir), null, `${c.name} wrote to the record`);
+  }
+});
+
+test('seam: an UNREADABLE --detail-file is refused and NAMES the read error', () => {
+  const dir = root();
+  const file = valueFile(dir, 'a real detail');
+  chmodSync(file, 0o000);
+  try {
+    // Running as root defeats the mode bits; the row would then assert nothing.
+    try { accessSync(file, constants.R_OK); return; } catch { /* not root, carry on */ }
+    const r = run(dir, ['trace', 'close', '--phase', '4', '--plan', '1', '--detail-file', file]);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(String(r.detail), /EACCES/, 'the read error was swallowed');
+    assert.equal(traceBytes(dir), null);
+  } finally {
+    chmodSync(file, 0o600);
+  }
 });
 
 // --- per-role totals ----------------------------------------------------------

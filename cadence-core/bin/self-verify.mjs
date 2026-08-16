@@ -287,14 +287,22 @@ const CONTRACTS = {
     // so a record left by an earlier, narrower range of the same plan does not
     // satisfy a later one.
     'risk-check status': ['--phase', '--plan', '--base', '--head'],
+    // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
+    // derived: the inline form puts that text in a double-quoted shell word,
+    // where `$(...)` and a backtick execute before Node starts. Additive - the
+    // inline form stays for a human typing at a shell (lib/text-flag-file.mjs).
     'trace append': ['--phase', '--family', '--event', '--plan', '--sha', '--detail',
-      '--role', '--tokens', '--raised', '--read', '--step', '--reviewer'],
+      '--detail-file', '--role', '--tokens', '--raised', '--read', '--step',
+      '--reviewer'],
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from
     // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
     // states what it closes and nothing about how the record spells it. A row
     // that listed them would let the restated spelling back in through the lint.
-    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail', '--reviewer'],
+    // The inference reads the RESOLVED detail, so `--detail-file` selects the
+    // checkpoint arm exactly as the inline form does.
+    'trace close': ['--phase', '--plan', '--role', '--tokens', '--detail',
+      '--detail-file', '--reviewer'],
     // `--events` asks for the RAW event array. The default response carries the
     // paired `brackets` rows plus every `outcome` event instead, which is what
     // the two shipped readers (triage-gate's `rearm` lookup, report.md's

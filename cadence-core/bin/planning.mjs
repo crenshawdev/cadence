@@ -159,6 +159,7 @@ import { suggestFromRender } from './lib/trace-suggest.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
+import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
@@ -2768,6 +2769,15 @@ function cmdTrace(dir, sub, opts) {
   if (sub === 'append' || sub === 'close') {
     const parsedPhase = requirePhaseArg(opts.phase);
     if (!parsedPhase.ok) return fail('bad-args', `trace ${sub} needs --phase <N>`);
+    // `--detail-file` is the SAFE transport for a detail the CALLER derived -
+    // a reviewer's verdict, a checkpoint's reason - and the reasoning lives in
+    // lib/text-flag-file.mjs and references/conventions.md, not restated here.
+    // Resolved BEFORE the close arm's inference below, which reads the detail:
+    // left on `opts.detail` alone, every converted checkpoint site would bill
+    // as a clean `return`, the one arm the record exists to keep separate.
+    const resolvedDetail = resolveTextFlag(opts, 'detail', `trace ${sub}`);
+    if (!resolvedDetail.ok) return fail('bad-args', resolvedDetail.detail);
+    const detail = resolvedDetail.value !== undefined ? resolvedDetail.value : opts.detail;
     let family;
     let event;
     if (sub === 'close') {
@@ -2787,7 +2797,7 @@ function cmdTrace(dir, sub, opts) {
       // member with zero prose producers, so a three-way inference would be
       // flexibility nothing exercises. It stays reachable through
       // `trace append --event escalation`.
-      event = typeof opts.detail === 'string' && opts.detail.trim() ? 'checkpoint' : 'return';
+      event = typeof detail === 'string' && detail.trim() ? 'checkpoint' : 'return';
     } else {
       family = typeof opts.family === 'string' ? opts.family : '';
       if (!FAMILIES.includes(family)) {
@@ -2922,7 +2932,7 @@ function cmdTrace(dir, sub, opts) {
       event,
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
       ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
-      ...(typeof opts.detail === 'string' && opts.detail ? { detail: opts.detail } : {}),
+      ...(typeof detail === 'string' && detail ? { detail } : {}),
       // A bare `--role` parses as boolean `true`; the same guard `--plan` and
       // `--sha` use records nothing rather than the literal `true`.
       ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
