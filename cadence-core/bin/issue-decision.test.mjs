@@ -105,9 +105,30 @@ test('classifyOrigin: a shared PUBLIC two-label suffix is not a shared domain', 
     ['https://acme.pages.dev/org/repo.git', [login('other.pages.dev')]],
     ['https://git.acme.co.uk/org/repo.git', [login('git.other.co.uk')]],
     ['https://git.acme.com.au/org/repo.git', [login('git.other.com.au')]],
+    // ...and the same shape outside the anglophone registries, which is where a
+    // set stopping at `co.uk` matched two unrelated companies as one forge.
+    ['https://git.acme.co.za/org/repo.git', [login('git.other.co.za')]],
+    ['https://git.acme.com.br/org/repo.git', [login('git.other.com.br')]],
+    ['https://git.acme.co.kr/org/repo.git', [login('git.other.co.kr')]],
+    ['https://git.acme.com.tr/org/repo.git', [login('git.other.com.tr')]],
+    ['https://git.acme.co.in/org/repo.git', [login('git.other.co.in')]],
+    ['https://git.acme.com.mx/org/repo.git', [login('git.other.com.mx')]],
+    ['https://git.acme.com.cn/org/repo.git', [login('git.other.com.cn')]],
+    ['https://git.acme.com.ua/org/repo.git', [login('git.other.com.ua')]],
+    ['https://git.acme.ne.jp/org/repo.git', [login('git.other.ne.jp')]],
+    ['https://git.acme.ac.uk/org/repo.git', [login('git.other.ac.uk')]],
+    ['https://acme.netlify.app/org/repo.git', [login('other.netlify.app')]],
+    ['https://acme.codeberg.page/org/repo.git', [login('other.codeberg.page')]],
   ]) {
     assert.equal(classifyOrigin(url, hosts).verdict, 'no-login', url);
   }
+  // The denial is of the SUFFIX, not of the country: two hosts under one
+  // registrant below such a suffix are still one forge, matched exactly.
+  const zaLogin = [login('git.acme.co.za')];
+  assert.equal(classifyOrigin('https://git.acme.co.za/org/repo.git', zaLogin).verdict, 'forgejo');
+  assert.equal(classifyOrigin('https://git.acme.co.za/org/repo.git', zaLogin).login, 'git.acme.co.za');
+  // ...and an ordinary two-label domain is untouched by the list's growth.
+  assert.equal(classifyOrigin('https://ssh.acme.dev/org/repo.git', [login('git.acme.dev')]).verdict, 'forgejo');
   // ...and a host with fewer than two labels matches only by exact equality.
   assert.equal(classifyOrigin('https://forge/org/repo.git', [login('forge')]).verdict, 'forgejo');
   assert.equal(classifyOrigin('https://forge/org/repo.git', [login('forge.example.com')]).verdict, 'no-login');

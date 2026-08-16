@@ -246,16 +246,56 @@ function splitOrigin(url) {
 
 /**
  * Two-label suffixes that are themselves PUBLIC: two hosts sharing one are two
- * unrelated registrants, not one forge. Frozen and deliberately small - a
- * vendored public-suffix list is out of proportion for a zero-dep repo, and
- * every denied pair falls back to today's `no-login` answer, which is the safe
- * direction: the seam refuses the call rather than trusting tea's pick (D-07).
- * Covers the hosting suffixes a git URL plausibly sits on, plus the common
- * two-label registry suffixes.
+ * unrelated registrants, not one forge. `git.acme.co.za` and `git.other.co.za`
+ * are two companies, and a set that stopped at the handful of suffixes an
+ * English-speaking reader thinks of first would call them one - so the ccTLD
+ * second-level registries a git host plausibly sits on are all listed, not just
+ * `co.uk`. A miss here is the failure; a suffix listed that no registry
+ * actually operates costs only a skip nobody was going to need.
+ *
+ * Frozen and curated: a vendored public-suffix list is out of proportion for a
+ * zero-dep repo (D-07), and every denied pair falls back to today's `no-login`
+ * answer, which is the safe direction - the seam refuses the call rather than
+ * querying a forge it cannot show is this repository's. That is the second of
+ * the two guards and it is not redundant with the first: binding the call to
+ * the matched login (see classifyOrigin) stops an answer arriving from a login
+ * nothing was checked against, and this stops the wrong login being the one
+ * that matched in the first place.
  */
 const PUBLIC_TWO_LABEL = Object.freeze(new Set([
-  'github.io', 'gitlab.io', 'pages.dev',
-  'co.uk', 'org.uk', 'com.au', 'co.jp', 'co.nz', 'com.br',
+  // Hosting suffixes: one registrant per SUBDOMAIN, so the suffix itself is
+  // shared by everyone with an account.
+  'github.io', 'gitlab.io', 'codeberg.page', 'sourceforge.io', 'pages.dev',
+  'workers.dev', 'netlify.app', 'vercel.app', 'herokuapp.com', 'fly.dev',
+  'onrender.com', 'glitch.me',
+  // ccTLD second-level registries, by country.
+  'co.za', 'org.za', 'net.za', 'web.za', 'ac.za',
+  'co.in', 'net.in', 'org.in', 'firm.in', 'gen.in',
+  'co.kr', 'or.kr', 'ne.kr', 're.kr', 'pe.kr',
+  'co.il', 'org.il', 'net.il', 'ac.il',
+  'com.tr', 'net.tr', 'org.tr', 'gen.tr', 'web.tr',
+  'com.mx', 'org.mx', 'net.mx',
+  'co.id', 'or.id', 'net.id', 'web.id', 'my.id',
+  'com.sg', 'net.sg', 'org.sg', 'edu.sg',
+  'co.th', 'in.th', 'or.th', 'ac.th',
+  'com.tw', 'net.tw', 'org.tw', 'idv.tw',
+  'com.cn', 'net.cn', 'org.cn', 'ac.cn',
+  'co.nz', 'net.nz', 'org.nz', 'geek.nz', 'kiwi.nz',
+  'com.au', 'net.au', 'org.au', 'id.au', 'asn.au',
+  'co.uk', 'org.uk', 'me.uk', 'net.uk', 'ltd.uk', 'plc.uk', 'ac.uk',
+  'co.jp', 'ne.jp', 'or.jp', 'gr.jp', 'ac.jp',
+  'com.br', 'net.br', 'org.br', 'eti.br',
+  'com.ru', 'net.ru', 'org.ru', 'pp.ru',
+  'com.ua', 'net.ua', 'org.ua', 'in.ua', 'kiev.ua',
+  'com.hk', 'net.hk', 'org.hk', 'idv.hk',
+  'com.my', 'net.my', 'org.my',
+  'com.ph', 'net.ph', 'org.ph',
+  'com.pl', 'net.pl', 'org.pl',
+  'com.ar', 'net.ar', 'org.ar',
+  'com.co', 'net.co', 'nom.co',
+  'com.ng', 'net.ng', 'org.ng',
+  'com.vn', 'net.vn', 'org.vn',
+  'com.pk', 'net.pk', 'org.pk',
 ]));
 
 /**
