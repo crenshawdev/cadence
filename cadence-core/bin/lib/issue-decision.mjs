@@ -163,9 +163,53 @@ function splitOrigin(url) {
 }
 
 /**
+ * Two-label suffixes that are themselves PUBLIC: two hosts sharing one are two
+ * unrelated registrants, not one forge. Frozen and deliberately small - a
+ * vendored public-suffix list is out of proportion for a zero-dep repo, and
+ * every denied pair falls back to today's `no-login` answer, which is the safe
+ * direction: the seam refuses the call rather than trusting tea's pick (D-07).
+ * Covers the hosting suffixes a git URL plausibly sits on, plus the common
+ * two-label registry suffixes.
+ */
+const PUBLIC_TWO_LABEL = Object.freeze(new Set([
+  'github.io', 'gitlab.io', 'pages.dev',
+  'co.uk', 'org.uk', 'com.au', 'co.jp', 'co.nz', 'com.br',
+]));
+
+/**
+ * A host's registrable domain: its last two labels - null when it has fewer
+ * than two, and null when those two are a public suffix on their own. A null
+ * on either side means the pair can only match by exact equality.
+ * @param {string} host @returns {string|null}
+ */
+function registrableDomain(host) {
+  const labels = host.split('.');
+  if (labels.length < 2) return null;
+  const domain = labels.slice(-2).join('.');
+  return PUBLIC_TWO_LABEL.has(domain) ? null : domain;
+}
+
+/**
  * Classify the origin URL into the forge whose tracker can be read, using the
  * hosts a `tea login list` reading names for everything that is not github or
- * gitlab - the rule skills/cad-land/SKILL.md step 1 already states.
+ * gitlab.
+ *
+ * A login matches the origin when it NAMES the origin host or shares its
+ * registrable domain - not by host equality alone. A forge's SSH endpoint is
+ * routinely a different name from its web host (this repository's origin is
+ * `ssh://git@ssh.jcrenshaw.dev:2222/...` against a login whose name, api url
+ * and `ssh_host` are all `git.jcrenshaw.dev`), which is a normal deployment
+ * shape and not a misconfiguration - under host equality it took the `no-login`
+ * arm on every land, so the report shipped in v3.4.0 never once ran on the
+ * repository it was built in. The widening is GUARDED both ways: the registrable
+ * domain is the last two labels, so a two-label public suffix cannot be the
+ * thing two hosts have in common (see PUBLIC_TWO_LABEL), and a host with fewer
+ * than two labels still matches only by exact equality. An unguarded
+ * fallthrough would be the worse failure by far: tea's `--repo` resolution is
+ * config-FILE-ORDER rather than repo-aware, so it answers from whichever login
+ * sits first in the user's config, and a server holding a repo at the same
+ * `owner/name` returns exit 0 with real JSON - another project's issues reported
+ * as this one's, silently.
  *
  * The verdicts are FIVE, not three, because the degradations are not
  * interchangeable (LND-01, criterion 3):
@@ -207,7 +251,13 @@ export function classifyOrigin(originUrl, teaHosts) {
   if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug };
   if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug };
   if (!Array.isArray(teaHosts)) return { verdict: 'unrecognized', host, slug };
-  const named = teaHosts.some((h) => typeof h === 'string' && h.toLowerCase() === host);
+  const originDomain = registrableDomain(host);
+  const named = teaHosts.some((h) => {
+    if (typeof h !== 'string') return false;
+    const login = h.toLowerCase();
+    if (login === host) return true;
+    return originDomain !== null && registrableDomain(login) === originDomain;
+  });
   return { verdict: named ? 'forgejo' : 'no-login', host, slug };
 }
 

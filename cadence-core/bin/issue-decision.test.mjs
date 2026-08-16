@@ -44,6 +44,39 @@ test('classifyOrigin: a tea-login host is forgejo in both url shapes', () => {
   }
 });
 
+test('classifyOrigin: a login sharing the origin\'s registrable domain is forgejo', () => {
+  // The shape this repository has: an SSH endpoint on its own subdomain, on a
+  // non-standard port, against a login keyed on the web host. Host equality
+  // took the no-login arm here on every land (TRK-01).
+  for (const url of [
+    'ssh://git@ssh.jcrenshaw.dev:2222/crenshawdev/cadence.git',
+    'git@ssh.jcrenshaw.dev:crenshawdev/cadence.git',
+  ]) {
+    const c = classifyOrigin(url, TEA_HOSTS);
+    assert.equal(c.verdict, 'forgejo', url);
+    assert.equal(c.host, 'ssh.jcrenshaw.dev', 'the ORIGIN host is reported, not the login\'s');
+    assert.equal(c.slug, 'crenshawdev/cadence');
+  }
+});
+
+test('classifyOrigin: a shared PUBLIC two-label suffix is not a shared domain', () => {
+  // Sharing `github.io` makes two unrelated registrants, and an unguarded call
+  // would query whichever login tea's config-file order picks (D-07). Each of
+  // these falls back to the answer that ships today.
+  for (const [url, hosts] of [
+    ['https://acme.github.io/org/repo.git', ['other.github.io']],
+    ['https://acme.gitlab.io/org/repo.git', ['other.gitlab.io']],
+    ['https://acme.pages.dev/org/repo.git', ['other.pages.dev']],
+    ['https://git.acme.co.uk/org/repo.git', ['git.other.co.uk']],
+    ['https://git.acme.com.au/org/repo.git', ['git.other.com.au']],
+  ]) {
+    assert.equal(classifyOrigin(url, hosts).verdict, 'no-login', url);
+  }
+  // ...and a host with fewer than two labels matches only by exact equality.
+  assert.equal(classifyOrigin('https://forge/org/repo.git', ['forge']).verdict, 'forgejo');
+  assert.equal(classifyOrigin('https://forge/org/repo.git', ['forge.example.com']).verdict, 'no-login');
+});
+
 test('classifyOrigin: no-login and unrecognized are DIFFERENT verdicts', () => {
   const url = 'https://forge.example.com/org/repo.git';
   // tea WAS consulted and named no login for this host: the fix is a login, and
