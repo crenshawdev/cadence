@@ -3970,6 +3970,34 @@ test('plan-overlap: a shared file is reported with both plan names', () => {
   assert.deepEqual(r.overlaps, [{ plans: ['PLAN-1.md', 'PLAN-2.md'], files: ['src/shared.rs'] }]);
 });
 
+// The two defective pairs the lease grammar's two readers disagree about: the
+// pre-flight gate compares declarations by exact string equality, while
+// `lease-check` reads a trailing slash as a directory prefix. A phase declaring
+// `src/` in one plan and `src/auth.js` in another therefore passes the
+// parallel-safety gate and is then refused, plan by plan, at the commit step.
+// Both spellings ride `overlaps[].files` as separate strings (D-06); the ORDER
+// is not pinned here, because it is not this pair's subject.
+
+test('plan-overlap: a directory lease src/ overlaps the file src/auth.js the other plan declares', () => {
+  const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/'], ['src/auth.js']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.overlaps.length, 1, JSON.stringify(r));
+  assert.deepEqual(r.overlaps[0].plans, ['PLAN-1.md', 'PLAN-2.md']);
+  assert.ok(r.overlaps[0].files.includes('src/'), JSON.stringify(r.overlaps[0]));
+  assert.ok(r.overlaps[0].files.includes('src/auth.js'), JSON.stringify(r.overlaps[0]));
+  assert.equal(r.overlaps[0].files.length, 2, JSON.stringify(r.overlaps[0]));
+});
+
+test('plan-overlap: a directory lease src/ overlaps the nested directory lease src/auth/', () => {
+  const r = run(['plan-overlap', '--phase', '1'], overlapTree(['src/'], ['src/auth/']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.overlaps.length, 1, JSON.stringify(r));
+  assert.deepEqual(r.overlaps[0].plans, ['PLAN-1.md', 'PLAN-2.md']);
+  assert.ok(r.overlaps[0].files.includes('src/'), JSON.stringify(r.overlaps[0]));
+  assert.ok(r.overlaps[0].files.includes('src/auth/'), JSON.stringify(r.overlaps[0]));
+  assert.equal(r.overlaps[0].files.length, 2, JSON.stringify(r.overlaps[0]));
+});
+
 test('plan-overlap: task **Files:** lines count even when frontmatter omits them', () => {
   // PLAN-2 frontmatter declares nothing, but its task line touches src/a.rs.
   const r = run(['plan-overlap', '--phase', '1'],
