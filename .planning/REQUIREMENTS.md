@@ -1,18 +1,30 @@
-# Requirements: Cadence (v3.5.2 open)
+# Requirements: Cadence (v3.5.3 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.2 - one reader, one transport`, opened 2026-08-16. Scoped off the Forgejo
-milestone, which holds two issues: #133 and #132. Both came out of an external
-deep dive against `v3.3.0` and were adjudicated AGREE-high; both are surfaces
-where this tree already concedes the correct rule in one place and prescribes
-the wrong one elsewhere. The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`,
-`CTX-02` - keep their deferral reasons and none is promoted. The open items
-filed at the `v3.5.1` close (#181 through #187) are unassigned and are not
-scoped here.
+`v3.5.3 - the bounds the review path never stated`, opened 2026-08-16. Scoped
+off the Forgejo milestone, which holds three issues: #168, #143 and #141. All
+three came from the same external deep dive, two adjudicated AGREE-low and one
+narrowed from a finding closed as not-a-Cadence-defect. None is a trust
+boundary; each is a bound the code was supposed to state and never did.
+
+- **RVP-01**: A provider response is bounded by bytes, destroying the request
+  once the ceiling is crossed, and an HTTP failure envelope carries a capped
+  sanitized excerpt rather than the whole body (#143).
+- **RVP-02**: Local validation of provider findings refuses what the canonical
+  schema refuses - `line <= 0`, empty `file`/`claim`/`failure_scenario`,
+  unknown keys, and unbounded finding counts and field lengths (#141).
+- **WIR-01**: `execute.md`'s "timeout or no report" arm either names what
+  produces that state or the word goes, and the default reviewer stops being
+  the one unbounded arm beside it (#168).
+
+The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted. The open items filed at the `v3.5.1`
+close (#181 through #187) and the seven filed at the `v3.5.2` close (#189
+through #195) are unassigned and are not scoped here.
 
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -

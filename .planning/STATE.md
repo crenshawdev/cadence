@@ -1,6 +1,6 @@
 # State
 
-Phase: 2 of 2 (One reader for the lease grammar)
-Status: phase complete
-Next: /cad-milestone
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-16

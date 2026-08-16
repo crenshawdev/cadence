@@ -2,36 +2,40 @@
 
 ## Overview
 
-**`v3.5.2 - one reader, one transport`, opened 2026-08-16.** Scoped off the
-Forgejo milestone, which holds two issues: #133 and #132.
+**`v3.5.3 - the bounds the review path never stated`, opened 2026-08-16.**
+Scoped off the Forgejo milestone, which holds three issues: #168, #143 and
+#141.
 
-**The theme is one sentence: two places that must agree about the same thing
-were written twice, and the copies drifted.** Both issues came out of an
-external deep dive against `v3.3.0`, both were adjudicated AGREE-high, and
-neither is a bug a user has hit yet - they are surfaces where the tree already
-concedes the correct rule in one place and prescribes the wrong one elsewhere.
-That makes both cheap to fix and easy to reintroduce, which is why each phase
-ships a check rather than only a correction.
+**The theme is one sentence: the review path accepts whatever comes back, and
+one workflow arm recovers from a state that cannot happen.** All three came
+from the same external deep dive, two adjudicated AGREE-low and one narrowed
+from a finding closed as not-a-Cadence-defect. None is a trust boundary, which
+is why they sit at low severity; each is a stated bound the code never actually
+states.
 
-`#133` is the shell transport. `planning.mjs:3815` already states why
-caller-derived prose cannot ride in a double-quoted shell word: an item carrying
-`$(...)` or a backtick executes before Node starts, and a path cannot. That
-reasoning is conceded for `capture` alone, and roughly sixteen other workflow
-sites still prescribe the unsafe form for values derived from agent output or
-repository content. The fix is the transport stated once and applied everywhere
-it governs, not sixteen local escapes.
+`#143` is the response body. `review-provider.mjs` concatenates a provider
+response into an unbounded string with no byte ceiling and no destroy path, so
+a proxy error page or an unexpectedly large answer is held whole in memory, and
+an HTTP failure envelope carries the entire body rather than a capped excerpt.
+The host's wrapping command timeout bounds it in practice, which is a bound
+Cadence does not own.
 
-`#132` is the lease. `plan-overlap` intersects declared `files:` by exact string
-equality (`planning.mjs:1788`) while `lease-check` reads a trailing slash as a
-directory prefix (`planning.mjs:2217-2218`), so a phase declaring `src/` in one
-plan and `src/auth.js` in another produces an empty `overlaps`, passes the
-parallel-safety gate, and then authorizes both plans to stage the same file.
-`references/plan-frontmatter.md` documents no trailing-slash form, which bounds
-the likelihood and not the validity: `lease-check` honours it, so it is live.
-The fix shape is one shared lease-normalization module both readers call.
+`#141` is the shape of what came back. Local validation of a provider's
+findings checks an integer `line` and three string fields and nothing else, so
+it admits `line <= 0`, empty strings, unknown keys and arbitrarily many
+arbitrarily large findings, while the canonical schema says
+`additionalProperties: false`. The output goes to a human for triage, so this
+is a degradation guard rather than a boundary, and it should still refuse what
+the schema refuses.
 
-The two phases are independent - disjoint files, disjoint seams - and neither
-depends on the other's outcome.
+`#168` is the wiring. `execute.md` opens a recovery arm labelled "timeout or no
+report" when nothing in the dispatch path can time out - `seams.md` says so in
+those words, and `subagent_timeout` was deleted in v2.7.0 rather than kept as a
+knob nothing enforces. Either the word is dead or it silently means "the user
+interrupted", which is a different condition with a different recovery. The
+default reviewer arm is the one unbounded path left beside it.
+
+Phases are not yet added - `/cad-phase add` opens the first.
 
 ## Phases
 
