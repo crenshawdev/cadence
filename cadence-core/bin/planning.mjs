@@ -663,6 +663,13 @@ function writeUat(dir, n, uat) {
 // untouched by that reset - it only ever records the first pass/fail verdict.
 const UAT_RESULTS = ['pass', 'fail', 'skipped', 'blocked', 'pending'];
 
+// The FREE-TEXT half of `uat record`'s fields, and exactly what `--fields-file`
+// may carry. Every other field the subcommand takes is validated against a
+// closed enum, an `AC<N>` shape or an integer grammar at its own guard, so it is
+// not caller-derived prose and gains nothing from a path transport - and
+// admitting one here would route it around the guard that validates it.
+const UAT_TEXT_FIELDS = ['reason', 'reported', 'cause', 'fix', 'evidence'];
+
 function cmdUat(dir, sub, opts) {
   // The shared reader, replacing a bare `Number()` + NaN test: a malformed
   // `--phase` is now refused in the same words on every seam, and `n` is the
@@ -791,6 +798,57 @@ function cmdUat(dir, sub, opts) {
     if (opts.criterion !== undefined && !/^AC\d+$/.test(String(opts.criterion))) {
       return fail('bad-args', `--criterion must be AC<N> (got: ${opts.criterion})`);
     }
+    // `--fields-file`: the FREE-TEXT fields through the path transport, because
+    // every one of them is caller-derived - a failing item's reason, what the
+    // user reported, the cause, the fix, the evidence - and the inline form puts
+    // that prose inside a double-quoted shell word where `$(...)` executes
+    // before Node starts (lib/text-flag-file.mjs, references/conventions.md).
+    //
+    // ONE flag holding a JSON OBJECT, never per-field `-file` flags (D-05):
+    // verify.md passes two or three text flags on a single call, so per-field
+    // files would cost up to three extra Write calls per failed item on the one
+    // workflow whose per-item round-trip discipline is explicit.
+    //
+    // A key outside the five is REFUSED, never dropped. `severity`, `origin`,
+    // `criterion`, `result` and `source` are enum-validated at their own guards
+    // above, so admitting them here would either bypass those guards or
+    // silently discard a field the caller believes was recorded. Every refusal
+    // lands BEFORE any mutation of the item, so a rejected call leaves UAT.md
+    // byte-unchanged - the standing posture at those same guards.
+    const resolvedFields = resolveTextFlag(opts, 'fields', 'uat record');
+    if (!resolvedFields.ok) return fail('bad-args', resolvedFields.detail);
+    /** @type {Record<string, string>} */
+    let fileFields = {};
+    if (resolvedFields.value !== undefined) {
+      let payload;
+      try {
+        payload = JSON.parse(resolvedFields.value);
+      } catch (e) {
+        return fail('bad-args',
+          `uat record --fields-file is not JSON: ${e && e.message ? e.message : String(e)}`);
+      }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return fail('bad-args',
+          `uat record --fields-file must hold a JSON object of ${UAT_TEXT_FIELDS.join(' | ')}`);
+      }
+      for (const [key, value] of Object.entries(payload)) {
+        if (!UAT_TEXT_FIELDS.includes(key)) {
+          return fail('bad-args', `uat record --fields-file carries "${key}", which is not one of:`
+            + ` ${UAT_TEXT_FIELDS.join(' | ')}`);
+        }
+        if (typeof value !== 'string') {
+          return fail('bad-args', `uat record --fields-file "${key}" must be a string`);
+        }
+        // The same refusal the reader makes for one flag's two forms, per FIELD:
+        // a precedence rule would silently discard one of two values the caller
+        // believes was recorded.
+        if (opts[key] !== undefined) {
+          return fail('bad-args',
+            `uat record takes "${key}" inline or in --fields-file, never both`);
+        }
+      }
+      fileFields = payload;
+    }
     item.status = opts.result;
     // `user` stays IMPLICIT - never written onto the item - so every existing
     // checklist stays byte-identical; `verifier` and `model` are the two values
@@ -801,7 +859,10 @@ function cmdUat(dir, sub, opts) {
     for (const [flag, field] of [['reason', 'reason'], ['reported', 'reported'],
       ['severity', 'severity'], ['cause', 'cause'], ['fix', 'fix'], ['evidence', 'evidence'],
       ['origin', 'origin'], ['criterion', 'criterion']]) {
-      if (opts[flag] !== undefined) item[field] = opts[flag];
+      // The file form feeds THIS loop and nothing else, so an identical value
+      // through either transport writes a byte-identical UAT.md.
+      const value = opts[flag] !== undefined ? opts[flag] : fileFields[flag];
+      if (value !== undefined) item[field] = value;
     }
     // Invariant: first_pass is the FIRST pass/fail verdict, set once, never after.
     if (item.first_pass === undefined && (opts.result === 'pass' || opts.result === 'fail')) {

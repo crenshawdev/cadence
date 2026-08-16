@@ -232,9 +232,15 @@ const CONTRACTS = {
     'phase-done': ['--n', '--reqs', '--undo'],
     'uat init': ['--phase', '--sources'],
     'uat refresh': ['--phase'],
+    // `--fields-file` is the path transport for the five FREE-TEXT fields
+    // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
+    // one file per failing item rather than three, on the workflow whose
+    // per-item round-trip discipline is explicit. The enum-validated flags gain
+    // no file form: a value that must survive `UAT_RESULTS.includes()` or an
+    // `AC<N>` test is not caller-derived prose.
     'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--source', '--origin',
-      '--criterion'],
+      '--severity', '--cause', '--fix', '--evidence', '--fields-file', '--source',
+      '--origin', '--criterion'],
     'uat merge': ['--phase', '--payload'],
     'uat status': ['--phase'],
     audit: [],

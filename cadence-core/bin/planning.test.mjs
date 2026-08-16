@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -859,6 +859,96 @@ test('uat record: a normal --item still records, with counts and first_pass', ()
   assert.deepEqual(r.item, { k: 1, status: 'pass' });
   assert.equal(r.counts.pass, 1);
   assert.match(readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8'), /first_pass: pass/);
+});
+
+// --- uat record --fields-file: the free-text fields through the path transport
+//
+// Every one of the five is caller-derived - a failing item's reason, what the
+// user reported, the cause, the fix, the evidence - so the inline form puts
+// that prose in a double-quoted shell word where `$(...)` executes before Node
+// starts. ONE flag holding a JSON object, never per-field files (D-05).
+
+/** The five free-text fields, as one object and as inline flag pairs. */
+const FIVE_FIELDS = {
+  reason: 'the redirect never fires',
+  reported: 'user sees a blank page',
+  cause: 'the session cookie is dropped',
+  fix: 'abc1234, retest',
+  evidence: '.planning/phases/1/FINDINGS.json',
+};
+const FIVE_INLINE = Object.entries(FIVE_FIELDS).flatMap(([k, v]) => [`--${k}`, v]);
+const uatBytes = (dir) => readFileSync(join(dir, 'phases', '1', 'UAT.md'), 'utf8');
+
+test('uat record: --fields-file writes the SAME UAT.md the five inline flags write', () => {
+  const inlineDir = uatTree();
+  const fileDir = uatTree();
+  const a = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    ...FIVE_INLINE], inlineDir);
+  const src = join(fileDir, 'fields.json');
+  writeFileSync(src, JSON.stringify(FIVE_FIELDS));
+  const b = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--fields-file', src], fileDir);
+  assert.equal(a.ok, true);
+  assert.equal(b.ok, true);
+  // Byte-identical, so a field the reader silently dropped fails this row
+  // rather than passing it.
+  assert.equal(uatBytes(fileDir), uatBytes(inlineDir));
+  for (const value of Object.values(FIVE_FIELDS)) {
+    assert.ok(uatBytes(fileDir).includes(value), `"${value}" never reached the file`);
+  }
+});
+
+test('uat record: a --fields-file value no shell could expand lands verbatim', () => {
+  const dir = uatTree();
+  const src = join(dir, 'fields.json');
+  const reason = 'it printed $(touch /tmp/cad-uat-should-not-exist) and `id`';
+  writeFileSync(src, JSON.stringify({ reason }));
+  const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+    '--fields-file', src], dir);
+  assert.equal(r.ok, true);
+  assert.ok(uatBytes(dir).includes(reason), 'the reason did not land verbatim');
+  assert.equal(existsSync('/tmp/cad-uat-should-not-exist'), false, 'the payload executed');
+});
+
+test('uat record: every --fields-file refusal is bad-args, UAT.md byte-unchanged', () => {
+  const dir = uatTree();
+  const before = uatBytes(dir);
+  const write = (name, body) => {
+    const f = join(dir, name);
+    writeFileSync(f, body);
+    return f;
+  };
+  const good = write('good.json', JSON.stringify({ reason: 'from the file' }));
+  const cases = [
+    { name: 'valueless', args: ['--fields-file'] },
+    { name: 'missing path', args: ['--fields-file', join(dir, 'absent.json')] },
+    { name: 'empty file', args: ['--fields-file', write('blank.json', '\n \n')] },
+    { name: 'not JSON', args: ['--fields-file', write('bad.json', 'reason: x')] },
+    // A JSON ARRAY parses, and `typeof [] === 'object'` - the arm that catches it.
+    { name: 'a JSON array', args: ['--fields-file', write('arr.json', '[{"reason":"x"}]')] },
+    { name: 'a non-string value', args: ['--fields-file', write('num.json', '{"reason":3}')] },
+    // Refused rather than dropped: `severity` is enum-validated at its own
+    // guard, so admitting it here would route it around that guard.
+    { name: 'an out-of-set key', args: ['--fields-file', write('sev.json', '{"severity":"high"}')] },
+    { name: 'a field given both ways', args: ['--reason', 'from the flag', '--fields-file', good] },
+  ];
+  // The unreadable arm, unless the suite runs as root (mode bits assert nothing).
+  const locked = write('locked.json', JSON.stringify({ reason: 'x' }));
+  chmodSync(locked, 0o000);
+  try {
+    try { accessSync(locked, constants.R_OK); } catch {
+      cases.push({ name: 'unreadable path', args: ['--fields-file', locked] });
+    }
+    for (const c of cases) {
+      const r = run(['uat', 'record', '--phase', '1', '--item', '1', '--result', 'fail',
+        ...c.args], dir);
+      assert.equal(r.ok, false, c.name);
+      assert.equal(r.reason, 'bad-args', c.name);
+      assert.equal(uatBytes(dir), before, `${c.name} wrote to UAT.md`);
+    }
+  } finally {
+    chmodSync(locked, 0o600);
+  }
 });
 
 test('uat merge: matches by k, and a verifier pass never rewrites first_pass', () => {
@@ -4721,10 +4811,11 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // The census, so a site added later fails here rather than shipping a
   // credential. planning.mjs carries FIVE other caught-error details this
   // requirement does not cover - partial-apply, write-failed, the
-  // dispatch-level internal catch, `capture --text-file`'s read failure and
-  // `capture-sections`' unreadable-capture - so the pin is by COUNT: eight uses
-  // of the idiom, exactly three of them wrapped. Adding a site moves the first
-  // number whether or not the author remembered the helper.
+  // dispatch-level internal catch, `capture --text-file`'s read failure,
+  // `capture-sections`' unreadable-capture and `uat record --fields-file`'s
+  // JSON parse failure - so the pin is by COUNT: nine uses of the idiom,
+  // exactly three of them wrapped. Adding a site moves the first number whether
+  // or not the author remembered the helper.
   //
   // The three wrapped sites, all git failures on the same EXP-01 rail:
   // `cmdLeaseCheck`'s `no-staged-set` detail; `resolveRange`, where a failing
@@ -4739,11 +4830,15 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // detail is an `fs` error over a path the CALLER just named, so the only
   // string it can echo is one the caller already holds. `redactUrl` targets a
   // credential arriving from a remote the user never typed, which a local path
-  // read cannot be.
+  // read cannot be. `uat record --fields-file`'s parse failure is the same
+  // class one step further in: a JSON syntax error over the caller's own file.
+  // The `-file` transports' READ failures are not counted here at all - they
+  // live in lib/text-flag-file.mjs, which this file-scoped census does not
+  // walk, and they are the same caller-named-path class.
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 8, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(IDIOM) || []).length, 9, 'planning.mjs gained or lost a detail site');
   assert.equal((src.match(WRAPPED) || []).length, 3,
     'a git-failure detail (no-staged-set, resolveRange, or risk-check run\'s diff catch) is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
