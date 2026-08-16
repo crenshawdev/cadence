@@ -11,12 +11,19 @@ import {
 
 // --- classifyOrigin ---------------------------------------------------------
 
-/** A `tea login list` reading as classifyOrigin now takes it: the login records
- *  exactly as tea printed them, consulted for their COUNT and nothing else.
- *  WHICH login serves a given origin is tea's own question, and the forgejo
- *  row's `--remote origin` is what asks it - so no field below is read here. */
+/** A `tea login list` reading as classifyOrigin takes it: the login records
+ *  exactly as tea printed them. Three fields are read, and only to answer
+ *  whether some login NAMES the origin's host - the guard that keeps the seam
+ *  from asking a question tea would answer by falling back to config order.
+ *  WHICH login serves a matched origin is still tea's own question, and the
+ *  forgejo row's `--remote origin` is what asks it.
+ *
+ *  `ssh_host` names the SSH endpoint and not the web host on purpose: that is
+ *  this repository's real shape (corrected 2026-08-15), and it is what makes a
+ *  split-endpoint remote reportable at all. A login that omits it fails the
+ *  guard, and the `no-login` line is what tells the user to add it. */
 const TEA_LOGINS = [
-  { name: 'git.jcrenshaw.dev', url: 'https://git.jcrenshaw.dev', ssh_host: 'git.jcrenshaw.dev', user: 'john' },
+  { name: 'git.jcrenshaw.dev', url: 'https://git.jcrenshaw.dev', ssh_host: 'ssh.jcrenshaw.dev', user: 'john' },
 ];
 
 test('classifyOrigin reads BOTH url shapes for github and gitlab', () => {
@@ -50,14 +57,15 @@ test('classifyOrigin: with tea naming ANY login, a non-github host is forgejo', 
   }
 });
 
-test('classifyOrigin: an SSH endpoint no login names is forgejo, and tea binds it', () => {
+test('classifyOrigin: an SSH endpoint a login NAMES is forgejo, and tea binds it', () => {
   // The shape this repository has: an SSH endpoint on its own subdomain, on a
-  // non-standard port, against a login keyed on the web host. Host equality took
-  // the no-login arm here on every land (TRK-01), and the registrable-domain
-  // match that replaced it could not be made correct without a public suffix
-  // list this repo refuses to vendor - so no host comparison survives here at
-  // all. The verdict is forgejo, and `--remote origin` is what makes tea answer
-  // from the login that actually serves this remote.
+  // non-standard port. Host equality against the login's NAME took the no-login
+  // arm here on every land (TRK-01); the login's `ssh_host` is what names the
+  // endpoint, and reading all three fields is what makes this reportable
+  // without any comparison beyond equality. The registrable-domain match that
+  // was tried in between could not be made correct without a public suffix list
+  // this repo refuses to vendor, and it is gone. The verdict is forgejo, and
+  // `--remote origin` is what makes tea answer from the right login.
   for (const url of [
     'ssh://git@ssh.jcrenshaw.dev:2222/crenshawdev/cadence.git',
     'git@ssh.jcrenshaw.dev:crenshawdev/cadence.git',
@@ -67,11 +75,15 @@ test('classifyOrigin: an SSH endpoint no login names is forgejo, and tea binds i
     assert.equal(c.host, 'ssh.jcrenshaw.dev', 'the ORIGIN host is reported, not the login\'s');
     assert.equal(c.slug, 'crenshawdev/cadence');
   }
-  // A host sharing NOTHING with any login reads the same way, on purpose: the
-  // reading names a login, so there is a tracker to try, and tea decides which
-  // one answers. What this file may no longer do is decide it from a hostname.
+  // A host NO login names does NOT read the same way, and this is the guard:
+  // tea would not refuse it, it would fall back to config order and answer for
+  // a repository it has never heard of, exit 0, with its NOTE on the stderr
+  // this seam discards. So the seam declines to ask. This is a precondition on
+  // making the call, not a rule for picking a login - the difference is that
+  // equality asks what a login IS NAMED, never what two hosts have in common,
+  // which is the question no curated suffix list could answer correctly.
   const stranger = classifyOrigin('https://git.stranger.org/org/repo.git', TEA_LOGINS);
-  assert.equal(stranger.verdict, 'forgejo');
+  assert.equal(stranger.verdict, 'no-login');
   assert.equal(stranger.host, 'git.stranger.org');
   // And nothing on the return names a login - there is no login pick to carry.
   assert.deepEqual(Object.keys(stranger).sort(), ['host', 'slug', 'verdict']);
@@ -79,17 +91,26 @@ test('classifyOrigin: an SSH endpoint no login names is forgejo, and tea binds i
 
 test('classifyOrigin: no-login and unrecognized are DIFFERENT verdicts', () => {
   const url = 'https://forge.example.com/org/repo.git';
-  // tea WAS consulted and named NO login at all: the fix is a login, and the
-  // line has to be able to say so. An EMPTY reading is the only thing that
-  // answers no-login now, and it still answers on the line it always printed.
+  // tea WAS consulted and named no login FOR THIS HOST: the fix is a login, and
+  // the line has to be able to say so. Both an empty reading and a reading whose
+  // logins name other hosts answer here, on the line it always printed - one
+  // verdict, because the user's move is the same in both.
   assert.equal(classifyOrigin(url, []).verdict, 'no-login');
+  assert.equal(classifyOrigin(url, TEA_LOGINS).verdict, 'no-login');
   assert.equal(decideIssueCheck({ enabled: true, classification: classifyOrigin(url, []) }).reason,
     'tea holds no login for forge.example.com: no tracker report');
   // tea could not be consulted at all - no reading exists to recognize it.
   assert.equal(classifyOrigin(url, null).verdict, 'unrecognized');
   assert.equal(classifyOrigin(url, undefined).verdict, 'unrecognized');
-  // ...and a reading that names a login answers forgejo, whatever the host is.
-  assert.equal(classifyOrigin(url, TEA_LOGINS).verdict, 'forgejo');
+  // ...and a reading that NAMES this host answers forgejo, by any of the three
+  // fields a login identifies its forge with.
+  for (const login of [
+    { name: 'forge.example.com', url: 'https://other.example', ssh_host: 'other.example' },
+    { name: 'work', url: 'https://forge.example.com', ssh_host: 'other.example' },
+    { name: 'work', url: 'https://other.example', ssh_host: 'forge.example.com' },
+  ]) {
+    assert.equal(classifyOrigin(url, [login]).verdict, 'forgejo', JSON.stringify(login));
+  }
 });
 
 test('classifyOrigin: an absent origin is no-remote, and garbage is unrecognized', () => {

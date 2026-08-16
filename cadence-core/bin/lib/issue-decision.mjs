@@ -157,20 +157,27 @@ function readOneIssue(text, number) {
  * sits SECOND in the config. The seam always spawns with `cwd` set to the
  * repository `--dir` names, which is what makes `origin` resolvable at all.
  *
- * THE ONE LIMIT OF DELEGATING IT, stated because it cannot be guarded here:
- * when NO login's host names the remote's host, tea does not refuse. It prints
- * `NOTE: no login matched this repository, falling back to login '<first>' in
- * non-interactive mode.` on STDERR, exits 0, and answers from config order -
- * i.e. a stranger's tracker, reported as this repository's. This seam cannot
- * see that happen: the NOTE is on stderr, which the caller discards by contract
- * (issue-check.mjs's header), tea 0.15.1 offers no strict/no-fallback flag, and
- * no subcommand reports which login answered. The fix is a login whose
- * `ssh_host` names the remote's host, and it is the user's to make in
- * `tea logins`. A host rule HERE was tried twice and could not be made correct
- * without a vendored public suffix list (see classifyOrigin); delegating to tea
- * and being honest about tea's fallback beats a curated rule this file would
- * keep getting wrong. `gh` and `glab` need no equivalent: neither is
- * multi-account-ambiguous the way tea's `--repo` fallback is.
+ * THE ONE LIMIT OF DELEGATING IT, and why the call is guarded rather than the
+ * binding: when NO login's host names the remote's host, tea does not refuse.
+ * It prints `NOTE: no login matched this repository, falling back to login
+ * '<first>' in non-interactive mode.` on STDERR, exits 0, and answers from
+ * config order - i.e. a stranger's tracker, reported as this repository's. This
+ * seam cannot SEE that happen: the NOTE is on stderr, which the caller discards
+ * by contract (issue-check.mjs's header), tea 0.15.1 offers no
+ * strict/no-fallback flag, and no subcommand reports which login answered.
+ *
+ * So it does not try to see it - it declines to ASK. `classifyOrigin` answers
+ * `no-login` unless some login NAMES the origin host exactly, which is the same
+ * condition tea itself falls back on, read from the same login list. That is a
+ * precondition on making the call, NOT a rule for picking a login: which login
+ * serves this remote is still tea's answer via `--remote origin`, and this file
+ * makes no host judgment beyond equality. The distinction matters because the
+ * PICKING rule was tried twice and could not be made correct without a vendored
+ * public suffix list (see classifyOrigin); the guard needs no such list, because
+ * exact equality guesses at nothing. The fix for a remote that fails it is a
+ * login whose `ssh_host` names the remote's host, and the `no-login` line says
+ * so. `gh` and `glab` need no equivalent: neither is multi-account-ambiguous
+ * the way tea's `--repo` fallback is.
  *
  * THE FORGEJO ROW ALONE LISTS `--state open` AND CARRIES A `resolve`. The
  * server clamps `tea issues list` at 50 rows whatever `--limit` asks for
@@ -306,11 +313,34 @@ function splitOrigin(url) {
  *
  * @param {unknown} originUrl the `git remote get-url origin` text, or ''/null
  * @param {unknown[]|null|undefined} teaLogins the logins a `tea login list`
- *   reading named, consulted for ONE fact - whether tea holds any login at all -
- *   or null/undefined when tea could not be consulted
+ *   reading named, consulted for ONE fact - whether any of them NAMES this
+ *   origin's host - or null/undefined when tea could not be consulted
  * @returns {{verdict:'github'|'gitlab'|'forgejo'|'no-login'|'no-remote'|'unrecognized',
  *   host:string|null, slug:string|null}}
  */
+/**
+ * Does one `tea login list` record NAME this host? The three fields a login
+ * identifies its forge by - its own `name`, its API `url`'s hostname and its
+ * `ssh_host` - compared lowercased and EXACTLY. No suffix, subdomain or
+ * registrable-domain reading: this is the guard's whole vocabulary, and the
+ * reason it needs no public suffix list is that it never asks what two hosts
+ * have in common.
+ * @param {unknown} login @param {string} host @returns {boolean}
+ */
+function loginNamesHost(login, host) {
+  if (!login || typeof login !== 'object') return false;
+  const rec = /** @type {Record<string, unknown>} */ (login);
+  for (const field of ['name', 'ssh_host']) {
+    const v = rec[field];
+    if (typeof v === 'string' && v.toLowerCase() === host) return true;
+  }
+  if (typeof rec.url === 'string') {
+    const m = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/]*@)?([^/:]+)/.exec(rec.url);
+    if (m && m[1].toLowerCase() === host) return true;
+  }
+  return false;
+}
+
 export function classifyOrigin(originUrl, teaLogins) {
   const url = typeof originUrl === 'string' ? originUrl.trim() : '';
   if (!url) return { verdict: 'no-remote', host: null, slug: null };
@@ -325,10 +355,15 @@ export function classifyOrigin(originUrl, teaLogins) {
   if (host === 'github.com' || host.endsWith('.github.com')) return { verdict: 'github', host, slug };
   if (host === 'gitlab.com' || host.endsWith('.gitlab.com')) return { verdict: 'gitlab', host, slug };
   if (!Array.isArray(teaLogins)) return { verdict: 'unrecognized', host, slug };
-  // The reading is consulted for its LENGTH and nothing else: a tea holding no
-  // login has no tracker this seam could read, and which login serves this
-  // origin is decided at the call by `--remote origin`, never here.
-  if (teaLogins.length === 0) return { verdict: 'no-login', host, slug };
+  // The GUARD, not a picker: unless some login names this host exactly, tea
+  // would fall back to config order and answer for a repository it has never
+  // heard of, exit 0, with its NOTE on the stderr this seam discards. Equality
+  // is the whole rule - it is the same condition tea falls back on, and it
+  // guesses at nothing, which is what the two deleted host rules could not say.
+  // WHICH login serves this remote stays tea's answer, via `--remote origin`.
+  if (!teaLogins.some((login) => loginNamesHost(login, host))) {
+    return { verdict: 'no-login', host, slug };
+  }
   return { verdict: 'forgejo', host, slug };
 }
 

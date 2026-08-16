@@ -46,7 +46,10 @@ const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-ic-')), 'no-global.json')
 const GH_BODY = '[{"number":42,"state":"OPEN"},{"number":47,"state":"CLOSED"},{"number":99,"state":"OPEN"}]';
 const GLAB_BODY = '[{"id":1,"iid":42,"state":"opened"},{"id":2,"iid":47,"state":"closed"},{"id":3,"iid":99,"state":"opened"}]';
 const TEA_BODY = '[{"index":"42","state":"open"},{"index":"47","state":"closed"},{"index":"99","state":"open"}]';
-const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.com","ssh_host":"forge.example.com","user":"t"}]';
+// A login whose `ssh_host` names the SSH endpoint while its name and url name
+// the web host - the split-endpoint shape this repository has, and the shape
+// the guard in classifyOrigin needs before it will let the call be made.
+const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.com","ssh_host":"ssh.example.com","user":"t"}]';
 
 /** A shell stub on PATH: records its argv, then prints `body` and exits `code`.
  *  `sleep` seconds before printing proves the call bound. `login` is the body
@@ -393,21 +396,45 @@ test('an EMPTY tea login list skips on the existing line, and queries nothing', 
     ['tea login list --output json'], readFileSync(argvLog, 'utf8'));
 });
 
-test('an origin no login names is bound to the REMOTE, never to a login picked here', () => {
-  // The rule this replaced: an origin sharing no registrable domain with any
-  // login skipped, and that domain math could not be made correct without a
-  // vendored public suffix list. So the seam no longer compares hosts - it asks
-  // tea, with `--remote origin`, which is the flag tea gives for exactly this
-  // ("Discover Gitea login from remote"). What a PATH stub can prove is that
-  // the flag rides every call and that no login name does; that tea honours it
-  // is measured live and recorded in lib/issue-decision.mjs's HOST_TABLE header.
+test('an origin NO login names skips, and asks tea nothing about it', () => {
+  // The guard, and the reason it is not the host rule that was deleted twice.
+  // `--remote origin` binds tea to the checkout's own remote ("Discover Gitea
+  // login from remote"), but tea does NOT refuse when no login matches: it
+  // falls back to config order, exits 0, and says so only on the stderr this
+  // seam discards - so an unguarded call reports a stranger's tracker as this
+  // repository's, which is the exact failure the phase goal names. The seam
+  // therefore declines to ask unless some login NAMES this host. That question
+  // is equality, never a shared-suffix reading, which is why it needs no
+  // vendored public suffix list.
   const dir = repo({ originUrl: 'https://git.stranger.org/org/repo.git', commits: COMMITS });
   const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
   const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
     { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, argvLog });
   assert.equal(status, 0, 'a stranger host must not fail the land');
-  assert.equal(envelope.action, 'report', JSON.stringify(envelope));
+  assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
+  assert.equal(envelope.reason, 'tea holds no login for git.stranger.org: no tracker report');
   assert.equal(envelope.host, 'git.stranger.org', 'the ORIGIN host, never a login\'s');
+  assert.deepEqual(envelope.referenced, []);
+  assert.deepEqual(envelope.open, []);
+  // The login probe ran; no issue query did. A skip that still queried would be
+  // the affirmative answer this arm exists to refuse.
+  const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
+  assert.equal(lines.filter((l) => l.startsWith('tea issues')).length, 0, lines.join('\n'));
+  assert.equal(lines.filter((l) => l.startsWith('tea login list')).length, 1, lines.join('\n'));
+});
+
+test('a split-endpoint origin a login NAMES is bound to the REMOTE, not to a login picked here', () => {
+  // The other side of the guard: it clears, and the seam still picks no login.
+  // What a PATH stub can prove is that `--remote origin` rides every call and
+  // that no login name does; that tea honours it is measured live and recorded
+  // in lib/issue-decision.mjs's HOST_TABLE header.
+  const dir = repo({ originUrl: SPLIT_ORIGIN, commits: COMMITS });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, argvLog });
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'report', JSON.stringify(envelope));
+  assert.equal(envelope.host, 'ssh.example.com', 'the ORIGIN host, never a login\'s');
   const queries = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => l.startsWith('tea issues'));
   assert.equal(queries.length, 1, queries.join('\n'));
   assert.match(queries[0], /--remote origin(\s|$)/, queries[0]);
@@ -432,7 +459,7 @@ const TEA_OPEN_BODY = '[{"index":"42","state":"open"},{"index":"99","state":"ope
 // another server's issues as this repository's, exit 0 and all.
 const TWO_LOGINS = JSON.stringify([
   { name: 'evil.example.net', url: 'https://evil.example.net', ssh_host: 'evil.example.net', user: 't' },
-  { name: 'forge.example.com', url: 'https://forge.example.com', ssh_host: 'forge.example.com', user: 't' },
+  { name: 'forge.example.com', url: 'https://forge.example.com', ssh_host: 'ssh.example.com', user: 't' },
 ]);
 
 test('forgejo: every call is bound with --remote origin, and none with --login', () => {
