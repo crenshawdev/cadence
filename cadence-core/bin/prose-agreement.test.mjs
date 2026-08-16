@@ -985,3 +985,42 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
   assert.deepEqual(seen.sort(), ['adjudication', 'gate_pass', 'override', 'rearm'],
     'the four blocking settle points no longer print one fenced receipt command each');
 });
+
+// --- MSR-01: the close-half turn rule is stated ONCE, in seams.md ------------
+//
+// `--turns` is dead the moment its ONE statement stops naming it: nothing in
+// the tree can make a coordinator read a tool-call count off a subagent return
+// except this paragraph, and the checks that exist around it are all blind to
+// its content. self-verify's flag lint only refuses a flag the CONTRACTS row
+// does not list, the weight budget only counts bytes, and the producer census
+// in trace.test.mjs reads the ten CLOSE COMMAND lines rather than the rule they
+// point at - so deleting the rule while leaving the flags in place is green
+// everywhere else. Read by its NAMED anchor (the paragraph's bolded opening),
+// never by the shape of the sentences around it, so a rewrap that changed no
+// fact stays green.
+
+test('MSR-01: seams.md\'s close-half rule states the turn count, its omission and its own counter', () => {
+  const text = doc('cadence-core', 'references', 'seams.md');
+  const start = text.indexOf('**The bracket rides the resolve.**');
+  assert.ok(start >= 0, 'seams.md has no `The bracket rides the resolve.` paragraph');
+  // To the end of the paragraph: the ONE statement is a single block, and a
+  // rule that drifted into a paragraph of its own is exactly what this refuses.
+  const end = text.indexOf('\n\n', start);
+  assert.ok(end > start, 'the bracket paragraph never ends');
+  const para = text.slice(start, end).replace(/\s+/g, ' ');
+
+  // 1. The count is CARRIED, with the same provenance `--tokens` has.
+  assert.match(para, /`--turns <the tool-call count on that same return>`/,
+    'the close-half rule no longer tells a caller to carry the tool-call count');
+  // 2. ...and OMITTED when the return carries none, never sent as zero.
+  assert.match(para, /OMIT `--turns`[\s\S]*?never `--turns 0`/,
+    'the close-half rule no longer states that an absent turn count is omitted rather than 0');
+  // 3. ...and a turn-figureless return renders under a counter of its OWN.
+  assert.match(para, /`turns_unrecorded`, distinct from the token `unrecorded`/,
+    'the close-half rule no longer states that turns have an unrecorded counter of their own');
+
+  // ...and it is still ONE statement. A second paragraph restating any of the
+  // three is how a rule starts disagreeing with itself across two sites.
+  assert.equal((text.match(/ONE statement/g) || []).length, 1,
+    'seams.md now holds more than one `ONE statement` marker - the rule was copied, not extended');
+});

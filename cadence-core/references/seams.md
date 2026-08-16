@@ -117,16 +117,23 @@ sites used to pay two. `--bracket-plan` is the worker key when it is not the
 role name (an executor's plan number). The CLOSE half stays with the caller,
 which alone sees the return: ONE `trace close` per dispatch moment, keyed
 `--plan <the worker key>` and `--role <name>`, carrying
-`--tokens <the figure on the subagent return>`. The seam fixes the family and
+`--tokens <the figure on the subagent return>` and
+`--turns <the tool-call count on that same return>`. The seam fixes the family and
 picks the arm off the DETAIL, whichever flag carried it (`--detail`, or
 `--detail-file <path>` when the text is the worker's own): absent means
 `return`, present means `checkpoint` (the worker came back empty, unmarked or
 unusable). `escalation` on a path
 change is NOT inferred and stays on `trace append`. OMIT `--tokens` when the
 return carries no figure - never `--tokens 0`, which would claim a dispatch
-that cost nothing. A
+that cost nothing - and OMIT `--turns` on the same rule when the return carries
+no tool-call count, never `--turns 0`, which would claim a dispatch that used
+no tools. A
 figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
-`unrecorded` it produces names a silent return, never a skipped bracket. This
+`unrecorded` it produces names a silent return, never a skipped bracket. A
+turn-figureless return is routine in the same way and renders under a counter
+of its OWN, `turns_unrecorded`, distinct from the token `unrecorded`, so a
+dispatch that reported tokens but no turns stays readable apart from one that
+reported turns but no tokens. This
 paragraph is the ONE statement of that rule; dispatch sites point here rather
 than restating it.
 
