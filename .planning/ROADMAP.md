@@ -46,7 +46,7 @@ built in.
 ## Phases
 
 - [x] **Phase 1: Authorization the repo grants, not the user** - `git.auto_close` resolves as two distinct booleans, and no unattended external mutation runs on any host, GitLab included, without the repo-layer one
-- [ ] **Phase 2: The seams that fail quietly** - a wrapped requirement bullet survives the prune whole, and a Forgejo remote whose SSH endpoint differs from its web host gets a tracker report
+- [x] **Phase 2: The seams that fail quietly** - a wrapped requirement bullet survives the prune whole, and a Forgejo remote whose SSH endpoint differs from its web host gets a tracker report
 
 ## Phase Details
 
