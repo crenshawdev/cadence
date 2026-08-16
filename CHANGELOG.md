@@ -6,6 +6,63 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-08-16
+
+### Fixed
+
+- **A `git.auto_close` set once in your global config authorized an unattended
+  merge in every repository you own.** The key is documented repo-local, and the
+  close gate enforced it by reading the repository layer, but the GitLab arm of
+  `/cad-land` read the merged value instead. Set it globally and any repo with a
+  GitLab remote would open an MR and merge it with nothing asked. It now resolves
+  as two separate answers, `autoCloseRequested` from the merged config and
+  `autoCloseAuthorized` from the repository layer alone, and the new
+  `git-publish.mjs authorized` subcommand is what every host consults before it
+  touches a remote. Requesting it globally and never authorizing it here now
+  refuses in wording that says which of the two is missing.
+
+  The GitLab consult also moved ahead of the reuse probe rather than sitting
+  beside the create. `glab mr create` publishes the source branch itself, and the
+  reuse arm hands an already-open MR straight to the merge with no create at all,
+  so a check placed at the create left that path ungated.
+
+- **`milestone-prune` read only the first physical line of a requirement
+  bullet, and both halves of the transform were wrong for it.** A bullet that
+  wrapped lost its lead line and left every continuation behind as orphaned
+  prose, and the archived `## Shipped` row got a parenthetical truncated at the
+  first newline. Three consecutive milestone closes were repaired by hand. It now
+  reads the whole span, takes both ends of `## Active` from the fence-aware
+  `sectionSpan` so a fenced example in a template is not mistaken for the
+  section, and escapes any `|` in the summary before it reaches the table cell,
+  so the row keeps its five columns.
+
+- **`/cad-land` never once reported the tracker on the repository it was built
+  in.** Host detection compared the origin URL's hostname against the `tea` login
+  list, and a forge whose SSH endpoint is a different name from its web host
+  matched nothing, which is an ordinary deployment shape rather than a
+  misconfiguration. The seam now hands the binding to `tea` itself with
+  `--remote origin`, and guards the call rather than the pick: unless some login
+  NAMES the origin host through its name, API url or `ssh_host`, it declines to
+  ask and prints the `no-login` line it always printed. `tea` does not refuse an
+  unmatched remote, it falls back to config order and answers exit 0, so an
+  unguarded call would report another server's issues as yours.
+
+  If your forge has a split endpoint, put the SSH host in the login's `ssh_host`
+  and the report will bind to it.
+
+### Changed
+
+- The Forgejo tracker read asks for `--state open` instead of `--state all`. The
+  server clamps a page at 50 rows whatever `--limit` requests, so on any real
+  tracker the read was honestly incomplete and the whole report degraded to a
+  skip line. What that costs is that a referenced number missing from the list is
+  closed or absent rather than absent, so each unanswered number gets one bounded
+  `tea issues <index>` resolve, capped at five per land. A number that neither
+  the list nor a resolve answered is reported as `unresolved`, never as closed
+  and never as not found: `tea` exits nonzero both for an absent issue and for a
+  failed read, and this seam discards child stderr, so naming it would be an
+  affirmative answer about input it could not read.
+
 ## [3.5.0] - 2026-08-15
 
 ### Added
@@ -2730,6 +2787,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.1
 [3.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.0
 [3.4.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.1
 [3.4.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.4.0
