@@ -3419,6 +3419,28 @@ function cmdRiskCheckRun(dir, opts) {
  */
 const planKey = (v) => (v === undefined || v === null ? '' : String(v));
 
+/** The trigger a risk RECEIPT has to name. One constant, because the detector
+ * that writes the record and the gate that fires on it are the same trigger,
+ * and a second spelling is how the two halves start clearing each other. */
+const RISK_TRIGGER = 'risk_surface';
+
+/**
+ * The four `outcome` event names a blocking `risk_surface` fire can settle at,
+ * and the whole vocabulary `risk-check status` accepts as proof the fire
+ * HAPPENED (GAT-04):
+ *   - `adjudication` - the adjudicated arm reported its survivors
+ *   - `rearm`        - the one-round re-arm fired a narrowed second round
+ *   - `gate_pass`    - the fire came back with nothing blocker/high
+ *   - `override`     - the user cleared a FAIL deliberately, reason on file
+ * `gate_pass` is here because the roadmap's stated acceptance set has no arm
+ * for a clean pass and a blocking PASS wrote nothing: without it, every matched
+ * range whose fire found no blocker would be permanently unclearable, and this
+ * tree has already stated its verdict on that shape - an unclearable gate is
+ * one that gets bypassed. A FIFTH name would be a state nothing produces; the
+ * producers are references/triage-gate.md and references/review-triggers.md.
+ */
+const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override'];
+
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'risk-check status needs --phase <N>');
@@ -3643,9 +3665,46 @@ function cmdRiskCheckStatus(dir, opts) {
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
       inconclusive: e.inconclusive === true,
+      // The category TOKENS `cmdRiskCheckRun` writes onto every record and this
+      // reader used to drop. They are what makes a range FIRED: a record
+      // carrying one is a range workflows/execute.md was obliged to fire the
+      // blocking `risk_surface` gate on. A non-array (an older seam, a
+      // hand-edited line) reads as no tokens, never as a match nobody can name.
+      matches: Array.isArray(e.matches) ? e.matches.filter((m) => typeof m === 'string') : [],
     };
     records.get(k).push(rec);
     byPlan.get(p).push(rec);
+  }
+
+  /**
+   * THE FIRE'S OWN RECEIPTS, keyed the same way the records are (GAT-04).
+   *
+   * The defect: `risk-check status` proved a range was READ and RECORDED, and
+   * stopped there. A coordinator could run the detector, watch it match
+   * `secrets`, skip the blocking `risk_surface` fire entirely and still be told
+   * `ok:true` - the gate reporting success for the one thing it exists to make
+   * unskippable. "The detector ran" and "the fire happened" are two different
+   * claims, so they are two different receipts and this reader demands both.
+   *
+   * Four event names, because those are the four outcomes a blocking fire can
+   * reach: the adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
+   * and references/triage-gate.md's two settle points - `gate_pass` when
+   * nothing blocker/high survived, `override` when the user cleared a FAIL
+   * deliberately. A fifth name would be a state nothing produces.
+   *
+   * The trigger is read off the STRUCTURED `trigger` field and never parsed out
+   * of `detail` (D-12): measured on this repository's 35 `outcome/adjudication`
+   * events the trigger is spelled four different ways in that free text, so a
+   * reader that parsed it would clear a range on a spelling and refuse an
+   * identical one on another.
+   * @type {Set<string>}
+   */
+  const receipts = new Set();
+  for (const e of r.events) {
+    if (!inCycle(e)) continue;
+    if (e.family !== 'outcome' || !FIRE_RECEIPTS.includes(e.event)) continue;
+    if (e.trigger !== RISK_TRIGGER) continue;
+    receipts.add(rowKey(e.corr, e.plan));
   }
 
   const rows = [...completed.entries()].map(([k, row]) => {
@@ -3669,27 +3728,59 @@ function cmdRiskCheckStatus(dir, opts) {
     // would otherwise pass on the record its earlier, narrower range left. Both
     // ref pairs are named so the reader can see which one it has. UNCHECKED is
     // the third state: the range was named and attempted, and nothing was read.
+    //
+    // The records that actually SATISFY the row, which is a narrower set than
+    // `usable` on the named-range arm: only a record for the asked commit pair
+    // answers there. Both the state below and the fire receipt read this same
+    // set, so the row cannot be `recorded` on one record and judged fired on
+    // another.
+    const satisfying = asked ? usable.filter(sameRange) : usable;
+    // A FIRED range: the detector read it and came back with category tokens or
+    // with `inconclusive: true`, which is the pair of conditions
+    // workflows/execute.md fires the blocking `risk_surface` gate on. Anything
+    // else is a range the gate had no reason to fire on, and demanding a
+    // receipt for it would refuse a clean phase.
+    const fired = satisfying.some((f) => f.matches.length > 0 || f.inconclusive);
+    // UNFIRED is the fifth state, and it sits ON TOP of the four above rather
+    // than in place of any of them: a record that never read its range is still
+    // `unchecked`, a stale one is still `stale`. This one is reached only where
+    // the range WAS read and recorded, matched, and no receipt says the fire
+    // that had to follow ever happened. The join is the row's own identity -
+    // `rowKey(corr, plan)`, which for the asked row is the
+    // `planRow(r.corr, wanted.plan)` this invocation registered.
     const state = asked
-      ? (usable.some(sameRange) ? 'recorded'
+      ? (usable.some(sameRange) ? (fired && !receipts.has(k) ? 'unfired' : 'recorded')
         : found.some(sameRange) ? 'unchecked'
           : found.length ? 'stale' : 'missing')
-      : (usable.length ? 'recorded' : (found.length ? 'unchecked' : 'missing'));
+      : (usable.length ? (fired && !receipts.has(k) ? 'unfired' : 'recorded')
+        : (found.length ? 'unchecked' : 'missing'));
     return { ...row, state, records: found, ...(asked ? { wanted: asked } : {}) };
   });
 
   const offending = rows.filter((row) => row.state !== 'recorded');
   if (offending.length) {
+    // The hint names the step that is actually MISSING. Every offending row in
+    // the `unfired` state has its record already: telling that caller to re-run
+    // the detector would send it to re-do the half it did, and leave the gate
+    // refusing for the same reason a second time. Where the offending set is
+    // mixed, the record hint leads - the fire cannot be recorded for a range
+    // nothing has read.
+    const unfiredOnly = offending.every((row) => row.state === 'unfired');
     // Emitted directly rather than through fail(): its reason/detail/hint shape
     // has no channel for the list, and the list is the whole point of the
     // refusal - exactly as cmdLeaseCheck's `undeclared-files` arm reasons.
     return emit({
       ok: false,
-      reason: 'risk-record-missing',
+      reason: unfiredOnly ? 'risk-fire-missing' : 'risk-record-missing',
       phase: n,
       plans: rows,
       missing: offending.map((row) => row.plan),
-      hint: `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
-        + ' for each plan listed, then re-run this check',
+      hint: unfiredOnly
+        ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
+          + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
+          + ' then re-run this check'
+        : `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
+          + ' for each plan listed, then re-run this check',
     });
   }
   // Nothing to require is not a failure: a phase with no completed executor
