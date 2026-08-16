@@ -26,7 +26,26 @@ on this path is a real defect to report, not the fork-point default.
 4. Remove each merged worktree and delete its branch.
 5. After all batches: read the key HERE, at its only consumer -
    `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" get workflow.test_command` -
-   and run it once if set; then fire the
+   and run it once if set.
+
+   Then the risk sequence, per plan, in the main tree the merges landed in - a
+   fire issued before them asks git for a commit this tree does not hold:
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check run --phase <N> --plan <k> --base {that plan's pre-merge HEAD from step 3} --head {that plan's post-merge HEAD from step 3}`
+   That pair and never the pre-plan HEAD, for the reason step 3 records both
+   ends. What that answer means, when the trigger fires, the range-diff file it
+   fires with and its rails, and the blocking gate with its capped re-arm are
+   stated ONCE, at `workflows/execute.md`'s `execute_sequential` step - the file
+   this reference is read from, so it is already resident: follow it there and
+   restate none of it here. The fire is PER PLAN, so each plan's survivors
+   persist under their own `plan-<k>` discriminator and a later plan's empty
+   settle cannot overwrite an earlier plan's file. Then, before that plan is
+   reported done:
+   `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" risk-check status --phase <N> --plan <k> --base {that plan's pre-merge HEAD from step 3} --head {that plan's post-merge HEAD from step 3}`
+   The same triple and never the phase-wide arm, which compares no range and
+   would clear this plan on a record an earlier and narrower one left. The plan
+   is NOT reported done while that call refuses.
+
+   Then fire the
    `diff` trigger for every plan CONCURRENTLY in one message (artifact: shape
    (a), the refs `{base_ref: that plan's pre-merge HEAD from step 3, head_ref:
    that plan's post-merge HEAD from step 3}`) - the ranges are static and
