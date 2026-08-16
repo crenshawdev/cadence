@@ -954,6 +954,142 @@ export function parseContextDecisions(text) {
 }
 
 // ---------------------------------------------------------------------------
+// ARCHIVE.md - the recall residue a milestone close leaves behind (RCL-07).
+//
+// A close removes `.planning/phases/<N>/`, and with it every SUMMARY deviation,
+// UAT item and CONTEXT decision that phase produced: the corpus above is
+// reachable only while the phase directory is live, so the record Cadence
+// writes in order to be remembered stopped being reachable at exactly the
+// moment the work retired. The residue is a top-level `.planning/ARCHIVE.md`
+// written BEFORE the directories go (D-01), carrying the SAME snippets the live
+// walk indexes rather than a distillation of them (D-03).
+//
+// The grammar has ONE home, here, in the module that already owns every other
+// corpus parser - and for the reason `CAPTURE_WALK_SECTIONS` above states in
+// full. `cmdMilestonePrune` writes this file and `cmdRecall` reads it: that is
+// a writer/reader pair over one walk, which is the exact arrangement whose
+// split-brain cost five filed bullets. So the parser and the appender sit
+// beside each other and share the two patterns below.
+// ---------------------------------------------------------------------------
+
+/**
+ * One residue row: a column-0 `- `, the ORIGIN path in backticks, a colon, a
+ * space, then the snippet to end of line.
+ *
+ * The path is fully constrained - `phases/<n>/` and one of the three indexed
+ * filenames, `<n>` an integer or a decimal `N.M`, the same phase-number shape
+ * `cmdRecall`'s directory filter admits - and that is what lets the snippet
+ * carry a backtick, a colon or a pipe with no second escaping rule: the closing
+ * backtick is found by position, and nothing after `: ` is parsed at all.
+ */
+const ARCHIVE_ROW = /^- `(phases\/(\d+(?:\.\d+)?)\/(?:SUMMARY|UAT|CONTEXT)\.md)`: (.*)$/;
+
+/** A column-0 `## ` heading opens a milestone section; its label is the rest. */
+const ARCHIVE_SECTION = /^## (.*)$/;
+
+/**
+ * The preamble an empty residue file is created with. It names the writer and
+ * the reader because this file has exactly one of each, and a human who finds
+ * it in a repository has no other way to learn that. It carries a `# ` title
+ * and deliberately NO column-0 `## ` heading, so no part of it can be read as a
+ * milestone section by the parser below.
+ */
+const ARCHIVE_PREAMBLE = `# Archive: the recall residue of closed milestones
+
+Written by \`planning.mjs milestone-prune\` before it removes a phase directory,
+read by \`planning.mjs recall\` beside CAPTURE.md. One section per closed
+milestone, one \`- \` row per snippet, each row naming the artifact it came from.
+A line that is not a row is skipped, so a note added here mints no recall entry.
+`;
+
+/**
+ * ARCHIVE.md rows in document order, as the `{text, source, phase}` shape
+ * `cmdRecall` already builds its corpus from.
+ *
+ * `source` is the milestone label and the origin path joined by a slash
+ * (`v3.5.2/phases/1/SUMMARY.md`), so one result names both the artifact that
+ * produced the snippet (D-04) and the milestone that retired it, while the
+ * rendered contract stays exactly four fields wide - `phase` keeps the meaning
+ * every live row gives it rather than being spent on the label.
+ *
+ * A line that does not match `ARCHIVE_ROW` is not a row and is skipped, the
+ * posture `parseContextDecisions` takes on a non-`D-NN` line, so a human note in
+ * this file cannot mint a corpus entry. A row above the first `## ` heading
+ * belongs to no milestone and is skipped for the same reason.
+ *
+ * Pure reader, so it normalizes through the shared `normalize` (BOM, CRLF, lone
+ * CR) exactly as `captureSections` does: a CRLF checkout must index as its
+ * plain-LF twin.
+ * @param {string} text
+ * @returns {Array<{text: string, source: string, phase: number}>}
+ */
+export function parseArchiveRows(text) {
+  const out = [];
+  /** @type {string|null} */
+  let label = null;
+  for (const line of normalize(text).split('\n')) {
+    const h = line.match(ARCHIVE_SECTION);
+    if (h) { label = h[1].trim(); continue; }
+    if (label === null) continue;
+    const m = line.match(ARCHIVE_ROW);
+    if (!m) continue;
+    out.push({ text: m[3], source: `${label}/${m[1]}`, phase: Number(m[2]) });
+  }
+  return out;
+}
+
+/**
+ * Land `rows` under `label`'s section in ARCHIVE.md `text` and return the new
+ * text. Rows go after that section's LAST row when the label already has a
+ * section, so a resumed close extends its own heading instead of minting a
+ * second one; otherwise they go into a new section at end of text. Text that is
+ * empty gets `ARCHIVE_PREAMBLE` first. Everything not inserted is byte-
+ * preserved, and nothing here does I/O or throws.
+ *
+ * Snippet and label are FLATTENED on write, the discipline `renderUat` states
+ * for the same reason: an embedded newline becomes its own line on the next
+ * parse, where a snippet's tail is silently skipped and a label's tail splits
+ * the heading. Flatten on write, never trust callers. A row whose text is empty
+ * after the flatten is dropped rather than written as a row with no snippet -
+ * an empty corpus entry ranks against every query and says nothing.
+ *
+ * @param {string} text @param {string} label
+ * @param {Array<{origin: string, text: string}>} rows
+ * @returns {string}
+ */
+export function appendArchiveRows(text, label, rows) {
+  const flat = (v) => String(v ?? '').replace(/\s*\n+\s*/g, ' ').trim();
+  const emitted = (rows || [])
+    .filter((r) => r && flat(r.text))
+    .map((r) => `- \`${flat(r.origin)}\`: ${flat(r.text)}`);
+  if (!emitted.length) return text;
+  const head = flat(label);
+  const base = typeof text === 'string' ? text : '';
+  if (!base.trim()) return `${ARCHIVE_PREAMBLE}\n## ${head}\n\n${emitted.join('\n')}\n`;
+
+  const lines = base.split('\n');
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(ARCHIVE_SECTION);
+    if (h && h[1].trim() === head) { start = i; break; }
+  }
+  if (start === -1) {
+    return `${base}${base.endsWith('\n') ? '' : '\n'}\n## ${head}\n\n${emitted.join('\n')}\n`;
+  }
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (ARCHIVE_SECTION.test(lines[i])) { end = i; break; }
+  }
+  let last = -1;
+  for (let i = start + 1; i < end; i++) if (ARCHIVE_ROW.test(lines[i])) last = i;
+  // A section with no row yet takes a blank line with its first one, so the
+  // heading keeps the blank the new-section arm gives it.
+  lines.splice(last === -1 ? start + 1 : last + 1, 0,
+    ...(last === -1 ? ['', ...emitted] : emitted));
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // CONTEXT.md - the `## Acceptance criteria` grammar. Stated in full at
 // cadence-core/references/acceptance-criteria.md; this section is that
 // grammar's single implementation, and `planning.mjs criteria-coverage` is its

@@ -20,6 +20,7 @@ import {
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
+  parseArchiveRows, appendArchiveRows,
 } from './lib/planning-files.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1874,4 +1875,109 @@ test('captureSections: a FENCED ## line inside a body does not mint a section', 
 
 test('captureSections: a CRLF checkout counts exactly as its plain-LF twin', () => {
   assert.deepEqual(captureSections(CENSUS.replace(/\n/g, '\r\n')), captureSections(CENSUS));
+});
+
+// --- the ARCHIVE.md residue grammar (parseArchiveRows / appendArchiveRows) ---
+// One home for the grammar, one pair of tests: the appender writes what the
+// parser reads, so the round trip below is the whole claim. `source` is the
+// milestone label and the origin path joined by a slash, which is what keeps a
+// SUMMARY deviation, a UAT item and a CONTEXT decision from one closed phase
+// distinguishable in a single recall result (D-04).
+
+/** The three-row residue a one-phase close writes, under one milestone label. */
+const ARCHIVE_ROWS = [
+  { origin: 'phases/1/SUMMARY.md', text: 'the guard fired on a range it did not own' },
+  { origin: 'phases/1/UAT.md', text: 'walk the install from a cold clone' },
+  { origin: 'phases/1/CONTEXT.md', text: 'D-01 (RCL-07): the residue is written before the dirs go' },
+];
+
+test('archive: a written row round-trips its snippet byte-identically', () => {
+  const snippet = ARCHIVE_ROWS[0].text;
+  const text = appendArchiveRows('', 'v3.5.2', [ARCHIVE_ROWS[0]]);
+  assert.deepEqual(parseArchiveRows(text),
+    [{ text: snippet, source: 'v3.5.2/phases/1/SUMMARY.md', phase: 1 }]);
+});
+
+test('archive: each origin filename keeps its own source', () => {
+  const text = appendArchiveRows('', 'v3.5.2', ARCHIVE_ROWS);
+  assert.deepEqual(parseArchiveRows(text).map((r) => r.source), [
+    'v3.5.2/phases/1/SUMMARY.md',
+    'v3.5.2/phases/1/UAT.md',
+    'v3.5.2/phases/1/CONTEXT.md',
+  ]);
+});
+
+test('archive: a decimal phase number parses to the decimal, never to 21', () => {
+  const text = appendArchiveRows('', 'v3.5.2',
+    [{ origin: 'phases/2.1/SUMMARY.md', text: 'the hotfix phase' }]);
+  assert.deepEqual(parseArchiveRows(text),
+    [{ text: 'the hotfix phase', source: 'v3.5.2/phases/2.1/SUMMARY.md', phase: 2.1 }]);
+});
+
+test('archive: a snippet carrying a colon, a backtick and a pipe survives whole', () => {
+  // The three characters that break a naive reader: the row separator, the
+  // path delimiter, and the character archiveRequirements has to escape for a
+  // table cell. Nothing after `: ` is parsed, so none of them needs escaping.
+  const snippet = 'note: `parsePlanFiles` refuses `a|b` - see phases/9/UAT.md: row 3';
+  const text = appendArchiveRows('', 'v3.5.2', [{ origin: 'phases/1/SUMMARY.md', text: snippet }]);
+  assert.equal(parseArchiveRows(text)[0].text, snippet);
+});
+
+test('archive: a non-matching line under a section mints no row', () => {
+  const text = [
+    '## v3.5.2',
+    '',
+    '- `phases/1/SUMMARY.md`: a real row',
+    '- a hand-written note with no origin path',
+    '- `phases/1/PLAN.md`: an artifact the walk never indexed',
+    '- `phases/x/SUMMARY.md`: a non-numeric phase',
+    'prose that is not a bullet at all',
+    '',
+  ].join('\n');
+  assert.deepEqual(parseArchiveRows(text).map((r) => r.text), ['a real row']);
+});
+
+test('archive: a row above the first heading belongs to no milestone and is skipped', () => {
+  const text = '- `phases/1/SUMMARY.md`: orphaned\n\n## v3.5.2\n\n- `phases/1/UAT.md`: kept\n';
+  assert.deepEqual(parseArchiveRows(text).map((r) => r.text), ['kept']);
+});
+
+test('archive: a second append under the same label extends the existing section', () => {
+  const first = appendArchiveRows('', 'v3.5.2', [ARCHIVE_ROWS[0]]);
+  const second = appendArchiveRows(first, 'v3.5.2', [ARCHIVE_ROWS[1]]);
+  assert.equal((second.match(/^## v3\.5\.2$/gm) || []).length, 1, 'one heading, never two');
+  assert.deepEqual(parseArchiveRows(second).map((r) => r.source),
+    ['v3.5.2/phases/1/SUMMARY.md', 'v3.5.2/phases/1/UAT.md']);
+  // A different label gets its own section, and the earlier one is untouched.
+  const third = appendArchiveRows(second, 'v3.5.3', [{ origin: 'phases/2/SUMMARY.md', text: 'later work' }]);
+  assert.ok(third.startsWith(second.endsWith('\n') ? second : `${second}\n`), 'the earlier bytes are preserved');
+  assert.deepEqual(parseArchiveRows(third).map((r) => r.source), [
+    'v3.5.2/phases/1/SUMMARY.md',
+    'v3.5.2/phases/1/UAT.md',
+    'v3.5.3/phases/2/SUMMARY.md',
+  ]);
+});
+
+test('archive: an append into empty text writes a preamble with no column-0 ## heading', () => {
+  const text = appendArchiveRows('', 'v3.5.2', [ARCHIVE_ROWS[0]]);
+  const preamble = text.split('\n## ')[0];
+  assert.ok(preamble.length > 0, 'there is a preamble at all');
+  assert.ok(!/^## /m.test(preamble), 'nothing in it can read as a milestone section');
+  assert.ok(/^# /m.test(preamble), 'it carries a title');
+  assert.match(preamble, /milestone-prune/, 'it names its writer');
+  assert.match(preamble, /recall/, 'it names its reader');
+});
+
+test('archive: an empty row set changes nothing; a newline is flattened on write', () => {
+  assert.equal(appendArchiveRows('# Archive\n', 'v3.5.2', []), '# Archive\n');
+  assert.equal(appendArchiveRows('# Archive\n', 'v3.5.2', [{ origin: 'phases/1/UAT.md', text: '  ' }]),
+    '# Archive\n', 'a row with no snippet is dropped, not written empty');
+  const text = appendArchiveRows('', 'v3.5.2',
+    [{ origin: 'phases/1/SUMMARY.md', text: 'first line\nsecond line' }]);
+  assert.equal(parseArchiveRows(text)[0].text, 'first line second line');
+});
+
+test('archive: a CRLF residue parses exactly as its plain-LF twin', () => {
+  const text = appendArchiveRows('', 'v3.5.2', ARCHIVE_ROWS);
+  assert.deepEqual(parseArchiveRows(text.replace(/\n/g, '\r\n')), parseArchiveRows(text));
 });
