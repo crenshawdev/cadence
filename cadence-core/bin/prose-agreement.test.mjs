@@ -841,3 +841,94 @@ test('ENFORCEMENT, task.md: done is withheld on `written: false`', () => {
     "task.md's risk_check step states the written flag but not that done is withheld on it - "
     + 'detection without enforcement is the outcome RSK-02 exists to prevent');
 });
+
+// --- PAR-01: the parallel branch reaches the SAME risk sequence, by pointer ---
+//
+// Watched FAILING at e4f95a3, this plan's unpatched baseline: `grep -c
+// risk-check cadence-core/references/execute-parallel.md` returned 0 there,
+// against 2 for `cadence-core/workflows/execute.md`. The one gate that is
+// `blocking` at every stakes level fired on the sequential path and nowhere
+// else, so all three checks below go red against that SHA - the first two on
+// the two absent command names, the third on the invocation it cannot find.
+//
+// Three checks and not one, because they fail apart: a tree can call both
+// commands while copying the sequence (1), while never withholding done on the
+// refusal (2), or while naming a range that is not this plan's own (3).
+
+test('PAR-01: the parallel path REACHES execute.md\'s risk sequence instead of copying it', () => {
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const parallel = doc('cadence-core', 'references', 'execute-parallel.md');
+
+  assert.match(parallel, /risk-check run/,
+    'the parallel path never asks the seam whether a plan\'s range touched a risk surface');
+  assert.match(parallel, /risk-check status/,
+    'the parallel path detects a risk surface but never re-reads the record before reporting done');
+
+  // The POINTER, both ends. A named step that no longer exists is a pointer
+  // into nothing, which is the state a copy gets pasted back in to fix.
+  assert.match(parallel, /execute_sequential/,
+    'the parallel path names no step of workflows/execute.md as the sequence it defers to');
+  assert.match(execute, /<step name="execute_sequential">/,
+    'workflows/execute.md no longer carries the step references/execute-parallel.md points at');
+
+  // Two markers workflows/execute.md demonstrably owns today - its fire rule
+  // (`inconclusive`) and its transient-file rail (`never stage it`). Markers
+  // rather than whole paragraphs: this must redden on a PASTE-BACK in either
+  // direction, not on a reformat that changed no fact. A second copy of one
+  // rule is two statements that disagree at the next edit.
+  for (const marker of [/inconclusive/, /never stage it/]) {
+    assert.match(execute, marker,
+      `workflows/execute.md lost ${marker}, the sequence references/execute-parallel.md defers to`);
+    assert.doesNotMatch(parallel, marker,
+      `references/execute-parallel.md restates ${marker}, which workflows/execute.md states - `
+      + 'the parallel path points at that sequence and carries no copy of it');
+  }
+});
+
+test('ENFORCEMENT, execute-parallel.md: a plan is not reported done while risk-check status refuses', () => {
+  // The sibling of `ENFORCEMENT, execute.md` above, for the other branch:
+  // detection without enforcement passes every other check here and is exactly
+  // the outcome RSK-02 exists to prevent.
+  const parallel = doc('cadence-core', 'references', 'execute-parallel.md');
+  assert.match(parallel, /risk-check status/,
+    'the parallel path never calls risk-check status before reporting a plan done');
+  assert.match(parallel, /not reported done while that call refuses/i,
+    'the parallel path calls risk-check status without withholding done on its refusal - '
+    + 'detection without enforcement is the outcome RSK-02 exists to prevent');
+});
+
+test('PAR-01: both parallel risk-check calls name that plan\'s OWN merge range', () => {
+  // The two checks above assert only that the command NAMES are there, and a
+  // range identity is what the fire is actually about: a plan fired on
+  // `{PHASE_START, HEAD}` or on the pre-plan HEAD hands its blocking gate every
+  // other plan's work, and a `status` call missing the triple falls through to
+  // the phase-wide arm, which compares no range and clears this plan on the
+  // record an earlier, narrower one left.
+  const parallel = doc('cadence-core', 'references', 'execute-parallel.md');
+  /** @type {string[]} */
+  const pairs = [];
+  for (const sub of ['run', 'status']) {
+    // The invocation is one inline code span, so the span's own backtick bounds
+    // the flags read here - prose after it is never scanned as an argument.
+    const m = new RegExp('risk-check ' + sub + '([^`\\n]*)').exec(parallel);
+    assert.ok(m, `references/execute-parallel.md carries no \`risk-check ${sub}\` invocation`);
+    for (const flag of ['--phase', '--plan', '--base', '--head']) {
+      assert.ok(m[1].includes(flag),
+        `the parallel \`risk-check ${sub}\` call drops ${flag}: the triple is all three or `
+        + 'none, and none is the phase-wide arm that compares no range');
+    }
+    const range = /--base\s+(.*?)\s+--head\s+(\S.*)$/.exec(m[1]);
+    assert.ok(range, `the parallel \`risk-check ${sub}\` call names no --base/--head pair`);
+    const pair = `${range[1]} .. ${range[2]}`;
+    assert.doesNotMatch(pair, /PHASE_START|pre-plan/i,
+      `the parallel \`risk-check ${sub}\` range is ${pair}, which contains other plans' work`);
+    assert.match(pair, /pre-merge[\s\S]+post-merge/,
+      `the parallel \`risk-check ${sub}\` range is ${pair}, not the pre-merge/post-merge HEAD pair`);
+    assert.match(pair, /step 3/,
+      `the parallel \`risk-check ${sub}\` range does not say where both its ends were recorded`);
+    pairs.push(pair);
+  }
+  assert.equal(pairs[0], pairs[1],
+    'the fire and the completion gate name DIFFERENT ranges, so the gate can clear on a '
+    + 'record for a range nobody fired on');
+});
