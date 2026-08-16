@@ -239,6 +239,26 @@ test('the forge call names the --dir repo, not the one the process cwd sits in',
   assert.match(recorded, /--limit 200/, recorded);
 });
 
+// The cut that gave the forgejo row `--remote origin` touched no other row, and
+// this is the assertion that says so in the strongest available form: the whole
+// recorded command line, byte for byte, for the two hosts whose binding did not
+// change. A regression here is a flag that leaked across rows.
+
+test('the github and gitlab argv are byte-identical to what they were', () => {
+  for (const [originUrl, stubs, expected] of [
+    ['https://github.com/org/repo.git', { gh: { body: GH_BODY } },
+      'gh issue list --repo org/repo --state all --json number,state --limit 200'],
+    ['git@gitlab.com:org/repo.git', { glab: { body: GLAB_BODY } },
+      'glab issue list --repo org/repo --all --output json --per-page 100'],
+  ]) {
+    const dir = repo({ originUrl, commits: COMMITS });
+    const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+    const r = seam(['check', '--dir', dir, '--base', 'main'], { stubs, argvLog });
+    assert.equal(r.action, 'report', JSON.stringify(r));
+    assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'), [expected]);
+  }
+});
+
 // --- the call bound ---------------------------------------------------------
 
 test('a forge CLI that never returns is killed at the bound and the land continues', () => {
@@ -350,28 +370,49 @@ for (const [name, pattern, build, action = 'skip'] of DEGRADATIONS) {
 }
 
 // Beside the matrix rather than inside it: the matrix keeps ONE row per
-// degradation class (AC5), and this is the same `no-login` class asserted from
-// the other side - what the seam must NOT do once host equality stops being the
-// test. tea's `--repo` fallback is config-FILE-ORDER, not repo-aware (D-07), so
-// an unguarded call resolves to whichever login sits first in the user's config
-// and can return another project's issues as this one's, exit 0 and all.
-test('an origin sharing no registrable domain with any login skips, and queries nothing', () => {
-  const dir = repo({ originUrl: 'https://git.stranger.org/org/repo.git', commits: COMMITS });
+// degradation class (AC5), and these two are the `no-login` class asserted from
+// both sides - what the seam must do when tea holds no login at all, and what
+// it must do for an origin no login names.
+
+test('an EMPTY tea login list skips on the existing line, and queries nothing', () => {
+  const dir = repo({ originUrl: FORGE_REPO, commits: COMMITS });
   const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
   const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
   const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
-    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, marker, argvLog });
-  assert.equal(status, 0, 'a stranger host must not fail the land');
+    { stubs: { tea: { body: TEA_BODY, login: '[]' } }, bare: true, marker, argvLog });
+  assert.equal(status, 0, 'a tea holding no login must not fail the land');
   assert.equal(envelope.ok, true, JSON.stringify(envelope));
   assert.equal(envelope.action, 'skip', JSON.stringify(envelope));
-  assert.equal(envelope.reason, 'tea holds no login for git.stranger.org: no tracker report');
+  assert.equal(envelope.reason, 'tea holds no login for forge.example.com: no tracker report');
   assert.deepEqual(envelope.referenced, []);
   assert.deepEqual(envelope.open, []);
-  // One tea spawn, and its argv is the login probe alone - no issue query went
-  // out against a forge that shares nothing with this remote.
+  // One tea spawn, and its argv is the login probe alone - a tea with no login
+  // has no tracker to ask about, so no issue query goes out at all.
   assert.deepEqual(readFileSync(marker, 'utf8').trim().split('\n'), ['tea']);
   assert.deepEqual(readFileSync(argvLog, 'utf8').trim().split('\n'),
     ['tea login list --output json'], readFileSync(argvLog, 'utf8'));
+});
+
+test('an origin no login names is bound to the REMOTE, never to a login picked here', () => {
+  // The rule this replaced: an origin sharing no registrable domain with any
+  // login skipped, and that domain math could not be made correct without a
+  // vendored public suffix list. So the seam no longer compares hosts - it asks
+  // tea, with `--remote origin`, which is the flag tea gives for exactly this
+  // ("Discover Gitea login from remote"). What a PATH stub can prove is that
+  // the flag rides every call and that no login name does; that tea honours it
+  // is measured live and recorded in lib/issue-decision.mjs's HOST_TABLE header.
+  const dir = repo({ originUrl: 'https://git.stranger.org/org/repo.git', commits: COMMITS });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main'],
+    { stubs: { tea: { body: TEA_BODY, login: TEA_LOGINS } }, bare: true, argvLog });
+  assert.equal(status, 0, 'a stranger host must not fail the land');
+  assert.equal(envelope.action, 'report', JSON.stringify(envelope));
+  assert.equal(envelope.host, 'git.stranger.org', 'the ORIGIN host, never a login\'s');
+  const queries = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => l.startsWith('tea issues'));
+  assert.equal(queries.length, 1, queries.join('\n'));
+  assert.match(queries[0], /--remote origin(\s|$)/, queries[0]);
+  assert.ok(!queries[0].includes('--login'), queries[0]);
+  assert.ok(!queries[0].includes('forge.example.com'), queries[0]);
 });
 
 // --- the open list plus a bounded per-issue resolve (the forgejo row alone) --
@@ -394,7 +435,13 @@ const TWO_LOGINS = JSON.stringify([
   { name: 'forge.example.com', url: 'https://forge.example.com', ssh_host: 'forge.example.com', user: 't' },
 ]);
 
-test('forgejo: every call is bound with --login to the login that matched', () => {
+test('forgejo: every call is bound with --remote origin, and none with --login', () => {
+  // Two logins configured, neither of them chosen HERE. tea resolves an
+  // unqualified `--repo <owner>/<name>` in config FILE ORDER (D-07), so an
+  // unbound query would answer from the first - another server's issues,
+  // reported as this repository's, exit 0 and all. `--remote origin` hands that
+  // pick to tea, which reads the checkout's own remote; the seam's job is to
+  // put the flag on EVERY call it makes, list and resolve alike.
   const dir = repo({
     originUrl: SPLIT_ORIGIN,
     commits: [...COMMITS, 'chore: mentions #4242, which never existed'],
@@ -407,13 +454,14 @@ test('forgejo: every call is bound with --login to the login that matched', () =
   assert.equal(r.action, 'report', JSON.stringify(r));
   assert.equal(r.host, 'ssh.example.com');
   const lines = readFileSync(argvLog, 'utf8').trim().split('\n');
-  // The list call and EVERY resolve name the second login - the one that shares
-  // the origin's registrable domain - never the first one in the config.
   const queries = lines.filter((l) => l.startsWith('tea issues'));
   assert.equal(queries.length, 3, lines.join('\n'));
   for (const q of queries) {
-    assert.match(q, /--login forge\.example\.com(\s|$)/, q);
+    assert.match(q, /--remote origin(\s|$)/, q);
+    assert.ok(!q.includes('--login'), q);
+    // Neither configured login is named: the seam picks none of them.
     assert.ok(!q.includes('evil.example.net'), q);
+    assert.ok(!q.includes('forge.example.com'), q);
   }
   assert.equal(queries.filter((q) => q.startsWith('tea issues list')).length, 1, lines.join('\n'));
 });
@@ -444,8 +492,8 @@ test('forgejo: a number the open list missed resolves, or is named unresolved', 
   assert.match(list[0], /--state open/, list[0]);
   // Exactly one resolve per unanswered number, and none for an answered one.
   assert.deepEqual(lines.filter((l) => /^tea issues \d/.test(l)), [
-    'tea issues 47 --repo org/repo --login forge.example.com --fields index,state --output json',
-    'tea issues 4242 --repo org/repo --login forge.example.com --fields index,state --output json',
+    'tea issues 47 --repo org/repo --remote origin --fields index,state --output json',
+    'tea issues 4242 --repo org/repo --remote origin --fields index,state --output json',
   ], lines.join('\n'));
 });
 
