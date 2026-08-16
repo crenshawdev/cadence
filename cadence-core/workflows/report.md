@@ -23,8 +23,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads --join
 ```
 
 Everything below reads from the first return: `brackets` (one row per paired
-dispatch - `role`, `plan`, `event`, `ms`, `tokens`), `outcomes` (every outcome
-event), `roles` (per-role dispatch and token totals), `coordinator` (the
+dispatch - `role`, `plan`, `event`, `ms`, `tokens`, and `turns` on the rows
+whose close carried a tool-call count), `outcomes` (every outcome event),
+`roles` (per-role dispatch, token and turn totals, with `unrecorded` and
+`turns_unrecorded` beside them), `coordinator` (the
 coordinator's own per-step residue, present only where markers were written),
 `unpaired`, `mismatched`, `capped`, `malformed`. Never ask for the raw `events`
 array: nothing here reads one, and the flag re-buys 27 KB on the one path that
@@ -46,10 +48,11 @@ Compose the report, tersest form that keeps the receipts. Shape:
 
 ```
 Phase <N>: <name> - run record
-Dispatches: <table: role | rung | tokens | minutes, one row per `brackets` entry (minutes from its `ms`), rung from routing resolves>
+Dispatches: <table: role | rung | tokens | turns | minutes, one row per `brackets` entry (minutes from its `ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
 Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
-Tokens on subagent returns (the host's own per-dispatch figure, not a measured cost): <total recorded; top role and its share; unrecorded dispatch count>
+Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
+Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
 Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; omit the whole line when the record is empty>
 ```
@@ -58,12 +61,44 @@ Rules, all load-bearing:
 - Every number is FROM the record. A dispatch with no token figure reports
   `unrecorded`, never an estimate; minutes come from the row's own `ms`, and a
   null `ms` or a null `tokens` reports absent rather than zero.
-- What that token line EXCLUDES, stated where it is printed: an advisory fire
-  records none, because its reviewer closes its own bracket with no `--tokens`
-  (`references/review-triggers.md`, the advisory persistence tail), and a
-  cross-model provider call records none by design - no lifecycle bracket and no
-  token field on that arm at all. So the total prices the claude-subagent voice
-  only, and it is short by an unstated amount rather than being a run's cost.
+- What that token line EXCLUDES, stated where the figure is printed, in the
+  same three names `cadence-core/bin/lib/trace-suggest.mjs` exports as
+  `SPEND_EXCLUDES` and `/cad-suggest` relays - one list, so the two surfaces
+  cannot end up claiming different things:
+  - the orchestrator's own turns. A figure is read off a subagent RETURN and
+    the coordinator has no return of its own, so every turn it takes
+    contributes nothing to this total. It is the majority of what is missing
+    and the one arm this report never stated.
+  - cross-model provider calls. None by design - no lifecycle bracket and no
+    token field on that arm at all.
+  - figureless returns. A close that carried no `--tokens`, an advisory fire
+    among them because its reviewer closes its own bracket without one
+    (`references/review-triggers.md`, the advisory persistence tail); they
+    count under `unrecorded`, never as a zero.
+  So the total prices recorded claude-subagent returns only, short by an
+  unstated amount, and it is not what the run cost.
+- The gap is printed as its TERMS and never as one number: the dispatch count,
+  the turn count with `turns_unrecorded` beside it, the per-dispatch window
+  figure, and the count of dispatches that came back with no figure. The
+  per-dispatch window figure is the `tokens` on each `brackets[]` row, and say
+  it is a PROXY: it behaves like that dispatch's FINAL context window rather
+  than a sum across its turns, so multiplying it by the turns that grew that
+  window double-counts the early ones. Print no ratio and no single gap number -
+  a later budgeting decision needs the factors, and a stored product recreates
+  the maintenance loop `v2.7.0` deleted when it removed the checked-in derived
+  figures.
+- The billed figure comes from a tool the USER runs, named here only as
+  provenance: `burnrate`, which is what the measurement behind this line was
+  taken against. Cadence fetches nothing, shells out to nothing and bundles
+  nothing to obtain it, which is what keeps README's "ships no instrumentation
+  and phones nothing home" true. Name the comparator and stop; never print a
+  billed number this command did not read out of the record.
+- `--phase <N>` does NOT scope a run, and the line describing the figure says
+  so. The filter reads the events' `phase` field alone and never `corr`, so a
+  phase-scoped figure can pool several cycles that used the same phase number:
+  measured on this repository, `trace render --phase 1` spans 12 distinct
+  `corr` ids. A caveat attached to a total that pooled twelve cycles would be a
+  worse claim than the one it replaced.
 - The coordinator residue is `coordinator.residue_ms` and the `steps[]` row
   carrying the most of it, reported AS GIVEN - the renderer computes it once so
   this line and `trace suggest` cannot disagree, and prose recomputing it is how
