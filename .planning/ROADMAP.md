@@ -35,7 +35,7 @@ depends on the other's outcome.
 
 ## Phases
 
-- [ ] **Phase 1: One transport for caller-derived text** - the rule `planning.mjs` already concedes for one command is stated once and applied at every site that passes agent output or repository content to a seam, with a check that refuses the seventeenth
+- [x] **Phase 1: One transport for caller-derived text** - the rule `planning.mjs` already concedes for one command is stated once and applied at every site that passes agent output or repository content to a seam, with a check that refuses the seventeenth
 - [ ] **Phase 2: One reader for the lease grammar** - `plan-overlap` and `lease-check` resolve a declared path through one module, so the pre-flight gate cannot admit a pair the enforcement would refuse
 
 ## Phase Details
