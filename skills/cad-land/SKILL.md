@@ -30,9 +30,8 @@ across the steps below rather than re-reading per step.
    `git.base_branch`, else the first `git.protected_branches` entry that
    exists here (references/git-guard.md's fallback); commits ahead of base; unpushed commits; uncommitted/untracked
    changes; and the remote host detected from the origin URL (gitlab -> MR,
-   github -> PR, any other host a `tea` login names or shares a registrable
-   domain with -> Forgejo/Gitea PR via `tea`, else local only). Show this
-   plainly before doing anything.
+   github -> PR, any other host where `tea` holds a login -> Forgejo/Gitea PR
+   via `tea`, else local only). Show this plainly before doing anything.
 
    **Then the tracker, in the same report.** Run it here, before any publish
    ask, on both step-3 arms:
@@ -71,8 +70,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
      GitLab, `gh pr create` on GitHub, `tea pr create --base <base> --head
      <branch>` on a Forgejo/Gitea remote - `tea` does not push the source
      branch itself, so push it first as part of this same chosen action). If
-     no remote, or no `tea` login names the host or shares its registrable
-     domain, this option is absent.
+     no remote, or `tea` holds no login at all, this option is absent.
    - **Tag** - create an annotated tag (ask the name); ask separately
      whether to push it.
    - **Leave local** - do nothing further.
