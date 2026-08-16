@@ -161,6 +161,7 @@ import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
 import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
+import { intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
@@ -1864,10 +1865,34 @@ function cmdPlanOverlap(dir, opts) {
       ...(frontmatterIssues.length ? { frontmatter_issues: frontmatterIssues } : {}),
     });
   }
+  // Containment is `lib/lease-grammar.mjs`'s to answer, never this function's:
+  // exact string equality here is what let a phase declaring `src/` in one plan
+  // and `src/auth.js` in another report an EMPTY overlap, pass this gate, and
+  // then be refused plan by plan at `lease-check`, which reads the trailing
+  // slash as a directory prefix. Two readers of one declaration, one module.
+  //
+  // BOTH spellings of a collision ride `files` as separate strings (D-06): the
+  // covering declaration and the covered one are different strings and the
+  // caller needs to see the pair it must resolve. An exact match contributes
+  // ONE string, because `seen` is shared across the two passes.
+  //
+  // The emission ORDER is plan i's declarations in declaration order, then plan
+  // j's, so the reported list is the same on every run.
+  const collect = (from, against, into, seen) => {
+    for (const f of from) {
+      if (!against.some((g) => intersects(f, g))) continue;
+      if (seen.has(f)) continue;
+      seen.add(f);
+      into.push(f);
+    }
+  };
   const overlaps = [];
   for (let i = 0; i < declared.length; i++) {
     for (let j = i + 1; j < declared.length; j++) {
-      const shared = declared[i].files.filter((x) => declared[j].files.includes(x));
+      const shared = [];
+      const seen = new Set();
+      collect(declared[i].files, declared[j].files, shared, seen);
+      collect(declared[j].files, declared[i].files, shared, seen);
       if (shared.length) overlaps.push({ plans: [declared[i].plan, declared[j].plan], files: shared });
     }
   }
