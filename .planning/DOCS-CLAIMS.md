@@ -890,8 +890,8 @@ fixed, which is what makes that link answer the only question it is asked.
 | PROGRESS-10 | cadence-core/workflows/progress.md | 58-59 | Cursor drift is repaired through `cursor set`. | accurate | accurate | 2 |
 | PROGRESS-11 | cadence-core/workflows/progress.md | 61-64 | Status mapping unplanned/planned/executed/all-complete are legal cursor statuses. | accurate | accurate | 1 |
 | PROGRESS-12 | cadence-core/workflows/progress.md | 65-68 | A closed-milestone cursor set with no `--name`/`--total` derives "no active cycle" and 0. | accurate | accurate | 2 |
-| PROGRESS-13 | cadence-core/workflows/progress.md | 93 | `trace render --phase <current>`. | accurate | accurate | 2 |
-| PROGRESS-14 | cadence-core/workflows/progress.md | 95 | Four family counts `routing`, `provider`, `lifecycle`, `outcome` under one `corr`. | accurate | accurate | 2 |
+| PROGRESS-13 | cadence-core/workflows/progress.md | 96 | `trace render --phase <current>`. | accurate | accurate | 2 |
+| PROGRESS-14 | cadence-core/workflows/progress.md | 99-101 | Four family counts `routing`, `provider`, `lifecycle`, `outcome` printed over the events the phase filter admitted. | accurate | corrected - 059493f - the `under one corr` tail dropped as falsified; the scoping fact that tail stated wrong is PROGRESS-28's subject | 2 |
 | PROGRESS-15 | cadence-core/workflows/progress.md | 102-109 | The `roles` block carries a dispatch count, a token total, a turn total, and `unrecorded` / `turns_unrecorded` when present; an absent total prints `unrecorded`, never 0. | accurate | corrected - 059493f - claim re-stated to the live `roles` block | 2 |
 | PROGRESS-16 | cadence-core/workflows/progress.md | 104 | A render carrying no `roles` key prints nothing for it. | accurate | accurate | 1 |
 | PROGRESS-17 | cadence-core/workflows/progress.md | 105-107 | `unpaired` names a worker with no return, checkpoint or escalation. | accurate | accurate | 2 |
