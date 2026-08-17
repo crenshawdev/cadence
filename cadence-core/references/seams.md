@@ -295,13 +295,17 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - The script resolves the key itself (env first, then the shared providers.env)
   and NEVER logs it; the workflow passes no key.
 - Degradation is structured, not exceptional: `ok:false` with `reason` one of
-  `no-key | transport | http | no-output | bad-json | bad-shape` (call-shape
-  problems surface as `over-cap | bad-payload | bad-provider | bad-args |
-  bad-command`, and an unforeseen bug as `internal`). `over-cap` is the prompt
-  bound: `review` and `consult` both refuse a payload over
+  `no-key | transport | http | over-response | no-output | bad-json | bad-shape`
+  (call-shape problems surface as `over-cap | bad-payload | bad-provider |
+  bad-args | bad-command`, and an unforeseen bug as `internal`). `over-cap` is
+  the prompt bound: `review` and `consult` both refuse a payload over
   `review.max_prompt_tokens` estimated tokens (chars/4, default 120000) BEFORE
   any request is issued; `claude-subagent` never runs this script and is
-  exempt. On `no-key`
+  exempt. `over-response` is the same bound the other way round, on the response:
+  every command destroys the request once the body passes 4 MiB, so a flooding
+  provider meets a refusal Cadence owns rather than the execution host's wrapping
+  command timeout, and an `http` failure carries `detail.body` as a sanitized
+  1024-byte excerpt, always a string, never the body. On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
 - The default backend `claude-subagent` does NOT use this seam - it goes

@@ -37,9 +37,13 @@ serial.
   names `env $OPENAI_API_KEY` / `$GEMINI_API_KEY` or the providers.env path).
   Mark this provider unconfigured and move to the next - never block, since
   `claude-subagent` is the always-available fallback.
-- `ok:false, reason:"transport"|"http"`: report `detail`. Offer (ask-user seam)
-  `[Retry detection | Enter model ids manually | Skip this provider]`. Degrade,
-  do not block setup on a network failure.
+- `ok:false, reason:"transport"|"http"|"over-response"`: report `detail`. Offer
+  (ask-user seam) `[Retry detection | Enter model ids manually | Skip this
+  provider]`. Degrade, do not block setup on a network failure.
+  `over-response` means the provider's reply passed the seam's 4 MiB response
+  ceiling and the request was destroyed - name that rather than a network
+  failure, since a retry of an endpoint returning something that size is
+  unlikely to differ.
 - `ok:true`: continue with `models[]` - each entry is `{id, tier, high_effort}`
   where `tier` is `flagship|balanced|cheap` for known ids or `null` for unknown
   ones (unknowns are still selectable; the user places them).
