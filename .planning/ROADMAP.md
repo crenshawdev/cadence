@@ -69,6 +69,8 @@ window go unrecorded.
 
 - [x] **Phase 1: The controls that never reached their path** - recall survives a milestone close, the parallel branch runs the same risk sequence the sequential one does, and `risk-check status` stops accepting a matched range with no fire behind it
 - [x] **Phase 2: The record learns to see the run** - `trace close` records the tool-call count the return already carries, and `/cad-report` / `/cad-suggest` price a run from a record that can see the whole window instead of worker-return tokens alone
+- [ ] **Phase 3: Bounds the review path never stated** - a provider response is bounded by bytes, local validation of provider findings refuses what the canonical schema refuses, and `execute.md`'s "timeout or no report" arm either names what produces that state or loses the word
+- [ ] **Phase 4: Costs argued from the new record** - the record Phase 2 taught to see turns and window gets spent: a live window is budgeted, bulk tool output rides a file, and `workflow.max_plan_tasks` is re-decided against both forces
 
 
 ## Phase Details
@@ -182,5 +184,105 @@ majority of spend, and both present that price to the user as the run's cost.
   include, and no longer present a worker-return token sum as the run's cost.
 - The measured ~20x gap is reported against a named external figure rather than
   asserted, so a later phase can argue MSR-03 and PLN-01 from it.
+- A check fails against the unpatched code first for each requirement, and the
+  watched FAIL is recorded with its SHA.
+
+### Phase 3: Bounds the review path never stated
+**Goal:** The three places the review path asserts a control it does not hold
+stop asserting it: a provider response is bounded by bytes rather than by the
+host's wrapping timeout, local validation refuses exactly what the canonical
+schema refuses, and a recovery arm stops naming a state nothing in the dispatch
+path can produce.
+**Depends on:** Nothing
+**Requirements:** RVP-01, RVP-02, WIR-01
+
+These are the three the milestone was originally scoped off - #143, #141 and
+#168 - and the half that has not moved. Two were adjudicated AGREE-low from the
+external deep dive and one was narrowed from a finding closed as
+not-a-Cadence-defect. None is a trust boundary, which is why they sit at low
+severity, and none is a bug in the ordinary sense: in each the code works and
+the prose around it claims a bound the code never states.
+
+`RVP-01` is the response body. `review-provider.mjs` concatenates a provider
+response into an unbounded string with no byte ceiling and no destroy path, so a
+proxy error page or an unexpectedly large answer is held whole in memory, and an
+HTTP failure envelope carries the entire body rather than a capped excerpt. The
+host's command timeout bounds it in practice - a bound Cadence does not own, and
+the distinction is the whole finding.
+
+`RVP-02` is the shape of what came back. Local validation checks an integer
+`line` and three string fields and nothing else, so it admits `line <= 0`, empty
+strings, unknown keys and arbitrarily many arbitrarily large findings, while the
+canonical schema says `additionalProperties: false`. The output goes to a human
+for triage, so this is a degradation guard rather than a boundary - and it
+should still refuse what the schema refuses, or the schema is decoration.
+
+`WIR-01` is the wiring. `execute.md` opens a recovery arm labelled "timeout or
+no report" when nothing in the dispatch path can time out - `seams.md` says so
+in those words, and `subagent_timeout` was deleted in v2.7.0 rather than kept as
+a knob nothing enforces. Either the word is dead or it silently means "the user
+interrupted", which is a different condition with a different recovery.
+
+**Success criteria:**
+- A provider response crossing the stated byte ceiling destroys the request
+  rather than concatenating past it, and the failure envelope carries a capped
+  sanitized excerpt rather than the whole body.
+- Local validation refuses `line <= 0`, an empty `file` / `claim` /
+  `failure_scenario`, an unknown key, and a finding count or field length past
+  its stated bound - each with a named diagnostic rather than a silent drop.
+- Those refusals are the canonical schema's own: a fixture the schema rejects is
+  rejected locally and one it accepts is accepted, with no third answer.
+- `execute.md` carries no recovery arm for a state nothing in the dispatch path
+  can produce - the arm names its producer or the word goes - and `seams.md` and
+  the arm agree in the same words.
+- The default reviewer arm states its own bound rather than standing as the one
+  unbounded path beside a bounded one.
+- A check fails against the unpatched code first for each of the three, and the
+  watched FAIL is recorded with its SHA.
+
+### Phase 4: Costs argued from the new record
+**Goal:** The record Phase 2 taught to see turns and window gets spent on the
+three decisions that were not arguable without it: a live context window is
+budgeted the way shipped prose surfaces already are, bulk tool OUTPUT rides a
+file the way caller-derived input now does, and `workflow.max_plan_tasks` is
+re-decided against cold-prefix cost as well as context risk.
+**Depends on:** Phase 2
+**Requirements:** MSR-03, TRN-02, PLN-01
+
+`## Active` states this ordering rather than assuming it: MSR-01 or MSR-02
+unblocks MSR-03 and PLN-01, and neither is arguable while turns and window go
+unrecorded. Phase 2 closed that, so this phase is the cut the measurement
+bought - the point where a figure in `trace.jsonl` changes a shipped default
+instead of only describing one.
+
+`MSR-03` (#202) budgets the live window. Cadence already budgets shipped prose
+surfaces to the byte and fails self-verify on a crossing in either direction;
+the dispatch window - the larger term of `cost ~= turns x window x 0.10`, at a
+measured 121,250-token average - carries no budget at all. The asymmetry is the
+finding: the small surface is governed and the large one is not.
+
+`TRN-02` (#200) applies `v3.5.2`'s own file-transport lesson to the other
+direction. That milestone moved caller-derived INPUT onto a file and stated the
+rule once; bulk tool OUTPUT still rides the transcript, where it is paid for on
+every subsequent turn at the cache-read rate that is 62.5% of spend.
+
+`PLN-01` (#201) re-decides `workflow.max_plan_tasks`. The current value was set
+against context risk alone - one of the two forces - and cold-prefix cost is the
+half the record could not see until now. The requirement is a recorded decision
+against both, not a change: landing on the same number for a stated reason
+satisfies it.
+
+**Success criteria:**
+- A dispatch's live context window is measured and budgeted, and a crossing is
+  reported in the same failure shape a prose-surface budget crossing already
+  uses rather than a new one.
+- The budget's numbers are argued from `trace.jsonl` keys Phase 2 made
+  recordable, with the source key named, rather than from an asserted constant.
+- Bulk tool OUTPUT rides a file rather than the transcript, the rule is stated
+  once, the sites carrying it are registered, and self-verify reads that
+  register and fails when a site drifts off it.
+- `workflow.max_plan_tasks` carries a written decision naming both forces -
+  cold-prefix cost and context risk - with the measured figure behind each and
+  the value it lands on, whether or not that value changes.
 - A check fails against the unpatched code first for each requirement, and the
   watched FAIL is recorded with its SHA.
