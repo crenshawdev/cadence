@@ -22,6 +22,9 @@
           "api_contract",
           "untrusted_input"
         ]
+      },
+      "diff": {
+        "gate": "blocking"
       }
     }
   }
