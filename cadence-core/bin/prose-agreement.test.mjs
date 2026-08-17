@@ -568,6 +568,133 @@ test('the turn bound: every rung file and the spawn-agent seam name one maxTurns
     + `which no rung file carries - the 19 rung files carry ${bound}`);
 });
 
+// --- WIR-01: the recovery arm's producers, and the default reviewer's bound --
+//
+// WATCHED FAILING AT cdf8676, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout:
+//
+//   $ node --test --test-name-pattern='WIR-01' \
+//       cadence-core/bin/prose-agreement.test.mjs
+//   AssertionError [ERR_ASSERTION]: execute.md labels a recovery arm "timeout
+//   or no report" - the seam has no timeout to recover from
+//     actual: 'timeout or no report',
+//     expected: /timeout/i,
+//     operator: 'doesNotMatch',
+//   (exit 1)
+//
+// Which is the defect exactly: the arm was labelled with a control the dispatch
+// path does not hold. It stops at the first assertion because on that tree the
+// other two facts do not exist to extract either - neither document states a
+// producer clause, and neither `references/seams.md`'s exemption sentence nor
+// `references/review-triggers.md`'s `claude-subagent` bullet names a bound.
+//
+// Nothing this plan added is imported, so against the unpatched tree this fails
+// on an ASSERTION rather than on a missing export. To re-watch it: `git worktree
+// add --detach <tmp> cdf8676`, copy this file into that checkout's
+// `cadence-core/bin/`, `node --test` it there, then remove the worktree.
+
+/**
+ * The sentence containing `needle`. A sentence ends at `.!?` followed by
+ * WHITESPACE, so a dotted identifier (`review.max_prompt_tokens`) is not an
+ * end - which matters, because the sentence this reads has one in it.
+ */
+const sentenceAround = (text, needle, where) => {
+  const i = text.indexOf(needle);
+  assert.notEqual(i, -1, `${where} no longer contains "${needle}"`);
+  const before = [...text.slice(0, i).matchAll(/[.!?]\s/g)];
+  const from = before.length ? before[before.length - 1].index + 1 : 0;
+  const rest = text.slice(i);
+  const end = rest.search(/[.!?]\s/);
+  return text.slice(from, i + (end === -1 ? rest.length : end + 1)).replace(/\s+/g, ' ').trim();
+};
+
+/**
+ * The clause a document introduces with a colon in its sentence about what
+ * PRODUCES a state - the copied fact itself, read by its own anchor rather
+ * than by the shape of the prose around it, so a rewrap stays green and a
+ * reword in one document alone does not.
+ */
+const producerClause = (text, where) => {
+  const m = text.match(/produc\w*[^.:]*:\s*([^.]+)\./);
+  assert.ok(m, `${where} states no colon-introduced producer clause`);
+  return m[1].replace(/\s+/g, ' ').trim();
+};
+
+/** The one `maxTurns` figure every rung file's frontmatter carries. */
+const frontmatterBound = () => {
+  const files = readdirSync(join(REPO, 'agents')).filter((f) => f.endsWith('.md')).sort();
+  assert.ok(files.length, 'no agent files under agents/');
+  const values = [...new Set(files.map((f) => {
+    const m = (doc('agents', f).split(/^---$/m)[1] || '').match(/^maxTurns: (\d+)$/m);
+    assert.ok(m, `agents/${f} states no maxTurns bound in its frontmatter`);
+    return m[1];
+  }))];
+  assert.equal(values.length, 1, `the rung files disagree on maxTurns: ${values.join('/')}`);
+  return values[0];
+};
+
+test('WIR-01: the recovery arm names its producers in both documents, and the default reviewer names its bound', () => {
+  // The defect this pins. execute.md opened a recovery arm labelled "timeout or
+  // no report" while seams.md said in as many words that the spawn-agent seam
+  // has no timeout at all, and `workflow.subagent_timeout` was deleted in
+  // v2.7.0 for naming a control nothing could apply - so the arm named a state
+  // nothing in the dispatch path can produce. A prose fix satisfies that on the
+  // day it lands and nothing after: the two documents are copies of one fact,
+  // and the only failure worth catching is one of them being reworded alone.
+  // So both sides are EXTRACTED and compared to each other. Asserting that some
+  // expected phrase appears in each file is the weaker shape this very file has
+  // shipped once before (the coverage arm that required the word `site` and
+  // never parsed the count), and it passes exactly the tree this exists to
+  // catch.
+  const execute = doc('cadence-core', 'workflows', 'execute.md');
+  const seams = doc('cadence-core', 'references', 'seams.md');
+  const triggers = doc('cadence-core', 'references', 'review-triggers.md');
+
+  // The arms of the return-handling list, read positionally: the recovery arm
+  // is the last of them, whatever it now calls itself.
+  const list = execute.split("Handle the executor's return:")[1];
+  assert.ok(list, 'execute.md has no "Handle the executor\'s return" list');
+  const arms = list.split(/\n\r?\n/)[0].split(/\n- \*\*/).slice(1);
+  assert.equal(arms.length, 4, `that list has ${arms.length} arms, not the four this check reads`);
+  const recovery = arms[arms.length - 1];
+
+  // 1. No arm is labelled with a control this dispatch path does not hold.
+  for (const arm of arms) {
+    const label = arm.split('**')[0];
+    assert.doesNotMatch(label, /timeout/i,
+      `execute.md labels a recovery arm "${label}" - the seam has no timeout to recover from`);
+  }
+
+  // 2. The producer wording is one fact copied into two documents. Compare the
+  //    two EXTRACTIONS, so rewording either one alone reddens this.
+  const fromExecute = producerClause(recovery, 'execute.md\'s recovery arm');
+  const spawnSeam = seams.split('## Seam: spawn-agent')[1];
+  assert.ok(spawnSeam, 'seams.md has no spawn-agent seam section');
+  const fromSeams = producerClause(spawnSeam.split(/\n## /)[0], 'seams.md\'s spawn-agent seam');
+  assert.equal(fromExecute, fromSeams,
+    'execute.md and references/seams.md state different producers for the state that arm recovers from:\n'
+    + `  execute.md: ${fromExecute}\n`
+    + `  seams.md:   ${fromSeams}`);
+
+  // 3. The recovery itself survived the relabel: the report file on disk is
+  //    still what the arm reads.
+  assert.match(recovery, /reports\/plan-<k>\.md/,
+    'the recovery arm no longer reads the report file the executor left on disk');
+
+  // 4. The default reviewer states its own bound where it claims exemption,
+  //    and where the trigger reference introduces it. Both against the rung
+  //    files' own figure - a literal typed here goes stale the day they move.
+  const bound = frontmatterBound();
+  const exempt = sentenceAround(seams, 'is exempt', 'references/seams.md');
+  assert.match(exempt, new RegExp(`maxTurns: ${bound}\\b`),
+    `seams.md's exemption sentence names no maxTurns ${bound} bound, so \`claude-subagent\` `
+    + `still reads as the unbounded path beside over-cap: ${exempt}`);
+  const bullet = triggers.split(/\n- /).find((b) => b.startsWith('`claude-subagent`'));
+  assert.ok(bullet, 'review-triggers.md has no `claude-subagent` backend bullet');
+  assert.match(bullet, new RegExp(`maxTurns: ${bound}\\b`),
+    `review-triggers.md's \`claude-subagent\` bullet names no maxTurns ${bound} bound`);
+});
+
 // --- DOC-02: README counts its own skills, roles and rung files --------------
 
 test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {
