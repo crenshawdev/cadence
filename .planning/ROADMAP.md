@@ -3,15 +3,19 @@
 ## Overview
 
 **`v3.5.3 - bounds not stated, costs not counted`, opened 2026-08-16.**
-Scoped off the Forgejo milestone, which holds eight issues: #168, #143, #141,
-#198, #199, #200, #201 and #202.
+Scoped off the Forgejo milestone, which holds eleven issues: #168, #143, #141,
+#198, #199, #200, #201, #202, #203, #204 and #205.
 
-**The theme is one sentence: the review path accepts whatever comes back, and
-one workflow arm recovers from a state that cannot happen.** All three came
-from the same external deep dive, two adjudicated AGREE-low and one narrowed
-from a finding closed as not-a-Cadence-defect. None is a trust boundary, which
-is why they sit at low severity; each is a stated bound the code never actually
-states.
+**The theme is one sentence: Cadence asserts a control it does not actually
+hold.** Two halves. The review path states bounds it never enforces, and the run
+record claims to price a run it cannot see. A third group joined after the
+milestone opened - three controls that exist and are correct but never reach the
+path that needs them (#203, #204, #205), shipped as Phase 1.
+
+The first three came from the same external deep dive, two adjudicated AGREE-low
+and one narrowed from a finding closed as not-a-Cadence-defect. None is a trust
+boundary, which is why they sit at low severity; each is a stated bound the code
+never actually states.
 
 `#143` is the response body. `review-provider.mjs` concatenates a provider
 response into an unbounded string with no byte ceiling and no destroy path, so
@@ -35,7 +39,9 @@ knob nothing enforces. Either the word is dead or it silently means "the user
 interrupted", which is a different condition with a different recovery. The
 default reviewer arm is the one unbounded path left beside it.
 
-Phases are not yet added - `/cad-phase add` opens the first.
+Phase 1 shipped the late-joining third group and Phase 2 the measurement half.
+Phases 3 and 4 carry what remains: the review-path bounds above, then the cut
+that measurement bought.
 
 ## What the record never counted
 
@@ -110,8 +116,12 @@ the dirs are gone.
 that is `blocking` at every stakes level does not exist on the parallel path,
 and `risk-check status` - which the sequential branch requires before a plan may
 be reported done - is never called there, so the two branches disagree about
-what "done" means. This repo's move to `stakes: critical` buys compensating
-`diff` and `phase_diff` cover but not the detector receipt.
+what "done" means. When this was written the repo sat at `stakes: critical`,
+which bought compensating `diff` and `phase_diff` cover but not the detector
+receipt. The repo reverted to `stakes: shipped` on 2026-08-17, where both of
+those are `off` - so the compensating cover is gone and only PAR-01's own fix
+carries the parallel path. `risk_surface` is `blocking` at every level, so the
+gate this phase wired is unaffected by the level.
 
 `GAT-04` is the same argument one step out. `risk-check status` proves a range
 was READ and RECORDED; it does not prove the blocking fire happened. A
