@@ -1623,3 +1623,74 @@ test('RVP-01: the response is bounded by bytes Cadence owns, and the failure env
   }
   assert.match(failure.envelope.detail.body, /upstream rejected the request/);
 });
+
+// --- the RVP-02 falsifier -----------------------------------------------------
+//
+// WATCHED FAILING AT 15b5d4c, the tip of this plan's unpatched tree. Observed
+// there, with this file AND cadence-core/bin/lib/schema-eval.mjs copied into
+// that checkout:
+//
+//   $ node --test --test-name-pattern='RVP-02: local validation' \
+//       cadence-core/bin/review-provider.test.mjs
+//   AssertionError [ERR_ASSERTION]: a zero line number must not reach the
+//   caller as a finding, got: {"ok":true,"provider":"openai","model":
+//   "gpt-fault-fixture","findings":[{"file":"cadence-core/bin/
+//   review-provider.mjs","line":0,"severity":"low","claim":"the shape came
+//   back unchecked","failure_scenario":"it reaches a human for triage as if
+//   it were a finding"}]}
+//     + actual - expected
+//     + true
+//     - false
+//   (exit 1)
+//
+// Which is the defect exactly: local validation checked an integer `line` and
+// three string fields and nothing else, so a provider answer the canonical
+// schema refuses - a zero line number, an empty claim, a key nobody declared -
+// came back `ok:true` and went to a human for triage as if it were a finding.
+//
+// Driven through the seam's own entry unwind and the existing fault fixture,
+// importing nothing this plan added, so against the unpatched tree it fails on
+// its ASSERTIONS rather than on a missing export. That is also why
+// FINDING_SCHEMA reaches this file through a namespace import (see the top): a
+// named import of a symbol the unpatched module does not export is a LINK
+// error, and the file would never load.
+//
+// To re-watch it: `git worktree add --detach <tmp> <SHA>`, copy this file into
+// that checkout's `cadence-core/bin/` AND `cadence-core/bin/lib/schema-eval.mjs`
+// into that checkout's `cadence-core/bin/lib/`, run
+// `node --test --test-name-pattern='RVP-02' cadence-core/bin/review-provider.test.mjs`
+// there, then remove the worktree. The SECOND copy is not optional: the
+// evaluator cases earlier in this file `import` that module, so a checkout
+// carrying only the test file fails at module resolution before any assertion
+// runs - a green-to-red transition that proves nothing about RVP-02. The
+// `--test-name-pattern` scope is what keeps the other new cases in this file,
+// which also redden there, from being mistaken for the watched failure.
+
+test('RVP-02: local validation refuses exactly what the canonical schema refuses', async () => {
+  const finding = (/** @type {any} */ patch) => JSON.stringify({
+    output_text: JSON.stringify({
+      findings: [{
+        file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+        claim: 'the shape came back unchecked',
+        failure_scenario: 'it reaches a human for triage as if it were a finding',
+        ...patch,
+      }],
+    }),
+  });
+
+  // Three answers the schema refuses and the unpatched validator admitted.
+  const cases = [
+    { name: 'a zero line number', body: finding({ line: 0 }), names: /line/ },
+    { name: 'an empty claim', body: finding({ claim: '' }), names: /claim/ },
+    { name: 'a key nobody declared', body: finding({ confidence: 0.4 }), names: /confidence/ },
+  ];
+  for (const c of cases) {
+    const r = await runFaked(REVIEW_ARGS, { status: 200, body: c.body });
+    assert.equal(r.envelope.ok, false,
+      `${c.name} must not reach the caller as a finding, got: ${r.line}`);
+    assert.equal(r.envelope.reason, 'bad-shape',
+      `${c.name} must degrade as bad-shape, got: ${r.line}`);
+    assert.match(r.envelope.detail, c.names,
+      `${c.name}: the diagnostic must name the offending field, got: ${r.envelope.detail}`);
+  }
+});
