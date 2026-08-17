@@ -33,8 +33,9 @@
   },
   "model": {
     "effort": {
-      "cad-verifier": "high",
-      "cad-plan-checker": "high"
-    }
+      "cad-verifier": "xhigh",
+      "cad-plan-checker": "xhigh"
+    },
+    "escalate_on_failure": true
   }
 }
