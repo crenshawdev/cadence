@@ -46,6 +46,15 @@ of spend, at an average 121,250-token window).
   as well as context risk, on measured evidence rather than one of the two
   forces (#201).
 
+**The retune the record could not state.** Found reading `/cad-suggest 2`'s own
+output 2026-08-17, the first run against the record MSR-01 made turn-aware.
+
+- **SGT-01**: `trace suggest` returns a direction, a current value and a target
+  value beside every `action`, and `/cad-suggest` prints the tweaks in a headed
+  block of their own with the receipts separated below.
+- **MSR-04**: The coordinator figure excludes wall-clock the record cannot
+  attribute to a coordinator, or it stops being labelled coordinator time.
+
 MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither can be argued while turns
 and window go unrecorded.
 

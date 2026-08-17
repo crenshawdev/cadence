@@ -77,6 +77,7 @@ window go unrecorded.
 - [x] **Phase 2: The record learns to see the run** - `trace close` records the tool-call count the return already carries, and `/cad-report` / `/cad-suggest` price a run from a record that can see the whole window instead of worker-return tokens alone
 - [ ] **Phase 3: Bounds the review path never stated** - a provider response is bounded by bytes, local validation of provider findings refuses what the canonical schema refuses, and `execute.md`'s "timeout or no report" arm either names what produces that state or loses the word
 - [ ] **Phase 4: Costs argued from the new record** - the record Phase 2 taught to see turns and window gets spent: a live window is budgeted, bulk tool output rides a file, and `workflow.max_plan_tasks` is re-decided against both forces
+- [ ] **Phase 5: The retune says what to change** - `/cad-suggest` states each tweak as a direction and a target value in a block of its own, and the coordinator figure stops counting the hours a session sat idle waiting on the user
 
 
 ## Phase Details
@@ -294,5 +295,64 @@ satisfies it.
 - `workflow.max_plan_tasks` carries a written decision naming both forces -
   cold-prefix cost and context risk - with the measured figure behind each and
   the value it lands on, whether or not that value changes.
+- A check fails against the unpatched code first for each requirement, and the
+  watched FAIL is recorded with its SHA.
+
+### Phase 5: The retune says what to change
+**Goal:** The two places the run record describes itself instead of advising
+stop doing that: `/cad-suggest` names a direction and a target value for every
+tweak it raises and presents them apart from the receipts that ask for nothing,
+and the coordinator figure either excludes the wall-clock it cannot attribute or
+stops being labelled coordinator time.
+**Depends on:** Phase 2
+**Requirements:** SGT-01, MSR-04
+
+Both were found by reading `/cad-suggest 2`'s own output on 2026-08-17, which is
+the first run against the record Phase 2 taught to see turns. Neither is a bug:
+every figure the command printed was correct. What failed is that a command
+named *suggest* returned eight entries of which seven asked for nothing, and the
+one that did ask named a config key without saying which way to move it.
+
+`SGT-01` is the presentation, and the seam under it. `trace suggest` returns
+`action` as a bare config key, so `workflows/suggest.md` can print
+"`workflow.max_plan_tasks`" and no more - it cannot state a direction or a
+target without inventing a number, which its own no-fabricated-figures
+guardrail forbids. The mute output is that guardrail working exactly as written
+against a return shape that carries too little. So the fix is in the seam
+first: emit `direction`, `current` and `proposed` beside `action`, and only then
+can the workflow lead with a headed block of tweaks and put the `info` receipts
+below it. The flag set stays `--phase` alone - this changes the return shape,
+not the contract row in `bin/self-verify.mjs`.
+
+`MSR-04` is the figure. The coordinator evidence reports time between worker
+brackets as coordinator cost: on phase 2 that came to 6,112 minutes, 95% of wall
+time, 4,677 of it at `commit`. Seventy-eight hours at a commit step is a session
+sitting idle between user turns, not work, and the trace carries no event that
+marks where a user turn began - so the span is unattributable rather than
+mismeasured. Either the computation excludes what it cannot attribute, or the
+line stops claiming the time was the coordinator's.
+
+The one thing this phase must NOT do is retune `workflow.max_plan_tasks` off
+that record. Phase 2's plans carried 6 and 6 tasks against a ceiling of 8, so
+the three checkpoint returns happened entirely under the ceiling and the rule
+fired on a constraint that was not binding. `PLN-01` in Phase 4 already owns
+that decision, against both forces.
+
+**Success criteria:**
+- `trace suggest` returns a direction and a target value beside every `action`
+  it names, sourced from the resolved config layer rather than asserted, and a
+  suggestion it cannot price that way is returned without one rather than with a
+  guess.
+- A rule whose evidence does not bind - a ceiling suggestion where every plan
+  measured sat under the ceiling - is not returned as a suggestion at all.
+- `/cad-suggest` prints a headed block carrying only the tweaks, each as key,
+  current value, proposed value and the evidence behind it, with the `info`
+  receipts under a separate heading below and never interleaved.
+- The command still applies nothing and writes no config key; whether it ends by
+  offering to route the user to `/cad-config` is settled in CONTEXT and stated
+  either way.
+- The coordinator line reports no span the record cannot attribute to a
+  coordinator, or it carries a different name; a phase whose wall time is mostly
+  idle no longer reports that idle time as cost.
 - A check fails against the unpatched code first for each requirement, and the
   watched FAIL is recorded with its SHA.
