@@ -1,5 +1,5 @@
 {
-  "stakes": "critical",
+  "stakes": "shipped",
   "git": {
     "auto_branch": "auto",
     "base_branch": "main",
@@ -13,12 +13,14 @@
     "triggers": {
       "risk_surface": {
         "surfaces": [
+          "auth",
+          "migrations",
+          "billing",
+          "concurrency",
+          "destructive",
           "secrets",
           "api_contract",
-          "untrusted_input",
-          "destructive",
-          "concurrency",
-          "migrations"
+          "untrusted_input"
         ]
       }
     }
