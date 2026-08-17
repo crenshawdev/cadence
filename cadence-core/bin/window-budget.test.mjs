@@ -243,3 +243,71 @@ test('trace window: a bad --phase is ok:false / bad-args', () => {
   assert.equal(r.reason, 'bad-args');
   assert.match(r.detail, /trace window --phase/);
 });
+
+// --- the falsifier: a live window is budgeted the way prose surfaces are (MSR-03)
+//
+// WATCHED FAILING AT 9b1fe53, the tip of this plan's unpatched tree. Observed
+// there:
+//
+//   $ node cadence-core/bin/planning.mjs --dir <tmp>/.planning trace window
+//   {"ok":false,"reason":"usage","detail":"trace <append|close|render|suggest|ignore>"}
+//   exit=1
+//
+// and with this file copied in, the case below dying on its first assertion:
+//
+//   $ node --test cadence-core/bin/window-budget.test.mjs
+//   ✖ falsifier: a crossing is reported per role and an under-ceiling
+//     dispatch is not (MSR-03)
+//     AssertionError [ERR_ASSERTION]:
+//       {"ok":false,"reason":"usage","detail":"trace <append|close|render|suggest|ignore>"}
+//       false !== true
+//   ℹ pass 10  ℹ fail 8   (exit 1)
+//
+// The record could see a dispatch's final window all along - `tokens` on every
+// `brackets[]` row - and nothing compared it to anything. Prose surfaces have
+// carried per-surface byte ceilings since v1.1.0; the one figure the bill is
+// actually made of carried none, so a 275,285-token executor return and a
+// 47,148-token verifier return read the same in the record.
+//
+// The case below is that absence as a check: the seam is reached through the
+// CLI ONLY and nothing this plan added is imported by it, so against 9b1fe53 it
+// fails on its ASSERTIONS - `ok:false` / `usage`, the subcommand not existing -
+// rather than on a missing export. To re-watch it:
+// `git worktree add --detach <tmp> 9b1fe53`, copy this file into that
+// checkout's `cadence-core/bin/` ALONG WITH `lib/window-budget.mjs`, which the
+// unit tests at the head of this file import at load time and which nothing
+// below imports, `node --test cadence-core/bin/window-budget.test.mjs` there,
+// then remove the worktree.
+
+test('falsifier: a crossing is reported per role and an under-ceiling dispatch is not (MSR-03)', () => {
+  const fx = root();
+  bracket(fx.dir, { phase: 1, plan: '1', role: 'cad-executor', tokens: 275285 });
+  bracket(fx.dir, { phase: 1, plan: '2', role: 'cad-verifier', tokens: 47148 });
+
+  const r = run(fx, ['trace', 'window']);
+
+  // 1. The seam answers at all - the unpatched tree dies here, on usage.
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, 'dispatch-window');
+
+  // 2. The crossing is a self-verify-shaped problem naming the role that crossed.
+  assert.equal(r.problems.length, 1, JSON.stringify(r.problems));
+  const [p] = r.problems;
+  assert.equal(p.kind, 'budget-overrun');
+  assert.match(p.detail, /cad-executor/);
+  assert.ok(p.detail.includes('275285 exceeds budget 200000 by 75285'),
+    `detail did not carry the arithmetic: ${p.detail}`);
+
+  // 3. The under-ceiling dispatch is silent - a ceiling, not an equality, and
+  //    no shrink arm - but it was still COMPARED, not skipped.
+  assert.ok(!r.problems.some((x) => /cad-verifier/.test(x.detail)),
+    'the under-ceiling verifier dispatch was reported');
+  assert.equal(r.compared, 2);
+  assert.equal(r.unrecorded, 0);
+  assert.deepEqual(r.unbudgeted, {});
+
+  // 4. Nothing was refused: both dispatches are in the record and the seam
+  //    reports on a run that already completed.
+  assert.equal(r.ceilings['cad-executor'], 200000);
+  assert.equal(r.ceilings['cad-verifier'], 100000);
+});
