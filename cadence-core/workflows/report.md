@@ -15,11 +15,12 @@ report, which is itself the answer.
 </step>
 
 <step name="read_record">
-Two seam calls:
+Three seam calls:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>]
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads --join
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace window [--phase <N>]
 ```
 
 Everything below reads from the first return: `brackets` (one row per paired
@@ -30,7 +31,11 @@ whose close carried a tool-call count), `outcomes` (every outcome event),
 coordinator's own per-step residue, present only where markers were written),
 `unpaired`, `mismatched`, `capped`, `malformed`. Never ask for the raw `events`
 array: nothing here reads one, and the flag re-buys 27 KB on the one path that
-reads a record into a model's context. The second is the in-dispatch read ledger
+reads a record into a model's context. The third reads the SAME `brackets[]`
+rows against the per-role `workflow.max_dispatch_tokens` ceilings and
+returns `ceilings`, `problems` (each `{kind, file, detail}`), `compared`,
+`unbudgeted` and `unrecorded`; it takes the same `--phase` scope, so pass it
+whatever the render got. The second is the in-dispatch read ledger
 over `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
 `--join` ties each record to the dispatch bracket that caused it: `joined`,
 `ambiguous`, `unjoined`, `floor`, `coordinator`, `unresolved`.
@@ -53,6 +58,7 @@ Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / s
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
+Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
 Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
 Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; omit the whole line when the record is empty>
 ```
@@ -87,6 +93,16 @@ Rules, all load-bearing:
   a later budgeting decision needs the factors, and a stored product recreates
   the maintenance loop `v2.7.0` deleted when it removed the checked-in derived
   figures.
+- A window crossing is a FINDING and refuses nothing. The dispatch it names
+  already returned - nothing in the dispatch seam can resize or cancel a running
+  one - so the line reports what a completed run cost against a ceiling, and the
+  run it came from completed. Its figure is the SAME final-window proxy the gap
+  terms above describe, read off the same `brackets[]` `tokens` key, so this
+  command never acquires a second, differently denominated window number. Print
+  the figure and the ceiling as the two numbers they are and never their
+  quotient, and print no crossing the seam did not return: a role with no ceiling
+  counts under `unbudgeted` and a return with no figure under `unrecorded`,
+  neither as a zero and neither as a crossing.
 - The billed figure comes from a tool the USER runs, named here only as
   provenance: `burnrate`, which is what the measurement behind this line was
   taken against. Cadence fetches nothing, shells out to nothing and bundles
