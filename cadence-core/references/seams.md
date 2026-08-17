@@ -303,8 +303,9 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   bad-args | bad-command`, and an unforeseen bug as `internal`). `over-cap` is
   the prompt bound: `review` and `consult` both refuse a payload over
   `review.max_prompt_tokens` estimated tokens (chars/4, default 120000) BEFORE
-  any request is issued; `claude-subagent` never runs this script and is
-  exempt. `over-response` is the same bound the other way round, on the response:
+  any request is issued; `claude-subagent` never runs this script and is exempt
+  from it, bounded instead by the spawn-agent turn cap, `maxTurns: 200`.
+  `over-response` is the same bound the other way round, on the response:
   every command destroys the request once the body passes 4 MiB, so a flooding
   provider meets a refusal Cadence owns rather than the execution host's wrapping
   command timeout, and an `http` failure carries `detail.body` as a sanitized
@@ -312,7 +313,8 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
 - The default backend `claude-subagent` does NOT use this seam - it goes
-  through spawn-agent with a fresh-context, refute-prompted reviewer.
+  through spawn-agent with a fresh-context, refute-prompted reviewer, and takes
+  that seam's turn cap as its bound in place of anything stated here.
 - Model, effort, and per-provider endpoint/key-file path come from config
   (`review.providers.<name>`; per-trigger `review.triggers.<t>.tier` resolves
   the model id, `.effort` the reasoning level).

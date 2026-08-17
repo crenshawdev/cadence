@@ -5,7 +5,8 @@ a trigger point runs `fire(<trigger>)` as defined here - it never inlines its ow
 reviewer loop. Two backends, one finding schema, so the adjudicator merges them
 blind:
 - `claude-subagent` (default, zero-dep): spawn the `cad-reviewer` agent via the
-  spawn-agent seam, prompted to REFUTE the artifact.
+  spawn-agent seam, prompted to REFUTE the artifact. Bounded by that seam's turn
+  cap, `maxTurns: 200`.
 - cross-model (`openai` / `gemini` / `deepseek`, ... - any provider with an
   adapter): the call-review-provider seam (`bin/review-provider.mjs`), a
   provider API call.
