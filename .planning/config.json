@@ -24,7 +24,8 @@
         ]
       },
       "diff": {
-        "gate": "blocking"
+        "gate": "blocking",
+        "tier": "flagship"
       },
       "phase_diff": {
         "gate": "adjudicated"
