@@ -695,16 +695,35 @@ function providerEvents() {
 }
 
 /**
- * The wire, faked. `wire` is `{timeout:true}` or `{status, body}`; `seen`
- * collects what the seam handed the transport, so a test can assert the
- * destination and the options as well as the outcome.
+ * The wire, faked. `wire` is one of:
+ *   `{timeout:true}`                 - the socket goes quiet and 'timeout' fires
+ *   `{status, body}`                 - one chunk, the whole body at once
+ *   `{status, chunks:[...]}`         - the body arriving in order, chunk by chunk
+ * `body` and `chunks` are the same thing at different granularities: a real
+ * response arrives in as many pieces as the network chose, and a bound counted
+ * PER CHUNK cannot be exercised by a fake that only ever emits one.
+ *
+ * `seen` collects what the seam handed the transport, so a test can assert the
+ * destination and the options as well as the outcome. Each entry also carries
+ * `chunksEmitted` - how many of the list actually reached the seam - which is
+ * how a test tells a stream that was CUT from one that was drained.
+ *
+ * Destroying either half stops the emit loop before the next chunk: `req.destroy`
+ * (the seam's own abort mechanism, which also emits 'error' so the promise
+ * rejects) and `res.destroy`. A fake that kept emitting after a destroy could not
+ * distinguish a seam that aborted the request from one that merely stopped
+ * appending, which is the whole distinction the response bound turns on. A cut
+ * stream never emits 'end' either - a destroyed socket does not finish.
  */
 function fakeTransport(wire, seen) {
   return (/** @type {URL} */ url, /** @type {any} */ options, /** @type {any} */ cb) => {
-    seen.push({ url: String(url), options });
+    const record = { url: String(url), options, chunksEmitted: 0 };
+    seen.push(record);
+    let destroyed = false;
     const req = Object.assign(new EventEmitter(), {
       write: () => true,
       destroy: (/** @type {any} */ err) => {
+        destroyed = true;
         req.emit('error', err || new Error('socket destroyed'));
       },
       end: () => {
@@ -712,9 +731,19 @@ function fakeTransport(wire, seen) {
         // are attached first, exactly as they are against a real socket.
         queueMicrotask(() => {
           if (wire.timeout) { req.emit('timeout'); return; }
-          const res = Object.assign(new EventEmitter(), { statusCode: wire.status });
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: wire.status,
+            destroy: () => { destroyed = true; },
+          });
           cb(res);
-          if (wire.body !== undefined) res.emit('data', wire.body);
+          const chunks = wire.chunks !== undefined ? wire.chunks
+            : wire.body !== undefined ? [wire.body] : [];
+          for (const c of chunks) {
+            if (destroyed) return;
+            res.emit('data', c);
+            record.chunksEmitted += 1;
+          }
+          if (destroyed) return;
           res.emit('end');
         });
       },
@@ -744,7 +773,17 @@ async function runFaked(argv, wire, env = {}) {
   }
   process.chdir(faultCwd);
   process.exitCode = 0;
-  process.stdout.write = (/** @type {any} */ chunk) => { out += chunk; return true; };
+  // Capture the SEAM's writes only. `emit` writes a string; the test runner
+  // writes its own `test:complete` events to this same stdout as v8-serialized
+  // BUFFERS, and those flush on whatever tick the runtime picks - observed
+  // landing inside this window and turning the one JSON line into unparseable
+  // bytes. Forwarding a non-string through keeps the runner's protocol intact
+  // and keeps `out` the seam's own output whatever the tick alignment is.
+  process.stdout.write = (/** @type {any} */ chunk, /** @type {any[]} */ ...rest) => {
+    if (typeof chunk !== 'string') return realWrite.call(process.stdout, chunk, ...rest);
+    out += chunk;
+    return true;
+  };
   try {
     await __runCommandForTests(argv);
   } finally {
@@ -759,6 +798,56 @@ async function runFaked(argv, wire, env = {}) {
   process.exitCode = prevExit;
   return { line: out, envelope: JSON.parse(out), code, seen };
 }
+
+test('harness: a body split across chunks reaches the seam as the same body', async () => {
+  // The equivalence the chunk list has to hold before anything can be counted
+  // per chunk: three pieces of one JSON document, split mid-token so no piece
+  // parses alone, must produce byte-for-byte the envelope the whole body does.
+  const body = JSON.stringify({
+    output_text: JSON.stringify({
+      findings: [{
+        file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+        claim: 'the response body is concatenated without a ceiling',
+        failure_scenario: 'a proxy error page is held whole in memory',
+      }],
+    }),
+  });
+  const whole = await runFaked(REVIEW_ARGS, { status: 200, body });
+  const split = await runFaked(REVIEW_ARGS, {
+    status: 200, chunks: [body.slice(0, 17), body.slice(17, 90), body.slice(90)],
+  });
+  assert.equal(whole.envelope.ok, true, whole.line);
+  assert.deepEqual(split.envelope, whole.envelope);
+  assert.equal(split.envelope.findings.length, 1);
+  assert.equal(whole.seen[0].chunksEmitted, 1);
+  assert.equal(split.seen[0].chunksEmitted, 3);
+});
+
+test('harness: a destroyed response stops the emit loop mid-list', () => {
+  // The load-bearing half of the fake. Driven directly rather than through
+  // runFaked because the seam does not destroy a response of its own accord -
+  // this pins the MECHANISM the byte ceiling will reach for, so a later test
+  // asserting "fewer chunks emitted than the list holds" is asserting something
+  // the harness can actually report.
+  /** @type {any[]} */
+  const seen = [];
+  const wire = { status: 200, chunks: ['one', 'two', 'three'] };
+  let ended = false;
+  const req = fakeTransport(wire, seen)(
+    new URL('https://api.openai.com/v1/responses'), {},
+    (/** @type {any} */ res) => {
+      res.on('end', () => { ended = true; });
+      res.on('data', () => res.destroy());
+    },
+  );
+  req.on('error', () => {});
+  req.end();
+  return new Promise((resolve) => setImmediate(() => {
+    assert.equal(seen[0].chunksEmitted, 1, 'the stream was cut, not drained');
+    assert.equal(ended, false);
+    resolve(undefined);
+  }));
+});
 
 test('fault: the destination is the adapter base, and no environment variable moves it', async () => {
   // The reason the transport seam is a module-private reference and not an env
