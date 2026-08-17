@@ -60,7 +60,10 @@ How a workflow dispatches work to a fresh-context subagent.
   running. A config key claimed a wall-clock kill until v2.7.0, when it was
   deleted for naming a control nothing could apply. Plan size is still the real
   lever on what one dispatch costs, which is what `workflow.max_plan_tasks` is
-  for.
+  for. So a dispatch that comes back unusable has exactly two producers:
+  the turn cap cut the dispatch, or the return is missing or unparseable. A
+  coordinator's recovery arm names those two rather than a wall-clock kill this
+  seam cannot produce (`cadence-core/workflows/execute.md`).
 - Every dispatch is fresh-context and self-contained; there is no resume or
   "continue the same agent". A re-dispatch (revision, continuation, escalation)
   is a NEW spawn that reads the prior artifact from disk - never a
