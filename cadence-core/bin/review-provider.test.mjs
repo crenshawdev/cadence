@@ -1624,6 +1624,28 @@ test('RVP-01: the response is bounded by bytes Cadence owns, and the failure env
   assert.match(failure.envelope.detail.body, /upstream rejected the request/);
 });
 
+test('bound: a credential straddling the sanitize window does not reach the envelope', async () => {
+  // The window-edge case the phase-3 deep pass found and this fixes at the
+  // root. `bodyExcerpt` sanitizes a bounded 4096-byte window, so a credential
+  // whose closing quote falls OUTSIDE that window arrives at `redactCredentials`
+  // unterminated. The trailing-token safeguard cannot catch it either: that arm
+  // is gated on `clean <= room`, and this body is built so redaction shrinks the
+  // window to JUST PAST the cap - 73 bytes of the value rode the envelope.
+  //
+  // The prefix must be COMPRESSIBLE for that to happen: 77 credential pairs of
+  // 48 bytes each collapse to 12, which is the ~4:1 ratio that puts the
+  // straddling value inside the first `room` bytes of the sanitized result.
+  const filler = '"token":"' + 'A'.repeat(36) + '", ';
+  const body = filler.repeat(77)
+    + '"password":"SUPERSECRET_' + 'S'.repeat(400) + '"'
+    + 'x'.repeat(8000);
+  const failure = await runFaked(REVIEW_ARGS, { status: 502, body });
+  assert.equal(failure.envelope.detail.body.includes('SUPERSECRET'), false,
+    `a window-straddling credential rode the envelope: ${failure.envelope.detail.body}`);
+  assert.ok(Buffer.byteLength(failure.envelope.detail.body) <= 1024,
+    'the excerpt is still capped');
+});
+
 // --- the RVP-02 falsifier -----------------------------------------------------
 //
 // WATCHED FAILING AT 15b5d4c, the tip of this plan's unpatched tree. Observed

@@ -243,3 +243,30 @@ test('redactCredentials: camelCase names are credential names too', () => {
   assert.equal(redactCredentials('turkey: soup'), 'turkey: soup');
   assert.equal(redactCredentials('mistoken=1'), 'mistoken=1');
 });
+
+test('redactCredentials: a quoted value cut before its closing quote still goes', () => {
+  // The window-edge case. `bodyExcerpt` sanitizes a bounded PREFIX of a large
+  // body, so a credential straddling that window arrives with its opening quote
+  // and no closing one. The terminated alternatives could not match it, the
+  // bare class excludes `"` and `'`, and the pair survived byte-identical.
+  for (const body of [
+    '{"other":1, "password":"SUPERSECRET_TAIL_KEEPS_GOING',
+    "{'other':1, 'passwd': 'SUPERSECRET_TAIL_KEEPS_GOING",
+    '{"apiSecret": "SUPERSECRET_TAIL_KEEPS_GOING',
+    '{"x-api-key":"SUPERSECRET_TAIL_KEEPS_GOING',
+  ]) {
+    const out = redactCredentials(body);
+    assert.equal(out.includes('SUPERSECRET'), false,
+      `a window-truncated value survived: ${out}`);
+    assert.ok(out.includes('<redacted>'), `nothing was redacted in ${out}`);
+  }
+  // The terminated forms are tried FIRST, so a well-formed body is untouched
+  // past the value it was always going to redact - the diagnostic the excerpt
+  // exists to carry must not be eaten by the new alternatives.
+  assert.equal(
+    redactCredentials('{"password":"hunter2", "error":"model not found: gpt-9"}'),
+    '{<redacted>, "error":"model not found: gpt-9"}');
+  // And a lone unmatched quote carrying no credential name is still not a
+  // credential span.
+  assert.equal(redactCredentials('the "quick brown fox'), 'the "quick brown fox');
+});

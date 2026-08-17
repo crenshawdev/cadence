@@ -662,11 +662,17 @@ function failRequest(meta, e) {
  * its four other callers hand it a git error message, so the cost only became
  * reachable here.
  *
- * The window's own edge cannot reach the excerpt. It is 4x the cap, so anything
- * near it is discarded by the cap unless sanitizing shrank the window below the
- * cap - a body that is almost entirely credential spans - and in exactly that
- * case the trailing token is dropped at the last WHITESPACE, which is the one
- * character class no credential VALUE this seam recognizes can contain.
+ * The window's own edge is handled where it is CREATED, not here. Cutting a
+ * prefix can leave a credential's opening quote inside the window and its
+ * closing quote outside, so `redactCredentials` matches an unterminated quoted
+ * value to end-of-input - see rule 4's VALUE alternatives in lib/redact-url.mjs.
+ * The earlier reasoning on this line was that the cap discards anything near the
+ * edge unless sanitizing shrank the window below the cap, in which case the
+ * trailing token is dropped at the last whitespace. That arm is gated on
+ * `clean <= room`, so a body that is almost entirely credential spans could
+ * shrink to JUST PAST the cap, skip the safeguard, and carry 73 bytes of a value
+ * into the envelope. Both regression fixtures are in the test file; the
+ * whitespace arm below stays as a second line of defence, not the guarantee.
  *
  * The cut is by BYTES, and the head is trimmed back if slicing landed
  * mid-code-point, so the returned string never exceeds the cap however the body

@@ -113,13 +113,25 @@ const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._
 //    against a provider-controlled body up to the response ceiling.
 const CRED_NAME = '(?:[A-Za-z0-9]+[_.-]){0,4}'
   + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)';
-//    The VALUE is three alternatives, not one class. A quoted value runs to its
+//    The VALUE is five alternatives, not one class. A quoted value runs to its
 //    closing quote so a secret containing a space (`"password": "hunter2 xyz"`)
 //    goes whole - the bare class stops at the first space and left the tail in
-//    the excerpt, which is the leak this whole rule exists to prevent. Both
-//    quoted forms are `[^"]*` / `[^']*`: one bounded quantifier each, so the
-//    linear-time property the prefix bound above protects is unchanged.
-const CRED_VALUE = `(?:"[^"]*"|'[^']*'|[^\\s&"',;)\\]}>]+)`;
+//    the excerpt, which is the leak this whole rule exists to prevent.
+//
+//    The UNTERMINATED quoted forms exist because a caller may hand this a
+//    PREFIX of a larger body: `bodyExcerpt` sanitizes a bounded window, so a
+//    credential straddling that window arrives carrying its opening quote and
+//    no closing one. The terminated alternatives cannot match it, and the bare
+//    class excludes `"` and `'` so it cannot match either - the whole pair used
+//    to survive byte-identical, and 73 bytes of a value reached the failure
+//    envelope in the measured case. Running to end-of-input closes that. The
+//    terminated forms are tried FIRST, so a well-formed body is untouched, and
+//    the worst an unterminated quote costs is over-redaction of a malformed
+//    tail - never a leak.
+//
+//    All four quoted forms are `[^"]*` / `[^']*`: one bounded quantifier each,
+//    so the linear-time property the prefix bound above protects is unchanged.
+const CRED_VALUE = `(?:"[^"]*"|'[^']*'|"[^"]*$|'[^']*$|[^\\s&"',;)\\]}>]+)`;
 const CRED_PAIR = new RegExp(
   `(?<![A-Za-z0-9_.-])["']?${CRED_NAME}["']?\\s*[:=]\\s*${CRED_VALUE}`, 'gi');
 
