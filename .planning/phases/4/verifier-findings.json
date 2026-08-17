@@ -1,0 +1,66 @@
+{
+  "status": "delivered",
+  "score": "7/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A config key names the per-role dispatch-window ceiling and a `planning.mjs trace` surface reports a per-role crossing of it in the `budget-overrun` shape, read off the `tokens` on `brackets[]` rows",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Six `workflow.max_dispatch_tokens.<role>` int keys at cadence-core/config.schema.json:32-37 (planner/executor 200000, assumptions-analyzer/reviewer 150000, verifier 100000, plan-checker 75000). Value traced end to end: cadence-core/bin/planning.mjs:3265-3305 resolves DISPATCH_WINDOW_DEFAULTS through mergeLayers, feeds `windowBudget(r.file, r.brackets, ceilings)` (cadence-core/bin/lib/window-budget.mjs), and emits the problems. Live probe `node cadence-core/bin/planning.mjs trace window --phase 4` returned ceilings + 4 problems, each `{kind:\"budget-overrun\", file:\".planning/trace.jsonl\", detail:\"cad-executor (corr 4-0e7e70e, phase 4, plan 1, return at ...): 245828 exceeds budget 200000 by 45828\"}` - role named, compared 18, unbudgeted {\"(no role)\":1}, unrecorded 2. `trace window` also carries its CONTRACTS row at cadence-core/bin/self-verify.mjs:382 (`'trace window': ['--phase']`)."
+    },
+    {
+      "n": 2,
+      "truth": "The ceiling's value is argued in shipped prose from named trace.jsonl keys with the per-role figures, and no dispatch is refused - the crossing is a post-hoc finding",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/references/seams.md:67-95 states the ceiling is 'READ, never applied', names the budgeted quantity as the `tokens` on a `brackets[]` row of `.planning/trace.jsonl` read as a FINAL-WINDOW PROXY, and lists every default with its derivation (p75 rounded up to the next 25,000: cad-executor n=72 p75 182,631 max 275,285; cad-planner n=28 p75 188,135; cad-verifier n=24 p75 82,633; cad-reviewer n=2 p75 125,100; cad-plan-checker n=5 p75 64,203; cad-assumptions-analyzer n=25 p75 145,054). Non-refusal verified by reach: `grep -rn max_dispatch_tokens cadence-core agents skills` finds it only in the schema, planning.mjs:3282 (the report), self-verify comments, tests, report.md:43 and the six config-reach.md:125-130 rows, all reading 'trace window report only' - no agent frontmatter, dispatch path or spawn seam consults it. The live `trace window` run returned ok:true with 4 crossings and nothing refused."
+    },
+    {
+      "n": 3,
+      "truth": "The bulk-output rule is stated exactly once, in references/conventions.md, with a frozen register in cadence-core/bin/lib/ that carries no copy of the words",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`grep -rn 'rides a file, not the transcript' cadence-core agents skills` returns exactly one hit: cadence-core/references/conventions.md:97 (the rule runs :93-112 - measured threshold from .planning/reads.jsonl, the `> \"${TMPDIR:-/tmp}/<name>\"` transport, the digest requirement, the no-new-seam clause, and the pointer at the register). No copy in cadence-core/bin/lib/bulk-output.mjs (17 register rows at :191-298, exports BULK_OUTPUT/BULK_SHAPES/CODES/bulkOutputIssues). The two test files that grep as containing 'rides a file' assemble the clause from halves on purpose (prose-agreement.test.mjs:1285 `['rides a file','not the transcript'].join(', ')`), so the single-carrier assertion is not reporting on itself."
+    },
+    {
+      "n": 4,
+      "truth": "self-verify bites when a registered bulk-output site regresses to riding the transcript, and reports an unclassified site rather than skipping it",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Behavior observed without mutating any file, by calling the pure rule on modified text: bulkOutputIssues('cadence-core/references/triage-gate.md', <shipped text>) returns [] ; with the redirect stripped it returns [{kind:'bulk-output-inline', file:'cadence-core/references/triage-gate.md', detail:'`trace render --phase <N>` is registered as riding a scratch file and this line prescribes it with the output in the transcript...'}]; an unregistered `trace render --phase 9` call in a novel surface returns [{kind:'bulk-output-unregistered', ...'is classified by no row in lib/bulk-output.mjs - register it ... or out of scope with the reason'}]. Wired: cadence-core/bin/self-verify.mjs:184 imports it and :868 pushes its issues for every prose surface in the walk; the envelope's ok is `problems.length === 0` (:1460), so a bite exits non-zero. Full-tree run today: ok:true, problems []."
+    },
+    {
+      "n": 5,
+      "truth": "workflow.max_plan_tasks carries a written decision on a check-bound surface naming both forces with a measured, reproducible figure behind each, and the value it lands on",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "design-notes/dd-plan-task-ceiling.md (tracked past .gitignore:23 with the reason in its own header) prices both forces with the producing command at each figure, and the decision is republished on the two surfaces a check binds: cadence-core/config.schema.json workflow.max_plan_tasks `purpose` and cadence-core/references/config-catalog.md:30, both stating 'landing on 8, unchanged' with 12,488 bytes / ~2% and the checkpoint count. Figures reproduce on probe: `node cadence-core/bin/weight.mjs resident` gives agents/cad-executor.md dispatchBytes 12488, cad-planner 11664, cad-verifier 11277, zeroResidentBytes 40577; `.planning/trace.jsonl` now holds 22 checkpoint events, 16 cad-executor (the note says 21/15 dated 2026-08-17 and explicitly warns the numerator is live). The note's context-risk claim also holds on inspection: every checkpoint-bearing plan file still present (.planning/phases/{1,2,3,4}/PLAN-*.md) has 3-7 tasks, all under 8, with one row (phase 3 plan '5') having no surviving plan file."
+    },
+    {
+      "n": 6,
+      "truth": "Each of MSR-03, TRN-02 and PLN-01 has a falsifier carrying a `WATCHED FAILING AT <sha>` header, and the check run against the SHA it names exits non-zero",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "SHAs extracted per line, not counted: cadence-core/bin/window-budget.test.mjs:249 `WATCHED FAILING AT 9b1fe53`; cadence-core/bin/prose-agreement.test.mjs:1236 `86cd45d` (TRN-02) and :1350 `617a2a1` (PLN-01). All three re-watched in throwaway detached worktrees (removed after; `git worktree list` back to one entry): at 9b1fe53 `node --test cadence-core/bin/window-budget.test.mjs` exit 1; at 86cd45d `--test-name-pattern='TRN-02'` exit 1 with 'references/conventions.md states no bulk-output rule...'; at 617a2a1 `--test-name-pattern='PLN-01'` exit 1 with \"config.schema.json's workflow.max_plan_tasks purpose carries no landed...\". Each named SHA is a real commit preceding its plan's work (git log: 9b1fe53 < a79aad2, 86cd45d < 08a34be, 617a2a1 < 3bf1653)."
+    },
+    {
+      "n": 7,
+      "truth": "Full suite and self-verify are green, with weight-budgets pins current and a CONTRACTS row for the new subcommand",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "One full-suite run: `node --test cadence-core/bin/*.test.mjs` exit 0, tests 2150 / pass 2150 / fail 0 / skipped 0 / todo 0 (includes 'falsifier: a crossing is reported per role and an under-ceiling dispatch is not (MSR-03)'). `node cadence-core/bin/self-verify.mjs` exit 0, ok:true, problems [] across the 24 named checks including budgets (so weight-budgets.json is re-pinned for every edited prose surface - a stale pin would raise `budget-overrun`/`unbudgeted-surface`) and script-contracts. The one new subcommand has its row at cadence-core/bin/self-verify.mjs:382."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Dispatch-window ceiling is a config key and trace reports a per-role crossing", "evidence": "config.schema.json:32-37 six per-role int keys; planning.mjs:3265-3305 resolves them through mergeLayers into windowBudget(r.brackets); live `trace window --phase 4` printed 4 `budget-overrun` problems naming cad-executor and cad-planner with n/m/delta, compared 18, unbudgeted {\"(no role)\":1}, unrecorded 2; CONTRACTS row at self-verify.mjs:382." },
+    { "k": 2, "name": "The ceiling's value is argued in shipped prose, and nothing is refused", "evidence": "seams.md:67-95 argues each default as that role's p75 terminal `tokens` on brackets[] rows rounded up to 25,000, with n/p75/max per role, and states the ceiling is READ never applied; reach grep finds no dispatch-path, agent-frontmatter or spawn-seam consumer - only planning.mjs's report, report.md:43 and the six config-reach.md:125-130 'trace window report only' rows; the live run returned ok:true with crossings and refused nothing." },
+    { "k": 3, "name": "The bulk-output rule is stated exactly once", "evidence": "`grep -rn 'rides a file, not the transcript'` over cadence-core/, agents/ and skills/ returns exactly conventions.md:97; the 17-row register plus pure rule in bin/lib/bulk-output.mjs carries a pointer and no copy; the test assembles the clause from halves so it is not its own second carrier." },
+    { "k": 4, "name": "self-verify bites when a registered bulk-output site regresses", "evidence": "bulkOutputIssues on the shipped triage-gate.md returns []; with the redirect stripped it returns `bulk-output-inline` naming that file; an unregistered call returns `bulk-output-unregistered` rather than being skipped. Wired at self-verify.mjs:184/:868 with ok = problems.length===0 at :1460; full-tree run ok:true, problems []." },
+    { "k": 5, "name": "max_plan_tasks carries a written decision on a bound surface", "evidence": "design-notes/dd-plan-task-ceiling.md plus the schema `purpose` and config-catalog.md:30 both state the 2026-08-17 re-decision landing on 8; probes reproduce 12,488 executor dispatchBytes and 22/16 checkpoints (note dated 21/15 and flags the numerator as live); every surviving checkpoint-bearing plan file has 3-7 tasks." },
+    { "k": 6, "name": "Each falsifier carries a WATCHED FAILING AT sha that actually fails", "evidence": "Per-line SHA extraction: window-budget.test.mjs:249 9b1fe53, prose-agreement.test.mjs:1236 86cd45d, :1350 617a2a1. Re-watched in detached worktrees at each named SHA with the current test file copied in: exit 1 in all three, each on the intended assertion; worktrees removed." },
+    { "k": 7, "name": "Full suite and self-verify green, pins and CONTRACTS current", "evidence": "`node --test cadence-core/bin/*.test.mjs` exit 0, 2150/2150 pass; `node cadence-core/bin/self-verify.mjs` exit 0 with empty problems across 24 checks (budgets check green implies the re-pins landed); `trace window` CONTRACTS row present." }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
