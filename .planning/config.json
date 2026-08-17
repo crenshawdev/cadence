@@ -30,5 +30,11 @@
         "gate": "adjudicated"
       }
     }
+  },
+  "model": {
+    "effort": {
+      "cad-verifier": "high",
+      "cad-plan-checker": "high"
+    }
   }
 }
