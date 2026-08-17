@@ -1344,3 +1344,96 @@ test('TRN-02: the bulk-output rule is stated once, and every converted site perf
       + `not the scratch file the rule states. Got: ${calls[0].trim()}`);
   }
 });
+
+// --- PLN-01: the plan-task ceiling's decision, read off both bound surfaces --
+//
+// WATCHED FAILING AT 617a2a1, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/prose-agreement.test.mjs
+//   x PLN-01: the max_plan_tasks decision reads the same off the schema and the
+//     catalog
+//     AssertionError [ERR_ASSERTION]: config.schema.json's workflow.max_plan_tasks
+//     purpose carries no landed - it states what the key means and not what its
+//     value was decided against, so the ceiling is argued nowhere a check can read
+//       actual: null,
+//       expected: null,
+//       operator: 'notStrictEqual',
+//   i pass 28
+//   i fail 1
+//
+// and `node --test cadence-core/bin/prose-agreement.test.mjs` exits 1 there.
+//
+// To re-watch: `git worktree add --detach <tmp> 617a2a1`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/prose-agreement.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+// The defect this fails on: `workflow.max_plan_tasks` stated its MEANING on
+// both surfaces and its DECISION on neither, so the one number a phase's whole
+// plan count hangs off was argued nowhere a check reads. A phase SUMMARY is not
+// that place - `milestone-prune` removes it at the close.
+//
+// The subject is AGREEMENT, never presence. Each figure is EXTRACTED out of the
+// surface's own bytes and compared to the other surface's extraction, so a test
+// that went green on "some expected phrase appears in each" - and would stay
+// green on the day the two surfaces started stating different numbers - is not
+// what is written here. The extractions are deliberately three, because three
+// is what the decision is made of: what an extra plan costs cold, what the
+// record says about plans outrunning a context, and where those two land.
+//
+// The landed value is then checked against the machine-readable defaults on
+// BOTH surfaces, which is the failure mode a prose argument invites: prose that
+// argues for 8 beside a `"default": 6` is worse than no prose, because a reader
+// believes it.
+
+/**
+ * The three figures the `workflow.max_plan_tasks` re-decision is written with,
+ * pulled OUT of one surface's own bytes. A field the surface does not carry
+ * extracts `null` rather than throwing, so the comparison below can name WHICH
+ * of two surfaces is missing a figure instead of dying on the first one.
+ */
+function ceilingDecision(text) {
+  const landed = text.match(/landing on (\d+)/);
+  const prefix = text.match(/([\d,]+) bytes/);
+  const checkpoints = text.match(/(\d+) executor checkpoints of (\d+)/);
+  return {
+    landed: landed ? Number(landed[1]) : null,
+    prefixBytes: prefix ? prefix[1] : null,
+    execCheckpoints: checkpoints ? Number(checkpoints[1]) : null,
+    allCheckpoints: checkpoints ? Number(checkpoints[2]) : null,
+  };
+}
+
+test('PLN-01: the max_plan_tasks decision reads the same off the schema and the catalog', () => {
+  const key = JSON.parse(doc('cadence-core', 'config.schema.json'))
+    .keys['workflow.max_plan_tasks'];
+  assert.ok(key, 'config.schema.json defines no workflow.max_plan_tasks');
+  const schema = ceilingDecision(String(key.purpose));
+  const row = tableRow(
+    doc('cadence-core', 'references', 'config-catalog.md'), 'workflow.max_plan_tasks');
+  const catalog = ceilingDecision(row[2]);
+
+  // 1. The schema states the whole decision, not part of it.
+  for (const [field, value] of Object.entries(schema)) {
+    assert.notEqual(value, null,
+      `config.schema.json's workflow.max_plan_tasks purpose carries no ${field} - `
+      + 'it states what the key means and not what its value was decided against, '
+      + 'so the ceiling is argued nowhere a check can read');
+  }
+
+  // 2. The catalog row states the SAME decision. Compared as extractions, so a
+  //    figure changed on one surface and not the other is what fails, and the
+  //    message carries both sides rather than the phrase that was looked for.
+  assert.deepEqual(catalog, schema,
+    'config-catalog.md and config.schema.json extract different max_plan_tasks '
+    + 'decisions - one of the two surfaces was edited alone, so a reader gets a '
+    + 'different argument depending on which one they opened');
+
+  // 3. And the value the prose argues is the value the machine reads, on both
+  //    surfaces. Prose arguing for one number beside a default holding another
+  //    is worse than no prose: it is believed.
+  assert.equal(schema.landed, key.default,
+    `the schema purpose argues for ${schema.landed} and its own default is ${key.default}`);
+  assert.equal(schema.landed, Number(row[4]),
+    `the decision lands on ${schema.landed} and config-catalog.md's Default column says ${row[4]}`);
+});
