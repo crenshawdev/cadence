@@ -88,6 +88,29 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
   `cadence-core/bin/lib/text-transport.mjs`, and self-verify reports a site the
   register does not classify - so a NEW site is registered, not argued.
 
+## Bulk tool output
+
+- The size test, asked once per tool call a prose site PRESCRIBES: does that
+  call's own measured response cross 10,000 bytes? That figure is the mean
+  `Read` response on this repository - 10,323 B over 780 recorded calls,
+  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output
+  rides a file, not the transcript: redirect the call into a scratch path
+  (`> "${TMPDIR:-/tmp}/<name>"`) and hand the transcript a DIGEST of what the
+  step actually needs. A response sitting in the transcript is re-paid on every
+  later turn at the cache-read rate; a digest is paid once.
+- The conversion is a shell redirect plus a targeted read-back - never a new
+  seam, flag or subcommand. Read back only the fields the step prints or
+  branches on, one at a time; reading the scratch file WHOLE is the same bytes
+  on the same turn and buys nothing. The file is the model's own scratch, never
+  a phase artifact.
+- If no, the call stays inline: a response under the threshold, a form its own
+  flags already bound (`--stat`, `--name-only`), a call another agent runs in
+  its own context.
+- No site decides this for itself. Every one is classified in
+  `cadence-core/bin/lib/bulk-output.mjs` with its measured figure, and
+  self-verify reports a site the register does not classify - so a NEW site is
+  registered, not argued.
+
 ## Parallel work
 
 The coordinator walks a workflow's steps in order, but ordering the STEPS does
