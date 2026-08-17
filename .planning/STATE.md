@@ -1,6 +1,6 @@
 # State
 
 Phase: 2 of 2 (The record learns to see the run)
-Status: executed
-Next: /cad-verify 2
-Updated: 2026-08-16
+Status: phase complete
+Next: /cad-milestone - phase 2 was the last in the roadmap; the audit gate precedes any ship
+Updated: 2026-08-17

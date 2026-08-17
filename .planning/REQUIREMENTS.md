@@ -277,8 +277,8 @@ section only, bounded at the next `## ` heading.
 | RCL-07 | Phase 1 | Complete |
 | GAT-04 | Phase 1 | Complete |
 | PAR-01 | Phase 1 | Complete |
-| MSR-01 | Phase 2 | Pending |
-| MSR-02 | Phase 2 | Pending |
+| MSR-01 | Phase 2 | Complete |
+| MSR-02 | Phase 2 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

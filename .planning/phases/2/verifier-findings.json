@@ -1,0 +1,89 @@
+{
+  "status": "gaps",
+  "score": "8/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "`trace close` persists the tool-call count off the subagent return, and `trace render --phase 2` reports turns per bracket and per role",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/planning.mjs:2975-2998 (--turns validated in the shared append|close body), :3145-3149 (conditional spread onto the event); cadence-core/bin/lib/trace.mjs:620-624,656-661,686-696,729-738 (numeric guard, replay identity, bracket key, role triple). Live: `node cadence-core/bin/planning.mjs trace render --phase 2` returns roles.cad-executor = {dispatches:19, tokens:2525404, turns:204, turns_unrecorded:17} and two brackets carrying turns 127 and 77 (127+77=204)."
+    },
+    {
+      "n": 2,
+      "truth": "A close with no turn figure renders under its own `turns_unrecorded` counter, never as 0, and tokens-without-turns stays distinguishable from turns-without-tokens",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/lib/trace.mjs:762-786 (both turn keys gated on turnsFigures; turns_unrecorded is its own counter, separate from `unrecorded`). Live render: cad-planner shows {dispatches:8, tokens:1331664} with no turn key at all, cad-verifier shows tokens + `unrecorded: 2` with no turn key, cad-executor shows both figures and both counters. Named test passes: `node --test --test-name-pattern \"reporting tokens without turns is a different row\" cadence-core/bin/trace.test.mjs` -> pass 1, fail 0."
+    },
+    {
+      "n": 3,
+      "truth": "A malformed `--turns` value is refused wholesale with nothing appended to trace.jsonl",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/planning.mjs:2990-2996 (requireInt plus the <0 guard, returning fail('bad-args')). Exercised in a scratch .planning dir: `--turns -1`, `--turns abc`, `--turns 1.5` and the bare `--turns` each exit 1 and trace.jsonl has 0 lines afterwards; `--turns 0` exits 0 and writes `\"turns\":0`, so a real zero is still recorded."
+    },
+    {
+      "n": 4,
+      "truth": "Neither `/cad-report` nor `/cad-suggest` presents worker-return tokens as the run's cost: one exported list names the exclusions, both readers relay it, `/cad-suggest` gains no flag and recomputes nothing",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/bin/lib/trace-suggest.mjs:75-79 (frozen SPEND_EXCLUDES: orchestrator's own turns, cross-model provider calls, figureless returns), :332 (R5 evidence appends `; excludes ...` via join, kind still 'info', action still null, no new arithmetic). cadence-core/workflows/report.md:51,64-79 (spend line restated as 'not the run's cost' plus the three-name EXCLUDES rule). cadence-core/workflows/suggest.md is BYTE-UNCHANGED across 97eaf03..15610c8 (`git diff --stat` empty) and still states 'Add no flag of any kind' (:20) and 'Relay the figures UNCHANGED and recompute none of them' (:56). prose-agreement.test.mjs:1073-1120 imports SPEND_EXCLUDES and asserts report.md's printed spend line and its EXCLUDES rule name all three, so the two surfaces cannot drift."
+    },
+    {
+      "n": 5,
+      "truth": "The gap is printed as its terms against a named external comparator, with no stored multiplier anywhere in cadence-core/",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/workflows/report.md:52 (shape line 'Gap terms, never a product: <dispatch count; turn count with turns_unrecorded beside it; the per-dispatch window figure; the count of dispatches carrying no figure>'), :80-88 (window figure named as a PROXY, 'Print no ratio and no single gap number'), :89-94 (burnrate named as provenance the USER runs, nothing fetched or bundled). `grep -rniE \"multiplier|ratio|~20x|~25x|61\\.8\" cadence-core/` returns only substring hits inside 'integration'/'configuration' and lib/trace-suggest.mjs:71, which is the comment stating no ratio is stored - no numeric multiplier or ratio constant exists."
+    },
+    {
+      "n": 6,
+      "truth": "`/cad-progress --trace`'s cost sentence and DOCS-CLAIMS row PROGRESS-28 no longer claim the record has one `corr`, and no shipped prose is contradicted by a multi-corr render",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/workflows/progress.md:99-107 now reads 'over the events the phase filter admitted - the filter reads `phase` alone and never `corr`, so those counts can span several runs of the same phase number' and describes the roles block as 'what each worker's returns REPORTED, never the run's price'. .planning/DOCS-CLAIMS.md:1346 PROGRESS-28 rewritten to the filter-reads-phase-alone claim, marked 'corrected - 059493f'. A grep for one-corr assertions across cadence-core/, docs/, README.md and INTERNALS.md finds no shipped sentence claiming a single corr; the live render on this repo spans 8 distinct corr ids for phase 2 and contradicts none of them."
+    },
+    {
+      "n": 7,
+      "truth": "Each requirement half has a check watched failing at a named SHA, and running that check against that SHA exits non-zero",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Headers: cadence-core/bin/trace.test.mjs:1938 ('WATCHED FAILING AT 97eaf03'), cadence-core/bin/trace-suggest.test.mjs:471 and cadence-core/bin/prose-agreement.test.mjs:1030 (both '4b1d659'). Replayed by extracting each SHA with `git archive` into a scratch tree and copying the current test file in: trace.test.mjs at 97eaf03 exits 1 with 11 fails including 'falsifier: turns persist onto the close and reach both the bracket and the role row (MSR-01)'; trace-suggest.test.mjs at 4b1d659 exits 1 with 'MSR-02: the spend receipt names all three excluded sources, from the one exported list'; prose-agreement.test.mjs at 4b1d659 exits 1 with 'MSR-02: report.md names the seam's three excluded sources where it prints the spend figure'. The namespace-import guard works as documented - the old trees reach the assertion and fail on the CLAIM, not on a missing export."
+    },
+    {
+      "n": 8,
+      "truth": "The full suite, self-verify and the typecheck all exit 0, with weight-budgets.json re-pinned and the 'trace close' contract row updated",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "`node --test cadence-core/bin/*.test.mjs` exit 0, 2083 pass / 0 fail. `node cadence-core/bin/self-verify.mjs --root .` exit 0, {\"ok\":true,...,\"problems\":[]} across 23 checks. `npx tsc -p tsconfig.ci.json` exit 0. cadence-core/bin/self-verify.mjs:343-352 lists '--turns' on the 'trace close' row with its rationale. cadence-core/bin/weight-budgets.json re-pinned on all ten touched surfaces (report.md 6935->9605, progress.md 8957->9447, seams.md 19258->19726, plus seven close-site files). cadence-core/bin/fixtures/ is byte-unchanged across the range, so the D-12 old-trace invisibility claim holds; the one fixture deepEqual that moved (trace-suggest.test.mjs:1029-1038) carries its arithmetic in the header as D-12 requires."
+    },
+    {
+      "n": 9,
+      "truth": "No DOCS-CLAIMS row is left asserting the falsified one-corr claim as accurate",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": ".planning/DOCS-CLAIMS.md:894 - row PROGRESS-14 still reads 'Four family counts `routing`, `provider`, `lifecycle`, `outcome` under one `corr`.' anchored at progress.md line 95 and marked 'accurate | accurate'. It is untouched by the range (the DOCS-CLAIMS diff shows PROGRESS-15 and PROGRESS-28 rewritten on either side of it). The sentence it describes is the SAME sentence PROGRESS-28 was corrected for: progress.md:99-101 now says the filter 'reads `phase` alone and never `corr`', and line 95 is now the code fence, not the counts sentence."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "trace close persists the turn count and the render reports turns per dispatch and per role", "evidence": "planning.mjs:2975-2998,3145-3149 and lib/trace.mjs:620-738; live `trace render --phase 2` gives cad-executor turns 204 = 127 + 77, the phase's two executor closes" },
+    { "k": 2, "name": "A close with no turn figure renders under its own unrecorded counter, never as 0", "evidence": "lib/trace.mjs:762-786 gates both turn keys on turnsFigures; live render shows cad-planner with tokens and no turn key, cad-executor with turns 204 and turns_unrecorded 17; named test 'render: reporting tokens without turns is a different row from the reverse' passes" },
+    { "k": 3, "name": "A malformed --turns value is refused wholesale with nothing appended", "evidence": "planning.mjs:2990-2996; -1, abc, 1.5 and the bare flag each exit 1 in a scratch .planning dir with trace.jsonl left at 0 lines, while --turns 0 records a real 0" },
+    { "k": 4, "name": "Neither /cad-report nor /cad-suggest presents worker-return tokens as the run's cost", "evidence": "lib/trace-suggest.mjs:75-79 frozen SPEND_EXCLUDES read by both R5's evidence string (:332) and prose-agreement.test.mjs:1073-1120 against report.md:51,64-79; suggest.md byte-unchanged, still 'Add no flag of any kind' and 'Relay the figures UNCHANGED'" },
+    { "k": 5, "name": "The gap is printed as its terms against a named external comparator, with no stored multiplier", "evidence": "report.md:52,80-94 prints dispatches, turns with turns_unrecorded, the per-dispatch window figure stated as a proxy and the unmeasured count, naming burnrate as a tool the user runs; grep over cadence-core/ finds no ratio or multiplier constant" },
+    { "k": 6, "name": "/cad-progress --trace and DOCS-CLAIMS PROGRESS-28 no longer claim the record has one corr", "evidence": "progress.md:99-107 states the filter reads phase alone and never corr; DOCS-CLAIMS.md:1346 PROGRESS-28 rewritten and marked corrected - 059493f; no shipped prose anywhere claims a single corr" },
+    { "k": 7, "name": "Each requirement half has a check watched failing at a named SHA", "evidence": "Replayed both SHAs from `git archive` into scratch trees: trace.test.mjs exits 1 at 97eaf03 (11 fails incl. the MSR-01 falsifier), trace-suggest.test.mjs and prose-agreement.test.mjs each exit 1 at 4b1d659 on their MSR-02 checks" },
+    { "k": 8, "name": "The full suite and self-verify both exit 0 with pins updated", "evidence": "suite 2083 pass / 0 fail exit 0; self-verify --root . problems: [] exit 0; tsc -p tsconfig.ci.json exit 0; weight-budgets.json re-pinned on all ten touched surfaces; self-verify.mjs:343-352 carries --turns on the 'trace close' row" }
+  ],
+  "gaps": [
+    {
+      "name": "DOCS-CLAIMS row PROGRESS-14 still records the falsified one-corr claim as accurate",
+      "reason": "behavior wrong - a ledger row left asserting, and marking accurate, the exact claim PROGRESS-28 was corrected for in this phase",
+      "evidence": ".planning/DOCS-CLAIMS.md:894 - `| PROGRESS-14 | cadence-core/workflows/progress.md | 95 | Four family counts `routing`, `provider`, `lifecycle`, `outcome` under one `corr`. | accurate | accurate | 2 |`. Untouched by 97eaf03..15610c8 while its neighbours PROGRESS-15 (:895) and PROGRESS-28 (:1346) were both rewritten and re-anchored. The live sentence it cites, progress.md:99-101, now says the filter 'reads `phase` alone and never `corr`', and its line anchor 95 now lands on the code fence rather than the counts sentence - the anchor drift D-13 exists to catch.",
+      "severity": "minor",
+      "missing": "Rewrite PROGRESS-14's claim to the phase-filter wording (or fold it into PROGRESS-28), re-anchor it to progress.md:99-101, and mark it corrected. AC5 and shipped prose are unaffected - this is the planning ledger only, which is why it is minor rather than blocking."
+    }
+  ],
+  "human_checks": []
+}

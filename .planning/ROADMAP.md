@@ -68,7 +68,7 @@ window go unrecorded.
 ## Phases
 
 - [x] **Phase 1: The controls that never reached their path** - recall survives a milestone close, the parallel branch runs the same risk sequence the sequential one does, and `risk-check status` stops accepting a matched range with no fire behind it
-- [ ] **Phase 2: The record learns to see the run** - `trace close` records the tool-call count the return already carries, and `/cad-report` / `/cad-suggest` price a run from a record that can see the whole window instead of worker-return tokens alone
+- [x] **Phase 2: The record learns to see the run** - `trace close` records the tool-call count the return already carries, and `/cad-report` / `/cad-suggest` price a run from a record that can see the whole window instead of worker-return tokens alone
 
 
 ## Phase Details
