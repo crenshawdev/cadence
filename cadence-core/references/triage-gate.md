@@ -72,11 +72,22 @@ blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
    its own workers (`workflows/execute.md`'s timeout-or-no-report arm).
 
 The round count PERSISTS in the trace, so a `/clear` between rounds cannot
-reset it. Before firing the narrowed round, run
-`planning.mjs trace render --phase <N>`: the envelope's `corr` is the current
-run's id, and a `rearm` outcome for this trigger already recorded under that
-same id means the one round is SPENT - do not fire again, go straight to the
-STOP-and-ask arm above. No such event -> record the round as you fire it:
+reset it. Before firing the narrowed round, read that count in two steps - the
+render is bulk output, so it rides a scratch file and only the ANSWER reaches
+the transcript (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md`
+states the rule; the scratch file is the model's own, never a phase artifact):
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "${TMPDIR:-/tmp}/cad-rearm.json"
+node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log((r.outcomes||[]).filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr).length)' "${TMPDIR:-/tmp}/cad-rearm.json" "<trigger>"
+```
+
+The envelope's `corr` is the current run's id, so that one number is the whole
+answer: non-zero means a `rearm` outcome for this trigger is already recorded
+under that same id and the one round is SPENT - do not fire again, go straight
+to the STOP-and-ask arm above. The match is on the event's `trigger` FIELD and
+never on its detail text, for the reason the receipt paragraph above states.
+Zero -> record the round as you fire it:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --plan <k> --base <base> --sha <head> --detail "<trigger>"
