@@ -142,6 +142,21 @@
 //                    2's invocation parser: thirty of the qualifying mentions
 //                    sit in prose fragments with no `<script>.mjs <word>`
 //                    prefix, which that parser skips.
+//  20. bulk output   a prose site that PRESCRIBES a tool call whose measured
+//                    response is bulk must redirect that output to a scratch
+//                    file and hand the transcript a digest: a response sitting
+//                    in the transcript is re-paid on every later turn at the
+//                    cache-read rate. The lesson v3.5.2 learned for
+//                    caller-derived INPUT was never applied to bulk OUTPUT, so
+//                    the largest response any Cadence prose prescribes - a
+//                    68,044 B `trace render` - was read whole into a model's
+//                    context at three sites. The register of every examined
+//                    site, its measured byte figure and the reason on every row
+//                    owing no redirect live in lib/bulk-output.mjs, and a site
+//                    the register does not classify is REPORTED, for the reason
+//                    check 19 states about its own seventeenth site. It takes
+//                    no CONTRACTS row, for the reason check 14 states about
+//                    `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -166,6 +181,7 @@ import { parseSkillsField } from './lib/frontmatter.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
+import { bulkOutputIssues } from './lib/bulk-output.mjs';
 // The throwing `--root` reader, shared with weight.mjs: ABSENT and
 // PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
 // it used to fall back to the plugin's own tree so this linter returned ok:true
@@ -839,6 +855,17 @@ function run(root) {
     // applies to every prose surface. It takes no CONTRACTS row, for the reason
     // check 14 states about `lib/*.mjs`.
     problems.push(...textTransportIssues(rel, text));
+
+    // 20. bulk output: a prose site that PRESCRIBES a tool call whose measured
+    // response is bulk must redirect it to a scratch file and hand the
+    // transcript a digest. Every surface this walk yields, for the reason
+    // check 19 states about its own scope - a step in skills/ pays for a
+    // 68,044 B response exactly as a workflow does. The register of sites,
+    // their measured figures and the three reported kinds live in
+    // lib/bulk-output.mjs; this side only decides that it applies to every
+    // prose surface. It takes no CONTRACTS row, for the reason check 14 states
+    // about `lib/*.mjs`.
+    problems.push(...bulkOutputIssues(rel, text));
   }
 
   // 3b. INTERNALS repo-path citations: every backticked repo path in
@@ -1430,7 +1457,7 @@ try {
   const argv = process.argv.slice(2);
   const root = flagValue(argv, '--root') || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output', problems });
 } catch (e) {
   // The seam arm lands WITH flagValue: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
