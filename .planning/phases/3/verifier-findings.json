@@ -1,0 +1,81 @@
+{
+  "status": "gaps",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A provider response is bounded by BYTES inside the one concatenation point, and crossing it destroys the request instead of resolving with the full body",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/review-provider.mjs:276 MAX_RESPONSE_BYTES=4194304, :588-604 per-chunk count at the single `data += c` site with req.destroy(err) tagged OVER_RESPONSE, :639-640 failRequest maps the tag to reason 'over-response'. `node --test cadence-core/bin/review-provider.test.mjs` 69 pass / 0 fail; the ceiling test asserts reason 'over-response', code 1 and chunksEmitted === 5 of 8 (the stream was CUT), and the sibling test proves consult and detect-models are bounded by the same read path. Traced end to end: the 8x1MiB fake wire enters through runFaked and lands as the CLI envelope plus one provider event with outcome 'over-response', degraded true."
+    },
+    {
+      "n": 2,
+      "truth": "The HTTP failure envelope carries ONE shape - a capped, sanitized string excerpt - not the whole body",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/review-provider.mjs:676-693 bodyExcerpt (always String, cap MAX_HTTP_BODY_BYTES=1024 minus the truncation marker, sanitized through redactUrl + redactCredentials); the only two http fail sites, :1035 and :1131, both pass through it. Test 'RVP-01: the response is bounded by bytes Cadence owns, and the failure envelope is capped' (review-provider.test.mjs:1590) injects a 502 body echoing Bearer/key=/api_token/secret and asserts typeof string, <=1024 bytes, none of the planted substrings, and that the model diagnostic text survives. Green."
+    },
+    {
+      "n": 3,
+      "truth": "validateFindings refuses each of the seven out-of-grammar inputs with its own distinct named diagnostic, never null",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/review-provider.mjs:953 validateFindings; test at review-provider.test.mjs:280 calls the seven cases (line 0, empty file/claim/failure_scenario, unknown key, past MAX_FINDINGS, past MAX_TEXT_CHARS), asserts every result is a string and `new Set(...).size === 7`, then matches each diagnostic's own wording; also pins file's own maximum, the top-level unknown-key diagnostic, and code-point (not UTF-16) length counting. Green in the same 69/0 run."
+    },
+    {
+      "n": 4,
+      "truth": "Schema and validator agreement is machine-evaluated on both sides over a fixture table that includes accepts and rejects",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "cadence-core/bin/lib/schema-eval.mjs (168 lines, zero-dep, keyword-limited; unknown keyword THROWS - test at review-provider.test.mjs:338 asserts /unimplemented additionalProperties/ and /unimplemented type/, so the flagged assumption about silent accepts is closed). Agreement test at :405 runs 18 fixtures through evaluateSchema against the LIVE FINDING_SCHEMA (not a copy) and through validateFindings, asserts verdict equality per fixture and asserts accepts>=1 and rejects>=1, plus two astral-character rows that would catch a shared UTF-16 misreading. Green."
+    },
+    {
+      "n": 5,
+      "truth": "execute.md's recovery arm names its real producers and no longer names a timeout; seams.md states the same producer clause in the same words",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`rg -n \"timeout or no report\" cadence-core/workflows/execute.md` returns no match (exit 1). execute.md:244 is `- **turn cap or unusable return** -> two things produce this state:` followed verbatim by 'the turn cap cut the dispatch, or the return is missing or unparseable.'; the identical clause appears at cadence-core/references/seams.md:64 inside the spawn-agent seam. The arm still reads reports/plan-<k>.md, so the recovery survived the relabel."
+    },
+    {
+      "n": 6,
+      "truth": "The prose agreement is pinned by a standing check that reddens on a one-sided reword, and the default reviewer states maxTurns: 200 as its bound where it claims exemption",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`node --test cadence-core/bin/prose-agreement.test.mjs` 27 pass / 0 fail. The WIR-01 check (prose-agreement.test.mjs:636) EXTRACTS the colon-introduced producer clause from each document and asserts the two extractions are equal, so rewording one alone reddens it - not the weaker 'phrase appears in each file' shape. It also reads maxTurns from the 19 agents/*.md frontmatters (asserting they agree) and requires that figure in seams.md's 'is exempt' sentence and in review-triggers.md's claude-subagent bullet. seams.md:306-307 carries '...is exempt from it, bounded instead by the spawn-agent turn cap, `maxTurns: 200`.'; review-triggers.md:9 the same."
+    },
+    {
+      "n": 7,
+      "truth": "SUMMARY records, per requirement, the SHA at which that requirement's check was watched failing, and each SHA matches the header in the file it names",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": ".planning/phases/3/SUMMARY.md:184-211 lists RVP-01 e1e6c0a, RVP-02 15b5d4c, WIR-01 cdf8676 with re-watch instructions. Each matches its test's own WATCHED FAILING AT header and quoted unpatched output: review-provider.test.mjs:1566 (e1e6c0a, observed reason 'internal' with a TypeError), :1630 (15b5d4c, observed ok:true carrying a line:0 finding), prose-agreement.test.mjs:573 (cdf8676, observed label 'timeout or no report'). The plan-3 deviation note explains why the grep -c proxy read 4 and how the criterion was checked by extraction instead."
+    },
+    {
+      "n": 8,
+      "truth": "The goal's 'sanitized excerpt' clause holds on provider-controlled input - a credential in the body cannot reach the failure envelope",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Reproduced, not merely read: replaying bodyExcerpt's exact logic (cadence-core/bin/review-provider.mjs:676-693) against the real lib/redact-url.mjs with a >4096-byte body whose sanitized window lands just over `room` returns an envelope ending `... \\\"password\\\":\\\"SUPERSECRET ...[truncated]` - the key name and 11 bytes of the value. Mechanism is the ordering at :683-686: the trailing-token safeguard runs only when `clean <= room`, so a window-edge-truncated credential whose quoted value lost its closing quote (CRED_VALUE's alternatives all fail) survives redaction and stays inside the first `room` bytes when the shrink lands just past the cap. SUMMARY.md:118-125 declares this as an open item with the mechanism confirmed, so it is disclosed, not hidden - but it is a hole in the goal clause, not merely beside it."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Response byte ceiling destroys the request", "evidence": "review-provider.mjs:276,588-604,639-640; review-provider.test.mjs ceiling + one-read-path + under-ceiling + transport-discrimination tests all green in a 69/0 run; chunksEmitted 5 of 8 proves the stream was cut, not drained." },
+    { "k": 2, "name": "HTTP failure envelope is a capped, sanitized string", "evidence": "review-provider.mjs:676-693 bodyExcerpt on both http fail sites (:1035, :1131); RVP-01 falsifier asserts string type, <=1024 bytes, no planted Bearer/key=/token/secret/value substrings, and that the diagnostic text survives. Green." },
+    { "k": 3, "name": "validateFindings returns seven distinct diagnostics", "evidence": "review-provider.test.mjs:280 - seven calls, all strings, Set size 7, each matched against its own wording; plus file's own maximum, the top-level unknown-key case and code-point length counting. Green." },
+    { "k": 4, "name": "Schema and validator agree on every fixture", "evidence": "review-provider.test.mjs:405 - 18 fixtures through evaluateSchema against the live FINDING_SCHEMA and through validateFindings, verdicts compared per fixture, accepts>=1 and rejects>=1 asserted; schema-eval.mjs throws on any keyword it does not implement (test at :338). Green." },
+    { "k": 5, "name": "The recovery arm names its real producers", "evidence": "rg for 'timeout or no report' in execute.md returns no match; execute.md:244 and seams.md:64 carry the same producer clause verbatim; the arm still reads reports/plan-<k>.md." },
+    { "k": 6, "name": "Prose agreement is pinned and the default reviewer states its bound", "evidence": "prose-agreement.test.mjs:636 compares the two EXTRACTED producer clauses (one-sided reword reddens) and checks maxTurns against the 19 rung frontmatters; seams.md:306-307 and review-triggers.md:9 both name maxTurns: 200. 27 pass / 0 fail." },
+    { "k": 7, "name": "SUMMARY records each watched-FAIL SHA", "evidence": "SUMMARY.md:184-211 SHAs e1e6c0a / 15b5d4c / cdf8676 each match the WATCHED FAILING AT header and quoted unpatched output in the file that line names (review-provider.test.mjs:1566,:1630; prose-agreement.test.mjs:573)." }
+  ],
+  "gaps": [
+    {
+      "name": "bodyExcerpt leaks a credential fragment at the sanitize-window edge",
+      "reason": "behavior wrong - the goal's 'sanitized excerpt' clause does not hold for one reachable class of provider-controlled body, even though AC2's own fixture passes",
+      "evidence": "cadence-core/bin/review-provider.mjs:683-686 - the trailing-token safeguard is gated on `Buffer.byteLength(clean) <= room`, so when redaction shrinks the 4096-byte window to just PAST the cap the window-edge-truncated credential survives inside the first `room` bytes. Reproduced against the real cadence-core/bin/lib/redact-url.mjs: the returned excerpt ends `\\\"password\\\":\\\"SUPERSECRET ...[truncated]` (key name plus 11 bytes of value). Cause is that a quoted value cut before its closing quote matches none of CRED_VALUE's three alternatives (lib/redact-url.mjs:122), so redactCredentials leaves it whole. Declared at SUMMARY.md:118-125; the related quadratic in redactUrl that forces the window at all is SUMMARY.md:126-130.",
+      "severity": "minor",
+      "missing": "A bounded notion of edge-adjacent tail: drop the trailing partial token whenever the source was windowed, regardless of whether `clean` fits, without gutting an ordinary long diagnostic (the RVP-01 fixture's 4096-byte no-whitespace padding is the case both attempted repairs broke). Fixing the redactUrl quadratic instead removes the window and the hole together. A test fixture in the shape above (window shrinks to just over `room`, credential at the window edge) belongs beside the existing envelope tests."
+    }
+  ],
+  "human_checks": []
+}
