@@ -922,7 +922,12 @@ test('fault mode 2/6 - HTTP 4xx: the caller sees http with the status, and the t
   assert.equal(r.envelope.ok, false);
   assert.equal(r.envelope.reason, 'http');
   assert.equal(r.envelope.detail.status, 401);
-  assert.equal(r.envelope.detail.body.error.code, 'invalid_api_key');
+  // ONE envelope shape: `body` is always a sanitized string excerpt, never a
+  // parsed object for a small body and a string for a large one (D-04). What the
+  // tests here have always protected - that the user reads WHICH refusal it was
+  // rather than a bare status - is matched as TEXT inside that excerpt.
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.match(r.envelope.detail.body, /invalid_api_key/);
   assert.equal(r.code, 1);
   const ev = providerEvents().slice(before);
   assert.equal(ev.length, 1);
@@ -937,6 +942,8 @@ test('fault mode 3/6 - HTTP 5xx: the caller sees http with the status, not a ret
   const r = await runFaked(REVIEW_ARGS, { status: 503, body });
   assert.equal(r.envelope.reason, 'http');
   assert.equal(r.envelope.detail.status, 503);
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.match(r.envelope.detail.body, /temporarily unavailable/);
   assert.equal(r.code, 1);
   const ev = providerEvents().slice(before);
   assert.equal(ev.length, 1);          // one call, one event: no hidden retry
@@ -954,10 +961,14 @@ test('fault mode 4/6 - a dead or unknown model id: the provider 404 reaches the 
   const r = await runFaked(REVIEW_ARGS, { status: 404, body });
   assert.equal(r.envelope.reason, 'http');
   assert.equal(r.envelope.detail.status, 404);
-  // The body is passed through, so the user reads WHICH model was refused
-  // rather than a bare 404.
-  assert.equal(r.envelope.detail.body.error.code, 'model_not_found');
-  assert.match(r.envelope.detail.body.error.message, /gpt-fault-fixture/);
+  // The one thing /cad-config's review arm reads this envelope FOR: WHICH model
+  // was refused, rather than a bare 404. It survives as text inside the excerpt -
+  // the whole 155-byte body fits under the 1024-byte cap with room to spare,
+  // which is why the cap is that number and not a round one.
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.match(r.envelope.detail.body, /model_not_found/);
+  assert.match(r.envelope.detail.body, /gpt-fault-fixture/);
+  assert.equal(r.envelope.detail.body.includes('...[truncated]'), false);
   const ev = providerEvents().slice(before);
   assert.equal(ev[0].outcome, 'http');
   assert.equal(ev[0].model, 'gpt-fault-fixture');
@@ -1101,6 +1112,66 @@ test('bound: an ordinary socket error is still transport, not over-response', as
   const r = await runFaked(REVIEW_ARGS, { timeout: true });
   assert.equal(r.envelope.reason, 'transport');
   assert.equal(providerEvents().slice(-1)[0].outcome, 'transport');
+});
+
+/** Kept in step with `MAX_HTTP_BODY_BYTES` by hand, for the same reason. */
+const MAX_HTTP_BODY_BYTES = 1024;
+
+test('bound: the http envelope carries a capped, sanitized excerpt - one shape always', async () => {
+  // The body a misconfigured gateway actually returns: the upstream error PLUS
+  // an echo of the request it could not forward, headers and query string
+  // included. None of it is in URL userinfo position, so this is exactly what
+  // `redactUrl` alone could not see.
+  const body = JSON.stringify({
+    error: { message: 'upstream rejected the request', code: 'bad_gateway' },
+    request: {
+      authorization: 'Bearer sk-live-abc123',
+      url: 'https://api.example/v1/responses?key=sk-live-abc123&x=1',
+      api_token: 'glpat-xyz',
+      secret: 'hunter2',
+    },
+  });
+  const r = await runFaked(REVIEW_ARGS, { status: 502, body });
+  assert.equal(r.envelope.reason, 'http');
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.ok(Buffer.byteLength(r.envelope.detail.body) <= MAX_HTTP_BODY_BYTES, r.envelope.detail.body);
+  for (const planted of ['key=', 'token', 'secret', 'Bearer',
+    'sk-live-abc123', 'glpat-xyz', 'hunter2']) {
+    assert.equal(r.envelope.detail.body.includes(planted), false,
+      `${planted} survived: ${r.envelope.detail.body}`);
+  }
+  // The other half: an excerpt that redacted everything would be worthless, so
+  // the diagnostic a reader acts on must still be there.
+  assert.match(r.envelope.detail.body, /upstream rejected the request/);
+  assert.match(r.envelope.detail.body, /bad_gateway/);
+});
+
+test('bound: a body over the excerpt cap is cut, and says so', async () => {
+  // The proxy HTML error page - the case the cap exists for. `detail.body` is a
+  // string here and a string in the 155-byte model_not_found case above: ONE
+  // shape, so no consumer branches on `typeof detail.body`.
+  const page = `<html><head><title>504 Gateway Time-out</title></head><body>${'p'.repeat(20000)}</body></html>`;
+  const r = await runFaked(REVIEW_ARGS, { status: 504, body: page });
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.equal(Buffer.byteLength(r.envelope.detail.body), MAX_HTTP_BODY_BYTES);
+  assert.ok(r.envelope.detail.body.endsWith('...[truncated]'), r.envelope.detail.body);
+  assert.match(r.envelope.detail.body, /504 Gateway Time-out/);
+  assert.equal(r.envelope.detail.status, 504);
+});
+
+test('bound: a body near the RESPONSE ceiling is excerpted in bounded time', async () => {
+  // The two bounds meet here. `MAX_RESPONSE_BYTES` lets a non-2xx body reach
+  // 4 MiB, and `redactUrl` is quadratic in its input - measured 78ms at 10KB,
+  // 5.1s at 80KB - so sanitizing the whole body would cost hours for one failure
+  // envelope. The generous wall-clock bound is deliberate: it is not a benchmark,
+  // it is the difference between milliseconds and geological time, and it
+  // reddens by TIMING OUT if the sanitize window is ever removed.
+  const body = 'p'.repeat(1048576);
+  const started = Date.now();
+  const r = await runFaked(REVIEW_ARGS, { status: 502, body });
+  assert.ok(Date.now() - started < 5000, `took ${Date.now() - started}ms`);
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.equal(Buffer.byteLength(r.envelope.detail.body), MAX_HTTP_BODY_BYTES);
 });
 
 // --- the drop-outs BEFORE the wire (QW-05, AC7) -------------------------------
