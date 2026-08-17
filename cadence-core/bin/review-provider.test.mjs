@@ -1018,6 +1018,91 @@ test('fault: consult and detect-models degrade through the same six-mode mapping
   assert.equal(ev.tier, null);
 });
 
+// --- the RESPONSE bound (RVP-01, AC1) -----------------------------------------
+//
+// The bound the seam did not own. Everything above degrades on what the provider
+// SAID; this degrades on how much of it there was, which until now was bounded
+// only by the execution host's wrapping command timeout.
+
+/** Kept in step with `MAX_RESPONSE_BYTES` in review-provider.mjs, by hand and
+ * on purpose: a test that imported the constant would pass against any value,
+ * including a wrong one. */
+const MAX_RESPONSE_BYTES = 4194304;
+
+/**
+ * An openai-shaped 200 body of EXACTLY `total` ASCII bytes carrying one valid
+ * finding, so a size test is a size test and not a shape test in disguise.
+ * @param {number} total
+ */
+function bodyOfBytes(total) {
+  const make = (/** @type {number} */ pad) => JSON.stringify({
+    output_text: JSON.stringify({
+      findings: [{
+        file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+        claim: `padded ${'x'.repeat(pad)}`,
+        failure_scenario: 'the body is held whole in memory',
+      }],
+    }),
+  });
+  const base = make(0).length;
+  const out = make(total - base);
+  assert.equal(Buffer.byteLength(out), total, 'the filler must not be escaped');
+  return out;
+}
+
+test('bound: a response past the ceiling is over-response, and the stream is CUT', async () => {
+  const before = providerEvents().length;
+  // Eight 1 MiB chunks. The running total crosses on the fifth (4 MiB exactly is
+  // AT the ceiling, not over it), so a seam that destroys the request stops
+  // three chunks short of the list - and a seam that merely stopped appending
+  // would drain all eight.
+  const chunks = Array.from({ length: 8 }, () => 'A'.repeat(1048576));
+  const r = await runFaked(REVIEW_ARGS, { status: 200, chunks });
+  assert.equal(r.envelope.ok, false, r.line);
+  assert.equal(r.envelope.reason, 'over-response');
+  assert.equal(r.code, 1);
+  assert.match(r.envelope.detail, new RegExp(`over ${MAX_RESPONSE_BYTES} bytes`));
+  assert.equal(r.seen[0].chunksEmitted, 5, 'the stream was cut on the crossing chunk');
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1, JSON.stringify(ev));
+  assert.equal(ev[0].outcome, 'over-response');
+  assert.equal(ev[0].degraded, true);
+  assert.equal(ev[0].command, 'review');
+});
+
+test('bound: one read path, so consult and detect-models are bounded by the same change', async () => {
+  const chunks = Array.from({ length: 8 }, () => 'A'.repeat(1048576));
+  const consult = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT], { status: 200, chunks });
+  assert.equal(consult.envelope.reason, 'over-response');
+  assert.equal(consult.seen[0].chunksEmitted, 5);
+  const detect = await runFaked(['detect-models', '--provider', 'openai'], { status: 200, chunks });
+  assert.equal(detect.envelope.reason, 'over-response');
+  assert.equal(detect.seen[0].chunksEmitted, 5);
+  const ev = providerEvents().slice(-2);
+  assert.deepEqual(ev.map((e) => e.command), ['consult', 'detect-models']);
+  assert.deepEqual(ev.map((e) => e.outcome), ['over-response', 'over-response']);
+});
+
+test('bound: a body one byte under the ceiling still resolves exactly as before', async () => {
+  // The half a ceiling makes easy to break. Under the bound nothing changes:
+  // same envelope, same parse, same findings.
+  const r = await runFaked(REVIEW_ARGS, { status: 200, body: bodyOfBytes(MAX_RESPONSE_BYTES - 1) });
+  assert.equal(r.envelope.ok, true, r.line.slice(0, 300));
+  assert.equal(r.envelope.findings.length, 1);
+  assert.equal(r.envelope.findings[0].severity, 'low');
+  assert.equal(r.code, 0);
+});
+
+test('bound: an ordinary socket error is still transport, not over-response', async () => {
+  // The discrimination the tag exists for. Both paths reject out of the same
+  // `request()` promise, so a seam that matched on the message text - or that
+  // mapped every rejection to one word - would be indistinguishable here.
+  const r = await runFaked(REVIEW_ARGS, { timeout: true });
+  assert.equal(r.envelope.reason, 'transport');
+  assert.equal(providerEvents().slice(-1)[0].outcome, 'transport');
+});
+
 // --- the drop-outs BEFORE the wire (QW-05, AC7) -------------------------------
 //
 // Everything above this line degrades past the transport. These degrade before

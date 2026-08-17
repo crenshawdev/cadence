@@ -32,6 +32,11 @@
 //     non-string payload field is refused as bad-payload first, since an
 //     unmeasurable field is an unbounded one. The free claude-subagent
 //     reviewer never runs this script and is exempt.
+//   - The RESPONSE is bounded too, by bytes rather than by the host's wrapping
+//     command timeout (RVP-01): every command's read path crosses one counter
+//     inside `request()`, and a body past `MAX_RESPONSE_BYTES` destroys the
+//     request and degrades to {ok:false, reason:"over-response"} rather than
+//     being concatenated whole into memory.
 //
 // Usage:
 //   review-provider.mjs review  --provider <openai|gemini|deepseek> --model <id>
@@ -247,6 +252,30 @@ const MAX_REQUEST_TIMEOUT_MS = 600000;
 // smallest window a configured payload could be sent to, and `chars/4` is an
 // estimate rather than a tokenizer, so the margin is deliberate.
 const DEFAULT_MAX_PROMPT_TOKENS = 120000;
+
+// The RESPONSE byte ceiling (RVP-01, #143), the other side of the same bound.
+// `review.max_prompt_tokens` bounds what we SEND; nothing bounded what we HOLD,
+// so a proxy error page or a runaway answer was concatenated whole into one
+// string and the only thing stopping it was the execution host's wrapping
+// command timeout - a bound Cadence does not own.
+//
+// Derived rather than round. The shipped request-side bound is 120000 estimated
+// tokens, which is 480000 chars under the chars/4 proxy this file already uses,
+// and a structured-output response is smaller than the artifact that produced it
+// in every observed run. So 4 MiB sits at roughly 8.7x the largest payload this
+// seam will ever send, and the finding bounds local validation enforces put the
+// largest response it can ever ACCEPT near 0.5 MB, about 8x under this. A body
+// that crosses this is not a review; it is something else wearing a 200.
+//
+// Not a config key (D-03): a knob nothing needs is what v2.7.0 deleted
+// `workflow.subagent_timeout` for.
+const MAX_RESPONSE_BYTES = 4194304;
+
+// The tag that makes a ceiling crossing DISTINGUISHABLE from an ordinary socket
+// error at the two catch arms below. A symbol on the error object, never a match
+// on its message: a diagnostic string that decides control flow is a parser, and
+// the message is free text nobody promised to keep.
+const OVER_RESPONSE = Symbol('cadence-over-response');
 
 // Pure so the unit tests can exercise it without touching config or the network.
 // Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
@@ -523,7 +552,27 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
       },
     }, (res) => {
       let data = '';
-      res.on('data', (c) => { data += c; });
+      let bytes = 0;
+      res.on('data', (c) => {
+        // Real BYTES, not string length: no encoding is set on `res`, so a chunk
+        // is a Buffer in production and a string in the fake, and
+        // `Buffer.byteLength` is correct for both where `.length` is correct for
+        // neither. Counted BEFORE the append, so the ceiling bounds what this
+        // process holds rather than what it held one chunk ago.
+        bytes += Buffer.byteLength(c);
+        if (bytes > MAX_RESPONSE_BYTES) {
+          // `req.destroy(err)` is the same abort the timeout handler below uses:
+          // it forces an 'error' so the promise rejects down the one path the
+          // callers already handle, and it stops the wire rather than reading a
+          // body we have already refused.
+          req.destroy(Object.assign(
+            new Error(`response body over ${MAX_RESPONSE_BYTES} bytes (read ${bytes})`),
+            { [OVER_RESPONSE]: true },
+          ));
+          return;
+        }
+        data += c;
+      });
       res.on('end', () => {
         let json = null;
         try { json = data ? JSON.parse(data) : null; } catch { /* leave null; caller inspects status */ }
@@ -537,6 +586,29 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+/**
+ * The ONE mapping from a rejected `request()` to its degradation reason, shared
+ * by the two callers so a third read path cannot be left knowing only
+ * `transport`. A rejection the response ceiling tagged is `over-response`;
+ * everything else is an ordinary socket failure and stays `transport` exactly as
+ * before.
+ *
+ * The two words are deliberately distinct (D-02). Riding `transport` would leave
+ * the trace, the caller and workflows/config-review.md unable to tell a provider
+ * that flooded us from a socket that died, which are different conditions with
+ * different recoveries - one is retryable, the other says this provider is
+ * returning something that is not a review.
+ *
+ * Never returns in practice: `fail` throws the DONE sentinel, exactly as the
+ * inline arms this replaced did.
+ * @param {any} meta @param {any} e
+ */
+function failRequest(meta, e) {
+  const reason = e && e[OVER_RESPONSE] ? 'over-response' : 'transport';
+  traceProvider(meta, reason, e.message);
+  fail(reason, e.message);
 }
 
 // ---------------------------------------------------------------------------
@@ -807,8 +879,7 @@ async function callStructured(adapter, key, reqSpec, meta) {
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key), body });
   } catch (e) {
-    traceProvider(meta, 'transport', e.message);
-    fail('transport', e.message);
+    failRequest(meta, e);
   }
   if (res.status < 200 || res.status >= 300) {
     traceProvider(meta, 'http', `HTTP ${res.status}`);
@@ -904,8 +975,7 @@ async function cmdDetect(opts) {
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key) });
   } catch (e) {
-    traceProvider(meta, 'transport', e.message);
-    fail('transport', e.message);
+    failRequest(meta, e);
   }
   if (res.status < 200 || res.status >= 300) {
     traceProvider(meta, 'http', `HTTP ${res.status}`);
