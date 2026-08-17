@@ -308,6 +308,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks`\n' +
+    '`workflow.max_dispatch_tokens`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
@@ -1588,7 +1589,7 @@ test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an a
       }
     }
   }
-  assert.equal(total, 12, `callsites: ${files.join(', ')}`);
+  assert.equal(total, 13, `callsites: ${files.join(', ')}`);
   assert.equal(files.length, 9, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
