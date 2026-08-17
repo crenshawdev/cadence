@@ -29,7 +29,26 @@ import {
   resolveMaxPromptTokens, estimatePromptTokens,
   __setTransportForTests, __runCommandForTests,
 } from './review-provider.mjs';
+// FINDING_SCHEMA reaches these tests through a NAMESPACE import rather than the
+// named list above, deliberately. A named import of a symbol the module does
+// not export is a LINK error - the whole file fails to load before a single
+// test runs - and the RVP-02 falsifier at the end of this file has to be
+// runnable against the unpatched tree, where `FINDING_SCHEMA` was module-local.
+// Through a namespace it is simply `undefined` there, so the falsifier fails on
+// its assertions (what it is watching) instead of on module resolution.
+import * as reviewProvider from './review-provider.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
+
+const FINDING_SCHEMA = reviewProvider.FINDING_SCHEMA;
+// The bounds FINDING_SCHEMA states, read OUT of it rather than restated here -
+// a copied number is the drift these tests exist to catch. Optional chaining
+// throughout for the same reason the namespace import exists: against the
+// unpatched tree these resolve to `undefined` instead of throwing at module
+// load, which would take the falsifier down with them.
+const F_PROPS = FINDING_SCHEMA?.properties?.findings?.items?.properties ?? {};
+const MAX_FINDINGS = FINDING_SCHEMA?.properties?.findings?.maxItems;
+const MAX_FILE_CHARS = F_PROPS.file?.maxLength;
+const MAX_TEXT_CHARS = F_PROPS.claim?.maxLength;
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-provider-'));
@@ -177,6 +196,76 @@ test('stripAdditionalProperties: removes the key at every depth, nothing else', 
     'scalar',
   ]);
   assert.deepEqual(arr, [{ type: 'object', required: ['a'] }, 'scalar']);
+});
+
+/** Every object key appearing anywhere in a JSON tree. */
+function keysDeep(node, out = new Set()) {
+  if (Array.isArray(node)) { for (const v of node) keysDeep(v, out); return out; }
+  if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) { out.add(k); keysDeep(v, out); }
+  }
+  return out;
+}
+
+test('FINDING_SCHEMA: the bounds are stated on the wire, in every dialect (RVP-02)', () => {
+  // The settled numbers, pinned literally exactly once - everything else in
+  // this file reads them back off the schema. Derived from what the tree has
+  // produced (file 39, claim 159, failure_scenario 376 chars in the one
+  // committed findings file; largest panel round 9 findings), not rounded.
+  assert.equal(F_PROPS.line.minimum, 1);
+  assert.equal(F_PROPS.file.minLength, 1);
+  assert.equal(F_PROPS.claim.minLength, 1);
+  assert.equal(F_PROPS.failure_scenario.minLength, 1);
+  assert.equal(F_PROPS.file.maxLength, 1024);
+  assert.equal(F_PROPS.claim.maxLength, 2000);
+  assert.equal(F_PROPS.failure_scenario.maxLength, 2000);
+  assert.equal(FINDING_SCHEMA.properties.findings.maxItems, 100);
+  // NO minItems: a review that found nothing returns [], and refusing that
+  // would turn a clean result into a bad-shape degradation.
+  assert.equal('minItems' in FINDING_SCHEMA.properties.findings, false);
+  // None of OpenAI's structured-output UNSUPPORTED set rode in with them
+  // (provider-api.md, checked 2026-08-17).
+  const present = keysDeep(FINDING_SCHEMA);
+  for (const banned of ['unevaluatedProperties', 'propertyNames', 'minProperties',
+    'maxProperties', 'unevaluatedItems', 'contains', 'minContains', 'maxContains',
+    'uniqueItems']) {
+    assert.equal(present.has(banned), false, `${banned} is unsupported on OpenAI strict mode`);
+  }
+
+  const args = {
+    model: 'm', system: 's', user: 'u',
+    schema: FINDING_SCHEMA, schemaName: 'cadence_review',
+  };
+
+  // OpenAI strict json_schema: the schema rides verbatim under text.format.
+  const sent = ADAPTERS.openai.structuredRequest(args).body.text.format.schema;
+  assert.equal(sent.properties.findings.maxItems, 100);
+  assert.equal(sent.properties.findings.items.properties.line.minimum, 1);
+  assert.equal(sent.properties.findings.items.properties.claim.minLength, 1);
+  assert.equal(sent.properties.findings.items.properties.claim.maxLength, 2000);
+
+  // Gemini responseSchema: the same four keywords, and additionalProperties
+  // stripped at every depth - the ONLY thing that adapter removes.
+  const gem = ADAPTERS.gemini.structuredRequest(args).body.generationConfig.responseSchema;
+  assert.equal(gem.properties.findings.maxItems, 100);
+  assert.equal(gem.properties.findings.items.properties.line.minimum, 1);
+  assert.equal(gem.properties.findings.items.properties.file.minLength, 1);
+  assert.equal(gem.properties.findings.items.properties.file.maxLength, 1024);
+  assert.equal(keysDeep(gem).has('additionalProperties'), false);
+
+  // DeepSeek has no server-side schema enforcement, so the schema is serialized
+  // into the system prompt - the keywords have to survive that too.
+  const sys = ADAPTERS.deepseek.structuredRequest(args).body.messages[0].content;
+  for (const kw of ['"minimum":1', '"minLength":1', '"maxLength":2000', '"maxItems":100']) {
+    assert.ok(sys.includes(kw), `${kw} must reach DeepSeek in-prompt`);
+  }
+
+  // The carve-out stays a carve-out: one key removed, the bounds untouched.
+  const stripped = stripAdditionalProperties(FINDING_SCHEMA);
+  assert.equal(keysDeep(stripped).has('additionalProperties'), false);
+  for (const kw of ['minimum', 'minLength', 'maxLength', 'maxItems']) {
+    assert.equal(keysDeep(stripped).has(kw), true, `${kw} must survive the strip`);
+  }
 });
 
 test('validateFindings: accepts the exact shape, names the first defect', () => {

@@ -697,23 +697,44 @@ function bodyExcerpt(raw) {
 // one place so the JSON schema we send and the shape we assert never drift.
 // ---------------------------------------------------------------------------
 const SEVERITY = ['blocker', 'high', 'medium', 'low'];
-const FINDING_SCHEMA = {
+
+// The bounds the finding shape has always implied and never stated (RVP-02).
+// Sized against what this tree has actually produced rather than picked round:
+// the longest values in the one committed findings file
+// (.planning/phases/1/REVIEW-risk_surface-plan-1.md) are file 39 chars, claim
+// 159 and failure_scenario 376, and the largest `raised` count across the 19
+// adjudication events in .planning/trace.jsonl is 9 - from a PANEL, the union
+// of every reviewer. So each bound sits an order of magnitude above the
+// observed longest, and their product caps what local validation can accept at
+// roughly 0.5 MB, well inside the 4 MiB response ceiling.
+//
+// There is deliberately NO `minItems`: an empty findings array is what a
+// reviewer that found nothing returns, and refusing it would turn a clean
+// review into a `bad-shape` degradation.
+const MIN_LINE = 1;
+const MAX_FILE_CHARS = 1024;
+const MAX_TEXT_CHARS = 2000;
+const MAX_FINDINGS = 100;
+const FINDING_KEYS = ['file', 'line', 'severity', 'claim', 'failure_scenario'];
+
+export const FINDING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['findings'],
   properties: {
     findings: {
       type: 'array',
+      maxItems: MAX_FINDINGS,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['file', 'line', 'severity', 'claim', 'failure_scenario'],
+        required: FINDING_KEYS,
         properties: {
-          file: { type: 'string' },
-          line: { type: 'integer' },
+          file: { type: 'string', minLength: 1, maxLength: MAX_FILE_CHARS },
+          line: { type: 'integer', minimum: MIN_LINE },
           severity: { type: 'string', enum: SEVERITY },
-          claim: { type: 'string' },
-          failure_scenario: { type: 'string' },
+          claim: { type: 'string', minLength: 1, maxLength: MAX_TEXT_CHARS },
+          failure_scenario: { type: 'string', minLength: 1, maxLength: MAX_TEXT_CHARS },
         },
       },
     },
