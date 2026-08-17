@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
@@ -1228,5 +1228,119 @@ test('MSR-02: report.md names the seam\'s three excluded sources where it prints
     assert.ok(rule.includes(name),
       `report.md's EXCLUDES rule does not name \`${name}\` - the prose and the `
       + 'seam are claiming different things about one figure');
+  }
+});
+
+// --- TRN-02: the bulk-output rule, stated once, and the sites that obey it ---
+//
+// WATCHED FAILING AT 86cd45d, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test --test-name-pattern='TRN-02' \
+//       cadence-core/bin/prose-agreement.test.mjs
+//   x TRN-02: the bulk-output rule is stated once, and every converted site
+//     performs it
+//     AssertionError [ERR_ASSERTION]: references/conventions.md states no
+//     bulk-output rule - the distinctive clause the rule is written with is
+//     absent from it, so no converted site has a rule to cite
+//       actual: false,
+//       expected: true,
+//       operator: '==',
+//   i pass 0
+//   i fail 1
+//
+// and `node --test cadence-core/bin/prose-agreement.test.mjs` exits 1 there.
+//
+// Which is the defect exactly: the rule had no home, so no site could cite one
+// and all three read the whole render into the transcript. It stops at that
+// first assertion because on that tree the later facts do not exist to extract
+// either - no statement names a transport, no file carries the clause, and none
+// of the three surfaces prescribes its call with a redirect.
+//
+// Nothing THIS plan added is imported - the register and the rule module live
+// in `lib/bulk-output.mjs` and this test never touches them, reading the
+// SHIPPED prose bytes instead - so against the unpatched tree it fails on an
+// ASSERTION rather than on a module that does not exist yet.
+//
+// The subject is AGREEMENT, not the presence of a phrase. The transport the
+// statement itself prescribes is extracted OUT of the statement, and each
+// converted surface's own `trace render` invocation line is then matched
+// against that extracted form: the rule and the sites cannot end up describing
+// different transports, and a test that only asserted "some expected phrase
+// appears somewhere" would go green on the day they diverged.
+//
+// To re-watch: `git worktree add --detach <tmp> 86cd45d`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/prose-agreement.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+/**
+ * The one distinctive clause the bulk-output rule is stated with, ASSEMBLED
+ * from its two halves rather than written out. This test asserts that exactly
+ * one file under `cadence-core/` carries that clause, and a literal here would
+ * be the second - the check would then be reporting on itself. Joining the
+ * halves is what keeps `grep -rn` over the tree a true statement of the rule's
+ * single home, and it is why the presence assertion below carries its own
+ * message rather than `sentenceAround`'s, which echoes the needle it looked for.
+ */
+const BULK_CLAUSE = ['rides a file', 'not the transcript'].join(', ');
+
+/** Every file under `dir`, recursively, as absolute paths. */
+function everyFileUnder(dir) {
+  const out = [];
+  for (const d of readdirSync(dir, { withFileTypes: true })) {
+    const f = join(dir, d.name);
+    if (d.isDirectory()) out.push(...everyFileUnder(f));
+    else if (d.isFile()) out.push(f);
+  }
+  return out;
+}
+
+test('TRN-02: the bulk-output rule is stated once, and every converted site performs it', () => {
+  // 1. The statement, read out of the ONE file allowed to carry it.
+  const conventions = doc('cadence-core', 'references', 'conventions.md');
+  assert.ok(conventions.includes(BULK_CLAUSE),
+    'references/conventions.md states no bulk-output rule - the distinctive clause '
+    + 'the rule is written with is absent from it, so no converted site has a rule to cite');
+  const stated = sentenceAround(conventions, BULK_CLAUSE, 'references/conventions.md');
+
+  // 2. The transport that statement prescribes, EXTRACTED from the statement
+  //    rather than restated here: the scratch-path prefix comes out of the
+  //    rule's own bytes and is then what every converted site is required to
+  //    redirect into, so the rule and the sites cannot describe two different
+  //    transports. A literal regex here would be a second copy of the fact.
+  const prescribed = stated.match(/>\s*"([^"]+)"/);
+  assert.ok(prescribed && prescribed[1].includes('/'),
+    'the bulk-output rule states no scratch-file redirect, so it names no transport '
+    + `for a converted site to perform. Got: ${stated}`);
+  const target = prescribed[1];
+  const dir = target.slice(0, target.lastIndexOf('/') + 1);
+  const form = new RegExp(`>\\s*"${dir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]+"`);
+
+  // 3. It is stated NOWHERE else in the plugin. A second copy is a second rule
+  //    the moment either is edited, which is why `lib/bulk-output.mjs` carries
+  //    a pointer at this file rather than the words.
+  const carriers = everyFileUnder(join(REPO, 'cadence-core'))
+    .filter((f) => readFileSync(f, 'utf8').includes(BULK_CLAUSE))
+    .map((f) => f.slice(REPO.length + 1).split(sep).join('/'))
+    .sort();
+  assert.deepEqual(carriers, ['cadence-core/references/conventions.md'],
+    'the bulk-output rule is stated in more than one file, or in none');
+
+  // 4. Each converted surface prescribes its `trace render` with that same
+  //    transport. The invocation line is found the way the tree's other
+  //    censuses find one - a line that also names `planning.mjs` - so a
+  //    sentence ABOUT what the render reports is never mistaken for a call.
+  for (const surface of [
+    ['cadence-core', 'references', 'triage-gate.md'],
+    ['cadence-core', 'workflows', 'progress.md'],
+    ['cadence-core', 'workflows', 'report.md'],
+  ]) {
+    const where = surface.join('/');
+    const calls = doc(...surface).split('\n')
+      .filter((l) => l.includes('planning.mjs') && /\btrace\s+render\b/.test(l));
+    assert.equal(calls.length, 1, `${where} prescribes ${calls.length} \`trace render\` calls, not 1`);
+    assert.match(calls[0], form,
+      `${where} prescribes \`trace render\` with its output riding the transcript, `
+      + `not the scratch file the rule states. Got: ${calls[0].trim()}`);
   }
 });
