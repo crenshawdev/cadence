@@ -2,7 +2,8 @@
 The run record already holds the story of what a phase cost and what that
 spend caught; this command tells it. Everything reported is drawn from
 `.planning/trace.jsonl` and the phase's own artifacts - no subagent runs, no
-file is written, and a number that is not in the record is not in the report.
+planning file is written (the render's scratch file is the model's own temp),
+and a number that is not in the record is not in the report.
 </purpose>
 
 <process>
@@ -15,15 +16,22 @@ report, which is itself the answer.
 </step>
 
 <step name="read_record">
-Three seam calls:
+Three seam calls. The render is the largest response any Cadence prose
+prescribes - measured 2026-08-17 at 68,044 B unscoped and 14,857 B at
+`--phase 3` on this repository, and the unscoped figure grows with the record -
+so it rides a scratch file
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule;
+the file is the model's own scratch, never a phase artifact). The other two stay
+inline, under the threshold: `reads --join` measures 1,507 B and `trace window`
+5,378 B.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>]
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>] > "${TMPDIR:-/tmp}/cad-record.json"
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads --join
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace window [--phase <N>]
 ```
 
-Everything below reads from the first return: `brackets` (one row per paired
+Everything below reads from that scratch FILE: `brackets` (one row per paired
 dispatch - `role`, `plan`, `event`, `ms`, `tokens`, and `turns` on the rows
 whose close carried a tool-call count), `outcomes` (every outcome event),
 `roles` (per-role dispatch, token and turn totals, with `unrecorded` and
@@ -46,6 +54,20 @@ phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/reports/plan-*.md` ONLY when SUMMARY is absent (an
 unfinished phase). Do not re-read the trace file itself - the render is the
 reader.
+
+**The read-back BOUND, or the redirect buys nothing.** Every line of `compose`
+below pulls the ONE field it needs out of the scratch file, at the line that
+needs it - a `node -e` field read, the shape `workflows/progress.md` and
+`references/triage-gate.md` already use:
+
+```
+node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of r.brackets)console.log([b.role,b.plan,b.event,b.ms,b.tokens,b.turns].join("\t"))' "${TMPDIR:-/tmp}/cad-record.json"
+```
+
+and never read the file whole - no `cat`, no `Read`, no unfiltered `grep` of it
+into the transcript. A whole-file read-back after the redirect is the same bytes
+on the same turn, which is the transport not happening. The composed report IS
+the digest this transport owes the transcript.
 </step>
 
 <step name="compose">
