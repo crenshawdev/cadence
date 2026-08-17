@@ -1265,3 +1265,66 @@ test('fault: a 200 the schema does not match is bad-shape, distinct from bad-jso
   // finding is `claim` - the field order it checks, not the schema's order.
   assert.match(r.envelope.detail, /finding\.claim must be a string/);
 });
+
+// --- the RVP-01 falsifier -----------------------------------------------------
+//
+// WATCHED FAILING AT e1e6c0a, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout:
+//
+//   $ node --test --test-name-pattern='RVP-01' cadence-core/bin/review-provider.test.mjs
+//   AssertionError [ERR_ASSERTION]: a flooding provider must meet a bound
+//   Cadence owns, got: {"ok":false,"reason":"internal","detail":"Cannot read
+//   properties of null (reading 'output_text')"}
+//     + actual - expected
+//     + 'internal'
+//     - 'over-response'
+//
+// Which is the defect exactly: 8 MiB was concatenated whole into one string, the
+// parse of it failed, and what the caller got back for a flooding provider was
+// `internal` with a TypeError in it. Nothing named the bound because nothing
+// held one.
+//
+// Both halves of RVP-01 in one test, driven through the seam's own entry unwind
+// and the existing fault fixture, importing nothing this plan added - so against
+// the unpatched tree it fails on an ASSERTION rather than on a missing export,
+// which is the difference between proving the behaviour changed and proving the
+// module did. To re-watch it: `git worktree add --detach <tmp> e1e6c0a`, copy
+// this file into that checkout's `cadence-core/bin/`, `node --test` it there,
+// then remove the worktree.
+
+test('RVP-01: the response is bounded by bytes Cadence owns, and the failure envelope is capped', async () => {
+  // Half one. 8 MiB arriving in 1 MiB chunks. Unbounded, the seam concatenates
+  // all of it and reports on whatever the string turned out to be; bounded, it
+  // destroys the request on the crossing chunk and names its own refusal.
+  const flood = await runFaked(REVIEW_ARGS, {
+    status: 200, chunks: Array.from({ length: 8 }, () => 'A'.repeat(1048576)),
+  });
+  assert.equal(flood.envelope.reason, 'over-response',
+    `a flooding provider must meet a bound Cadence owns, got: ${flood.line}`);
+  assert.ok(flood.seen[0].chunksEmitted < 8,
+    'the request must be destroyed, not drained to the end of the body');
+
+  // Half two. A gateway that echoes the request it could not forward - the key
+  // in the query string, the authorization header, and two credential-shaped
+  // fields - inside a body far past the excerpt cap.
+  const echo = JSON.stringify({
+    error: { message: 'upstream rejected the request', code: 'bad_gateway' },
+    request: {
+      authorization: 'Bearer sk-live-abc123',
+      url: 'https://api.example/v1/responses?key=sk-live-abc123',
+      api_token: 'glpat-xyz',
+      secret: 'hunter2',
+    },
+    padding: 'q'.repeat(4096),
+  });
+  const failure = await runFaked(REVIEW_ARGS, { status: 502, body: echo });
+  assert.equal(typeof failure.envelope.detail.body, 'string',
+    `the envelope must carry ONE shape, got: ${typeof failure.envelope.detail.body}`);
+  assert.ok(Buffer.byteLength(failure.envelope.detail.body) <= 1024,
+    `the excerpt must be capped, got ${Buffer.byteLength(failure.envelope.detail.body)} bytes`);
+  for (const planted of ['Bearer', 'key=', 'token', 'secret', 'sk-live-abc123', 'glpat-xyz', 'hunter2']) {
+    assert.equal(failure.envelope.detail.body.includes(planted), false,
+      `${planted} rode the failure envelope`);
+  }
+  assert.match(failure.envelope.detail.body, /upstream rejected the request/);
+});
