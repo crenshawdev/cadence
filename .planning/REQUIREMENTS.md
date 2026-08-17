@@ -291,6 +291,9 @@ section only, bounded at the next `## ` heading.
 | RVP-01 | Phase 3 | Complete |
 | RVP-02 | Phase 3 | Complete |
 | WIR-01 | Phase 3 | Complete |
+| MSR-03 | Phase 4 | Pending |
+| TRN-02 | Phase 4 | Pending |
+| PLN-01 | Phase 4 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
