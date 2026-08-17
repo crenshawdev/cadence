@@ -149,13 +149,13 @@ plan.
   dispatch. Evidence: `cadence-core/bin/lib/resident-weight.mjs:1-45`. If wrong:
   the decision names a force worth 2% of a dispatch as one of two co-equal
   terms, and lands on a number the record does not support - the "asserted
-  constant" the success criteria forbid.
+  constant" the success criteria forbid. [corrected by plan-3 deviation: a live `weight.mjs resident` reports `zeroResidentBytes` 40,577, not 38,492, and the executor mean return re-derived over every tokens-bearing terminal is 147,740 at n=75, not 144,752 - the four `dispatchBytes` figures and the ~2% conclusion both reproduce]
 - D-10 (PLN-01): The written decision lands on a surface a CHECK already binds -
   the `config-catalog.md` row and the schema `purpose` string - not only in a
   phase SUMMARY. Evidence: `cadence-core/references/config-catalog.md:30`,
   `cadence-core/config.schema.json:31`, `cadence-core/bin/self-verify.mjs:866-873`
   (files `inert-config-key` for a schema key no prose token references);
-  `design-notes/` is tracked and is a viable second home for the dated
+  `design-notes/` is tracked and is a viable second home for the dated [corrected by plan-3 deviation: `.gitignore:23` ignores `/design-notes/dd-*.md`, so a `dd-`-named note is UNTRACKED by rule and reaches the record only via `git add -f`]
   arithmetic. If wrong: the decision is recorded only in
   `.planning/phases/4/SUMMARY.md`, which `milestone-prune` removes at the close -
   the exact reachability failure RCL-07 was filed for in phase 1 of this
@@ -216,7 +216,7 @@ plan.
   of them `cad-executor`, against 177 `dispatch` and 153 `return` events.
   Evidence: `cadence-core/bin/lib/trace-suggest.mjs:300-311`
   (`MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2`, `action:
-  'workflow.max_plan_tasks'`).
+  'workflow.max_plan_tasks'`). [corrected by plan-3 deviation: re-counted at execution the record holds 21 `checkpoint` events, 15 of them `cad-executor`, against 182 `dispatch` and 157 `return` - phase 4 wrote to the record while it ran, so the checkpoint NUMERATOR moves too, not only the denominators]
 - D-18 (PLN-01): Re-deciding the value changes nothing in the seam: `plan-size`
   counts tasks PER PLAN and takes the ceiling as the CALLER's resolved number,
   reading no config itself. Evidence:

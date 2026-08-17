@@ -11,6 +11,7 @@ files:
   - cadence-core/bin/window-budget.test.mjs
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/self-verify.mjs
+  - cadence-core/bin/self-verify.test.mjs
   - cadence-core/workflows/report.md
   - cadence-core/bin/weight-budgets.json
 ---
