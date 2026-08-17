@@ -37,6 +37,7 @@ import {
 // Through a namespace it is simply `undefined` there, so the falsifier fails on
 // its assertions (what it is watching) instead of on module resolution.
 import * as reviewProvider from './review-provider.mjs';
+import { evaluateSchema } from './lib/schema-eval.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
 
 const FINDING_SCHEMA = reviewProvider.FINDING_SCHEMA;
@@ -332,6 +333,73 @@ test('validateConsult: angles need all three string fields', () => {
   assert.equal(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r', how_to_check: 'c' }] }), null);
   assert.match(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r' }] }), /how_to_check/);
   assert.match(validateConsult({}), /missing angles/);
+});
+
+test('schema-eval: every implemented keyword, both directions (RVP-02)', () => {
+  const s = (/** @type {any} */ schema) => (/** @type {any} */ v) => evaluateSchema(schema, v);
+
+  const typed = s({ type: 'string' });
+  assert.equal(typed('ok'), null);
+  assert.match(String(typed(7)), /expected string/);
+  assert.equal(evaluateSchema({ type: 'integer' }, 3), null);
+  assert.match(String(evaluateSchema({ type: 'integer' }, 3.5)), /expected integer/);
+
+  const req = s({ type: 'object', properties: { a: { type: 'string' } }, required: ['a'] });
+  assert.equal(req({ a: 'x' }), null);
+  assert.match(String(req({})), /missing required `a`/);
+
+  const closed = s({ type: 'object', additionalProperties: false, properties: { a: { type: 'string' } } });
+  assert.equal(closed({ a: 'x' }), null);
+  assert.match(String(closed({ a: 'x', b: 1 })), /unknown key `b`/);
+
+  const enumd = s({ type: 'string', enum: ['low', 'high'] });
+  assert.equal(enumd('high'), null);
+  assert.match(String(enumd('catastrophic')), /is not one of/);
+
+  const minimum = s({ type: 'integer', minimum: 1 });
+  assert.equal(minimum(1), null);
+  assert.match(String(minimum(0)), /below minimum 1/);
+
+  const len = s({ type: 'string', minLength: 1, maxLength: 3 });
+  assert.equal(len('ab'), null);
+  assert.match(String(len('')), /shorter than minLength 1/);
+  assert.match(String(len('abcd')), /longer than maxLength 3/);
+
+  const items = s({ type: 'array', maxItems: 2, items: { type: 'integer' } });
+  assert.equal(items([1, 2]), null);
+  assert.match(String(items([1, 2, 3])), /more than maxItems 2/);
+
+  // CODE POINTS, not UTF-16 units. Four astral characters are 8 `.length`
+  // units, so a `.length` implementation would REJECT this accepting case -
+  // the direction a shared bug between this evaluator and validateFindings
+  // would hide, and the reason both are pinned on it.
+  const astral = '\u{1F600}'.repeat(4);
+  assert.equal(astral.length, 8);
+  assert.equal(evaluateSchema({ type: 'string', minLength: 4, maxLength: 4 }, astral), null);
+  assert.match(String(evaluateSchema({ type: 'string', minLength: 5 }, astral)), /shorter than minLength 5/);
+  assert.match(String(evaluateSchema({ type: 'string', maxLength: 3 }, astral)), /longer than maxLength 3/);
+
+  // Nesting: a violation inside findings[].claim is found and its path named.
+  const nested = evaluateSchema(FINDING_SCHEMA, {
+    findings: [{ file: 'a.ts', line: 1, severity: 'low', claim: '', failure_scenario: 'f' }],
+  });
+  assert.match(String(nested), /findings\[0\]\.claim/);
+  assert.match(String(nested), /minLength/);
+
+  // The load-bearing half: an unimplemented keyword THROWS rather than being
+  // treated as satisfied. Ignoring it would make the agreement test below go
+  // green on an agreement it never checked.
+  assert.throws(() => evaluateSchema({ type: 'string', pattern: '^a' }, 'a'),
+    /unimplemented keyword `pattern`/);
+  // Including one buried in a branch no value ever reaches.
+  assert.throws(() => evaluateSchema(
+    { type: 'object', properties: { deep: { type: 'array', uniqueItems: true } } }, {}),
+  /unimplemented keyword `uniqueItems` at \$\.deep/);
+  // And an `additionalProperties` value other than `false`, the only form used.
+  assert.throws(() => evaluateSchema({ type: 'object', additionalProperties: true }, {}),
+    /unimplemented additionalProperties/);
+  assert.throws(() => evaluateSchema({ type: 'object', properties: { a: { type: ['string', 'null'] } } }, {}),
+    /unimplemented type/);
 });
 
 test('classify: tier hints applied, non-text modalities excluded, unknowns kept', () => {
