@@ -402,6 +402,74 @@ test('schema-eval: every implemented keyword, both directions (RVP-02)', () => {
     /unimplemented type/);
 });
 
+test('agreement: the schema and validateFindings give the same verdict, every fixture (RVP-02)', () => {
+  // The pairing, machine-run on BOTH sides. Every fixture goes through the
+  // keyword-limited evaluator against the LIVE FINDING_SCHEMA (never a copy - a
+  // copied schema is exactly the drift this exists to kill) and through
+  // validateFindings, and the two must agree on accept-vs-reject. Deliberately
+  // NOT a hand-paired (fixture, expected verdict) table: the schema column
+  // would then be asserted by human reading, which is the shape D-08 rejects.
+  const ok = () => ({
+    file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+    claim: 'the response is unbounded', failure_scenario: 'a proxy error page arrives whole',
+  });
+  const withFinding = (/** @type {any} */ patch) => ({ findings: [{ ...ok(), ...patch }] });
+  const emoji = (/** @type {number} */ n) => '\u{1F600}'.repeat(n);
+
+  /** @type {{name: string, value: any}[]} */
+  const fixtures = [
+    { name: 'a clean single finding', value: withFinding({}) },
+    { name: 'an empty findings array', value: { findings: [] } },
+    { name: 'line: 0', value: withFinding({ line: 0 }) },
+    { name: 'a negative line', value: withFinding({ line: -1 }) },
+    { name: 'a non-integer line', value: withFinding({ line: 1.5 }) },
+    { name: 'an empty file', value: withFinding({ file: '' }) },
+    { name: 'an empty claim', value: withFinding({ claim: '' }) },
+    { name: 'an empty failure_scenario', value: withFinding({ failure_scenario: '' }) },
+    { name: 'a claim one past maxLength', value: withFinding({ claim: 'x'.repeat(MAX_TEXT_CHARS + 1) }) },
+    { name: 'a file one past maxLength', value: withFinding({ file: 'p'.repeat(MAX_FILE_CHARS + 1) }) },
+    { name: 'a findings array one past maxItems', value: { findings: Array.from({ length: MAX_FINDINGS + 1 }, ok) } },
+    { name: 'an unknown key on a finding', value: withFinding({ note: 'extra' }) },
+    { name: 'an unknown key at the top level', value: { findings: [ok()], scratch: 1 } },
+    { name: 'a missing required field', value: (() => {
+      // Actually ABSENT, not present-and-undefined: `required` is a
+      // hasOwnProperty question and the two are different fixtures.
+      const f = ok(); delete (/** @type {any} */ (f)).failure_scenario; return { findings: [f] };
+    })() },
+    { name: 'a bad severity', value: withFinding({ severity: 'catastrophic' }) },
+    { name: 'a findings that is not an array', value: { findings: 'one finding, honest' } },
+    // The two rows that stop the AGREEMENT from being the bug. Both sides were
+    // written in this phase, so a shared UTF-16 `.length` reading of
+    // minLength/maxLength agrees perfectly while both disagree with the schema -
+    // and every BMP-only row above is blind to it.
+    { name: `a claim of exactly ${MAX_TEXT_CHARS} astral characters`, value: withFinding({ claim: emoji(MAX_TEXT_CHARS) }) },
+    { name: `a claim of ${MAX_TEXT_CHARS + 1} astral characters`, value: withFinding({ claim: emoji(MAX_TEXT_CHARS + 1) }) },
+  ];
+
+  let accepts = 0;
+  let rejects = 0;
+  for (const { name, value } of fixtures) {
+    const bySchema = evaluateSchema(FINDING_SCHEMA, value);
+    const byValidator = validateFindings(value);
+    const schemaAccepts = bySchema === null;
+    const validatorAccepts = byValidator === null;
+    assert.equal(schemaAccepts, validatorAccepts,
+      `${name}: FINDING_SCHEMA says ${schemaAccepts ? 'ACCEPT' : `REJECT (${bySchema})`}` +
+      ` but validateFindings says ${validatorAccepts ? 'ACCEPT' : `REJECT (${byValidator})`}`);
+    if (schemaAccepts) accepts += 1; else rejects += 1;
+  }
+  // A table whose every row rejects would pass a validator that rejects
+  // everything, and one whose every row accepts would pass one that accepts
+  // everything. Both kinds have to have reached both sides.
+  assert.ok(accepts >= 1, 'the table must hold at least one ACCEPT case');
+  assert.ok(rejects >= 1, 'the table must hold at least one REJECT case');
+  assert.equal(accepts + rejects, fixtures.length);
+  // Named, so a future edit that drops the astral rows is visible: the exactly-
+  // at-maxLength emoji row is the one that must land in the accept column.
+  assert.equal(evaluateSchema(FINDING_SCHEMA, withFinding({ claim: emoji(MAX_TEXT_CHARS) })), null);
+  assert.equal(validateFindings(withFinding({ claim: emoji(MAX_TEXT_CHARS) })), null);
+});
+
 test('classify: tier hints applied, non-text modalities excluded, unknowns kept', () => {
   const out = classify('openai', ['text-embedding-3-large', 'brand-new-model', 'gpt-5.2', 'o4-nano']);
   assert.equal(out.some((m) => m.id.includes('embedding')), false); // excluded modality
