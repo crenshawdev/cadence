@@ -916,16 +916,63 @@ export const ADAPTERS = {
 // Assert the model returned our exact shape. Enforced output should already
 // match; we still guard so a schema-ignoring model degrades cleanly.
 // ---------------------------------------------------------------------------
-/** @param {any} obj @returns {string|null} null when valid, else the defect */
+
+/**
+ * String length in Unicode CODE POINTS, which is what JSON Schema's
+ * `minLength`/`maxLength` count. JavaScript's `.length` counts UTF-16 code
+ * units, so one astral character (an emoji, most CJK extension blocks) reads
+ * as 2 and a `maxLength` check written on it refuses a string the schema
+ * accepts. `lib/schema-eval.mjs` counts the same way for the same reason, and
+ * the agreement test pins both against a non-BMP fixture.
+ * @param {string} s @returns {number}
+ */
+function codePoints(s) {
+  let n = 0;
+  for (const _ of s) n += 1;
+  return n;
+}
+
+/**
+ * Mirror of FINDING_SCHEMA's constraints, one named diagnostic each. Every
+ * refusal here is a refusal the canonical schema also makes - `line` below 1,
+ * an empty or over-long `file`/`claim`/`failure_scenario`, a findings array
+ * past `maxItems`, and an unknown key at either level, since
+ * `additionalProperties:false` sits at both. The two sides are checked against
+ * each other by test (the agreement table in review-provider.test.mjs runs
+ * every fixture through this function AND through a keyword-limited evaluator
+ * against the live schema), so the pairing is enforced rather than remembered:
+ * a keyword added to FINDING_SCHEMA without a mirror here reddens that test.
+ *
+ * The diagnostic is never a shared "invalid finding" string, because it is what
+ * reaches the user as `{ok:false, reason:"bad-shape", detail}` and a
+ * degradation the user cannot act on is the silent drop this guard exists to
+ * end. Pure and total: returns null or a string, never throws.
+ *
+ * @param {any} obj @returns {string|null} null when valid, else the defect
+ */
 export function validateFindings(obj) {
   if (!obj || !Array.isArray(obj.findings)) return 'missing findings[]';
+  for (const k of Object.keys(obj)) {
+    if (k !== 'findings') return `unknown top-level key: ${k}`;
+  }
+  if (obj.findings.length > MAX_FINDINGS) {
+    return `findings[] holds at most ${MAX_FINDINGS} entries, got ${obj.findings.length}`;
+  }
   for (const f of obj.findings) {
     if (!f || typeof f !== 'object') return 'finding not an object';
     for (const k of ['file', 'claim', 'failure_scenario']) {
       if (typeof f[k] !== 'string') return `finding.${k} must be a string`;
+      const max = k === 'file' ? MAX_FILE_CHARS : MAX_TEXT_CHARS;
+      const n = codePoints(f[k]);
+      if (n < 1) return `finding.${k} must not be empty`;
+      if (n > max) return `finding.${k} is at most ${max} characters, got ${n}`;
     }
     if (!Number.isInteger(f.line)) return 'finding.line must be an integer';
+    if (f.line < MIN_LINE) return `finding.line must be at least ${MIN_LINE}, got ${f.line}`;
     if (!SEVERITY.includes(f.severity)) return `bad severity: ${f.severity}`;
+    for (const k of Object.keys(f)) {
+      if (!FINDING_KEYS.includes(k)) return `finding has an unknown key: ${k}`;
+    }
   }
   return null;
 }

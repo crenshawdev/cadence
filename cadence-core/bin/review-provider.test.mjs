@@ -276,6 +276,58 @@ test('validateFindings: accepts the exact shape, names the first defect', () => 
   assert.match(validateFindings({ findings: [{ ...good.findings[0], severity: 'catastrophic' }] }), /bad severity/);
 });
 
+test('validateFindings: every schema bound refuses by its own name (RVP-02)', () => {
+  const good = () => ({ file: 'a.ts', line: 3, severity: 'high', claim: 'c', failure_scenario: 'f' });
+  const one = (/** @type {any} */ patch) => validateFindings({ findings: [{ ...good(), ...patch }] });
+
+  // The seven the requirement names. Seven calls, seven DIFFERENT strings, no
+  // null - a shared "invalid finding" message would collapse the set and fail
+  // the size assertion, which is the point of asserting on the set.
+  const diagnostics = [
+    one({ line: 0 }),
+    one({ file: '' }),
+    one({ claim: '' }),
+    one({ failure_scenario: '' }),
+    one({ note: 'an unknown key' }),
+    validateFindings({ findings: Array.from({ length: MAX_FINDINGS + 1 }, good) }),
+    one({ claim: 'x'.repeat(MAX_TEXT_CHARS + 1) }),
+  ];
+  for (const [i, d] of diagnostics.entries()) {
+    assert.equal(typeof d, 'string', `diagnostic ${i} must be a named refusal, got ${d}`);
+  }
+  assert.equal(new Set(diagnostics).size, 7, `seven distinct diagnostics: ${JSON.stringify(diagnostics)}`);
+
+  // Each names the offending field and the bound it crossed.
+  assert.match(diagnostics[0], /finding\.line must be at least 1, got 0/);
+  assert.match(diagnostics[1], /finding\.file must not be empty/);
+  assert.match(diagnostics[2], /finding\.claim must not be empty/);
+  assert.match(diagnostics[3], /finding\.failure_scenario must not be empty/);
+  assert.match(diagnostics[4], /unknown key: note/);
+  assert.match(diagnostics[5], new RegExp(`at most ${MAX_FINDINGS} entries, got ${MAX_FINDINGS + 1}`));
+  assert.match(diagnostics[6], new RegExp(`claim is at most ${MAX_TEXT_CHARS} characters`));
+  // `file` carries its OWN maximum, not the text one.
+  assert.match(one({ file: 'p'.repeat(MAX_FILE_CHARS + 1) }),
+    new RegExp(`file is at most ${MAX_FILE_CHARS} characters`));
+  // `line: 0` is distinct from a non-integer line, and an empty string is
+  // distinct from a non-string - the pre-existing diagnostics still stand.
+  assert.match(one({ line: 'three' }), /line must be an integer/);
+  assert.match(one({ claim: 7 }), /claim must be a string/);
+
+  // additionalProperties:false sits at BOTH levels in the schema, so the
+  // validator refuses at both, and the top-level diagnostic names the key.
+  assert.match(validateFindings({ findings: [], scratch: 1 }), /unknown top-level key: scratch/);
+
+  // An EMPTY findings array is what a review with nothing to report returns.
+  assert.equal(validateFindings({ findings: [] }), null);
+  assert.equal(validateFindings({ findings: [good()] }), null);
+
+  // Lengths are CODE POINTS, as JSON Schema specifies. A `.length` reading
+  // counts one emoji as 2 and would refuse the accepting case below.
+  assert.equal(one({ claim: '\u{1F600}'.repeat(MAX_TEXT_CHARS) }), null);
+  assert.match(one({ claim: '\u{1F600}'.repeat(MAX_TEXT_CHARS + 1) }),
+    new RegExp(`got ${MAX_TEXT_CHARS + 1}`));
+});
+
 test('validateConsult: angles need all three string fields', () => {
   assert.equal(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r', how_to_check: 'c' }] }), null);
   assert.match(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r' }] }), /how_to_check/);
@@ -1142,6 +1194,13 @@ const MAX_RESPONSE_BYTES = 4194304;
 /**
  * An openai-shaped 200 body of EXACTLY `total` ASCII bytes carrying one valid
  * finding, so a size test is a size test and not a shape test in disguise.
+ *
+ * The filler rides a SIBLING key of `output_text`, not the finding's `claim`.
+ * It used to pad the claim, which stopped being a valid finding the moment
+ * RVP-02 gave `claim` a 2000-character maximum - and a fixture that degrades
+ * to `bad-shape` proves nothing about the response ceiling. `extractText`
+ * reads `output_text` and ignores everything beside it, so the bytes on the
+ * wire are unchanged and the finding stays inside every schema bound.
  * @param {number} total
  */
 function bodyOfBytes(total) {
@@ -1149,10 +1208,11 @@ function bodyOfBytes(total) {
     output_text: JSON.stringify({
       findings: [{
         file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
-        claim: `padded ${'x'.repeat(pad)}`,
-        failure_scenario: 'the body is held whole in memory',
+        claim: 'the body is held whole in memory',
+        failure_scenario: 'a proxy error page arrives unbounded',
       }],
     }),
+    _filler: 'x'.repeat(pad),
   });
   const base = make(0).length;
   const out = make(total - base);
