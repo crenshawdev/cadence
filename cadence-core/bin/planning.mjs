@@ -113,6 +113,15 @@
 //                                   _archive-<label>/ (untagged), and their
 //                                   requirements move from Active/Traceability
 //                                   into ## Shipped rows carrying the label
+//   trace window [--phase N]        every paired bracket's terminal `tokens`
+//                                   figure against its role's
+//                                   workflow.max_dispatch_tokens ceiling, as
+//                                   budget-overrun problems. A REPORT about a
+//                                   run that already finished - nothing on the
+//                                   dispatch path reads a ceiling - plus the
+//                                   rows it could not compare: roles with no
+//                                   ceiling, and terminals that carried no
+//                                   figure
 //   trace ignore [--root <path>] [--check]
 //                                   keep .planning/trace.jsonl out of git:
 //                                   append-if-absent at scaffold time, or
@@ -157,6 +166,7 @@ import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
 import { suggestFromRender } from './lib/trace-suggest.mjs';
+import { windowBudget } from './lib/window-budget.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
@@ -2888,6 +2898,28 @@ function cmdReads(dir, opts) {
   });
 }
 
+/**
+ * The per-role dispatch-window ceilings the `window` arm falls back to when no
+ * config layer sets one.
+ *
+ * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these numbers -
+ * its rows carry the defaults, the sample sizes behind them and the reach
+ * phrase, and `cadence-core/references/seams.md` carries the argument. This map
+ * is the unset-layer fallback and nothing else, the same duplication
+ * `cmdRecall`'s `?? 'builtin'` already accepts: this seam reads the merged
+ * config, not the schema, so an unset key has to resolve to something here.
+ * A number changed in one place and not the other makes the report disagree
+ * with the row a user reads before setting the key.
+ */
+const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
+  'cad-planner': 200000,
+  'cad-assumptions-analyzer': 150000,
+  'cad-verifier': 100000,
+  'cad-reviewer': 150000,
+  'cad-executor': 200000,
+  'cad-plan-checker': 75000,
+});
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -3230,7 +3262,50 @@ function cmdTrace(dir, sub, opts) {
       ...(r.mismatched.length ? { mismatched: r.mismatched } : {}),
     });
   }
-  return fail('usage', 'trace <append|close|render|suggest|ignore>');
+  if (sub === 'window') {
+    // Scope exactly as `render` and `suggest` take it: no `--phase` is the
+    // WHOLE record, because a window ceiling is argued off a milestone's worth
+    // of dispatches rather than one phase's.
+    let phase;
+    if (opts.phase !== undefined) {
+      const parsedPhase = requirePhaseArg(opts.phase);
+      if (!parsedPhase.ok) return fail('bad-args', 'trace window --phase must be a phase number');
+      phase = parsedPhase.raw;
+    }
+    const r = renderTrace(dir, phase);
+    // warnings[] BOUND and ridden on the envelope when non-empty, the rule
+    // lib/merge-warnings.mjs holds every mergeLayers callsite to: a torn layer
+    // reads every ceiling as unset, so the report silently falls back to the
+    // defaults below and a project that deliberately raised one would see its
+    // crossings come back with nothing said.
+    const { config: windowConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+    const set = windowConfig?.workflow?.max_dispatch_tokens;
+    /** @type {Record<string, number>} */
+    const ceilings = {};
+    for (const [role, fallback] of Object.entries(DISPATCH_WINDOW_DEFAULTS)) {
+      const v = set?.[role];
+      ceilings[role] = v === undefined || v === null ? fallback : v;
+    }
+    const w = windowBudget(r.file, r.brackets, ceilings);
+    return ok({
+      checked: 'dispatch-window',
+      scope: phase === undefined ? 'all' : String(phase),
+      // The record the crossings were read from, which is also the `file` on
+      // every problem: a finding that cannot name its source is a number.
+      file: r.file,
+      ceilings,
+      problems: w.problems,
+      // Stated at zero rather than omitted, unlike `render`'s conditional keys.
+      // This subcommand has no byte-stable envelope to preserve, and the whole
+      // point of the two counters is that a reader can tell how much of the
+      // record was actually compared - an absent count would read as none.
+      compared: w.compared,
+      unbudgeted: w.unbudgeted,
+      unrecorded: w.unrecorded,
+      ...(warnings.length ? { warnings } : {}),
+    });
+  }
+  return fail('usage', 'trace <append|close|render|suggest|window|ignore>');
 }
 
 // ---------------------------------------------------------------------------

@@ -356,6 +356,14 @@ const CONTRACTS = {
     // dispatch table) actually consume - and one to three of the bytes.
     'trace render': ['--phase', '--events'],
     'trace suggest': ['--phase'],
+    // The dispatch-window report. `--phase` ALONE, and the absence of every
+    // other flag is the point: the ceilings are CONFIG (six
+    // `workflow.max_dispatch_tokens.<role>` keys), so a flag that could name a
+    // role or a number here would be a second, un-layered way to set one - the
+    // ad-hoc override that makes a run's report disagree with the project's own
+    // configured bound. `--phase` only scopes which brackets are read, exactly
+    // as it does on `render` and `suggest`.
+    'trace window': ['--phase'],
     'trace ignore': ['--root', '--check'],
     // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s
     // global queue alone - there is no `--section`, and that absence is the

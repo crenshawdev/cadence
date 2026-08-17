@@ -117,3 +117,129 @@ test('every row lands in exactly one bucket, so the buckets sum to the row count
   assert.equal(r.compared + r.unrecorded + unbudgeted, rows.length);
   assert.equal(r.problems.length, 1);
 });
+
+// --- the CLI: `planning.mjs trace window` ------------------------------------
+//
+// Fixtures follow trace.test.mjs: a scratch `.planning` root written through
+// the shipped `appendEvent`, and the seam run as a subprocess so the one JSON
+// line and the exit code a caller sees are what get asserted.
+// CADENCE_GLOBAL_CONFIG points at a path that does not exist, so the machine's
+// own user-global layer cannot decide a ceiling this test is asserting.
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { appendEvent } from './lib/trace.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PLANNING = join(HERE, 'planning.mjs');
+
+/** A fresh, empty planning root, and a global-config path that is not there. */
+function root() {
+  const base = mkdtempSync(join(tmpdir(), 'cad-window-'));
+  const dir = join(base, '.planning');
+  mkdirSync(dir, { recursive: true });
+  return { dir, noGlobal: join(base, 'absent-global.json') };
+}
+
+/** Run the seam and parse its one JSON line, ok:false included. */
+function run(fx, args) {
+  const opts = {
+    encoding: 'utf8',
+    env: { ...process.env, CADENCE_GLOBAL_CONFIG: fx.noGlobal },
+  };
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, '--dir', fx.dir, ...args], opts));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+/** One paired bracket: a dispatch and the terminal that closes it. */
+function bracket(dir, { phase, plan, role, tokens }) {
+  appendEvent(dir, { phase, family: 'lifecycle', event: 'dispatch', plan, role });
+  appendEvent(dir, { phase, family: 'lifecycle', event: 'return', plan, role, tokens });
+}
+
+test('trace window: a crossing bracket is reported in the budget-overrun shape', () => {
+  const fx = root();
+  bracket(fx.dir, { phase: 1, plan: '1', role: 'cad-executor', tokens: 275285 });
+  const r = run(fx, ['trace', 'window']);
+  assert.equal(r.ok, true);
+  assert.equal(r.checked, 'dispatch-window');
+  assert.equal(r.scope, 'all');
+  assert.equal(r.problems.length, 1);
+  assert.equal(r.problems[0].kind, 'budget-overrun');
+  assert.equal(r.problems[0].file, r.file);
+  assert.match(r.problems[0].detail, /cad-executor/);
+  assert.ok(r.problems[0].detail.includes('275285 exceeds budget 200000 by 75285'),
+    `detail did not carry the arithmetic: ${r.problems[0].detail}`);
+  assert.equal(r.compared, 1);
+  assert.equal(r.ceilings['cad-executor'], 200000);
+});
+
+test('trace window: a repo-layer config raising that role\'s key removes the crossing', () => {
+  const fx = root();
+  bracket(fx.dir, { phase: 1, plan: '1', role: 'cad-executor', tokens: 275285 });
+  writeFileSync(join(fx.dir, 'config.json'),
+    JSON.stringify({ workflow: { max_dispatch_tokens: { 'cad-executor': 300000 } } }));
+  const r = run(fx, ['trace', 'window']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.ceilings['cad-executor'], 300000);
+  // The roles the layer did not touch keep the schema-row defaults.
+  assert.equal(r.ceilings['cad-verifier'], 100000);
+  assert.equal(r.compared, 1);
+});
+
+test('trace window: --phase scopes which brackets are read', () => {
+  const fx = root();
+  bracket(fx.dir, { phase: 1, plan: '1', role: 'cad-executor', tokens: 275285 });
+  bracket(fx.dir, { phase: 2, plan: '1', role: 'cad-executor', tokens: 10 });
+  const all = run(fx, ['trace', 'window']);
+  assert.equal(all.problems.length, 1);
+  assert.equal(all.compared, 2);
+  const two = run(fx, ['trace', 'window', '--phase', '2']);
+  assert.equal(two.scope, '2');
+  assert.deepEqual(two.problems, []);
+  assert.equal(two.compared, 1);
+});
+
+test('trace window: an absent trace file is ok:true with nothing to report', () => {
+  const fx = root();
+  const r = run(fx, ['trace', 'window']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.compared, 0);
+  assert.equal(r.unrecorded, 0);
+  assert.deepEqual(r.unbudgeted, {});
+});
+
+test('trace window: a terminal with no token figure counts unrecorded, not zero', () => {
+  const fx = root();
+  appendEvent(fx.dir, { phase: 1, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(fx.dir, { phase: 1, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor' });
+  const r = run(fx, ['trace', 'window']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.unrecorded, 1);
+  assert.equal(r.compared, 0);
+});
+
+test('trace window: a role with no ceiling is counted per role, never skipped', () => {
+  const fx = root();
+  bracket(fx.dir, { phase: 1, plan: '1', role: 'cad-something-else', tokens: 900000 });
+  const r = run(fx, ['trace', 'window']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.problems, []);
+  assert.deepEqual(r.unbudgeted, { 'cad-something-else': 1 });
+});
+
+test('trace window: a bad --phase is ok:false / bad-args', () => {
+  const fx = root();
+  const r = run(fx, ['trace', 'window', '--phase', 'x']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /trace window --phase/);
+});
