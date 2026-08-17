@@ -67,21 +67,21 @@ evidence: SUMMARY.md:184-211 SHAs e1e6c0a / 15b5d4c / cdf8676 each match the WAT
 ### 8. bodyExcerpt leaks a credential fragment at the sanitize-window edge
 expected: behavior wrong - the goal's 'sanitized excerpt' clause does not hold for one reachable class of provider-controlled body, even though AC2's own fixture passes
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
-source: verifier
-evidence: cadence-core/bin/review-provider.mjs:683-686 - the trailing-token safeguard is gated on `Buffer.byteLength(clean) <= room`, so when redaction shrinks the 4096-byte window to just PAST the cap the window-edge-truncated credential survives inside the first `room` bytes. Reproduced against the real cadence-core/bin/lib/redact-url.mjs: the returned excerpt ends `\"password\":\"SUPERSECRET ...[truncated]` (key name plus 11 bytes of value). Cause is that a quoted value cut before its closing quote matches none of CRED_VALUE's three alternatives (lib/redact-url.mjs:122), so redactCredentials leaves it whole. Declared at SUMMARY.md:118-125; the related quadratic in redactUrl that forces the window at all is SUMMARY.md:126-130.
+source: model
+evidence: Fixed at 6d0aab4 (lib/redact-url.mjs CRED_VALUE gains unterminated quoted alternatives). `node --test cadence-core/bin/redact-url.test.mjs cadence-core/bin/review-provider.test.mjs` -> tests 87, pass 87, fail 0, including the two new fixtures 'a quoted value cut before its closing quote still goes' and 'a credential straddling the sanitize window does not reach the envelope'. Both were watched failing against the unpatched helper (git checkout of redact-url.mjs alone): fail 1 each, the envelope one printing 73 bytes of the planted value. Suite-wide `node --test cadence-core/bin/*.test.mjs` -> 2109 pass / 0 fail and `tsc -p tsconfig.ci.json` clean at 6d0aab4.
 reported: behavior wrong - the goal's 'sanitized excerpt' clause does not hold for one reachable class of provider-controlled body, even though AC2's own fixture passes
 severity: minor
 cause: review-provider.mjs:683-686 gates the trailing-token safeguard on Buffer.byteLength(clean) <= room, so when redaction shrinks the 4096-byte window to just past the cap, a window-edge-truncated credential survives inside the first `room` bytes. Root cause is lib/redact-url.mjs:122: a quoted value cut before its closing quote matches none of CRED_VALUE's three alternatives, so redactCredentials leaves it whole. The window exists only because redactUrl is quadratic; fixing that removes the window and this hole together.
-fix: left open - redactUrl quadratic fix is the repair
+fix: 6d0aab4, retest
 reason: Left open by user decision. Minor, already declared in SUMMARY open items. Correct repair is the redactUrl quadratic fix, which removes the 4096-byte window and this hole together - phase-sized, not a gate-time patch.
 
 ## Summary
 
 total: 8
-passed: 7
-failed: 1
+passed: 8
+failed: 0
 pending: 0
 skipped: 0
 blocked: 0

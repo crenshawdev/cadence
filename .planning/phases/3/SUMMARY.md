@@ -115,14 +115,18 @@ by the user and recorded as an explicit override
 
 ## Open items
 
-- The window-edge ordering in `bodyExcerpt` (`review-provider.mjs`) - the
-  trailing-token safeguard runs only when `clean <= room`, so a sanitizer shrink
-  can pull a window-edge-truncated credential's head under the cap while `clean`
-  still exceeds it, exposing ~36 bytes of a secret. Mechanism confirmed; two
-  attempted repairs both gut an ordinary long body (the RVP-01 fixture's
-  4096-byte no-whitespace padding puts the last whitespace at byte 43, cutting a
-  1024-byte diagnostic to 43). A correct repair needs a bounded notion of
-  "edge-adjacent tail", which is a design decision, not a gate-time patch.
+- ~~The window-edge ordering in `bodyExcerpt`~~ - CLOSED at `6d0aab4` during
+  phase-3 UAT, after the deep verify pass reproduced it at 73 bytes of exposed
+  value. The repair was NOT in `bodyExcerpt`: the root cause was `CRED_VALUE` in
+  `lib/redact-url.mjs`, whose two quoted alternatives both require a closing
+  quote while the bare class excludes quotes, so a credential straddling the
+  window matched nothing and survived byte-identical. It now also matches an
+  unterminated quoted value to end-of-input, terminated forms tried first. Both
+  earlier repair attempts failed because they targeted the whitespace safeguard,
+  which is the symptom. Regression fixtures at both levels, each watched failing
+  against the unpatched helper. This commit did NOT re-fire the blocking
+  `risk_surface` gate: recorded as an explicit user override in the trace
+  (`outcome/override`, base `5fac300`, sha `6d0aab4`).
 - The quadratic in `redactUrl` itself is unfixed and is the better repair -
   its scheme-less rule `[^\s/:@]+:[^\s/@]+@` rescans from every offset. Its four
   other callers hand it a git error message, so the cost was unreachable until
@@ -176,10 +180,11 @@ goal's own claim: the byte ceiling shipped at `99ef17e` could crash the process
 rather than degrade, so between `99ef17e` and `15b5d4c` the phase asserted a
 bound it did not hold - exactly the failure mode the phase exists to remove. It
 is fixed and regression-tested, and the fake transport that hid it is now
-faithful. Second, the `bodyExcerpt` window-edge item above means the sanitize
-path still has one narrow input class where a credential fragment reaches the
-envelope; the envelope is bounded and sanitized as the goal asked, but not
-provably leak-free, and that is carried as an open item rather than claimed.
+faithful. Second, the `bodyExcerpt` window-edge item WAS a narrow input class
+where a credential fragment reached the envelope - carried as an open item here
+rather than claimed clean, then found by the deep verify pass and fixed at
+`6d0aab4` before the phase was marked complete. The remaining `redactUrl`
+quadratic below is a cost bound, not a leak.
 
 ## AC7: watched failures
 
