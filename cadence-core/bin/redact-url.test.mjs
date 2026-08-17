@@ -210,3 +210,36 @@ test('redactCredentials and redactUrl each keep their own coverage', () => {
   const pair = 'key=sk-live-abc123';
   assert.equal(redactUrl(pair), pair, 'a name=value pair is redactCredentials\' job');
 });
+
+test('redactCredentials: a QUOTED value goes whole, spaces and all', () => {
+  // The value class stops at whitespace, so a multi-word secret used to lose
+  // only its first word and ride the excerpt with the rest intact. A quoted
+  // value now runs to its closing quote.
+  for (const [body, leak] of [
+    ['{"password":"correct horse battery staple"}', 'horse battery staple'],
+    ["{'passwd': 'hunter2 two'}", 'two'],
+    ['{"api_token": "glpat one two"}', 'one two'],
+  ]) {
+    const out = redactCredentials(body);
+    assert.equal(out.includes(leak), false, `${leak} survived in ${out}`);
+    assert.ok(out.includes("<redacted>"), `nothing was redacted in ${out}`);
+  }
+  // An UNquoted value still stops at the delimiter that ends it - the boundary
+  // that keeps this from eating the diagnostic around it.
+  assert.equal(redactCredentials('key=abc&next=1'), "<redacted>&next=1");
+});
+
+test('redactCredentials: camelCase names are credential names too', () => {
+  // Rule 4 crosses a `_`, `-` or `.` only, so the ordinary spelling of a JSON
+  // key went through byte-identical. Case is the discriminator here.
+  for (const name of ['apiSecret', 'clientSecret', 'apiKey', 'accessToken', 'refreshToken']) {
+    const body = `{"${name}":"sk-live-abc123"}`;
+    assert.equal(redactCredentials(body).includes('sk-live-abc123'), false,
+      `${name} leaked its value`);
+  }
+  // And the same false positives rule 4's lookbehind exists to prevent: a
+  // lowercase word merely ENDING in a credential word is not a credential name.
+  assert.equal(redactCredentials('monkey=1'), 'monkey=1');
+  assert.equal(redactCredentials('turkey: soup'), 'turkey: soup');
+  assert.equal(redactCredentials('mistoken=1'), 'mistoken=1');
+});

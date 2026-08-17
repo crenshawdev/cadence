@@ -720,10 +720,19 @@ function fakeTransport(wire, seen) {
     const record = { url: String(url), options, chunksEmitted: 0 };
     seen.push(record);
     let destroyed = false;
+    /** @type {any} */
+    let live = null;
     const req = Object.assign(new EventEmitter(), {
       write: () => true,
       destroy: (/** @type {any} */ err) => {
         destroyed = true;
+        // A real `ClientRequest.destroy()` during an ACTIVE response aborts the
+        // IncomingMessage too, and that emits its OWN 'error' - unhandled, it
+        // takes the process down rather than rejecting the promise. The fake
+        // emitted on `req` alone, so the response ceiling's abort looked clean
+        // here while it could crash in production. Emit on both, res first, and
+        // let the first rejection win.
+        if (live) live.emit('error', err || new Error('aborted'));
         req.emit('error', err || new Error('socket destroyed'));
       },
       end: () => {
@@ -735,6 +744,7 @@ function fakeTransport(wire, seen) {
             statusCode: wire.status,
             destroy: () => { destroyed = true; },
           });
+          live = res;
           cb(res);
           const chunks = wire.chunks !== undefined ? wire.chunks
             : wire.body !== undefined ? [wire.body] : [];

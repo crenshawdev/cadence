@@ -113,8 +113,26 @@ const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._
 //    against a provider-controlled body up to the response ceiling.
 const CRED_NAME = '(?:[A-Za-z0-9]+[_.-]){0,4}'
   + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)';
+//    The VALUE is three alternatives, not one class. A quoted value runs to its
+//    closing quote so a secret containing a space (`"password": "hunter2 xyz"`)
+//    goes whole - the bare class stops at the first space and left the tail in
+//    the excerpt, which is the leak this whole rule exists to prevent. Both
+//    quoted forms are `[^"]*` / `[^']*`: one bounded quantifier each, so the
+//    linear-time property the prefix bound above protects is unchanged.
+const CRED_VALUE = `(?:"[^"]*"|'[^']*'|[^\\s&"',;)\\]}>]+)`;
 const CRED_PAIR = new RegExp(
-  `(?<![A-Za-z0-9_.-])"?${CRED_NAME}"?\\s*[:=]\\s*"?[^\\s&"',;)\\]}>]+"?`, 'gi');
+  `(?<![A-Za-z0-9_.-])["']?${CRED_NAME}["']?\\s*[:=]\\s*${CRED_VALUE}`, 'gi');
+
+// 5. The same pair in camelCase, which rule 4 structurally cannot reach: its
+//    prefix crosses a `_`, `-` or `.` only, and its lookbehind blocks a
+//    mid-word terminal, so `apiSecret` and `clientSecret` - the ordinary
+//    spelling of a JSON key - passed through byte-identical. Case is the
+//    discriminator here rather than a separator, so this pattern is
+//    case-SENSITIVE (no `i`) and that is what keeps `monkey` from matching on
+//    its last three characters exactly as the lookbehind does for rule 4.
+const CRED_PAIR_CAMEL = new RegExp(
+  `(?<![A-Za-z0-9_.-])["']?[a-z][A-Za-z0-9]{0,30}(?:Key|Token|Secret|Passwd|Password)["']?`
+  + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
 
 /**
  * `s` with every credential-shaped span replaced by `<redacted>` - the NAME, the
@@ -129,5 +147,6 @@ const CRED_PAIR = new RegExp(
 export function redactCredentials(s) {
   return String(s)
     .replace(AUTH_SCHEME, MARK)
-    .replace(CRED_PAIR, MARK);
+    .replace(CRED_PAIR, MARK)
+    .replace(CRED_PAIR_CAMEL, MARK);
 }

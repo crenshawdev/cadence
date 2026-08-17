@@ -598,6 +598,12 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
         }
         data += c;
       });
+      // `req.destroy(err)` above (and the 'timeout' handler below) aborts an
+      // ACTIVE response, and an aborted IncomingMessage emits its own 'error'.
+      // Without this listener that is an unhandled 'error' event - the ceiling
+      // would crash the process instead of degrading to `over-response`.
+      // `reject` is first-wins, so whichever of req/res errors first decides.
+      res.on('error', reject);
       res.on('end', () => {
         let json = null;
         try { json = data ? JSON.parse(data) : null; } catch { /* leave null; caller inspects status */ }
