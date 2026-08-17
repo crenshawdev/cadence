@@ -25,6 +25,9 @@
       },
       "diff": {
         "gate": "blocking"
+      },
+      "phase_diff": {
+        "gate": "adjudicated"
       }
     }
   }
