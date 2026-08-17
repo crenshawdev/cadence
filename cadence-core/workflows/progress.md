@@ -90,11 +90,19 @@ nothing stored:
 
 <step name="trace">
 (`--trace` only.) Print what the current phase's run actually did, then stop -
-one read, nothing stored:
+one read, nothing stored. The render is bulk output, so it rides a scratch file
+and only the fields this step prints reach the transcript
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule;
+the scratch file is the model's own, never a phase artifact):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <current>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <current> > "${TMPDIR:-/tmp}/cad-trace.json"
+node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(JSON.stringify({counts:r.counts,roles:r.roles,unpaired:r.unpaired,capped:r.capped}))' "${TMPDIR:-/tmp}/cad-trace.json"
 ```
+
+The `brackets` and `outcomes` arrays are the bulk of that response and nothing
+in this step reads either, so they stay in the file - widening that field list
+to the whole envelope is the same bytes on the same turn and buys nothing.
 
 Print the four family counts (`routing`, `provider`, `lifecycle`, `outcome`)
 over the events the phase filter admitted - the filter reads `phase` alone and
@@ -180,7 +188,8 @@ workflow. cad-progress never does the work itself.
 - ROADMAP/REQUIREMENTS drift is reported and routed to /cad-verify, never
   edited here.
 - No stored analytics or progress artifacts; `--stats` and `--trace` both derive
-  on demand and write nothing. The trace file itself is written by the seams and
+  on demand and store nothing - the `--trace` scratch render is the model's own
+  temp file, never a phase artifact. The trace file itself is written by the seams and
   by the context, plan, execute, verify and verify-deep workflows, plus the
   reviewer bracket in `references/review-triggers.md` - never by progress.
 - Never invoke a spine skill without the user accepting the offer.
@@ -195,5 +204,5 @@ workflow. cad-progress never does the work itself.
       drift; other drift routed to /cad-verify untouched
 - [ ] Exactly one suggestion made; work handed off only on user acceptance
 - [ ] --stats printed a derived summary, and --trace printed the phase's run
-      record; both wrote nothing
+      record; neither stored a planning artifact
 </success_criteria>
