@@ -199,6 +199,12 @@ test('R1: the live record this repo has been writing for four cycles emits a sug
       evidence: '2 of 7 adjudicated fire(s), 0 survivors of 1 raised'
         + ' - the gate caught work; the reviewer set is what looks miscalibrated',
       action: 'review.reviewers',
+      // SGT-01, and read as the ONE-ARGUMENT degradation: this call passes no
+      // resolution, so the reviewer set resolves to nothing and the record
+      // carries no `routing/resolve` event to name a level with. The direction
+      // is the rule's own and is here whatever the caller passed.
+      direction: 'raise',
+      current: 'unset: no config layer pins this, so the stakes level decides it',
     },
     {
       kind: 'info',
@@ -287,6 +293,113 @@ test('R4: executor checkpoints at the floor suggest workflow.max_plan_tasks; oth
   assert.equal(s.subject, 'cad-executor');
   assert.equal(out.filter((x) => x.action === 'workflow.max_plan_tasks').length, 1,
     'reviewer checkpoints are closes of failed reviews, not plan-size evidence');
+});
+
+// --- SGT-01: the direction, the current value and the target ------------------
+//
+// The rules above say WHICH key; these say which way to move it and what it
+// holds now. The resolution is the caller's second argument - `planning.mjs`
+// reads the merged config, the gate ladder and the stakes level, this file
+// stays pure - and every case below passes one by hand, which is what keeps the
+// pure-render discipline intact.
+
+/** The resolution shape `planning.mjs`'s suggest arm passes in. */
+const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const twoEmptyFires = (trigger, extra = {}) => Array.from(
+  { length: MIN_FIRES_FOR_GATE_SUGGESTION },
+  () => adjudication(`${trigger}: 0 survivors; voices openai`, extra),
+);
+
+test('SGT-01: R1s gate arm moves DOWN, prints the value a layer set, and proposes one step below it', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), {
+    values: { 'review.triggers.plan.gate': 'blocking' },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'lower');
+  assert.equal(s.current, 'blocking');
+  assert.equal(s.proposed, 'advisory', 'the target is one step down the ladder the caller passed');
+});
+
+test('SGT-01: an unset gate names the level that decides it and carries NO proposed', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES, stakes: 'shipped' });
+  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'lower');
+  assert.match(s.current, /unset/);
+  assert.match(s.current, /shipped/);
+  assert.ok(!/advisory|blocking|adjudicated/.test(String(s.current)),
+    'D-06: an unset gate names the DECIDER, never the value that level would fire');
+  // Key presence, never a null comparison: `proposed: null` would satisfy an
+  // equality check and is exactly what D-12 forbids.
+  assert.equal('proposed' in s, false, 'an unset gate has no rung on the ladder to step down from');
+});
+
+test('SGT-01: a record carrying no stakes level says unset without naming one', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES });
+  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(s);
+  assert.match(s.current, /unset/);
+  assert.match(s.current, /the stakes level decides it$/);
+});
+
+test('SGT-01: R1s reviewer arm moves UP - strengthen the set - and proposes nothing', () => {
+  const out = suggestFromRender(render(twoEmptyFires('diff', { raised: 9 })), {
+    values: { 'review.reviewers': ['openai'] },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const s = out.find((x) => x.action === 'review.reviewers');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'raise', 'lower would name the opposite move on a gate that caught work');
+  assert.deepEqual(s.current, ['openai']);
+  assert.equal('proposed' in s, false, 'which backend to add is not a thing the record names');
+});
+
+test('SGT-01: R3 proposes the rung the escalated resolves actually landed on', () => {
+  const out = suggestFromRender(render([
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { effort: 'high', stakes: 'shipped' }),
+  ]), { gates: GATES, stakes: 'shipped' });
+  const s = out.find((x) => x.action === 'model.effort.cad-planner');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'raise');
+  assert.match(s.current, /unset/);
+  assert.match(s.current, /shipped/);
+  assert.equal(s.proposed, 'xhigh');
+});
+
+test('SGT-01: R4 moves DOWN, prints the resolved ceiling, and prices nothing', () => {
+  const out = suggestFromRender(render([checkpoint('cad-executor'), checkpoint('cad-executor')]), {
+    values: { 'workflow.max_plan_tasks': 8 },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const s = out.find((x) => x.action === 'workflow.max_plan_tasks');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'lower');
+  assert.equal(s.current, 8);
+  assert.equal('proposed' in s, false, 'no field in the record names a plan task count');
+});
+
+test('SGT-01: a one-argument call still answers - a direction and an honest unset, never a throw', () => {
+  // Every pure-render test above calls the function this way; degrading to a
+  // throw or to a missing direction would take all of them with it.
+  const out = suggestFromRender(render([
+    ...twoEmptyFires('plan'),
+    resolve('cad-planner', { escalated: true }), resolve('cad-planner', { escalated: true }),
+    checkpoint('cad-executor'), checkpoint('cad-executor'),
+  ]));
+  const keyed = out.filter((x) => x.action !== null);
+  assert.ok(keyed.length >= 3, JSON.stringify(out));
+  for (const s of keyed) {
+    assert.ok(s.direction === 'raise' || s.direction === 'lower', `${s.action} has no direction`);
+    assert.match(String(s.current), /unset/);
+    assert.equal('proposed' in s, false, `${s.action} priced a target off no resolution at all`);
+  }
 });
 
 test('R5: the spend receipt names the top role, its share, and asks for nothing', () => {

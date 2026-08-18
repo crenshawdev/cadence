@@ -15,10 +15,25 @@
 // Every rule needs a floor of evidence before it speaks (MIN_* below). A
 // suggestion computed from one event is a guess wearing a verdict, and the
 // whole point of reading the trace is to not guess.
+//
+// A keyed suggestion also names WHICH WAY to move the key and what it holds now
+// (SGT-01), and that is why `suggestFromRender` takes a second argument. The
+// values behind those keys live on disk - the merged config layers, the gate
+// ladder in `route-table.json`, the resolved task ceiling - and reading them
+// here would end the purity above. So the CALLER resolves them and passes them
+// in: `planning.mjs`'s `suggest` arm owns every read, this file owns every
+// rule, and the argument is optional so a test can still call
+// `suggestFromRender(render(...))` with one argument and get an honest "unset"
+// rather than a throw. `direction` is assigned per RULE rather than by the
+// caller (phase 5 plan-2 note): the caller cannot know whether R1 fired on its
+// gate arm or its reviewer arm until these rules have run.
 
 /**
  * @typedef {{kind: 'suggest'|'info', subject: string, evidence: string,
- *            action: string|null}} Suggestion
+ *            action: string|null, direction?: 'raise'|'lower',
+ *            current?: any, proposed?: any}} Suggestion
+ * @typedef {{values?: Record<string, any>, gates?: string[],
+ *            stakes?: string|null, checkpointTasks?: (number|null)[]}} Resolution
  * @typedef {{counts: Record<string, number>,
  *            roles: Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>,
  *            events: any[],
@@ -87,6 +102,74 @@ function minutes(ms) {
 }
 
 /**
+ * The value a config layer (or the caller's schema-default fallback) holds for
+ * `key`, or `undefined` when nothing does. `null` reads as nothing on purpose:
+ * that is the schema sentinel for "no layer pins this, the stakes level decides
+ * it", not a value anybody set.
+ * @param {Resolution|undefined} resolution
+ * @param {string} key
+ */
+function resolved(resolution, key) {
+  const values = resolution && typeof resolution.values === 'object' && resolution.values
+    ? resolution.values
+    : null;
+  if (!values) return undefined;
+  const v = /** @type {any} */ (values)[key];
+  return v === undefined || v === null ? undefined : v;
+}
+
+/**
+ * What an unset key prints as `current`: the refusal `config.mjs get` makes, in
+ * the same words and for the same reason (D-06). It names the DECIDER - the
+ * stakes level the record carries - and never the value that level would fire,
+ * because printing an effective value invites the user to set it and pin the
+ * key at every level, which is the pinning the schema's own purpose text warns
+ * about. A record carrying no `routing/resolve` event names no level rather
+ * than one it does not carry.
+ * @param {Resolution|undefined} resolution
+ */
+function unsetCurrent(resolution) {
+  const level = resolution && typeof resolution.stakes === 'string' && resolution.stakes.trim()
+    ? resolution.stakes.trim()
+    : null;
+  return level
+    ? `unset: no config layer pins this, so the stakes level (${level}) decides it`
+    : 'unset: no config layer pins this, so the stakes level decides it';
+}
+
+/**
+ * `current` and, where one can be READ rather than guessed, `proposed` - as the
+ * fragment a suggestion spreads into itself. `proposed` is OMITTED rather than
+ * set to null or 0 (D-07/D-12), the omit-not-zero rule `--turns` already
+ * follows: a key nobody computed a target for must be invisible, not zero.
+ * @param {Resolution|undefined} resolution
+ * @param {string} key
+ * @param {(current: any) => any} [target] priced only when the key is SET
+ */
+function keyState(resolution, key, target) {
+  const value = resolved(resolution, key);
+  const proposed = value === undefined || !target ? undefined : target(value);
+  return {
+    current: value === undefined ? unsetCurrent(resolution) : value,
+    ...(proposed === undefined ? {} : { proposed }),
+  };
+}
+
+/**
+ * One step DOWN the gate ladder `route-table.json` states, or `undefined` when
+ * there is no ladder, the value is not on it, or it is already the bottom rung.
+ * The ladder is the caller's: an absent one omits `proposed`, and that omission
+ * IS the report - no ladder is substituted from memory here.
+ * @param {string[]|undefined} gates
+ * @param {any} value
+ */
+function oneStepDown(gates, value) {
+  if (!Array.isArray(gates)) return undefined;
+  const i = gates.indexOf(value);
+  return i > 0 ? gates[i - 1] : undefined;
+}
+
+/**
  * Parse an adjudication EVENT: the trigger and survivor count out of its
  * `<trigger>: <n> survivors; voices <...>` detail line (review-triggers.md
  * step 5's shape), and the RAISED count - how many findings the reviewers put
@@ -145,9 +228,12 @@ export function parseAdjudication(input) {
  * All suggestions the render supports, most actionable first (`suggest`
  * before `info`, then by subject for a stable order tests can pin).
  * @param {RenderLike} render
+ * @param {Resolution} [resolution] the values the caller read off disk for the
+ *   keys these rules name - absent, every keyed suggestion still carries a
+ *   direction and reports its `current` as unset.
  * @returns {Suggestion[]}
  */
-export function suggestFromRender(render) {
+export function suggestFromRender(render, resolution) {
   /** @type {Suggestion[]} */
   const out = [];
   const events = Array.isArray(render.events) ? render.events : [];
@@ -168,7 +254,13 @@ export function suggestFromRender(render) {
    * @param {any} e
    */
   const corrOf = (e) => (typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '');
-  /** @type {Map<string, {resolves: number, escalated: number}>} */
+  /**
+   * Per role: the resolve counts R3 reads, and the rung its ESCALATED resolves
+   * actually landed on, off the `effort` field those events carry. That rung is
+   * R3's `proposed` - a rung the routing table really resolved for this role,
+   * rather than a legal one it would never produce (D-07).
+   * @type {Map<string, {resolves: number, escalated: number, rung?: string}>}
+   */
   const rungs = new Map();
   /** @type {Map<string, number>} */
   const checkpoints = new Map();
@@ -212,7 +304,10 @@ export function suggestFromRender(render) {
       row.resolves++;
       // Either spelling of a climb counts: the seam's own `escalated` flag, or
       // a retry attempt (`--attempt 2`) that lands on the retry rung.
-      if (e.escalated === true || (typeof e.attempt === 'number' && e.attempt >= 2)) row.escalated++;
+      if (e.escalated === true || (typeof e.attempt === 'number' && e.attempt >= 2)) {
+        row.escalated++;
+        if (typeof e.effort === 'string' && e.effort.trim()) row.rung = e.effort.trim();
+      }
       rungs.set(role, row);
     } else if (e.family === 'lifecycle' && e.event === 'checkpoint') {
       const role = typeof e.role === 'string' ? e.role : '';
@@ -251,6 +346,13 @@ export function suggestFromRender(render) {
   }
   for (const [trigger, row] of [...triggers.entries()].sort()) {
     if (row.empty >= MIN_FIRES_FOR_GATE_SUGGESTION) {
+      // The two arms move OPPOSITE ways, which is the whole reason the split
+      // exists: the gate arm's evidence is fires that keep coming back empty,
+      // so the move is DOWN the ladder; the reviewer arm's evidence is a gate
+      // catching work in front of a reviewer set that killed all of it, so the
+      // move is to STRENGTHEN that set. `raise`/`lower` is the whole vocabulary
+      // - widening it is a schema-shaped decision, and `lower` on the reviewer
+      // arm would name the opposite move.
       out.push(row.raised > 0
         ? {
           kind: 'suggest',
@@ -258,12 +360,23 @@ export function suggestFromRender(render) {
           evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors of ${row.raised} raised`
             + ' - the gate caught work; the reviewer set is what looks miscalibrated',
           action: 'review.reviewers',
+          direction: 'raise',
+          // No `proposed`: which backend to add is not a thing the record
+          // names, and a guessed reviewer set beside two measured targets is
+          // the credibility the no-fabricated-figures guardrail protects.
+          ...keyState(resolution, 'review.reviewers'),
         }
         : {
           kind: 'suggest',
           subject: trigger,
           evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors, no re-arm`,
           action: `review.triggers.${trigger}.gate`,
+          direction: 'lower',
+          // Priced only off a value a LAYER set: an unset gate has no position
+          // on the ladder to step down from, and reading the level's value to
+          // find one is exactly what D-06 refuses.
+          ...keyState(resolution, `review.triggers.${trigger}.gate`,
+            (current) => oneStepDown(resolution && resolution.gates, current)),
         });
     }
   }
@@ -286,6 +399,12 @@ export function suggestFromRender(render) {
         subject: role,
         evidence: `${row.escalated} of ${row.resolves} resolves climbed to the retry rung`,
         action: `model.effort.${role}`,
+        direction: 'raise',
+        // The target is a rung the record SHOWS this role's escalated resolves
+        // landing on, never a step guessed off `rung_order`: a rung the routing
+        // table actually resolved cannot be one the table would never produce.
+        ...keyState(resolution, `model.effort.${role}`),
+        ...(row.rung ? { proposed: row.rung } : {}),
       });
     } else if (row.escalated === 0 && row.resolves >= MIN_DISPATCHES_FOR_RUNG_INFO) {
       out.push({
@@ -307,6 +426,11 @@ export function suggestFromRender(render) {
       subject: 'cad-executor',
       evidence: `${execCp} checkpoint return(s) - plans may exceed one context`,
       action: 'workflow.max_plan_tasks',
+      direction: 'lower',
+      // No `proposed`, and none is derivable: no field in the record names a
+      // plan's task count, so the only target available would be a number
+      // invented here (D-07). The key is OMITTED rather than sent as null.
+      ...keyState(resolution, 'workflow.max_plan_tasks'),
     });
   }
 
