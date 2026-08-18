@@ -124,6 +124,59 @@ test('redactUrl: a non-string input is coerced, not passed through', () => {
   assert.equal(redactUrl(7), '7');
 });
 
+test('redactUrl: a userinfo span the window cut before its `@` still goes', () => {
+  // EXP-02, the URL-position twin of the quoted-value case at the end of this
+  // file. `bodyExcerpt` sanitizes a bounded 4096-byte PREFIX of a provider
+  // body, so a credentialed URL straddling that edge arrives with its userinfo
+  // and no `@` at all. Rules 1 and 2 are both `@`-anchored, so the whole span
+  // used to come back byte-identical and rode the failure envelope.
+  const scheme = redactUrl("fatal: unable to access 'https://cad:s3cr3t-tok");
+  assertClean(scheme, 'scheme-anchored, cut');
+  assert.ok(scheme.includes('https://<redacted>'), scheme);
+  assert.ok(scheme.includes('unable to access'), scheme);
+
+  const bare = redactUrl('fatal: unable to look up cad:s3cr3t-tok');
+  assertClean(bare, 'scheme-less, cut');
+  assert.ok(bare.includes('<redacted>'), bare);
+  assert.ok(bare.includes('unable to look up'), bare);
+
+  // Inside a JSON string, which is where a cut URL in a provider-controlled
+  // body actually sits - the quote is what the span starts after.
+  const json = redactUrl('{"remote":"git://cad:s3cr3t-tok');
+  assertClean(json, 'JSON-embedded, cut');
+
+  // The password-less PAT has no colon to key on, so cut before its `@` it is
+  // byte-for-byte a plain host and the scheme anchor is the only signal left.
+  // Redacting it is why rule 1b does NOT require a colon.
+  const pat = redactUrl("fatal: unable to access 'https://ghp_liveTokenValue");
+  assert.equal(pat.includes('ghp_liveTokenValue'), false, pat);
+});
+
+test('redactUrl: a port is not userinfo, at end-of-input as much as mid-body', () => {
+  // The boundary the end-of-input anchor could plausibly break (AC3): `:8080`
+  // is a colon-separated pair sitting right where a cut userinfo span would.
+  // The `/` exclusion both classes carry is what keeps them apart, so the same
+  // URL is byte-identical whether or not it ends the string.
+  const url = 'https://example.com:8080/path';
+  assert.equal(redactUrl(url), url);
+  assert.equal(redactUrl(`see ${url} for more`), `see ${url} for more`);
+});
+
+test('redactUrl: the end-of-input rules stay inside redactUrl\'s own half', () => {
+  // The split issue-check.mjs:41-47 states in these words: a `name=value` pair
+  // is in URL position to nobody, and the new anchors must not widen redactUrl
+  // into redactCredentials' coverage to reach the window edge.
+  const pair = 'key=sk-live-abc123';
+  assert.equal(redactUrl(pair), pair);
+
+  // And the tail the `"`/`'` exclusion protects: a JSON body's own closing
+  // `"name":"value"}}` is the diagnostic the excerpt exists to carry. Without
+  // the exclusion it reads as one scheme-less userinfo span running to the end
+  // of the input, and the excerpt comes back saying nothing.
+  const body = '{"error":{"message":"upstream rejected","code":"model_not_found"}}';
+  assert.equal(redactUrl(body), body);
+});
+
 // --- redactCredentials: the spans a URL-position rule cannot see (RVP-01) -----
 //
 // The provider seam's HTTP failure envelope carries an excerpt of a body nobody
