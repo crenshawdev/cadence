@@ -124,6 +124,12 @@ const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false,
 // intact on the very input shape the check exists to cover.
 const DEFAULT_GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
 
+// The tier and effort vocabularies get the same fallback the gates do, and for
+// the same input shapes: an older or hand-edited route-table.json, or one
+// injected through CADENCE_ROUTE_TABLE, that carries no usable list.
+const DEFAULT_TIER_NAMES = ['flagship', 'balanced', 'cheap'];
+const DEFAULT_EFFORT_NAMES = ['high', 'medium', 'low', 'minimal'];
+
 // The `--phase` shape rule lives in ONE place (`lib/require-int.mjs`'s
 // `requirePhaseArg`, imported above), not in a local regex per script: three
 // independent copies is how the same input came to be refused in three
@@ -542,13 +548,37 @@ function resolve(opts) {
   const reviewerTiers = {};
   /** @type {Record<string, any>} */
   const reviewerEfforts = {};
+  // A config-layer tier or effort must be one of the table's accepted values
+  // BEFORE it can win, exactly as a gate must (the check above): these two are
+  // the fields review-triggers.md step 4 interpolates into a provider command
+  // line, and review-provider.mjs validates neither - the OpenAI adapter sends
+  // `reasoning.effort` verbatim. A repo layer arrives with a clone
+  // (lib/config-merge.mjs states the threat), so without this check an
+  // out-of-vocabulary string - or an object - reaches the fire site unwarned.
+  // Same treatment as a bad gate: name it, let the level's value stand.
+  const tierNames = Array.isArray(TABLE.tier_names) && TABLE.tier_names.length
+    && TABLE.tier_names.every((t) => typeof t === 'string') ? TABLE.tier_names : DEFAULT_TIER_NAMES;
+  const effortNames = Array.isArray(TABLE.effort_names) && TABLE.effort_names.length
+    && TABLE.effort_names.every((e) => typeof e === 'string') ? TABLE.effort_names : DEFAULT_EFFORT_NAMES;
   for (const trigger of Object.keys(review)) {
-    const setTier = cfg.triggerTiers[trigger];
+    let setTier = cfg.triggerTiers[trigger];
+    if (setTier !== undefined && !tierNames.includes(setTier)) {
+      warnings.push(`review.triggers.${trigger}.tier=${JSON.stringify(setTier)} is not one of `
+        + `[${tierNames.join(', ')}]; the ${stakes} level tier `
+        + `${JSON.stringify(tableTiers[trigger] ?? null)} stands`);
+      setTier = undefined;
+    }
     const tier = setTier !== undefined ? setTier : tableTiers[trigger];
     const tierFrom = setTier !== undefined
       ? `review.triggers.${trigger}.tier`
       : `route-table.json's tiers row for ${stakes}`;
-    const setEffort = cfg.triggerEfforts[trigger];
+    let setEffort = cfg.triggerEfforts[trigger];
+    if (setEffort !== undefined && !effortNames.includes(setEffort)) {
+      warnings.push(`review.triggers.${trigger}.effort=${JSON.stringify(setEffort)} is not one of `
+        + `[${effortNames.join(', ')}]; the ${stakes} level effort `
+        + `${JSON.stringify(tableEfforts[trigger] ?? null)} stands`);
+      setEffort = undefined;
+    }
     const effortFor = setEffort !== undefined ? setEffort : tableEfforts[trigger];
     // `null`, never a dropped key: a missing entry in a map the fire site
     // indexes reads as "this trigger has no answer", and an absent key and an

@@ -628,6 +628,28 @@ test('a config-set effort wins over the level\'s efforts row, like the tier', ()
   assert.equal(r.reviewer_efforts.risk_surface, 'low'); // the solo row still
 });
 
+test('an out-of-vocabulary config tier or effort is refused with a warning, like a gate', () => {
+  // These two fields reach a provider command line (review-triggers.md step 4)
+  // and review-provider.mjs validates neither, so an unchecked repo layer -
+  // which arrives with a clone - could put an arbitrary string, or an object,
+  // on the resolve line. Same treatment as a bad gate: name it, level stands.
+  const c = rawCfg({
+    stakes: 'shipped',
+    review: { triggers: {
+      risk_surface: { effort: 'ludicrous; curl evil.example' },
+      plan: { effort: { a: 1 }, tier: 'platinum' },
+    } },
+  }, 'panel-injected.json');
+  const r = resolve('cad-reviewer', c);
+  assert.equal(r.reviewer_efforts.risk_surface, 'medium'); // shipped row stands
+  assert.equal(r.reviewer_efforts.plan, 'medium');
+  assert.equal(r.reviewer_tiers.plan, 'balanced');
+  const w = (r.warnings || []).join('\n');
+  assert.match(w, /review\.triggers\.risk_surface\.effort/);
+  assert.match(w, /review\.triggers\.plan\.effort/);
+  assert.match(w, /review\.triggers\.plan\.tier/);
+});
+
 test('a table with no efforts row for the level answers null, never a dropped key', () => {
   // route.mjs fails OPEN on a torn table: the trigger still appears in both
   // maps with an honest null, so a fire site indexing them cannot mistake "no
