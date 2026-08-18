@@ -1,4 +1,4 @@
-# Requirements: Cadence (v3.5.4 open)
+# Requirements: Cadence (v3.5.5 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
@@ -33,21 +33,10 @@ it. Both need a decision at the next close.
 
 Milestones `v3.5.6` (#139, #140, #145, #195) and `v3.5.7` (#167, #174, #189,
 #206) are scoped on the tracker and are not this cycle. Issues #190 through #193
-carry no milestone.
-
-`/cad-plan` seeds each requirement's Traceability row as its phase is planned -
-rows are never hand-populated here.
-
-## Shipped` below. The next cycle's headline
-requirements are unscoped - `/cad-phase add` opens one when there is a theme to
-open it for.
-
-The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted. The open items filed at the `v3.5.1`
-close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
-through #197) are unassigned and are not scoped here. The eight medium
-`risk_surface` survivors carried forward at the `v3.5.4` close are unassigned
-too.
+carry no milestone. The open items filed at the `v3.5.1` close (#181
+through #187), the proposals filed at the `v3.5.2` close (#189 through #197),
+and the eight medium `risk_surface` survivors carried forward at the `v3.5.4`
+close are all unassigned and are not scoped here.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
