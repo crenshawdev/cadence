@@ -1,4 +1,4 @@
-// Grammar tests for lib/route-cells.mjs - what makes route-table.json's three
+// Grammar tests for lib/route-cells.mjs - what makes route-table.json's five
 // grids well-formed. Run: node --test cadence-core/bin/route-cells.test.mjs
 //
 // ONE test() per row, deliberately: a table asserted inside a single test() with
@@ -23,12 +23,16 @@ function table(role = 'cad-verifier', cell = { model: 'opus', effort: 'high', re
     model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
     roles: [role],
     tier_names: ['flagship', 'balanced', 'cheap'],
-    tiers: { plan: 'flagship', diff: 'balanced', risk_surface: 'flagship', phase_diff: 'flagship' },
-    cells: {}, review: {}, verify: {},
+    effort_names: ['high', 'medium', 'low', 'minimal'],
+    cells: {}, review: {}, tiers: {}, efforts: {}, verify: {},
   };
   for (const level of LEVELS) {
     t.cells[level] = { [role]: { ...cell } };
     t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking', phase_diff: 'off' };
+    // DENSE by construction, like the shipped grids: every level names every
+    // trigger, so a row deleted below is the only sparseness in the fixture.
+    t.tiers[level] = { plan: 'flagship', diff: 'balanced', risk_surface: 'flagship', phase_diff: 'flagship' };
+    t.efforts[level] = { plan: 'high', diff: 'medium', risk_surface: 'high', phase_diff: 'high' };
     t.verify[level] = 'off';
   }
   return t;
@@ -186,57 +190,95 @@ test('an unknown trigger reports ONCE, not also as a bad gate value', () => {
   assert.deepEqual(c, ['unknown-trigger']); // the gate is the wrong thing to fix
 });
 
-// --- the tiers grid, keyed on a trigger alone ---------------------------------
+// --- the tiers and efforts grids, both keyed on (level, trigger) --------------
+//
+// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
+// there: `tiers` keyed on the trigger alone, so a LEVEL could omit a trigger -
+// or the whole grid could omit a level - with nothing reported, and `efforts`
+// did not exist, so every check below either passed vacuously or reported the
+// wrong locator (`tiers/<trigger>`, which since RVW-03 names no cell).
+//
+// The two grids are the same shape, so every row runs against BOTH: a rule that
+// held for one and not the other would be a difference in what a maintainer is
+// told, not in what is true.
+const GRIDS = [
+  { grid: 'tiers', field: 'tier', vocabKey: 'tier_names', code: 'unknown-tier',
+    bad: 'premium', set: '[flagship, balanced, cheap]' },
+  { grid: 'efforts', field: 'effort', vocabKey: 'effort_names', code: 'unknown-effort',
+    bad: 'ludicrous', set: '[high, medium, low, minimal]' },
+];
 
-test('a trigger with no tiers entry is missing-cell naming that trigger', () => {
-  const t = table();
-  delete t.tiers.risk_surface;
-  const hit = find(t, 'missing-cell');
-  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
-  assert.match(hit.detail, /^tiers\/risk_surface/);
-  assert.match(hit.detail, /review\.triggers\.risk_surface\.tier/);
-});
+for (const g of GRIDS) {
+  test(`a (level, trigger) pair ${g.grid} omits is missing-cell naming grid, level and trigger`, () => {
+    const t = table();
+    delete t[g.grid].critical.risk_surface;
+    const hit = find(t, 'missing-cell');
+    assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+    assert.match(hit.detail, new RegExp(`^${g.grid}/critical/risk_surface`));
+    assert.match(hit.detail, new RegExp(`review\\.triggers\\.risk_surface\\.${g.field}`));
+  });
 
-test('a tiers key that is not a schema trigger is unknown-trigger naming it', () => {
-  const t = table();
-  t.tiers.frobnicate = 'flagship';
-  const hit = find(t, 'unknown-trigger');
-  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
-  assert.match(hit.detail, /^tiers\/frobnicate/);
-  assert.match(hit.detail, /plan, diff, risk_surface, phase_diff/);
-});
+  test(`a level ${g.grid} omits entirely is ONE missing-cell naming grid and level`, () => {
+    const t = table();
+    delete t[g.grid].solo;
+    const c = cellIssues(t, VOCAB).filter((i) => i.code === 'missing-cell');
+    assert.equal(c.length, 1, JSON.stringify(c));
+    assert.match(c[0].detail, new RegExp(`^${g.grid}/solo: no row`));
+  });
 
-test('a tier outside tier_names is unknown-tier naming the trigger and the set', () => {
-  const t = table();
-  t.tiers.plan = 'premium';
-  const hit = find(t, 'unknown-tier');
-  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
-  assert.match(hit.detail, /^tiers\/plan/);
-  assert.match(hit.detail, /\[flagship, balanced, cheap\]/);
-});
+  test(`an entry ${g.grid} carries for a non-trigger is unknown-trigger naming the cell`, () => {
+    const t = table();
+    t[g.grid].shipped.frobnicate = t[g.grid].shipped.plan;
+    const hit = find(t, 'unknown-trigger');
+    assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+    assert.match(hit.detail, new RegExp(`^${g.grid}/shipped/frobnicate`));
+    assert.match(hit.detail, /plan, diff, risk_surface, phase_diff/);
+  });
 
-test('a tier of the wrong TYPE reports rather than throwing', () => {
-  const t = table();
-  t.tiers.diff = 7;
-  const hit = find(t, 'unknown-tier');
-  assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
-  assert.match(hit.detail, /^tiers\/diff/);
-});
+  test(`a ${g.grid} value outside ${g.vocabKey} is ${g.code} naming the cell and the set`, () => {
+    const t = table();
+    t[g.grid].shipped.plan = g.bad;
+    const hit = find(t, g.code);
+    assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+    assert.match(hit.detail, new RegExp(`^${g.grid}/shipped/plan`));
+    assert.ok(hit.detail.includes(g.set), hit.detail);
+  });
 
-test('an absent tiers block is ONE missing-cell, not one per trigger', () => {
+  test(`a ${g.grid} value of the wrong TYPE reports rather than throwing`, () => {
+    const t = table();
+    t[g.grid].solo.diff = 7;
+    const hit = find(t, g.code);
+    assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
+    assert.match(hit.detail, new RegExp(`^${g.grid}/solo/diff`));
+  });
+
+  test(`an absent ${g.grid} block is ONE missing-cell, not one per cell`, () => {
+    const t = table();
+    delete t[g.grid];
+    const c = cellIssues(t, VOCAB).filter((i) => i.code === 'missing-cell');
+    assert.equal(c.length, 1, JSON.stringify(c));
+    assert.match(c[0].detail, new RegExp(`^${g.grid}: no ${g.grid} block`));
+  });
+
+  test(`an absent ${g.vocabKey} is ONE problem, not one per cell`, () => {
+    const t = table();
+    delete t[g.vocabKey];
+    const c = cellIssues(t, VOCAB).filter((i) => i.code === g.code);
+    assert.equal(c.length, 1, JSON.stringify(c));
+    assert.match(c[0].detail, new RegExp(`${g.vocabKey} is absent or empty`));
+  });
+}
+
+test('a sparse grid is a fault, not a silent inheritance of another level (D-02)', () => {
+  // The defect this requirement closes, one indirection further in: a level
+  // that names no tier would read as "use whatever the level above resolved".
   const t = table();
-  delete t.tiers;
+  t.tiers.solo = { plan: 'cheap' };
   const c = cellIssues(t, VOCAB).filter((i) => i.code === 'missing-cell');
-  assert.equal(c.length, 1, JSON.stringify(c));
-  assert.match(c[0].detail, /^tiers: no tiers block/);
-});
-
-test('an absent tier_names is ONE problem, not one per trigger', () => {
-  const t = table();
-  delete t.tier_names;
-  const c = cellIssues(t, VOCAB).filter((i) => i.code === 'unknown-tier');
-  assert.equal(c.length, 1, JSON.stringify(c));
-  assert.match(c[0].detail, /tier_names is absent or empty/);
+  assert.equal(c.length, 3, JSON.stringify(c));
+  for (const trigger of ['diff', 'risk_surface', 'phase_diff']) {
+    assert.ok(c.some((i) => i.detail.startsWith(`tiers/solo/${trigger}`)), trigger);
+  }
 });
 
 // --- rung-demotion, the direction no membership check can see -----------------
@@ -300,9 +342,9 @@ test('a table that is null, a string or an array yields issues but never throws'
     assert.doesNotThrow(() => cellIssues(bad, VOCAB));
   }
   // With no declared roles there are no (level, role) pairs to miss, but every
-  // level still owes a review row and a verify value - plus the two the
-  // level-less `tiers` grid owes once: its block and its vocabulary array.
-  assert.equal(cellIssues(null, VOCAB).length, LEVELS.length * 2 + 2);
+  // level still owes a review row and a verify value - plus the two each of
+  // `tiers` and `efforts` owes ONCE: its block and its vocabulary array.
+  assert.equal(cellIssues(null, VOCAB).length, LEVELS.length * 2 + 4);
 });
 
 test('an empty vocabulary checks nothing rather than failing everything', () => {

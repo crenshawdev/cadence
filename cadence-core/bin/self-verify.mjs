@@ -28,7 +28,7 @@
 //                    a pointer at one single-sourced contract; the moment one
 //                    grows behaviour, the ladder is N divergent variants
 //                    instead of one contract at N efforts.
-//   8. routing cells the three grids in route-table.json, cell by cell (every
+//   8. routing cells the five grids in route-table.json, cell by cell (every
 //                    problem NAMES the cell), the shared vocabulary arrays
 //                    against the schema's own enums,
 //                    plus both directions between the grids and agents/: every
