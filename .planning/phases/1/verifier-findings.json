@@ -1,0 +1,81 @@
+{
+  "status": "gaps",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "resolveProtectedBranches returns a list of real branch names for every grammar row, and never a list with an empty or whitespace-only entry",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Live node -e against cadence-core/bin/lib/protected-branches.mjs: \"\" -> [\"main\",\"master\"], \" \" -> [\"main\",\"master\"], [\"\"] -> [\"main\",\"master\"], [\"\",\"main\"] -> [\"main\"], [] -> [], \"release\" -> [\"release\"] - all six OK. Predicate is the single namesABranch at protected-branches.mjs:33; rows pinned in protected-branches.test.mjs including 'no returned list ever carries an empty or whitespace-only entry (AC1)' and 'an EMPTY protected_branches list still means nothing is protected (D-09)', all green."
+    },
+    {
+      "n": 2,
+      "truth": "The coercion reaches a guard DECISION: a git commit on main under git.protected_branches: \"\" returns a protected-branch decision naming main, not null",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/git-guard.test.mjs:172-189 'a protected_branches naming NO branch guards the default list (GRD-01)' asserts the decision for both the string \"\" and the array [\"\"] spellings, under the default on_protected and under 'refuse'; the row at :162-169 keeps [] unguarded. Ran node --test on git-guard.test.mjs (with the other three GRD files): 99 tests, 0 fail."
+    },
+    {
+      "n": 3,
+      "truth": "The two [0]-indexing readers get a defined base under a string \"\": land-cleanup reports base 'main' and issue-check names the issues its commits reference",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "cadence-core/bin/land-cleanup.test.mjs:122-131 'a protected_branches naming NO branch resolves base to main (GRD-01, D-02)' asserts r.base === 'main'; cadence-core/bin/issue-check.test.mjs:228-246 asserts referenced deepEquals [{42,open},{47,closed},{99,open}] rather than only action 'report'. Both files pass in the run above. Reach row updated: config-reach.md:137 names all five readers through bin/lib/protected-branches.mjs, matching the module header."
+    },
+    {
+      "n": 4,
+      "truth": "All six D-11 scratch sites write inside a directory this run made with mktemp -d, and no fixed shared scratch filename remains at any of them",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "rg 'TMPDIR:-/tmp' cadence-core skills agents hooks: every non-test, non-fixture hit is a mktemp -d template - triage-gate.md:82, progress.md:99, report.md:29, review-triggers.md:202 (covering both cad-artifact and cad-payload, the payload path now a fourth ARGUMENT to the composer rather than derived from process.env.TMPDIR), task.md:126, plus the rule itself at conventions.md:103. rg 'cadence-risk-task' shows only task.md:127 writing to $D/. review-triggers.md:268 passes --payload \"<the echoed scratch directory>/payload.json\" as a literal, and report.md:29/:76 carry directory plus run token across the two invocations with a scratch-stale arm."
+    },
+    {
+      "n": 5,
+      "truth": "A reintroduced fixed shared scratch path makes a deterministic check fail by name, and the tree as shipped passes that same check",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "node cadence-core/bin/self-verify.mjs exits 0 with problems: [] and 'scratch-path' in checked. node --test --test-name-pattern 'check 21' cadence-core/bin/self-verify.test.mjs: 3/3 pass, including 'a fixed shared scratch path reaches problems, naming the surface' (kind scratch-shared-path through the CLI) and 'the LIVE tree is clean of all three per-run scratch codes'. scratch-path.test.mjs pins the six pre-conversion site lines verbatim as reported and their converted forms as clean; the known line-local bound (mktemp and a fixed redirect on ONE line) is stated as an accepted gap in the module header at scratch-path.mjs:33-42 and is a novel spelling rather than the reintroduction AC5 names."
+    },
+    {
+      "n": 6,
+      "truth": "Every read-back refuses a truncated file with a named reason and a non-zero exit, and none prints {} as a success",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "node --test cadence-core/bin/scratch-readback.test.mjs: 21/21 pass. It extracts the shipped node -e scripts out of the four prose surfaces (pinned at exactly one read-back per surface) and EXECUTES them against a truncated fixture and a wrong-shaped fixture, asserting non-zero exit, scratch-unreadable / scratch-shape on stderr and empty stdout, with a negative control pinning the unguarded form printing {} and exiting 0. The sixth read-back, review-provider.mjs --payload, is covered by review-provider.test.mjs:685 'malformed payload degrades to bad-payload before any network call' per the AC6 amendment."
+    },
+    {
+      "n": 7,
+      "truth": "self-verify, the full suite and the two doc claims agree",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "node cadence-core/bin/self-verify.mjs exits 0, problems: []. node --test cadence-core/bin/*.test.mjs: 2250 tests, 2249 pass, 0 fail, 1 skipped (pre-existing) - matching SUMMARY. conventions.md:98-108 states the rule in per-run form (> \"$D/<name>\", D from mktemp -d, run token for the split arm). DOCS-CLAIMS.md:1391 TASK-17 cites workflows/task.md 125-129, and those exact lines carry the mktemp -d bullet and the $D/cadence-risk-task-{slug}.diff claim."
+    },
+    {
+      "n": 8,
+      "truth": "A well-formed scratch file of the wrong shape produces a named refusal rather than an unhandled throw at every read-back",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "Ran the shipped triage-gate.md read-back script verbatim against a file containing literal `null`: it throws an uncaught TypeError 'Cannot read properties of null (reading outcomes)' outside the try/catch, with no scratch-shape or scratch-unreadable line. The same shape is present in workflows/progress.md:101 (r[k] on a null r), report.md's compose read-back (r.brackets) and the triage-gate re-arm count. PLAN-2's 'Must be true when done' requires a named reason on stderr for 'a well-formed file of the wrong shape' at each read-back."
+    }
+  ],
+  "passes": [
+    { "k": 1, "name": "Resolver returns a non-empty branch list for every grammar row", "evidence": "Live node -e over lib/protected-branches.mjs matched all six AC1 rows exactly; protected-branches.test.mjs rows (including the D-09 [] row and the #38 string row) green." },
+    { "k": 2, "name": "git-guard refuses a commit on main under a string \"\" config", "evidence": "git-guard.test.mjs:172-189 asserts a non-null protected-branch decision naming main under \"\" and under [\"\"], ask by default and deny under on_protected: refuse; file passes." },
+    { "k": 3, "name": "land-cleanup and issue-check emit a defined base under a string \"\"", "evidence": "land-cleanup.test.mjs:122-131 asserts base === 'main'; issue-check.test.mjs:228-246 asserts referenced === [42 open, 47 closed, 99 open] with no --base and no git.base_branch; both pass." },
+    { "k": 4, "name": "All six scratch sites use a per-run path", "evidence": "rg 'TMPDIR:-/tmp' over cadence-core/skills/agents/hooks shows a mktemp -d template at every site line (triage-gate.md:82, progress.md:99, report.md:29, review-triggers.md:202 for both artifact and payload, task.md:126) and no fixed shared filename; the composer's payload path is now an explicit argument." },
+    { "k": 5, "name": "A reintroduced fixed shared path fails a deterministic named check", "evidence": "self-verify exits 0 with scratch-path in checked and problems: []; self-verify.test.mjs check-21 rows show a reintroduced fixed shared path reaching problems with kind scratch-shared-path and the surface named, and the live tree clean of all three codes." },
+    { "k": 6, "name": "Every read-back refuses a truncated file by name", "evidence": "scratch-readback.test.mjs executes the four extracted prose scripts against truncated and wrong-shaped fixtures: non-zero exit, named reason on stderr, empty stdout, with a negative control; review-provider.test.mjs:685 covers the --payload seam's bad-payload envelope." },
+    { "k": 7, "name": "self-verify, the full suite, and the two doc claims all agree", "evidence": "self-verify exit 0 / problems []; full suite 2250 tests, 2249 pass, 0 fail, 1 skipped; conventions.md:98-108 in per-run form; DOCS-CLAIMS.md TASK-17 span 125-129 matches task.md's current bullet." }
+  ],
+  "gaps": [
+    {
+      "name": "A scratch file that parses to null crashes the read-backs instead of refusing by name",
+      "reason": "behavior wrong - the four shipped node -e read-backs dereference the parsed value outside their try/catch, so a well-formed file holding literal `null` throws an uncaught TypeError rather than printing the promised scratch-shape refusal",
+      "evidence": "Executed the shipped triage-gate.md read-back verbatim against a file containing `null`: uncaught TypeError 'Cannot read properties of null (reading outcomes)', no named reason on stderr. Same dereference at cadence-core/workflows/progress.md:101 (r[k]), cadence-core/workflows/report.md compose read-back (r.brackets), cadence-core/references/triage-gate.md:84 (r.outcomes). PLAN-2 'Must be true when done' requires a named reason for a well-formed file of the wrong shape; scratch-readback.test.mjs has no null fixture, so nothing holds this.",
+      "severity": "minor",
+      "missing": "Guard the parsed value before dereferencing it at all four sites (refuse as scratch-shape when the parse result is not a non-null object), and add a null fixture row to cadence-core/bin/scratch-readback.test.mjs so the arm is pinned. Already disclosed as an adjudicated open item in SUMMARY.md; the exit is non-zero and no {} is printed, which is why this is minor rather than a lost protection."
+    }
+  ],
+  "human_checks": []
+}
