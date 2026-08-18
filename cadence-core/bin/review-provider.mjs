@@ -677,9 +677,18 @@ function failRequest(meta, e) {
  * The cut is by BYTES, and the head is trimmed back if slicing landed
  * mid-code-point, so the returned string never exceeds the cap however the body
  * was encoded.
+ * EXPORTED for its own unit test and nothing else (D-09). The two
+ * `fail('http', ...)` sites below are still its only callers in the tree; the
+ * export exists because the leak class it guards - a credential cut by the
+ * window edge - is reachable at unit level with one string, while reaching it
+ * through `runFaked` costs a fake transport and a body tuned to a compression
+ * ratio. Plain `export function`, matching every other pure helper here with
+ * test value (`resolveTimeoutMs`, `validateFindings`, `estimatePromptTokens`);
+ * the `__setTransportForTests` spelling is for the transport seam, which is a
+ * replaceable module-private REFERENCE rather than a function to call.
  * @param {unknown} raw @returns {string}
  */
-function bodyExcerpt(raw) {
+export function bodyExcerpt(raw) {
   const full = raw == null ? '' : String(raw);
   const buf = Buffer.from(full, 'utf8');
   const windowed = buf.length > SANITIZE_WINDOW_BYTES;
