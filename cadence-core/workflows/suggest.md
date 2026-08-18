@@ -29,7 +29,7 @@ cycle's phase `N` beside this one's. The user reading a suggestion needs that.
 </step>
 
 <step name="read_record">
-One seam call:
+One seam call, through the `Bash` tool:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace suggest [--phase <N>]
@@ -87,11 +87,23 @@ given anyway: correcting it means changing the seam's denominators, and a number
 quietly adjusted in prose is the one failure mode this command has no defence
 against.
 
-Then STOP - apply NOTHING. A suggestion is input to the user's decision, exactly
-as `cadence-core/references/triage-gate.md` treats review findings: the user
-names which keys to change and changes them through `/cad-config` or a direct
-edit of `.planning/config.json`, and an unanswered list means no change. There is
-no apply arm here to decline.
+Then ASK, below the receipts. Every tweak that came back with a `proposed`
+target is one `/cad-config <key>=<value>` token - the key as `action` returned
+it, the value its `proposed` - and the closing question is whether to run
+`/cad-config` with those tokens, through the `SlashCommand` tool. Name the exact
+tokens in the question: a user answering "yes" to a summary has not seen the
+values. A tweak the seam could not price has no token to offer and is named in
+the block without one - never synthesize a value for it - and when NO entry
+carries a target there is nothing to route, so say that and ask nothing.
+
+The posture that question keeps is `cadence-core/references/triage-gate.md`'s
+over review findings: the suggestion is input to the user's decision, nothing is
+applied on the way to asking, and an unanswered offer means no change. Bind it
+through the ask-user seam's open-ended arm - end the turn on the question, never
+assume the answer. WHERE the write happens, on a yes, is inside `/cad-config`,
+which takes `<key>=<value>` tokens directly; this command writes no config key
+itself, before the question or after it, and a user who would rather edit
+`.planning/config.json` by hand declines and does that.
 </step>
 
 <step name="thin_record">
@@ -114,10 +126,12 @@ and that there is no retune to read. Never a halt, never a guess.
 </process>
 
 <guardrails>
-- Read-only, and narrowly so: no config file is written - not
+- This command writes nothing itself: no config file - not
   `.planning/config.json`, not the global Cadence layer - and no planning file,
-  trace line or `.planning/` artifact either. This command reads a
-  recommendation out loud; changing anything is the user's next move.
+  trace line or `.planning/` artifact either. It ends by ASKING whether to route
+  the priced tweaks to `/cad-config`; on a yes the write is `/cad-config`'s,
+  made from the tokens the offer named. Changing anything is still the user's
+  call, and a question is not a change.
 - No subagent is dispatched. There is no reviewer, no adjudication, no verdict:
   a suggestion cannot PASS or FAIL anything.
 - No fabricated figures. Every count, share and duration is the seam's own; a

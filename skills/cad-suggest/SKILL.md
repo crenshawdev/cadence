@@ -1,19 +1,21 @@
 ---
 name: cad-suggest
-description: "Turn the run record into evidence-backed retune suggestions - each with the trace figures behind it and the config key it concerns - and apply none of them"
+description: "Turn the run record into evidence-backed retune suggestions - each with its config key, the value in force, a direction and a target - and offer to route the ones you accept to /cad-config"
 argument-hint: "[phase]"
 allowed-tools:
-  - Read
   - Bash
+  - SlashCommand
 ---
 
 <objective>
-Read the retune the run record supports back to you: every suggestion carrying
-the trace figures that produced it and the config key it concerns, every
-receipt line named, and nothing applied. Every figure comes from
+The retune the run record supports, read back to you: every tweak under a
+heading of its own carrying its config key, the value in force, the direction to
+move it and the target where the record prices one, with the receipts that ask
+for nothing kept separate below. Every figure comes from
 `planning.mjs trace suggest` - this command relays the record, it never
-recomputes it and never writes a config key. No argument spans the whole
-record; a phase number scopes it.
+recomputes it and it writes no config key itself. It ends by offering to route
+the tweaks you accept to `/cad-config`, which is where a write would happen. No
+argument spans the whole record; a phase number scopes it.
 </objective>
 
 <execution_context>
