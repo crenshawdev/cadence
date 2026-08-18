@@ -28,6 +28,11 @@ cannot show.
   credential's head under the cap while `clean` still exceeds it. Raised at the
   `v3.5.3` phase-3 fire and still live at `v3.5.3`.
 
+- **PHS-01**: `cad-phase remove` refuses a git state it could not read. `uncommittedUnder` returns an empty array whenever `git status` fails, so an unreadable state is indistinguishable from a clean one and the recursive delete of `phases/<N>/` follows on evidence that was never gathered.
+- **RVW-03**: raising `stakes` moves BOTH halves of a cross-model review panel. `route-table.json` carries three separate vocabularies for what a user reads as one dial, so the subagent reviewer upgrades and the cross-model one stays where it was.
+- **REL-01**: `git.create_tag` governs the tag and nothing else. It is documented as "Tag on milestone" and read as the release-mode discriminator for the whole of `milestone.md` step 2, so setting it false silently skips the manifest bump as well. Hit live at the v3.4.1 close.
+- **ISS-01**: the per-issue resolve bound is a land's budget, not a per-call one. `issue-check.mjs` stops its resolve loop only on `timedOut`, so a `tea` that answers slowly and exits non-zero is never marked timed out and each capped resolve can burn nearly the full call timeout.
+
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
 close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
