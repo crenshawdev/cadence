@@ -225,6 +225,26 @@ test('a branch referencing NO issue still reports the open list as the fallback'
   assert.deepEqual(r.open, [42, 99]);
 });
 
+test('a protected_branches naming NO branch still names the referenced issues (GRD-01, D-02)', () => {
+  // With no --base and no git.base_branch, the base falls back to
+  // resolveProtectedBranches(git)[0] and is spent on `git log <base>..HEAD`.
+  // `""` used to resolve to [""], so the range became `..HEAD`, git read the
+  // empty side as HEAD, the log came back empty and the report named NO issue
+  // while still answering ok:true - a silently empty report, not a failure.
+  // Assert the NUMBERS: the pre-fix tree also answers action "report".
+  const dir = repo({
+    originUrl: 'https://github.com/org/repo.git',
+    commits: COMMITS,
+    gitConfig: { protected_branches: '' },
+  });
+  const r = seam(['check', '--dir', dir], { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced, [
+    { number: 42, state: 'open' }, { number: 47, state: 'closed' }, { number: 99, state: 'open' },
+  ], JSON.stringify(r));
+});
+
 // --- the call is bound to the repository --dir names ------------------------
 
 test('the forge call names the --dir repo, not the one the process cwd sits in', () => {
