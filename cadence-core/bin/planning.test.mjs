@@ -3937,6 +3937,34 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.doesNotMatch(r.hint, /partly renumbered/);
 });
 
+test('source: the renumber rm fallback\'s recursive delete is gated by the .git probe', () => {
+  // A source row rather than a behavioural one because the state it guards is
+  // unreachable from a test: it needs `git rm` to fail while `.git` exists,
+  // which the pre-flight already refuses ahead of the apply. The arm is still
+  // load-bearing - it is the SECOND, independent fail-open, covering a git
+  // state that turned unreadable between the pre-flight and the apply, and any
+  // `git rm` failure the pre-flight did not predict at all. What the row pins
+  // is that the guard cannot be dropped back to the shipped one-liner
+  // `catch { rmSync(..., { recursive: true }) }`, which read an unreadable git
+  // state as a clean one and deleted the phase directory whole.
+  const src = readFileSync(PLANNING, 'utf8');
+  // Sliced from the rm step's own op literal to the move loop that follows it,
+  // so this reads the ONE fallback that deletes a phase directory and not the
+  // unrelated recursive rmSync in milestone-prune's delete mode.
+  const start = src.indexOf('steps.push([{ rm: `phases/${at}` }');
+  assert.ok(start > 0, 'the renumber apply loop\'s rm step is no longer under this shape');
+  const end = src.indexOf('for (const [f, t] of dirMoves)', start);
+  assert.ok(end > start, 'the rm step is no longer followed by the dir-move loop');
+  const step = src.slice(start, end);
+  assert.match(step, /rmSync\([\s\S]*?recursive: true/, 'the recursive fallback this row guards is gone');
+  // Guarded, and guarded BEFORE the delete - a probe after the rmSync would
+  // pass a substring check while deleting exactly as it did.
+  const probe = step.indexOf('gitDirAbove(');
+  assert.ok(probe > 0 && probe < step.indexOf('rmSync(join('),
+    'the recursive delete runs without the .git probe deciding first');
+  assert.doesNotMatch(step, /catch \{ rmSync/, 'the unguarded one-line fallback is back');
+});
+
 // --- plan-overlap: the parallel-safety gate ------------------------------------
 
 /** A two-plan phase whose PLAN files declare the given file lists. */

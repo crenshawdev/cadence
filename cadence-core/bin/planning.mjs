@@ -4454,8 +4454,32 @@ function cmdRenumber(dir, sub, opts) {
   const steps = [];
   if (sub === 'remove' && existingDir(at)) {
     steps.push([{ rm: `phases/${at}` }, () => {
-      try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
-      catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+      // `cwd: dir`, matching the pre-flight's own `git status` call. Without it
+      // git discovers the repository from the CALLER's cwd, which for any
+      // `--dir` outside it is a different repository or none - git answers
+      // `'<path>' is outside repository` and every remove fell through to the
+      // `rmSync` below, tracked work and all. The pre-flight has always read
+      // the right repo; this step did not, so the two disagreed about which
+      // repository the phase belongs to.
+      try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { cwd: dir, stdio: 'pipe' }); }
+      catch {
+        // The recursive delete is the destructive act this whole command is
+        // built around, so it gets its OWN gate rather than trusting the
+        // pre-flight's. The guard is repeated here deliberately: the pre-flight
+        // ran before the roadmap was even computed, and a git state can become
+        // unreadable between the two - and this arm also fires on a `git rm`
+        // failure the pre-flight did not predict at all, which inside a
+        // repository means git disagrees with the clean answer the pre-flight
+        // got. Either way the object store is the only copy of what is about to
+        // go, and `rmSync` is a delete with nothing behind it. Outside a
+        // repository there is no object store to consult and no residue that
+        // could survive to be nested into, so the fallback stays the only
+        // remover - that is the bare-tree path every renumber fixture runs on.
+        if (gitDirAbove(dir)) {
+          throw new Error(`git rm -r failed inside a git repository whose state could not be read for phases/${at} - refusing the recursive delete, since the object store may hold the only copy`);
+        }
+        rmSync(join(dir, 'phases', String(at)), { recursive: true });
+      }
     }]);
   }
   for (const [f, t] of dirMoves) {
