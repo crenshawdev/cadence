@@ -1508,3 +1508,80 @@ test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's o
     + 'was edited alone, so /cad-suggest prints a `current` for an unset key that the row '
     + '/cad-config shows contradicts');
 });
+
+
+// --- REL-01: the tag flag is read at one site, and its words name that site --
+//
+// WATCHED FAILING AT c78cbdb, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test --test-name-pattern='REL-01' \
+//       cadence-core/bin/prose-agreement.test.mjs
+//   x REL-01: git.create_tag is read at one prose site, and its purpose names
+//     that site
+//     AssertionError [ERR_ASSERTION]: git.create_tag is read at 2 prose sites:
+//     cadence-core/workflows/milestone.md, skills/cad-land/SKILL.md - the key
+//     governs the tag /cad-land cuts after the merge, so every other reader is
+//     a step deciding something else by it
+//   i pass 0
+//   i fail 1
+//
+// and `node --test cadence-core/bin/prose-agreement.test.mjs` exits 1 there.
+//
+// Which is the defect exactly: `workflows/milestone.md` step 2 read the key as
+// the release-mode discriminator for a whole step, so setting it false skipped
+// the manifest bump - work the key never claimed to govern - while the schema
+// `purpose` said "Tag on milestone" over a tag that is cut at land, after the
+// merge confirms. Both halves are false on that tree: the second assertion's
+// `land` is absent from those three words and its `milestone` is all of them.
+//
+// The subject is AGREEMENT, never presence. The command the purpose has to name
+// is DERIVED from the one site found in step 1 - `skills/cad-land/SKILL.md` ->
+// `cad-land` -> `land` - so the documented words and the actual reader cannot
+// end up naming two different moments, and a literal `land` written into this
+// test would be a second copy of the fact rather than a check on it.
+//
+// Scoped to the prose READ sites, `cadence-core/workflows/` and `skills/`, and
+// deliberately NOT to `config.schema.json`, `references/config-catalog.md` or
+// `references/config-reach.md`: those three name every key by definition, so a
+// count that included them would be red forever for the wrong reason.
+//
+// To re-watch: `git worktree add --detach <tmp> c78cbdb`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/prose-agreement.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+/** A repo-relative, forward-slashed path for an absolute one under REPO. */
+const repoPath = (abs) => abs.slice(REPO.length + 1).split(sep).join('/');
+
+test('REL-01: git.create_tag is read at one prose site, and its purpose names that site', () => {
+  // 1. The prose surfaces that READ the key, found rather than listed.
+  const sites = [];
+  for (const dir of ['cadence-core/workflows', 'skills']) {
+    for (const f of everyFileUnder(join(REPO, ...dir.split('/')))) {
+      if (f.endsWith('.md') && readFileSync(f, 'utf8').includes('git.create_tag')) {
+        sites.push(repoPath(f));
+      }
+    }
+  }
+  sites.sort();
+  assert.deepEqual(sites, ['skills/cad-land/SKILL.md'],
+    `git.create_tag is read at ${sites.length} prose sites: ${sites.join(', ')} - the key `
+    + 'governs the tag /cad-land cuts after the merge, so every other reader is a step '
+    + 'deciding something else by it');
+
+  // 2. The schema `purpose` names THAT site's command, and no other moment.
+  //    Both sides are extracted: the command comes out of the path found above,
+  //    the words out of the schema's own bytes.
+  const command = dirname(join(REPO, ...sites[0].split('/'))).split(sep).pop();
+  const moment = String(command).replace(/^cad-/, '');
+  const key = JSON.parse(doc('cadence-core', 'config.schema.json')).keys['git.create_tag'];
+  assert.ok(key, 'config.schema.json defines no git.create_tag');
+  const purpose = String(key.purpose);
+  assert.match(purpose, new RegExp(`\\b${moment}\\b`, 'i'),
+    `${sites[0]} is the one site that reads git.create_tag, and its schema purpose - `
+    + `"${purpose}" - never names ${moment}, so the key documents a moment nothing reads it at`);
+  assert.doesNotMatch(purpose, /milestone/i,
+    `git.create_tag's schema purpose - "${purpose}" - still names the milestone close, `
+    + `which stopped reading the key: the cut is ${moment}'s, on the pulled base after the `
+    + 'merge confirms');
+});
