@@ -4476,7 +4476,12 @@ function cmdRenumber(dir, sub, opts) {
         // could survive to be nested into, so the fallback stays the only
         // remover - that is the bare-tree path every renumber fixture runs on.
         if (gitDirAbove(dir)) {
-          throw new Error(`git rm -r failed inside a git repository whose state could not be read for phases/${at} - refusing the recursive delete, since the object store may hold the only copy`);
+          // Worded to what is actually known. `git rm` failing does not prove
+          // the repository is unreadable - it proves the git state this delete
+          // depends on went UNREAD, which covers both a `.git` we cannot open
+          // and an answer we did not predict. Claiming the stronger fact would
+          // be this milestone's own defect: a verdict the check did not earn.
+          throw new Error(`git rm -r failed for phases/${at} inside a git repository, so the git state this delete depends on is unread - refusing the recursive fallback, since the object store may hold the only copy; run \`git rm -r -- .planning/phases/${at}\` from the repository to see git's own answer`);
         }
         rmSync(join(dir, 'phases', String(at)), { recursive: true });
       }
