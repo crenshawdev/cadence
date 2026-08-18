@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 5 (The guards that remove a protection)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 5 (Readers that accept what they have a rule against)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-18

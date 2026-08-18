@@ -12,11 +12,11 @@ live rather than trusting its note.
 
 - **GRD-01** (#219): a string `git.protected_branches` resolves to a list that actually protects, never to `[""]`, which protects nothing while reading as set.
 - **SCR-01** (#223): the bulk-output transport uses a per-run scratch path coupled to its write, so a concurrent run cannot answer another run's blocking re-arm cap, and the read-back refuses a truncated or stale file.
-- **ARG-01** (#137): the mutating seams read `--dir` through a strict reader, so an empty or absent flag is refused rather than answered about the process cwd.
+- **ARG-01** (#137): every seam reading `--dir` reads it through a strict reader, so an empty or absent flag is refused rather than answered about the process cwd.
 - **ARG-02** (#142): `release-bump --date` is validated against the format its own documentation states.
-- **ARG-03** (#144): a decimal phase id survives `seed-reqs` and `cursor set` intact, so `1.10` and `1.1` stay distinct.
-- **ARG-04** (#182): `normalizeNumber` refuses a digit string outside the safe-integer range instead of rounding it or yielding `Infinity`.
-- **ARG-05** (#220): `config.mjs get` reports a prototype key as unknown rather than returning a silent success naming nothing.
+- **ARG-03** (#144): a phase spelling the numeric grammar cannot round-trip is refused at `seed-reqs` and `cursor set`, so `1.10` can never be silently merged into `1.1`.
+- **ARG-04** (#182): the shared numeric readers refuse a digit string outside the safe-integer range instead of rounding it or yielding `Infinity`.
+- **ARG-05** (#220): every `config.mjs` face reports a prototype-member key as unknown rather than a silent success or a fabricated retirement claim.
 - **RCH-01** (#221): `detect-commands` names a lint or typecheck command only when its binary is reachable.
 - **RSK-03** (#222): `risk-check status` is satisfiable for every worker key `seams.md` permits, not only a numeric one.
 - **RSK-04** (#224): `risk-diff` does not fire the blocking gate on its own test fixtures.
