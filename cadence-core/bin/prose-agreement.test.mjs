@@ -767,12 +767,29 @@ test('PROJECT.md\'s `### Active` declares its milestone as the section\'s first 
   // The property is that the two scans AGREE, not that either equals a value:
   // an assertion phrased as "the first version token" would have PASSED on the
   // broken file, and one naming a version would need re-baselining every cycle
-  // open. activeVersion() and DECLARED_VERSION_RE are NOT changed and get no
-  // fallback (D-07) - the line anchor is the deliberate v2.4.0 fix for reading
-  // a MENTION as the milestone, with four fixtures pinning it at
-  // branch-decision.test.mjs:237-265. Loosening it to make this pass would ship
-  // a behaviour change to the branch-naming seam out of a docs phase; the file
-  // is what moves when this goes red.
+  // open.
+  //
+  // THE READER NOW CARRIES THAT PROPERTY (phase 2 D-03, reversing this pin's
+  // own D-07 policy). DRF-01 moved it into activeVersion(): the two scans both
+  // run over the whole `### Active` body, and a line-anchored token is admitted
+  // as the declaration only when it AGREES with the body's first token or its
+  // line OPENS a sentence rather than continuing a wrapped one - a rejected
+  // anchor contributing nothing, so the earlier correct mention answers. The
+  // 81bdb5d file above now reads `v3.2.0` unchanged, which is why the sentence
+  // this comment used to end on - the file is what moves when this goes red -
+  // no longer describes the code and was deleted rather than left standing.
+  //
+  // So a red run here means something NARROWER than it did, and it is the only
+  // shape left: activeVersion() admitted an anchored token through the
+  // sentence-opening arm while this repository's own `### Active` names a
+  // different version earlier in its prose. The wrapped-continuation defect
+  // cannot reach this assertion any more - the reader ignores it and answers
+  // the first token, which is agreement. What that leaves is a question about
+  // the READER's admission rule (`lib/branch-decision.mjs`, with the four
+  // fixtures at branch-decision.test.mjs:237-266 pinning what it may not cost),
+  // not a hand-edit of the section: read which of the two versions is the
+  // milestone, and if it is the one activeVersion() returned, this pin is the
+  // stale reading and is re-derived from the reader's rule.
   const text = doc('.planning', 'PROJECT.md');
   const lines = text.split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
@@ -804,11 +821,14 @@ test('PROJECT.md\'s `### Active` declares its milestone as the section\'s first 
 
   assert.equal(declared, first.version,
     `activeVersion() reads ${declared} (line ${at}) as the milestone while the \`### Active\` `
-    + `body's FIRST version token is ${first.version} (line ${first.line}). A line-anchored `
-    + 'token below an earlier prose mention wins under DECLARED_VERSION_RE, so version_drift '
-    + 'compares the wrong version against the tag list while the docs themselves are correct. '
-    + 'Fix the section - declare the milestone on its own line above every mention - rather '
-    + 'than the anchor, which is the v2.4.0 fix for reading a mention as the milestone.');
+    + `body's FIRST version token is ${first.version} (line ${first.line}). Since phase 2 `
+    + 'D-03 the agreement property lives in activeVersion() itself, which admits a '
+    + 'line-anchored token only on agreement or on a line that opens a sentence - so the one '
+    + 'reading that still reaches here is the sentence-opening admission, and version_drift '
+    + `is comparing ${declared} against the tag list. Settle which version is the milestone: `
+    + 'the remedy is the READER\'s admission rule in lib/branch-decision.mjs and this pin '
+    + 'derived from it, not a hand-edit of the section, which no longer has to route around '
+    + 'where markdown wrapped a line.');
 });
 
 // --- AC6: the executor is told the surfaces it will be judged on -------------
