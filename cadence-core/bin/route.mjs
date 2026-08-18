@@ -311,13 +311,22 @@ function resolve(opts) {
   // All four knobs come from the floored row through the one cell grid.
   const stakes = cfg.stakes;
 
-  // The three grids (D-01). `model`, `effort` and `retry` come from ONE cell
-  // keyed on (level, role); `review` keys on (level, trigger) because a gate
-  // belongs to a trigger, not to an agent; `verify` keys on the level alone
-  // because deep_check runs once per phase with no role in hand. A level
-  // missing any of the three is a TORN table, so it degrades the same way a bad
-  // stakes value already does rather than emitting a partial bundle - half a
-  // bundle read as a whole one is worse than no bundle at all.
+  // The three grids a torn LEVEL is fatal in (D-01). `model`, `effort` and
+  // `retry` come from ONE cell keyed on (level, role); `review` keys on
+  // (level, trigger) because a gate belongs to a trigger, not to an agent;
+  // `verify` keys on the level alone because deep_check runs once per phase
+  // with no role in hand. A level missing any of the three is a TORN table, so
+  // it degrades the same way a bad stakes value already does rather than
+  // emitting a partial bundle - half a bundle read as a whole one is worse than
+  // no bundle at all.
+  //
+  // The table's other two grids - `tiers` and `efforts`, which key on (level,
+  // trigger) since RVW-03 - are deliberately NOT in this guard. They answer the
+  // cross-model half of a review panel, and a level missing one of them still
+  // yields a whole routing bundle: the trigger's entry resolves `null`, the
+  // availability test drops the provider with its cause in `warnings[]`, and
+  // CI catches the hole (self-verify check 8). Refusing the bundle for them
+  // would take the spine down over a field the spine does not use.
   const level = TABLE.cells && TABLE.cells[stakes];
   const cell = level && typeof level === 'object' && !Array.isArray(level) ? level[opts.role] : null;
   const reviewRow = TABLE.review && TABLE.review[stakes];
