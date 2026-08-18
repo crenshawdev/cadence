@@ -36,22 +36,47 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace suggest [--phas
 ```
 
 Everything below reads off its return: `scope`, `events_read`, `suggestions`,
-and `capped` / `malformed` when either is present. Do not open
-`.planning/trace.jsonl` - the seam is the reader, and prose that re-reads it is
-prose that can disagree with it.
+and `capped` / `malformed` / `warnings` when any of the three is present - a
+`warnings` entry is a config layer the merge could not read whole, so a `current`
+below may be reading less than the project set, and it is relayed rather than
+swallowed. Do not open `.planning/trace.jsonl` - the seam is the reader, and
+prose that re-reads it is prose that can disagree with it.
 </step>
 
 <step name="present">
-Open with one line naming the scope read and the `events_read` count. Then:
+Open with one line naming the scope read and the `events_read` count. Then TWO
+headed blocks, the tweaks first and the receipts below them. The two kinds never
+interleave: presenting them as one list is what makes a retune read as a report.
 
-- Every `kind: "suggest"` entry is a NUMBERED item carrying its `subject`, its
-  `evidence` verbatim as the seam computed it, and the `action` it names - the
-  config key, spelled as returned.
-- Every `kind: "info"` entry is one receipt line. An `info` asks for nothing; it
-  is there because the record earned it a mention.
-- `capped` or `malformed` gets one line each, named rather than swallowed: a
-  capped file was read to a limit, a malformed count is lines the reader could
-  not parse.
+**Heading one - the tweaks this record supports.** Every `kind: "suggest"` entry
+is a NUMBERED item under it and no `info` entry appears inside it. Each item
+states five things, in this order:
+
+- What it is about: its `subject`, the role, trigger or marker the rule counted.
+- The config key it concerns: its `action`, spelled exactly as returned.
+- Its `current` value - and where that came back as the unset form, that form
+  and the stakes level it names, AS GIVEN. Never resolved here to the value the
+  level would fire: a user who sets a key to move it off a printed effective
+  value has just pinned that gate at every stakes level.
+- Its `direction`, with the `proposed` target beside it where the seam returned
+  one - `current` to `proposed`, both spelled as returned. Where the entry
+  carries NO `proposed`, state that absence in words rather than leaving a
+  blank, which is indistinguishable from a forgotten field: the record cannot
+  price a target, and a suggestion it cannot price comes back without one rather
+  than with a guess.
+- Its `evidence`, verbatim as the seam computed it.
+
+When the return carries `info` entries but no `suggest` entry, that heading
+still appears and carries exactly one line: the record supports no tweak in this
+scope. Nothing is attached to that line - an offer with nothing behind it is the
+same mute output pointed the other way.
+
+**Heading two - the receipts, below the tweak block.** Every `kind: "info"`
+entry is one line under it. An `info` asks for nothing; it is there because the
+record earned it a mention, and it is never lifted into the block above.
+`capped` or `malformed` gets one line each here, named rather than swallowed: a
+capped file was read to a limit, a malformed count is lines the reader could not
+parse.
 
 Relay the figures UNCHANGED and recompute none of them - including the ones
 whose denominator is arguable. The per-role escalation evidence is denominated

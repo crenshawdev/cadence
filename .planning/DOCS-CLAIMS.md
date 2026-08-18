@@ -1106,17 +1106,17 @@ mistake.
 | SUGGEST-04 | cadence-core/workflows/suggest.md | 20-22 | `trace suggest`'s contract row in `cadence-core/bin/self-verify.mjs` fixes its flag set at `--phase` alone | accurate | accurate | 2 |
 | SUGGEST-05 | cadence-core/workflows/suggest.md | 22-23 | There is no correlation-id scoping to reach for | accurate | accurate | 2 |
 | SUGGEST-06 | cadence-core/workflows/suggest.md | 26-28 | Nothing prunes `.planning/trace.jsonl` at a close, so an unscoped run spans every milestone still in the file | accurate | accurate | 2 |
-| SUGGEST-07 | cadence-core/workflows/suggest.md | 35-39 | `planning.mjs trace suggest [--phase <N>]` returns `scope`, `events_read`, `suggestions`, and `capped` / `malformed` when present | accurate | accurate | 2 |
-| SUGGEST-08 | cadence-core/workflows/suggest.md | 47-49 | Every `kind: "suggest"` entry carries `subject`, `evidence` and `action` | accurate | accurate | 2 |
-| SUGGEST-09 | cadence-core/workflows/suggest.md | 50-51 | Every `kind: "info"` entry is one receipt line and asks for nothing | accurate | accurate | 2 |
-| SUGGEST-10 | cadence-core/workflows/suggest.md | 57-60 | The per-role escalation evidence is denominated in `routing/resolve` events | accurate | accurate | 2 |
-| SUGGEST-11 | cadence-core/workflows/suggest.md | 65-67 | A suggestion is input to the user's decision, exactly as `cadence-core/references/triage-gate.md` treats review findings | accurate | accurate | 2 |
-| SUGGEST-12 | cadence-core/workflows/suggest.md | 67-68 | The user changes keys through `/cad-config` or a direct edit of `.planning/config.json` | accurate | accurate | 2 |
-| SUGGEST-13 | cadence-core/workflows/suggest.md | 73-80 | The envelope offers one discriminator, `events_read`, so the thin-record arm has exactly two lines to choose between | accurate | accurate | 2 |
-| SUGGEST-14 | cadence-core/workflows/suggest.md | 83-84 | The envelope returns no floor figure | accurate | accurate | 2 |
-| SUGGEST-15 | cadence-core/workflows/suggest.md | 100-101 | Name no config key that `cadence-core/config.schema.json` does not carry | accurate | accurate | 2 |
-| SUGGEST-16 | cadence-core/workflows/suggest.md | 92-95 | No config file is written - not `.planning/config.json`, not the global layer | accurate | accurate | 2 |
-| SUGGEST-17 | cadence-core/workflows/suggest.md | 96-97 | No subagent is dispatched; a suggestion cannot PASS or FAIL anything | accurate | accurate | 2 |
+| SUGGEST-07 | cadence-core/workflows/suggest.md | 35-43 | `planning.mjs trace suggest [--phase <N>]` returns `scope`, `events_read`, `suggestions`, and `capped` / `malformed` / `warnings` when any of the three is present | accurate | accurate | 2 |
+| SUGGEST-08 | cadence-core/workflows/suggest.md | 51-67 | Every `kind: "suggest"` entry carries `subject`, `action`, `current`, `direction` and `evidence`, plus `proposed` where the seam priced a target | accurate | accurate | 2 |
+| SUGGEST-09 | cadence-core/workflows/suggest.md | 74-76 | Every `kind: "info"` entry is one receipt line under a heading of its own below the tweak block, and asks for nothing | accurate | accurate | 2 |
+| SUGGEST-10 | cadence-core/workflows/suggest.md | 82-85 | The per-role escalation evidence is denominated in `routing/resolve` events | accurate | accurate | 2 |
+| SUGGEST-11 | cadence-core/workflows/suggest.md | 90-92 | A suggestion is input to the user's decision, exactly as `cadence-core/references/triage-gate.md` treats review findings | accurate | accurate | 2 |
+| SUGGEST-12 | cadence-core/workflows/suggest.md | 92-93 | The user changes keys through `/cad-config` or a direct edit of `.planning/config.json` | accurate | accurate | 2 |
+| SUGGEST-13 | cadence-core/workflows/suggest.md | 98-105 | The envelope offers one discriminator, `events_read`, so the thin-record arm has exactly two lines to choose between | accurate | accurate | 2 |
+| SUGGEST-14 | cadence-core/workflows/suggest.md | 107-109 | The envelope returns no floor figure | accurate | accurate | 2 |
+| SUGGEST-15 | cadence-core/workflows/suggest.md | 125-126 | Name no config key that `cadence-core/config.schema.json` does not carry | accurate | accurate | 2 |
+| SUGGEST-16 | cadence-core/workflows/suggest.md | 117-120 | No config file is written - not `.planning/config.json`, not the global layer | accurate | accurate | 2 |
+| SUGGEST-17 | cadence-core/workflows/suggest.md | 121-122 | No subagent is dispatched; a suggestion cannot PASS or FAIL anything | accurate | accurate | 2 |
 | README-52 | README.md | 34 | v2.2.0 deleted 2,251 lines of the shell tokenizer | accurate | accurate | 2 |
 | README-53 | README.md | 36 | OpenAI and Gemini enforce the output schema themselves; DeepSeek has no server-side schema, so its adapter puts the schema in the prompt and asserts the returned shape | accurate | accurate | 2 |
 | README-54 | README.md | 38 | `METHOD.md`, `INTERNALS.md`, `docs/WORKFLOW.md` and `docs/EVIDENCE.md` all exist | accurate | accurate | 2 |
