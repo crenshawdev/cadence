@@ -1,6 +1,6 @@
 # State
 
-Phase: 4 of 5 (Costs argued from the new record)
-Status: phase complete
-Next: /cad-context 5
-Updated: 2026-08-17
+Phase: 5 of 5 (The retune says what to change)
+Status: context gathered
+Next: /cad-plan 5
+Updated: 2026-08-18
