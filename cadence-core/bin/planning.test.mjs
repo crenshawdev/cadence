@@ -4034,6 +4034,62 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.doesNotMatch(r.hint, /partly renumbered/);
 });
 
+test('PHS-01: a repository rooted INSIDE phases/<at> is not deleted out from under itself', () => {
+  // The classifier walks UP from the planning root, so a repository rooted in
+  // the very directory the fallback is about to delete is invisible to it: the
+  // tree answers "no repository" and `rmSync` takes the nested object store
+  // along with the phase. Nothing else in the run reads that repository, so its
+  // commits have no second copy anywhere.
+  const dir = renumberTree();
+  const nested = join(dir, 'phases', '3');
+  execFileSync('git', ['init', '-q', '.'], { cwd: nested, stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+
+  assert.equal(r.ok, false, `the nested repository must stop the delete - got ${JSON.stringify(r)}`);
+  assert.ok(existsSync(join(nested, '.git')), 'the nested object store must survive');
+  assert.ok(existsSync(join(nested, 'PLAN.md')));
+  // The rm is the FIRST apply step, so a refusal there leaves the tree whole.
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+});
+
+test('PHS-01: a GIT_DIR-selected repository counts as present when its state cannot be read', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  // `GIT_DIR`/`GIT_WORK_TREE` select a repository with no lexical `.git`
+  // anywhere above the work tree. The filesystem probe finds nothing, so an
+  // unreadable external repository classified as ABSENT - the permissive arm,
+  // which ends in the recursive delete. Presence is what the environment says
+  // here, not what the walk can see.
+  const dir = renumberTree();
+  const work = join(dir, '..');
+  const meta = join(work, 'meta.git');
+  const env = { GIT_DIR: meta, GIT_WORK_TREE: work,
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+  const g = (args) => execFileSync('git', args, { cwd: work, stdio: 'pipe', env: { ...process.env, ...env } });
+  g(['init', '-q']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 'T']);
+  g(['add', '-A']);
+  g(['commit', '-qm', 'init']);
+  assert.ok(!existsSync(join(work, '.git')), 'the fixture is only meaningful with no lexical .git');
+
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  let r;
+  chmodSync(meta, 0o000);
+  try { r = run(['renumber', 'remove', '--n', '3'], dir, undefined, env); }
+  finally { chmodSync(meta, 0o755); }
+
+  assert.ok(existsSync(join(dir, 'phases', '3', 'PLAN.md')),
+    `phases/3 must survive an unreadable GIT_DIR repository - got ${JSON.stringify(r)}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unreadable-git-state');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+});
+
 test('source: the renumber rm fallback\'s recursive delete is gated by the .git probe', () => {
   // A source row rather than a behavioural one because the state it guards is
   // unreachable from a test: it needs `git rm` to fail while `.git` exists,
@@ -4057,8 +4113,16 @@ test('source: the renumber rm fallback\'s recursive delete is gated by the .git 
   // Guarded, and guarded BEFORE the delete - a probe after the rmSync would
   // pass a substring check while deleting exactly as it did.
   const probe = step.indexOf('gitDirAbove(');
-  assert.ok(probe > 0 && probe < step.indexOf('rmSync(join('),
+  const del = step.search(/rmSync\(/);
+  assert.ok(probe > 0 && probe < del,
     'the recursive delete runs without the .git probe deciding first');
+  // The probe looks UP from the planning root, so it cannot see a repository
+  // rooted in the directory being deleted. That half is a separate call and
+  // it must also decide before the delete, or the nested object store goes
+  // with the phase dir - the same fail-open reached from the other side.
+  const under = step.indexOf('gitDirUnder(');
+  assert.ok(under > 0 && under < del,
+    'the recursive delete runs without the nested-repository probe deciding first');
   assert.doesNotMatch(step, /catch \{ rmSync/, 'the unguarded one-line fallback is back');
 });
 

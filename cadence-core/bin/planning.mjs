@@ -4184,13 +4184,20 @@ function gitMv(from, to) {
  * PRESENT. `existsSync` follows the link, finds nothing, and answers with the
  * permissive arm - the same failure mode `occupied` below was written for.
  *
- * Total by construction: an ancestor we may not stat throws EACCES, which ends
- * the walk with `false` rather than propagating. That is the permissive answer,
- * and it is the safe direction here only because the CALLER re-checks nothing -
- * see its two refusals.
+ * Two states this walk cannot see on its own, both of which would otherwise
+ * report ABSENT for a repository that is present:
+ *   - `GIT_DIR`/`GIT_WORK_TREE` in the environment select a repository with no
+ *     lexical `.git` anywhere above the work tree. The walk finds nothing while
+ *     an object store holding the only copy of the work is very much there.
+ *   - a probe that ERRORS - EACCES on an ancestor we may not stat, EIO, ESTALE -
+ *     is a repository we could not rule OUT, never one we ruled out.
+ * Both answer PRESENT. This gate's permissive arm ends in `rmSync`, so
+ * "could not tell" and "definitely none" must not share it: the whole point of
+ * the check is that an unread git state never reads as a clean one.
  * @param {string} from @returns {boolean}
  */
 function gitDirAbove(from) {
+  if (process.env.GIT_DIR || process.env.GIT_WORK_TREE) return true;
   try {
     let cur = resolvePath(from);
     for (;;) {
@@ -4199,7 +4206,33 @@ function gitDirAbove(from) {
       if (up === cur) return false;
       cur = up;
     }
-  } catch { return false; }
+  } catch { return true; }
+}
+
+/**
+ * Is there a `.git` entry anywhere INSIDE `target`? The companion to
+ * `gitDirAbove`, which starts at the planning root and looks UP - so a
+ * repository rooted inside `phases/<N>` is invisible to it, an otherwise
+ * non-repository tree answers ABSENT, and `rmSync` takes that nested object
+ * store along with the directory. It is the same failure the caller's refusal
+ * exists to stop, reached from the other side.
+ *
+ * Bounded by the phase directory's own size - a handful of markdown files and
+ * a reports dir. A subtree we cannot read answers PRESENT for `gitDirAbove`'s
+ * reason; a target that is not there at all answers ABSENT, since there is
+ * nothing under it to protect. That is an errno test and not a message parse:
+ * `review-provider.mjs`'s ban is on a diagnostic STRING deciding control flow.
+ * @param {string} target @returns {boolean}
+ */
+function gitDirUnder(target) {
+  let entries;
+  try { entries = readdirSync(target, { withFileTypes: true }); }
+  catch (e) { return !(e && e.code === 'ENOENT'); }
+  for (const e of entries) {
+    if (e.name === '.git') return true;
+    if (e.isDirectory() && gitDirUnder(join(target, e.name))) return true;
+  }
+  return false;
 }
 
 /**
@@ -4471,19 +4504,23 @@ function cmdRenumber(dir, sub, opts) {
         // failure the pre-flight did not predict at all, which inside a
         // repository means git disagrees with the clean answer the pre-flight
         // got. Either way the object store is the only copy of what is about to
-        // go, and `rmSync` is a delete with nothing behind it. Outside a
-        // repository there is no object store to consult and no residue that
-        // could survive to be nested into, so the fallback stays the only
-        // remover - that is the bare-tree path every renumber fixture runs on.
-        if (gitDirAbove(dir)) {
+        // go, and `rmSync` is a delete with nothing behind it. With no
+        // repository at, above OR inside the target there is no object store to
+        // consult and no residue that could survive to be nested into, so the
+        // fallback stays the only remover - the bare-tree path every renumber
+        // fixture runs on. `gitDirUnder` carries the "inside" half: looking up
+        // from the planning root cannot see a repository rooted in the very
+        // directory this is about to delete recursively.
+        const target = join(dir, 'phases', String(at));
+        if (gitDirAbove(dir) || gitDirUnder(target)) {
           // Worded to what is actually known. `git rm` failing does not prove
           // the repository is unreadable - it proves the git state this delete
           // depends on went UNREAD, which covers both a `.git` we cannot open
           // and an answer we did not predict. Claiming the stronger fact would
           // be this milestone's own defect: a verdict the check did not earn.
-          throw new Error(`git rm -r failed for phases/${at} inside a git repository, so the git state this delete depends on is unread - refusing the recursive fallback, since the object store may hold the only copy; run \`git rm -r -- .planning/phases/${at}\` from the repository to see git's own answer`);
+          throw new Error(`git rm -r failed for phases/${at} and a git repository sits at, above or inside it, so the git state this delete depends on is unread - refusing the recursive fallback, since the object store may hold the only copy; run \`git rm -r -- .planning/phases/${at}\` from the repository to see git's own answer`);
         }
-        rmSync(join(dir, 'phases', String(at)), { recursive: true });
+        rmSync(target, { recursive: true });
       }
     }]);
   }
