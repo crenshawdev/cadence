@@ -133,3 +133,82 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/5/CONTEXT.md`: D-09 (SGT-01): A checkpoint whose plan file cannot be read degrades to
 - `phases/5/CONTEXT.md`: D-10 (SGT-01): The binding check compares against the SAME resolved ceiling
 - `phases/5/CONTEXT.md`: D-11 (SGT-01): `/cad-suggest` ends by OFFERING to route the change to
+
+## v3.5.4
+
+- `phases/1/SUMMARY.md`: Plan 1, task 4 - the plan names "#215's own parametrization" as a fixture, but #215's body is not recoverable from this tree: the v3.5.3 phase-3 artifacts were pruned at `bc04ef6` and only the ROADMAP's magnitude survives. Built parametrization one as the URL-position twin of the fire's surviving quoted-value fixture and recorded its MEASURED figure at `ae73dd6` (73 bytes) rather than restating the issue's ~36. The high-magnitude case measured 985 bytes, clearing the >=900 bar. Commit 5af7158.
+- `phases/1/SUMMARY.md`: Plan 2, task 2 - the apply loop's `git rm` passed no `cwd`, so git resolved the repository from the caller's process cwd rather than from `--dir`; every remove under a `--dir` outside the caller's repository had been falling through to the `rmSync` fallback with `git rm` never running. Added `cwd: dir`, matching what `uncommittedUnder` has always used. Commit 99ba45c.
+- `phases/1/SUMMARY.md`: `gitMv` has the identical missing-`cwd` defect the plan-2 deviation fixed for `git rm`: a dir move under a foreign `--dir` falls back to `renameSync` and is never recorded in the index. Non-destructive (it renames rather than deletes) and outside phase-1 scope.
+- `phases/1/SUMMARY.md`: An EMPTY `phases/<N>/` inside a real repository now returns `partial-apply` with the "nothing was written, safe to re-run" hint, because `git rm -r` answers "pathspec did not match any files" and the gate refuses the fallback. Non-destructive and re-runnable after an `rmdir`, but a case that used to succeed silently.
+- `phases/1/SUMMARY.md`: `risk_surface` survivor (medium): the `GIT_DIR`/`GIT_WORK_TREE` check treats any non-empty value as proof a repository covers the target, so a stale or unrelated variable refuses a legitimate removal. Fails safe - a refusal, not a delete.
+- `phases/1/SUMMARY.md`: `risk_surface` survivor (medium): `gitDirUnder` recurses without a depth bound, one call frame per level; a deep chain exhausts the stack and surfaces as a `partial-apply` refusal. Fails safe for the same reason.
+- `phases/1/SUMMARY.md`: Declined the fuller "only at a window edge" signal for `redactUrl` - a `windowed` flag or second entry point applying the unterminated rules to `bodyExcerpt`'s cut prefix alone. Stated cost: a body ENDING in a bare `scheme://authority` now comes back `<redacted>`.
+- `phases/1/SUMMARY.md`: Declined carrying git's own stderr into the fallback's refusal detail; the detail names the exact `git rm -r --` command instead.
+- `phases/1/UAT.md`: Cut-userinfo secret no longer leaks in excerpt A response body whose URL userinfo span has its `@` outside the 4096-byte sanitize window yields an excerpt containing zero bytes of the planted secret, at both #215's parametrization and the high-magnitude case that leaked >=900 bytes before the fix.
+- `phases/1/UAT.md`: Provider suite passes with truncation equalities intact `node --test cadence-core/bin/review-provider.test.mjs` passes, both truncation fixtures still assert `=== MAX_HTTP_BODY_BYTES`, and the proxy-page excerpt still contains `504 Gateway Time-out`.
+- `phases/1/UAT.md`: Port is not read as userinfo at end-of-input `redactUrl` returns `https://example.com:8080/path` unchanged both mid-body and at end-of-input.
+- `phases/1/UAT.md`: phase remove refuses an unreadable git state `phase remove` against a phase dir whose `.git` is unreadable fails with a reason that is not `uncommitted-work`, on both `--dry-run` and apply, and `phases/<N>/` still exists afterwards.
+- `phases/1/UAT.md`: Non-repo remove still succeeds `phase remove` in a directory that is not a git repository still succeeds and removes `phases/<N>/`; the existing renumber fixtures pass unchanged.
+- `phases/1/UAT.md`: Both falsifiers watched failing at a real prior sha EXP-02 and PHS-01 each carry a check with a `WATCHED FAILING AT <sha>` header whose sha resolves to a real commit preceding the fix, and that check fails when re-run against that commit's tree.
+- `phases/1/UAT.md`: Full suite and self-verify exit 0 `node --test cadence-core/bin/*.test.mjs` and `node cadence-core/bin/self-verify.mjs` both exit 0.
+- `phases/1/UAT.md`: The risk-gate round's two falsifiers have no in-file watch record behavior wrong - the watch is claimed in prose and in a commit message but is not carried where the convention (and every other falsifier in this tree) puts it, so a future reader cannot re-run it or see what it observed failing
+- `phases/1/UAT.md`: Re-watch both falsifiers at ae73dd6: `git worktree add --detach <tmp> ae73dd6`, copy cadence-core/bin/review-provider.test.mjs AND cadence-core/bin/review-provider.mjs into <tmp>/cadence-core/bin/, run `node --test --test-name-pattern='EXP-02' cadence-core/bin/review-provider.test.mjs` there; then in a second worktree copy only cadence-core/bin/planning.test.mjs and run `node --test --test-name-pattern='PHS-01' cadence-core/bin/planning.test.mjs`; remove both worktrees EXP-02 fails 2/2 naming ~73 and ~985 bytes of SUPERSECRET in the excerpt; PHS-01 fails showing the remove returning ok:true with {"rm":"phases/3"} and phases/3/PLAN.md gone. Both exit 1
+- `phases/1/CONTEXT.md`: D-01 (EXP-02): The repair lands in `lib/redact-url.mjs` as an
+- `phases/1/CONTEXT.md`: D-02 (EXP-02): An ordinary long body still returns EXACTLY
+- `phases/1/CONTEXT.md`: D-03 (EXP-02): Re-sanitizing the cut `head` after truncation is REJECTED as
+- `phases/1/CONTEXT.md`: D-04 (EXP-02): Deleting the sanitize window - the repair that would remove
+- `phases/1/CONTEXT.md`: D-05 (PHS-01): "Not a git repository" stays a PERMISSIVE answer - empty array,
+- `phases/1/CONTEXT.md`: D-06 (PHS-01): The classifier is a FILESYSTEM probe - walk up from `cwd` for a
+- `phases/1/CONTEXT.md`: D-07 (PHS-01): The same classifier gates the `rmSync` recursive fallback, not
+- `phases/2/SUMMARY.md`: The plan's `## Must be true when done` and AC7 assert
+- `phases/2/SUMMARY.md`: Task 2's Verify asserts `grep -rn "Fix the section - declare the
+- `phases/2/SUMMARY.md`: `.planning/REQUIREMENTS.md:31` - PHS-01's bullet needs wrapping at the repo's
+- `phases/2/SUMMARY.md`: `.planning/DOCS-CLAIMS.md` rows AUDIT-25 and AUDIT-39 cite `audit.md` lines
+- `phases/2/SUMMARY.md`: Recorded decline (no action queued): task 3 did not give `readTags` a
+- `phases/2/SUMMARY.md`: Recorded decline (no action queued): task 1 did not make the sentence-opening
+- `phases/2/UAT.md`: activeVersion answers the milestone on both residue shapes On a body whose first version token is the milestone with a later line-anchored predecessor (the 81bdb5d wrapped-continuation shape), and on a body naming the predecessor in prose before the milestone, activeVersion returns the milestone, never the predecessor.
+- `phases/2/UAT.md`: activeVersion still answers on a mid-prose-only token, four pinned fixtures unchanged A body whose only version token sits mid-prose with no line anchor still returns that version, and the four DECLARED_VERSION_RE fixtures at branch-decision.test.mjs:237-266 pass byte-unchanged.
+- `phases/2/UAT.md`: DOC-02 pin's remedy names the reader, not the file prose-agreement.test.mjs's DOC-02 test passes, and the sentence "Fix the section - declare the milestone on its own line above every mention - rather than the anchor" occurs nowhere in the tree.
+- `phases/2/UAT.md`: Rolled-over phase is exempt from version_drift audit against a project whose sole unsettled phase has all-Deferred requirement rows emits no version_drift; the identical project with those rows Pending still emits one.
+- `phases/2/UAT.md`: Tag discovery is bounded to the caller's project root audit --dir sub/.planning, where sub/ is a non-repository project inside a repo tagged v9.9.0, emits no version_drift and leaves the envelope otherwise unchanged; the same audit inside a linked worktree of a real tagged repo still reads that repo's tags and still emits one.
+- `phases/2/UAT.md`: Each requirement carries a WATCHED FAILING AT check that is red at its sha DRF-01, DRF-02 and TAG-01 each have a check headed WATCHED FAILING AT <sha> whose sha resolves to a real commit preceding that fix, and that check fails when re-run against that commit's tree.
+- `phases/2/UAT.md`: Test suite and self-verify both exit 0 node --test cadence-core/bin/*.test.mjs exits 0 and node cadence-core/bin/self-verify.mjs exits 0.
+- `phases/2/CONTEXT.md`: D-01 (DRF-01): The tightening moves the SHARED reader, so
+- `phases/2/CONTEXT.md`: D-02 (DRF-01, amended 2026-08-18): The `loose` fallback STAYS, gated on the
+- `phases/2/CONTEXT.md`: D-03 (DRF-01): This phase REVERSES the DOC-02 prose-agreement pin's D-07
+- `phases/2/CONTEXT.md`: D-04 (DRF-02): The rolled-over exemption cannot be derived from the phase
+- `phases/2/CONTEXT.md`: D-05 (DRF-02): A sanctioned rolled-over phase is byte-identical on disk to a
+- `phases/2/CONTEXT.md`: D-06 (TAG-01): The containment probe is `git -C <dir> rev-parse` toplevel
+- `phases/2/CONTEXT.md`: D-07 (TAG-01): Containment is expressed against a project root derived PER
+- `phases/2/CONTEXT.md`: D-08 (TAG-01): The refusal answers `[]` - permissive, no drift, no new named
+- `phases/3/SUMMARY.md`: Plan 2 task 3: D-13 named DOCS-CLAIMS CONFIG-26 as moving with
+- `phases/3/SUMMARY.md`: AC2's read half was reworded at UAT. It asked
+- `phases/3/SUMMARY.md`: Restore the cross-model review key: `~/.config/cadence/providers.env` is
+- `phases/3/SUMMARY.md`: No drift check ties `effort_names` (or `tier_names`) to config.schema.json's
+- `phases/3/SUMMARY.md`: CHANGELOG migration note: the level-keyed tiers grid means a flagship-only
+- `phases/3/SUMMARY.md`: A missing table `efforts` entry resolves null silently (no runtime warning;
+- `phases/3/SUMMARY.md`: review-triggers.md's degraded-resolve fallback ("config gate, tier and
+- `phases/3/SUMMARY.md`: route-table.json `_meta.review`'s level-invariance rationale for
+- `phases/3/SUMMARY.md`: `readTags` swallows ENOBUFS (1 MiB maxBuffer) and reports a heavily tagged
+- `phases/3/SUMMARY.md`: `git-branch.mjs tags` collapses an empty `--dir` with an absent one and
+- `phases/3/SUMMARY.md`: issue-check test harness `stub()` gained `issueSleep` (sleeps only the
+- `phases/3/UAT.md`: Stakes level moves both panel halves For the same trigger, route.mjs resolve returns a different cross-model tier AND a different effort at solo vs shipped vs critical, both riding the returned envelope beside reviewers - checked on at least the plan and risk_surface triggers.
+- `phases/3/UAT.md`: Unset tier reports the resolved value; grids have no missing cells On a repo where no layer sets it, config.mjs get review.triggers.plan.tier reports the value the resolver actually uses at the effective stakes level rather than a fixed flagship, and self-verify reports no missing-cell for either the tiers or the efforts grid, walked in both directions.
+- `phases/3/UAT.md`: create_tag governs only the land-time tag cut With git.create_tag: false the milestone close still bumps the plugin manifest version; grep -rn create_tag over cadence-core/ and skills/ shows the key read at exactly one site (the land-time tag cut); and the schema purpose no longer says the tag happens at milestone close.
+- `phases/3/UAT.md`: Bounded tags read does not escape the project root The bounded tags read returns no tags for sub/.planning where sub/ is a non-repository project inside a repository tagged v9.9.0, and still returns that repository's tags when run inside a real tagged repository.
+- `phases/3/UAT.md`: Resolve loop is bounded by one wall-clock budget With a PATH-stubbed tea that sleeps and exits non-zero, issue-check.mjs check over five or more referenced numbers completes inside one stated wall-clock budget rather than five call timeouts, exits 0 with ok:true and action:report, and reports the unreached numbers unresolved.
+- `phases/3/UAT.md`: Each requirement carries a watched-failing falsifier RVW-03, REL-01 and ISS-01 each carry a check with a WATCHED FAILING AT <sha> header whose sha resolves to a real commit preceding the fix, and that check fails when re-run against that commit's tree.
+- `phases/3/UAT.md`: Full test suite and self-verify are green node --test cadence-core/bin/*.test.mjs and node cadence-core/bin/self-verify.mjs both exit 0.
+- `phases/3/UAT.md`: Unset tier answers the null sentinel and names the resolving seam; grids have no missing cells On a repo where no layer sets it, config.mjs get review.triggers.plan.tier no longer answers a fixed flagship: it answers the null unset sentinel plus a warning naming route.mjs resolve as the seam that answers it for a stakes level (the shape .gate already carries), and self-verify reports no missing-cell for either the tiers or the efforts grid, walked in both directions.
+- `phases/3/CONTEXT.md`: D-01 (RVW-03): The level-dependence is added by RE-KEYING the existing
+- `phases/3/CONTEXT.md`: D-02 (RVW-03): The re-keyed grid is DENSE - every stakes level names every
+- `phases/3/CONTEXT.md`: D-03 (RVW-03): The resolved per-trigger tier is RETURNED in the `resolve`
+- `phases/3/CONTEXT.md`: D-04 (RVW-03): `review.triggers.<t>.tier`'s schema `default` moves to the
+- `phases/3/CONTEXT.md`: D-05 (RVW-03): The cross-model reasoning EFFORT moves with the tier: an
+- `phases/3/CONTEXT.md`: D-06 (RVW-03): `review.consult.*` and `review.decision_review.*` stay OUT,
+- `phases/3/CONTEXT.md`: D-07 (REL-01): After the fix `git.create_tag` is read by exactly ONE site -
+- `phases/3/CONTEXT.md`: D-08 (REL-01): The manifest bump stays gated on a CONFIRMED version rather
+- `phases/3/CONTEXT.md`: D-09 (REL-01): The step-2 tag probe is BOUNDED through phase 2's
+- `phases/3/CONTEXT.md`: D-10 (ISS-01): The bound becomes a wall-clock BUDGET over the resolve LOOP,
+- `phases/3/CONTEXT.md`: D-11 (ISS-01): A FAST non-zero resolve does NOT stop the loop - only budget
+- `phases/3/CONTEXT.md`: D-12 (ISS-01): The budget derives from the existing
