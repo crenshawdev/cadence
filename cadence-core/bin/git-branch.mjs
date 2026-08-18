@@ -7,7 +7,7 @@
 // JSON line on stdout, exit 0 (seam convention, lib/seam-io.mjs). The tested
 // logic lives in lib/branch-decision.mjs; this wraps it with config + prose I/O.
 //
-// Subcommand (prints one JSON line):
+// Subcommands (each prints one JSON line):
 //   decide [--dir <path>] [--branch <name>]
 //     --dir     planning root (default cwd); reads <dir>/.planning/config.json,
 //               PROJECT.md, ROADMAP.md, and the repo's tag list (`git tag
@@ -16,6 +16,15 @@
 //     --branch  override the current branch; when absent, read it via
 //               `git -C <dir> rev-parse --abbrev-ref HEAD`, degrading to "" on
 //               failure (no repo / no commits -> treated as not-on-a-base).
+//   tags [--dir <path>]
+//     --dir     project root (default cwd); prints `tags[]` - every tag the
+//               repository AT that root carries, in `git tag --list` order.
+//               Read-only in the strongest sense: `git rev-parse` and `git tag
+//               --list` and nothing else, degrading to an empty list on every
+//               failure, so a caller in a non-repository reads "this project
+//               has published nothing" rather than an enclosing repository's
+//               releases (TAG-01). Prose asks this to tell a release project
+//               from one that has never tagged.
 'use strict';
 
 import { join } from 'node:path';
@@ -70,6 +79,22 @@ function decide(dir, branchOverride) {
   emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
 }
 
+/**
+ * Every tag THIS project has published, as `tags[]`. The prose-facing half of
+ * lib/git-tags.mjs: `workflows/milestone.md` step 2 decides whether a close is
+ * a release at all from "has this project ever tagged", and a bare `git tag`
+ * there answers that question with whatever repository happens to CONTAIN the
+ * project - the upward discovery TAG-01 bounded one level up. `dir` is both the
+ * directory the question is asked from and the project root the answer must
+ * belong to, the same binding `decide` makes for itself above.
+ *
+ * No config is read here, so there is no `warnings[]` to ride: this arm's whole
+ * input is the directory it was handed.
+ */
+function tags(dir) {
+  emit({ ok: true, tags: readTags(dir, dir) });
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
@@ -82,8 +107,11 @@ const flag = (name) => optionalFlag(argv, name);
 try {
   if (cmd === 'decide') {
     decide(flag('--dir') || process.cwd(), flag('--branch'));
+  } else if (cmd === 'tags') {
+    tags(flag('--dir') || process.cwd());
   } else {
-    emit({ ok: false, reason: 'usage', detail: 'subcommand: decide [--dir <path>] [--branch <name>]' });
+    emit({ ok: false, reason: 'usage',
+      detail: 'subcommands: decide [--dir <path>] [--branch <name>] | tags [--dir <path>]' });
   }
 } catch (e) {
   emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });

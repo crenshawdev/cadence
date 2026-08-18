@@ -406,6 +406,12 @@ const CONTRACTS = {
   'git-branch.mjs': {
     '*': ['--dir'],
     decide: ['--branch'],
+    // The read-only tags arm. No flags of its own: `--dir` is the whole input
+    // and it is BOTH the directory the question is asked from and the project
+    // root the answer must belong to (TAG-01), so a second flag here would be
+    // the way to ask one of those two questions without the other - which is
+    // the upward discovery the bound closed.
+    tags: [],
   },
   'git-publish.mjs': {
     '*': ['--dir'],
