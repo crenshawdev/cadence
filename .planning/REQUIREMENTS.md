@@ -22,6 +22,7 @@ live rather than trusting its note.
 - **RSK-04** (#224): `risk-diff` does not fire the blocking gate on its own test fixtures.
 - **SHP-01** (#183): `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.
 - **ARG-06** (#147): the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.
+- **RME-01**: `README.md` is a decision document, not a reference manual - the command table, the cost-to-run section and the worked example move to `docs/`, the audience section states the DEMAND rather than a label and sits ABOVE Install, and every claim that survives the move is verified rather than carried over. Promoted from the 2026-08-18 capture decision.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, with two caveats the 2026-08-18 audit

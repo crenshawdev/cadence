@@ -15,14 +15,19 @@ value and answers as if it were well-formed, a guard that reads an empty string
 as a configured one, a gate that cannot be satisfied by the key its own seam
 document permits.
 
-The four phases are ordered by what a wrong answer costs, not by where the code
-lives. Phase 1 carries the two that REMOVE a protection - one unprotects every
+The first four phases are ordered by what a wrong answer costs, not by where the
+code lives. Phase 1 carries the two that REMOVE a protection - one unprotects every
 branch, the other lets one repository answer another's blocking gate. Phase 2
 carries the readers that accept malformed input and answer anyway. Phase 3
 carries the gates that fire on themselves or cannot be satisfied at all. Phase 4
 is the structural form of phase 2, and goes last on purpose: a declarative
 argument contract is only worth writing once the case-by-case fixes have said
 what it has to express.
+
+Phase 5 is not part of that theme and does not pretend to be. It is the README
+restructure decided 2026-08-18, promoted into this cycle from the capture queue
+rather than held for a docs milestone. It shares no code with the four defect
+phases and depends on none of them.
 
 The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 
@@ -32,6 +37,7 @@ The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 - [ ] **Phase 2: Readers that accept what they have a rule against** - the `--dir`, `--date`, phase-id, `Number` and prototype-key faces refuse malformed input instead of answering as if it were well-formed
 - [ ] **Phase 3: Gates that fire on themselves or cannot be satisfied** - `detect-commands` stops naming an unreachable binary, `risk-check status` accepts the worker key `seams.md` permits, `risk-diff` stops matching its own fixtures, and `## Shipped` is located fence-aware
 - [ ] **Phase 4: One argument contract instead of nine** - the per-seam refusals phase 2 wrote become a declarative contract the CLIs share
+- [ ] **Phase 5: A README that asks for a decision** - the landing page keeps the argument for why the gates exist, the reference material moves to `docs/`, and the audience section states the demand above Install
 
 ## Phase Details
 
@@ -114,3 +120,34 @@ rules rather than restating them.
 writing once the case-by-case fixes have said what it has to express, and phase
 2 is what says it. Written first, it would be a guess at five shapes; written
 here, it is a generalization of five known ones.
+
+### Phase 5: A README that asks for a decision
+**Goal:** `README.md` stops being a 24.8 KB reference manual and becomes the
+document that asks for one decision - whether to install this - with the
+reference material relocated to `docs/` and every surviving claim verified
+rather than carried across.
+**Depends on:** Nothing
+**Requirements:** RME-01
+
+`RME-01` is the restructure John decided on 2026-08-18, promoted here rather
+than left in the capture queue. It is a split PLUS an accuracy pass, never a
+pure move: a claim that moves to `docs/` unverified is the same stale claim at a
+new path.
+
+Stays on the landing page, because it is the argument for why the gates exist
+rather than material you look things up in: the opening, Install, the
+audience/demands section, The loop, a compressed How it works, Where it came
+from, and "What a break costs".
+
+Moves to `docs/`: the command table, the cost-to-run section, and the worked
+example. The cost-to-run section is already known stale, and isolating it gives
+the docs-drift sweep exactly one file to check instead of a section buried in a
+4,100-word page.
+
+The wording rule for the audience section is load-bearing and not a style note:
+state the DEMAND and never the label - how many times the run stops and waits
+for a decision, and the sentence "if you want to describe a feature and come
+back to a merged PR, this is the wrong tool". It goes ABOVE Install, because the
+current order asks for the install decision before disclosing the price. Labels
+invite people to self-identify into the flattering box; a demand makes them do
+the arithmetic.
