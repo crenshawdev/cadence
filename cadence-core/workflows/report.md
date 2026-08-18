@@ -19,17 +19,29 @@ report, which is itself the answer.
 Three seam calls. The render is the largest response any Cadence prose
 prescribes - measured 2026-08-17 at 68,044 B unscoped and 14,857 B at
 `--phase 3` on this repository, and the unscoped figure grows with the record -
-so it rides a scratch file
+so it rides THIS RUN's own scratch directory
 (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule;
 the file is the model's own scratch, never a phase artifact). The other two stay
 inline, under the threshold: `reads --join` measures 1,507 B and `trace window`
 5,378 B.
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>] > "${TMPDIR:-/tmp}/cad-record.json"
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-record-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+  && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render [--phase <N>] > "$D/render.json" \
+  && echo "scratch dir: $D  run token: $T"
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" reads --join
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace window [--phase <N>]
 ```
+
+**That last `echo` is why the step exists in this shape.** `compose` runs in a
+DIFFERENT Bash invocation, and the tool persists the working directory and not
+shell state, so `$D` is empty there. The directory and the run token are printed
+here precisely so the next step can carry them as LITERALS - copy the printed
+path and the printed token into `compose`'s read-back, and do NOT re-derive
+either with a fresh `mktemp`, which would point the read-back at an empty
+directory. The token is what makes a carried path safe: a path carried by hand
+is the one arm where an EARLIER run's complete, well-formed record still
+resolves, and the token it was handed is an id that file cannot supply itself.
 
 Everything below reads from that scratch FILE: `brackets` (one row per paired
 dispatch - `role`, `plan`, `event`, `ms`, `tokens`, and `turns` on the rows
@@ -61,8 +73,17 @@ needs it - a `node -e` field read, the shape `workflows/progress.md` and
 `references/triage-gate.md` already use:
 
 ```
-node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const b of r.brackets)console.log([b.role,b.plan,b.event,b.ms,b.tokens,b.turns].join("\t"))' "${TMPDIR:-/tmp}/cad-record.json"
+node -e 'const f=require("fs");const d=process.argv[1];let tok;try{tok=f.readFileSync(d+"/run-token","utf8")}catch(e){console.error("scratch-stale: no run token in "+d);process.exit(1)}if(tok!==process.argv[2]){console.error("scratch-stale: "+d+" belongs to another run");process.exit(1)}let r;try{r=JSON.parse(f.readFileSync(d+"/render.json","utf8"))}catch(e){console.error("scratch-unreadable: "+d+"/render.json: "+e.message);process.exit(1)}if(!Array.isArray(r.brackets)){console.error("scratch-shape: brackets is not an array in "+d+"/render.json");process.exit(1)}for(const b of r.brackets)console.log([b.role,b.plan,b.event,b.ms,b.tokens,b.turns].join("\t"))' "<the echoed scratch directory>" "<the echoed run token>"
 ```
+
+Its first two arguments are the two literals `read_record` printed. It refuses
+before it reads anything else: `scratch-stale` when the directory holds no run
+token or holds a different one, `scratch-unreadable` when the record cannot be
+read or parsed, and `scratch-shape` when `brackets` is not an array - all three
+on stderr with a non-zero exit and nothing on stdout, because a report composed
+from another run's brackets is worse than no report. Every other field read
+below takes the same three guards and the same two leading arguments; only the
+last expression changes.
 
 and never read the file whole - no `cat`, no `Read`, no unfiltered `grep` of it
 into the transcript. A whole-file read-back after the redirect is the same bytes
