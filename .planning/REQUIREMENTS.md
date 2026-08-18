@@ -247,8 +247,8 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EXP-02 | Phase 1 | Pending |
-| PHS-01 | Phase 1 | Pending |
+| EXP-02 | Phase 1 | Complete |
+| PHS-01 | Phase 1 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time

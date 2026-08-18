@@ -35,7 +35,7 @@ the v3.5.3 land did, and why the item is still open.
 
 ## Phases
 
-- [ ] **Phase 1: What a wrong answer destroys** - the excerpt stops carrying a truncated credential, and `cad-phase remove` refuses a git state it could not read instead of deleting recursively
+- [x] **Phase 1: What a wrong answer destroys** - the excerpt stops carrying a truncated credential, and `cad-phase remove` refuses a git state it could not read instead of deleting recursively
 - [ ] **Phase 2: The ship gate that FAILs correct docs** - version drift, the interrupted-close exemption and tag discovery stop reporting a break on a repository that has none
 - [ ] **Phase 3: Flags that do more or less than they say** - raising stakes moves both halves of a review panel, `git.create_tag` governs the tag rather than the whole release step, and the per-issue resolve bound is a land's budget rather than a call's
 
