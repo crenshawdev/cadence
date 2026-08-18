@@ -65,6 +65,20 @@ const READBACKS = [
           return [join(d, 'render.json'), 'risk_surface'];
         },
       },
+      {
+        name: 'a render that parses to literal null', reason: 'scratch-shape',
+        setup: (d) => {
+          writeFileSync(join(d, 'render.json'), 'null');
+          return [join(d, 'render.json'), 'risk_surface'];
+        },
+      },
+      {
+        name: 'an outcomes array holding a non-object entry', reason: 'scratch-shape',
+        setup: (d) => {
+          writeFileSync(join(d, 'render.json'), '{"corr":"c1","outcomes":[42]}');
+          return [join(d, 'render.json'), 'risk_surface'];
+        },
+      },
     ],
   },
   {
@@ -81,6 +95,20 @@ const READBACKS = [
         name: 'a well-formed render missing the fields the step prints', reason: 'scratch-shape',
         setup: (d) => {
           writeFileSync(join(d, 'render.json'), '{"counts":{},"roles":{},"unpaired":[]}');
+          return [join(d, 'render.json')];
+        },
+      },
+      {
+        name: 'a render that parses to literal null', reason: 'scratch-shape',
+        setup: (d) => {
+          writeFileSync(join(d, 'render.json'), 'null');
+          return [join(d, 'render.json')];
+        },
+      },
+      {
+        name: 'a render whose printed fields are present but null', reason: 'scratch-shape',
+        setup: (d) => {
+          writeFileSync(join(d, 'render.json'), '{"counts":null,"roles":null,"unpaired":null,"capped":null}');
           return [join(d, 'render.json')];
         },
       },
@@ -105,6 +133,22 @@ const READBACKS = [
         setup: (d) => {
           writeFileSync(join(d, 'run-token'), 'tok-1');
           writeFileSync(join(d, 'render.json'), '{}');
+          return [d, 'tok-1'];
+        },
+      },
+      {
+        name: 'a record that parses to literal null', reason: 'scratch-shape',
+        setup: (d) => {
+          writeFileSync(join(d, 'run-token'), 'tok-1');
+          writeFileSync(join(d, 'render.json'), 'null');
+          return [d, 'tok-1'];
+        },
+      },
+      {
+        name: 'a brackets array holding a non-object entry', reason: 'scratch-shape',
+        setup: (d) => {
+          writeFileSync(join(d, 'run-token'), 'tok-1');
+          writeFileSync(join(d, 'render.json'), '{"brackets":[42]}');
           return [d, 'tok-1'];
         },
       },
