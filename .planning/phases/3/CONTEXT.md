@@ -213,10 +213,14 @@ falsifiers and non-overlapping leases.
       `critical`, and both ride the returned envelope beside `reviewers` -
       checked on at least the `plan` and `risk_surface` triggers.
 - [ ] AC2: On a repository where no layer sets it,
-      `config.mjs get review.triggers.plan.tier` reports the value the resolver
-      actually uses at the effective stakes level rather than a fixed
-      `flagship`, and `self-verify` reports no `missing-cell` for either the
-      `tiers` or the `efforts` grid, walked in both directions.
+      `config.mjs get review.triggers.plan.tier` no longer answers a fixed
+      `flagship`: it answers the `null` unset sentinel plus a warning naming
+      `route.mjs resolve` as the seam that answers it for a stakes level - the
+      shape `.gate` already carries - and `self-verify` reports no
+      `missing-cell` for either the `tiers` or the `efforts` grid, walked in
+      both directions. [reworded 2026-08-18 at UAT: the original asked this
+      seam to report the resolver's value, which D-04's unset sentinel and
+      `bin/config.mjs:288-291` deliberately put out of its reach]
 - [ ] AC3: With `git.create_tag: false`, the milestone close still bumps the
       plugin manifest version; `grep -rn "create_tag" cadence-core/ skills/`
       shows the key read at exactly one site, the land-time tag cut; and the

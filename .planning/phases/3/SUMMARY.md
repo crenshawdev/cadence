@@ -59,6 +59,16 @@ budget taken once at loop start.
   the catalog rewrite, but its claim is the Default column, which the
   Purpose-cell fix does not touch - the row was left `accurate` and the ledger
   narrative records why (4a05bf1); D-13 annotated in CONTEXT.md.
+- [deviation] AC2's read half was reworded at UAT. It asked
+  `config.mjs get review.triggers.plan.tier` to report the value the resolver
+  uses at the effective stakes level; D-04 put that key on the `null` unset
+  sentinel and `cadence-core/bin/config.mjs:288-291` states the matching
+  refusal outright - that seam does not know the stakes level and never reads
+  `route-table.json`, so answering as if it did is the same defect pointed the
+  other way. What shipped is the `.gate` shape: `null` plus a warning naming
+  `route.mjs resolve` as the answering seam, which is the fix for the fixed
+  `flagship` the criterion was written against. AC2 now states that; the grids
+  half is unchanged and held on first check.
 
 ## Review gates
 
