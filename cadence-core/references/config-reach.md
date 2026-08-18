@@ -139,7 +139,7 @@ purpose test runs against the reach the author just replaced.
 | `git.integration_branch` | universal | `bin/git-branch.mjs` - milestone branch or trunk |
 | `git.auto_branch` | universal | `bin/git-branch.mjs` - how that branch is created |
 | `git.base_branch` | universal | `bin/land-cleanup.mjs` - the base a land returns to |
-| `git.create_tag` | universal | `workflows/milestone.md` - release-mode detection |
+| `git.create_tag` | universal | `skills/cad-land/SKILL.md` - the release tag cut in its cleanup step, on the pulled base after the merge confirms (tag-after-merge); no other site reads it |
 | `git.on_land_cleanup` | universal | `bin/land-cleanup.mjs` - return, pull, reap after a merge |
 | `git.issue_check` | universal | `bin/issue-check.mjs` - the read-only tracker report `/cad-land` step 1 prints |
 | `git.auto_close` | repo config layer only for the unattended publish | `bin/git-publish.mjs` `publish` AND `authorized` read the repo layer alone, through `bin/lib/repo-auto-close.mjs` - a user-global value authorizes no push (D-08) and no `glab mr create`, which `skills/cad-land/SKILL.md` step 3(b) consults `authorized` before, since on GitLab the create is itself the publish; `bin/land-cleanup.mjs` gate, `skills/cad-land/SKILL.md` and `cadence-core/workflows/milestone.md` read the MERGED value, because the triage ask and the gate's halt are a matched pair and must agree |
