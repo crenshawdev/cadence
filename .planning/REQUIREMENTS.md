@@ -1,47 +1,39 @@
-# Requirements: Cadence (v3.5.3 open)
+# Requirements: Cadence (v3.5.4 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.3 - bounds not stated, costs not counted`, opened 2026-08-16. Scoped off
-the Forgejo milestone, which holds eleven issues: #168, #143, #141, #198, #199,
-#200, #201, #202, #203, #204 and #205.
+`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18. Scoped from the
+capture queue's open review findings rather than from a tracker milestone.
 
-Two halves of one shape: Cadence asserts a control it does not actually hold.
-The review path states bounds it never enforces, and the run record claims to
-price a run it cannot see.
+One shape: a gate that reports a verdict it did not earn. Each item is a check
+that already runs and already answers, and answers wrong in a way its own output
+cannot show.
 
-**Bounds the review path never stated** (from the external deep dive, two
-AGREE-low and one narrowed from a finding closed as not-a-Cadence-defect):
-
-
-**Costs the record never counted.** Measured on this repo 2026-08-16: the trace
-recorded 795,845 tokens for the whole `v3.5.2` milestone while burnrate recorded
-16,261,487 billed-equivalent for the project on that one day. The trace prices a
-run ~20x low, carries no cache fields at all, and records neither turns nor
-window - the two terms that multiply out to the bill (cache-read alone is 62.5%
-of spend, at an average 121,250-token window).
-
-
-**The retune the record could not state.** Found reading `/cad-suggest 2`'s own
-output 2026-08-17, the first run against the record MSR-01 made turn-aware.
-
-
-MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither can be argued while turns
-and window go unrecorded.
-
-**Controls that do not reach their own paths.** From the external strict
-re-review of 2026-08-16, adjudicated here: five of its ten findings were killed
-as already-filed, already-deferred or by-design, and three survived verification.
-
-
-RCL-07 is the one that falsifies a stated claim rather than a documented rail:
-`PROJECT.md`'s Core Value says what Cadence writes down "must come back on its
-own at the moment it matters", and after a close three of its four categories
-cannot.
-
+- **DRF-01**: `version_drift` stops FAILing a ship gate on correct docs - its
+  comparand reads the milestone `### Active` NAMES rather than the first version
+  token in its prose, so an Active section mentioning the predecessor first is
+  not reported as the current version.
+- **DRF-02**: the interrupted-close exemption holds in the state `audit.md`
+  declares exempt - a phase carrying a terminal `blocked` item, or sanctioned
+  rolled-over work, no longer fires `drift` with a remedy `verify.md` says is
+  impossible.
+- **VER-01**: `verify.md` stops treating `why_human` as proof an item is
+  human-only. The predicate becomes the bar the walk already states
+  (irreversible against real data, or outside the model's reach), so an
+  UNCERTAIN truth the verifier could not probe is executed rather than asked.
+- **CAP-02**: the one-round re-arm cap reaches the `risk_surface` fire sites that
+  never load `triage-gate.md`, and its scope is decided deliberately - per
+  correlation id gives a five-plan phase one round across all five.
+- **TAG-01**: `readTags` stops discovering upward from `.planning`, so a project
+  that is not itself a repository cannot be FAILed by a version an enclosing
+  umbrella repo published.
+- **EXP-02**: `bodyExcerpt`'s trailing-token safeguard runs on the path that
+  needs it - a sanitizer shrink can no longer pull a window-edge-truncated
+  credential's head under the cap while `clean` still exceeds it. Raised at the
+  `v3.5.3` phase-3 fire and still live at `v3.5.3`.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
