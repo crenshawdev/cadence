@@ -394,6 +394,23 @@ corrects a row is the commit that WRITES the row, so a self-referential sha is
 unknowable while the cell is being typed. The requirement id and the milestone
 locate the change exactly as well and can be written down honestly.
 
+REL-01 settled a FOURTH row in the same phase, the same way: `MILESTONE-01`,
+verdicted `accurate` over an up-front read naming two config keys, where the
+close now names one - the release-mode half of that pair stopped being read at
+all when step 2 moved onto a confirmed version plus a bounded tags probe. Its
+resolution names `REL-01 (v3.5.4)` for the reason just given.
+
+`CONFIG-26` was re-read beside it and is deliberately LEFT `accurate`. Its claim
+is the catalog's DEFAULT column - `git.create_tag` true, `git.on_land_cleanup`
+true, `git.auto_close` false - and REL-01 rewrote that key's Purpose cell while
+its default and its two neighbours are untouched. Re-verdicting it would file a
+correction over a sentence that is still true.
+
+The seven `MILESTONE-*` rows BELOW the rewritten step are not re-pinned: their
+claims are unchanged and their anchors were already drifting before this phase,
+so the next sweep's fresh extraction is what re-seats them, exactly as it does
+for every other row this ledger has not settled.
+
 **Resolution values.** Measured over all 933 rows, every cell is one of four
 forms: `accurate` on every row the sweep confirmed (845);
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
@@ -805,7 +822,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-28 | cadence-core/workflows/execute.md | 404-409 | `cursor set --phase <N> --status executed --next "/cad-verify <N>"`. | accurate | accurate | 2 |
 | EXECUTE-29 | cadence-core/workflows/execute.md | 415-416 | `plan-<k>-risk-task-<n>.diff` is the transient flagged diff and must never be staged. | accurate | accurate | 1 |
 | EXECUTE-30 | cadence-core/workflows/execute.md | 438-439 | STATE.md is exactly the 4-line cursor, overwritten, and this workflow is its only writer. | accurate | accurate | 2 |
-| MILESTONE-01 | cadence-core/workflows/milestone.md | 9-12 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | accurate | accurate | 2 |
+| MILESTONE-01 | cadence-core/workflows/milestone.md | 9-12 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | stale | corrected - REL-01 (v3.5.4) - the up-front read is `config.mjs get git.auto_close` alone, and step 2 decides release mode from a confirmed version plus the bounded `git-branch.mjs tags` probe rather than from any key | 2 |
 | MILESTONE-02 | cadence-core/workflows/milestone.md | 16-20 | `/cad-audit` is the requirement/phase/plan/verified FAIL gate invoked here. | accurate | accurate | 2 |
 | MILESTONE-03 | cadence-core/workflows/milestone.md | 33-39 | `release-bump.mjs bump --dir <root> --version <version>`, with `--version` REQUIRED. | accurate | accurate | 2 |
 | MILESTONE-04 | cadence-core/workflows/milestone.md | 41-42 | The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"` when absent. | accurate | accurate | 2 |

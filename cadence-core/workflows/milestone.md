@@ -6,10 +6,11 @@ pruning removes completed work from the LIVE planning docs, not from history.
 The release tag is NOT cut here: /cad-land cuts it on the pulled base after
 the merge confirms (tag-after-merge).
 
-Read the config keys this close needs in ONE `config.mjs get` up front -
-`git.create_tag git.auto_close` - and reuse them at steps 2 and 7 rather than
-re-reading. Independent probes here share one message; only a call that consumes
-a prior call's output is serialized.
+This close reads ONE config key: `config.mjs get git.auto_close` up front, reused
+at step 7 rather than re-read. Step 2 decides release mode from evidence - a
+confirmed version and the tags this project has published - and from no key at
+all. Independent probes here share one message; only a call that consumes a
+prior call's output is serialized.
 
 ## 1. Scope + audit gate
 Identify the milestone being closed (from PROJECT.md's current version/
@@ -20,15 +21,28 @@ report it and STOP, unless the user explicitly overrides (a milestone must not
 ship with silent gaps). On PASS, continue.
 
 ## 2. Version bump (release projects only)
-Detect release mode first: read `git.create_tag` from config and probe for any
-existing tag (`git tag`). It is a non-release milestone when `git.create_tag`
-is false, or the project has never tagged and the user is not cutting a named
-version - then skip this step, note "no version bump (non-release milestone)",
-and do not frame the close as a version cut. Do not press the user toward a
-release they did not ask for.
+Confirm the version first: `$ARGUMENTS`, else propose the next from PROJECT.md's
+current and confirm it. Then probe what this project has already published,
+naming the project ROOT - the read is bounded to the repository at that path, so
+a project sitting inside an unrelated repository does not read its releases as
+its own:
 
-Otherwise confirm the version (`$ARGUMENTS`, else propose the next from
-PROJECT.md's current).
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" tags --dir <root>
+```
+
+An EMPTY `tags` and no confirmed version together are a non-release milestone -
+the project has never published and the user is not cutting a named version.
+Skip this step, note "no version bump (non-release milestone)", and do not frame
+the close as a version cut. Do not press the user toward a release they did not
+ask for. No config key decides this: a project that tags by hand still bumps its
+manifest, and the key that governs the release tag is read where that tag is cut
+(/cad-land, after the merge - the tag-after-merge note below).
+
+Everything below runs on the version you confirmed, and only with one: the seam
+refuses without it (`no-target-version`) and this workflow treats an `ok:false`
+as a STOP, so a close that named no version skips to step 3 rather than failing
+there.
 
 Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
 own line, naming the version you just confirmed - `--version` is REQUIRED, the
