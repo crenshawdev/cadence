@@ -3887,6 +3887,103 @@ test('renumber remove: uncommitted work in phases/<at> is refused before any wri
   assert.match(readFileSync(join(dir, 'phases', '1', 'PLAN.md'), 'utf8'), /Plan 2/);
 });
 
+// WATCHED FAILING AT ae73dd6, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout:
+//
+//   $ node --test --test-name-pattern='PHS-01' cadence-core/bin/planning.test.mjs
+//   AssertionError [ERR_ASSERTION]: phases/3 must survive a git state that
+//   could not be read - apply returned {"ok":true,"ops":[{"rm":"phases/3"},
+//   {"edit":"ROADMAP.md","changes":1},{"edit":"REQUIREMENTS.md","changes":1},
+//   {"edit":"STATE.md","changes":1}],"orphaned_reqs":["REQ-3"],"total":2,
+//   "_exit":0}
+//     + actual - expected
+//     + false
+//     - true
+//   (exit 1)
+//
+// Which is the defect exactly: the repository's `.git` was at mode 000, so
+// `git status --porcelain --ignored` exited 128 and `uncommittedUnder`'s bare
+// `catch { return []; }` reported NO uncommitted work - the same answer it
+// gives for a directory with no repository at all. `remove` read that as clean,
+// ran, reported `ok:true` with `{"rm":"phases/3"}` among its ops, and phases/3
+// and its PLAN.md were gone. The exit code is 0: nothing in the output says a
+// check was skipped, which is the whole shape - a gate that clears itself
+// wrong.
+//
+// Driven through the CLI with `execFileSync` and importing nothing this plan
+// added, so against the unpatched tree it fails on an ASSERTION rather than on
+// a missing export. To re-watch it:
+// `git worktree add --detach <tmp> ae73dd6`, copy THIS FILE alone into that
+// checkout's `cadence-core/bin/`, run it there with
+// `--test-name-pattern='PHS-01'` - the scope matters, since the source row
+// below (`source: the renumber rm fallback's ...`) also reddens at that sha and
+// is a different claim - then `git worktree remove` it.
+
+test('PHS-01: an unreadable git state refuses the remove, a non-repo still removes', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  const dir = renumberTree();
+  const repo = join(dir, '..');
+  const g = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+  g(['init', '-q', '.']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 'T']);
+  g(['add', '-A']);
+  g(['commit', '-qm', 'init']);
+
+  // Mode 000 on `.git` is the whole fixture: git then exits 128 with
+  // `fatal: not a git repository` - the SAME bytes it prints for a directory
+  // that has no repository above it at all. That collision is why the
+  // classifier probes the filesystem instead of reading git's answer, and it
+  // is why the two arms below have to be asserted together: any rule derived
+  // from git's own output either refuses both or permits both.
+  const gitDir = join(repo, '.git');
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  let rDry, rApply;
+  chmodSync(gitDir, 0o000);
+  try {
+    rDry = run(['renumber', 'remove', '--n', '3', '--dry-run'], dir);
+    rApply = run(['renumber', 'remove', '--n', '3'], dir);
+  } finally {
+    // Restored before any assertion, so a red row cannot leave a tmpdir
+    // nothing can descend into - the shipped partial-apply fixture's
+    // discipline, for the same reason.
+    chmodSync(gitDir, 0o755);
+  }
+
+  // The destroyed thing first, and the envelope in the message: what a wrong
+  // answer costs here is a phase directory and everything under it, so that is
+  // the assertion the watch is meant to show failing.
+  assert.ok(existsSync(join(dir, 'phases', '3', 'PLAN.md')),
+    `phases/3 must survive a git state that could not be read - apply returned ${JSON.stringify(rApply)}`);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+
+  // Both arms refuse, and neither sends the caller to a remedy git cannot
+  // perform. `--dry-run` matters as much as apply: it is what the workflow's
+  // confirmation gate prints, so a clean plan there is what talks a caller
+  // into the apply.
+  for (const [arm, r] of [['--dry-run', rDry], ['apply', rApply]]) {
+    assert.equal(r.ok, false, `${arm} must refuse an unreadable git state, got ${JSON.stringify(r)}`);
+    assert.notEqual(r.reason, 'uncommitted-work',
+      `${arm} reported uncommitted work for a git that could not answer`);
+    assert.doesNotMatch(`${r.detail || ''} ${r.hint || ''}`, /commit or discard/,
+      `${arm} prescribes committing or discarding, which an unreadable repository cannot do`);
+  }
+
+  // The permissive arm of the same classifier (AC5), asserted in the same
+  // family because it is the cost of getting the first arm wrong: no `.git`
+  // anywhere above means nothing is tracked, nothing can be lost to the
+  // object store, and the remove must still happen. Eleven shipped renumber
+  // fixtures run on exactly this tree.
+  const bare = renumberTree();
+  const rBare = run(['renumber', 'remove', '--n', '3'], bare);
+  assert.equal(rBare.ok, true, `a tree with no repository must still remove, got ${JSON.stringify(rBare)}`);
+  assert.ok(!existsSync(join(bare, 'phases', '3')));
+  assert.deepEqual(readdirSync(join(bare, 'phases')).sort(), ['1', '2']);
+});
+
 test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
 }, () => {
@@ -3935,6 +4032,34 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.deepEqual(r.completed, []);
   assert.match(r.hint, /nothing was written/);
   assert.doesNotMatch(r.hint, /partly renumbered/);
+});
+
+test('source: the renumber rm fallback\'s recursive delete is gated by the .git probe', () => {
+  // A source row rather than a behavioural one because the state it guards is
+  // unreachable from a test: it needs `git rm` to fail while `.git` exists,
+  // which the pre-flight already refuses ahead of the apply. The arm is still
+  // load-bearing - it is the SECOND, independent fail-open, covering a git
+  // state that turned unreadable between the pre-flight and the apply, and any
+  // `git rm` failure the pre-flight did not predict at all. What the row pins
+  // is that the guard cannot be dropped back to the shipped one-liner
+  // `catch { rmSync(..., { recursive: true }) }`, which read an unreadable git
+  // state as a clean one and deleted the phase directory whole.
+  const src = readFileSync(PLANNING, 'utf8');
+  // Sliced from the rm step's own op literal to the move loop that follows it,
+  // so this reads the ONE fallback that deletes a phase directory and not the
+  // unrelated recursive rmSync in milestone-prune's delete mode.
+  const start = src.indexOf('steps.push([{ rm: `phases/${at}` }');
+  assert.ok(start > 0, 'the renumber apply loop\'s rm step is no longer under this shape');
+  const end = src.indexOf('for (const [f, t] of dirMoves)', start);
+  assert.ok(end > start, 'the rm step is no longer followed by the dir-move loop');
+  const step = src.slice(start, end);
+  assert.match(step, /rmSync\([\s\S]*?recursive: true/, 'the recursive fallback this row guards is gone');
+  // Guarded, and guarded BEFORE the delete - a probe after the rmSync would
+  // pass a substring check while deleting exactly as it did.
+  const probe = step.indexOf('gitDirAbove(');
+  assert.ok(probe > 0 && probe < step.indexOf('rmSync(join('),
+    'the recursive delete runs without the .git probe deciding first');
+  assert.doesNotMatch(step, /catch \{ rmSync/, 'the unguarded one-line fallback is back');
 });
 
 // --- plan-overlap: the parallel-safety gate ------------------------------------
