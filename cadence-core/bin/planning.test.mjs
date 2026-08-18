@@ -4034,6 +4034,37 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.doesNotMatch(r.hint, /partly renumbered/);
 });
 
+// WATCHED FAILING AT ae73dd6, the same unpatched tip the falsifier above was
+// watched at. These two came out of the blocking `risk_surface` round rather
+// than a plan task, which is why the header lands here after the fact; the
+// watch it records was re-run in full before this comment was written.
+// Observed there, with THIS FILE alone copied into that checkout:
+//
+//   $ node --test --test-name-pattern='PHS-01' cadence-core/bin/planning.test.mjs
+//   AssertionError [ERR_ASSERTION]: the nested repository must stop the delete
+//   - got {"ok":true,"ops":[{"rm":"phases/3"},{"edit":"ROADMAP.md",
+//   "changes":1},{"edit":"REQUIREMENTS.md","changes":1},{"edit":"STATE.md",
+//   "changes":1}],"orphaned_reqs":["REQ-3"],"total":2,"_exit":0}
+//   true !== false
+//   AssertionError [ERR_ASSERTION]: phases/3 must survive an unreadable GIT_DIR
+//   repository - got {"ok":true,"ops":[{"rm":"phases/3"}, ... ,"_exit":0}
+//   (exit 1)
+//
+// Both are the SAME shape as the falsifier above and a different reach: there
+// the repository sat at the planning root with its state unreadable, here it is
+// invisible to a walk that only goes UP (rooted inside the target) or that only
+// reads the filesystem (selected by `GIT_DIR`). In both the classifier answered
+// ABSENT, which is the permissive arm, and the permissive arm ends in the
+// recursive delete - `ok:true`, `{"rm":"phases/3"}`, exit 0, nothing in the
+// output saying a check was skipped.
+//
+// Both are driven through the CLI with `execFileSync` and import nothing this
+// phase added, so they fail on an ASSERTION at the unpatched sha rather than on
+// a missing export. To re-watch: `git worktree add --detach <tmp> ae73dd6`,
+// copy THIS FILE alone into that checkout's `cadence-core/bin/`, run it there
+// with `--test-name-pattern='PHS-01'` - the scope matters for the same reason
+// it does above - then `git worktree remove` it.
+
 test('PHS-01: a repository rooted INSIDE phases/<at> is not deleted out from under itself', () => {
   // The classifier walks UP from the planning root, so a repository rooted in
   // the very directory the fallback is about to delete is invisible to it: the
