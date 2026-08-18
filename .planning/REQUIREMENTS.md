@@ -5,8 +5,39 @@
 
 ## Active
 
-No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18;
-its eight requirements are under `## Shipped` below. The next cycle's headline
+`v3.5.5 - a seam that accepts what it should refuse`, opened 2026-08-18. Scoped
+from the tracker milestone `v3.5.5`. Each id names its issue; #219 through #224
+were filed at the open from a capture-queue audit that re-verified every defect
+live rather than trusting its note.
+
+- **GRD-01** (#219): a string `git.protected_branches` resolves to a list that actually protects, never to `[""]`, which protects nothing while reading as set.
+- **SCR-01** (#223): the bulk-output transport uses a per-run scratch path coupled to its write, so a concurrent run cannot answer another run's blocking re-arm cap, and the read-back refuses a truncated or stale file.
+- **ARG-01** (#137): the mutating seams read `--dir` through a strict reader, so an empty or absent flag is refused rather than answered about the process cwd.
+- **ARG-02** (#142): `release-bump --date` is validated against the format its own documentation states.
+- **ARG-03** (#144): a decimal phase id survives `seed-reqs` and `cursor set` intact, so `1.10` and `1.1` stay distinct.
+- **ARG-04** (#182): `normalizeNumber` refuses a digit string outside the safe-integer range instead of rounding it or yielding `Infinity`.
+- **ARG-05** (#220): `config.mjs get` reports a prototype key as unknown rather than returning a silent success naming nothing.
+- **RCH-01** (#221): `detect-commands` names a lint or typecheck command only when its binary is reachable.
+- **RSK-03** (#222): `risk-check status` is satisfiable for every worker key `seams.md` permits, not only a numeric one.
+- **RSK-04** (#224): `risk-diff` does not fire the blocking gate on its own test fixtures.
+- **SHP-01** (#183): `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.
+- **ARG-06** (#147): the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.
+
+The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
+deferral reasons and none is promoted, with two caveats the 2026-08-18 audit
+recorded: `CTX-02`'s two issues (#69, #29) are both closed and #29's ask shipped
+as `/cad-minimalism-review`, so its stated basis no longer holds; and `RCL-06`
+carries no deferral reason and no promotion trigger, so nothing can ever re-ask
+it. Both need a decision at the next close.
+
+Milestones `v3.5.6` (#139, #140, #145, #195) and `v3.5.7` (#167, #174, #189,
+#206) are scoped on the tracker and are not this cycle. Issues #190 through #193
+carry no milestone.
+
+`/cad-plan` seeds each requirement's Traceability row as its phase is planned -
+rows are never hand-populated here.
+
+## Shipped` below. The next cycle's headline
 requirements are unscoped - `/cad-phase add` opens one when there is a theme to
 open it for.
 
