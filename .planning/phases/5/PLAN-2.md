@@ -8,6 +8,7 @@ files:
   - cadence-core/bin/trace-suggest.test.mjs
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/prose-agreement.test.mjs
+  - cadence-core/bin/self-verify.test.mjs
 ---
 
 # Phase 5: The retune says what to change - Plan 2 (SGT-01, the seam)
