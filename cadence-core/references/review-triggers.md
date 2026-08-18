@@ -25,7 +25,10 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/route.mjs" resolve --role cad-revie
 
 Take the gate from the resolved bundle's review map, keyed by this trigger's
 name; take the reviewer SET from its `reviewers` map, keyed the same way (step
-3); take the reviewer's `agent` and `model` from the same line (step 4). If
+3); take the reviewer's `agent` and `model` from the same line, and the
+cross-model half's model tier and reasoning effort from that line's
+`reviewer_tiers` and `reviewer_efforts` maps, keyed the same way again (step
+4). If
 the gate is `off`, return immediately (no-op). Else it is one of
 `advisory | blocking | adjudicated` (step 6). The stakes level sets it, so the
 same trigger gates differently on a solo project and a critical one.
@@ -33,12 +36,18 @@ same trigger gates differently on a solo project and a critical one.
 The seam has ALREADY applied config-wins precedence: a
 `review.triggers.<trigger>.gate` the user set beats the level's gate, and the
 disagreement arrives as a `warnings[]` entry - relay it (seams.md) rather than
-resolving it again here. A degraded resolve (`ok:false`) means no bundle: fall
-back to the config gate and say so.
+resolving it again here. The same precedence has applied to the tier and the
+effort since RVW-03, so those two maps are answers, not defaults: a layer that
+set `review.triggers.<trigger>.tier` or `.effort` is already folded in, and
+where no layer did, the STAKES LEVEL's row answered - raising `stakes` moves the
+cross-model half of the panel exactly as it moves the subagent half. A degraded
+resolve (`ok:false`) means no bundle: fall back to the config gate, tier and
+effort, and say so.
 
 **Which fields reach which backend.** The gate governs both. The per-trigger
-`tier` and `effort` govern the cross-model backend ONLY - they resolve the
-provider's model id and its reasoning-effort API parameter (step 4). The
+tier and effort govern the cross-model backend ONLY - they resolve the
+provider's model id and its reasoning-effort API parameter (step 4), and both
+arrive RESOLVED on the step-1 line rather than being read from config here. The
 `claude-subagent` backend can honour neither: its model and its rung both come
 from the routing seam, and effort is definition-time only on the spawn-agent
 seam - not per-dispatch overridable (seams.md). That is a host constraint, not
@@ -171,10 +180,10 @@ set never does. Per backend:
   `effort` is NOT
   passed and cannot be - the seam's surface is `(agent_name, prompt, model?)` -
   so the reviewer runs at the `effort:` its own rung file pins.
-  **When the per-trigger `effort` differs from the rung actually dispatched, say
-  so in one line before dispatching**, e.g. "`diff` is configured at effort
-  `medium`; the shipped level dispatches `cad-reviewer`, pinned at `high`, so it
-  runs `high` - per-trigger effort reaches cross-model reviewers only". One line
+  **When the RESOLVED per-trigger effort differs from the rung actually
+  dispatched, say so in one line before dispatching**, e.g. "`diff` resolves at
+  effort `low`; the shipped level dispatches `cad-reviewer`, pinned at `high`, so
+  it runs `high` - per-trigger effort reaches cross-model reviewers only". One line
   per fire, not per reviewer, and nothing when the two agree. A resolved value
   the backend cannot deliver is a degradation like any other: name it. Do not
   "fix" it by editing the config or by pretending the effort applied.
@@ -221,9 +230,11 @@ set never does. Per backend:
   `assertUnderCap` is UNCHANGED and still measures the parsed string fields,
   which under `--payload <file>` ARE the file's contents; a non-string
   `artifact` is still refused `bad-payload` before the cap is consulted. Then
-  resolve
-  `model = review.providers.<name>.tiers[trigger.tier]`
-  and `effort = trigger.effort`, and run the seam:
+  take this trigger's tier and effort off the step-1 line -
+  `reviewer_tiers[<trigger>]` and `reviewer_efforts[<trigger>]` - index the
+  provider's own map with the tier
+  (`model = review.providers.<name>.tiers[<the resolved tier>]`),
+  and run the seam with that model and that effort:
   ```
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <model> --effort <effort> --trigger <trigger> \
