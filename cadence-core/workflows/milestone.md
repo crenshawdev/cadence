@@ -21,28 +21,29 @@ report it and STOP, unless the user explicitly overrides (a milestone must not
 ship with silent gaps). On PASS, continue.
 
 ## 2. Version bump (release projects only)
-Confirm the version first: `$ARGUMENTS`, else propose the next from PROJECT.md's
-current and confirm it. Then probe what this project has already published,
-naming the project ROOT - the read is bounded to the repository at that path, so
-a project sitting inside an unrelated repository does not read its releases as
-its own:
+First probe what this project has published, naming the project ROOT - the
+read is bounded to the repository at that path, so a project inside an
+unrelated repository does not read its releases as its own:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/git-branch.mjs" tags --dir <root>
 ```
 
-An EMPTY `tags` and no confirmed version together are a non-release milestone -
-the project has never published and the user is not cutting a named version.
-Skip this step, note "no version bump (non-release milestone)", and do not frame
-the close as a version cut. Do not press the user toward a release they did not
-ask for. No config key decides this: a project that tags by hand still bumps its
-manifest, and the key that governs the release tag is read where that tag is cut
-(/cad-land, after the merge - the tag-after-merge note below).
+Then confirm the version: `$ARGUMENTS`, else propose the next from PROJECT.md's
+current - EXCEPT on an empty `tags` (never published): propose nothing unless
+`$ARGUMENTS` named one. Do not press the user toward a release they did not ask
+for.
 
-Everything below runs on the version you confirmed, and only with one: the seam
-refuses without it (`no-target-version`) and this workflow treats an `ok:false`
-as a STOP, so a close that named no version skips to step 3 rather than failing
-there.
+NO CONFIRMED VERSION - declined, or never proposed - is the skip rule: skip the
+remainder, note "no version bump (non-release milestone)", never frame the
+close as a version cut; continue at step 3. No config key decides this: a project that tags by hand
+still bumps its manifest, and the key that governs the release tag is read where
+that tag is cut (/cad-land, after the merge - the tag-after-merge note below).
+
+Everything below runs only on the version you confirmed: the bump never runs
+without `--version`, so the seam's `no-target-version` refusal is unreachable
+here; an `ok:false` on a named version is a genuine failure - the halts below
+STOP the close.
 
 Then, before the tag, bump the manifest + scaffold the changelog. Run, on its
 own line, naming the version you just confirmed - `--version` is REQUIRED, the
