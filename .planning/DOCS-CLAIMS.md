@@ -1139,7 +1139,7 @@ mistake.
 | README-71 | README.md | 74 | `docs/DISCOVERY.md` | accurate | accurate | 2 |
 | README-72 | README.md | 80 | `docs/WORKFLOW.md` carries the eighteen-cell stakes grid | accurate | accurate | 2 |
 | README-73 | README.md | 95 | `/cad-debug` runs hypotheses that survive a clear; `/cad-capture` parks a todo | accurate | accurate | 2 |
-| README-74 | README.md | 97 | `trace suggest` turns the milestone's trace into evidence-backed retune suggestions and applies none | accurate | accurate | 2 |
+| README-74 | README.md | 99 | `/cad-suggest` turns the milestone's trace into evidence-backed retune suggestions, each with its config key, the value in force, a direction and a target where one can be priced, and ends by offering to route the accepted tweaks to `/cad-config` rather than writing any itself | accurate | accurate | 2 |
 | README-75 | README.md | 97, 115 | `/cad-milestone` audits, bumps the version and prunes completed phases; the tag is cut by `/cad-land` after the merge | accurate | accurate | 2 |
 | README-76 | README.md | 103 | `/cad-help` prints the full reference and `/cad-help <name>` shows one entry | accurate | accurate | 2 |
 | README-77 | README.md | 106-130 | All 21 commands listed under Review & quality, Lifecycle & git and Support exist | accurate | accurate | 2 |
