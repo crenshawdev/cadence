@@ -2028,3 +2028,87 @@ test('falsifier: turns persist onto the close and reach both the bracket and the
     'cad-executor': { dispatches: 2, tokens: 202240, turns: 83, turns_unrecorded: 1 },
   });
 });
+
+// --- the falsifier: a step window closes inside its own run (MSR-04) ---------
+//
+// WATCHED FAILING AT d94c79d, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/trace.test.mjs
+//   x falsifier: every step window closes inside the corr that opened it (MSR-04)
+//     AssertionError [ERR_ASSERTION]: `commit`: a 18180000 ms window opened by
+//     `1-aaa1111`, whose own record ends 120000 ms after the marker - the window
+//     closed at another run's event.
+//   i pass 108
+//   i fail 2
+//
+// 18,180,000 ms is 303 minutes: run A's last marker paired with run B's last
+// event, five hours of clock across a boundary nobody worked over, reported as
+// coordinator time. Run A's own record ends 120,000 ms after that marker.
+//
+// The second failure in that run is `coordinator: one phase spanning two corr
+// ids is TWO coordinator streams (D-01)`, which is the same fact read from the
+// other end - the shipped fixture whose arithmetic task 1 moved from 9 minutes
+// to 6 - and it is expected there.
+//
+// The subject is the RULE and not a figure: this repository's trace grows while
+// the phase runs and no residue is ever stored, so the check asserts that no
+// window outruns the tail of the `corr` that opened it, over a fixture built by
+// this file's own `at`/`mark`/`bracket` helpers.
+//
+// To re-watch: `git worktree add --detach <tmp> d94c79d`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/trace.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+test('falsifier: every step window closes inside the corr that opened it (MSR-04)', () => {
+  const dir = root();
+  // Run A: its anchor, a marker, a worker bracket, the run's LAST marker, and
+  // one outcome event two minutes after it.
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'aaa1111', ts: at(0) });
+  mark(dir, 'dispatch_plans', 1);
+  bracket(dir, '1', 2, 5);
+  mark(dir, 'commit', 10);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(12) });
+  // Five hours of clock nobody was working, then run B - a re-run filed under
+  // the same phase NUMBER, which is what a phase-keyed rollup pairs run A's
+  // last marker against.
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'bbb2222', ts: at(312) });
+  mark(dir, 'replan', 313);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(320) });
+
+  const r = renderTrace(dir, 1);
+  const markers = r.events.filter((e) => e.family === 'lifecycle' && e.event === COORDINATOR);
+  assert.equal(new Set(markers.map((m) => String(m.corr))).size, 2,
+    'the fixture must hold two runs, or there is nothing here to close early');
+
+  // The newest timestamp carrying each `corr` - the only end that run's own
+  // record offers for its last marker.
+  /** @type {Map<string, number>} */
+  const lastByCorr = new Map();
+  for (const e of r.events) {
+    const t = Date.parse(e.ts);
+    if (!Number.isFinite(t)) continue;
+    const c = String(e.corr === undefined || e.corr === null ? '' : e.corr);
+    const seen = lastByCorr.get(c);
+    if (seen === undefined || t > seen) lastByCorr.set(c, t);
+  }
+
+  // The INVARIANT AC5 pins, asserted rather than a figure: the record grows
+  // while this phase runs and no residue is ever stored, so a number measured
+  // off the live trace would rot. A window may be shorter than its run's tail -
+  // the next marker closes it - but it can never be longer, because the only
+  // thing past that tail belongs to somebody else's run.
+  for (const s of r.coordinator.steps) {
+    const m = markers.find((x) => x.ts === s.ts && x.step === s.step);
+    assert.ok(m, `no marker event behind the steps[] row ${JSON.stringify(s)}`);
+    const own = lastByCorr.get(String(m.corr)) - Date.parse(m.ts);
+    assert.ok(s.residue_ms <= own,
+      `\`${s.step}\`: a ${s.residue_ms} ms window opened by \`${m.corr}\`, whose own `
+      + `record ends ${own} ms after the marker - the window closed at another run's event.`);
+  }
+
+  // And the row that pairing rule used to stretch, named: run A's last marker
+  // carries run A's own two-minute gap, not the five hours to run B's end.
+  const commit = r.coordinator.steps.find((s) => s.step === 'commit');
+  assert.equal(commit.residue_ms, 2 * MIN);
+});
