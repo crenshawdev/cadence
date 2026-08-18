@@ -159,7 +159,7 @@ falsifiers and non-overlapping leases.
   asserting that pair move in the same change. Evidence:
   `.planning/DOCS-CLAIMS.md:793` (MILESTONE-01) asserts "One
   `config.mjs get git.create_tag git.auto_close` reads both keys";
-  `.planning/DOCS-CLAIMS.md:682` (CONFIG-26) carries the catalog row.
+  `.planning/DOCS-CLAIMS.md:682` (CONFIG-26) carries the catalog row. [corrected by plan-2 deviation: CONFIG-26's claim is the Default column, untouched by the Purpose-cell rewrite, so it stays accurate and does not move]
 - D-14 (REL-01): `git.create_tag`'s schema `purpose` ("Tag on milestone") and
   its catalog and reach rows are corrected to name the land-time tag cut. The
   requirement's own framing is the documented words, so leaving them makes the
