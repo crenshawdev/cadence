@@ -1,0 +1,135 @@
+# Archive: the recall residue of closed milestones
+
+Written by `planning.mjs milestone-prune` before it removes a phase directory,
+read by `planning.mjs recall` beside CAPTURE.md. One section per closed
+milestone, one `- ` row per snippet, each row naming the artifact it came from.
+A line that is not a row is skipped, so a note added here mints no recall entry.
+
+## v3.5.3
+
+- `phases/1/SUMMARY.md`: None from the plans as written. Every `gate` row above is work the blocking `risk_surface` and `diff` gates required after an executor returned, not a departure from a plan.
+- `phases/1/SUMMARY.md`: The archive row parser accepts arbitrarily large digit strings and converts them with `Number` without a finite/safe check, so a malformed phase number rounds or becomes `Infinity` rather than being rejected. Persisted at `.planning/phases/1/REVIEW-risk_surface-plan-1.md` (medium, survived adjudication unfixed).
+- `phases/1/SUMMARY.md`: The `head_id: null` legacy arm in `settledBy` accepts an unbound receipt, deliberately: a range no receipt can settle is a gate that gets bypassed. Every record `risk-check run` writes today carries the ids, so the arm is exactly as wide as the records that lack them.
+- `phases/1/SUMMARY.md`: Declined a dedicated `write-failed` reason for the residue write; `atomicWrite` throws through the dispatcher as `fail('internal', ...)` with nothing yet removed.
+- `phases/1/SUMMARY.md`: Declined putting the matching receipt on the emitted row (which event cleared it, and when). The receipt is already in the record; add it when a reader needs the provenance.
+- `phases/1/SUMMARY.md`: `detect-commands` reports `lint: null` for this repo, so `typecheck` is the only static-analysis command available to a dispatch.
+- `phases/1/SUMMARY.md`: `workflows/report.md`'s Gates line does not name `gate_pass` or `override` explicitly, and `workflows/execute.md`'s "it also catches" clause is now incomplete - it names only the `written: false` case, not the skipped-fire case. Both left as-is; no locked decision or AC requires them.
+- `phases/1/UAT.md`: Pruned-phase recall survives the close, with its origin After milestone-prune --mode delete over a phase, planning.mjs recall for a term appearing only in that phase's SUMMARY deviation returns the hit, with source naming the SUMMARY origin rather than a flat residue filename. The same run under --mode archive returns the same result.
+- `phases/1/UAT.md`: execute-parallel.md reaches the risk sequence without copying it grep -c risk-check cadence-core/references/execute-parallel.md returns non-zero, and a check fails when the detector/fire/status sequence is restated there as a second copy of workflows/execute.md's.
+- `phases/1/UAT.md`: A check holds the parallel done-gating sentence A check asserts execute-parallel.md gates reporting a plan done on the risk-check status call, and that check fails when the gating sentence is removed.
+- `phases/1/UAT.md`: risk-check status refuses a fired range with no receipt risk-check status returns ok:false for a range recorded with matches non-empty or inconclusive:true that carries no outcome event under the same correlation id and plan, and ok:true once an adjudication, re-arm, clean-pass or override event exists under that corr+plan.
+- `phases/1/UAT.md`: An explicit override clears the gate via --detail-file An explicit user override appends its own outcome event with its reason carried by --detail-file, after which risk-check status returns ok:true for that range.
+- `phases/1/UAT.md`: Each new check names the SHA it was watched failing at Each of the three new checks carries a header comment naming the SHA it was watched failing at, and running that check against that SHA exits non-zero.
+- `phases/1/UAT.md`: Whole-tree suite and self-verify are green on the re-pinned counts node --test cadence-core/bin/*.test.mjs and node cadence-core/bin/self-verify.mjs both exit 0, with the moved count pins and weight-budgets.json re-pinned.
+- `phases/1/UAT.md`: Three of the four documented fire receipts omit --plan, so the new gate cannot be cleared by following the command as written behavior wrong - the gate joins a receipt on rowKey(corr, plan) (cadence-core/bin/planning.mjs:3734), but the copyable commands for gate_pass, override and rearm carry no --plan, so a receipt written exactly as documented does not settle a per-plan record and risk-check status keeps refusing
+- `phases/1/CONTEXT.md`: D-01 (RCL-07): The residue is written at prune time, BEFORE the directories
+- `phases/1/CONTEXT.md`: D-02 (RCL-07): The residue is a NEW tracked top-level `.planning/ARCHIVE.md`
+- `phases/1/CONTEXT.md`: D-03 (RCL-07): The residue carries the SAME snippets the walker already
+- `phases/1/CONTEXT.md`: D-05 (RCL-07): Recall keeps ONE flat BM25 ranking - archived rows compete
+- `phases/1/CONTEXT.md`: D-06 (PAR-01): The parallel path reaches the sequence by pointing at
+- `phases/1/CONTEXT.md`: D-11 (GAT-04): Every blocking `risk_surface` fire records an outcome event of
+- `phases/1/CONTEXT.md`: D-12 (GAT-04): The event `risk-check status` matches on carries STRUCTURED
+- `phases/1/CONTEXT.md`: D-14 (GAT-04): The `/cad-task`, `/cad-debug` and `/cad-verify` fire sites stay
+- `phases/2/SUMMARY.md`: Six close-site sentences reading `OMIT --tokens on a figureless return (seams.md's bracket rule)` still name `--tokens` alone rather than generalizing to `--turns`. Task 4's `Verify:` pins `grep -c -- --turns <file>` to an exact per-file census (1/2/2/1/1/1/1/1), and a prose mention would push `plan.md` to 4 and the others past their count, so naming the flag on the command line only is the shape that satisfies it. The omit rule for turns is stated once in `seams.md`, which those sites point at by design (D-04). Generalize the six sentences if a later task states a count that admits them.
+- `phases/2/SUMMARY.md`: `detect-commands` reports `lint: null` for this repo, so there is no lint command Cadence can find. The static-analysis step for every task in this phase was `npx tsc -p tsconfig.ci.json` plus `node cadence-core/bin/self-verify.mjs`.
+- `phases/2/SUMMARY.md`: Pre-existing, out of scope: `self-verify.mjs`'s budget-check comment states the budgets are an equality ("a shrink is as much a mismatch as a growth") directly above an implementation that makes it a ceiling (`if (bytes > budget)`). Three untouched surfaces currently sit under their pins - `cadence-core/workflows/debug.md` (6911 vs 6920), `skills/cad-capture/SKILL.md` (5751 vs 5850), `skills/cad-plan-review/SKILL.md` (2343 vs 2353) - which is legal under the code and contradicted by the sentence.
+- `phases/2/UAT.md`: trace close persists the turn count and the render reports turns per dispatch and per role `planning.mjs trace render --phase 2` reports a turns figure per bracket and per role, not tokens alone
+- `phases/2/UAT.md`: A close with no turn figure renders under its own unrecorded counter, never as 0 A role whose closes carried no turn figure shows turns_unrecorded rather than `turns: 0`, and a dispatch reporting tokens-but-no-turns stays distinguishable from turns-but-no-tokens
+- `phases/2/UAT.md`: A malformed --turns value is refused wholesale with nothing appended `trace close --turns -1`, a non-integer, and the bare flag each exit non-zero and append no line to trace.jsonl
+- `phases/2/UAT.md`: Neither /cad-report nor /cad-suggest presents worker-return tokens as the run's cost The seam emits what the figure excludes (orchestrator turns, cross-model provider calls, figureless returns); both readers relay it unchanged, /cad-suggest gains no flag and recomputes nothing
+- `phases/2/UAT.md`: The gap is printed as its terms against a named external comparator, with no stored multiplier report.md names burnrate and prints dispatches, turns, the per-dispatch window figure and the unmeasured count; `grep -rn` over cadence-core/ finds no stored multiplier or ratio constant
+- `phases/2/UAT.md`: /cad-progress --trace and DOCS-CLAIMS PROGRESS-28 no longer claim the record has one corr The cost sentence in progress.md and row PROGRESS-28 are corrected, so a render on this repo returning more than one corr contradicts no shipped prose
+- `phases/2/UAT.md`: Each requirement half has a check watched failing at a named SHA Both MSR-01 and MSR-02 checks carry a header comment naming the SHA they were watched failing at, and running that check against that SHA exits non-zero
+- `phases/2/UAT.md`: The full suite and self-verify both exit 0 with pins updated `node --test cadence-core/bin/*.test.mjs` and `node cadence-core/bin/self-verify.mjs` both exit 0, with weight-budgets.json re-pinned and the 'trace close' contract row updated
+- `phases/2/UAT.md`: DOCS-CLAIMS row PROGRESS-14 still records the falsified one-corr claim as accurate behavior wrong - a ledger row left asserting, and marking accurate, the exact claim PROGRESS-28 was corrected for in this phase
+- `phases/2/CONTEXT.md`: D-01 (MSR-01): The turn count arrives as a NEW structured, non-negative-integer
+- `phases/2/CONTEXT.md`: D-02 (MSR-01): The count is read off the HOST's subagent return metadata - the
+- `phases/2/CONTEXT.md`: D-03 (MSR-01): Turns get their OWN unrecorded counter; the existing
+- `phases/2/CONTEXT.md`: D-04 (MSR-01): Every close site gains the flag in THIS phase rather than a
+- `phases/2/CONTEXT.md`: D-05 (MSR-02): The external figure is NAMED as provenance in the record and in
+- `phases/2/CONTEXT.md`: D-06 (MSR-02): The gap is reported as its TERMS - dispatches, turns, the
+- `phases/3/SUMMARY.md`: plan 1, task 4 (`a42705a`) - the Action said to sanitize the whole
+- `phases/3/SUMMARY.md`: plan 2, task 2 (`21f7844`) - the Verify assumed the existing suite
+- `phases/3/SUMMARY.md`: plan 3, task 4 (`e58733b`) - the Verify's
+- `phases/3/SUMMARY.md`: ~~The window-edge ordering in `bodyExcerpt`~~ - CLOSED at `6d0aab4` during
+- `phases/3/SUMMARY.md`: The quadratic in `redactUrl` itself is unfixed and is the better repair -
+- `phases/3/SUMMARY.md`: D-09 - `CONSULT_SCHEMA` and `validateConsult` carry the IDENTICAL gap in
+- `phases/3/SUMMARY.md`: `lib/schema-eval.mjs` is test-only but sits under `bin/lib/` so
+- `phases/3/SUMMARY.md`: `README.md` carries a re-added self-hosted test badge, unstaged and outside
+- `phases/3/SUMMARY.md`: `risk_surface` cannot distinguish "this diff touches auth/secrets" from "this
+- `phases/3/UAT.md`: Response byte ceiling destroys the request node --test cadence-core/bin/review-provider.test.mjs runs green and contains a test where fakeTransport emits chunks totalling more than the ceiling, whose result is {ok:false, reason:"over-response"} with the request destroyed - not a resolved response carrying the full body.
+- `phases/3/UAT.md`: HTTP failure envelope is a capped, sanitized string In the same run, a fault-injected non-2xx response returns detail.body as a string no longer than the stated cap (1024 bytes), containing none of the key=, token, secret or Bearer substrings planted in the injected body.
+- `phases/3/UAT.md`: validateFindings returns seven distinct diagnostics Calling validateFindings on each of line: 0, file: "", claim: "", failure_scenario: "", an unknown key, a findings array past the count bound, and a field past the length bound returns a distinct non-null diagnostic string for each - seven different strings, no null.
+- `phases/3/UAT.md`: Schema and validator agree on every fixture A test runs every fixture through both the in-repo schema evaluator and validateFindings and asserts the two verdicts match; the run is green and the fixture table includes at least one accept case.
+- `phases/3/UAT.md`: The recovery arm names its real producers rg -n "timeout or no report" cadence-core/workflows/execute.md returns no match, and the replacement arm's producer wording appears verbatim in both cadence-core/workflows/execute.md and cadence-core/references/seams.md.
+- `phases/3/UAT.md`: Prose agreement is pinned and the default reviewer states its bound node --test cadence-core/bin/prose-agreement.test.mjs is green and contains a check that reddens when either file's wording is changed alone; rg -n "is exempt" cadence-core/references/seams.md shows the claude-subagent sentence naming maxTurns: 200 as its bound.
+- `phases/3/UAT.md`: SUMMARY records each watched-FAIL SHA .planning/phases/3/SUMMARY.md records, for each of RVP-01, RVP-02 and WIR-01, the SHA at which its check was watched failing before the fix landed.
+- `phases/3/UAT.md`: bodyExcerpt leaks a credential fragment at the sanitize-window edge behavior wrong - the goal's 'sanitized excerpt' clause does not hold for one reachable class of provider-controlled body, even though AC2's own fixture passes
+- `phases/3/CONTEXT.md`: D-01 (RVP-01): The byte ceiling is enforced inside the single `request()`
+- `phases/3/CONTEXT.md`: D-02 (RVP-01): A crossing surfaces as a NEW named `reason` in the seam's
+- `phases/3/CONTEXT.md`: D-04 (RVP-01): The HTTP failure envelope carries ONE shape always - a capped
+- `phases/3/CONTEXT.md`: D-06 (RVP-02): `FINDING_SCHEMA` ITSELF gains the constraints - `line` minimum
+- `phases/3/CONTEXT.md`: D-07 (RVP-02): The new constraint keywords RIDE THE WIRE on every adapter, and
+- `phases/3/CONTEXT.md`: D-08 (RVP-02): Agreement between the schema and the validator is proved by a
+- `phases/3/CONTEXT.md`: D-10 (WIR-01): `execute.md`'s recovery arm drops the word "timeout" and names
+- `phases/3/CONTEXT.md`: D-11 (WIR-01): The "same words" agreement between `seams.md` and the arm is
+- `phases/4/SUMMARY.md`: PLAN-1's task-1 Action states per-role p75 figures the record does
+- `phases/4/SUMMARY.md`: PLAN-1 could not reach its own `## Must be true when done` (full
+- `phases/4/SUMMARY.md`: PLAN-3: CONTEXT D-10 asserts `design-notes/` is tracked.
+- `phases/4/SUMMARY.md`: PLAN-3: CONTEXT D-17's 20 checkpoints / 14 executor / 177 dispatch
+- `phases/4/SUMMARY.md`: PLAN-3: CONTEXT D-09's `zeroResidentBytes` 38,492 reads 40,577
+- `phases/4/SUMMARY.md`: PLAN-3 names `37796d0` as the unpatched tip for its falsifier
+- `phases/4/SUMMARY.md`: PLAN-3's task 4 assigns `SUMMARY.md` to an executor, which the
+- `phases/4/SUMMARY.md`: `cadence-core/bin/lib/window-budget.mjs` hardening, three findings in one
+- `phases/4/SUMMARY.md`: `cadence-core/bin/planning.mjs:3287` coerces an explicitly null per-role
+- `phases/4/SUMMARY.md`: `cadence-core/bin/lib/bulk-output.mjs` checker gaps, three findings in one
+- `phases/4/SUMMARY.md`: The bulk-output transport uses a fixed shared scratch path at five sites
+- `phases/4/SUMMARY.md`: `cadence-core/workflows/progress.md:101`'s read-back has no parse guard and no
+- `phases/4/SUMMARY.md`: `design-notes/dd-plan-task-ceiling.md` carries three argument holes the
+- `phases/4/SUMMARY.md`: `cadence-core/bin/self-verify.test.mjs:1555`'s test TITLE still reads "ELEVEN
+- `phases/4/SUMMARY.md`: `.gitignore:23`'s `/design-notes/dd-*.md` and the now-tracked
+- `phases/4/UAT.md`: Dispatch-window ceiling is a config key and trace reports a per-role crossing config.schema.json holds a key naming the dispatch-window ceiling in tokens, and `planning.mjs trace window` run against this repo's trace.jsonl prints at least one budget-overrun-shaped crossing ({kind, file, detail: "<n> exceeds budget <m> by <d>"}) naming the role that crossed.
+- `phases/4/UAT.md`: The ceiling's value is argued in shipped prose, and nothing is refused Shipped prose argues the ceiling from named trace.jsonl keys with the per-role figures behind it, and the crossing is a finding only - no dispatch is refused and the run completes.
+- `phases/4/UAT.md`: The bulk-output rule is stated exactly once `grep -rn` over cadence-core/ finds the bulk-output rule statement in references/conventions.md and in no other file; a frozen register lives in cadence-core/bin/lib/ and the rule module carries no copy of the statement.
+- `phases/4/UAT.md`: self-verify bites when a registered bulk-output site regresses `node cadence-core/bin/self-verify.mjs` reports a named problem when a registered bulk-output site is edited back to riding the transcript, and reports an unclassified site rather than skipping it.
+- `phases/4/UAT.md`: max_plan_tasks carries a written decision on a bound surface workflow.max_plan_tasks carries a written decision on a surface self-verify binds, naming both forces with a measured figure behind each (checkpoint count from trace.jsonl, per-role dispatchBytes from weight.mjs resident) and the value it lands on.
+- `phases/4/UAT.md`: Each falsifier carries a WATCHED FAILING AT sha that actually fails For MSR-03, TRN-02 and PLN-01 a check carries a `WATCHED FAILING AT <sha>` header, and running that check against the SHA it names exits non-zero; the audit extracts each SHA per line rather than counting occurrences.
+- `phases/4/UAT.md`: Full suite and self-verify green, pins and CONTRACTS current `node --test cadence-core/bin/*.test.mjs` and `node cadence-core/bin/self-verify.mjs` both exit 0, with weight-budgets.json re-pinned for every edited surface and a CONTRACTS row for any new flag or subcommand.
+- `phases/4/CONTEXT.md`: D-01 (MSR-03): The budgeted quantity is the `tokens` value on a `brackets[]`
+- `phases/4/CONTEXT.md`: D-02 (MSR-03): The budget is stated PER ROLE rather than as one global window
+- `phases/4/CONTEXT.md`: D-03 (MSR-03): The crossing is reported by a seam that can SEE A RUN - the
+- `phases/4/CONTEXT.md`: D-04 (MSR-03): The crossing is REPORTED after the fact, never refused.
+- `phases/4/CONTEXT.md`: D-05 (MSR-03): The ceiling's number lives as a `config.schema.json` KEY,
+- `phases/4/CONTEXT.md`: D-06 (MSR-03): A plan's DECLARED read-set weight is NOT a usable proxy for the
+- `phases/4/CONTEXT.md`: D-07 (TRN-02): "Bulk" is MEASURED rather than asserted, because
+- `phases/4/CONTEXT.md`: D-08 (TRN-02): The registered sites are PROSE sites that prescribe a
+- `phases/4/CONTEXT.md`: D-09 (PLN-01): The cold-prefix figure the decision names comes from
+- `phases/4/CONTEXT.md`: D-10 (PLN-01): The written decision lands on a surface a CHECK already binds -
+- `phases/4/CONTEXT.md`: D-11 (mechanics): The prose-surface budget check is a CEILING, not an
+- `phases/5/SUMMARY.md`: `cadence-core/bin/planning.mjs` `checkpointPlanTasks()` resolves a checkpoint
+- `phases/5/SUMMARY.md`: Plan 2's AC2 live clause is unmet BY DESIGN, as that plan's Notes state:
+- `phases/5/SUMMARY.md`: `cadence-core/references/COMMANDS.md:53` says `/cad-suggest` "Applies
+- `phases/5/SUMMARY.md`: `skills/cad-suggest/SKILL.md` no longer declares `Read` in `allowed-tools`,
+- `phases/5/SUMMARY.md`: The routing offer binds the ask-user seam's OPEN-ENDED arm rather than its
+- `phases/5/SUMMARY.md`: `workflow.lint_command` is unset and `detect-commands` reports `lint: null` on
+- `phases/5/UAT.md`: trace suggest names a direction, a current value and only a read target `node cadence-core/bin/planning.mjs trace suggest --phase <N>` returns `direction` beside every non-null `action` plus `current`; `proposed` appears only where a target is READ from the resolved config layer or a ladder; a key no config layer pins returns `current` as unset naming the stakes level the record carries; a rule that cannot be priced omits `proposed` entirely rather than returning null or a derived number.
+- `phases/5/UAT.md`: the ceiling rule goes silent when its evidence does not bind `trace suggest` returns no `workflow.max_plan_tasks` suggestion when every checkpoint it counted maps to a readable plan under the resolved ceiling, and a checkpoint whose plan file cannot be read counts as UNKNOWN rather than under-ceiling; on this repo `trace suggest --phase 2` returns no ceiling suggestion.
+- `phases/5/UAT.md`: /cad-suggest prints the tweaks in a heading of their own A live `/cad-suggest <N>` run prints a heading carrying only the tweaks - each as key, current value, proposed value or its stated absence, and the evidence behind it - with the `info` receipts under a separate heading BELOW it and no `info` entry inside the tweak block. (human-verify: needs a live /cad-suggest run)
+- `phases/5/UAT.md`: the offer's surfaces declare it: skill tools and the README sentence `skills/cad-suggest/SKILL.md` declares in `allowed-tools` every tool the offer's steps name and names no tool the frontmatter lacks; `README.md`'s retune sentence states the offer rather than claiming the command applies nothing; and no step in `cadence-core/workflows/suggest.md` writes a config key itself.
+- `phases/5/UAT.md`: /cad-suggest ends by offering to route the change A live `/cad-suggest <N>` run ends by offering to route the tweaks to `/cad-config`, naming the exact `<key>=<value>` tokens it would pass, and applies nothing until answered. (human-verify: needs a live /cad-suggest run)
+- `phases/5/UAT.md`: no marker window closes on a different run's event In `trace render`, no marker window ends at an event carrying a different `corr` than the marker that opened it, and phase 2's reported residue differs from the phase-keyed figure the same command reported before this phase.
+- `phases/5/UAT.md`: every surface describes the residue as one run's, not one phase's `/cad-report`'s residue lines and `.planning/DOCS-CLAIMS.md` rows REPORT-13/14/15 describe the figure the seam now computes, and no shipped surface describes the residue as spanning a phase rather than a run.
+- `phases/5/UAT.md`: both falsifiers were watched failing, and the tree is green with every pin re-pinned SGT-01 and MSR-04 each carry a check with a `WATCHED FAILING AT <sha>` header whose SHA is extracted per line (not counted) and resolves to a real commit preceding the fix; `node --test cadence-core/bin/*.test.mjs` and `node cadence-core/bin/self-verify.mjs` both exit 0 with every moved weight pin re-pinned.
+- `phases/5/UAT.md`: Run `/cad-suggest 2` (or `/cad-suggest` with no argument) in a live session and read the output Two headed blocks: a tweak heading carrying only the `kind: suggest` entries, each numbered and stating subject, config key, current value (the unset form verbatim where it came back unset), direction with the proposed target beside it or the absence stated in words, and the evidence verbatim - with no `info` entry inside that block; then a separate receipts heading BELOW it carrying every `kind: info` entry one line each.
+- `phases/5/UAT.md`: In that same `/cad-suggest` run, read the closing turn The run ends by asking whether to route the priced tweaks to `/cad-config`, naming the exact `<key>=<value>` tokens it would pass, and stops there - nothing applied, no config file written, and a tweak with no `proposed` offered no token. On a record where nothing carries a target, it says there is nothing to route and asks nothing.
+- `phases/5/CONTEXT.md`: D-01 (MSR-04): The residue is keyed by `corr`, not by phase - each phase's
+- `phases/5/CONTEXT.md`: D-02 (MSR-04): The name "coordinator time" STAYS. The roadmap offered a
+- `phases/5/CONTEXT.md`: D-03 (MSR-04): No length threshold is introduced and
+- `phases/5/CONTEXT.md`: D-04 (MSR-04): `.planning/reads.jsonl` is NOT used to bound a residue span.
+- `phases/5/CONTEXT.md`: D-05 (SGT-01): `direction`, `current` and `proposed` are resolved in
+- `phases/5/CONTEXT.md`: D-06 (SGT-01): A key held in NO config layer returns `current` as unset,
+- `phases/5/CONTEXT.md`: D-07 (SGT-01): Only R1's gate arm (`review.triggers.<t>.gate`, a stated ladder
+- `phases/5/CONTEXT.md`: D-08 (SGT-01): A ceiling suggestion is SUPPRESSED - not returned as a
+- `phases/5/CONTEXT.md`: D-09 (SGT-01): A checkpoint whose plan file cannot be read degrades to
+- `phases/5/CONTEXT.md`: D-10 (SGT-01): The binding check compares against the SAME resolved ceiling
+- `phases/5/CONTEXT.md`: D-11 (SGT-01): `/cad-suggest` ends by OFFERING to route the change to

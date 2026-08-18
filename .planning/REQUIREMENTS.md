@@ -16,15 +16,6 @@ price a run it cannot see.
 **Bounds the review path never stated** (from the external deep dive, two
 AGREE-low and one narrowed from a finding closed as not-a-Cadence-defect):
 
-- **RVP-01**: A provider response is bounded by bytes, destroying the request
-  once the ceiling is crossed, and an HTTP failure envelope carries a capped
-  sanitized excerpt rather than the whole body (#143).
-- **RVP-02**: Local validation of provider findings refuses what the canonical
-  schema refuses - `line <= 0`, empty `file`/`claim`/`failure_scenario`,
-  unknown keys, and unbounded finding counts and field lengths (#141).
-- **WIR-01**: `execute.md`'s "timeout or no report" arm either names what
-  produces that state or the word goes, and the default reviewer stops being
-  the one unbounded arm beside it (#168).
 
 **Costs the record never counted.** Measured on this repo 2026-08-16: the trace
 recorded 795,845 tokens for the whole `v3.5.2` milestone while burnrate recorded
@@ -33,27 +24,10 @@ run ~20x low, carries no cache fields at all, and records neither turns nor
 window - the two terms that multiply out to the bill (cache-read alone is 62.5%
 of spend, at an average 121,250-token window).
 
-- **MSR-01**: `trace close` records the tool-call count the subagent return
-  already carries, so turns per dispatch and per role become visible (#199).
-- **MSR-02**: `/cad-report` and `/cad-suggest` price a run from a record that
-  can see the whole window, rather than from worker-return tokens alone (#198).
-- **MSR-03**: A dispatch's live context window is budgeted and a crossing is
-  reported, the way shipped prose surfaces already are (#202).
-- **TRN-02**: Bulk tool OUTPUT rides a file the way caller-derived text now
-  does, with the rule stated once, a register of the sites, and a self-verify
-  check that reads it (#200).
-- **PLN-01**: `workflow.max_plan_tasks` is re-decided against cold-prefix cost
-  as well as context risk, on measured evidence rather than one of the two
-  forces (#201).
 
 **The retune the record could not state.** Found reading `/cad-suggest 2`'s own
 output 2026-08-17, the first run against the record MSR-01 made turn-aware.
 
-- **SGT-01**: `trace suggest` returns a direction, a current value and a target
-  value beside every `action`, and `/cad-suggest` prints the tweaks in a headed
-  block of their own with the receipts separated below.
-- **MSR-04**: The coordinator figure excludes wall-clock the record cannot
-  attribute to a coordinator, or it stops being labelled coordinator time.
 
 MSR-01 or MSR-02 unblocks MSR-03 and PLN-01; neither can be argued while turns
 and window go unrecorded.
@@ -62,19 +36,6 @@ and window go unrecorded.
 re-review of 2026-08-16, adjudicated here: five of its ten findings were killed
 as already-filed, already-deferred or by-design, and three survived verification.
 
-- **RCL-07**: The recall corpus survives a milestone close. `milestone-prune`
-  deletes (or archives) `phases/<N>/`, and the corpus walker
-  (`planning.mjs:2036-2064`) reads only live phase dirs plus `CAPTURE.md`, so
-  every shipped SUMMARY, UAT and CONTEXT decision goes unreachable at the close.
-  Reproduced live on this repo hours after the `v3.5.2` close (#203).
-- **PAR-01**: The parallel execute path runs the same risk sequence the
-  sequential one does. `execute.md` calls `risk-check` twice; `execute-parallel.md`
-  calls it zero times, so the one gate that is `blocking` at every stakes level
-  does not exist there and the two branches disagree about what "done" means
-  (#204).
-- **GAT-04**: `risk-check status` refuses a matched or inconclusive range that
-  carries no corresponding outcome event, so proving the detector RAN stops
-  standing in for proving the blocking fire HAPPENED (#205).
 
 RCL-07 is the one that falsifies a stated claim rather than a documented rail:
 `PROJECT.md`'s Core Value says what Cadence writes down "must come back on its
@@ -242,6 +203,19 @@ parses only the Traceability table).
 | TRK-01 (`issue-check.mjs` resolves the tracker by repository rather than by origin-URL host equality, so a Forgejo remote whose SSH endpoint differs from its web host still reports. Today the host parsed off `ssh://git@ssh.jcrenshaw.dev:2222/...` is matched against a `tea` login keyed on `git.jcrenshaw.dev`, nothing matches, and the seam takes its skip arm - by its own contract, which is why LND-01 has never once produced a report on this repository. A separate SSH endpoint on a non-standard port is a normal deployment shape, not a misconfiguration, and `tea --repo <owner>/<name>` already works against the same login. The one-line read-only degradation stays; what changes is that a correctly configured remote stops hitting it (#180).) | 2 | Complete | v3.5.1 |
 | TRN-01 (Caller-derived text reaches a seam through a transport that cannot execute it. `planning.mjs` already concedes the rule for one command - prose carrying `$(...)` or a backtick inside a double-quoted shell word executes before Node starts, and a path cannot - while roughly sixteen other workflow sites still prescribe the unsafe form for values derived from agent output or repository content. The rule is stated once and applied everywhere it governs, rather than sixteen local escapes, and a self-verify check is what keeps a seventeenth site from reintroducing it (#133).) | 1 | Complete | v3.5.2 |
 | LSE-01 (`plan-overlap` and `lease-check` read one declaration grammar through one module. Today the first intersects declared `files:` by exact string equality and the second reads a trailing slash as a directory prefix, so a phase declaring `src/` in one plan and `src/auth.js` in another produces an empty `overlaps`, passes the parallel-safety gate, and then authorizes both plans to stage the same file. Nested declarations (`src/` and `src/auth/`) have the same defect. `references/plan-frontmatter.md` documents no trailing-slash form, which bounds the likelihood and not the validity, since `lease-check` honours it. Whether the form becomes documented or refused is a decision the phase makes rather than an assumption it inherits (#132).) | 2 | Complete | v3.5.2 |
+| RCL-07 (The recall corpus survives a milestone close. `milestone-prune` deletes (or archives) `phases/<N>/`, and the corpus walker (`planning.mjs:2036-2064`) reads only live phase dirs plus `CAPTURE.md`, so every shipped SUMMARY, UAT and CONTEXT decision goes unreachable at the close. Reproduced live on this repo hours after the `v3.5.2` close (#203).) | 1 | Complete | v3.5.3 |
+| GAT-04 (`risk-check status` refuses a matched or inconclusive range that carries no corresponding outcome event, so proving the detector RAN stops standing in for proving the blocking fire HAPPENED (#205).) | 1 | Complete | v3.5.3 |
+| PAR-01 (The parallel execute path runs the same risk sequence the sequential one does. `execute.md` calls `risk-check` twice; `execute-parallel.md` calls it zero times, so the one gate that is `blocking` at every stakes level does not exist there and the two branches disagree about what "done" means (#204).) | 1 | Complete | v3.5.3 |
+| MSR-01 (`trace close` records the tool-call count the subagent return already carries, so turns per dispatch and per role become visible (#199).) | 2 | Complete | v3.5.3 |
+| MSR-02 (`/cad-report` and `/cad-suggest` price a run from a record that can see the whole window, rather than from worker-return tokens alone (#198).) | 2 | Complete | v3.5.3 |
+| RVP-01 (A provider response is bounded by bytes, destroying the request once the ceiling is crossed, and an HTTP failure envelope carries a capped sanitized excerpt rather than the whole body (#143).) | 3 | Complete | v3.5.3 |
+| RVP-02 (Local validation of provider findings refuses what the canonical schema refuses - `line <= 0`, empty `file`/`claim`/`failure_scenario`, unknown keys, and unbounded finding counts and field lengths (#141).) | 3 | Complete | v3.5.3 |
+| WIR-01 (`execute.md`'s "timeout or no report" arm either names what produces that state or the word goes, and the default reviewer stops being the one unbounded arm beside it (#168).) | 3 | Complete | v3.5.3 |
+| MSR-03 (A dispatch's live context window is budgeted and a crossing is reported, the way shipped prose surfaces already are (#202).) | 4 | Complete | v3.5.3 |
+| TRN-02 (Bulk tool OUTPUT rides a file the way caller-derived text now does, with the rule stated once, a register of the sites, and a self-verify check that reads it (#200).) | 4 | Complete | v3.5.3 |
+| PLN-01 (`workflow.max_plan_tasks` is re-decided against cold-prefix cost as well as context risk, on measured evidence rather than one of the two forces (#201).) | 4 | Complete | v3.5.3 |
+| MSR-04 (The coordinator figure excludes wall-clock the record cannot attribute to a coordinator, or it stops being labelled coordinator time.) | 5 | Complete | v3.5.3 |
+| SGT-01 (`trace suggest` returns a direction, a current value and a target value beside every `action`, and `/cad-suggest` prints the tweaks in a headed block of their own with the receipts separated below.) | 5 | Complete | v3.5.3 |
 
 ## Deferred
 
@@ -283,19 +257,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RCL-07 | Phase 1 | Complete |
-| GAT-04 | Phase 1 | Complete |
-| PAR-01 | Phase 1 | Complete |
-| MSR-01 | Phase 2 | Complete |
-| MSR-02 | Phase 2 | Complete |
-| RVP-01 | Phase 3 | Complete |
-| RVP-02 | Phase 3 | Complete |
-| WIR-01 | Phase 3 | Complete |
-| MSR-03 | Phase 4 | Complete |
-| TRN-02 | Phase 4 | Complete |
-| PLN-01 | Phase 4 | Complete |
-| MSR-04 | Phase 5 | Complete |
-| SGT-01 | Phase 5 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
