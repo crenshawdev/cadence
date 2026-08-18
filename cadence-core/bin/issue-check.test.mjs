@@ -584,6 +584,54 @@ test('the per-issue resolves share ONE wall-clock budget, not one bound each', (
     `the whole resolve phase must fit inside the single stated budget: ${elapsed}ms`);
 });
 
+test('a FAST nonzero resolve does not stop the loop: the numbers behind it still resolve', () => {
+  // D-11. The shipped cap fixture cannot prove this and neither can the
+  // resolve fixture above: in both, the number the stub exits 1 for is the LAST
+  // one, so a loop that broke on any nonzero exit would still pass them. Here
+  // the unanswered number comes FIRST, which is the ordinary case - tea exits 1
+  // for an issue that is not there, and a land may reference several of those.
+  const refs = [401, 402, 403];
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: {
+      body: TEA_OPEN_BODY, login: TEA_LOGINS,
+      issue: { 402: '{"index":402,"state":"closed"}', 403: '{"index":403,"state":"open"}' },
+    } },
+    bare: true,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced, [
+    { number: 401, state: 'unresolved' },
+    { number: 402, state: 'closed' },
+    { number: 403, state: 'open' },
+  ], JSON.stringify(r));
+});
+
+test('a budget spent mid-loop is still a report: real states behind it, unresolved ahead', () => {
+  // D-15. The budget is a bound on the land's cost, never a failure of it: the
+  // envelope is the same one every other path emits, and the numbers the loop
+  // never reached carry `unresolved` - never `not-found`, which would be an
+  // affirmative claim about input this seam could not read.
+  const refs = [501, 502, 503, 504, 505, 506, 507, 508];
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  // 501 answers at once; every later number is the slow nonzero exit, so the
+  // budget runs out with real state already collected and most refs untouched.
+  const run = seamRun(['check', '--dir', dir, '--base', 'main', '--timeout-ms', '2000'], {
+    stubs: { tea: {
+      body: TEA_OPEN_BODY, login: TEA_LOGINS,
+      issue: { 501: '{"index":501,"state":"closed"}' }, issueSleep: 1,
+    } },
+  });
+  assert.equal(run.status, 0, JSON.stringify(run.envelope));
+  assert.equal(run.envelope.ok, true, JSON.stringify(run.envelope));
+  assert.equal(run.envelope.action, 'report', JSON.stringify(run.envelope));
+  assert.deepEqual(run.envelope.referenced,
+    refs.map((n) => ({ number: n, state: n === 501 ? 'closed' : 'unresolved' })),
+    JSON.stringify(run.envelope));
+  assert.deepEqual(run.envelope.open, [42, 99]);
+  assert.deepEqual(run.envelope.warnings, []);
+});
+
 test('the key-off arm spawns NO forge CLI at all, not merely an empty report', () => {
   // A test reading only the reason and the empty list also passes an
   // implementation that probed `tea login list` before consulting the key. So
