@@ -3,7 +3,7 @@
 // route.mjs - zero-dep routing resolver. Given an agent role and an attempt
 // number, resolve the whole quality bundle the spawn-agent seam and the review
 // subsystem need: {model, effort, review, verify}. The route-table.json beside
-// ../route-table.json is editable data (three grids); this file is the logic.
+// ../route-table.json is editable data (five grids); this file is the logic.
 // DESIGN "model routing" (§ model routing).
 //
 // The question the table asks is what a break COSTS, not what a dispatch costs:
@@ -42,9 +42,18 @@
 //   review.reviewers           the reviewer backends the fire may go to, which
 //                              `resolve` filters per trigger by availability
 //                              into the `reviewers` map beside `review`
-//   review.triggers.*.tier     the model tier that trigger's availability test
-//                              reads, falling back to the table's `tiers` row
-//                              (never to the schema default, D-04)
+//   review.triggers.*.tier     the model tier that trigger's cross-model half
+//                              runs at, which is also what its availability
+//                              test reads, falling back to the LEVEL's row of
+//                              the table's `tiers` grid (never to the schema
+//                              default, D-04); returned as `reviewer_tiers`
+//   review.triggers.*.effort   the reasoning effort that trigger's cross-model
+//                              half runs at, falling back to the level's row of
+//                              the table's `efforts` grid on the same terms;
+//                              returned as `reviewer_efforts`. Both fields are
+//                              level-dependent (RVW-03), so raising `stakes`
+//                              moves the cross-model half of a panel and not
+//                              the subagent half alone
 //   review.providers.*.tiers.* the model id a provider is configured with per
 //                              tier - a provider with none at the resolved tier
 //                              is unavailable, is dropped, and says so in
@@ -146,6 +155,13 @@ function readConfig(file) {
     // it is the input to the reviewer-availability test below, and a schema
     // default read here would report an availability answer as the user's.
     triggerTiers: triggerFieldIn(c, 'tier'),
+    // The per-trigger cross-model EFFORT, the tier's other half (RVW-03).
+    // Read through the same generic reader for the third time and for the same
+    // reason: the level's `efforts` row answers it when no layer did, and a
+    // schema default read here would report the seam's own answer as the
+    // user's. Nothing else about it resembles the envelope's `effort`, which
+    // is the agent RUNG this dispatch runs at.
+    triggerEfforts: triggerFieldIn(c, 'effort'),
     // `review.triggers.risk_surface.surfaces` - the categories the one blocking
     // trigger is scoped to. Read through the same reader for the same reason
     // again: config.schema.json's default for this key is `null` precisely so
@@ -480,24 +496,56 @@ function resolve(opts) {
   // Availability, per trigger: `claude-subagent` is always available (it is a
   // subagent dispatch, not a provider call); any other name needs a model id at
   // the tier THIS trigger resolves at - the layer's `review.triggers.<t>.tier`
-  // when a layer set one, else the table's hand-maintained `tiers` row (D-04:
-  // never config.schema.json's default, which would report the schema's answer
-  // as the user's). An empty set falls back to `claude-subagent`, because a
-  // blocking trigger with no reviewer is a gate that silently stops gating.
+  // when a layer set one, else the LEVEL's row of the table's hand-maintained
+  // `tiers` grid (D-04: never config.schema.json's default, which would report
+  // the schema's answer as the user's). An empty set falls back to
+  // `claude-subagent`, because a blocking trigger with no reviewer is a gate
+  // that silently stops gating.
   //
   // Detection, not prevention (D-07): nothing here refuses a dispatch to a
   // reviewer outside this set. The set plus the `reviewer` field on the
   // lifecycle event are what make a substitution visible afterwards.
+  //
+  // The tier and the effort are RESOLVED here and RETURNED (RVW-03), not merely
+  // consumed by the availability test: they are the two fields that reach a
+  // cross-model provider call, and before this they were read at the fire site
+  // from a config key no layer sets - so the level moved the subagent half of a
+  // panel and left the cross-model half on a value nothing resolved. Both ride
+  // their own top-level maps beside `reviewers` for the reason `reviewers`
+  // itself does (D-05): `review`'s values are gate STRINGS, and turning each
+  // into an object would break every reader of the wiring table at once.
+  //
+  // `reviewer_efforts`, never `efforts`: the envelope already carries a
+  // top-level `effort`, which is the agent RUNG this dispatch runs at. These
+  // are per-trigger provider-request efforts and are a different quantity, so
+  // the names are kept far enough apart that a reader cannot take one for the
+  // other.
   const wantedReviewers = cfg.reviewers ?? DEFAULTS.reviewers;
-  const tableTiers = TABLE.tiers && typeof TABLE.tiers === 'object'
-    && !Array.isArray(TABLE.tiers) ? TABLE.tiers : {};
+  const levelRow = (grid) => {
+    const g = TABLE[grid];
+    const row = g && typeof g === 'object' && !Array.isArray(g) ? g[stakes] : null;
+    return row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+  };
+  const tableTiers = levelRow('tiers');
+  const tableEfforts = levelRow('efforts');
   const reviewers = {};
+  /** @type {Record<string, any>} */
+  const reviewerTiers = {};
+  /** @type {Record<string, any>} */
+  const reviewerEfforts = {};
   for (const trigger of Object.keys(review)) {
     const setTier = cfg.triggerTiers[trigger];
     const tier = setTier !== undefined ? setTier : tableTiers[trigger];
     const tierFrom = setTier !== undefined
       ? `review.triggers.${trigger}.tier`
-      : "route-table.json's tiers row";
+      : `route-table.json's tiers row for ${stakes}`;
+    const setEffort = cfg.triggerEfforts[trigger];
+    const effortFor = setEffort !== undefined ? setEffort : tableEfforts[trigger];
+    // `null`, never a dropped key: a missing entry in a map the fire site
+    // indexes reads as "this trigger has no answer", and an absent key and an
+    // unresolved one must not be the same shape to a caller.
+    reviewerTiers[trigger] = tier ?? null;
+    reviewerEfforts[trigger] = effortFor ?? null;
     const kept = [];
     const dropped = [];
     for (const name of wantedReviewers) {
@@ -507,7 +555,8 @@ function resolve(opts) {
         ? `${name} has no model id at the "${tier}" tier `
           + `(review.providers.${name}.tiers.${tier}, tier from ${tierFrom})`
         : `${name} cannot be placed: the ${trigger} trigger resolves no tier `
-          + '(no config layer set one and route-table.json names none)');
+          + `(no config layer set one and route-table.json's tiers grid names none `
+          + `for ${stakes})`);
     }
     // The cause travels IN the return, never left to be inferred from a set
     // that is smaller than the one the user configured. One warning per
@@ -633,7 +682,7 @@ function resolve(opts) {
   // `surfaces_answered` are the risk_surface fire's scope and whether anyone
   // chose it, and `verify` is the level's two-state deep-verify switch. All
   // three halves of a fire ride on ONE resolve.
-  out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
+  out({ ok: true, role: opts.role, agent, model, effort, review, reviewers, reviewer_tiers: reviewerTiers, reviewer_efforts: reviewerEfforts, surfaces, surfaces_answered: surfacesAnswered, verify, stakes, escalated, pinned, attempt: opts.attempt || 1, reason, ...(warnings.length ? { warnings } : {}) });
 }
 
 // --- arg parsing -------------------------------------------------------------
