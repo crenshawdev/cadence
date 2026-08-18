@@ -90,15 +90,28 @@ nothing stored:
 
 <step name="trace">
 (`--trace` only.) Print what the current phase's run actually did, then stop -
-one read, nothing stored. The render is bulk output, so it rides a scratch file
-and only the fields this step prints reach the transcript
+one read, nothing stored. The render is bulk output, so it rides this RUN's own
+scratch directory and only the fields this step prints reach the transcript
 (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the rule;
 the scratch file is the model's own, never a phase artifact):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <current> > "${TMPDIR:-/tmp}/cad-trace.json"
-node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(JSON.stringify({counts:r.counts,roles:r.roles,unpaired:r.unpaired,capped:r.capped}))' "${TMPDIR:-/tmp}/cad-trace.json"
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-trace-XXXXXX")" \
+  && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <current> > "$D/render.json" \
+  && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}const miss=["counts","roles","unpaired","capped"].filter((k)=>r[k]===undefined);if(miss.length){console.error("scratch-shape: "+miss.join(", ")+" absent from "+process.argv[1]);process.exit(1)}console.log(JSON.stringify({counts:r.counts,roles:r.roles,unpaired:r.unpaired,capped:r.capped}))' "$D/render.json"
 ```
+
+The directory is made for this run and both calls are `&&`-chained to it, so no
+other run's render can be the one this step prints and the read-back cannot run
+on a render that failed.
+
+The read-back REFUSES rather than printing an answer it could not stand behind:
+`scratch-unreadable` on stderr with a non-zero exit when the file could not be
+read or parsed, and `scratch-shape` NAMING the missing field when the parse
+succeeded without one of the four this step prints. Both matter here because
+the old form had no guard at all - a truncated file threw, and a file of the
+wrong shape stringified four `undefined` fields into `{}`, which prints as a
+clean, empty, successful answer.
 
 The `brackets` and `outcomes` arrays are the bulk of that response and nothing
 in this step reads either, so they stay in the file - widening that field list
