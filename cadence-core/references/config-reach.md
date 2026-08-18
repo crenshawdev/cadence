@@ -134,7 +134,7 @@ purpose test runs against the reach the author just replaced.
 | `parallelization.max_concurrent_agents` | universal | `references/execute-parallel.md`, read at `workflows/execute.md`'s `execute_parallel` step - dispatch batch size |
 | `parallelization.min_plans_for_parallel` | universal | `workflows/execute.md` - the parallel-path gate |
 | `parallelization.use_worktrees` | universal | `workflows/execute.md` - worktree isolation for parallel writes |
-| `git.protected_branches` | universal | `bin/git-guard.mjs`, `bin/land-cleanup.mjs` and `bin/git-publish.mjs` |
+| `git.protected_branches` | universal | `bin/git-guard.mjs`, `bin/git-publish.mjs`, `bin/git-branch.mjs`, `bin/land-cleanup.mjs` and `bin/issue-check.mjs` - all five through `bin/lib/protected-branches.mjs`, the one place the grammar lives, so a sixth reader finds it rather than a callsite to copy; the last two index `[0]` for a base ref, so what an out-of-grammar value resolves to moves a git query and not only a guard verdict |
 | `git.on_protected` | universal | `bin/git-guard.mjs` - ask / refuse / allow on a protected branch |
 | `git.integration_branch` | universal | `bin/git-branch.mjs` - milestone branch or trunk |
 | `git.auto_branch` | universal | `bin/git-branch.mjs` - how that branch is created |
