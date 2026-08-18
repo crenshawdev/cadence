@@ -719,6 +719,96 @@ const SPEND_EXCLUDES_READ = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
   ? traceSuggestModule.SPEND_EXCLUDES
   : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
 
+// --- SGT-01: the whole path returns a retune, not a description -------------
+//
+// WATCHED FAILING AT 01b2ca1, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/trace-suggest.test.mjs
+//   x SGT-01: `trace suggest` returns a direction, a current, and a proposed
+//     where the record prices one
+//     AssertionError [ERR_ASSERTION]: `model.effort.cad-planner` came back with
+//     no direction - /cad-suggest names a key and leaves the user to work out
+//     which way to move it. Got: {"kind":"suggest","subject":"cad-planner",
+//     "evidence":"2 of 2 resolves climbed to the retry rung","action":
+//     "model.effort.cad-planner"}
+//   i pass 25
+//   i fail 11
+//
+// and that run exits 1. The other ten failures are this plan's own new
+// assertions read against the old seam - the direction/current cases, the
+// binding check and the receipt-silence guards - which is the same fact from
+// every other end; this one is the check the requirement is written on.
+//
+// To re-watch: `git worktree add --detach <tmp> 01b2ca1`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/trace-suggest.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+// The subject is the whole PATH rather than the pure function: the values a
+// direction and a target are read from live on disk, so a check over
+// `suggestFromRender` alone would pass on a seam that resolved none of them and
+// passed nothing in. So the record is written through `appendEvent`, the config
+// layer is a real file, and the CLI is run end to end - what is asserted is the
+// RETURN a `/cad-suggest` reader gets.
+
+test('SGT-01: `trace suggest` returns a direction, a current, and a proposed where the record prices one', async () => {
+  const { appendEvent } = await import('./lib/trace.mjs');
+  const { writeFileSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'cad-suggest-sgt-'));
+  try {
+    const planning = join(dir, '.planning');
+    mkdirSync(planning, { recursive: true });
+    // A repo layer, so both currents are the layer's own whatever a global
+    // layer on the running machine holds - the repo wins at the merge.
+    writeFileSync(join(planning, 'config.json'), JSON.stringify({
+      review: { triggers: { plan: { gate: 'blocking' } } },
+      model: { effort: { 'cad-planner': 'high' } },
+    }));
+    for (let i = 0; i < MIN_FIRES_FOR_GATE_SUGGESTION; i++) {
+      appendEvent(planning, {
+        phase: '1', family: 'outcome', event: 'adjudication',
+        detail: 'plan: 0 survivors; voices openai',
+      });
+    }
+    for (let i = 0; i < MIN_ESCALATIONS_FOR_RUNG_SUGGESTION; i++) {
+      appendEvent(planning, {
+        phase: '1', family: 'routing', event: 'resolve',
+        role: 'cad-planner', escalated: true, effort: 'xhigh', stakes: 'shipped',
+      });
+    }
+
+    const res = JSON.parse(execFileSync('node', [BIN, 'trace', 'suggest', '--phase', '1'],
+      { cwd: dir, encoding: 'utf8' }).trim().split('\n').pop() || '{}');
+    assert.equal(res.ok, true);
+    const keyed = res.suggestions.filter((s) => s.action !== null);
+    assert.equal(keyed.length, 2, `expected the gate and the effort key: ${JSON.stringify(res.suggestions)}`);
+    for (const s of keyed) {
+      assert.ok(s.direction === 'raise' || s.direction === 'lower',
+        `\`${s.action}\` came back with no direction - /cad-suggest names a key and leaves the`
+        + ` user to work out which way to move it. Got: ${JSON.stringify(s)}`);
+      assert.ok(s.current !== undefined && s.current !== null,
+        `\`${s.action}\` came back with no current value - the retune describes the run instead`
+        + ` of advising a change. Got: ${JSON.stringify(s)}`);
+    }
+
+    const gate = keyed.find((s) => s.action === 'review.triggers.plan.gate');
+    assert.ok(gate, JSON.stringify(keyed));
+    assert.equal(gate.direction, 'lower');
+    assert.equal(gate.current, 'blocking');
+    assert.equal(gate.proposed, 'advisory',
+      'the gate arm prices its target one step down the ladder route-table.json states');
+
+    const effort = keyed.find((s) => s.action === 'model.effort.cad-planner');
+    assert.ok(effort, JSON.stringify(keyed));
+    assert.equal(effort.direction, 'raise');
+    assert.equal(effort.current, 'high');
+    assert.equal(effort.proposed, 'xhigh',
+      'the rung the record shows this role\'s escalated resolves landing on is the target');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('MSR-02: the spend receipt names all three excluded sources, from the one exported list', () => {
   const out = suggestFromRender(render([], {
     'cad-executor': { dispatches: 2, tokens: 300000 },
