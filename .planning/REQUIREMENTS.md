@@ -20,13 +20,6 @@ cannot show.
   declares exempt - a phase carrying a terminal `blocked` item, or sanctioned
   rolled-over work, no longer fires `drift` with a remedy `verify.md` says is
   impossible.
-- **VER-01**: `verify.md` stops treating `why_human` as proof an item is
-  human-only. The predicate becomes the bar the walk already states
-  (irreversible against real data, or outside the model's reach), so an
-  UNCERTAIN truth the verifier could not probe is executed rather than asked.
-- **CAP-02**: the one-round re-arm cap reaches the `risk_surface` fire sites that
-  never load `triage-gate.md`, and its scope is decided deliberately - per
-  correlation id gives a five-plan phase one round across all five.
 - **TAG-01**: `readTags` stops discovering upward from `.planning`, so a project
   that is not itself a repository cannot be FAILed by a version an enclosing
   umbrella repo published.
