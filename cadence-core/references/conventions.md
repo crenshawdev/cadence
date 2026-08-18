@@ -93,11 +93,12 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 - The size test, asked once per tool call a prose site PRESCRIBES: does that
   call's own measured response cross 10,000 bytes? That figure is the mean
   `Read` response on this repository - 10,323 B over 780 recorded calls,
-  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output rides a
-  file, not the transcript: redirect the call into THIS RUN's scratch directory
-  and hand the transcript a DIGEST of what the step actually needs. A response
-  sitting in the transcript is re-paid on every later turn at the cache-read
-  rate; a digest is paid once.
+  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output
+  rides a file, not the transcript: redirect the call into a scratch path
+  inside THIS RUN's own directory (`> "$D/<name>"`, where `D` is a directory
+  this run made with `mktemp -d`) and hand the transcript a DIGEST of what the
+  step actually needs. A response sitting in the transcript is re-paid on every
+  later turn at the cache-read rate; a digest is paid once.
 - The directory is made for the run and never given a shared name:
   `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`, and everything the step
   writes goes inside it. A fixed scratch filename is ONE file that two runs

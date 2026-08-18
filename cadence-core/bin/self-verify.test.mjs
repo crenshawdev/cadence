@@ -2318,3 +2318,47 @@ test('check 20: the LIVE tree is clean of all three bulk-output codes', () => {
   assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-unregistered'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-unclear'), []);
 });
+
+// --- check 21: the scratch file belongs to this run --------------------------
+// The CLI wiring only. The three rules, their kinds and the gap they accept are
+// scratch-path.test.mjs's, per row - including the six shipped sites in both
+// directions; what has to be true HERE is that the walk reaches the rule, that
+// the envelope names it, and that the LIVE tree passes it. Check 20 is blind to
+// both halves, which is why re-introducing a fixed shared name has to redden
+// something and this is the something.
+
+test('check 21: a fixed shared scratch path reaches problems, naming the surface', () => {
+  // Synthetic prose at a REGISTERED path, so check 20 stays quiet about it -
+  // the line carries the redirect that check demands and shares the fixed name
+  // this one refuses, which is exactly the pair the two checks split.
+  const root = fixture('nothing to see\n');
+  writeFileSync(join(root, 'cadence-core', 'references', 'triage-gate.md'),
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "${TMPDIR:-/tmp}/cad-rearm.json"\n');
+  const j = run(['--root', root]);
+  assert.match(j.checked, /scratch-path/);
+  const hits = j.problems.filter((p) => p.kind === 'scratch-shared-path');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'cadence-core/references/triage-gate.md');
+  assert.match(hits[0].detail, /mktemp/);
+  assert.deepEqual(j.problems.filter((p) => p.kind === 'bulk-output-inline'), []);
+});
+
+test('check 21: an unguarded read-back reaches problems through the CLI', () => {
+  const root = fixture(
+    'node -e \'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.n)\' "$D/render.json"\n');
+  const hits = run(['--root', root]).problems
+    .filter((p) => p.kind === 'scratch-unguarded-readback');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+});
+
+test('check 21: the LIVE tree is clean of all three per-run scratch codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the half a fixture can never state - and it is
+  // what stops the next prose edit from putting a shared scratch name back
+  // with a green self-verify, the exact gap D-07 named.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'scratch-shared-path'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'scratch-fixed-target'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'scratch-unguarded-readback'), []);
+});

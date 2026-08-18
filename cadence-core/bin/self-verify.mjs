@@ -157,6 +157,22 @@
 //                    check 19 states about its own seventeenth site. It takes
 //                    no CONTRACTS row, for the reason check 14 states about
 //                    `lib/*.mjs`.
+//  21. per-run       the scratch file a converted bulk-output site writes must
+//      scratch       belong to THIS RUN, and the read-back reading it must
+//                    REFUSE rather than answer from a file it could not read.
+//                    Check 20 holds neither half: it asserts a redirect EXISTS
+//                    and never sees what it points AT, so a fixed shared name
+//                    and `> /dev/stdout` pass it identically. That blind spot is
+//                    what let six sites share five fixed names under one
+//                    world-writable directory, where a concurrent run in another
+//                    repository could answer this run's blocking `risk_surface`
+//                    re-arm cap, and where a read-back defaulting a missing array
+//                    to `[]` reported that gate as unspent. The three line-local
+//                    rules and the gap they accept live in lib/scratch-path.mjs;
+//                    this side only decides that they apply to every prose
+//                    surface, for the reason check 19 states about its own scope.
+//                    It takes no CONTRACTS row, for the reason check 14 states
+//                    about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -182,6 +198,7 @@ import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
+import { scratchPathIssues } from './lib/scratch-path.mjs';
 // The throwing `--root` reader, shared with weight.mjs: ABSENT and
 // PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
 // it used to fall back to the plugin's own tree so this linter returned ok:true
@@ -872,6 +889,18 @@ function run(root) {
     // prose surface. It takes no CONTRACTS row, for the reason check 14 states
     // about `lib/*.mjs`.
     problems.push(...bulkOutputIssues(rel, text));
+
+    // 21. per-run scratch: a converted bulk-output site must write into a
+    // directory THIS run made, and its read-back must refuse a file it could
+    // not read, parse or recognise instead of answering from it. Every surface
+    // this walk yields, for the reason check 19 states about its own scope: a
+    // step in skills/ pays for a collision exactly as a workflow does. Check 20
+    // cannot stand in for it - it sees that a redirect is there and never what
+    // it points at, so nothing in this tree held the shape in place. The three
+    // rules and the gap they accept live in lib/scratch-path.mjs; this side
+    // only decides where they apply. It takes no CONTRACTS row, for the reason
+    // check 14 states about `lib/*.mjs`.
+    problems.push(...scratchPathIssues(rel, text));
   }
 
   // 3b. INTERNALS repo-path citations: every backticked repo path in
@@ -1463,7 +1492,7 @@ try {
   const argv = process.argv.slice(2);
   const root = flagValue(argv, '--root') || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path', problems });
 } catch (e) {
   // The seam arm lands WITH flagValue: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
