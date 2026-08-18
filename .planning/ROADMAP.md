@@ -77,7 +77,7 @@ window go unrecorded.
 - [x] **Phase 2: The record learns to see the run** - `trace close` records the tool-call count the return already carries, and `/cad-report` / `/cad-suggest` price a run from a record that can see the whole window instead of worker-return tokens alone
 - [x] **Phase 3: Bounds the review path never stated** - a provider response is bounded by bytes, local validation of provider findings refuses what the canonical schema refuses, and `execute.md`'s "timeout or no report" arm either names what produces that state or loses the word
 - [x] **Phase 4: Costs argued from the new record** - the record Phase 2 taught to see turns and window gets spent: a live window is budgeted, bulk tool output rides a file, and `workflow.max_plan_tasks` is re-decided against both forces
-- [ ] **Phase 5: The retune says what to change** - `/cad-suggest` states each tweak as a direction and a target value in a block of its own, and the coordinator figure stops counting the hours a session sat idle waiting on the user
+- [x] **Phase 5: The retune says what to change** - `/cad-suggest` states each tweak as a direction and a target value in a block of its own, and the coordinator figure stops counting the hours a session sat idle waiting on the user
 
 
 ## Phase Details
