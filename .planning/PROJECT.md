@@ -5,14 +5,17 @@
 Cadence is a Claude Code plugin for phased planning and execution: roadmap →
 context → plan → execute → verify, with file-based continuity in `.planning/`,
 deterministic seam scripts guarding invariants, and an adversarial review
-subsystem. `v2.6.1` is the current release: the four defects the `v2.6.0` doc
-sweep filed are closed at their source, each with a check watched to fail against
-the unpatched code first, and a budgeted surface that SHRINKS below its recorded
-byte count now fails self-verify exactly like one that grows. `v2.6.0` before it
-was the reconciliation cycle: the capture queue triaged from 213 open items to
-28, per-role token accounting with every phase dispatch bracketed, a
-runaway-loop bound on all 19 rung agents, and the first end-to-end doc sweep at
-547 claims with a committed ledger. Earlier cycles: `v2.5.0` static analysis
+subsystem. `v3.5.4` is the current release: three checks that reported a verdict
+they had not earned now report the truth, a credential the 4096-byte sanitize
+window cut is redacted rather than shipped to a review provider, and the stakes
+level moves both halves of a cross-model review panel. `v3.5.3` before it was
+bounds not stated and costs not counted: a provider-response ceiling Cadence
+owns, turns per dispatch on the run record, and three controls that existed but
+never reached the path needing them. `v3.5.2` was one reader, one transport;
+`v3.5.1` authorization the repo grants rather than the user. Earlier cycles:
+`v2.6.1` the four defects the `v2.6.0` doc sweep filed closed at their source,
+`v2.6.0` the reconciliation cycle that triaged the capture queue from 213 open
+items to 28 and swept 547 doc claims with a committed ledger, `v2.5.0` static analysis
 reaching execution and plan gates that ask whether a plan is proportionate,
 `v2.4.0` the parallel path that could never engage, `v2.3.0` where the bytes
 live, `v2.2.0` the config read face and the deleted git-guard parser, `v2.1.0`
@@ -109,51 +112,58 @@ context-gathering, and debugging — without any external memory system.
 
 - ✓ `v3.5.3 - bounds not stated, costs not counted`: the provider response gained a 4 MiB ceiling Cadence owns with its own `over-response` reason and a sanitized 1024-byte failure excerpt, local finding validation was pinned to the canonical schema by an 18-fixture agreement table, and the recovery arm stopped naming a timeout the dispatch path cannot produce (RVP-01, RVP-02, WIR-01); the run record learned turns per dispatch and per role and the three surfaces pricing a run now name what that figure excludes (MSR-01, MSR-02); six per-role window ceilings derived from this repo's own p75, a bulk-output file transport with a 17-row register, and `workflow.max_plan_tasks` re-decided against both its forces and left at 8 (MSR-03, TRN-02, PLN-01); the coordinator residue re-keyed on `corr` so one run's marker stops closing at another run's event, and every retune suggestion gained a direction, a current value and a read target with an offer to route it (MSR-04, SGT-01); plus three controls that existed and never reached their path - the recall corpus surviving a close, a receipt naming the range it settles, and the parallel branch reaching the sequential risk sequence (RCL-07, GAT-04, PAR-01) - v3.5.3
 
+- ✓ `v3.5.4 - the gate that clears itself wrong`: `redactUrl` gained end-of-input
+  userinfo alternatives so a credential the 4096-byte `bodyExcerpt` window cut
+  before its `@` is redacted rather than shipped to a review provider, and
+  `cad-phase remove` refuses a git state it could not read instead of classifying
+  it clean and deleting `phases/<N>/` recursively (EXP-02, PHS-01); `/cad-audit`
+  stopped FAILing a healthy repository on three counts - a wrapped continuation
+  line out-declaring the milestone, `version_drift` firing on the rolled-forward
+  phase the workflow declares exempt, and tag discovery walking upward out of the
+  caller's own project root (DRF-01, DRF-02, TAG-01); and three flags were made
+  to mean what they say - the stakes level moves both halves of a cross-model
+  review panel through level-keyed `tiers` and a new `efforts` grid returned on
+  the resolve line, `git.create_tag` governs the land-time tag cut alone with the
+  milestone close deciding release mode from evidence, and issue-check's
+  per-issue resolve loop runs under one wall-clock budget rather than a per-call
+  timeout its own exit condition could not detect (RVW-03, REL-01, ISS-01) - v3.5.4
+
 ### Active
 
-`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18. Scoped from the
-capture queue's open review findings rather than from a tracker milestone.
+No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18:
+eight requirements (`EXP-02`, `PHS-01`, `DRF-01`, `DRF-02`, `TAG-01`, `RVW-03`,
+`REL-01`, `ISS-01`), three phases, 51 commits off `6d445f3`, the audit green (8/8
+traced, 0 broken, 0 deferred; 21/21 acceptance criteria covered), the manifest at
+`3.5.4`. Its eight rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its
+narrative in `CHANGELOG.md`, its per-phase residue in `.planning/ARCHIVE.md` at 76
+rows, and its phase record in git history at the pruning commit - this close ran
+`--mode delete`, so there is no `_archive-v3.5.4/`. The merge and the release tag
+are both outstanding: `/cad-land` on `cadence/v3.5.4`, which cuts `v3.5.4` on the
+pulled base after the merge confirms.
 
-**The theme is one sentence: a gate that reports a verdict it did not earn.**
-Every item below is a check that already runs and already answers - and answers
-wrong in a way its own output cannot show. That is the shape `v3.5.3` closed for
-controls that never reached their path; this one closes it for controls that
-reach the path and mis-answer once they are there.
+What it delivered: the shape `v3.5.3` closed for controls that never reached
+their path, closed again for controls that reach the path and mis-answer once
+they are there. Two of the eight cost something irreversible when they answered
+wrong - a credential reaching a third-party review provider in clear text, and a
+recursive delete of a phase directory whose git state was never read - and both
+now refuse rather than proceed. Three more were the ship gate itself FAILing
+correct docs, which is the failure mode that teaches a user to stop trusting the
+gate. The last three were flags whose documented reach and real reach disagreed.
+Every fix carries a check watched failing against the unpatched tree first.
 
-Five came out of the `v3.5.2` and `v3.5.3` diff reviews, grounded against the
-live files and left open at the time because each sat outside the firing phase's
-lease:
+What is NOT closed: eight medium `risk_surface` survivors carried forward at this
+close, plus the phase-3 open items - no drift check ties `effort_names` or
+`tier_names` to the schema enums, `review-triggers.md`'s degraded-resolve fallback
+is unfollowable now that the schema defaults are `null`, `readTags` swallows
+ENOBUFS and answers `tags: []` with `ok:true`, and `git-branch.mjs tags` collapses
+an empty `--dir` with an absent one. None is scoped to a cycle. The four deferred
+ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their deferral reasons and
+none is promoted.
 
-- `version_drift`'s comparand is `activeVersion()`, a first-version-token scan
-  over the free prose of `PROJECT.md ### Active`. A section naming the
-  predecessor before the current milestone reports the predecessor and hard-FAILs
-  the ship gate on correct docs. This file is one clause reorder from that state.
-- The interrupted-close exemption is `derivePhases(...).every(complete)`, but the
-  close is sanctioned to carry rolled-over work and a UAT holding a `blocked`
-  item can never derive complete. Drift fires in the state `audit.md` declares
-  exempt, with a remedy `verify.md` says is impossible.
-- `verify.md` treats `why_human` as proof an item is human-only, while the
-  verifier contract writes it for every UNCERTAIN truth too, so model-executable
-  checks route to the one-at-a-time ask - the exact defect FRI-01 targeted.
-- The one-round re-arm cap lives only in `triage-gate.md`, which the
-  `risk_surface` fire sites never load, and every "RE-READ triage-gate.md"
-  instruction is scoped to the `adjudicated` arm. The bound misses the one
-  trigger that is blocking at every stakes level, and it is scoped per
-  correlation id, so a five-plan phase gets ONE round across all five plans.
-- `readTags` lets `git -C` discover upward from `.planning`, so a project that is
-  not itself a repo inherits an enclosing repo's tags and can be FAILed by a
-  version an unrelated umbrella repo published.
-
-One more is a live credential-leak path found while carrying the `v3.5.3`
-`risk_surface` survivors forward at the close: `bodyExcerpt`'s trailing-token
-safeguard runs only when `clean <= room`, so a sanitizer shrink can pull a
-window-edge-truncated credential's head under the cap while `clean` still
-exceeds it. Raised at the phase-3 fire, still true at `v3.5.3`.
-
-The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted. The open items filed at the `v3.5.1`
-close (#181 through #187) and the seven filed at the `v3.5.2` close (#189
-through #197) are unassigned and are not scoped here.
+Deviation from `milestone.md`: this is a close-only run. The workflow's steps 4
+and 5 assume every close opens the next cycle, so closing without one is
+hand-written rather than a path through it - the fourth time, and the open capture
+item asking for an explicit close-only arm is still open.
 
 ## Key Decisions
 

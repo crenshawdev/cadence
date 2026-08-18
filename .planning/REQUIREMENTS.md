@@ -5,20 +5,17 @@
 
 ## Active
 
-`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18. Scoped from the
-capture queue's open review findings rather than from a tracker milestone.
-
-One shape: a gate that reports a verdict it did not earn. Each item is a check
-that already runs and already answers, and answers wrong in a way its own output
-cannot show.
-
-
+No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18;
+its eight requirements are under `## Shipped` below. The next cycle's headline
+requirements are unscoped - `/cad-phase add` opens one when there is a theme to
+open it for.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
 close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
-through #197) are unassigned and are not scoped here.
-
+through #197) are unassigned and are not scoped here. The eight medium
+`risk_surface` survivors carried forward at the `v3.5.4` close are unassigned
+too.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.

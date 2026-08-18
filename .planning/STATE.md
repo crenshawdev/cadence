@@ -1,6 +1,6 @@
 # State
 
-Phase: 3 of 3 (Flags that do more or less than they say)
-Status: phase complete
-Next: /cad-milestone - last phase of the cycle; the audit gate precedes any ship
+Phase: 1 of 0 (no active cycle)
+Status: ready to plan
+Next: /cad-phase add
 Updated: 2026-08-18
