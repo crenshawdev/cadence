@@ -93,23 +93,54 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 - The size test, asked once per tool call a prose site PRESCRIBES: does that
   call's own measured response cross 10,000 bytes? That figure is the mean
   `Read` response on this repository - 10,323 B over 780 recorded calls,
-  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output
-  rides a file, not the transcript: redirect the call into a scratch path
-  (`> "${TMPDIR:-/tmp}/<name>"`) and hand the transcript a DIGEST of what the
-  step actually needs. A response sitting in the transcript is re-paid on every
-  later turn at the cache-read rate; a digest is paid once.
+  `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output rides a
+  file, not the transcript: redirect the call into THIS RUN's scratch directory
+  and hand the transcript a DIGEST of what the step actually needs. A response
+  sitting in the transcript is re-paid on every later turn at the cache-read
+  rate; a digest is paid once.
+- The directory is made for the run and never given a shared name:
+  `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`, and everything the step
+  writes goes inside it. A fixed scratch filename is ONE file that two runs
+  started in two repositories both write and both read, so one run's blocking
+  gate is answered by the other's bytes. Leave the directory for the operating
+  system's tmp reaping: a step that `rm -rf`s a path it computed itself is a
+  worse failure than a stale directory. The template is explicit because the
+  argument-less spelling of that call is GNU-only.
 - The conversion is a shell redirect plus a targeted read-back - never a new
   seam, flag or subcommand. Read back only the fields the step prints or
   branches on, one at a time; reading the scratch file WHOLE is the same bytes
   on the same turn and buys nothing. The file is the model's own scratch, never
   a phase artifact.
+- When the write and the read-back share ONE Bash invocation, chain both to the
+  directory-making call with `&&`: the read-back then cannot run on a write that
+  failed, and what it reads is a directory this run just created empty.
+- When they are SPLIT across two fenced blocks, a shell variable cannot carry
+  it - the Bash tool persists the working directory and not shell state. So the
+  writing block ECHOES the directory once, and beside it a run TOKEN it also
+  wrote into that directory; the later block carries both as literals, a path
+  and never a `$(...)`, which is the caller-derived-text rule above. A carried
+  path is the one arm where an EARLIER run's well-formed file still resolves, so
+  the later block compares the directory's token file against the token it was
+  handed and refuses when the two differ. Compare against an id carried
+  independently of the file: an id read out of the file itself is one that any
+  stale file answers self-consistently.
+- A read-back REFUSES rather than answering from a file it could not trust. It
+  names `scratch-unreadable` on stderr and exits non-zero when the file cannot
+  be read or parsed, `scratch-shape` when the field the step needs is absent,
+  and `scratch-stale` when the token does not match. No default may stand in for
+  a missing value: `(r.outcomes||[]).length` answers `0` and
+  `JSON.stringify({a:r.a})` prints `{}`, and both of those read as a successful
+  answer. At a blocking gate a refusal is NEITHER verdict - the gate could not
+  be evaluated, so it goes to that gate's STOP-and-ask arm.
 - If no, the call stays inline: a response under the threshold, a form its own
   flags already bound (`--stat`, `--name-only`), a call another agent runs in
   its own context.
 - No site decides this for itself. Every one is classified in
-  `cadence-core/bin/lib/bulk-output.mjs` with its measured figure, and
-  self-verify reports a site the register does not classify - so a NEW site is
-  registered, not argued.
+  `cadence-core/bin/lib/bulk-output.mjs` with its measured figure, and the
+  per-run path and the read-back's refusal are held at every site by
+  `cadence-core/bin/lib/scratch-path.mjs`; self-verify reports a site that
+  either one leaves unclassified or unguarded - so a NEW site is registered,
+  not argued.
 
 ## Parallel work
 

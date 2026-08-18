@@ -87,7 +87,11 @@ test('no two rows share a surface, shape and call', () => {
 
 test('a converted row reports the site that goes back to riding the transcript', () => {
   const rows = [row()];
-  const clean = issues(seamLine('trace render --phase <N> > "${TMPDIR:-/tmp}/t.json"'), rows);
+  // The redirect is written in the per-run form `references/conventions.md`
+  // states, so the tree holds no illustration of the fixed shared path SCR-01
+  // removed - check 21 (lib/scratch-path.mjs) is what enforces that shape, and
+  // this check is blind to it either way.
+  const clean = issues(seamLine('trace render --phase <N> > "$D/render.json"'), rows);
   assert.deepEqual(clean, [], JSON.stringify(clean));
   const back = issues(seamLine('trace render --phase <N>'), rows);
   assert.equal(back.length, 1, JSON.stringify(back));
