@@ -150,15 +150,15 @@ purpose test runs against the reach the author just replaced.
 | `review.key_file` | user-global config layer only | `bin/review-provider.mjs` - the provider env-file path, reached through the `--key-file` flag the prose sites interpolate; `bin/lib/config-merge.mjs` strips the key out of the repo layer before the merge, so no future reader of the merged config can be pointed at a repo-chosen key file (CFG-02) |
 | `review.request_timeout_ms` | universal | `bin/review-provider.mjs` - ms before a provider request aborts |
 | `review.max_prompt_tokens` | cross-model provider calls only | `bin/review-provider.mjs` `review` and `consult` - both refuse an over-cap payload before any request; the claude-subagent reviewer never runs the script |
-| `review.providers.openai.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.openai.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.openai.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.gemini.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.gemini.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.gemini.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.deepseek.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.deepseek.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
-| `review.providers.deepseek.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by `review.providers.<name>.tiers[trigger.tier]` |
+| `review.providers.openai.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.openai.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.openai.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.gemini.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.gemini.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.gemini.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.deepseek.tiers.flagship` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.deepseek.tiers.balanced` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
+| `review.providers.deepseek.tiers.cheap` | universal | `bin/review-provider.mjs` `--model`, resolved by indexing it with the tier `bin/route.mjs resolve` returned for the firing trigger |
 | `review.triggers.plan.gate` | universal | `bin/route.mjs resolve` - the plan review's gate, over the level's |
 | `review.triggers.plan.tier` | cross-model reviewers only | `bin/route.mjs resolve` - the cross-model tier, resolved per trigger from the stakes level's `tiers` row into the `reviewer_tiers` map beside `reviewers` (review-triggers.md step 4 TAKES it and indexes `review.providers.<name>.tiers` with it); a layer that sets it wins over the level's row, and the claude-subagent reviewer's model comes from the routing cell |
 | `review.triggers.plan.effort` | cross-model reviewers only | `bin/review-provider.mjs` `--effort`, resolved per trigger by `bin/route.mjs resolve` from the stakes level's `efforts` row into the `reviewer_efforts` map beside `reviewers` (review-triggers.md step 4 TAKES it); a layer that sets it wins over the level's row, and the claude-subagent reviewer's effort is frontmatter-frozen |
