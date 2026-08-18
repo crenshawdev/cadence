@@ -4090,6 +4090,23 @@ test('PHS-01: a GIT_DIR-selected repository counts as present when its state can
   assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
 });
 
+test('source: the nested-repository probe reads the filesystem, not entry names', () => {
+  // A source row because the state it guards needs a case-INSENSITIVE
+  // filesystem, which the suite cannot conjure on Linux. What it pins is the
+  // mechanism: `e.name === '.git'` over a readdir is a case-sensitive test, so
+  // an admin directory stored as `.GIT` on APFS or NTFS still resolves for git
+  // and gets scanned past, while `gitDirAbove` - which has always probed with
+  // lstat - matches it. One guard, two halves, and only one of them open.
+  const src = readFileSync(PLANNING, 'utf8');
+  const start = src.indexOf('function gitDirUnder(');
+  assert.ok(start > 0, 'the nested-repository probe is no longer under this name');
+  const body = src.slice(start, src.indexOf('\n}', start));
+  assert.match(body, /lstatSync\(join\([^)]*'\.git'\)/,
+    'the nested probe no longer asks the filesystem whether .git is there');
+  assert.doesNotMatch(body, /\.name === '\.git'/,
+    'the nested probe is back to a case-sensitive name comparison');
+});
+
 test('source: the renumber rm fallback\'s recursive delete is gated by the .git probe', () => {
   // A source row rather than a behavioural one because the state it guards is
   // unreachable from a test: it needs `git rm` to fail while `.git` exists,

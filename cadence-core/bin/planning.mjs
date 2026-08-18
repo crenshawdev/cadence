@@ -4222,14 +4222,25 @@ function gitDirAbove(from) {
  * reason; a target that is not there at all answers ABSENT, since there is
  * nothing under it to protect. That is an errno test and not a message parse:
  * `review-provider.mjs`'s ban is on a diagnostic STRING deciding control flow.
+ *
+ * `lstatSync` per directory, never `e.name === '.git'` over the readdir: a
+ * name comparison is case-SENSITIVE while the filesystem underneath may not be,
+ * so an admin directory stored as `.GIT` on APFS or NTFS still resolves for git
+ * and would be scanned straight past. Probing inherits the filesystem's own
+ * case semantics, which is what `gitDirAbove` has always done - a guard whose
+ * two halves disagree about what `.git` matches is one half open.
+ *
+ * Directory recursion is by `isDirectory()`, which is lstat-shaped, so a
+ * symlink is never followed and the scan cannot leave the phase directory.
  * @param {string} target @returns {boolean}
  */
 function gitDirUnder(target) {
   let entries;
-  try { entries = readdirSync(target, { withFileTypes: true }); }
-  catch (e) { return !(e && e.code === 'ENOENT'); }
+  try {
+    if (lstatSync(join(target, '.git'), { throwIfNoEntry: false })) return true;
+    entries = readdirSync(target, { withFileTypes: true });
+  } catch (e) { return !(e && e.code === 'ENOENT'); }
   for (const e of entries) {
-    if (e.name === '.git') return true;
     if (e.isDirectory() && gitDirUnder(join(target, e.name))) return true;
   }
   return false;
