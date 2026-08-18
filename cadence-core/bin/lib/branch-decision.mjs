@@ -68,13 +68,50 @@ const VERSION_RE = /v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/;
 // docs (`version_drift` compares this against the tag list).
 const DECLARED_VERSION_RE = new RegExp(`^[\\s>*_\`-]*(${VERSION_RE.source})`);
 
+// Trailing markdown furniture, transparent when asking whether a line CLOSED
+// its sentence: this tree's prose routinely ends a sentence inside a code span
+// or an emphasis run (``closed 2026-08-08.` ``), and the terminator is what the
+// question is about, not the wrapper around it.
+const TRAILING_FURNITURE_RE = /[\s`*_)\]"']+$/;
+
+/**
+ * Does the body line at `i` OPEN a sentence rather than continue a wrapped one?
+ * True at the top of the body, after a blank line, and after a line whose last
+ * character past its trailing furniture terminates a sentence. False after a
+ * line of running prose - which is exactly what markdown wrapping produces, and
+ * the only way a version token lands at a line start without being declared.
+ * @param {string[]} body @param {number} i
+ */
+function opensSentence(body, i) {
+  if (i === 0) return true;
+  const prev = body[i - 1];
+  if (!prev.trim()) return true;
+  return /[.!?]$/.test(prev.replace(TRAILING_FURNITURE_RE, ''));
+}
+
 /**
  * The version named in the `### Active` section of PROJECT.md, or null.
- * Scans the section body (from the `### Active` heading to the next level-1..3
- * heading) for the milestone declaration - the first LINE-ANCHORED version
- * token. Falls back to the first token anywhere in the body when no line
- * declares one, so a section that only ever mentions its version in prose still
- * answers rather than going silent.
+ *
+ * Reads the section body (from the `### Active` heading to the next level-1..3
+ * heading) with TWO scans over the whole body: the first version token anywhere
+ * in it, and the LINE-ANCHORED candidates. An anchored candidate is the
+ * milestone DECLARATION only when it agrees with the first token, or when its
+ * line opens a sentence rather than continuing a wrapped one (DRF-01, D-02). An
+ * anchored token riding a wrapped continuation line contributes NOTHING - it is
+ * markdown layout, not a declaration, and reading it as the milestone is how a
+ * correct `### Active` hard-FAILs the ship gate (measured at 81bdb5d: the
+ * section declared `v3.2.0` in its opening sentence and this reader answered
+ * `v3.0.0`, a token forty lines below it that a wrap had pushed to a line
+ * start). When no candidate is admitted the first-token-anywhere answer stands,
+ * so a section that only ever mentions its version mid-sentence still answers
+ * rather than going silent - the fallback D-02 keeps deliberately, because
+ * templates/PROJECT.md's `### Active` names no version at all and the ROADMAP
+ * title is no safety net (this repo's carries no version either).
+ *
+ * SHARED READER, so this tightening is not audit-only: `git-branch.mjs decide`
+ * derives the integration-branch NAME and its already-published refusal from
+ * the same answer (D-01), and both surfaces move together on purpose - a second
+ * comparand for the audit alone is the drift this module exists to prevent.
  * @param {string} projectText
  */
 export function activeVersion(projectText) {
@@ -82,15 +119,19 @@ export function activeVersion(projectText) {
   const lines = String(projectText).split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
   if (start < 0) return null;
-  let loose = null;
+  let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^#{1,3}\s/.test(lines[i])) break; // next section ends the Active body
-    const declared = lines[i].match(DECLARED_VERSION_RE);
-    if (declared) return declared[1];
-    if (loose === null) {
-      const m = lines[i].match(VERSION_RE);
-      if (m) loose = m[0];
-    }
+    if (/^#{1,3}\s/.test(lines[i])) { end = i; break; } // next section ends the body
+  }
+  const body = lines.slice(start + 1, end);
+  let loose = null;
+  for (const line of body) {
+    const m = line.match(VERSION_RE);
+    if (m) { loose = m[0]; break; }
+  }
+  for (let i = 0; i < body.length; i++) {
+    const declared = body[i].match(DECLARED_VERSION_RE);
+    if (declared && (declared[1] === loose || opensSentence(body, i))) return declared[1];
   }
   return loose;
 }

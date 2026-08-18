@@ -264,3 +264,64 @@ test('activeVersion: the Active body ends at the next heading', () => {
   const text = '# P\n\n### Active\n\nNo token.\n\n### Out of Scope\n\n`v9.9.9` - not this one\n';
   assert.equal(activeVersion(text), null);
 });
+
+// --- DRF-01: a wrapped continuation line is layout, not a declaration --------
+//
+// WATCHED FAILING AT 2c88137, the branch tip before this fix. Observed there,
+// with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/branch-decision.test.mjs
+//   x activeVersion: an anchored token riding a wrapped line does not out-declare the milestone
+//     AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+//     'v3.0.0' !== 'v3.2.0'
+//   i pass 25
+//   i fail 1
+//
+// Only THIS file is copied: `lib/branch-decision.mjs` stays as that tree shipped
+// it, so the old reader answers and the watch means something. The other two
+// fixtures pass there and are expected to - they pin what the fix must NOT cost
+// (a rejected anchor going null), not the defect itself.
+//
+// To re-watch: `git worktree add --detach <tmp> 2c88137`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/branch-decision.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+test('activeVersion: an anchored token riding a wrapped line does not out-declare the milestone', () => {
+  // The 81bdb5d shape, measured on this repo's own PROJECT.md: the section
+  // declared its milestone in its opening sentence, and the only LINE-ANCHORED
+  // token in the whole body was a predecessor forty lines below it, left at a
+  // line start because markdown wrapped a sentence there. The anchor alone
+  // reads that layout accident as the declaration and hard-FAILs version_drift
+  // on docs that are correct.
+  const text = project(
+    'This cycle is `v3.2.0 - the controls that reported success`, opened 2026-08-15.\n'
+    + 'Scope came from the capture queue rather than a tracker milestone.\n'
+    + '\n'
+    + '`### Validated` above stops at `v2.6.0`; `v2.7.0`,\n'
+    + 'v3.0.0 and v3.1.0 were never cut as public releases.');
+  assert.equal(activeVersion(text), 'v3.2.0');
+});
+
+test('activeVersion: a predecessor named in prose above the declaration still loses', () => {
+  // The other residue shape: the first token in the body is the PREDECESSOR,
+  // mid-prose and unanchored, and the milestone is declared several lines
+  // below it. The agreement half of D-02 rejects that anchor - the two scans
+  // disagree - so the sentence-opening half is what answers here, and a
+  // rejected anchor must never turn the reading null.
+  const text = project(
+    'The predecessor `v2.5.0 - what Cadence says about itself` closed on 2026-08-08,\n'
+    + 'with its four deferred items rolled forward into this cycle.\n'
+    + '\n'
+    + '**`v2.6.0 - the reconciliation cycle`**, opened the same day.');
+  assert.equal(activeVersion(text), 'v2.6.0');
+});
+
+test('activeVersion: a body whose ONLY token sits on a continuation line still answers', () => {
+  // The fallback's other end: nothing here opens a sentence with the token, so
+  // a reader that required a trustworthy anchor and stopped would go silent on
+  // a section that names its version exactly once.
+  const text = project(
+    'The milestone this cycle opens under is\n'
+    + 'v4.2.0 - the gate that clears itself wrong.');
+  assert.equal(activeVersion(text), 'v4.2.0');
+});
