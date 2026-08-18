@@ -6,6 +6,100 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.3] - 2026-08-18
+
+Cadence asserted controls it did not hold. The review path stated bounds it
+never enforced, the run record claimed to price a run it could not see, and
+three controls that already existed and were already correct never reached the
+path that needed them. Five phases, thirteen requirements, all of it argued off
+this repo's own trace rather than off a guess.
+
+### Added
+
+- **Turns on the record, and a spend figure that names what it excludes.**
+  `trace close` now persists the tool-call count its return already carried, and
+  `trace render` reports turns per dispatch and per role beside a
+  `turns_unrecorded` counter of their own, so a dispatch that reported tokens but
+  no turns stays distinguishable from one that reported the reverse. The three
+  surfaces that priced a run from worker-return tokens (`/cad-report`,
+  `trace suggest`, `/cad-progress --trace`) now name the three sources that
+  figure leaves out - the orchestrator's own turns, cross-model provider calls,
+  and figureless returns - instead of presenting it as the run's cost.
+  `SPEND_EXCLUDES` is a frozen export, so the list cannot drift into three
+  versions of itself.
+
+- **A dispatch window budgeted off the run record.** Six
+  `workflow.max_dispatch_tokens.<role>` ceilings, each defaulted to that role's
+  75th-percentile terminal window on this repo's own record rounded up to the
+  next 25,000, plus `planning.mjs trace window [--phase <N>]` to apply them. The
+  ceiling is READ after the fact and never enforced at dispatch time, because
+  nothing can resize or cancel a dispatch already running, and the report says so
+  rather than implying a bound that does not exist.
+
+- **A direction and a target on every retune suggestion.** `trace suggest` used
+  to return a bare config key, so `/cad-suggest` could print
+  `workflow.max_plan_tasks` and no more. Each keyed suggestion now carries the
+  direction to move it, the value it holds now, and a target where one can be
+  READ - stepped down the gate ladder `route-table.json` states, or taken off the
+  rung the record shows a role's escalated resolves landing on. A rule that
+  cannot price a target omits it rather than guessing, and a target that would
+  name no actual change is omitted too. `/cad-suggest` presents the tweaks in a
+  heading of their own with the receipts below, and ends by offering to route the
+  change to `/cad-config` rather than by declining to have an apply arm.
+
+- **A bulk-output transport, and a register that holds it.** Bulk tool output
+  rides a scratch file at the five sites that prescribed it inline, the rule is
+  stated once in `references/conventions.md`, and a 17-row register plus
+  self-verify check 20 refuses an eighteenth inline site.
+
+### Fixed
+
+- **The coordinator figure counted hours that were not the coordinator's.** The
+  residue accumulators were keyed on phase number, so one run's last marker
+  closed at a different run's last event whenever a phase number spanned several
+  runs. Keyed on `corr` instead, phase 2's reported residue over the live record
+  falls from 366,716,303 ms to 3,508,747 ms, and the largest single window from
+  280,613,472 ms to 1,081,370 ms. The name stays: a corr-scoped gap between
+  worker brackets is time this coordinator held the run.
+
+- **The provider response had no ceiling Cadence owned.** `request()` now
+  enforces a 4 MiB response limit with its own `over-response` reason, distinct
+  from `transport`, on `review`, `consult` and `detect-models` alike; the failure
+  envelope carries a sanitized 1024-byte excerpt rather than the whole body. A
+  credential sanitizer sits beside the URL one, covering `Bearer` echoes,
+  `name=value` pairs in four spellings, quoted multi-word values and camelCase
+  keys.
+
+- **Local validation admitted findings the canonical schema refuses.**
+  `FINDING_SCHEMA` now carries the constraints `validateFindings` enforces -
+  `minimum`, `minLength`, `maxLength`, `maxItems` - and an 18-fixture agreement
+  table runs both sides and compares verdicts, so the schema and the validator
+  cannot disagree silently. `cadence-core/bin/lib/schema-eval.mjs` is a
+  keyword-limited, zero-dep evaluator.
+
+- **The recovery arm named a timeout the dispatch path cannot produce.**
+  `execute.md` now says `turn cap or unusable return`, in those words, held
+  there by a standing prose-agreement check. `maxTurns: 200` is named where the
+  default reviewer claims exemption, checked against the rung files' own
+  frontmatter rather than a literal.
+
+- **Three controls that existed, were correct, and never reached their path.**
+  A milestone close now distills its pruned phases into `.planning/ARCHIVE.md`
+  before the directories go, so the recall corpus survives the close.
+  `risk-check status` gains an `unfired` row state and refuses a fired range
+  carrying no receipt for that range, and every blocking fire writes
+  `--plan --base --sha` so a receipt names the range it settles rather than
+  clearing every later one. `references/execute-parallel.md` reaches the
+  sequential branch's detector, fire and status sequence by pointing at it
+  instead of copying it.
+
+- **The plan-task ceiling re-decided, and left where it was.**
+  `workflow.max_plan_tasks` was argued against both of its forces - cold-prefix
+  cost and context risk - and lands on 8 unchanged, with the arithmetic written
+  down in `design-notes/dd-plan-task-ceiling.md` where a milestone close cannot
+  prune it.
+
+
 ## [3.5.2] - 2026-08-16
 
 Two surfaces where the tree already conceded the correct rule in one place and
@@ -2846,6 +2940,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.3]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.3
 [3.5.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.2
 [3.5.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.1
 [3.5.0]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.0
