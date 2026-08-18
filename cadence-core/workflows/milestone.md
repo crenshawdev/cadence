@@ -1,7 +1,7 @@
 # cad-milestone workflow
 
 Close a finished milestone and set up the next one. A thin close-out: audit,
-bump (release projects only), prune, evolve, refresh. Git is the archive -
+bump (release projects only), prune, evolve or record, refresh. Git is the archive -
 pruning removes completed work from the LIVE planning docs, not from history.
 The release tag is NOT cut here: /cad-land cuts it on the pulled base after
 the merge confirms (tag-after-merge).
@@ -143,16 +143,32 @@ file - it is transient, and ARCHIVE.md is its opposite: that file exists to be
 consumed and deleted by step 7, while the residue IS the recall corpus for every
 milestone this project has closed and dies with the working tree untracked.
 
-## 4. Evolve PROJECT.md
-Bump the version/milestone and set the next cycle's goal and scope. Ask the user
-(ask-user seam) for the next milestone's intent if it is not obvious from
-deferred work. Keep it to what changed - PROJECT.md is the north star, not a
-changelog.
+## 4. Evolve PROJECT.md - or close only
+First the arm, asked through the ask-user seam with no preselected default: does
+this close OPEN the next cycle, or close only? A close is sanctioned to open
+none - the next theme may not exist yet, and inventing one to satisfy this step
+is how a roadmap acquires phases nobody asked for.
+
+**Close only.** `### Active` opens `No cycle open.` and then RECORDS the cycle
+just shipped: its label, close date, requirement ids, phase and commit counts,
+the audit result, the manifest version, where its rows, narrative and residue now
+live, and what is still outstanding - the merge and the tag are /cad-land's. Step
+5 takes its own close-only bullet, step 6 is unchanged, and the close ends there.
+
+**Opening a cycle.** Bump the version/milestone and set the next cycle's goal and
+scope. Ask the user (ask-user seam) for the next milestone's intent if it is not
+obvious from deferred work. Keep it to what changed - PROJECT.md is the north
+star, not a changelog.
 
 ## 5. Refresh REQUIREMENTS
 The shipped rows already moved under `## Shipped` (step 3's seam call - that
 archival is what keeps /cad-audit able to trace shipped scope after the phase
 dirs are pruned). What remains is judgment, not surgery:
+- **Close only** (step 4's arm): `## Active` opens `No cycle open.` too, points
+  at `## Shipped` for the shipped ids, and names `/cad-phase add` as what opens
+  the next cycle. Deferred ids keep their reasons and nothing is promoted to fill
+  the section. The two bullets below do not apply - there is no next milestone to
+  seed - and step 6's cursor call is the same on both arms.
 - Carry forward any deferred/unmet requirement into the new milestone.
 - Seed the next milestone's headline requirements from the PROJECT.md evolution
   and the user's intent, as `## Active` bullets in the `- **<ID>**: <one line>`
