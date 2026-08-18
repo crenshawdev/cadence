@@ -1318,12 +1318,37 @@ function cmdAudit(dir) {
   // That is the close's own definition of finished work, minus the arm the walk
   // cannot revisit. It does not weaken #87: a cycle being worked under a
   // published number has pending or failed items, or no checklist at all.
+  // The OTHER sanctioned state the artifacts cannot express is rolled-over work
+  // (DRF-02/D-04). A close is allowed to carry work forward -
+  // `workflows/milestone.md` names it - and such a phase is byte-identical on
+  // disk to one still being worked: `derivePhases` gives it
+  // unplanned/planned/executed with a possibly absent UAT either way, and the
+  // "the close already ran" signals (an ARCHIVE.md heading, an `_archive-<label>`
+  // directory) are written conditionally and are far too sparse to key on
+  // (D-05). So neither a status derivation nor an archive probe can tell the two
+  // apart, and the only surface that carries the answer is the REQUIREMENT ROWS:
+  // rolling a phase forward means marking its rows `Deferred`, which the close
+  // already does and this audit already excludes from breaks. A phase whose rows
+  // are all `Deferred` therefore stops holding the cycle open, and one whose rows
+  // are still `Pending` keeps the gate armed - which is the half of D-04 that
+  // keeps this from weakening #87.
+  //
+  // NO rows at all is NOT exempt: an empty set satisfies "every row is Deferred"
+  // vacuously, and an unplanned or unseeded phase is the ordinary mid-cycle state
+  // the signal exists to catch. The exemption needs at least one row.
+  //
+  // Read off the `rows` parseRequirements already produced - no second read of
+  // REQUIREMENTS.md, and the same row set the arithmetic above is computed from.
   const settled = (p) => p.status === 'complete'
     || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
       i.status === 'pass' || i.status === 'blocked'
       || (i.status === 'skipped' && i.reason)));
+  const rolledOver = (p) => {
+    const own = rows.filter((r) => r.phase === p.n);
+    return own.length > 0 && own.every((r) => r.status === 'Deferred');
+  };
   const cycleOpen = publishedAs !== null
-    && derivePhases(dir, [...roadmap.values()]).some((p) => !settled(p));
+    && derivePhases(dir, [...roadmap.values()]).some((p) => !settled(p) && !rolledOver(p));
 
   ok({
     requirements,

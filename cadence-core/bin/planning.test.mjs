@@ -2628,6 +2628,68 @@ test('audit: the v2.4.0 state of this repo (issue #87) fires - the regression pi
     { doc_version: 'v2.4.0', published_as: 'v2.4.0', cycle_state: 'open' });
 });
 
+// --- DRF-02: the sanctioned rolled-over phase ---------------------------------
+//
+// WATCHED FAILING AT caf3a23, the branch tip before this fix. Observed there,
+// with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/planning.test.mjs
+//   x audit: a phase rolled forward - every row Deferred - does not hold the cycle open
+//     AssertionError [ERR_ASSERTION]: rolling work forward is a sanctioned close,
+//     not an open cycle under a published number
+//     + actual - expected
+//     + { cycle_state: 'open', doc_version: 'v9.9.0', published_as: 'v9.9.0' }
+//     - undefined
+//   i pass 394
+//   i fail 1
+//
+// Only THIS file is copied: `planning.mjs` stays as that tree shipped it, so
+// the artifact-only `settled` predicate answers and the watch means something.
+// The `Pending` twin passes there and is expected to - it is the half of D-04
+// that keeps the gate armed, and it must pass on BOTH trees.
+//
+// To re-watch: `git worktree add --detach <tmp> caf3a23`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/planning.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+/**
+ * One unsettled phase - a pending UAT item, so no artifact can call it complete
+ * - whose sole requirement row carries `status`. The two calls differ in that
+ * one cell and nowhere else.
+ */
+const rolledSpec = (status) => ({
+  roadmap: [{ n: 1, name: 'One', checked: false }],
+  phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: true,
+    uat: [{ status: 'pending' }] } },
+  reqs: [['AUD-01', 1, status]],
+});
+
+test('audit: a phase rolled forward - every row Deferred - does not hold the cycle open', () => {
+  // A close is sanctioned to carry work forward (milestone.md), and such a
+  // phase looks byte-identical on disk to one still being worked. The rows are
+  // the only surface that says which it is: `Deferred` is what rolling forward
+  // writes, and the close's remedy - "complete the close so no phase is left
+  // open" - is not reachable for a phase deliberately left open.
+  const dir = taggedTree(rolledSpec('Deferred'), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined,
+    'rolling work forward is a sanctioned close, not an open cycle under a published number');
+  // The row still reports as deferred - the exemption reads that datum, it does
+  // not change it.
+  assert.deepEqual(r.deferred, ['AUD-01']);
+});
+
+test('audit: the same phase with its rows still Pending keeps the gate armed', () => {
+  // D-04's other half, and what keeps the exemption from re-opening #87: a
+  // cycle being WORKED under a published number has rows that are not deferred.
+  const dir = taggedTree(rolledSpec('Pending'), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
 // --- TAG-01: the tag list has to belong to THIS project ----------------------
 //
 // WATCHED FAILING AT 487e150, the branch tip before this fix. Observed there,
