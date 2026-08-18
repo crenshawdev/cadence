@@ -340,6 +340,14 @@ export function suggestFromRender(render) {
   // `config.schema.json` key governs coordinator spend, and this file's own
   // test refuses an action naming a key the schema lacks.
   //
+  // The figure it relays is CORR-SCOPED (phase 5 D-01): `lib/trace.mjs` keys the
+  // residue accumulators on `corr`, so each run's last marker closes at that
+  // run's own last event and no window spans the clock between two runs that
+  // share a phase number. A `--phase` render can still pool several runs, and
+  // this receipt then relays the sum of their windows - never a span across
+  // them. The evidence string below is unchanged byte for byte: D-02 keeps the
+  // name, which the corrected arithmetic earns rather than outgrows.
+  //
   // SILENT on a render with no `coordinator` block, never an "absent
   // coordinator record" line (D-06). Every trace written before the marker
   // existed - Cadence's own and the committed fixture - would otherwise gain a

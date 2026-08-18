@@ -81,7 +81,7 @@ Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations;
 Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
 Window budget (from `trace window`): <only when `problems` is non-empty: one line per crossing - the role, the dispatch it belongs to, its figure and the ceiling it crossed, both as given; then `unbudgeted` roles and `unrecorded` when either is non-zero>
-Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue - each named, never silently dropped>
+Record health: <only when present: unpaired brackets, mismatched brackets, malformed lines, capped file, coordinator residue (one RUN's, joined on `corr`, not the phase's) - each named, never silently dropped>
 Reading (whole `.planning/reads.jsonl`, not this phase): <`fileCalls` calls that carried files, `fileRedundancy` touches per distinct file, the first few `topFiles` with their counts; then `joined` attributed to a bracket, `ambiguous` refused, and `floor` unjoinable by construction; omit the whole line when the record is empty>
 ```
 
@@ -142,6 +142,13 @@ Rules, all load-bearing:
   this line and `trace suggest` cannot disagree, and prose recomputing it is how
   they start to. No `coordinator` block means say nothing about residue at all:
   not a zero, not an absence.
+- The residue is the ONE figure here that is scoped to a run rather than to a
+  phase - the exception to the bullet above, so say a run and never a phase when
+  describing it. It is joined on `corr`, so each run's last marker closes at
+  that run's own last event; a re-run under the same phase number contributes
+  its own windows beside the first run's, and no window ever spans the clock
+  between two runs. A marker that is its run's last event closes at itself and
+  contributes nothing.
 - That residue is TIME the coordinator spent between worker brackets, never
   tokens. A marker carries no token figure, because a figure is read off a
   subagent's return metadata and the coordinator has no such return.

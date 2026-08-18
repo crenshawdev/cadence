@@ -96,7 +96,9 @@
 //                                   return/checkpoint/escalation, the per-role
 //                                   dispatch/token totals, and - where markers
 //                                   were written - the coordinator's own
-//                                   per-step residue between those brackets.
+//                                   per-step residue between those brackets,
+//                                   scoped per RUN by `corr` so no window spans
+//                                   two runs that share a phase number.
 //                                   By default the response carries the paired
 //                                   `brackets` rows and every `outcome` event
 //                                   in place of the raw event array; --events

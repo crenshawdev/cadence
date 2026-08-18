@@ -1089,9 +1089,9 @@ mistake.
 | REPORT-10 | cadence-core/workflows/report.md | 61-63 | A dispatch with no token figure reports `unrecorded`, never an estimate | accurate | accurate | 2 |
 | REPORT-11 | cadence-core/workflows/report.md | 74-77 | An advisory fire records no tokens, because its reviewer closes its own bracket with no `--tokens` | accurate | accurate | 2 |
 | REPORT-12 | cadence-core/workflows/report.md | 72-73 | A cross-model provider call records no tokens - no lifecycle bracket and no token field on that arm at all | accurate | accurate | 2 |
-| REPORT-13 | cadence-core/workflows/report.md | 67-69 | The coordinator residue is `coordinator.residue_ms` and the `steps[]` row carrying the most of it | accurate | accurate | 2 |
-| REPORT-14 | cadence-core/workflows/report.md | 69-70 | The renderer computes it once so this line and `trace suggest` cannot disagree | accurate | accurate | 2 |
-| REPORT-15 | cadence-core/workflows/report.md | 72-74 | Residue is TIME between worker brackets, never tokens; a marker carries no token figure | accurate | accurate | 2 |
+| REPORT-13 | cadence-core/workflows/report.md | 140-151 | The coordinator residue is `coordinator.residue_ms` and the `steps[]` row carrying the most of it, scoped to one RUN by `corr` rather than to a phase - each run's last marker closes at that run's own last event and no window spans two runs | accurate | accurate | 2 |
+| REPORT-14 | cadence-core/workflows/report.md | 141-142 | The renderer computes it once so this line and `trace suggest` cannot disagree | accurate | accurate | 2 |
+| REPORT-15 | cadence-core/workflows/report.md | 152-154 | Residue is TIME between worker brackets, never tokens; a marker carries no token figure | accurate | accurate | 2 |
 | REPORT-16 | cadence-core/workflows/report.md | 75-79 | A `mismatched` entry names `corr`, `phase`, `plan`, `ts`, `dispatched` and `closed` | accurate | accurate | 2 |
 | REPORT-17 | cadence-core/workflows/report.md | 79-80 | The tokens stay billed to the dispatch's role | accurate | accurate | 2 |
 | REPORT-18 | cadence-core/workflows/report.md | 82-85 | `.planning/reads.jsonl` carries NO phase scoping - it is one file per project | accurate | accurate | 2 |

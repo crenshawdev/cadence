@@ -459,21 +459,43 @@ export function renderTrace(planningRoot, phase) {
     return row;
   };
 
-  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. One
-  // phase can still hold more than one id - a RE-RUN starts a new one, and a
-  // phase whose anchor is missing entirely (a head-truncated read) keeps the
-  // bare form the pre-anchor repair above could not resolve - so a corr-keyed
-  // rollup would split ONE coordinator's record into two and report its time
-  // twice. `last` is the phase's newest timestamp across every family,
-  // because the final marker's window has no next marker to close it and the
-  // phase's own last event is the only honest end for it.
-  /** @type {Map<string, {phase: any, markers: {step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
+  // Coordinator-residue accumulators, keyed by `corr` and never by PHASE
+  // (phase 5 D-01). A phase NUMBER is not a run: every re-run and every later
+  // milestone that reaches the same number files under it, so a phase-keyed
+  // rollup pairs one run's last marker with a DIFFERENT run's last event and
+  // bills the clock between two sessions as coordinator time. Measured on this
+  // repository 2026-08-17, phase "2" holds 9 distinct `corr` ids spanning
+  // 2026-08-08 to 2026-08-17, and its 4,677-minute `commit` window was opened
+  // at 2026-08-13T20:30:13.500Z by `2-6790224`, a run whose OWN last event is
+  // 25 seconds later at 20:30:38. Keying on `corr` closes that window where its
+  // run closed.
+  //
+  // This REVERSES the choice this block shipped with, which rolled a phase's
+  // ids up together so a re-run - or a phase whose anchor is missing entirely,
+  // where a head-truncated read leaves the bare form behind - could not split
+  // ONE coordinator's record in two and report its time twice. The PASS-2
+  // pre-anchor repair above now joins a phase's pre-anchor events to the anchor
+  // that follows them, which is most of that case; where it does not, two ids
+  // really are two runs, and reporting them apart is the answer rather than the
+  // defect.
+  //
+  // `last` is therefore the newest timestamp across every family carrying THIS
+  // `corr`, because the final marker's window has no next marker to close it
+  // and its own run's last event is the only honest end for it. A marker that
+  // IS its run's last event closes at itself and contributes a ZERO-length
+  // window: the record holds no evidence the coordinator kept working after its
+  // own last act, and inventing an end is the class of guess this key exists to
+  // remove. An event carrying no `corr` at all keys the empty string, exactly
+  // as the worker key already does with a missing `plan` - one rule, no second
+  // case. The `phase` a `steps[]` row reports comes from the MARKER's own
+  // event, since the accumulator key is no longer a phase.
+  /** @type {Map<string, {markers: {phase: any, step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
   const coord = new Map();
-  /** @param {any} p */
-  const coordRow = (p) => {
-    const k = key(p);
+  /** @param {any} c */
+  const coordRow = (c) => {
+    const k = key(c);
     let row = coord.get(k);
-    if (!row) { row = { phase: p, markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
+    if (!row) { row = { markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
     return row;
   };
 
@@ -585,13 +607,13 @@ export function renderTrace(planningRoot, phase) {
   /** @type {Set<string>} */
   const seenTerminals = new Set();
   for (const e of out.events) {
-    // Every family feeds the phase's end-of-record mark, not the lifecycle one
+    // Every family feeds the RUN's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
     // outcome events it produced are being written, so an end taken from
     // lifecycle events only would stop the clock early.
     const t = millis(e.ts);
     if (t !== null) {
-      const row = coordRow(e.phase);
+      const row = coordRow(e.corr);
       if (t > row.last) row.last = t;
     }
 
@@ -602,7 +624,7 @@ export function renderTrace(planningRoot, phase) {
     // event carries no `--role` at all (D-07), and a branch that keyed the empty
     // string would render a nameless worker row through `workflows/progress.md`.
     if (e.event === COORDINATOR) {
-      if (t !== null) coordRow(e.phase).markers.push({ step: e.step, ts: e.ts, t });
+      if (t !== null) coordRow(e.corr).markers.push({ phase: e.phase, step: e.step, ts: e.ts, t });
       continue;
     }
 
@@ -673,7 +695,7 @@ export function renderTrace(planningRoot, phase) {
       // gap the marker exists to show.
       if (matched) {
         const a = millis(matched.ts);
-        if (a !== null && t !== null && t > a) coordRow(e.phase).spans.push({ a, b: t });
+        if (a !== null && t !== null && t > a) coordRow(e.corr).spans.push({ a, b: t });
         // The bracket ROW, taken here because this is the one place the two
         // halves are both in hand. `ms` is null rather than 0 when either
         // timestamp is unreadable: a duration of zero and a duration nobody
@@ -790,8 +812,9 @@ export function renderTrace(planningRoot, phase) {
   // report different numbers for the same run - the arithmetic is D-01's, and
   // the only thing that changed is that it lives in one place.
   //
-  // A step's window runs from its marker to the NEXT marker in the same phase,
-  // and the last marker's window ends at that phase's last event. Inside the
+  // A step's window runs from its marker to the NEXT marker in the same RUN,
+  // and the last marker's window ends at that run's own last event - never at a
+  // later run that happens to share the phase number (D-01). Inside the
   // window, the merged bracket spans are clipped to it and subtracted; what
   // survives is what the coordinator was doing while no worker was running.
   // Floored at zero because a window can be shorter than the brackets clipped
@@ -817,7 +840,7 @@ export function renderTrace(planningRoot, phase) {
         if (hi > lo) bracket += hi - lo;
       }
       const residue = Math.max(0, wall - bracket);
-      stepRows.push({ phase: row.phase, step: m.step, ts: m.ts, t: m.t, residue_ms: residue });
+      stepRows.push({ phase: m.phase, step: m.step, ts: m.ts, t: m.t, residue_ms: residue });
       wallMs += wall;
       bracketMs += bracket;
       residueMs += residue;

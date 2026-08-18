@@ -1824,12 +1824,21 @@ test('coordinator: a step\'s residue is its wall span minus the bracket inside i
   );
 });
 
-test('coordinator: one phase spanning two corr ids is still ONE coordinator stream', () => {
+test('coordinator: one phase spanning two corr ids is TWO coordinator streams (D-01)', () => {
   const dir = root();
   // A phase can hold more than one id even after the read-time repair: a RE-RUN
   // starts a new one. Every /cad-context marker fires before any anchor, so
   // `load_priors` joins the first anchor ahead of it and `git_guard` joins the
-  // second - one coordinator, two ids, or the rollup counts it twice.
+  // second - two ids, and each one's last marker closes at ITS OWN run's last
+  // event rather than at the phase's.
+  //
+  // The arithmetic, and what moved it: this fixture used to report 9 minutes,
+  // because `git_guard`'s window ran to the phase's newest timestamp - the
+  // 9-minute routing resolve, which belongs to `1-def5678`. It now reports 6.
+  // `1-abc1234` holds both markers and ends at `git_guard` itself, so
+  // `load_priors` keeps its 0..6 window and `git_guard` closes at itself for a
+  // zero-length one; `1-def5678` carries no marker at all and contributes
+  // nothing. The pairing rule is what changed, not the clipping arithmetic.
   mark(dir, 'load_priors', 0);
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'abc1234', ts: at(4) });
   mark(dir, 'git_guard', 6);
@@ -1839,7 +1848,11 @@ test('coordinator: one phase spanning two corr ids is still ONE coordinator stre
   const corrs = new Set(r.events.map((e) => e.corr));
   assert.deepEqual([...corrs].sort(), ['1-abc1234', '1-def5678']);
   assert.deepEqual(r.coordinator.steps.map((s) => s.step), ['load_priors', 'git_guard']);
-  assert.equal(r.coordinator.residue_ms, 9 * MIN);
+  // Both rows still report the PHASE they were marked in - the key moved, the
+  // row's field did not.
+  assert.deepEqual(r.coordinator.steps.map((s) => s.phase), [1, 1]);
+  assert.deepEqual(r.coordinator.steps.map((s) => s.residue_ms), [6 * MIN, 0]);
+  assert.equal(r.coordinator.residue_ms, 6 * MIN);
 });
 
 test('coordinator: two workers running at once subtract their overlap ONCE', () => {
