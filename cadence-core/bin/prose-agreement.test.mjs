@@ -1437,3 +1437,54 @@ test('PLN-01: the max_plan_tasks decision reads the same off the schema and the 
   assert.equal(schema.landed, Number(row[4]),
     `the decision lands on ${schema.landed} and config-catalog.md's Default column says ${row[4]}`);
 });
+
+// --- SGT-01: the suggest seam's unset-layer defaults, against the schema -----
+//
+// `planning.mjs`'s `SUGGEST_KEY_DEFAULTS` is what `/cad-suggest` prints as a
+// key's `current` when no config layer holds one, and it is a hand-copied
+// mirror of `config.schema.json` by decision (D-15: the schema is not parsed at
+// runtime, the duplication `DISPATCH_WINDOW_DEFAULTS` and `route.mjs`'s
+// `DEFAULTS` already accept). Copied numbers drift, and this drift is silent at
+// the worst possible place: the user reads a `current` off `/cad-suggest`, sets
+// a value against it, and `/cad-config` shows a different row.
+//
+// The subject is AGREEMENT, never presence: both sides are EXTRACTED - one out
+// of `planning.mjs`'s own source bytes, one out of the schema's `default`
+// fields - and compared, the same shape the PLN-01 arm above uses. Scoped to
+// the keys the literal carries; `DISPATCH_WINDOW_DEFAULTS` is a separate map
+// with its own row set and is not widened onto here.
+
+/**
+ * The `SUGGEST_KEY_DEFAULTS` literal, read out of a source file's bytes as
+ * key -> value. A line the grammar does not fit is SKIPPED rather than guessed
+ * at, so the comparison below fails on a missing key by name.
+ */
+function suggestKeyDefaults(text) {
+  const block = text.match(/const SUGGEST_KEY_DEFAULTS = Object\.freeze\(\{\n([\s\S]*?)\n\}\);/);
+  assert.ok(block, 'planning.mjs carries no SUGGEST_KEY_DEFAULTS literal to compare');
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const line of block[1].split('\n')) {
+    const m = /^\s*'([\w.]+)':\s*(.+?),\s*$/.exec(line);
+    if (m) out[m[1]] = JSON.parse(m[2].replace(/'/g, '"'));
+  }
+  return out;
+}
+
+test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's own", () => {
+  const literal = suggestKeyDefaults(doc('cadence-core', 'bin', 'planning.mjs'));
+  assert.ok(Object.keys(literal).length >= 2,
+    `SUGGEST_KEY_DEFAULTS extracted ${Object.keys(literal).length} keys - the literal's `
+    + 'shape moved out from under this extraction, so it is checking nothing');
+  const keys = JSON.parse(doc('cadence-core', 'config.schema.json')).keys;
+  /** @type {Record<string, any>} */
+  const schema = {};
+  for (const k of Object.keys(literal)) {
+    assert.ok(keys[k], `SUGGEST_KEY_DEFAULTS names ${k}, which config.schema.json does not define`);
+    schema[k] = keys[k].default;
+  }
+  assert.deepEqual(literal, schema,
+    "planning.mjs's SUGGEST_KEY_DEFAULTS and config.schema.json's defaults disagree - one "
+    + 'was edited alone, so /cad-suggest prints a `current` for an unset key that the row '
+    + '/cad-config shows contradicts');
+});

@@ -167,7 +167,7 @@ import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
-import { suggestFromRender } from './lib/trace-suggest.mjs';
+import { suggestFromRender, parseAdjudication } from './lib/trace-suggest.mjs';
 import { windowBudget } from './lib/window-budget.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
@@ -2922,6 +2922,94 @@ const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
   'cad-plan-checker': 75000,
 });
 
+/**
+ * The values the `suggest` arm falls back to for the keys its rules NAME when
+ * no config layer holds one - and only for the keys whose schema default is a
+ * real value. A key defaulting to `null` is not in here on purpose: `null` is
+ * the schema's sentinel for "no layer pins this, the stakes level decides it",
+ * and the suggestion reports that state as unset rather than inventing the
+ * value the level would fire (D-06).
+ *
+ * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these values -
+ * its rows carry the defaults and the argument behind them. This map is the
+ * unset-layer fallback and nothing else, the same duplication
+ * `DISPATCH_WINDOW_DEFAULTS` above already accepts: this seam reads the merged
+ * config, not the schema, so an unset key has to resolve to something here. The
+ * schema is deliberately NOT parsed at runtime (D-15) - neither this file nor
+ * `lib/trace-suggest.mjs` reads it today. A value changed in one place and not
+ * the other makes `/cad-suggest` print a `current` that disagrees with the row
+ * `/cad-config` shows, which `prose-agreement.test.mjs` fails on.
+ */
+const SUGGEST_KEY_DEFAULTS = Object.freeze({
+  'workflow.max_plan_tasks': 8,
+  'review.reviewers': ['claude-subagent'],
+});
+
+/**
+ * The gate ladder `cadence-core/route-table.json` states, resolved against THIS
+ * file's own directory the way `route.mjs` resolves the same file - and without
+ * honouring `CADENCE_ROUTE_TABLE`: an env-supplied ladder is the ungated
+ * override class EXP-01 closed, and this one decides what a suggestion tells a
+ * user to set a review gate to.
+ *
+ * A table that cannot be read or parsed degrades to NO ladder, which makes the
+ * gate arm omit `proposed`. That omission is the report; no ladder is
+ * substituted from memory here.
+ * @returns {string[]|undefined}
+ */
+function gateLadder() {
+  try {
+    const table = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+    if (Array.isArray(table.gates) && table.gates.length
+      && table.gates.every((g) => typeof g === 'string' && g)) return table.gates;
+  } catch { /* unreadable or malformed: no ladder, and the omission says so */ }
+  return undefined;
+}
+
+/**
+ * Everything the pure rules in `lib/trace-suggest.mjs` need to name a
+ * direction, a current value and - where one can be READ - a target: the
+ * resolved config value behind each key the record's own events reach, the gate
+ * ladder, and the stakes level the record carries. Resolved HERE because that
+ * file is pure and stays that way (D-05); it owns the rules, this owns the
+ * reads.
+ *
+ * Keyed off the RECORD rather than the schema's key space: a trigger that never
+ * fired and a role that never resolved are keys no rule can name, so resolving
+ * them would read config nothing asked about.
+ * @param {any} render
+ * @param {any} config the merged config layers
+ */
+function suggestResolution(render, config) {
+  /** @type {Record<string, any>} */
+  const values = {};
+  // An absent or null value is NOT recorded: `lib/trace-suggest.mjs` reads a
+  // missing key as unset, which is the state D-06 makes it print.
+  const set = (key, value) => { if (value !== undefined && value !== null) values[key] = value; };
+  const triggers = config?.review?.triggers || {};
+  const effort = config?.model?.effort || {};
+  const events = Array.isArray(render?.events) ? render.events : [];
+  // The level the most recent `routing/resolve` event in scope carries, and
+  // nothing when the scope holds none - never a level the record does not
+  // carry.
+  let stakes = null;
+  for (const e of events) {
+    if (!e || typeof e !== 'object') continue;
+    if (e.family === 'outcome' && e.event === 'adjudication') {
+      const parsed = parseAdjudication(e);
+      if (parsed) set(`review.triggers.${parsed.trigger}.gate`, triggers?.[parsed.trigger]?.gate);
+    } else if (e.family === 'routing' && e.event === 'resolve') {
+      if (typeof e.role === 'string' && e.role) set(`model.effort.${e.role}`, effort?.[e.role]);
+      if (typeof e.stakes === 'string' && e.stakes.trim()) stakes = e.stakes.trim();
+    }
+  }
+  set('review.reviewers', config?.review?.reviewers ?? SUGGEST_KEY_DEFAULTS['review.reviewers']);
+  set('workflow.max_plan_tasks',
+    config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
+  const gates = gateLadder();
+  return { values, ...(gates ? { gates } : {}), stakes };
+}
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -3205,13 +3293,20 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
-    const suggestions = suggestFromRender(r);
+    // warnings[] BOUND and ridden on the envelope when non-empty, the rule
+    // lib/merge-warnings.mjs holds every mergeLayers callsite to (D-13): a torn
+    // layer reads every key as unset, so every suggestion would report an unset
+    // `current` and a project that deliberately pinned one would be told to
+    // move a value the read never saw.
+    const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+    const suggestions = suggestFromRender(r, suggestResolution(r, suggestConfig));
     return ok({
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       suggestions,
+      ...(warnings.length ? { warnings } : {}),
     });
   }
   if (sub === 'render') {
