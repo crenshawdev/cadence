@@ -2958,10 +2958,32 @@ const SUGGEST_KEY_DEFAULTS = Object.freeze({
  * @returns {string[]|undefined}
  */
 function gateLadder() {
+  return routeLadder('gates');
+}
+
+/**
+ * The rung ladder `route-table.json` states, on the same terms as the gate one:
+ * R3 compares its target against the rung a config layer set, and an absent
+ * ladder omits the target rather than substituting an order from memory.
+ * @returns {string[]|undefined}
+ */
+function rungLadder() {
+  return routeLadder('rung_order');
+}
+
+/**
+ * One ordered ladder off `route-table.json`, or `undefined` when the table is
+ * unreadable, malformed, or names that ladder as anything but a non-empty array
+ * of non-empty strings.
+ * @param {string} key
+ * @returns {string[]|undefined}
+ */
+function routeLadder(key) {
   try {
     const table = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
-    if (Array.isArray(table.gates) && table.gates.length
-      && table.gates.every((g) => typeof g === 'string' && g)) return table.gates;
+    const ladder = table[key];
+    if (Array.isArray(ladder) && ladder.length
+      && ladder.every((g) => typeof g === 'string' && g)) return ladder;
   } catch { /* unreadable or malformed: no ladder, and the omission says so */ }
   return undefined;
 }
@@ -3053,7 +3075,8 @@ function suggestResolution(dir, render, config) {
   set('workflow.max_plan_tasks',
     config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
   const gates = gateLadder();
-  return { values, ...(gates ? { gates } : {}), stakes, checkpointTasks };
+  const rungs = rungLadder();
+  return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), stakes, checkpointTasks };
 }
 
 function cmdTrace(dir, sub, opts) {

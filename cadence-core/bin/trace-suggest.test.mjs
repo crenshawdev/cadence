@@ -305,6 +305,7 @@ test('R4: executor checkpoints at the floor suggest workflow.max_plan_tasks; oth
 
 /** The resolution shape `planning.mjs`'s suggest arm passes in. */
 const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const RUNGS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const twoEmptyFires = (trigger, extra = {}) => Array.from(
   { length: MIN_FIRES_FOR_GATE_SUGGESTION },
   () => adjudication(`${trigger}: 0 survivors; voices openai`, extra),
@@ -370,6 +371,55 @@ test('SGT-01: R3 proposes the rung the escalated resolves actually landed on', (
   assert.match(s.current, /unset/);
   assert.match(s.current, /shipped/);
   assert.equal(s.proposed, 'xhigh');
+});
+
+test('SGT-01: R3 omits a target that names no raise against the rung in force', () => {
+  const climbed = [
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+  ];
+  const at = (rung) => suggestFromRender(render(climbed), {
+    values: { 'model.effort.cad-planner': rung },
+    gates: GATES,
+    rungs: RUNGS,
+    stakes: 'shipped',
+  }).find((x) => x.action === 'model.effort.cad-planner');
+
+  const same = at('xhigh');
+  assert.ok(same, 'the suggestion still stands - it is the TARGET that cannot be named');
+  assert.equal(same.direction, 'raise');
+  assert.equal(same.current, 'xhigh');
+  assert.equal('proposed' in same, false,
+    'a target equal to the rung in force is a retune that changes nothing');
+
+  const above = at('max');
+  assert.ok(above, JSON.stringify(above));
+  assert.equal(above.current, 'max');
+  assert.equal('proposed' in above, false,
+    'a target UNDER the rung in force would contradict the raise it ships beside');
+
+  const below = at('high');
+  assert.ok(below, JSON.stringify(below));
+  assert.equal(below.proposed, 'xhigh', 'a real raise still prices its target');
+});
+
+test('SGT-01: R3 keeps the record\'s rung when no layer pins the key, ladder or not', () => {
+  const climbed = [
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+  ];
+  const unset = suggestFromRender(render(climbed), { gates: GATES, rungs: RUNGS, stakes: 'shipped' })
+    .find((x) => x.action === 'model.effort.cad-planner');
+  assert.equal(unset.proposed, 'xhigh',
+    'nothing is in force to compare against, and the rung is still a change from a default nobody stated');
+
+  const noLadder = suggestFromRender(render(climbed), {
+    values: { 'model.effort.cad-planner': 'high' },
+    gates: GATES,
+    stakes: 'shipped',
+  }).find((x) => x.action === 'model.effort.cad-planner');
+  assert.equal('proposed' in noLadder, false,
+    'no ladder means no comparison, and the omission IS the report');
 });
 
 test('SGT-01: R4 moves DOWN, prints the resolved ceiling, and prices nothing', () => {

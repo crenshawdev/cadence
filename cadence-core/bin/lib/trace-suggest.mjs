@@ -32,7 +32,7 @@
  * @typedef {{kind: 'suggest'|'info', subject: string, evidence: string,
  *            action: string|null, direction?: 'raise'|'lower',
  *            current?: any, proposed?: any}} Suggestion
- * @typedef {{values?: Record<string, any>, gates?: string[],
+ * @typedef {{values?: Record<string, any>, gates?: string[], rungs?: string[],
  *            stakes?: string|null, checkpointTasks?: (number|null)[]}} Resolution
  * @typedef {{counts: Record<string, number>,
  *            roles: Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>,
@@ -153,6 +153,29 @@ function keyState(resolution, key, target) {
     current: value === undefined ? unsetCurrent(resolution) : value,
     ...(proposed === undefined ? {} : { proposed }),
   };
+}
+
+/**
+ * The rung the record shows a role's escalated resolves landing on, kept only
+ * where it names an actual RAISE. A rung a config layer SET is compared against
+ * it on the caller's rung ladder and must sit strictly BELOW it, so a target
+ * equal to the current rung - a retune that changes nothing - or under it -
+ * a target contradicting the `raise` it ships beside - is omitted instead.
+ * An UNSET key has no rung to compare and keeps the target: the record's rung
+ * is still a change from a default nobody stated. No ladder means no
+ * comparison and no target, the same omission `oneStepDown` reports.
+ * @param {Resolution|undefined} resolution
+ * @param {string} key
+ * @param {string|undefined} rung
+ */
+function raiseTarget(resolution, key, rung) {
+  if (!rung) return undefined;
+  const current = resolved(resolution, key);
+  if (current === undefined) return rung;
+  const rungs = resolution && Array.isArray(resolution.rungs) ? resolution.rungs : null;
+  if (!rungs) return undefined;
+  const i = rungs.indexOf(current);
+  return i >= 0 && rungs.indexOf(rung) > i ? rung : undefined;
 }
 
 /**
@@ -394,17 +417,20 @@ export function suggestFromRender(render, resolution) {
   // R3: escalation pressure per role, both directions.
   for (const [role, row] of [...rungs.entries()].sort()) {
     if (row.escalated >= MIN_ESCALATIONS_FOR_RUNG_SUGGESTION) {
+      // The target is a rung the record SHOWS this role's escalated resolves
+      // landing on, never a step guessed off `rung_order`: a rung the routing
+      // table actually resolved cannot be one the table would never produce.
+      // It still has to name a CHANGE against the rung in force - see
+      // `raiseTarget`.
+      const proposed = raiseTarget(resolution, `model.effort.${role}`, row.rung);
       out.push({
         kind: 'suggest',
         subject: role,
         evidence: `${row.escalated} of ${row.resolves} resolves climbed to the retry rung`,
         action: `model.effort.${role}`,
         direction: 'raise',
-        // The target is a rung the record SHOWS this role's escalated resolves
-        // landing on, never a step guessed off `rung_order`: a rung the routing
-        // table actually resolved cannot be one the table would never produce.
         ...keyState(resolution, `model.effort.${role}`),
-        ...(row.rung ? { proposed: row.rung } : {}),
+        ...(proposed ? { proposed } : {}),
       });
     } else if (row.escalated === 0 && row.resolves >= MIN_DISPATCHES_FOR_RUNG_INFO) {
       out.push({
