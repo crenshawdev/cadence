@@ -4169,6 +4169,40 @@ function gitMv(from, to) {
 }
 
 /**
+ * Is there a `.git` entry at `from` or at any ancestor? A FILESYSTEM answer,
+ * and deliberately not git's own: a `.git` at mode 000 makes `git status` and
+ * `git rev-parse` alike exit 128 with `fatal: not a git repository`, byte-
+ * identical to a directory that genuinely has no repository above it. So git's
+ * exit code and its stderr cannot separate "unreadable" from "absent" at all,
+ * and reading the message to try would be a parser over free text - the thing
+ * `review-provider.mjs`'s "a diagnostic string never decides control flow" ban
+ * exists to stop. The precedent for probing rather than parsing is
+ * `gitIgnoreState` above.
+ *
+ * `lstatSync`, never `existsSync`: a dangling or unreadable symlink named
+ * `.git` is still a repository this process could not read, and must count as
+ * PRESENT. `existsSync` follows the link, finds nothing, and answers with the
+ * permissive arm - the same failure mode `occupied` below was written for.
+ *
+ * Total by construction: an ancestor we may not stat throws EACCES, which ends
+ * the walk with `false` rather than propagating. That is the permissive answer,
+ * and it is the safe direction here only because the CALLER re-checks nothing -
+ * see its two refusals.
+ * @param {string} from @returns {boolean}
+ */
+function gitDirAbove(from) {
+  try {
+    let cur = resolvePath(from);
+    for (;;) {
+      if (lstatSync(join(cur, '.git'), { throwIfNoEntry: false })) return true;
+      const up = dirname(cur);
+      if (up === cur) return false;
+      cur = up;
+    }
+  } catch { return false; }
+}
+
+/**
  * Every path under `relPath` carrying uncommitted state - untracked (`??`),
  * ignored (`!!`), modified, staged, or deleted. All of them make a `remove`
  * unsafe, for two different reasons:
@@ -4180,20 +4214,32 @@ function gitMv(from, to) {
  *     no copy in the object store to recover from.
  * Refusing on any porcelain output covers both, and leaves git's own
  * safety check intact instead of overriding it.
- * Outside a git repo the call fails and this returns [] - correctly, since
- * nothing is tracked there, the `rmSync` fallback removes the directory
- * whole, and no residue can survive to be nested into.
+ *
+ * Return shape: `{paths, unreadable}`, because a failed `git status` is TWO
+ * states and answering `[]` for both is a fail-open that deletes. Outside a git
+ * repo the call fails and `paths` is empty with `unreadable:false` - correctly,
+ * since nothing is tracked there, the `rmSync` fallback removes the directory
+ * whole, and no residue can survive to be nested into. But when `gitDirAbove`
+ * finds a `.git` the call still failed against, the state is UNREADABLE: the
+ * directory may hold tracked work whose only copy is in an object store this
+ * process cannot open, and `[]` would classify it as clean and delete it.
+ * `unreadable:true` is that third answer, and the caller refuses on it.
+ * A record rather than a bare array costs nothing: this has exactly one caller.
  * `relPath` is relative to `cwd`, so this works whether the caller's `--dir`
  * is absolute or relative.
- * @param {string} cwd @param {string} relPath @returns {string[]}
+ * @param {string} cwd @param {string} relPath
+ * @returns {{paths: string[], unreadable: boolean}}
  */
 function uncommittedUnder(cwd, relPath) {
   try {
     const out = execFileSync('git', ['status', '--porcelain', '--ignored', '--', relPath],
       { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return out.split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim());
+    return {
+      paths: out.split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim()),
+      unreadable: false,
+    };
   } catch {
-    return [];
+    return { paths: [], unreadable: gitDirAbove(cwd) };
   }
 }
 
@@ -4289,9 +4335,20 @@ function cmdRenumber(dir, sub, opts) {
   // licence to discard it.
   if (sub === 'remove' && existingDir(at)) {
     const dirty = uncommittedUnder(dir, join('phases', String(at)));
-    if (dirty.length) {
+    // A git that could not ANSWER is its own refusal, never `uncommitted-work`:
+    // that reason's remedy is "commit or discard them first", which is the one
+    // thing a caller whose repository is unreadable cannot do. This sits above
+    // the dry-run return below, so both arms refuse - the dry-run is what the
+    // workflow's confirmation gate shows, and a gate that displays a clean plan
+    // is what talks the caller into the apply.
+    if (dirty.unreadable) {
+      return fail('unreadable-git-state',
+        `phases/${at} sits under a git repository whose state could not be read, so whether it holds uncommitted work is unknown - removing it could destroy work only git can recover`,
+        `restore read access to the repository's git directory (ls -ld .git), then re-run; the removal stays refused until git can answer for .planning/phases/${at}`);
+    }
+    if (dirty.paths.length) {
       return fail('uncommitted-work',
-        `phases/${at} holds ${dirty.length} file(s) with uncommitted state (e.g. ${dirty[0]}) - commit or discard them first; removing the phase would destroy work git cannot recover`,
+        `phases/${at} holds ${dirty.paths.length} file(s) with uncommitted state (e.g. ${dirty.paths[0]}) - commit or discard them first; removing the phase would destroy work git cannot recover`,
         `git status --porcelain --ignored -- .planning/phases/${at}`);
     }
   }
