@@ -119,6 +119,18 @@ test('a STRING protected_branches resolves base to that branch (#38, COR-01, D-0
   assert.equal(forced.base, 'main');
 });
 
+test('a protected_branches naming NO branch resolves base to main (GRD-01, D-02)', () => {
+  // The same fallback path as the row above, on the value that used to break
+  // it: `""` resolved to [""], so `base` became the empty string and the reap
+  // query became `git branch --merged ""` - a query that answers emptily and
+  // successfully rather than failing. A value naming no branch is a typo, so
+  // the default list applies and base lands on `main` (D-02).
+  const dir = fixture({ protected_branches: '' });
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.equal(r.ok, true);
+  assert.equal(r.base, 'main');
+});
+
 test('cleanup with git.on_land_cleanup=false: skip, all flags false', () => {
   const dir = fixture({ base_branch: 'main', on_land_cleanup: false });
   const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
