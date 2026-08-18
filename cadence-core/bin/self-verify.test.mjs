@@ -1553,10 +1553,10 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
-test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an arm', () => {
+test('check 12: the live tree is FOURTEEN callsites over NINE files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a
-  // twelfth callsite cannot be added without choosing an arm.
+  // new callsite cannot be added without choosing an arm.
   const binDir = join(REPO, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
   /** @param {string} dir @returns {string[]} */
@@ -1589,7 +1589,7 @@ test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an a
       }
     }
   }
-  assert.equal(total, 13, `callsites: ${files.join(', ')}`);
+  assert.equal(total, 14, `callsites: ${files.join(', ')}`);
   assert.equal(files.length, 9, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
