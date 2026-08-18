@@ -488,6 +488,74 @@ test('R6: a render with no coordinator block says NOTHING about the coordinator 
   }
 });
 
+test('D-12: an info receipt gains NONE of the three new keys, under every rule that emits one', () => {
+  // The silence is the proof the change is invisible where nothing was
+  // computed - and it is checked by key PRESENCE, never against null: a
+  // `direction: null` would satisfy an equality check and is exactly what D-12
+  // forbids. The resolution passed here is a FULL one, so the guard holds on
+  // the path where the caller resolved every value there is.
+  const full = {
+    values: {
+      'review.triggers.risk_surface.gate': 'blocking',
+      'review.reviewers': ['openai'],
+      'model.effort.cad-executor': 'xhigh',
+      'workflow.max_plan_tasks': 8,
+    },
+    gates: GATES,
+    stakes: 'shipped',
+  };
+  const outs = [
+    // R2's re-arm receipt, R3's held-rung receipt and R5's spend receipt.
+    suggestFromRender({
+      counts: {},
+      roles: { 'cad-executor': { dispatches: 4, tokens: 300000 }, 'cad-planner': { dispatches: 1, tokens: 100000 } },
+      events: [
+        rearm('risk_surface'),
+        ...Array.from({ length: MIN_DISPATCHES_FOR_RUNG_INFO }, () => resolve('cad-executor', {})),
+      ],
+    }, full),
+    // R6's coordinator receipt.
+    suggestFromRender(coordRender(
+      MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 2,
+      [{ phase: 1, step: 'analyze', ts: 'a', residue_ms: MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 2 }],
+    ), full),
+  ];
+  const infos = outs.flat().filter((x) => x.kind === 'info');
+  assert.equal(infos.length, 4,
+    `expected R2, R3's receipt, R5 and R6 - got ${JSON.stringify(infos.map((x) => x.subject))}`);
+  for (const e of infos) {
+    for (const key of ['direction', 'current', 'proposed']) {
+      assert.equal(key in e, false,
+        `an info receipt carries \`${key}\` - it asks for nothing, so there is nothing to move: `
+        + JSON.stringify(e));
+    }
+    assert.deepEqual(Object.keys(e).sort(), ['action', 'evidence', 'kind', 'subject'],
+      `an info receipt's shape moved off {kind, subject, evidence, action}: ${JSON.stringify(e)}`);
+    assert.equal(e.action, null);
+  }
+});
+
+test('D-12: a suggest entry that cannot be priced omits `proposed` by key, never as a null', () => {
+  // Both unpriceable arms at once: R1's reviewer arm (which backend to add is
+  // not a thing the record names) and R4 (no field in the record names a plan's
+  // task count).
+  const out = suggestFromRender(render([
+    ...twoEmptyFires('diff', { raised: 9 }),
+    checkpoint('cad-executor'), checkpoint('cad-executor'),
+  ]), {
+    values: { 'review.reviewers': ['openai'], 'workflow.max_plan_tasks': 8 },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const priced = out.filter((x) => x.kind === 'suggest');
+  assert.equal(priced.length, 2, JSON.stringify(out));
+  for (const e of priced) {
+    assert.equal('proposed' in e, false,
+      `${e.action} carries a target nothing computed: ${JSON.stringify(e)}`);
+    assert.ok(e.direction && e.current !== undefined, JSON.stringify(e));
+  }
+});
+
 test('suggestions order suggest-first, then stable by subject; an empty render is an empty list', () => {
   assert.deepEqual(suggestFromRender(render([])), []);
   const out = suggestFromRender(render([
