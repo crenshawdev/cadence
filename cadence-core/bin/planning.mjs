@@ -1295,8 +1295,16 @@ function cmdAudit(dir) {
   // `activeVersion` returns the prose token WITH its `v` (`v9.9.0`), while
   // `tagCarrying` takes a bare comparand and `compareVersions` returns null -
   // not 0 - for a `v`-prefixed operand, so the raw token would match no tag.
+  //
+  // The tag question is asked FROM the planning root and answered for the
+  // PROJECT root above it (TAG-01/D-07): `dir` defaults to `.planning` and
+  // audit.md invokes the seam with no `--dir`, and `.planning` never holds
+  // `.git`, so unbounded `git -C` discovery walked past the project entirely. A
+  // project sitting inside an unrelated umbrella repository was FAILed by a
+  // version that repository published; now that answer is refused and the tag
+  // list is empty, which is exactly the no-repo behaviour (D-08).
   const publishedAs = docVersion
-    ? tagCarrying(readTags(dir), normalizeTargetVersion(docVersion)) : null;
+    ? tagCarrying(readTags(dir, dirname(dir)), normalizeTargetVersion(docVersion)) : null;
   // Derived phase status, not the roadmap checkbox: "finish the close" means the
   // artifacts say complete. Same test cmdStatus uses to find the current phase.
   //

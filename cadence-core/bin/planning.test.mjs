@@ -2493,6 +2493,13 @@ test('audit: a colon INSIDE the bold span reports, and is never normalized into 
  * @param {any} spec @param {{version?: string|null, tags?: string[],
  *   roadmapTitle?: string}} opts
  */
+const GIT_FIXTURE_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+  GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+};
+
 function taggedTree(spec, { version = 'v9.9.0', tags = [], roadmapTitle } = {}) {
   const dir = makeTree(spec);
   if (version !== null) {
@@ -2506,13 +2513,8 @@ function taggedTree(spec, { version = 'v9.9.0', tags = [], roadmapTitle } = {}) 
     writeFileSync(join(dir, 'ROADMAP.md'), text.replace(/^# .*$/m, roadmapTitle));
   }
   const root = dirname(dir);
-  const env = {
-    ...process.env,
-    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
-    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
-    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-  };
-  const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore', env });
+  const git = (...args) => execFileSync('git', ['-C', root, ...args],
+    { stdio: 'ignore', env: GIT_FIXTURE_ENV });
   git('init', '-q');
   git('commit', '--allow-empty', '-q', '-m', 'root');
   for (const t of tags) git('tag', t);
@@ -2624,6 +2626,83 @@ test('audit: the v2.4.0 state of this repo (issue #87) fires - the regression pi
   assert.equal(r.ok, true);
   assert.deepEqual(r.version_drift,
     { doc_version: 'v2.4.0', published_as: 'v2.4.0', cycle_state: 'open' });
+});
+
+// --- TAG-01: the tag list has to belong to THIS project ----------------------
+//
+// WATCHED FAILING AT 487e150, the branch tip before this fix. Observed there,
+// with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/planning.test.mjs
+//   x audit: an enclosing repository's tags are not this project's (TAG-01)
+//     AssertionError [ERR_ASSERTION]: an unrelated umbrella repo's v9.9.0 is not
+//     a publication of this project
+//     + actual - expected
+//     + { cycle_state: 'open', doc_version: 'v9.9.0', published_as: 'v9.9.0' }
+//     - undefined
+//   i pass 392
+//   i fail 1
+//
+// `git-branch.test.mjs`'s TAG-01 fixture - the other caller - reddens in the
+// same tree and the same way (`create` expected, `ask` observed).
+//
+// Only THIS file is copied: `lib/git-tags.mjs` stays as that tree shipped it,
+// so the unbounded `git -C` discovery answers and the watch means something.
+// The linked-worktree fixture below passes there and is expected to - it pins
+// what the bound must NOT cost (this repository runs its own executors in
+// worktrees, cd5aed6), not the defect itself.
+//
+// To re-watch: `git worktree add --detach <tmp> 487e150`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/planning.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+test('audit: an enclosing repository\'s tags are not this project\'s (TAG-01)', () => {
+  // `git -C` discovers the repository UPWARD, and the audit asks the tag
+  // question from `.planning` - which never holds `.git` - so a project that is
+  // not itself a repository inherited the tags of whatever repository contained
+  // it, and could be FAILed by a version an unrelated umbrella repo published.
+  const inner = makeTree(cycleSpec(false));
+  writeFileSync(join(inner, 'PROJECT.md'),
+    '# Fixture\n\n## Requirements\n\n### Active\n\n`v9.9.0` - the open cycle\n\n### Out of Scope\n');
+  const umbrella = mkdtempSync(join(tmpdir(), 'cad-umbrella-'));
+  const git = (...args) => execFileSync('git', ['-C', umbrella, ...args],
+    { stdio: 'ignore', env: GIT_FIXTURE_ENV });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  git('tag', 'v9.9.0');
+  // The project moves INSIDE the umbrella's working tree, still carrying no
+  // `.git` of its own - a vendored copy, a monorepo sibling, a checkout under
+  // somebody else's repo.
+  renameSync(dirname(inner), join(umbrella, 'project'));
+
+  const r = run(['audit'], join(umbrella, 'project', '.planning'));
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined,
+    'an unrelated umbrella repo\'s v9.9.0 is not a publication of this project');
+  // Permissive at `[]` (D-08), so the rest of the envelope is exactly the
+  // no-repo one: the refusal costs the audit nothing but the tag question.
+  assert.equal(r.requirements[0].break, 'not-verified');
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+});
+
+test('audit: a LINKED WORKTREE still reads its own repository\'s tags (TAG-01)', () => {
+  // The bound must not simply disable the reader. `--show-toplevel` inside a
+  // linked worktree returns the WORKTREE root - which is the root the caller
+  // derived - and the tags are shared with the main repository, so the drift
+  // signal still fires where it should.
+  const dir = taggedTree(cycleSpec(false), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const root = dirname(dir);
+  const git = (...args) => execFileSync('git', ['-C', root, ...args],
+    { stdio: 'ignore', env: GIT_FIXTURE_ENV });
+  git('add', '-A');
+  git('commit', '-q', '-m', 'planning');
+  const linked = join(mkdtempSync(join(tmpdir(), 'cad-linked-')), 'wt');
+  git('worktree', 'add', '--detach', linked, 'HEAD');
+
+  const r = run(['audit'], join(linked, '.planning'));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
 });
 
 test('seed-reqs: a v1.3.1-shaped ## Active table leaves its envelope unchanged - the delegation did not leak into the writer', () => {

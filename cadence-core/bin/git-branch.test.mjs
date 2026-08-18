@@ -14,15 +14,19 @@ const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'git-branch.mjs');
 // Hermetic global config (never read the dev's real ~/.claude one).
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-gb-')), 'no-global.json');
 
-/** A .planning fixture with the given git config block. */
-function fixture(gitConfig, version = 'v1.1.0-rc.2') {
-  const dir = mkdtempSync(join(tmpdir(), 'cad-gb-repo-'));
+/** Plant a .planning fixture at `dir`, whatever built the directory. */
+function plant(dir, gitConfig, version) {
   mkdirSync(join(dir, '.planning'), { recursive: true });
   writeFileSync(join(dir, '.planning', 'config.json'), JSON.stringify({ git: gitConfig }));
   writeFileSync(join(dir, '.planning', 'PROJECT.md'),
     `## Requirements\n### Active\n\n\`${version}\` - the round\n\n### Out of Scope\n`);
   writeFileSync(join(dir, '.planning', 'ROADMAP.md'), `# Roadmap: Cadence ${version}\n`);
   return dir;
+}
+
+/** A .planning fixture with the given git config block. */
+function fixture(gitConfig, version = 'v1.1.0-rc.2') {
+  return plant(mkdtempSync(join(tmpdir(), 'cad-gb-repo-')), gitConfig, version);
 }
 
 /**
@@ -32,14 +36,16 @@ function fixture(gitConfig, version = 'v1.1.0-rc.2') {
  * so the empty commit works on any machine, including one with commit.gpgsign
  * set globally.
  */
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+  GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+};
+
 function taggedFixture(gitConfig, version, tags) {
   const dir = fixture(gitConfig, version);
-  const env = {
-    ...process.env,
-    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
-    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
-    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-  };
+  const env = GIT_ENV;
   const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env });
   git('init', '-q');
   git('commit', '--allow-empty', '-q', '-m', 'root');
@@ -160,6 +166,33 @@ test('published: a non-semver tag is skipped, not guessed at', () => {
   const clean = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
     'v0.2.0', ['nightly', '2024-06-release']);
   assert.equal(decide(clean, 'main').action, 'create', 'no tag carries it: nothing to refuse');
+});
+
+// --- TAG-01: the tags have to belong to THIS project ------------------------
+//
+// WATCHED FAILING AT 487e150, the branch tip before this fix - the audit-side
+// half of the same bound carries the full watch recipe in
+// planning.test.mjs's `version_drift` block.
+
+test('published: an enclosing repository\'s tags are not this project\'s (TAG-01)', () => {
+  // `git -C` discovers the repository UPWARD, so a project that is not itself a
+  // repository read the tag list of whatever repository happened to CONTAIN it
+  // - a checkout under an umbrella repo, a vendored copy, a monorepo sibling -
+  // and was refused an integration branch over a version it never published.
+  // The umbrella's v0.1.0 says nothing about the project below it.
+  const umbrella = mkdtempSync(join(tmpdir(), 'cad-gb-umbrella-'));
+  const git = (...args) => execFileSync('git', ['-C', umbrella, ...args],
+    { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  git('tag', 'v0.1.0');
+
+  const sub = plant(join(umbrella, 'project'),
+    { integration_branch: 'milestone', auto_branch: 'auto' }, 'v0.1.0');
+  const r = decide(sub, 'main');
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'create', 'the umbrella published v0.1.0; this project published nothing');
+  assert.equal(r.branch, 'cadence/v0.1.0');
 });
 
 test('warnings[] rides the envelope, and a torn layer puts the parse failure on it', () => {

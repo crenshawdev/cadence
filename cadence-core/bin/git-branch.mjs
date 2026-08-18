@@ -59,8 +59,14 @@ function decide(dir, branchOverride) {
   // nothing to pick a highest from. The ranking helper that used to sit here was
   // deleted with the sort-order comparison it fed - a dead ranking helper beside
   // a membership test is what would invite the sort order back.
+  //
+  // `dir` IS this project's root here - every read above joins `.planning` onto
+  // it - so it is both the directory the question is asked from and the root the
+  // answer must belong to (TAG-01/D-07). A project that is not itself a
+  // repository no longer inherits an enclosing repository's tags and gets
+  // refused an integration branch over a version it never published.
   const d = decideBranch({ mode, autoBranch, currentBranch: branch, protectedBranches, integrationName,
-    publishedVersions: readTags(dir) });
+    publishedVersions: readTags(dir, dir) });
   emit({ ok: true, action: d.action, branch: d.branch, mode, currentBranch: branch, reason: d.reason, warnings });
 }
 
