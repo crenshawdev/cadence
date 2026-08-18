@@ -1,0 +1,112 @@
+{
+  "status": "gaps",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "For the same trigger, `route.mjs resolve` returns a different cross-model tier AND effort at solo vs shipped vs critical, both beside `reviewers`",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Live: `node cadence-core/bin/route.mjs resolve --role cad-reviewer --file <cfg>` with stakes solo/shipped/critical returned reviewer_tiers.plan cheap/balanced/flagship and reviewer_efforts.plan low/medium/high; risk_surface identical ladder; both maps keyed exactly like `reviewers`. Source rows at cadence-core/route-table.json:59-69 (tiers) and :71-75 (efforts); emitted at cadence-core/bin/route.mjs:724."
+    },
+    {
+      "n": 2,
+      "truth": "The value is traced end to end: route-table.json grid -> route.mjs resolve envelope -> the prose that consumes it (review-provider `--model`/`--effort`)",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/references/review-triggers.md:233-241 takes `reviewer_tiers[<trigger>]`/`reviewer_efforts[<trigger>]` off the step-1 resolve line, indexes `review.providers.<name>.tiers` with the tier, and passes both to `review-provider.mjs review --model <model> --effort <effort>`; reach rows cadence-core/references/config-reach.md:163-174 name the same handoff."
+    },
+    {
+      "n": 3,
+      "truth": "`self-verify` reports no `missing-cell` for either the `tiers` or the `efforts` grid, walked in both directions",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "`node cadence-core/bin/self-verify.mjs` exit 0, `problems: []`, `routing-cells` among checks run. The walk is real, not vacuous: cadence-core/bin/lib/route-cells.mjs:302-350 runs the same two-direction walk over both grids per level (absent block, absent row, absent (level,trigger) cell -> `missing-cell`; unknown trigger -> `unknown-trigger`; out-of-vocabulary value -> `unknown-tier`/`unknown-effort`)."
+    },
+    {
+      "n": 4,
+      "truth": "On a repo where no layer sets it, `config.mjs get review.triggers.plan.tier` reports the value the resolver actually uses at the effective stakes level",
+      "status": "FAILED",
+      "uat_item": 2,
+      "evidence": "`node cadence-core/bin/config.mjs get review.triggers.plan.tier` answers `{\"values\":{\"review.triggers.plan.tier\":null},\"warnings\":[\"... is unset: no config layer pins this model tier, so the stakes level decides it - `route.mjs resolve` answers it for a level\"]}`. It no longer answers a fixed `flagship` (schema default is now the null sentinel), but it does not report the resolved value either. cadence-core/bin/config.mjs:288-291 states this is deliberate: \"It never states what the level fires and never reads route-table.json (D-07): this seam does not know the stakes level\"."
+    },
+    {
+      "n": 5,
+      "truth": "`git.create_tag` is read at exactly one prose site (the land-time tag cut), its schema purpose no longer names the milestone close, and a close with `create_tag:false` still bumps the plugin manifest",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`grep -rn create_tag cadence-core/ skills/`: the only prose readers are skills/cad-land/SKILL.md:26,183,193 (one site, the tag cut); cadence-core/workflows/milestone.md contains no occurrence, and its step 2 (lines 24-40) decides release mode from `git-branch.mjs tags` + a confirmed version, with \"No config key decides this\". Schema purpose cadence-core/config.schema.json:51 = \"Cut the release tag at land ... It governs that tag cut and nothing else: no other step reads it, and a manifest bump never depends on it\". Behaviour: fixture with `.planning/config.json` `{\"git\":{\"create_tag\":false}}` (confirmed read back as false) then `release-bump.mjs bump --dir <fix> --version 1.1.0` -> `action:\"bumped\"`, manifest version 1.0.0 -> 1.1.0."
+    },
+    {
+      "n": 6,
+      "truth": "The bounded tags read cannot escape the project root: no tags for a non-repository project inside a tagged repository, real tags inside a real tagged repository",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Fixture: git repo at <tmp>/outer tagged v9.9.0 containing non-repo <tmp>/outer/sub/.planning. `git-branch.mjs tags --dir <tmp>/outer` -> {\"ok\":true,\"tags\":[\"v9.9.0\"]}; `--dir <tmp>/outer/sub` and `--dir <tmp>/outer/sub/.planning` -> {\"ok\":true,\"tags\":[]}; `--dir /code/cadence` -> the repo's real v1.0.0..v3.5.x list. Arm at cadence-core/bin/git-branch.mjs:94-95 (`readTags(dir, dir)`), dispatched at :110-111."
+    },
+    {
+      "n": 7,
+      "truth": "issue-check's per-issue resolve loop is bounded by one wall-clock budget: 5+ referenced numbers against a slow non-zero `tea` finish inside one stated budget, exit 0 / ok:true / action:report, unreached numbers `unresolved`",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/bin/issue-check.test.mjs:558-585 (8 refs, PATH-stubbed `tea` sleeping 1s and exiting 1, `--timeout-ms 2000`) passed on the current tree in 2062ms with at most 2 resolves logged, status 0, ok:true, action:\"report\"; the same case took 5071ms / 5 resolves on 1ca00f7. cadence-core/bin/issue-check.test.mjs:604+ (\"a budget spent mid-loop is still a report\") passed, pinning real states behind the budget and `unresolved` ahead of it; the D-11 case (a fast non-zero resolve does not stop the loop) passed too."
+    },
+    {
+      "n": 8,
+      "truth": "RVW-03, REL-01 and ISS-01 each carry a `WATCHED FAILING AT <sha>` check whose sha is a real pre-fix commit, and the check fails when re-run against that tree",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "route.test.mjs:564 (478b1ff, the plan commit, ancestor of fix 5e4b883), prose-agreement.test.mjs:1514 (c78cbdb, ancestor of REL-01 fixes 58cb940/4a05bf1/de2886c), issue-check.test.mjs:550 (1ca00f7, ancestor of fix dd30e52). Re-ran each via `git archive <sha> | tar -x` into /tmp with the current test file copied in: RVW-03 panel cases fail (`Cannot read properties of undefined (reading 'plan')` - no reviewer_tiers); REL-01 fails with the exact documented message (\"read at 2 prose sites: cadence-core/workflows/milestone.md, skills/cad-land/SKILL.md\"); ISS-01 fails at 5071ms with 5 resolves, matching the header's 5.07s."
+    },
+    {
+      "n": 9,
+      "truth": "`node --test cadence-core/bin/*.test.mjs` and `node cadence-core/bin/self-verify.mjs` both exit 0",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "Full suite: exit 0, tests 2218, pass 2218, fail 0, duration 17.0s. self-verify: exit 0, `{\"ok\":true,...,\"problems\":[]}` over 24 checks."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Stakes level moves both panel halves",
+      "evidence": "route.mjs resolve --role cad-reviewer at solo/shipped/critical: reviewer_tiers.plan cheap/balanced/flagship, reviewer_efforts.plan low/medium/high, same ladder for risk_surface, both maps keyed like `reviewers`; route-table.json:59-75, route.mjs:724, consumed at review-triggers.md:233-241."
+    },
+    {
+      "k": 3,
+      "name": "create_tag governs only the land-time tag cut",
+      "evidence": "grep -rn create_tag over cadence-core/ and skills/ finds one prose reader (skills/cad-land/SKILL.md:26,183,193); milestone.md has no occurrence and step 2 decides from `git-branch.mjs tags` + a confirmed version; config.schema.json:51 purpose names the land-time cut; with `.planning/config.json` git.create_tag:false, release-bump.mjs bumped the plugin manifest 1.0.0 -> 1.1.0."
+    },
+    {
+      "k": 4,
+      "name": "Bounded tags read does not escape the project root",
+      "evidence": "outer repo tagged v9.9.0 -> [\"v9.9.0\"]; outer/sub and outer/sub/.planning (non-repo) -> []; /code/cadence -> its real tag list. git-branch.mjs:94-95."
+    },
+    {
+      "k": 5,
+      "name": "Resolve loop is bounded by one wall-clock budget",
+      "evidence": "PATH-stubbed tea (1s sleep, exit 1), 8 referenced numbers, --timeout-ms 2000: 2062ms, <=2 resolves, status 0, ok:true, action:report; the mid-loop case reports unreached numbers `unresolved`; the D-11 fast-non-zero case still resolves the numbers behind it."
+    },
+    {
+      "k": 6,
+      "name": "Each requirement carries a watched-failing falsifier",
+      "evidence": "478b1ff / c78cbdb / 1ca00f7 all resolve to real commits preceding their fixes (ancestry checked); each check re-run against that commit's exported tree failed with the message its header documents."
+    },
+    {
+      "k": 7,
+      "name": "Full test suite and self-verify are green",
+      "evidence": "node --test cadence-core/bin/*.test.mjs exit 0, 2218/2218 pass; node cadence-core/bin/self-verify.mjs exit 0, problems []."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 2,
+      "name": "Unset tier reports the resolved value; grids have no missing cells",
+      "reason": "behavior wrong (half the item): the grids half holds - self-verify walks both `tiers` and `efforts` in both directions per level and reports no `missing-cell`. The read half does not: with no layer setting it, `config.mjs get review.triggers.plan.tier` answers `null` plus a warning pointing at `route.mjs resolve`, not the value the resolver uses at the effective stakes level. It no longer answers a fixed `flagship`, so the lie is gone, but the item as written asks for the resolved value and that value is unobtainable from this seam by design.",
+      "evidence": "`node cadence-core/bin/config.mjs get review.triggers.plan.tier` -> {\"values\":{\"review.triggers.plan.tier\":null},\"warnings\":[\"review.triggers.plan.tier is unset: no config layer pins this model tier, so the stakes level decides it - `route.mjs resolve` answers it for a level\"]} (same shape for `.effort` and, unchanged, `.gate`). cadence-core/bin/config.mjs:236-296 implements it and :288-291 states the refusal outright: \"It never states what the level fires and never reads route-table.json (D-07): this seam does not know the stakes level, and answering as if it did is the same defect pointed the other way.\" CONTEXT.md D-04 licenses the null sentinel; AC2's wording and D-04/D-07 are in tension and SUMMARY.md records no deviation for it.",
+      "severity": "minor",
+      "missing": "One decision, then one edit. Either (a) reword AC2 / UAT item 2 to what was deliberately built - an unset read answers the null sentinel and names `route.mjs resolve` as the answering seam, rather than a fixed `flagship` - and record it as a deviation in SUMMARY.md; or (b) if the literal criterion is meant to stand, give the read the level: have `config.mjs get` resolve a level-keyed unset key through route-table.json (which D-07 currently forbids) so the answer carries the tier the resolver would use."
+    }
+  ],
+  "human_checks": []
+}

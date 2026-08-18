@@ -264,9 +264,9 @@ section only, bounded at the next `## ` heading.
 | DRF-01 | Phase 2 | Complete |
 | DRF-02 | Phase 2 | Complete |
 | TAG-01 | Phase 2 | Complete |
-| RVW-03 | Phase 3 | Pending |
-| REL-01 | Phase 3 | Pending |
-| ISS-01 | Phase 3 | Pending |
+| RVW-03 | Phase 3 | Complete |
+| REL-01 | Phase 3 | Complete |
+| ISS-01 | Phase 3 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
