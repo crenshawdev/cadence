@@ -122,10 +122,17 @@ path never does:
 - The INLINE path creates no directory and must not start now: `Zero planning
   artifacts for inline tasks` is this workflow's own success criterion, and an
   inline task that `mkdir -p`s a slug directory leaves it behind empty once the
-  transient diff is deleted, accreting one per risk-surface task. So write to
-  `${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` and fire with THAT path -
+  transient diff is deleted, accreting one per risk-surface task. So make this
+  run's own directory - `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-risk-XXXXXX")"` - write
+  the diff to `$D/cadence-risk-task-{slug}.diff`, and fire with THAT path -
   still shape (c), which since `v2.6.1` admits a flagged-diff file however it
-  was produced. The same applies when `.planning/` does not exist at all.
+  was produced. A fixed shared name collides between two inline runs of the
+  same-slugged task, and what collides is the artifact of a trigger that BLOCKS
+  at every stakes level - the shape `v2.3.0` already closed once as a stale diff
+  reaching a blocking gate. The `.diff` is still deleted once the trigger
+  returns and the run directory is left for the operating system to reap;
+  neither is a `.planning/` artifact, so the success criterion holds. The same
+  applies when `.planning/` does not exist at all.
 
 This trigger is `blocking` at every level, so its re-arm is CAPPED at ONE
 narrowed round - RE-READ

@@ -1388,7 +1388,7 @@ mistake.
 | TASK-14 | cadence-core/workflows/task.md | 80-82 | That file is transient exactly like `execute.md`'s `plan-<k>-risk-task-<n>.diff` | accurate | accurate | 2 |
 | TASK-15 | cadence-core/workflows/task.md | 85-88 | `planned_path` step 1 is the only writer of `.planning/tasks/{slug}/` | accurate | accurate | 2 |
 | TASK-16 | cadence-core/workflows/task.md | 100-101 | `Zero planning artifacts for inline tasks` is this workflow's own success criterion | accurate | accurate | 2 |
-| TASK-17 | cadence-core/workflows/task.md | 103-105 | The inline arm writes to `${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` - still shape (c), which since v2.6.1 admits a flagged-diff file however it was produced | accurate | accurate | 2 |
+| TASK-17 | cadence-core/workflows/task.md | 125-129 | The inline arm makes this run's own directory with `mktemp -d` and writes the diff to `$D/cadence-risk-task-{slug}.diff` - still shape (c), which since v2.6.1 admits a flagged-diff file however it was produced | accurate | accurate | 2 |
 | UNDO-09 | cadence-core/workflows/undo.md | 10-12 | Fallback is `git log` filtered to the phase's conventional-commit scope, SHOWN before it is trusted | accurate | accurate | 2 |
 | UNDO-10 | cadence-core/workflows/undo.md | 30-32 | Only the protected-branch check applies; a recovery revert does not open an integration branch | accurate | accurate | 2 |
 | UNDO-11 | cadence-core/workflows/undo.md | 32-33 | The `--no-commit` form writes no commit, so it skips the guard | accurate | accurate | 2 |
