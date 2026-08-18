@@ -385,6 +385,30 @@ test('SGT-01: R4 moves DOWN, prints the resolved ceiling, and prices nothing', (
   assert.equal('proposed' in s, false, 'no field in the record names a plan task count');
 });
 
+test('SGT-01: R4 goes silent when every checkpoint it counted maps to a plan under the ceiling', () => {
+  const events = [checkpoint('cad-executor'), checkpoint('cad-executor')];
+  const base = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES, stakes: 'shipped' };
+  const ceilingOf = (out) => out.find((x) => x.action === 'workflow.max_plan_tasks');
+
+  assert.equal(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, 3] })),
+    undefined, 'the evidence does not bind: both plans are under the ceiling it would lower');
+
+  // D-09: one unreadable plan leaves the rule speaking. Unknown is never
+  // under-ceiling, or an archived cycle silences the rule permanently.
+  assert.ok(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, null] })),
+    'a checkpoint whose plan file cannot be read counts as unknown, not as under-ceiling');
+
+  // Equal is not under.
+  assert.ok(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, 8] })),
+    'a plan AT the ceiling is evidence for the ceiling, not against it');
+
+  // D-10: the comparison is the RESOLVED ceiling, never a hardcoded 8. These
+  // two counts are over 8 and under 12, so a hardcoded comparison speaks here.
+  assert.equal(ceilingOf(suggestFromRender(render(events), {
+    values: { 'workflow.max_plan_tasks': 12 }, stakes: 'shipped', checkpointTasks: [9, 10],
+  })), undefined, 'a project that raised the ceiling is told to lower one its plans never touched');
+});
+
 test('SGT-01: a one-argument call still answers - a direction and an honest unset, never a throw', () => {
   // Every pure-render test above calls the function this way; degrading to a
   // throw or to a missing direction would take all of them with it.

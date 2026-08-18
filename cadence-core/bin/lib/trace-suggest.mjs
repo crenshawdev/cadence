@@ -419,8 +419,33 @@ export function suggestFromRender(render, resolution) {
   // R4: executor checkpoint pressure. A checkpoint is a fresh-context
   // continuation paid at full dispatch price; repeated ones say the plans are
   // outrunning one context.
+  //
+  // SUPPRESSED - not returned with a caveat - when every checkpoint it counted
+  // maps to a readable plan whose task count is UNDER the resolved ceiling
+  // (D-08). A suggestion the evidence does not support is the thing that made
+  // `/cad-suggest` read as a report rather than advice: telling a user to lower
+  // a ceiling their plans never reached is a sentence they can only ignore, and
+  // a caveat printed beside it still leaves the retune list to be sorted by
+  // hand. This is a new class of check, not a tightened floor - the four MIN_*
+  // constants above are untouched.
+  //
+  // The comparison is against the ceiling the suggestion PRINTS as `current`,
+  // never a hardcoded 8 (D-10): a project that raised it to 12 must not be told
+  // to lower one its plans never touched. An unknown count - a checkpoint whose
+  // plan file cannot be read - is never under-ceiling (D-09), so a single one
+  // leaves the rule speaking; a count EQUAL to the ceiling is not under it
+  // either. And with no ceiling resolved at all, or no per-checkpoint counts
+  // passed, there is nothing to bind against and the rule speaks exactly as it
+  // did before this check existed.
   const execCp = checkpoints.get('cad-executor') || 0;
-  if (execCp >= MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION) {
+  const ceiling = resolved(resolution, 'workflow.max_plan_tasks');
+  const counted = resolution && Array.isArray(resolution.checkpointTasks)
+    ? resolution.checkpointTasks
+    : [];
+  const bounded = typeof ceiling === 'number' && Number.isFinite(ceiling)
+    && counted.length === execCp && execCp > 0
+    && counted.every((n) => typeof n === 'number' && Number.isFinite(n) && n < ceiling);
+  if (execCp >= MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION && !bounded) {
     out.push({
       kind: 'suggest',
       subject: 'cad-executor',

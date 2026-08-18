@@ -2967,6 +2967,42 @@ function gateLadder() {
 }
 
 /**
+ * The task count of the plan a `cad-executor` checkpoint names, or `null` when
+ * the checkpoint maps to no readable plan - UNKNOWN, never under-ceiling
+ * (D-09). Unknown is the common case and stays so: a `plan` that is a WORKER
+ * key rather than a plan number (`1-cut`, `1-fix`) names no file, an archived
+ * cycle keeps its phase dirs under a different milestone dir and filename
+ * shape, and a delete-mode close removes them outright.
+ *
+ * The `phase` is read through `requirePhaseArg`, which is the traversal guard
+ * as much as the shape one: this value comes off a RECORD line rather than a
+ * flag, and it is about to be a directory component. The `plan` needs no such
+ * guard - it is only ever compared against `readdirSync` entries, so a `../`
+ * in it matches nothing.
+ * @param {string} dir the planning dir
+ * @param {any} event a `lifecycle/checkpoint` event
+ * @returns {number|null}
+ */
+function checkpointPlanTasks(dir, event) {
+  const phase = requirePhaseArg(typeof event.phase === 'number' ? String(event.phase) : event.phase);
+  if (!phase.ok) return null;
+  const plan = typeof event.plan === 'string' || typeof event.plan === 'number'
+    ? String(event.plan).trim()
+    : '';
+  if (!plan) return null;
+  const pdir = join(dir, 'phases', phase.raw);
+  const { plans } = listPlanFiles(pdir);
+  // `PLAN.md` is plan 1 spelled bare - the same equivalence `listPlanFiles`'s
+  // own conforming set carries.
+  const file = plans.find((f) => f === `PLAN-${plan}.md`)
+    || (plan === '1' ? plans.find((f) => f === 'PLAN.md') : undefined);
+  if (!file) return null;
+  const text = read(join(pdir, file));
+  if (text === null) return null;
+  return planTaskTitles(text).length;
+}
+
+/**
  * Everything the pure rules in `lib/trace-suggest.mjs` need to name a
  * direction, a current value and - where one can be READ - a target: the
  * resolved config value behind each key the record's own events reach, the gate
@@ -2977,10 +3013,14 @@ function gateLadder() {
  * Keyed off the RECORD rather than the schema's key space: a trigger that never
  * fired and a role that never resolved are keys no rule can name, so resolving
  * them would read config nothing asked about.
+ *
+ * `checkpointTasks` is the FILE half of R4's binding check, here for the same
+ * reason as everything else in this function: reading a plan file is I/O.
+ * @param {string} dir the planning dir
  * @param {any} render
  * @param {any} config the merged config layers
  */
-function suggestResolution(render, config) {
+function suggestResolution(dir, render, config) {
   /** @type {Record<string, any>} */
   const values = {};
   // An absent or null value is NOT recorded: `lib/trace-suggest.mjs` reads a
@@ -2993,6 +3033,10 @@ function suggestResolution(render, config) {
   // nothing when the scope holds none - never a level the record does not
   // carry.
   let stakes = null;
+  // One entry per counted checkpoint, in record order, so the rule can tell
+  // "every one of them was measured" from "some were".
+  /** @type {(number|null)[]} */
+  const checkpointTasks = [];
   for (const e of events) {
     if (!e || typeof e !== 'object') continue;
     if (e.family === 'outcome' && e.event === 'adjudication') {
@@ -3001,13 +3045,15 @@ function suggestResolution(render, config) {
     } else if (e.family === 'routing' && e.event === 'resolve') {
       if (typeof e.role === 'string' && e.role) set(`model.effort.${e.role}`, effort?.[e.role]);
       if (typeof e.stakes === 'string' && e.stakes.trim()) stakes = e.stakes.trim();
+    } else if (e.family === 'lifecycle' && e.event === 'checkpoint' && e.role === 'cad-executor') {
+      checkpointTasks.push(checkpointPlanTasks(dir, e));
     }
   }
   set('review.reviewers', config?.review?.reviewers ?? SUGGEST_KEY_DEFAULTS['review.reviewers']);
   set('workflow.max_plan_tasks',
     config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
   const gates = gateLadder();
-  return { values, ...(gates ? { gates } : {}), stakes };
+  return { values, ...(gates ? { gates } : {}), stakes, checkpointTasks };
 }
 
 function cmdTrace(dir, sub, opts) {
@@ -3299,7 +3345,7 @@ function cmdTrace(dir, sub, opts) {
     // `current` and a project that deliberately pinned one would be told to
     // move a value the read never saw.
     const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
-    const suggestions = suggestFromRender(r, suggestResolution(r, suggestConfig));
+    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig));
     return ok({
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
