@@ -42,12 +42,22 @@ its own falsifier.
   `cadence-core/bin/git-branch.mjs:54-63` feeds `integrationBranchName` and
   `readTags` into `decideBranch`; `cadence-core/references/git-guard.md:64,72`
   describes the same derivation in prose.
-- D-02 (DRF-01): The `loose` fallback STAYS, gated on agreement - the
-  line-anchored token must also be the body's first version token, and a
-  disagreement reports nothing rather than the wrong version. Deleting the
-  fallback outright, and replacing it with a named diagnostic, are both
-  rejected. Evidence: `cadence-core/templates/PROJECT.md`'s `### Active` is a
-  requirement bullet list naming no version token at all;
+- D-02 (DRF-01, amended 2026-08-18): The `loose` fallback STAYS, gated on the
+  anchored reading being trustworthy - the line-anchored token is accepted when
+  it agrees with the body's first version token, OR when its line OPENS a
+  sentence rather than continuing a wrapped one; a rejected anchor contributes
+  nothing, so the body's earlier correct mention answers. Deleting the fallback
+  outright, and replacing it with a named diagnostic, are both rejected. The
+  original wording ("the anchored token must also be the first token, and a
+  disagreement reports nothing") was found unsatisfiable at the `plan` gate: AC1
+  requires the milestone to ANSWER on a disagreement (the `81bdb5d` shape), and
+  the shipped fixture at `cadence-core/bin/branch-decision.test.mjs:237-246`
+  asserts the anchored `v2.6.0` over a first token of `v2.5.0` while AC2 pins
+  those four fixtures unchanged - no reader satisfies all three. The
+  sentence-opening discriminator is what separates the two: `81bdb5d`'s anchored
+  `v3.0.0` rides a wrapped continuation, that fixture's `v2.6.0` opens its own.
+  Evidence: `cadence-core/templates/PROJECT.md`'s `### Active` is a requirement
+  bullet list naming no version token at all;
   `cadence-core/bin/branch-decision.test.mjs:255-261` pins the fallback
   deliberately ("a strict anchor would go silent on every pre-existing
   PROJECT.md"); the ROADMAP fallback is not a safety net here -
@@ -167,10 +177,13 @@ its own falsifier.
       requirement rows all marked `Deferred` returns no `version_drift` break,
       and the identical project with those rows `Pending` still returns one.
 - [ ] AC5: `audit --dir sub/.planning`, where `sub/` is a non-repository
-      project inside a repository tagged `v9.9.0`, returns a `version_drift`
-      envelope reporting no published version; the same audit run inside a
-      linked worktree of a real tagged repository still reads that
-      repository's tags.
+      project inside a repository tagged `v9.9.0`, emits NO `version_drift` and
+      leaves the envelope otherwise unchanged (D-08's permissive `[]`, matching
+      the pin at `cadence-core/bin/planning.test.mjs:2600-2612`); the same audit
+      run inside a linked worktree of a real tagged repository still reads that
+      repository's tags and still emits one. Amended 2026-08-18: the original
+      "returns a `version_drift` envelope reporting no published version"
+      contradicted D-08, which this criterion follows.
 - [ ] AC6: DRF-01, DRF-02 and TAG-01 each carry a check with a
       `WATCHED FAILING AT <sha>` header whose sha resolves to a real commit
       preceding the fix, and that check fails when re-run against that commit's
