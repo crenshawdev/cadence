@@ -233,11 +233,18 @@ function set(file, tokens, create) {
   out({ ok: true, file, changed: pairs });
 }
 
-// The gate keys, whose schema default is the `null` sentinel rather than a
-// gate: route-table.json is what fires and the level decides (GAT-02).
-// Matched by shape rather than a hand-kept list, so a fifth trigger is
-// covered the day its key lands.
-const GATE_KEY = /^review\.triggers\.[^.]+\.gate$/;
+// The per-trigger keys whose schema default is the `null` sentinel rather than
+// a value: route-table.json answers them and the level decides - the `review`
+// grid for `.gate` (GAT-02), the `tiers` and `efforts` grids for the two
+// fields that reach a cross-model reviewer (RVW-03). Matched by shape rather
+// than a hand-kept list, so a fifth trigger is covered the day its keys land.
+const LEVEL_KEY = /^review\.triggers\.[^.]+\.(gate|tier|effort)$/;
+
+// What each of them is CALLED in the warning below. Written out rather than
+// interpolated from the key's last segment so `tier` and `effort` read as the
+// quantities a user recognises, and so `effort` cannot be mistaken for the
+// agent rung of the same name.
+const LEVEL_KEY_NOUN = { gate: 'gate', tier: 'model tier', effort: 'reasoning effort' };
 
 // The effective value set: schema defaults, overlaid by the global then the
 // repo layer (shared merge lib - identical semantics to route.mjs). Output is
@@ -265,22 +272,25 @@ function get(file, keys, asGlobal) {
   if (unknown.length) fail('unknown-key', unknown);
   for (const k of wanted) {
     values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
-    // The read face says WHICH of the two states a gate is in. The value line
-    // above is unchanged (D-06) - the schema sentinel does that work - but a
-    // bare `null` cannot tell a reader "no layer set one, the level decides"
-    // apart from a layer that wrote null, which is what GAT-02 asks for. So
-    // the answer carries a warning naming where the level IS resolved.
+    // The read face says WHICH of the two states one of these keys is in. The
+    // value line above is unchanged (D-06) - the schema sentinel does that work
+    // - but a bare `null` cannot tell a reader "no layer set one, the level
+    // decides" apart from a layer that wrote null, which is what GAT-02 asks
+    // for. So the answer carries a warning naming where the level IS resolved.
     //
     // Only on an EXPLICIT read (D-02). A keyless `get` walks every schema
-    // key, so warning there appends four lines to every full read - prose
+    // key, so warning there appends a line per key to every full read - prose
     // that workflows/milestone.md and verify.md relay straight to the user -
-    // for a caller that asked about no gate in particular.
+    // for a caller that asked about none of them in particular. That is why
+    // this arm mattered more once RVW-03 tripled the family it covers.
     //
     // It never states what the level fires and never reads route-table.json
     // (D-07): this seam does not know the stakes level, and answering as if
     // it did is the same defect pointed the other way.
-    if (keys.length && layered[k] === undefined && GATE_KEY.test(k)) {
-      allWarnings.push(`${k} is unset: no config layer pins this gate, so the `
+    const levelKey = keys.length && layered[k] === undefined ? LEVEL_KEY.exec(k) : null;
+    if (levelKey) {
+      allWarnings.push(`${k} is unset: no config layer pins this `
+        + `${LEVEL_KEY_NOUN[levelKey[1]]}, so the `
         + 'stakes level decides it - `route.mjs resolve` answers it for a level');
     }
   }
