@@ -6,6 +6,88 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.4] - 2026-08-18
+
+Every check in here already ran and already answered, and answered wrong in a
+way its own output could not show. `v3.5.3` closed the shape for controls that
+never reached their path; this one closes it for controls that reach the path
+and mis-answer once they are there. Three phases, eight requirements, each fix
+backed by a check watched failing against the unpatched tree first.
+
+### Added
+
+- **The stakes level moves both halves of a cross-model review panel.**
+  `route-table.json` now carries level-keyed `tiers` and a new `efforts` grid
+  beside it, and `route.mjs resolve` returns `reviewer_tiers` and
+  `reviewer_efforts` per trigger alongside `reviewers`. At `solo` / `shipped` /
+  `critical` the `plan` trigger resolves `cheap/low`, `balanced/medium`,
+  `flagship/high`. Both grids are dense and self-verify walks each one per level
+  in both directions, so a level silently inheriting another level's tier is a
+  `missing-cell` failure rather than a surprise at review time.
+
+- **A read-only `tags` arm on the git-branch seam.** `git-branch.mjs tags --dir
+  <root>` exposes phase 2's bounded tag read to prose, so a workflow asking what
+  a project has published gets an answer bounded to that project root instead of
+  a bare `git tag`.
+
+### Changed
+
+- **All eight per-trigger `.tier` and `.effort` schema defaults sit on the
+  `null` unset sentinel**, the shape `.gate` has carried since GAT-02. An unset
+  key now answers `null` plus a warning naming `route.mjs resolve` as the seam
+  that answers it for a level, rather than a hard `flagship` or `balanced` that
+  nothing resolved. Upgrade note: if your provider config only defines a
+  `flagship` model, a `shipped` project now resolves `balanced` for most
+  triggers and loses its cross-model reviewer until you add that tier. Each
+  resolve warns when it happens.
+
+- **`git.create_tag` governs the land-time tag cut and nothing else.**
+  `grep -rn create_tag` over `cadence-core/` and `skills/` now finds exactly one
+  reader, `/cad-land`'s tag step. The milestone close decides release mode from
+  a confirmed version plus the bounded tags probe, which means a project that
+  turns tagging off still gets its manifest bumped instead of a close that skips
+  the bump for a reason nobody wrote down.
+
+### Fixed
+
+- **A credential at the sanitize window's edge reached the review provider in
+  clear text.** `redactUrl`'s userinfo rules both required a terminating `@`, so
+  a URL whose userinfo span was cut by the 4096-byte `bodyExcerpt` window passed
+  through unredacted. Two end-of-input alternatives now run after the terminated
+  rules. Measured against the unpatched tree at `ae73dd6`: 73 bytes of planted
+  secret surviving the excerpt on the reported shape and 985 bytes on the
+  high-magnitude case, both zero now. `redactUrl('https://example.com:8080/path')`
+  is byte-identical mid-body and at end-of-input, so a port is still not read as
+  userinfo.
+
+- **`cad-phase remove` deleted a phase directory it could not prove was clean.**
+  `uncommittedUnder` collapsed "no uncommitted paths" and "I could not read the
+  git state" into the same answer, and the caller deleted recursively on both.
+  It now returns three states and refuses the third with `unreadable-git-state`.
+  The blocking review found three more fail-open paths in the delete guard, all
+  closed with their own falsifiers, plus a case-sensitive name comparison where
+  the `.git` probe belonged.
+
+- **The ship gate FAILed a healthy repository on three separate counts.**
+  `activeVersion` was a first-token line scan, so a `### Active` section
+  mentioning the predecessor on a wrapped continuation line reported the
+  predecessor and hard-FAILed `/cad-audit`; it now scans the whole body twice and
+  admits a line-anchored token only on agreement or a sentence opening.
+  `version_drift` fired on the rolled-forward phase the workflow already declared
+  exempt. And `readTags` let `git -C` discover upward from `.planning`, so a
+  project that is not itself a repository inherited an enclosing repository's
+  tags and could be failed by a version an unrelated umbrella repo published.
+
+- **`issue-check`'s resolve loop could multiply its own bound by the call cap.**
+  The loop's only exit was a SIGKILL timeout, so five issue lookups each
+  answering at 9.9 seconds with exit 1 cost fifty seconds and never tripped it.
+  The loop now takes one `Date.now()` deadline at start and derives each call's
+  timeout from what is left. Against a stubbed `tea` that sleeps and exits
+  non-zero: 5 resolves in 5.07s before, 2 in 2.06s after. Budget exhaustion still
+  exits 0 with `action: "report"` and reports the unreached numbers `unresolved`,
+  and a fast non-zero resolve still does not stop the loop, because an absent
+  issue is a legitimate answer.
+
 ## [3.5.3] - 2026-08-18
 
 Cadence asserted controls it did not hold. The review path stated bounds it
@@ -2940,6 +3022,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.4]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.4
 [3.5.3]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.3
 [3.5.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.2
 [3.5.1]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.1
