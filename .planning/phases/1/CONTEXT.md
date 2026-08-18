@@ -129,8 +129,15 @@ Plan shape: multiple plans, same phase - GRD-01 (AC1-AC3) and SCR-01
       sites makes a deterministic check FAIL by name; with the tree as shipped,
       that same check passes.
 - [ ] AC6: feeding a truncated file to each of the six read-backs produces a
-      named refusal on stderr and a non-zero exit; none throws an unhandled
-      parse error and none prints `{}` as a success.
+      named refusal and a non-zero exit; none throws an unhandled parse error
+      and none prints `{}` as a success. The five prose read-backs name the
+      refusal on stderr; `review-provider.mjs --payload` names it in its stdout
+      seam envelope (`{"ok":false,"reason":"bad-payload"}`), per
+      `lib/seam-io.mjs`. AMENDED 2026-08-18 by John, from the blocking `plan`
+      review: the original "on stderr" arm asked one seam to break the
+      one-JSON-line-on-stdout convention every seam shares, for a property that
+      already holds and is already tested there
+      (`review-provider.test.mjs:685`).
 - [ ] AC7: `node cadence-core/bin/self-verify.mjs` and the full test suite both
       pass, with `references/conventions.md`'s stated rule showing the per-run
       form and the `.planning/DOCS-CLAIMS.md` TASK-17 row matching
