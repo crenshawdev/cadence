@@ -5,34 +5,17 @@
 
 ## Active
 
-`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18. Scoped from the
-capture queue's open review findings rather than from a tracker milestone.
-
-One shape: a gate that reports a verdict it did not earn. Each item is a check
-that already runs and already answers, and answers wrong in a way its own output
-cannot show.
-
-- **DRF-01**: `version_drift` stops FAILing a ship gate on correct docs - its
-  comparand reads the milestone `### Active` NAMES rather than the first version
-  token in its prose, so an Active section mentioning the predecessor first is
-  not reported as the current version.
-- **DRF-02**: the interrupted-close exemption holds in the state `audit.md`
-  declares exempt - a phase carrying a terminal `blocked` item, or sanctioned
-  rolled-over work, no longer fires `drift` with a remedy `verify.md` says is
-  impossible.
-- **TAG-01**: `readTags` stops discovering upward from `.planning`, so a project
-  that is not itself a repository cannot be FAILed by a version an enclosing
-  umbrella repo published.
-- **EXP-02**: `bodyExcerpt`'s trailing-token safeguard runs on the path that
-  needs it - a sanitizer shrink can no longer pull a window-edge-truncated
-  credential's head under the cap while `clean` still exceeds it. Raised at the
-  `v3.5.3` phase-3 fire and still live at `v3.5.3`.
+No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18;
+its eight requirements are under `## Shipped` below. The next cycle's headline
+requirements are unscoped - `/cad-phase add` opens one when there is a theme to
+open it for.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
 close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
-through #197) are unassigned and are not scoped here.
-
+through #197) are unassigned and are not scoped here. The eight medium
+`risk_surface` survivors carried forward at the `v3.5.4` close are unassigned
+too.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -201,6 +184,14 @@ parses only the Traceability table).
 | PLN-01 (`workflow.max_plan_tasks` is re-decided against cold-prefix cost as well as context risk, on measured evidence rather than one of the two forces (#201).) | 4 | Complete | v3.5.3 |
 | MSR-04 (The coordinator figure excludes wall-clock the record cannot attribute to a coordinator, or it stops being labelled coordinator time.) | 5 | Complete | v3.5.3 |
 | SGT-01 (`trace suggest` returns a direction, a current value and a target value beside every `action`, and `/cad-suggest` prints the tweaks in a headed block of their own with the receipts separated below.) | 5 | Complete | v3.5.3 |
+| EXP-02 (`bodyExcerpt`'s trailing-token safeguard runs on the path that needs it - a sanitizer shrink can no longer pull a window-edge-truncated credential's head under the cap while `clean` still exceeds it. Raised at the `v3.5.3` phase-3 fire and still live at `v3.5.3`.) | 1 | Complete | v3.5.4 |
+| PHS-01 (`cad-phase remove` refuses a git state it could not read. `uncommittedUnder` returns an empty array whenever `git status` fails, so an unreadable state is indistinguishable from a clean one and the recursive delete of `phases/<N>/` follows on evidence that was never gathered.) | 1 | Complete | v3.5.4 |
+| DRF-01 (`version_drift` stops FAILing a ship gate on correct docs - its comparand reads the milestone `### Active` NAMES rather than the first version token in its prose, so an Active section mentioning the predecessor first is not reported as the current version.) | 2 | Complete | v3.5.4 |
+| DRF-02 (the interrupted-close exemption holds in the state `audit.md` declares exempt - a phase carrying a terminal `blocked` item, or sanctioned rolled-over work, no longer fires `drift` with a remedy `verify.md` says is impossible.) | 2 | Complete | v3.5.4 |
+| TAG-01 (`readTags` stops discovering upward from `.planning`, so a project that is not itself a repository cannot be FAILed by a version an enclosing umbrella repo published.) | 2 | Complete | v3.5.4 |
+| RVW-03 (raising `stakes` moves BOTH halves of a cross-model review panel. `route-table.json` carries three separate vocabularies for what a user reads as one dial, so the subagent reviewer upgrades and the cross-model one stays where it was.) | 3 | Complete | v3.5.4 |
+| REL-01 (`git.create_tag` governs the tag and nothing else. It is documented as "Tag on milestone" and read as the release-mode discriminator for the whole of `milestone.md` step 2, so setting it false silently skips the manifest bump as well. Hit live at the v3.4.1 close.) | 3 | Complete | v3.5.4 |
+| ISS-01 (the per-issue resolve bound is a land's budget, not a per-call one. `issue-check.mjs` stops its resolve loop only on `timedOut`, so a `tea` that answers slowly and exits non-zero is never marked timed out and each capped resolve can burn nearly the full call timeout.) | 3 | Complete | v3.5.4 |
 
 ## Deferred
 

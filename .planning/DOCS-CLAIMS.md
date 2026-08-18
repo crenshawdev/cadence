@@ -379,6 +379,38 @@ No row was added. This ledger holds run-1 provenance, and the claims this phase
 CREATED - what the spend figure excludes, the gap terms, the named comparator,
 the `--phase` scoping fact - are for the next `/cad-docs-verify` to extract.
 
+Phase 3 of `v3.5.4` settled THREE rows on 2026-08-18, all three verdicted
+`accurate` in run 2 over sentences RVW-03 then falsified: `INTERNALS-42`, which
+counted `route-table.json`'s grids at three when the file already carried four
+and now carries five, and `CONFIG-CATALOG-09` / `CONFIG-CATALOG-10`, whose
+Default cells asserted the fixed `flagship`/`high` values the requirement moved
+onto the unset sentinel. Each is re-verdicted `stale` and closed the way the
+fourteen before them were - claim text left exactly as the sweep read it, the
+fix in the resolution cell.
+
+Their resolutions name `RVW-03 (v3.5.4)` where the rows above name a sha, for
+the reason `CONFIG-CATALOG-08` already names `v3.4.1 phase 1`: the commit that
+corrects a row is the commit that WRITES the row, so a self-referential sha is
+unknowable while the cell is being typed. The requirement id and the milestone
+locate the change exactly as well and can be written down honestly.
+
+REL-01 settled a FOURTH row in the same phase, the same way: `MILESTONE-01`,
+verdicted `accurate` over an up-front read naming two config keys, where the
+close now names one - the release-mode half of that pair stopped being read at
+all when step 2 moved onto a confirmed version plus a bounded tags probe. Its
+resolution names `REL-01 (v3.5.4)` for the reason just given.
+
+`CONFIG-26` was re-read beside it and is deliberately LEFT `accurate`. Its claim
+is the catalog's DEFAULT column - `git.create_tag` true, `git.on_land_cleanup`
+true, `git.auto_close` false - and REL-01 rewrote that key's Purpose cell while
+its default and its two neighbours are untouched. Re-verdicting it would file a
+correction over a sentence that is still true.
+
+The seven `MILESTONE-*` rows BELOW the rewritten step are not re-pinned: their
+claims are unchanged and their anchors were already drifting before this phase,
+so the next sweep's fresh extraction is what re-seats them, exactly as it does
+for every other row this ledger has not settled.
+
 **Resolution values.** Measured over all 933 rows, every cell is one of four
 forms: `accurate` on every row the sweep confirmed (845);
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
@@ -790,7 +822,7 @@ fixed, which is what makes that link answer the only question it is asked.
 | EXECUTE-28 | cadence-core/workflows/execute.md | 404-409 | `cursor set --phase <N> --status executed --next "/cad-verify <N>"`. | accurate | accurate | 2 |
 | EXECUTE-29 | cadence-core/workflows/execute.md | 415-416 | `plan-<k>-risk-task-<n>.diff` is the transient flagged diff and must never be staged. | accurate | accurate | 1 |
 | EXECUTE-30 | cadence-core/workflows/execute.md | 438-439 | STATE.md is exactly the 4-line cursor, overwritten, and this workflow is its only writer. | accurate | accurate | 2 |
-| MILESTONE-01 | cadence-core/workflows/milestone.md | 9-12 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | accurate | accurate | 2 |
+| MILESTONE-01 | cadence-core/workflows/milestone.md | 9-12 | One `config.mjs get git.create_tag git.auto_close` reads both keys. | stale | corrected - REL-01 (v3.5.4) - the up-front read is `config.mjs get git.auto_close` alone, and step 2 decides release mode from a confirmed version plus the bounded `git-branch.mjs tags` probe rather than from any key | 2 |
 | MILESTONE-02 | cadence-core/workflows/milestone.md | 16-20 | `/cad-audit` is the requirement/phase/plan/verified FAIL gate invoked here. | accurate | accurate | 2 |
 | MILESTONE-03 | cadence-core/workflows/milestone.md | 33-39 | `release-bump.mjs bump --dir <root> --version <version>`, with `--version` REQUIRED. | accurate | accurate | 2 |
 | MILESTONE-04 | cadence-core/workflows/milestone.md | 41-42 | The seam auto-detects `.claude-plugin/plugin.json` and returns `action:"skip"` when absent. | accurate | accurate | 2 |
@@ -1179,7 +1211,7 @@ mistake.
 | INTERNALS-39 | INTERNALS.md | 11 | `cad-plan-checker-medium` and `cad-plan-checker-high` are the same contract at two depths | accurate | accurate | 2 |
 | INTERNALS-40 | INTERNALS.md | 11 | `cadence-core/bin/lib/rung-agent.mjs` states the rung-to-file map per role | accurate | accurate | 2 |
 | INTERNALS-41 | INTERNALS.md | 13 | `model.escalate_on_failure` is off by default and climbs a retry to the rung its cell names | accurate | accurate | 2 |
-| INTERNALS-42 | INTERNALS.md | 17 | `route.mjs`, `route-table.json` (three grids, 18 cells), `lib/rung-agent.mjs`, `route.test.mjs` all exist | accurate | accurate | 2 |
+| INTERNALS-42 | INTERNALS.md | 17 | `route.mjs`, `route-table.json` (three grids, 18 cells), `lib/rung-agent.mjs`, `route.test.mjs` all exist | stale | corrected - RVW-03 (v3.5.4) - the sentence now reads "the five grids - the 18 cells, the review gates, the cross-model reviewer's tiers and efforts, the verify switch"; the four files it names all still exist | 2 |
 | INTERNALS-43 | INTERNALS.md | 23-26 | `isPlainPush` was built and deleted; four adversarial rounds, four bypasses | accurate | accurate | 2 |
 | INTERNALS-44 | INTERNALS.md | 27 | It refuses unless the repo opted into `auto_close` and HEAD is a non-protected branch | accurate | accurate | 2 |
 | INTERNALS-45 | INTERNALS.md | 33 | The tokenizer was 2,251 lines with the tests | accurate | accurate | 2 |
@@ -1391,8 +1423,8 @@ mistake.
 | CONFIG-CATALOG-06 | cadence-core/references/config-catalog.md | 46 | `git.auto_close` halts on a surviving blocker/high `risk_surface` finding | accurate | accurate | 2 |
 | CONFIG-CATALOG-07 | cadence-core/references/config-catalog.md | 51 | A `**Risk**` knob category exists | stale | corrected - fdb2d69 - the empty `**Risk**` category header deleted, no surviving row moved | 2 |
 | CONFIG-CATALOG-08 | cadence-core/references/config-catalog.md | 61 | `review.triggers.<t>.gate` defaults: `adjudicated` for plan, `advisory` for diff/phase_diff, `blocking` for risk_surface | stale | corrected - v3.4.1 phase 1 | 2 |
-| CONFIG-CATALOG-09 | cadence-core/references/config-catalog.md | 62 | `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | accurate | accurate | 2 |
-| CONFIG-CATALOG-10 | cadence-core/references/config-catalog.md | 63 | `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | accurate | accurate | 2 |
+| CONFIG-CATALOG-09 | cadence-core/references/config-catalog.md | 62 | `review.triggers.<t>.tier` default `flagship`, except `balanced` for diff - cross-model only | stale | corrected - RVW-03 (v3.5.4) - the schema default moved to the unset sentinel, and the Default cell now reads "unset→the stakes level decides, per trigger (`route.mjs resolve` answers it)"; the cross-model-only reach is unchanged | 2 |
+| CONFIG-CATALOG-10 | cadence-core/references/config-catalog.md | 63 | `review.triggers.<t>.effort` default `high`, except `medium` for diff - cross-model only | stale | corrected - RVW-03 (v3.5.4) - the schema default moved to the unset sentinel, and the Default cell now reads "unset→the stakes level decides, per trigger (`route.mjs resolve` answers it)"; the cross-model-only reach is unchanged | 2 |
 | CONFIG-CATALOG-11 | cadence-core/references/config-catalog.md | 64 | `review.triggers.risk_surface.surfaces` list(enum) over the eight surfaces, unset means all eight and the first fire asks once | accurate | accurate | 2 |
 | CONFIG-CATALOG-12 | cadence-core/references/config-catalog.md | 68-69 | Every write goes through the Validation seam; a value outside its set is rejected, never written | accurate | accurate | 2 |
 | RECALL-01 | cadence-core/references/recall.md | 3-6 | Two commands call `planning.mjs recall` - `/cad-context` at `analyze` and `/cad-debug` at Hypothesize - and the contract is stated here once instead of drifting in two workflows | stale | corrected - 75b1d28 - the opening paragraph now names all three callers and the step each calls recall at | 2 |

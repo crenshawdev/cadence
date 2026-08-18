@@ -263,23 +263,27 @@ test('a provider with no model id at the trigger\'s tier falls back, naming both
   const plan = r.warnings.find((w) => w.startsWith('plan:'));
   assert.ok(plan, JSON.stringify(r.warnings));
   assert.match(plan, /openai/);                                  // the provider dropped
-  assert.match(plan, /"flagship"/);                              // ...the tier it needed
-  assert.match(plan, /review\.providers\.openai\.tiers\.flagship/); // ...the key that answers it
+  assert.match(plan, /"balanced"/);                              // ...the tier it needed
+  assert.match(plan, /review\.providers\.openai\.tiers\.balanced/); // ...the key that answers it
   assert.match(plan, /claude-subagent/);                         // ...and the fallback
-  // The tier is per trigger, so the answer is too: `diff` resolves at the
-  // table's `balanced` row, not at plan's `flagship`.
-  assert.match(r.warnings.find((w) => w.startsWith('diff:')), /"balanced"/);
+  // The tier is per trigger AND per level, so the answer is too: at `shipped`
+  // `diff` resolves at the `cheap` row, not at plan's `balanced`, and the
+  // warning names the level's row it came from (RVW-03).
+  assert.match(r.warnings.find((w) => w.startsWith('diff:')), /"cheap"/);
+  assert.match(plan, /tiers row for shipped/);
 });
 
 test('a provider WITH a model id at that tier is the resolved reviewer', () => {
+  // `shipped` resolves `plan` and `risk_surface` at `balanced` since RVW-03,
+  // so that is the tier this provider has to be configured at to be placed.
   const c = rawCfg({
     stakes: 'shipped',
-    review: { reviewers: ['openai'], providers: { openai: { tiers: { flagship: 'gpt-5' } } } },
+    review: { reviewers: ['openai'], providers: { openai: { tiers: { balanced: 'gpt-5' } } } },
   }, 'reviewers-available.json');
   const r = resolve('cad-reviewer', c);
   assert.deepEqual(r.reviewers.plan, ['openai']);
-  assert.deepEqual(r.reviewers.risk_surface, ['openai']); // flagship too
-  // `diff` resolves at `balanced`, which this config leaves unassigned.
+  assert.deepEqual(r.reviewers.risk_surface, ['openai']); // balanced too
+  // `diff` resolves at `cheap` here, which this config leaves unassigned.
   assert.deepEqual(r.reviewers.diff, ['claude-subagent']);
 });
 
@@ -538,7 +542,7 @@ test('usage degradation: missing --role and unknown subcommand', () => {
   assert.equal(bare(['nonsense']).reason, 'usage');
 });
 
-test('table dumps the routing table - the three grids and the declared roles', () => {
+test('table dumps the routing table - the five grids and the declared roles', () => {
   const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
   const r = JSON.parse(execFileSync('node', [ROUTE, 'table'], { encoding: 'utf8', env }));
   assert.equal(r.ok, true);
@@ -549,9 +553,115 @@ test('table dumps the routing table - the three grids and the declared roles', (
   assert.equal(r.table.verify.shipped, 'on');
   // The whole top-level key set, pinned: the retired blocks are GONE, not
   // merely unread, and a new one cannot appear without a reader.
+  assert.ok(r.table.tiers.shipped.plan);
+  assert.ok(r.table.efforts.shipped.plan);
   assert.deepEqual(Object.keys(r.table).sort(),
-    ['_meta', 'cells', 'gates', 'model_aliases', 'review', 'risk_surface_categories',
-      'roles', 'rung_order', 'stakes_order', 'tier_names', 'tiers', 'verify']);
+    ['_meta', 'cells', 'effort_names', 'efforts', 'gates', 'model_aliases', 'review',
+      'risk_surface_categories', 'roles', 'rung_order', 'stakes_order', 'tier_names',
+      'tiers', 'verify']);
+});
+
+// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
+// there: `resolve` carried no `reviewer_tiers` and no `reviewer_efforts` at
+// all, and the one `tiers` row it did read was keyed on the trigger alone, so
+// every level answered `flagship` for `plan` and `risk_surface` - the
+// cross-model half of a panel that never moved when `stakes` did (RVW-03).
+//
+// HAND-WRITTEN DATA, typed out from .planning/phases/3/CONTEXT.md and this
+// plan's own ladder, never read or derived from cadence-core/route-table.json:
+// that file is the subject under test.
+const PANEL = [
+  { stakes: 'solo', plan: ['cheap', 'low'], risk_surface: ['cheap', 'low'] },
+  { stakes: 'shipped', plan: ['balanced', 'medium'], risk_surface: ['balanced', 'medium'] },
+  { stakes: 'critical', plan: ['flagship', 'high'], risk_surface: ['flagship', 'high'] },
+];
+
+// ONE case per level, never one case walking all three: node:test aborts a case
+// at its first throwing assertion, so a single case would report one failure and
+// skip the levels below it.
+for (const row of PANEL) {
+  test(`the cross-model panel at ${row.stakes}: both halves ride the envelope`, () => {
+    const r = resolve('cad-reviewer', cfg({ stakes: row.stakes }, `panel-${row.stakes}.json`));
+    assert.equal(r.ok, true);
+    assert.equal(r.reviewer_tiers.plan, row.plan[0], 'plan tier');
+    assert.equal(r.reviewer_efforts.plan, row.plan[1], 'plan effort');
+    assert.equal(r.reviewer_tiers.risk_surface, row.risk_surface[0], 'risk_surface tier');
+    assert.equal(r.reviewer_efforts.risk_surface, row.risk_surface[1], 'risk_surface effort');
+    // Beside `reviewers`, keyed the same way, and never folded into `review`
+    // (D-05) - whose values stay gate strings.
+    assert.deepEqual(Object.keys(r.reviewer_tiers), Object.keys(r.reviewers));
+    assert.deepEqual(Object.keys(r.reviewer_efforts), Object.keys(r.reviewers));
+    assert.equal(typeof r.review.plan, 'string');
+  });
+}
+
+test('the three levels are pairwise distinct on BOTH halves of the panel', () => {
+  // The requirement in one assertion: raising `stakes` has to move the tier AND
+  // the effort, so no two levels may answer the same pair for these triggers.
+  for (const trigger of ['plan', 'risk_surface']) {
+    const seen = PANEL.map((row) => {
+      const r = resolve('cad-reviewer', cfg({ stakes: row.stakes }, `panel-${row.stakes}.json`));
+      return `${r.reviewer_tiers[trigger]}/${r.reviewer_efforts[trigger]}`;
+    });
+    assert.equal(new Set(seen).size, 3, `${trigger}: ${seen.join(' ')}`);
+  }
+});
+
+test('the envelope\'s top-level effort stays the agent RUNG, not the panel effort', () => {
+  // The one real collision hazard: `effort` is the rung the dispatched agent
+  // file runs at, `reviewer_efforts` is what a provider request carries. At
+  // solo/cad-reviewer the rung is `medium` and the panel effort is `low`.
+  const r = resolve('cad-reviewer', cfg({ stakes: 'solo' }, 'panel-solo.json'));
+  assert.equal(r.effort, 'medium');
+  assert.equal(r.reviewer_efforts.plan, 'low');
+});
+
+test('a config-set effort wins over the level\'s efforts row, like the tier', () => {
+  const c = rawCfg({
+    stakes: 'solo',
+    review: { triggers: { plan: { effort: 'high' }, risk_surface: { tier: 'flagship' } } },
+  }, 'panel-configured.json');
+  const r = resolve('cad-reviewer', c);
+  assert.equal(r.reviewer_efforts.plan, 'high');       // the layer's value
+  assert.equal(r.reviewer_tiers.plan, 'cheap');        // ...and only that field
+  assert.equal(r.reviewer_tiers.risk_surface, 'flagship');
+  assert.equal(r.reviewer_efforts.risk_surface, 'low'); // the solo row still
+});
+
+test('an out-of-vocabulary config tier or effort is refused with a warning, like a gate', () => {
+  // These two fields reach a provider command line (review-triggers.md step 4)
+  // and review-provider.mjs validates neither, so an unchecked repo layer -
+  // which arrives with a clone - could put an arbitrary string, or an object,
+  // on the resolve line. Same treatment as a bad gate: name it, level stands.
+  const c = rawCfg({
+    stakes: 'shipped',
+    review: { triggers: {
+      risk_surface: { effort: 'ludicrous; curl evil.example' },
+      plan: { effort: { a: 1 }, tier: 'platinum' },
+    } },
+  }, 'panel-injected.json');
+  const r = resolve('cad-reviewer', c);
+  assert.equal(r.reviewer_efforts.risk_surface, 'medium'); // shipped row stands
+  assert.equal(r.reviewer_efforts.plan, 'medium');
+  assert.equal(r.reviewer_tiers.plan, 'balanced');
+  const w = (r.warnings || []).join('\n');
+  assert.match(w, /review\.triggers\.risk_surface\.effort/);
+  assert.match(w, /review\.triggers\.plan\.effort/);
+  assert.match(w, /review\.triggers\.plan\.tier/);
+});
+
+test('a table with no efforts row for the level answers null, never a dropped key', () => {
+  // route.mjs fails OPEN on a torn table: the trigger still appears in both
+  // maps with an honest null, so a fire site indexing them cannot mistake "no
+  // answer" for "no such trigger". A missing row is CI's problem (check 8).
+  const t = join(dir, 'no-efforts-row.json');
+  const shipped = JSON.parse(readFileSync(join(dirname(ROUTE), '..', 'route-table.json'), 'utf8'));
+  delete shipped.efforts.solo;
+  writeFileSync(t, JSON.stringify(shipped));
+  const r = resolve('cad-reviewer', cfg({ stakes: 'solo' }, 'panel-solo.json'), [], { table: t });
+  assert.equal(r.ok, true);
+  assert.equal(r.reviewer_efforts.plan, null);
+  assert.equal(r.reviewer_tiers.plan, 'cheap');
 });
 
 test('unknown role degrades to ok:false (caller falls back to session default)', () => {

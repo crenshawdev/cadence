@@ -26,7 +26,8 @@
 //     --dir is the planning root AND the repository every read is bound to
 //     (default cwd). Base resolves from --base, else git.base_branch, else the
 //     first git.protected_branches entry - the same order land-cleanup.mjs
-//     cleanup uses. --timeout-ms overrides DEFAULT_TIMEOUT_MS below.
+//     cleanup uses. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
+//     bounds each subprocess AND the whole per-issue resolve loop.
 //
 // THE CALL IS BOUND TO THE REPOSITORY --dir NAMES, TWO WAYS TOGETHER: `cwd:
 // dir` on the spawn AND the explicit `--repo owner/name` selector parsed from
@@ -67,12 +68,16 @@ import {
 } from './lib/issue-decision.mjs';
 
 /**
- * The bound on EVERY subprocess this seam starts. A land must not be delayed by
- * a forge CLI that never returns (LND-01, criterion 4), and this is the first
- * remote state /cad-land reads that is not git. It is a named constant over a
- * `--timeout-ms` flag rather than a config key on purpose: the milestone
- * licenses exactly one new key, and a bound reachable at the call site is
- * directly testable where a buried hardcoded one is not.
+ * The bound on EVERY subprocess this seam starts, AND the wall-clock budget for
+ * the per-issue resolve loop as a whole (ISS-01). Those are one value on
+ * purpose: the same number answers "how long may one call take" and "how long
+ * may the resolve phase take", so a land's worst case here is this many
+ * milliseconds rather than this many times MAX_RESOLVES. A land must not be
+ * delayed by a forge CLI that never returns (LND-01, criterion 4), and this is
+ * the first remote state /cad-land reads that is not git. It is a named
+ * constant over a `--timeout-ms` flag rather than a config key on purpose: the
+ * milestone licenses exactly one new key, and a bound reachable at the call
+ * site is directly testable where a buried hardcoded one is not.
  */
 const DEFAULT_TIMEOUT_MS = 10000;
 
@@ -236,18 +241,32 @@ function check(dir, baseArg, timeout) {
     return skip({ action: 'skip', reason: `${bin} returned a response this seam could not read as a complete issue list: no tracker report` },
       { host, repo, warnings });
   }
-  // Numbers the list itself could not answer, resolved one bounded call each on
-  // the rows that carry a resolver. The loop STOPS at the first resolve killed
-  // at the call bound rather than continuing: a hung CLI must not be able to
-  // multiply the bound by the cap and put five timeouts on the land path.
+  // Numbers the list itself could not answer, resolved on the rows that carry a
+  // resolver, under ONE wall-clock budget for the whole loop rather than one
+  // bound per call (ISS-01). The deadline is taken once, here, from the same
+  // resolved timeout every other subprocess is bound by, and each call is given
+  // only what is left of it - so no single resolve can outlive the budget and
+  // the loop cannot spend the budget more than once. That is the bound a
+  // per-call timeout could not deliver: a `tea` answering at just under the
+  // bound and exiting nonzero is never killed, so the old `if (one.timedOut)`
+  // exit never fired and MAX_RESOLVES calls each cost nearly the full bound.
+  //
+  // Three things end the loop and nothing else: the budget is spent, a resolve
+  // was killed at what remained of it, or MAX_RESOLVES calls have been made. A
+  // FAST nonzero exit does NOT end it - that is what tea answers for an issue
+  // that is not there, and a land may reference several of those and still need
+  // the states of the numbers behind them.
   /** @type {Map<number, string>} */
   const resolved = new Map();
   if (row.resolve && repo) {
+    const deadline = Date.now() + timeout;
     let spent = 0;
     for (const n of part.notFound) {
       if (spent >= MAX_RESOLVES) break;
+      const left = deadline - Date.now();
+      if (left <= 0) break;
       spent++;
-      const one = run(bin, row.resolve.argv(repo, n), { cwd: dir, timeout });
+      const one = run(bin, row.resolve.argv(repo, n), { cwd: dir, timeout: left });
       if (one.timedOut) break;
       const s = one.ok ? row.resolve.read(one.stdout, n) : null;
       if (s) resolved.set(n, s);

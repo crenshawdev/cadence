@@ -1295,8 +1295,16 @@ function cmdAudit(dir) {
   // `activeVersion` returns the prose token WITH its `v` (`v9.9.0`), while
   // `tagCarrying` takes a bare comparand and `compareVersions` returns null -
   // not 0 - for a `v`-prefixed operand, so the raw token would match no tag.
+  //
+  // The tag question is asked FROM the planning root and answered for the
+  // PROJECT root above it (TAG-01/D-07): `dir` defaults to `.planning` and
+  // audit.md invokes the seam with no `--dir`, and `.planning` never holds
+  // `.git`, so unbounded `git -C` discovery walked past the project entirely. A
+  // project sitting inside an unrelated umbrella repository was FAILed by a
+  // version that repository published; now that answer is refused and the tag
+  // list is empty, which is exactly the no-repo behaviour (D-08).
   const publishedAs = docVersion
-    ? tagCarrying(readTags(dir), normalizeTargetVersion(docVersion)) : null;
+    ? tagCarrying(readTags(dir, dirname(dir)), normalizeTargetVersion(docVersion)) : null;
   // Derived phase status, not the roadmap checkbox: "finish the close" means the
   // artifacts say complete. Same test cmdStatus uses to find the current phase.
   //
@@ -1310,12 +1318,37 @@ function cmdAudit(dir) {
   // That is the close's own definition of finished work, minus the arm the walk
   // cannot revisit. It does not weaken #87: a cycle being worked under a
   // published number has pending or failed items, or no checklist at all.
+  // The OTHER sanctioned state the artifacts cannot express is rolled-over work
+  // (DRF-02/D-04). A close is allowed to carry work forward -
+  // `workflows/milestone.md` names it - and such a phase is byte-identical on
+  // disk to one still being worked: `derivePhases` gives it
+  // unplanned/planned/executed with a possibly absent UAT either way, and the
+  // "the close already ran" signals (an ARCHIVE.md heading, an `_archive-<label>`
+  // directory) are written conditionally and are far too sparse to key on
+  // (D-05). So neither a status derivation nor an archive probe can tell the two
+  // apart, and the only surface that carries the answer is the REQUIREMENT ROWS:
+  // rolling a phase forward means marking its rows `Deferred`, which the close
+  // already does and this audit already excludes from breaks. A phase whose rows
+  // are all `Deferred` therefore stops holding the cycle open, and one whose rows
+  // are still `Pending` keeps the gate armed - which is the half of D-04 that
+  // keeps this from weakening #87.
+  //
+  // NO rows at all is NOT exempt: an empty set satisfies "every row is Deferred"
+  // vacuously, and an unplanned or unseeded phase is the ordinary mid-cycle state
+  // the signal exists to catch. The exemption needs at least one row.
+  //
+  // Read off the `rows` parseRequirements already produced - no second read of
+  // REQUIREMENTS.md, and the same row set the arithmetic above is computed from.
   const settled = (p) => p.status === 'complete'
     || (p.uat !== null && p.uat.items.length > 0 && p.uat.items.every((i) =>
       i.status === 'pass' || i.status === 'blocked'
       || (i.status === 'skipped' && i.reason)));
+  const rolledOver = (p) => {
+    const own = rows.filter((r) => r.phase === p.n);
+    return own.length > 0 && own.every((r) => r.status === 'Deferred');
+  };
   const cycleOpen = publishedAs !== null
-    && derivePhases(dir, [...roadmap.values()]).some((p) => !settled(p));
+    && derivePhases(dir, [...roadmap.values()]).some((p) => !settled(p) && !rolledOver(p));
 
   ok({
     requirements,
@@ -4169,6 +4202,84 @@ function gitMv(from, to) {
 }
 
 /**
+ * Is there a `.git` entry at `from` or at any ancestor? A FILESYSTEM answer,
+ * and deliberately not git's own: a `.git` at mode 000 makes `git status` and
+ * `git rev-parse` alike exit 128 with `fatal: not a git repository`, byte-
+ * identical to a directory that genuinely has no repository above it. So git's
+ * exit code and its stderr cannot separate "unreadable" from "absent" at all,
+ * and reading the message to try would be a parser over free text - the thing
+ * `review-provider.mjs`'s "a diagnostic string never decides control flow" ban
+ * exists to stop. The precedent for probing rather than parsing is
+ * `gitIgnoreState` above.
+ *
+ * `lstatSync`, never `existsSync`: a dangling or unreadable symlink named
+ * `.git` is still a repository this process could not read, and must count as
+ * PRESENT. `existsSync` follows the link, finds nothing, and answers with the
+ * permissive arm - the same failure mode `occupied` below was written for.
+ *
+ * Two states this walk cannot see on its own, both of which would otherwise
+ * report ABSENT for a repository that is present:
+ *   - `GIT_DIR`/`GIT_WORK_TREE` in the environment select a repository with no
+ *     lexical `.git` anywhere above the work tree. The walk finds nothing while
+ *     an object store holding the only copy of the work is very much there.
+ *   - a probe that ERRORS - EACCES on an ancestor we may not stat, EIO, ESTALE -
+ *     is a repository we could not rule OUT, never one we ruled out.
+ * Both answer PRESENT. This gate's permissive arm ends in `rmSync`, so
+ * "could not tell" and "definitely none" must not share it: the whole point of
+ * the check is that an unread git state never reads as a clean one.
+ * @param {string} from @returns {boolean}
+ */
+function gitDirAbove(from) {
+  if (process.env.GIT_DIR || process.env.GIT_WORK_TREE) return true;
+  try {
+    let cur = resolvePath(from);
+    for (;;) {
+      if (lstatSync(join(cur, '.git'), { throwIfNoEntry: false })) return true;
+      const up = dirname(cur);
+      if (up === cur) return false;
+      cur = up;
+    }
+  } catch { return true; }
+}
+
+/**
+ * Is there a `.git` entry anywhere INSIDE `target`? The companion to
+ * `gitDirAbove`, which starts at the planning root and looks UP - so a
+ * repository rooted inside `phases/<N>` is invisible to it, an otherwise
+ * non-repository tree answers ABSENT, and `rmSync` takes that nested object
+ * store along with the directory. It is the same failure the caller's refusal
+ * exists to stop, reached from the other side.
+ *
+ * Bounded by the phase directory's own size - a handful of markdown files and
+ * a reports dir. A subtree we cannot read answers PRESENT for `gitDirAbove`'s
+ * reason; a target that is not there at all answers ABSENT, since there is
+ * nothing under it to protect. That is an errno test and not a message parse:
+ * `review-provider.mjs`'s ban is on a diagnostic STRING deciding control flow.
+ *
+ * `lstatSync` per directory, never `e.name === '.git'` over the readdir: a
+ * name comparison is case-SENSITIVE while the filesystem underneath may not be,
+ * so an admin directory stored as `.GIT` on APFS or NTFS still resolves for git
+ * and would be scanned straight past. Probing inherits the filesystem's own
+ * case semantics, which is what `gitDirAbove` has always done - a guard whose
+ * two halves disagree about what `.git` matches is one half open.
+ *
+ * Directory recursion is by `isDirectory()`, which is lstat-shaped, so a
+ * symlink is never followed and the scan cannot leave the phase directory.
+ * @param {string} target @returns {boolean}
+ */
+function gitDirUnder(target) {
+  let entries;
+  try {
+    if (lstatSync(join(target, '.git'), { throwIfNoEntry: false })) return true;
+    entries = readdirSync(target, { withFileTypes: true });
+  } catch (e) { return !(e && e.code === 'ENOENT'); }
+  for (const e of entries) {
+    if (e.isDirectory() && gitDirUnder(join(target, e.name))) return true;
+  }
+  return false;
+}
+
+/**
  * Every path under `relPath` carrying uncommitted state - untracked (`??`),
  * ignored (`!!`), modified, staged, or deleted. All of them make a `remove`
  * unsafe, for two different reasons:
@@ -4180,20 +4291,32 @@ function gitMv(from, to) {
  *     no copy in the object store to recover from.
  * Refusing on any porcelain output covers both, and leaves git's own
  * safety check intact instead of overriding it.
- * Outside a git repo the call fails and this returns [] - correctly, since
- * nothing is tracked there, the `rmSync` fallback removes the directory
- * whole, and no residue can survive to be nested into.
+ *
+ * Return shape: `{paths, unreadable}`, because a failed `git status` is TWO
+ * states and answering `[]` for both is a fail-open that deletes. Outside a git
+ * repo the call fails and `paths` is empty with `unreadable:false` - correctly,
+ * since nothing is tracked there, the `rmSync` fallback removes the directory
+ * whole, and no residue can survive to be nested into. But when `gitDirAbove`
+ * finds a `.git` the call still failed against, the state is UNREADABLE: the
+ * directory may hold tracked work whose only copy is in an object store this
+ * process cannot open, and `[]` would classify it as clean and delete it.
+ * `unreadable:true` is that third answer, and the caller refuses on it.
+ * A record rather than a bare array costs nothing: this has exactly one caller.
  * `relPath` is relative to `cwd`, so this works whether the caller's `--dir`
  * is absolute or relative.
- * @param {string} cwd @param {string} relPath @returns {string[]}
+ * @param {string} cwd @param {string} relPath
+ * @returns {{paths: string[], unreadable: boolean}}
  */
 function uncommittedUnder(cwd, relPath) {
   try {
     const out = execFileSync('git', ['status', '--porcelain', '--ignored', '--', relPath],
       { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    return out.split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim());
+    return {
+      paths: out.split('\n').filter((l) => l.trim()).map((l) => l.slice(3).trim()),
+      unreadable: false,
+    };
   } catch {
-    return [];
+    return { paths: [], unreadable: gitDirAbove(cwd) };
   }
 }
 
@@ -4289,9 +4412,20 @@ function cmdRenumber(dir, sub, opts) {
   // licence to discard it.
   if (sub === 'remove' && existingDir(at)) {
     const dirty = uncommittedUnder(dir, join('phases', String(at)));
-    if (dirty.length) {
+    // A git that could not ANSWER is its own refusal, never `uncommitted-work`:
+    // that reason's remedy is "commit or discard them first", which is the one
+    // thing a caller whose repository is unreadable cannot do. This sits above
+    // the dry-run return below, so both arms refuse - the dry-run is what the
+    // workflow's confirmation gate shows, and a gate that displays a clean plan
+    // is what talks the caller into the apply.
+    if (dirty.unreadable) {
+      return fail('unreadable-git-state',
+        `phases/${at} sits under a git repository whose state could not be read, so whether it holds uncommitted work is unknown - removing it could destroy work only git can recover`,
+        `restore read access to the repository's git directory (ls -ld .git), then re-run; the removal stays refused until git can answer for .planning/phases/${at}`);
+    }
+    if (dirty.paths.length) {
       return fail('uncommitted-work',
-        `phases/${at} holds ${dirty.length} file(s) with uncommitted state (e.g. ${dirty[0]}) - commit or discard them first; removing the phase would destroy work git cannot recover`,
+        `phases/${at} holds ${dirty.paths.length} file(s) with uncommitted state (e.g. ${dirty.paths[0]}) - commit or discard them first; removing the phase would destroy work git cannot recover`,
         `git status --porcelain --ignored -- .planning/phases/${at}`);
     }
   }
@@ -4397,8 +4531,41 @@ function cmdRenumber(dir, sub, opts) {
   const steps = [];
   if (sub === 'remove' && existingDir(at)) {
     steps.push([{ rm: `phases/${at}` }, () => {
-      try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { stdio: 'pipe' }); }
-      catch { rmSync(join(dir, 'phases', String(at)), { recursive: true }); }
+      // `cwd: dir`, matching the pre-flight's own `git status` call. Without it
+      // git discovers the repository from the CALLER's cwd, which for any
+      // `--dir` outside it is a different repository or none - git answers
+      // `'<path>' is outside repository` and every remove fell through to the
+      // `rmSync` below, tracked work and all. The pre-flight has always read
+      // the right repo; this step did not, so the two disagreed about which
+      // repository the phase belongs to.
+      try { execFileSync('git', ['rm', '-r', '-q', join(dir, 'phases', String(at))], { cwd: dir, stdio: 'pipe' }); }
+      catch {
+        // The recursive delete is the destructive act this whole command is
+        // built around, so it gets its OWN gate rather than trusting the
+        // pre-flight's. The guard is repeated here deliberately: the pre-flight
+        // ran before the roadmap was even computed, and a git state can become
+        // unreadable between the two - and this arm also fires on a `git rm`
+        // failure the pre-flight did not predict at all, which inside a
+        // repository means git disagrees with the clean answer the pre-flight
+        // got. Either way the object store is the only copy of what is about to
+        // go, and `rmSync` is a delete with nothing behind it. With no
+        // repository at, above OR inside the target there is no object store to
+        // consult and no residue that could survive to be nested into, so the
+        // fallback stays the only remover - the bare-tree path every renumber
+        // fixture runs on. `gitDirUnder` carries the "inside" half: looking up
+        // from the planning root cannot see a repository rooted in the very
+        // directory this is about to delete recursively.
+        const target = join(dir, 'phases', String(at));
+        if (gitDirAbove(dir) || gitDirUnder(target)) {
+          // Worded to what is actually known. `git rm` failing does not prove
+          // the repository is unreadable - it proves the git state this delete
+          // depends on went UNREAD, which covers both a `.git` we cannot open
+          // and an answer we did not predict. Claiming the stronger fact would
+          // be this milestone's own defect: a verdict the check did not earn.
+          throw new Error(`git rm -r failed for phases/${at} and a git repository sits at, above or inside it, so the git state this delete depends on is unread - refusing the recursive fallback, since the object store may hold the only copy; run \`git rm -r -- .planning/phases/${at}\` from the repository to see git's own answer`);
+        }
+        rmSync(target, { recursive: true });
+      }
     }]);
   }
   for (const [f, t] of dirMoves) {

@@ -1646,6 +1646,110 @@ test('bound: a credential straddling the sanitize window does not reach the enve
     'the excerpt is still capped');
 });
 
+// --- the EXP-02 falsifier -----------------------------------------------------
+//
+// WATCHED FAILING AT ae73dd6, the tip of the tree this plan opened against -
+// the leak reproduces there with `lib/redact-url.mjs` exactly as committed.
+// Observed there, with this file AND cadence-core/bin/review-provider.mjs
+// copied into that checkout (that module's only change in this plan is the
+// `export` keyword on `bodyExcerpt`, so the copy carries no part of the repair):
+//
+//   $ node --test --test-name-pattern='EXP-02' \
+//       cadence-core/bin/review-provider.test.mjs
+//   AssertionError [ERR_ASSERTION]: 73 bytes of the planted value rode the
+//   failure envelope: "d>, <redacted>, <redacted>, <redacted>, <redacted>,
+//   <redacted>, <redacted>, <redacted>, <redacted>, https://cad:SUPERSECRET_
+//   SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+//   ...[truncated]"
+//   73 !== 0
+//   AssertionError [ERR_ASSERTION]: 985 bytes of the planted value rode the
+//   failure envelope: "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS
+//   [...] ...[truncated]"
+//   985 !== 0
+//   (2 failing, exit 1)
+//
+// Which is the defect exactly: `SCHEME_USERINFO` and `BARE_USERINFO` are both
+// `@`-anchored, so a userinfo span whose `@` fell outside the 4096-byte
+// sanitize window matched nothing, survived byte-identical into `clean`, and
+// rode the capped excerpt into the failure envelope a human reads. The two
+// figures are MEASURED at that commit rather than restated from #215: 73 bytes
+// of the planted value on the issue's own 4:1-compressible shape, and 985 on
+// the high-magnitude one - the class is worth two orders of magnitude more than
+// the figure the issue happened to observe (D-08).
+//
+// To re-watch it: `git worktree add --detach <tmp> ae73dd6`, copy BOTH
+// `cadence-core/bin/review-provider.test.mjs` AND
+// `cadence-core/bin/review-provider.mjs` into that checkout's
+// `cadence-core/bin/`, run
+// `node --test --test-name-pattern='EXP-02' cadence-core/bin/review-provider.test.mjs`
+// there, then remove the worktree. The SECOND copy is not optional and is also
+// the reason task 1 of this plan changed nothing but an export keyword: without
+// it `bodyExcerpt` is module-private at ae73dd6 and the family fails on an
+// undefined function rather than on the leak. The `--test-name-pattern` scope
+// is what keeps the other cases in this file that also redden there - the
+// redact-url window-edge fixtures - from being mistaken for the watched
+// failure.
+
+// Driven straight through `bodyExcerpt`, which is exported for this family and
+// nothing else (D-09): the window edge is reachable with one string here, while
+// reaching it through `runFaked` costs a fake transport plus a body tuned to a
+// compression ratio. Read off the NAMESPACE import for the reason stated at the
+// top of this file - the RVP-01 and RVP-02 re-watch recipes copy only this file
+// into their own, older checkouts, and a named import of a symbol those trees
+// do not export would take the whole file down at load instead of failing the
+// one family that is watching something.
+const bodyExcerpt = reviewProvider.bodyExcerpt;
+
+/**
+ * How many bytes of the planted value came back. The two cases below report a
+ * FIGURE rather than `true !== false` because the defect is a magnitude: the
+ * excerpt is capped either way, and what changes is how much of the secret fits
+ * inside the cap.
+ * @param {string} out
+ */
+const leaked = (out) => (out.match(/SUPERSECRET_S*/) || [''])[0].length;
+
+/** The tail of an excerpt, which is where a cut span lands. @param {string} out */
+const tail = (out) => JSON.stringify(out.slice(-200));
+
+// TWO parametrizations, deliberately two TESTS rather than two halves of one
+// (D-08): a single test stops at its first failed assertion, and the whole
+// point of the second case is that its measured magnitude is read off the
+// watched run too. Both carry the `EXP-02` prefix, so one
+// `--test-name-pattern` still scopes the family.
+
+test('EXP-02: a userinfo span the window cut before its `@` never reaches the excerpt', () => {
+  // #215's own shape: a prefix of credential pairs that compresses about 4:1
+  // (77 pairs of 48 bytes collapsing to 12 each), then a credentialed URL whose
+  // `@` falls outside the 4096-byte window. Sanitizing shrinks the window to
+  // JUST PAST the 1024-byte cap, which is what skips the `clean <= room`
+  // whitespace safeguard - the same arithmetic as the quoted-value fixture
+  // above, pointed at the span `redactCredentials` structurally cannot see.
+  const filler = '"token":"' + 'A'.repeat(36) + '", ';
+  const body = filler.repeat(77)
+    + 'https://cad:SUPERSECRET_' + 'S'.repeat(400) + '@host.invalid/r.git'
+    + 'x'.repeat(8000);
+  const out = bodyExcerpt(body);
+  assert.equal(leaked(out), 0,
+    `${leaked(out)} bytes of the planted value rode the failure envelope: ${tail(out)}`);
+  assert.equal(out.includes('cad:'), false, `the userinfo survived: ${tail(out)}`);
+  assert.ok(Buffer.byteLength(out) <= MAX_HTTP_BODY_BYTES, 'the excerpt is still capped');
+});
+
+test('EXP-02: the same cut span at high magnitude - the class, not the issue figure', () => {
+  // The fix is sized to the CLASS (D-08). One 3 KB credential pair compresses
+  // to 12 bytes, so nearly the whole 1009-byte excerpt is left for the cut
+  // span: the identical defect, two orders of magnitude more of the secret.
+  const body = '"token":"' + 'A'.repeat(3000) + '", '
+    + 'https://cad:SUPERSECRET_' + 'S'.repeat(2000) + '@host.invalid/r.git'
+    + 'x'.repeat(8000);
+  const out = bodyExcerpt(body);
+  assert.equal(leaked(out), 0,
+    `${leaked(out)} bytes of the planted value rode the failure envelope: ${tail(out)}`);
+  assert.equal(out.includes('cad:'), false, `the userinfo survived: ${tail(out)}`);
+  assert.ok(Buffer.byteLength(out) <= MAX_HTTP_BODY_BYTES, 'the excerpt is still capped');
+});
+
 // --- the RVP-02 falsifier -----------------------------------------------------
 //
 // WATCHED FAILING AT 15b5d4c, the tip of this plan's unpatched tree. Observed

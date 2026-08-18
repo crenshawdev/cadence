@@ -14,15 +14,19 @@ const SEAM = join(dirname(fileURLToPath(import.meta.url)), 'git-branch.mjs');
 // Hermetic global config (never read the dev's real ~/.claude one).
 const NO_GLOBAL = join(mkdtempSync(join(tmpdir(), 'cad-gb-')), 'no-global.json');
 
-/** A .planning fixture with the given git config block. */
-function fixture(gitConfig, version = 'v1.1.0-rc.2') {
-  const dir = mkdtempSync(join(tmpdir(), 'cad-gb-repo-'));
+/** Plant a .planning fixture at `dir`, whatever built the directory. */
+function plant(dir, gitConfig, version) {
   mkdirSync(join(dir, '.planning'), { recursive: true });
   writeFileSync(join(dir, '.planning', 'config.json'), JSON.stringify({ git: gitConfig }));
   writeFileSync(join(dir, '.planning', 'PROJECT.md'),
     `## Requirements\n### Active\n\n\`${version}\` - the round\n\n### Out of Scope\n`);
   writeFileSync(join(dir, '.planning', 'ROADMAP.md'), `# Roadmap: Cadence ${version}\n`);
   return dir;
+}
+
+/** A .planning fixture with the given git config block. */
+function fixture(gitConfig, version = 'v1.1.0-rc.2') {
+  return plant(mkdtempSync(join(tmpdir(), 'cad-gb-repo-')), gitConfig, version);
 }
 
 /**
@@ -32,14 +36,16 @@ function fixture(gitConfig, version = 'v1.1.0-rc.2') {
  * so the empty commit works on any machine, including one with commit.gpgsign
  * set globally.
  */
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+  GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+};
+
 function taggedFixture(gitConfig, version, tags) {
   const dir = fixture(gitConfig, version);
-  const env = {
-    ...process.env,
-    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
-    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
-    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-  };
+  const env = GIT_ENV;
   const git = (...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore', env });
   git('init', '-q');
   git('commit', '--allow-empty', '-q', '-m', 'root');
@@ -160,6 +166,86 @@ test('published: a non-semver tag is skipped, not guessed at', () => {
   const clean = taggedFixture({ integration_branch: 'milestone', auto_branch: 'auto' },
     'v0.2.0', ['nightly', '2024-06-release']);
   assert.equal(decide(clean, 'main').action, 'create', 'no tag carries it: nothing to refuse');
+});
+
+// --- TAG-01: the tags have to belong to THIS project ------------------------
+//
+// WATCHED FAILING AT 487e150, the branch tip before this fix - the audit-side
+// half of the same bound carries the full watch recipe in
+// planning.test.mjs's `version_drift` block.
+
+test('published: an enclosing repository\'s tags are not this project\'s (TAG-01)', () => {
+  // `git -C` discovers the repository UPWARD, so a project that is not itself a
+  // repository read the tag list of whatever repository happened to CONTAIN it
+  // - a checkout under an umbrella repo, a vendored copy, a monorepo sibling -
+  // and was refused an integration branch over a version it never published.
+  // The umbrella's v0.1.0 says nothing about the project below it.
+  const umbrella = mkdtempSync(join(tmpdir(), 'cad-gb-umbrella-'));
+  const git = (...args) => execFileSync('git', ['-C', umbrella, ...args],
+    { stdio: 'ignore', env: GIT_ENV });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  git('tag', 'v0.1.0');
+
+  const sub = plant(join(umbrella, 'project'),
+    { integration_branch: 'milestone', auto_branch: 'auto' }, 'v0.1.0');
+  const r = decide(sub, 'main');
+  assert.equal(r.ok, true);
+  assert.equal(r.action, 'create', 'the umbrella published v0.1.0; this project published nothing');
+  assert.equal(r.branch, 'cadence/v0.1.0');
+});
+
+// --- the read-only tags arm (REL-01) ----------------------------------------
+//
+// `workflows/milestone.md` step 2 asks "has this project ever tagged" to tell a
+// release close from a non-release one, and it used to ask it with a bare `git
+// tag`, which discovers the repository UPWARD. This arm is that question
+// bounded to the project the caller names, which is why the same TAG-01 shape
+// the `decide` test above builds is what proves it.
+
+/** Run `git-branch.mjs tags` against a directory. */
+function tags(dir) {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  return JSON.parse(execFileSync('node', [SEAM, 'tags', '--dir', dir],
+    { encoding: 'utf8', env }));
+}
+
+test('tags: the repository at --dir answers with its own tag list', () => {
+  const dir = taggedFixture({}, 'v9.9.0', ['v9.9.0']);
+  const r = tags(dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.tags, ['v9.9.0']);
+});
+
+test('tags: a non-repository project inside a tagged repository has published nothing (TAG-01)', () => {
+  // The defect this arm exists to stop carrying into the release-mode
+  // decision: `sub/` is not a repository, so a bare probe there reads the
+  // umbrella's v9.9.0 and the close reads as a RELEASE close for a project
+  // that has never published anything.
+  const umbrella = taggedFixture({}, 'v9.9.0', ['v9.9.0']);
+  const sub = plant(join(umbrella, 'project'), {}, 'v9.9.0');
+  const r = tags(sub);
+  assert.equal(r.ok, true, 'a non-repository is an answer, never a failure');
+  assert.deepEqual(r.tags, [], "the umbrella's release is not this project's");
+});
+
+test('tags: a directory that is no repository at all reads as no tags, not an error', () => {
+  const r = tags(mkdtempSync(join(tmpdir(), 'cad-gb-bare-')));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.tags, []);
+});
+
+test('an unknown subcommand names BOTH arms, so the new one is reachable from the usage line', () => {
+  // `ok:false` mirrors into exit 1 (lib/seam-io.mjs), so the usage line comes
+  // back on the thrown error's stdout exactly as `decide` above reads it.
+  let out;
+  try { out = execFileSync('node', [SEAM, 'nope'], { encoding: 'utf8' }); }
+  catch (e) { out = e.stdout; }
+  const r = JSON.parse(out);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'usage');
+  assert.match(r.detail, /decide/);
+  assert.match(r.detail, /tags/);
 });
 
 test('warnings[] rides the envelope, and a torn layer puts the parse failure on it', () => {

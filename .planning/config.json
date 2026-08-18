@@ -9,5 +9,10 @@
         ]
       }
     }
+  },
+  "model": {
+    "effort": {
+      "cad-planner": "xhigh"
+    }
   }
 }

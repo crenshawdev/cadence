@@ -57,9 +57,12 @@ const TEA_LOGINS = '[{"name":"forge.example.com","url":"https://forge.example.co
  *  the seam sends it. `issue` is the OPTIONAL third shape - a `{number: body}`
  *  map answering `tea issues <index>`, where a number the map does not hold
  *  exits 1 with no output, which is what tea does for an issue that is not
- *  there. Both extras default to null, so the existing callers (including
+ *  there. `issueSleep` sleeps that many seconds on THAT unmatched arm alone,
+ *  which is what a slow tracker looks like to the resolve loop while the list
+ *  call it follows still answers at once - `sleep` would slow both. Both extras
+ *  default to null and issueSleep to 0, so the existing callers (including
  *  git-publish.test.mjs, which imports this) are untouched. */
-export function stub(dir, name, { body = '', login = null, issue = null, code = 0, sleep = 0, stderr = '' } = {}) {
+export function stub(dir, name, { body = '', login = null, issue = null, issueSleep = 0, code = 0, sleep = 0, stderr = '' } = {}) {
   // `echo`, never a `cat` heredoc: under `bare: true` the child's PATH holds
   // git and nothing else, and /bin/sh has no `cat` builtin - a heredoc stub
   // silently printed nothing there and every bare case degraded for the wrong
@@ -73,7 +76,7 @@ export function stub(dir, name, { body = '', login = null, issue = null, code = 
       'if [ "$1" = "issues" ] && [ "$2" != "list" ]; then',
       'case "$2" in',
       ...Object.entries(issue).map(([n, b]) => `${n}) ${heredoc(b)}; exit 0 ;;`),
-      '*) exit 1 ;;',
+      `*) ${issueSleep ? `sleep ${issueSleep}; ` : ''}exit 1 ;;`,
       'esac',
       'fi',
     ].join('\n'),
@@ -540,6 +543,93 @@ test('forgejo: the resolve stops at its cap, and the remainder are unresolved', 
     refs.map((n, i) => ({ number: n, state: i < 5 ? 'closed' : 'unresolved' })), JSON.stringify(r));
   const resolves = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => /^tea issues \d/.test(l));
   assert.equal(resolves.length, 5, resolves.join('\n'));
+});
+
+// --- the resolve loop's WALL-CLOCK budget (ISS-01) ---------------------------
+//
+// WATCHED FAILING AT 1ca00f7, the tip of this plan's unpatched tree. Observed
+// there, with `tea` sleeping 1s and exiting 1 for every resolve, eight
+// referenced numbers and `--timeout-ms 2000`: FIVE resolves ran (the whole
+// MAX_RESOLVES cap) and the invocation took 5.07s, two and a half times the
+// bound the flag names. The old loop's only exit was `if (one.timedOut) break;`
+// and `run` marks `timedOut` from `err.signal === 'SIGKILL'` alone, so a CLI
+// that answers inside the per-call bound and exits nonzero was never marked
+// timed out and every one of the cap's calls cost the caller its own bound.
+
+test('the per-issue resolves share ONE wall-clock budget, not one bound each', () => {
+  const refs = [301, 302, 303, 304, 305, 306, 307, 308];
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  const argvLog = join(mkdtempSync(join(tmpdir(), 'cad-ic-argv-')), 'argv.log');
+  const started = Date.now();
+  // `issue: {}` answers no number, so every resolve is the slow nonzero exit a
+  // real tracker gives for an issue that is not there. Not `bare`: the stub
+  // needs /usr/bin/sleep, and prepending the stub dir already wins over any
+  // real `tea`.
+  const run = seamRun(['check', '--dir', dir, '--base', 'main', '--timeout-ms', '2000'], {
+    stubs: { tea: { body: TEA_OPEN_BODY, login: TEA_LOGINS, issue: {}, issueSleep: 1 } },
+    argvLog,
+  });
+  const elapsed = Date.now() - started;
+  assert.equal(run.status, 0, JSON.stringify(run.envelope));
+  assert.equal(run.envelope.ok, true, JSON.stringify(run.envelope));
+  assert.equal(run.envelope.action, 'report', JSON.stringify(run.envelope));
+  const resolves = readFileSync(argvLog, 'utf8').trim().split('\n').filter((l) => /^tea issues \d/.test(l));
+  // The budget buys one full call plus whatever is left, never the cap's five.
+  assert.ok(resolves.length <= 2 && resolves.length >= 1,
+    `the loop must stop when its budget is spent, not at MAX_RESOLVES: ${resolves.join('\n')}`);
+  // The falsifying number: five calls at ~1s each is 5.07s, and the bound the
+  // caller named is 2s. Anything under two budgets plus the run's own overhead
+  // can only be a loop that stopped on the budget.
+  assert.ok(elapsed < 3500,
+    `the whole resolve phase must fit inside the single stated budget: ${elapsed}ms`);
+});
+
+test('a FAST nonzero resolve does not stop the loop: the numbers behind it still resolve', () => {
+  // D-11. The shipped cap fixture cannot prove this and neither can the
+  // resolve fixture above: in both, the number the stub exits 1 for is the LAST
+  // one, so a loop that broke on any nonzero exit would still pass them. Here
+  // the unanswered number comes FIRST, which is the ordinary case - tea exits 1
+  // for an issue that is not there, and a land may reference several of those.
+  const refs = [401, 402, 403];
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  const r = seam(['check', '--dir', dir, '--base', 'main'], {
+    stubs: { tea: {
+      body: TEA_OPEN_BODY, login: TEA_LOGINS,
+      issue: { 402: '{"index":402,"state":"closed"}', 403: '{"index":403,"state":"open"}' },
+    } },
+    bare: true,
+  });
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced, [
+    { number: 401, state: 'unresolved' },
+    { number: 402, state: 'closed' },
+    { number: 403, state: 'open' },
+  ], JSON.stringify(r));
+});
+
+test('a budget spent mid-loop is still a report: real states behind it, unresolved ahead', () => {
+  // D-15. The budget is a bound on the land's cost, never a failure of it: the
+  // envelope is the same one every other path emits, and the numbers the loop
+  // never reached carry `unresolved` - never `not-found`, which would be an
+  // affirmative claim about input this seam could not read.
+  const refs = [501, 502, 503, 504, 505, 506, 507, 508];
+  const dir = repo({ originUrl: FORGE_REPO, commits: refs.map((n) => `chore: touches #${n}`) });
+  // 501 answers at once; every later number is the slow nonzero exit, so the
+  // budget runs out with real state already collected and most refs untouched.
+  const run = seamRun(['check', '--dir', dir, '--base', 'main', '--timeout-ms', '2000'], {
+    stubs: { tea: {
+      body: TEA_OPEN_BODY, login: TEA_LOGINS,
+      issue: { 501: '{"index":501,"state":"closed"}' }, issueSleep: 1,
+    } },
+  });
+  assert.equal(run.status, 0, JSON.stringify(run.envelope));
+  assert.equal(run.envelope.ok, true, JSON.stringify(run.envelope));
+  assert.equal(run.envelope.action, 'report', JSON.stringify(run.envelope));
+  assert.deepEqual(run.envelope.referenced,
+    refs.map((n) => ({ number: n, state: n === 501 ? 'closed' : 'unresolved' })),
+    JSON.stringify(run.envelope));
+  assert.deepEqual(run.envelope.open, [42, 99]);
+  assert.deepEqual(run.envelope.warnings, []);
 });
 
 test('the key-off arm spawns NO forge CLI at all, not merely an empty report', () => {

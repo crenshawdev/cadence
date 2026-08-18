@@ -143,15 +143,21 @@ function cellTable(role = 'cad-verifier', cell = {}) {
     rung_order: RUNG_ORDER,
     model_aliases: ['opus', 'sonnet', 'haiku', 'fable'],
     tier_names: ['flagship', 'balanced', 'cheap'],
-    tiers: { plan: 'flagship', diff: 'balanced', risk_surface: 'flagship',
-      phase_diff: 'flagship' },
+    effort_names: ['high', 'medium', 'low', 'minimal'],
     roles: [role],
-    cells: {}, review: {}, verify: {},
+    cells: {}, review: {}, tiers: {}, efforts: {}, verify: {},
   };
   for (const level of ['solo', 'shipped', 'critical']) {
     t.cells[level] = { [role]: { ...spec } };
     t.review[level] = { plan: 'advisory', diff: 'off', risk_surface: 'blocking',
       phase_diff: 'off' };
+    // `tiers` and `efforts` key on (level, trigger) since RVW-03, and both are
+    // DENSE - every level names every trigger - so a fixture row that deletes
+    // one cell breaks exactly the one thing it is about.
+    t.tiers[level] = { plan: 'flagship', diff: 'balanced', risk_surface: 'flagship',
+      phase_diff: 'flagship' };
+    t.efforts[level] = { plan: 'high', diff: 'medium', risk_surface: 'high',
+      phase_diff: 'high' };
     t.verify[level] = 'off';
   }
   return t;
@@ -868,6 +874,45 @@ test('check 8: a level whose review row omits a trigger is missing-cell naming i
   assert.ok(p.some((x) => x.kind === 'missing-cell'
     && /shipped\/phase_diff/.test(x.detail)), JSON.stringify(p));
 });
+
+// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
+// there: `tiers` keyed on the trigger alone and `efforts` did not exist, so a
+// level missing a cross-model tier or effort reached CI green - the grid that
+// this requirement makes stakes-dependent was the one grid check 8 could not
+// see a hole in.
+for (const g of [{ grid: 'tiers', bad: 'premium', code: 'unknown-tier' },
+  { grid: 'efforts', bad: 'ludicrous', code: 'unknown-effort' }]) {
+  test(`check 8: a (level, trigger) pair ${g.grid} omits is missing-cell naming all three`, () => {
+    const t = cellTable('cad-verifier');
+    delete t[g.grid].shipped.risk_surface;
+    const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+    const r = run(['--root', root]);
+    assert.equal(r.ok, false);
+    assert.ok(r.problems.some((x) => x.kind === 'missing-cell'
+      && x.file === 'cadence-core/route-table.json'
+      && x.detail.startsWith(`${g.grid}/shipped/risk_surface`)), JSON.stringify(r.problems));
+  });
+
+  test(`check 8: an out-of-vocabulary ${g.grid} value is ${g.code} naming the cell`, () => {
+    const t = cellTable('cad-verifier');
+    t[g.grid].critical.plan = g.bad;
+    const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+    const r = run(['--root', root]);
+    assert.equal(r.ok, false);
+    assert.ok(r.problems.some((x) => x.kind === g.code
+      && x.detail.startsWith(`${g.grid}/critical/plan`)), JSON.stringify(r.problems));
+  });
+
+  test(`check 8: an entry ${g.grid} carries for a non-trigger is unknown-trigger`, () => {
+    const t = cellTable('cad-verifier');
+    t[g.grid].solo.frobnicate = t[g.grid].solo.plan;
+    const root = fixtureWith({ agents: VERIFIER_AGENTS, routeTable: t });
+    const r = run(['--root', root]);
+    assert.equal(r.ok, false);
+    assert.ok(r.problems.some((x) => x.kind === 'unknown-trigger'
+      && x.detail.startsWith(`${g.grid}/solo/frobnicate`)), JSON.stringify(r.problems));
+  });
+}
 
 test('check 8: a level with no verify value is missing-cell naming the level', () => {
   const t = cellTable('cad-verifier');

@@ -767,12 +767,29 @@ test('PROJECT.md\'s `### Active` declares its milestone as the section\'s first 
   // The property is that the two scans AGREE, not that either equals a value:
   // an assertion phrased as "the first version token" would have PASSED on the
   // broken file, and one naming a version would need re-baselining every cycle
-  // open. activeVersion() and DECLARED_VERSION_RE are NOT changed and get no
-  // fallback (D-07) - the line anchor is the deliberate v2.4.0 fix for reading
-  // a MENTION as the milestone, with four fixtures pinning it at
-  // branch-decision.test.mjs:237-265. Loosening it to make this pass would ship
-  // a behaviour change to the branch-naming seam out of a docs phase; the file
-  // is what moves when this goes red.
+  // open.
+  //
+  // THE READER NOW CARRIES THAT PROPERTY (phase 2 D-03, reversing this pin's
+  // own D-07 policy). DRF-01 moved it into activeVersion(): the two scans both
+  // run over the whole `### Active` body, and a line-anchored token is admitted
+  // as the declaration only when it AGREES with the body's first token or its
+  // line OPENS a sentence rather than continuing a wrapped one - a rejected
+  // anchor contributing nothing, so the earlier correct mention answers. The
+  // 81bdb5d file above now reads `v3.2.0` unchanged, which is why the sentence
+  // this comment used to end on - the file is what moves when this goes red -
+  // no longer describes the code and was deleted rather than left standing.
+  //
+  // So a red run here means something NARROWER than it did, and it is the only
+  // shape left: activeVersion() admitted an anchored token through the
+  // sentence-opening arm while this repository's own `### Active` names a
+  // different version earlier in its prose. The wrapped-continuation defect
+  // cannot reach this assertion any more - the reader ignores it and answers
+  // the first token, which is agreement. What that leaves is a question about
+  // the READER's admission rule (`lib/branch-decision.mjs`, with the four
+  // fixtures at branch-decision.test.mjs:237-266 pinning what it may not cost),
+  // not a hand-edit of the section: read which of the two versions is the
+  // milestone, and if it is the one activeVersion() returned, this pin is the
+  // stale reading and is re-derived from the reader's rule.
   const text = doc('.planning', 'PROJECT.md');
   const lines = text.split('\n');
   const start = lines.findIndex((l) => /^###\s+Active\b/.test(l));
@@ -804,11 +821,14 @@ test('PROJECT.md\'s `### Active` declares its milestone as the section\'s first 
 
   assert.equal(declared, first.version,
     `activeVersion() reads ${declared} (line ${at}) as the milestone while the \`### Active\` `
-    + `body's FIRST version token is ${first.version} (line ${first.line}). A line-anchored `
-    + 'token below an earlier prose mention wins under DECLARED_VERSION_RE, so version_drift '
-    + 'compares the wrong version against the tag list while the docs themselves are correct. '
-    + 'Fix the section - declare the milestone on its own line above every mention - rather '
-    + 'than the anchor, which is the v2.4.0 fix for reading a mention as the milestone.');
+    + `body's FIRST version token is ${first.version} (line ${first.line}). Since phase 2 `
+    + 'D-03 the agreement property lives in activeVersion() itself, which admits a '
+    + 'line-anchored token only on agreement or on a line that opens a sentence - so the one '
+    + 'reading that still reaches here is the sentence-opening admission, and version_drift '
+    + `is comparing ${declared} against the tag list. Settle which version is the milestone: `
+    + 'the remedy is the READER\'s admission rule in lib/branch-decision.mjs and this pin '
+    + 'derived from it, not a hand-edit of the section, which no longer has to route around '
+    + 'where markdown wrapped a line.');
 });
 
 // --- AC6: the executor is told the surfaces it will be judged on -------------
@@ -1487,4 +1507,81 @@ test("SGT-01: the suggest seam's unset-layer defaults are config.schema.json's o
     "planning.mjs's SUGGEST_KEY_DEFAULTS and config.schema.json's defaults disagree - one "
     + 'was edited alone, so /cad-suggest prints a `current` for an unset key that the row '
     + '/cad-config shows contradicts');
+});
+
+
+// --- REL-01: the tag flag is read at one site, and its words name that site --
+//
+// WATCHED FAILING AT c78cbdb, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test --test-name-pattern='REL-01' \
+//       cadence-core/bin/prose-agreement.test.mjs
+//   x REL-01: git.create_tag is read at one prose site, and its purpose names
+//     that site
+//     AssertionError [ERR_ASSERTION]: git.create_tag is read at 2 prose sites:
+//     cadence-core/workflows/milestone.md, skills/cad-land/SKILL.md - the key
+//     governs the tag /cad-land cuts after the merge, so every other reader is
+//     a step deciding something else by it
+//   i pass 0
+//   i fail 1
+//
+// and `node --test cadence-core/bin/prose-agreement.test.mjs` exits 1 there.
+//
+// Which is the defect exactly: `workflows/milestone.md` step 2 read the key as
+// the release-mode discriminator for a whole step, so setting it false skipped
+// the manifest bump - work the key never claimed to govern - while the schema
+// `purpose` said "Tag on milestone" over a tag that is cut at land, after the
+// merge confirms. Both halves are false on that tree: the second assertion's
+// `land` is absent from those three words and its `milestone` is all of them.
+//
+// The subject is AGREEMENT, never presence. The command the purpose has to name
+// is DERIVED from the one site found in step 1 - `skills/cad-land/SKILL.md` ->
+// `cad-land` -> `land` - so the documented words and the actual reader cannot
+// end up naming two different moments, and a literal `land` written into this
+// test would be a second copy of the fact rather than a check on it.
+//
+// Scoped to the prose READ sites, `cadence-core/workflows/` and `skills/`, and
+// deliberately NOT to `config.schema.json`, `references/config-catalog.md` or
+// `references/config-reach.md`: those three name every key by definition, so a
+// count that included them would be red forever for the wrong reason.
+//
+// To re-watch: `git worktree add --detach <tmp> c78cbdb`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/prose-agreement.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+/** A repo-relative, forward-slashed path for an absolute one under REPO. */
+const repoPath = (abs) => abs.slice(REPO.length + 1).split(sep).join('/');
+
+test('REL-01: git.create_tag is read at one prose site, and its purpose names that site', () => {
+  // 1. The prose surfaces that READ the key, found rather than listed.
+  const sites = [];
+  for (const dir of ['cadence-core/workflows', 'skills']) {
+    for (const f of everyFileUnder(join(REPO, ...dir.split('/')))) {
+      if (f.endsWith('.md') && readFileSync(f, 'utf8').includes('git.create_tag')) {
+        sites.push(repoPath(f));
+      }
+    }
+  }
+  sites.sort();
+  assert.deepEqual(sites, ['skills/cad-land/SKILL.md'],
+    `git.create_tag is read at ${sites.length} prose sites: ${sites.join(', ')} - the key `
+    + 'governs the tag /cad-land cuts after the merge, so every other reader is a step '
+    + 'deciding something else by it');
+
+  // 2. The schema `purpose` names THAT site's command, and no other moment.
+  //    Both sides are extracted: the command comes out of the path found above,
+  //    the words out of the schema's own bytes.
+  const command = dirname(join(REPO, ...sites[0].split('/'))).split(sep).pop();
+  const moment = String(command).replace(/^cad-/, '');
+  const key = JSON.parse(doc('cadence-core', 'config.schema.json')).keys['git.create_tag'];
+  assert.ok(key, 'config.schema.json defines no git.create_tag');
+  const purpose = String(key.purpose);
+  assert.match(purpose, new RegExp(`\\b${moment}\\b`, 'i'),
+    `${sites[0]} is the one site that reads git.create_tag, and its schema purpose - `
+    + `"${purpose}" - never names ${moment}, so the key documents a moment nothing reads it at`);
+  assert.doesNotMatch(purpose, /milestone/i,
+    `git.create_tag's schema purpose - "${purpose}" - still names the milestone close, `
+    + `which stopped reading the key: the cut is ${moment}'s, on the pulled base after the `
+    + 'merge confirms');
 });

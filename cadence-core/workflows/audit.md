@@ -107,10 +107,12 @@ requirement id.
   this repo has ALREADY tagged while its cycle is still open. That is issue
   #87's failure mode - a cycle planned, branched and worked under a number that
   already shipped - and it is invisible to every other key here. `published_as`
-  is the tag spelling that carries it. Two exits: open the NEXT version in
+  is the tag spelling that carries it. Three exits: open the NEXT version in
   `PROJECT.md ### Active` (and the ROADMAP title, if it names one) - the exit
   that always exists, and the right one when the tag is already cut - or, if the
-  cycle really is finished, complete the close so no phase is left open.
+  cycle really is finished, complete the close so no phase is left open - or
+  roll the work forward, which the seam honours once every Traceability row
+  naming that phase is `Deferred`.
 
 ## 4. Verdict
 Arithmetic over both seam calls - in-scope `counts.broken` (after any milestone

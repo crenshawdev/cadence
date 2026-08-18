@@ -2493,6 +2493,13 @@ test('audit: a colon INSIDE the bold span reports, and is never normalized into 
  * @param {any} spec @param {{version?: string|null, tags?: string[],
  *   roadmapTitle?: string}} opts
  */
+const GIT_FIXTURE_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
+  GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
+  GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+};
+
 function taggedTree(spec, { version = 'v9.9.0', tags = [], roadmapTitle } = {}) {
   const dir = makeTree(spec);
   if (version !== null) {
@@ -2506,13 +2513,8 @@ function taggedTree(spec, { version = 'v9.9.0', tags = [], roadmapTitle } = {}) 
     writeFileSync(join(dir, 'ROADMAP.md'), text.replace(/^# .*$/m, roadmapTitle));
   }
   const root = dirname(dir);
-  const env = {
-    ...process.env,
-    GIT_AUTHOR_NAME: 'cad', GIT_AUTHOR_EMAIL: 'cad@example.invalid',
-    GIT_COMMITTER_NAME: 'cad', GIT_COMMITTER_EMAIL: 'cad@example.invalid',
-    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
-  };
-  const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore', env });
+  const git = (...args) => execFileSync('git', ['-C', root, ...args],
+    { stdio: 'ignore', env: GIT_FIXTURE_ENV });
   git('init', '-q');
   git('commit', '--allow-empty', '-q', '-m', 'root');
   for (const t of tags) git('tag', t);
@@ -2624,6 +2626,145 @@ test('audit: the v2.4.0 state of this repo (issue #87) fires - the regression pi
   assert.equal(r.ok, true);
   assert.deepEqual(r.version_drift,
     { doc_version: 'v2.4.0', published_as: 'v2.4.0', cycle_state: 'open' });
+});
+
+// --- DRF-02: the sanctioned rolled-over phase ---------------------------------
+//
+// WATCHED FAILING AT caf3a23, the branch tip before this fix. Observed there,
+// with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/planning.test.mjs
+//   x audit: a phase rolled forward - every row Deferred - does not hold the cycle open
+//     AssertionError [ERR_ASSERTION]: rolling work forward is a sanctioned close,
+//     not an open cycle under a published number
+//     + actual - expected
+//     + { cycle_state: 'open', doc_version: 'v9.9.0', published_as: 'v9.9.0' }
+//     - undefined
+//   i pass 394
+//   i fail 1
+//
+// Only THIS file is copied: `planning.mjs` stays as that tree shipped it, so
+// the artifact-only `settled` predicate answers and the watch means something.
+// The `Pending` twin passes there and is expected to - it is the half of D-04
+// that keeps the gate armed, and it must pass on BOTH trees.
+//
+// To re-watch: `git worktree add --detach <tmp> caf3a23`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/planning.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+/**
+ * One unsettled phase - a pending UAT item, so no artifact can call it complete
+ * - whose sole requirement row carries `status`. The two calls differ in that
+ * one cell and nowhere else.
+ */
+const rolledSpec = (status) => ({
+  roadmap: [{ n: 1, name: 'One', checked: false }],
+  phases: { 1: { plan: true, planReqs: ['AUD-01'], summary: true,
+    uat: [{ status: 'pending' }] } },
+  reqs: [['AUD-01', 1, status]],
+});
+
+test('audit: a phase rolled forward - every row Deferred - does not hold the cycle open', () => {
+  // A close is sanctioned to carry work forward (milestone.md), and such a
+  // phase looks byte-identical on disk to one still being worked. The rows are
+  // the only surface that says which it is: `Deferred` is what rolling forward
+  // writes, and the close's remedy - "complete the close so no phase is left
+  // open" - is not reachable for a phase deliberately left open.
+  const dir = taggedTree(rolledSpec('Deferred'), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined,
+    'rolling work forward is a sanctioned close, not an open cycle under a published number');
+  // The row still reports as deferred - the exemption reads that datum, it does
+  // not change it.
+  assert.deepEqual(r.deferred, ['AUD-01']);
+});
+
+test('audit: the same phase with its rows still Pending keeps the gate armed', () => {
+  // D-04's other half, and what keeps the exemption from re-opening #87: a
+  // cycle being WORKED under a published number has rows that are not deferred.
+  const dir = taggedTree(rolledSpec('Pending'), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const r = run(['audit'], dir);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
+});
+
+// --- TAG-01: the tag list has to belong to THIS project ----------------------
+//
+// WATCHED FAILING AT 487e150, the branch tip before this fix. Observed there,
+// with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/planning.test.mjs
+//   x audit: an enclosing repository's tags are not this project's (TAG-01)
+//     AssertionError [ERR_ASSERTION]: an unrelated umbrella repo's v9.9.0 is not
+//     a publication of this project
+//     + actual - expected
+//     + { cycle_state: 'open', doc_version: 'v9.9.0', published_as: 'v9.9.0' }
+//     - undefined
+//   i pass 392
+//   i fail 1
+//
+// `git-branch.test.mjs`'s TAG-01 fixture - the other caller - reddens in the
+// same tree and the same way (`create` expected, `ask` observed).
+//
+// Only THIS file is copied: `lib/git-tags.mjs` stays as that tree shipped it,
+// so the unbounded `git -C` discovery answers and the watch means something.
+// The linked-worktree fixture below passes there and is expected to - it pins
+// what the bound must NOT cost (this repository runs its own executors in
+// worktrees, cd5aed6), not the defect itself.
+//
+// To re-watch: `git worktree add --detach <tmp> 487e150`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/planning.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+
+test('audit: an enclosing repository\'s tags are not this project\'s (TAG-01)', () => {
+  // `git -C` discovers the repository UPWARD, and the audit asks the tag
+  // question from `.planning` - which never holds `.git` - so a project that is
+  // not itself a repository inherited the tags of whatever repository contained
+  // it, and could be FAILed by a version an unrelated umbrella repo published.
+  const inner = makeTree(cycleSpec(false));
+  writeFileSync(join(inner, 'PROJECT.md'),
+    '# Fixture\n\n## Requirements\n\n### Active\n\n`v9.9.0` - the open cycle\n\n### Out of Scope\n');
+  const umbrella = mkdtempSync(join(tmpdir(), 'cad-umbrella-'));
+  const git = (...args) => execFileSync('git', ['-C', umbrella, ...args],
+    { stdio: 'ignore', env: GIT_FIXTURE_ENV });
+  git('init', '-q');
+  git('commit', '--allow-empty', '-q', '-m', 'root');
+  git('tag', 'v9.9.0');
+  // The project moves INSIDE the umbrella's working tree, still carrying no
+  // `.git` of its own - a vendored copy, a monorepo sibling, a checkout under
+  // somebody else's repo.
+  renameSync(dirname(inner), join(umbrella, 'project'));
+
+  const r = run(['audit'], join(umbrella, 'project', '.planning'));
+  assert.equal(r.ok, true);
+  assert.equal(r.version_drift, undefined,
+    'an unrelated umbrella repo\'s v9.9.0 is not a publication of this project');
+  // Permissive at `[]` (D-08), so the rest of the envelope is exactly the
+  // no-repo one: the refusal costs the audit nothing but the tag question.
+  assert.equal(r.requirements[0].break, 'not-verified');
+  assert.deepEqual(r.counts, { total: 1, traced: 0, broken: 1, deferred: 0 });
+});
+
+test('audit: a LINKED WORKTREE still reads its own repository\'s tags (TAG-01)', () => {
+  // The bound must not simply disable the reader. `--show-toplevel` inside a
+  // linked worktree returns the WORKTREE root - which is the root the caller
+  // derived - and the tags are shared with the main repository, so the drift
+  // signal still fires where it should.
+  const dir = taggedTree(cycleSpec(false), { version: 'v9.9.0', tags: ['v9.9.0'] });
+  const root = dirname(dir);
+  const git = (...args) => execFileSync('git', ['-C', root, ...args],
+    { stdio: 'ignore', env: GIT_FIXTURE_ENV });
+  git('add', '-A');
+  git('commit', '-q', '-m', 'planning');
+  const linked = join(mkdtempSync(join(tmpdir(), 'cad-linked-')), 'wt');
+  git('worktree', 'add', '--detach', linked, 'HEAD');
+
+  const r = run(['audit'], join(linked, '.planning'));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.version_drift,
+    { doc_version: 'v9.9.0', published_as: 'v9.9.0', cycle_state: 'open' });
 });
 
 test('seed-reqs: a v1.3.1-shaped ## Active table leaves its envelope unchanged - the delegation did not leak into the writer', () => {
@@ -3887,6 +4028,103 @@ test('renumber remove: uncommitted work in phases/<at> is refused before any wri
   assert.match(readFileSync(join(dir, 'phases', '1', 'PLAN.md'), 'utf8'), /Plan 2/);
 });
 
+// WATCHED FAILING AT ae73dd6, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout:
+//
+//   $ node --test --test-name-pattern='PHS-01' cadence-core/bin/planning.test.mjs
+//   AssertionError [ERR_ASSERTION]: phases/3 must survive a git state that
+//   could not be read - apply returned {"ok":true,"ops":[{"rm":"phases/3"},
+//   {"edit":"ROADMAP.md","changes":1},{"edit":"REQUIREMENTS.md","changes":1},
+//   {"edit":"STATE.md","changes":1}],"orphaned_reqs":["REQ-3"],"total":2,
+//   "_exit":0}
+//     + actual - expected
+//     + false
+//     - true
+//   (exit 1)
+//
+// Which is the defect exactly: the repository's `.git` was at mode 000, so
+// `git status --porcelain --ignored` exited 128 and `uncommittedUnder`'s bare
+// `catch { return []; }` reported NO uncommitted work - the same answer it
+// gives for a directory with no repository at all. `remove` read that as clean,
+// ran, reported `ok:true` with `{"rm":"phases/3"}` among its ops, and phases/3
+// and its PLAN.md were gone. The exit code is 0: nothing in the output says a
+// check was skipped, which is the whole shape - a gate that clears itself
+// wrong.
+//
+// Driven through the CLI with `execFileSync` and importing nothing this plan
+// added, so against the unpatched tree it fails on an ASSERTION rather than on
+// a missing export. To re-watch it:
+// `git worktree add --detach <tmp> ae73dd6`, copy THIS FILE alone into that
+// checkout's `cadence-core/bin/`, run it there with
+// `--test-name-pattern='PHS-01'` - the scope matters, since the source row
+// below (`source: the renumber rm fallback's ...`) also reddens at that sha and
+// is a different claim - then `git worktree remove` it.
+
+test('PHS-01: an unreadable git state refuses the remove, a non-repo still removes', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  const dir = renumberTree();
+  const repo = join(dir, '..');
+  const g = (args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+  g(['init', '-q', '.']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 'T']);
+  g(['add', '-A']);
+  g(['commit', '-qm', 'init']);
+
+  // Mode 000 on `.git` is the whole fixture: git then exits 128 with
+  // `fatal: not a git repository` - the SAME bytes it prints for a directory
+  // that has no repository above it at all. That collision is why the
+  // classifier probes the filesystem instead of reading git's answer, and it
+  // is why the two arms below have to be asserted together: any rule derived
+  // from git's own output either refuses both or permits both.
+  const gitDir = join(repo, '.git');
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  let rDry, rApply;
+  chmodSync(gitDir, 0o000);
+  try {
+    rDry = run(['renumber', 'remove', '--n', '3', '--dry-run'], dir);
+    rApply = run(['renumber', 'remove', '--n', '3'], dir);
+  } finally {
+    // Restored before any assertion, so a red row cannot leave a tmpdir
+    // nothing can descend into - the shipped partial-apply fixture's
+    // discipline, for the same reason.
+    chmodSync(gitDir, 0o755);
+  }
+
+  // The destroyed thing first, and the envelope in the message: what a wrong
+  // answer costs here is a phase directory and everything under it, so that is
+  // the assertion the watch is meant to show failing.
+  assert.ok(existsSync(join(dir, 'phases', '3', 'PLAN.md')),
+    `phases/3 must survive a git state that could not be read - apply returned ${JSON.stringify(rApply)}`);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+
+  // Both arms refuse, and neither sends the caller to a remedy git cannot
+  // perform. `--dry-run` matters as much as apply: it is what the workflow's
+  // confirmation gate prints, so a clean plan there is what talks a caller
+  // into the apply.
+  for (const [arm, r] of [['--dry-run', rDry], ['apply', rApply]]) {
+    assert.equal(r.ok, false, `${arm} must refuse an unreadable git state, got ${JSON.stringify(r)}`);
+    assert.notEqual(r.reason, 'uncommitted-work',
+      `${arm} reported uncommitted work for a git that could not answer`);
+    assert.doesNotMatch(`${r.detail || ''} ${r.hint || ''}`, /commit or discard/,
+      `${arm} prescribes committing or discarding, which an unreadable repository cannot do`);
+  }
+
+  // The permissive arm of the same classifier (AC5), asserted in the same
+  // family because it is the cost of getting the first arm wrong: no `.git`
+  // anywhere above means nothing is tracked, nothing can be lost to the
+  // object store, and the remove must still happen. Eleven shipped renumber
+  // fixtures run on exactly this tree.
+  const bare = renumberTree();
+  const rBare = run(['renumber', 'remove', '--n', '3'], bare);
+  assert.equal(rBare.ok, true, `a tree with no repository must still remove, got ${JSON.stringify(rBare)}`);
+  assert.ok(!existsSync(join(bare, 'phases', '3')));
+  assert.deepEqual(readdirSync(join(bare, 'phases')).sort(), ['1', '2']);
+});
+
 test('renumber remove: a partial apply reports which ops completed (#49.2)', {
   skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
 }, () => {
@@ -3935,6 +4173,146 @@ test('renumber remove: a failure before ANY step says so, rather than claiming a
   assert.deepEqual(r.completed, []);
   assert.match(r.hint, /nothing was written/);
   assert.doesNotMatch(r.hint, /partly renumbered/);
+});
+
+// WATCHED FAILING AT ae73dd6, the same unpatched tip the falsifier above was
+// watched at. These two came out of the blocking `risk_surface` round rather
+// than a plan task, which is why the header lands here after the fact; the
+// watch it records was re-run in full before this comment was written.
+// Observed there, with THIS FILE alone copied into that checkout:
+//
+//   $ node --test --test-name-pattern='PHS-01' cadence-core/bin/planning.test.mjs
+//   AssertionError [ERR_ASSERTION]: the nested repository must stop the delete
+//   - got {"ok":true,"ops":[{"rm":"phases/3"},{"edit":"ROADMAP.md",
+//   "changes":1},{"edit":"REQUIREMENTS.md","changes":1},{"edit":"STATE.md",
+//   "changes":1}],"orphaned_reqs":["REQ-3"],"total":2,"_exit":0}
+//   true !== false
+//   AssertionError [ERR_ASSERTION]: phases/3 must survive an unreadable GIT_DIR
+//   repository - got {"ok":true,"ops":[{"rm":"phases/3"}, ... ,"_exit":0}
+//   (exit 1)
+//
+// Both are the SAME shape as the falsifier above and a different reach: there
+// the repository sat at the planning root with its state unreadable, here it is
+// invisible to a walk that only goes UP (rooted inside the target) or that only
+// reads the filesystem (selected by `GIT_DIR`). In both the classifier answered
+// ABSENT, which is the permissive arm, and the permissive arm ends in the
+// recursive delete - `ok:true`, `{"rm":"phases/3"}`, exit 0, nothing in the
+// output saying a check was skipped.
+//
+// Both are driven through the CLI with `execFileSync` and import nothing this
+// phase added, so they fail on an ASSERTION at the unpatched sha rather than on
+// a missing export. To re-watch: `git worktree add --detach <tmp> ae73dd6`,
+// copy THIS FILE alone into that checkout's `cadence-core/bin/`, run it there
+// with `--test-name-pattern='PHS-01'` - the scope matters for the same reason
+// it does above - then `git worktree remove` it.
+
+test('PHS-01: a repository rooted INSIDE phases/<at> is not deleted out from under itself', () => {
+  // The classifier walks UP from the planning root, so a repository rooted in
+  // the very directory the fallback is about to delete is invisible to it: the
+  // tree answers "no repository" and `rmSync` takes the nested object store
+  // along with the phase. Nothing else in the run reads that repository, so its
+  // commits have no second copy anywhere.
+  const dir = renumberTree();
+  const nested = join(dir, 'phases', '3');
+  execFileSync('git', ['init', '-q', '.'], { cwd: nested, stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' } });
+
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  const r = run(['renumber', 'remove', '--n', '3'], dir);
+
+  assert.equal(r.ok, false, `the nested repository must stop the delete - got ${JSON.stringify(r)}`);
+  assert.ok(existsSync(join(nested, '.git')), 'the nested object store must survive');
+  assert.ok(existsSync(join(nested, 'PLAN.md')));
+  // The rm is the FIRST apply step, so a refusal there leaves the tree whole.
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+  assert.deepEqual(readdirSync(join(dir, 'phases')).sort(), ['1', '2', '3']);
+});
+
+test('PHS-01: a GIT_DIR-selected repository counts as present when its state cannot be read', {
+  skip: typeof process.getuid === 'function' && process.getuid() === 0 ? 'root bypasses mode bits' : false,
+}, () => {
+  // `GIT_DIR`/`GIT_WORK_TREE` select a repository with no lexical `.git`
+  // anywhere above the work tree. The filesystem probe finds nothing, so an
+  // unreadable external repository classified as ABSENT - the permissive arm,
+  // which ends in the recursive delete. Presence is what the environment says
+  // here, not what the walk can see.
+  const dir = renumberTree();
+  const work = join(dir, '..');
+  const meta = join(work, 'meta.git');
+  const env = { GIT_DIR: meta, GIT_WORK_TREE: work,
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' };
+  const g = (args) => execFileSync('git', args, { cwd: work, stdio: 'pipe', env: { ...process.env, ...env } });
+  g(['init', '-q']);
+  g(['config', 'user.email', 't@t']);
+  g(['config', 'user.name', 'T']);
+  g(['add', '-A']);
+  g(['commit', '-qm', 'init']);
+  assert.ok(!existsSync(join(work, '.git')), 'the fixture is only meaningful with no lexical .git');
+
+  const before = readFileSync(join(dir, 'ROADMAP.md'), 'utf8');
+  let r;
+  chmodSync(meta, 0o000);
+  try { r = run(['renumber', 'remove', '--n', '3'], dir, undefined, env); }
+  finally { chmodSync(meta, 0o755); }
+
+  assert.ok(existsSync(join(dir, 'phases', '3', 'PLAN.md')),
+    `phases/3 must survive an unreadable GIT_DIR repository - got ${JSON.stringify(r)}`);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'unreadable-git-state');
+  assert.equal(readFileSync(join(dir, 'ROADMAP.md'), 'utf8'), before);
+});
+
+test('source: the nested-repository probe reads the filesystem, not entry names', () => {
+  // A source row because the state it guards needs a case-INSENSITIVE
+  // filesystem, which the suite cannot conjure on Linux. What it pins is the
+  // mechanism: `e.name === '.git'` over a readdir is a case-sensitive test, so
+  // an admin directory stored as `.GIT` on APFS or NTFS still resolves for git
+  // and gets scanned past, while `gitDirAbove` - which has always probed with
+  // lstat - matches it. One guard, two halves, and only one of them open.
+  const src = readFileSync(PLANNING, 'utf8');
+  const start = src.indexOf('function gitDirUnder(');
+  assert.ok(start > 0, 'the nested-repository probe is no longer under this name');
+  const body = src.slice(start, src.indexOf('\n}', start));
+  assert.match(body, /lstatSync\(join\([^)]*'\.git'\)/,
+    'the nested probe no longer asks the filesystem whether .git is there');
+  assert.doesNotMatch(body, /\.name === '\.git'/,
+    'the nested probe is back to a case-sensitive name comparison');
+});
+
+test('source: the renumber rm fallback\'s recursive delete is gated by the .git probe', () => {
+  // A source row rather than a behavioural one because the state it guards is
+  // unreachable from a test: it needs `git rm` to fail while `.git` exists,
+  // which the pre-flight already refuses ahead of the apply. The arm is still
+  // load-bearing - it is the SECOND, independent fail-open, covering a git
+  // state that turned unreadable between the pre-flight and the apply, and any
+  // `git rm` failure the pre-flight did not predict at all. What the row pins
+  // is that the guard cannot be dropped back to the shipped one-liner
+  // `catch { rmSync(..., { recursive: true }) }`, which read an unreadable git
+  // state as a clean one and deleted the phase directory whole.
+  const src = readFileSync(PLANNING, 'utf8');
+  // Sliced from the rm step's own op literal to the move loop that follows it,
+  // so this reads the ONE fallback that deletes a phase directory and not the
+  // unrelated recursive rmSync in milestone-prune's delete mode.
+  const start = src.indexOf('steps.push([{ rm: `phases/${at}` }');
+  assert.ok(start > 0, 'the renumber apply loop\'s rm step is no longer under this shape');
+  const end = src.indexOf('for (const [f, t] of dirMoves)', start);
+  assert.ok(end > start, 'the rm step is no longer followed by the dir-move loop');
+  const step = src.slice(start, end);
+  assert.match(step, /rmSync\([\s\S]*?recursive: true/, 'the recursive fallback this row guards is gone');
+  // Guarded, and guarded BEFORE the delete - a probe after the rmSync would
+  // pass a substring check while deleting exactly as it did.
+  const probe = step.indexOf('gitDirAbove(');
+  const del = step.search(/rmSync\(/);
+  assert.ok(probe > 0 && probe < del,
+    'the recursive delete runs without the .git probe deciding first');
+  // The probe looks UP from the planning root, so it cannot see a repository
+  // rooted in the directory being deleted. That half is a separate call and
+  // it must also decide before the delete, or the nested object store goes
+  // with the phase dir - the same fail-open reached from the other side.
+  const under = step.indexOf('gitDirUnder(');
+  assert.ok(under > 0 && under < del,
+    'the recursive delete runs without the nested-repository probe deciding first');
+  assert.doesNotMatch(step, /catch \{ rmSync/, 'the unguarded one-line fallback is back');
 });
 
 // --- plan-overlap: the parallel-safety gate ------------------------------------

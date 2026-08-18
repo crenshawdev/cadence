@@ -1,14 +1,17 @@
 // @ts-check
 // route-cells.mjs - the ONE statement of what makes cadence-core/route-table.json's
-// four grids AND its shared vocabulary arrays well-formed, imported by self-verify.mjs
+// five grids AND its shared vocabulary arrays well-formed, imported by self-verify.mjs
 // (which files each issue as a CI problem). Same shape and same reasons as lib/rung-agent.mjs: route.mjs
 // reads these grids and fails OPEN on anything wrong with them, so CI is the only
 // place a bad cell can die, and the rule it dies by has to be written once.
 //
-// Every `detail` NAMES THE CELL - `<level>/<role>`, `<level>/<trigger>` or
-// `tiers/<trigger>` for the one grid that keys on a trigger alone - because
-// in an 18-cell grid the level and the key are the only things that locate a
-// problem. "a model outside model_aliases" sends a maintainer reading all 18.
+// Every `detail` NAMES THE CELL - `<level>/<role>` for the cells grid,
+// `<level>/<trigger>` for the review rows, and `<grid>/<level>/<trigger>` for
+// the two that key on (level, trigger) beside them - because in an 18-cell grid
+// the level and the key are the only things that locate a problem. "a model
+// outside model_aliases" sends a maintainer reading all 18, and since RVW-03
+// THREE grids key on (level, trigger), so a bare `<level>/<trigger>` would send
+// them to the wrong block.
 //
 // Pure lib: no fs, no emit, no process, no Date, no randomness. File EXISTENCE is
 // the caller's job (it does the I/O); this side owns the map from a rung to the
@@ -132,30 +135,38 @@ export function vocabularyIssues(table, vocab = {}) {
 }
 
 /**
- * Everything wrong with the four grids, as `{code, detail}` entries.
+ * Everything wrong with the five grids, as `{code, detail}` entries.
  *
  * Codes:
  *   `missing-cell`        a (level, role) pair with no entry, a level with no
  *                         review row or no verify value, a trigger the level's
- *                         review row omits, or a trigger with no `tiers` entry
+ *                         review row omits, or a level row or (level, trigger)
+ *                         entry either of the `tiers` and `efforts` grids omits
  *   `missing-rung-agent`  a cell whose `effort` or `retry` names a rung that
  *                         lib/rung-agent.mjs maps to no agent file
  *   `unknown-model`       a cell `model` outside the table's `model_aliases`
  *   `unknown-rung`        a cell `effort`/`retry` outside `rung_order`, or a
  *                         `verify` value outside on/off
  *   `unknown-gate`        a review value outside the schema's gate enum
- *   `unknown-trigger`     a review or `tiers` key that is not a trigger the
- *                         schema defines
+ *   `unknown-trigger`     a review, `tiers` or `efforts` key that is not a
+ *                         trigger the schema defines
  *   `unknown-tier`        a `tiers` value outside the table's `tier_names`
+ *   `unknown-effort`      an `efforts` value outside the table's `effort_names`
  *   `rung-demotion`       a cell whose `retry` sits BELOW its `effort`
  *
- * `tiers` is the ONE grid that does not key on a level: it names the fallback
- * model tier a trigger's reviewer-availability test uses when no config layer
- * set `review.triggers.<t>.tier`, so its cells are located by trigger alone
- * (`tiers/<trigger>`). A trigger with no entry is caught here rather than at
- * resolve time for the reason every other cell is: route.mjs fails open, so a
- * missing tier would resolve every provider unavailable on a live dispatch and
- * report a fallback the user never configured.
+ * `tiers` and `efforts` are the cross-model half of a review panel: the model
+ * tier and the reasoning effort a trigger's provider call runs at when no config
+ * layer set `review.triggers.<t>.tier` or `.effort`. Both key on (level,
+ * trigger) since RVW-03 - `tiers` used to key on the trigger alone, which is
+ * exactly how raising `stakes` moved the subagent half of a panel and left this
+ * half where it was - and both are walked in BOTH directions against the same
+ * trigger list the review rows are, so a DENSE grid is the rule: a level that
+ * omits a trigger is a fault here rather than a silent inheritance of another
+ * level's value. A missing entry is caught here rather than at resolve time for
+ * the reason every other cell is: route.mjs fails open, so a missing tier would
+ * resolve every provider unavailable on a live dispatch and report a fallback
+ * the user never configured, and a missing effort would send a provider request
+ * with no effort at all.
  *
  * `rung-demotion` is the one code no acceptance criterion asked for, and it is
  * mandatory: membership checks cannot see DIRECTION, and this phase deletes
@@ -193,6 +204,7 @@ export function cellIssues(table, vocab = {}) {
   const order = strs(t.rung_order);
   const aliases = strs(t.model_aliases);
   const tierNames = strs(t.tier_names);
+  const effortNames = strs(t.effort_names);
   const show = (/** @type {any} */ v) => JSON.stringify(v === undefined ? null : v);
 
   // A vocabulary the table itself was supposed to declare, missing: ONE problem
@@ -281,36 +293,61 @@ export function cellIssues(table, vocab = {}) {
     }
   }
 
-  // The `tiers` grid, checked in BOTH directions against the same trigger list
-  // the review rows are checked against - a trigger the schema defines with no
-  // fallback tier, and an entry for a trigger the schema does not define.
-  const tiers = obj(t.tiers);
-  if (triggers.length && !tierNames.length) {
-    // ONE problem naming the absent list, never one per trigger (the rule
-    // rung_order and model_aliases already follow above).
-    issues.push({ code: 'unknown-tier',
-      detail: 'tier_names is absent or empty, so no fallback tier can be checked against it' });
-  }
-  if (triggers.length && !tiers) {
-    issues.push({ code: 'missing-cell',
-      detail: 'tiers: no tiers block - the table names no fallback model tier for any trigger' });
-  } else if (tiers) {
-    for (const trigger of triggers) {
-      if (tiers[trigger] === undefined) {
-        issues.push({ code: 'missing-cell',
-          detail: `tiers/${trigger}: no fallback tier - the availability test has no tier to read `
-            + `when no config layer sets review.triggers.${trigger}.tier` });
-      }
+  // The `tiers` and `efforts` grids: the SAME walk twice, because they are the
+  // same shape and any difference between them would be a difference in what a
+  // maintainer is told, not in what is true. Both directions against the same
+  // trigger list the review rows use - a (level, trigger) pair the schema
+  // defines with no entry, and an entry for a trigger the schema does not
+  // define - and every detail names the grid first.
+  const GRIDS = [
+    { grid: 'tiers', field: 'tier', key: 'tier_names', vocab: tierNames,
+      code: 'unknown-tier', reads: 'the availability test has no tier to read' },
+    { grid: 'efforts', field: 'effort', key: 'effort_names', vocab: effortNames,
+      code: 'unknown-effort', reads: 'the provider call has no effort to carry' },
+  ];
+  for (const g of GRIDS) {
+    if (triggers.length && !g.vocab.length) {
+      // ONE problem naming the absent list, never one per cell (the rule
+      // rung_order and model_aliases already follow above).
+      issues.push({ code: g.code,
+        detail: `${g.key} is absent or empty, so no ${g.grid} value can be checked against it` });
     }
-    for (const [trigger, tier] of Object.entries(tiers)) {
-      if (triggers.length && !triggers.includes(trigger)) {
-        issues.push({ code: 'unknown-trigger',
-          detail: `tiers/${trigger}: not a trigger config.schema.json defines [${triggers.join(', ')}]` });
-        continue; // an unknown trigger's tier value is the wrong thing to fix
+    const grid = obj(t[g.grid]);
+    if (triggers.length && !grid) {
+      // ONE problem naming the absent block, never one per level either.
+      issues.push({ code: 'missing-cell',
+        detail: `${g.grid}: no ${g.grid} block - the table names no cross-model ${g.field} `
+          + 'for any level' });
+      continue;
+    }
+    if (!grid) continue;
+    for (const level of levels) {
+      const row = obj(grid[level]);
+      if (!row) {
+        issues.push({ code: 'missing-cell',
+          detail: `${g.grid}/${level}: no row - the level names no cross-model ${g.field} `
+            + 'for any trigger' });
+        continue;
       }
-      if (tierNames.length && !(typeof tier === 'string' && tierNames.includes(tier))) {
-        issues.push({ code: 'unknown-tier',
-          detail: `tiers/${trigger}: tier ${show(tier)} is not one of [${tierNames.join(', ')}]` });
+      for (const trigger of triggers) {
+        if (row[trigger] === undefined) {
+          issues.push({ code: 'missing-cell',
+            detail: `${g.grid}/${level}/${trigger}: no ${g.field} - ${g.reads} when no config `
+              + `layer sets review.triggers.${trigger}.${g.field}` });
+        }
+      }
+      for (const [trigger, value] of Object.entries(row)) {
+        if (triggers.length && !triggers.includes(trigger)) {
+          issues.push({ code: 'unknown-trigger',
+            detail: `${g.grid}/${level}/${trigger}: not a trigger config.schema.json defines `
+              + `[${triggers.join(', ')}]` });
+          continue; // an unknown trigger's value is the wrong thing to fix
+        }
+        if (g.vocab.length && !(typeof value === 'string' && g.vocab.includes(value))) {
+          issues.push({ code: g.code,
+            detail: `${g.grid}/${level}/${trigger}: ${g.field} ${show(value)} is not one of `
+              + `[${g.vocab.join(', ')}]` });
+        }
       }
     }
   }

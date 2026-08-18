@@ -1139,6 +1139,74 @@ test('get: the KEYLESS full read carries no gate warning at all', () => {
   assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
 });
 
+// --- get: an unset tier / effort reads as unset too (RVW-03) ------------------
+//
+// WATCHED FAILING AT 478b1ff, the tip of this plan's unpatched tree. Observed
+// there: `review.triggers.plan.tier` answered `flagship` and `.effort` answered
+// `high` on a repository where no layer sets either, so the read face reported
+// a value nothing resolves - the same defect GAT-02 closed for `.gate`, on the
+// two fields that actually reach a cross-model reviewer.
+
+/** The eight cross-model panel keys, walked rather than spelled per test. */
+const PANEL_KEYS = ['plan', 'diff', 'risk_surface', 'phase_diff']
+  .flatMap((t) => [`review.triggers.${t}.tier`, `review.triggers.${t}.effort`]);
+
+test('get: every unset tier and effort answers null plus one warning naming route.mjs resolve', () => {
+  const gpath = join(dir, 'panel-no-global.json');
+  const repo = join(dir, 'panel-absent.json');
+  for (const key of PANEL_KEYS) {
+    const r = run(['get', '--file', repo, key], gpath);
+    assert.equal(r.ok, true);
+    assert.equal(r.values[key], null, key);
+    const named = gateWarnings(r);
+    assert.equal(named.length, 1, `${key}: ${JSON.stringify(r.warnings)}`);
+    assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
+    // D-07 again: this seam does not know the stakes level, so it must not
+    // answer for one. A warning naming a tier or an effort would be the same
+    // defect pointed the other way.
+    assert.ok(!/\b(flagship|balanced|cheap|minimal|low|medium|high)\b/.test(named[0]), named[0]);
+  }
+});
+
+test('get: a tier or effort a layer PINNED reads back byte-identical, unwarned', () => {
+  const gpath = join(dir, 'panel-pinned-global.json');
+  const repo = join(dir, 'panel-pinned-repo.json');
+  const pinned = { plan: { tier: 'cheap', effort: 'minimal' },
+    risk_surface: { tier: 'flagship', effort: 'high' } };
+  writeFileSync(repo, JSON.stringify({ review: { triggers: pinned } }));
+  for (const [t, spec] of Object.entries(pinned)) {
+    for (const [field, value] of Object.entries(spec)) {
+      const key = `review.triggers.${t}.${field}`;
+      const r = run(['get', '--file', repo, key], gpath);
+      assert.equal(r.values[key], value, key);
+      assert.deepEqual(gateWarnings(r), [], key);
+    }
+  }
+});
+
+test('get: the KEYLESS full read carries no panel warning either', () => {
+  // D-02. RVW-03 tripled this family: warning on a full read would append
+  // twelve lines to prose workflows relay straight to the user.
+  const r = run(['get', '--file', join(dir, 'panel-absent.json')],
+    join(dir, 'panel-no-global.json'));
+  assert.equal(r.ok, true);
+  for (const key of PANEL_KEYS) assert.equal(r.values[key], null, key);
+  assert.deepEqual(gateWarnings(r), [], JSON.stringify(r.warnings));
+});
+
+test('check: null is still refused at the write face for a tier and an effort', () => {
+  // The sentinel is the schema's way of saying "nobody set one", never
+  // something a user writes - the `values` arrays did not move.
+  for (const [key, names] of [['review.triggers.plan.tier', /flagship, balanced, cheap/],
+    ['review.triggers.plan.effort', /minimal, low, medium, high/]]) {
+    const r = run(['check', `${key}=null`]);
+    assert.equal(r.ok, false, key);
+    assert.equal(r.reason, 'invalid');
+    assert.equal(r.detail[0].key, key);
+    assert.match(r.detail[0].error, names);
+  }
+});
+
 test('check: null is still refused at the write face - the sentinel is not a value', () => {
   // D-05: the `values` arrays stay four-membered, so `set` and `check` behave
   // byte-identically to before the default moved. `null` is the schema's way of
