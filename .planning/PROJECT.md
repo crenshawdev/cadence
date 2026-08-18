@@ -130,7 +130,13 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18:
+`v3.5.5 - a seam that accepts what it should refuse`, opened 2026-08-18 and
+scoped from the tracker milestone of the same name: 13 requirements across five
+phases, each id naming its issue. Phase 1 (`GRD-01`, `SCR-01`) is complete and
+verified - 8/8 UAT items passed. Rows and criteria live in
+`.planning/REQUIREMENTS.md` and `.planning/ROADMAP.md`.
+
+`v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18 before it:
 eight requirements (`EXP-02`, `PHS-01`, `DRF-01`, `DRF-02`, `TAG-01`, `RVW-03`,
 `REL-01`, `ISS-01`), three phases, 51 commits off `6d445f3`, the audit green (8/8
 traced, 0 broken, 0 deferred; 21/21 acceptance criteria covered), the manifest at
