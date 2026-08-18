@@ -195,12 +195,30 @@ set never does. Per backend:
   rather than let a reader infer completeness: under a panel, `cad-reviewer`'s
   per-role total in `trace render` covers the claude-subagent voice ONLY, and the
   provider call that ran beside it is unmeasured, so that number is short by an
-  unstated amount. Compose the payload FILE in two shell steps and pass it with the
-  EXISTING `--payload <file>` flag - no new subcommand or flag:
+  unstated amount. Compose the payload FILE inside THIS RUN's own scratch
+  directory and pass it with the EXISTING `--payload <file>` flag - no new
+  subcommand or flag:
   ```
-  git diff <base_ref>..<head_ref> > "${TMPDIR:-/tmp}/cad-artifact.txt"
-  node -e 'const f=require("fs"),d=process.env.TMPDIR||"/tmp";f.writeFileSync(d+"/cad-payload.json",JSON.stringify({instruction:f.readFileSync(process.argv[1],"utf8")+"\n\n"+process.argv[2],artifact:f.readFileSync(process.argv[3],"utf8")}))' "${CLAUDE_PLUGIN_ROOT}/cadence-core/references/reviewer-brief.md" "<instruction>" "${TMPDIR:-/tmp}/cad-artifact.txt"
+  D="$(mktemp -d "${TMPDIR:-/tmp}/cad-review-XXXXXX")" && T="$$-$(date +%s)" && printf '%s' "$T" > "$D/run-token" \
+    && git diff <base_ref>..<head_ref> > "$D/artifact.txt" \
+    && node -e 'const f=require("fs");const rd=(p)=>{try{return f.readFileSync(p,"utf8")}catch(e){console.error("scratch-unreadable: "+p+": "+e.message);process.exit(1)}};const brief=rd(process.argv[1]),art=rd(process.argv[3]);if(art===""){console.error("scratch-unreadable: "+process.argv[3]+" is empty");process.exit(1)}f.writeFileSync(process.argv[4],JSON.stringify({instruction:brief+"\n\n"+process.argv[2],artifact:art}))' "${CLAUDE_PLUGIN_ROOT}/cadence-core/references/reviewer-brief.md" "<instruction>" "$D/artifact.txt" "$D/payload.json" \
+    && echo "scratch dir: $D  run token: $T"
   ```
+  **The directory and the token are ECHOED because the seam call below runs in a
+  DIFFERENT Bash invocation**, where `$D` is empty - the tool persists the
+  working directory and not shell state. Carry both printed values into that
+  block as LITERALS. A fixed shared scratch name here is the worst collision in
+  the tree: a concurrent review in another repository would be the one whose
+  diff is sent to the provider under this run's instruction, at a gate that
+  blocks. The token is what a carried path needs, because a previous run's
+  payload is well-formed BY CONSTRUCTION and no shape guard can tell it from
+  this run's.
+  The composer REFUSES rather than composing something the provider would
+  accept: a brief or an artifact it cannot read, and an artifact that is EMPTY,
+  each name `scratch-unreadable` on stderr and exit non-zero without writing a
+  payload. The empty case is not defensive padding - an empty artifact is
+  exactly what a failed or colliding redirect leaves behind, and it would
+  otherwise be sent as a review of nothing.
   The `instruction` is the reviewer BRIEF followed by this trigger's own
   sentence, never the sentence alone.
   `references/reviewer-brief.md` is the stance, the severity definitions, the
@@ -218,15 +236,21 @@ set never does. Per backend:
   schema-injection bytes) and every provider's cap would under-report by the
   brief. The cost is measured, not unknown: about 670 estimated tokens against
   the 120,000 default `review.max_prompt_tokens`, ~0.6% of one payload.
-  The second step takes the artifact path as its LAST ARGUMENT, which is what lets
-  all three shapes share it: shape (b) redirects `git diff --cached` into the
-  same scratch path, shape (c) drops the first step and passes its OWN absolute
-  path instead. Hardcode the scratch name and shape (c) has no command at all -
-  it silently ships the previous review's file. NEVER hand-assemble that JSON
+  The composing step takes the artifact path as its THIRD argument and the
+  payload path it WRITES as its fourth. Both are arguments, and that is what
+  lets all three shapes share the step: shape (b) redirects `git diff --cached`
+  into the same run directory in place of the range diff, and shape (c) drops
+  the diff step and passes its OWN absolute path as that third argument.
+  Hardcode either name - as the payload path was, derived inside the script
+  from the environment - and shape (c) has no command at all, and every run
+  writes over every other run: it silently ships the previous review's file.
+  NEVER hand-assemble that JSON
   with `echo` or a heredoc - one
   unescaped quote or backslash anywhere in a diff makes the payload
   unparseable, which comes back as `bad-payload` after the shell already did
-  the work. Both temp files are the model's scratch, never a phase artifact.
+  the work. Both files are the model's own scratch inside that run directory,
+  never a phase artifact, and the directory is left for the operating system to
+  reap.
   `assertUnderCap` is UNCHANGED and still measures the parsed string fields,
   which under `--payload <file>` ARE the file's contents; a non-string
   `artifact` is still refused `bad-payload` before the cap is consulted. Then
@@ -234,13 +258,20 @@ set never does. Per backend:
   `reviewer_tiers[<trigger>]` and `reviewer_efforts[<trigger>]` - index the
   provider's own map with the tier
   (`model = review.providers.<name>.tiers[<the resolved tier>]`),
-  and run the seam with that model and that effort:
+  and run the seam with that model and that effort. Check the run token FIRST,
+  in the same invocation, so a carried path that is not this run's refuses
+  instead of being sent:
   ```
+  [ "$(cat "<the echoed scratch directory>/run-token" 2>/dev/null)" = "<the echoed run token>" ] || { echo "scratch-stale: that directory holds another run payload" >&2; exit 1; }
   node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/review-provider.mjs" review \
     --provider <name> --model <model> --effort <effort> --trigger <trigger> \
-    --payload "${TMPDIR:-/tmp}/cad-payload.json" \
+    --payload "<the echoed scratch directory>/payload.json" \
     [--key-file <review.key_file, only if set>]
   ```
+  Both `<the echoed ...>` placeholders are the literals the composition block
+  printed, never a fresh `mktemp` and never a `$(...)` - a path is the
+  caller-derived-text rule `references/conventions.md` states, and re-deriving
+  the directory here would point `--payload` at an empty one.
   `--trigger` is what JOINS this arm's seam-written event to the fire: the event
   it writes already shares the phase's correlation id, and the trigger name is
   the field that was missing. That event plus the subagent arm's `--reviewer`
