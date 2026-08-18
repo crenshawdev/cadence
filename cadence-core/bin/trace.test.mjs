@@ -676,6 +676,59 @@ test('seam: a bare or blank --reviewer appends NOTHING at all', () => {
   assert.equal(traceBytes(dir), null);
 });
 
+test('seam: --trigger stores the review trigger an event belongs to, as a string', () => {
+  // GAT-04/D-12: an `outcome` receipt is only joinable to the fire that
+  // produced it if the trigger it names is STRUCTURED. Measured on this
+  // repository's 35 `outcome/adjudication` events the trigger is spelled four
+  // different ways inside the free-text `--detail`, and lib/trace-suggest.mjs
+  // discards that text entirely.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--plan', '2', '--trigger', 'risk_surface',
+    '--detail', 'risk_surface plan-2: 1 survivor']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const [e] = lines(dir);
+  assert.equal(e.trigger, 'risk_surface');
+  assert.equal(typeof e.trigger, 'string');
+  // Beside `--detail`, never instead of it: the detail stays the human's line
+  // and lib/trace-suggest.mjs still parses its own trigger out of it.
+  assert.equal(e.detail, 'risk_surface plan-2: 1 survivor');
+  assert.equal(e.plan, '2');
+});
+
+test('seam: --trigger is stored VERBATIM, trimmed, with no vocabulary of its own', () => {
+  // Event-agnostic like every other flag on this seam: no coupling to an event
+  // NAME and no refusal keyed to one. A trigger the seam does not recognise is
+  // the caller's business, exactly as `--reviewer` treats a backend name.
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'gate_pass', '--trigger', '  risk_surface  ']);
+  assert.equal(lines(dir)[0].trigger, 'risk_surface');
+});
+
+test('seam: a bare or blank --trigger appends NOTHING at all', () => {
+  // A bare flag parses as boolean `true` and would store the literal `true` as
+  // a trigger name - a receipt that joins to a fire nobody made, which is worse
+  // than the missing field it stands in for. Nothing is appended, the rule
+  // `--tokens`, `--raised` and `--reviewer` already hold.
+  const dir = root();
+  for (const args of [['--trigger'], ['--trigger', ''], ['--trigger', '  ']]) {
+    const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+      '--event', 'adjudication', '--plan', '2', ...args]);
+    assert.equal(r.ok, false, JSON.stringify(args));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(args));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: an append with no --trigger is byte-identical to today\'s', () => {
+  const dir = root();
+  run(dir, ['trace', 'append', '--phase', '1', '--family', 'outcome',
+    '--event', 'adjudication', '--detail', 'plan: 2 survivors']);
+  const [e] = lines(dir);
+  assert.equal('trigger' in e, false, JSON.stringify(e));
+});
+
 test('seam: --read stores a comma-separated set as an array, verbatim', () => {
   const dir = root();
   const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
@@ -779,6 +832,84 @@ test('seam: a malformed --tokens on a close appends NOTHING at all', () => {
     // CALL, never a best-effort append with the figure dropped.
     assert.equal(traceBytes(dir), null, bad);
   }
+});
+
+// --- the OTHER term the bill is made of: --turns (MSR-01) --------------------
+//
+// A run's price is turns times window, and the record carried only what a
+// worker RETURNED. `--turns` is the tool-call count on the same subagent return
+// `--tokens` is read off, so the two travel together at every close site.
+
+test('seam: --turns rides a close beside --tokens, as a NUMBER', () => {
+  const dir = root();
+  const r = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '12', '--turns', '83']);
+  assert.equal(r.ok, true);
+  assert.equal(r.written, true);
+  const [e] = lines(dir);
+  assert.equal(e.turns, 83);
+  // A NUMBER for the same reason `--tokens` is one: the per-role render sums
+  // the field without type-checking it first.
+  assert.equal(typeof e.turns, 'number');
+  assert.match(traceBytes(dir), /"turns":83/);
+  assert.equal(e.tokens, 12);
+});
+
+test('seam: --turns lands on a `trace append` through the same shared body', () => {
+  // One body serves both subcommands, so the flag cannot be validated twice and
+  // cannot drift between them. `append` is where a hand-written or replayed
+  // event still enters the record.
+  const dir = root();
+  const r = run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+    '--event', 'return', '--plan', '1', '--role', 'cad-planner', '--turns', '7']);
+  assert.equal(r.ok, true);
+  assert.equal(lines(dir)[0].turns, 7);
+});
+
+test('seam: a malformed --turns appends NOTHING at all', () => {
+  const dir = root();
+  // No comma-grouping exception, unlike `--tokens`: a tool-call count is never
+  // PRINTED grouped, so `1,234` is a typo rather than a transcription - the
+  // same rule `--raised` states.
+  for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
+    const before = traceBytes(dir);
+    const r = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+      '--role', 'cad-executor', '--tokens', '12', '--turns', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    // Byte-identical (or still absent): a best-effort append with the count
+    // dropped would render the role turn-unrecorded while the caller believed
+    // a figure was recorded.
+    assert.equal(traceBytes(dir), before, bad);
+  }
+  assert.equal(traceBytes(dir), null);
+  // A bare `--turns` (parsed as boolean true) is refused the same way -
+  // `requireInt` refuses a non-string, so the guard falls out of it.
+  const bare = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--turns']);
+  assert.equal(bare.ok, false);
+  assert.equal(bare.reason, 'bad-args');
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: a close with no --turns writes no turns key at all', () => {
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '12']);
+  const [e] = lines(dir);
+  // OMITTED, never `0`: a zero would claim a dispatch that used no tools, and
+  // a trace written before this flag existed must stay byte-identical.
+  assert.equal('turns' in e, false, JSON.stringify(e));
+});
+
+test('seam: --turns 0 is a recorded figure, not an omission', () => {
+  const dir = root();
+  run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--turns', '0']);
+  const [e] = lines(dir);
+  assert.equal(e.turns, 0);
+  assert.ok('turns' in e);
+  assert.match(traceBytes(dir), /"turns":0/);
 });
 
 test('seam: a close pairs with the dispatch of the same --plan', () => {
@@ -994,6 +1125,110 @@ test('render: two roles in one phase are grouped separately', () => {
     'cad-planner': { dispatches: 1, tokens: 900 },
     'cad-reviewer': { dispatches: 1, unrecorded: 1 },
   });
+});
+
+// --- per-role TURNS, and their own unrecorded counter (MSR-01, D-03) ---------
+
+test('render: a role\'s turn total rides beside its tokens with a counter of its own', () => {
+  const dir = root();
+  for (const n of [1, 2]) {
+    appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: String(n), role: 'cad-executor' });
+  }
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10, turns: 4 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 10 });
+  const row = renderTrace(dir, 4).roles['cad-executor'];
+  // Both dispatches reported TOKENS, so `unrecorded` is absent - and exactly
+  // one reported TURNS, so the turn counter is 1. One shared counter could only
+  // have said one of those two things.
+  assert.deepEqual(row, { dispatches: 2, tokens: 20, turns: 4, turns_unrecorded: 1 });
+  assert.equal('unrecorded' in row, false);
+});
+
+test('render: reporting tokens without turns is a different row from the reverse', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'tokens-only' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'tokens-only', tokens: 10 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'turns-only' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'turns-only', turns: 4 });
+  const r = renderTrace(dir, 4);
+  assert.deepEqual(r.roles['tokens-only'], { dispatches: 1, tokens: 10 });
+  assert.deepEqual(r.roles['turns-only'], { dispatches: 1, turns: 4, unrecorded: 1 });
+  // The whole point of the second counter: these two are not the same row, and
+  // with one shared `unrecorded` they would have been.
+  assert.notDeepEqual(r.roles['tokens-only'], r.roles['turns-only']);
+});
+
+test('render: a role whose every close carried no turn figure shows NO turn keys', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-planner' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-planner', tokens: 900 });
+  const row = renderTrace(dir, 4).roles['cad-planner'];
+  // Never a `0`, and never a `turns_unrecorded` either: a role absent from the
+  // turn accounting is what makes a record written before the flag render
+  // exactly as it always did (D-12).
+  assert.deepEqual(row, { dispatches: 1, tokens: 900 });
+  assert.equal('turns' in row, false);
+  assert.equal('turns_unrecorded' in row, false);
+});
+
+test('render: a bracket carries the turn figure only where one exists', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', tokens: 10, turns: 4 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '2', role: 'cad-executor' });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '2', role: 'cad-executor', tokens: 10 });
+  const [withTurns, without] = renderTrace(dir, 4).brackets;
+  assert.equal(withTurns.turns, 4);
+  // NO key rather than `null`: a null would put a new key on every bracket of
+  // every trace written before the flag existed.
+  assert.equal('turns' in without, false, JSON.stringify(without));
+  assert.equal(without.tokens, 10, 'the token half of the same row is untouched');
+});
+
+test('render: a bracket falls back to a turn figure the DISPATCH half carried', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', turns: 7 });
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor' });
+  const [b] = renderTrace(dir, 4).brackets;
+  assert.equal(b.turns, 7);
+  // ...and it funds the dispatch exactly once, so the terminal cannot re-fund it.
+  assert.deepEqual(renderTrace(dir, 4).roles,
+    { 'cad-executor': { dispatches: 1, turns: 7, unrecorded: 1 } });
+});
+
+test('render: two closes differing ONLY in their turn count are two closes', () => {
+  const dir = root();
+  const at1 = '2026-08-16T10:00:00.000Z';
+  const at2 = '2026-08-16T11:00:00.000Z';
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: at1 });
+  const close = { phase: 4, family: 'lifecycle', event: 'return', plan: '1', role: 'cad-executor', ts: at2 };
+  appendEvent(dir, { ...close, turns: 4 });
+  appendEvent(dir, { ...close, turns: 5 });
+  // The replay identity discriminates on the turn figure the way it already
+  // does on the token figure: folding these two would drop a real figure.
+  assert.deepEqual(renderTrace(dir, 4).roles,
+    { 'cad-executor': { dispatches: 1, turns: 9, unrecorded: 1 } });
+  // ...and the byte-identical repeat IS still a replay.
+  const same = root();
+  appendEvent(same, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor', ts: at1 });
+  appendEvent(same, { ...close, turns: 4 });
+  appendEvent(same, { ...close, turns: 4 });
+  assert.deepEqual(renderTrace(same, 4).roles,
+    { 'cad-executor': { dispatches: 1, turns: 4, unrecorded: 1 } });
+});
+
+test('render: a non-numeric turn figure contributes NOTHING', () => {
+  const dir = root();
+  appendEvent(dir, { phase: 4, family: 'lifecycle', event: 'dispatch', plan: '1', role: 'cad-executor' });
+  // A hand-edited or foreign-producer line: the same posture `tokens` takes,
+  // never string-concatenated onto a total.
+  appendFileSync(tracePath(dir), `${JSON.stringify({
+    ts: '2026-08-16T10:00:00.000Z', corr: '4', phase: 4, family: 'lifecycle',
+    event: 'return', plan: '1', role: 'cad-executor', turns: '4',
+  })}\n`);
+  const row = renderTrace(dir, 4).roles['cad-executor'];
+  assert.deepEqual(row, { dispatches: 1, unrecorded: 1 });
+  assert.equal('turns' in row, false);
 });
 
 test('render: tokens on checkpoint and escalation aggregate as on return', () => {
@@ -1302,6 +1537,7 @@ function traceCalls(text, verb) {
       // `read` and so can never match `--read-file`.
       read: flag(line, 'read', true) ?? flag(line, 'read-file', false),
       tokens: flag(line, 'tokens', false),
+      turns: flag(line, 'turns', false),
       step: flag(line, 'step', true),
       detail: flag(line, 'detail', true),
     });
@@ -1446,6 +1682,16 @@ test('census: every trace family has a producer, and every producer speaks the r
     assert.ok(c.plan && c.plan.trim(),
       `${c.where}: a \`trace close\` with no \`--plan\` - the worker key is what pairs it `
       + 'with its dispatch, so without one the bracket never closes.');
+    // ...and the TURN count, which is what holds the all-ten conversion (D-04)
+    // mechanically. The per-file map above already requires closes to EQUAL
+    // dispatches, so it sees a lost bracket - but nothing saw a site quietly
+    // shedding this flag, and turns per role would then read as LOW rather than
+    // as partial, which is the zero/unrecorded/recorded conflation the separate
+    // `turns_unrecorded` counter exists to prevent.
+    assert.ok(c.turns && c.turns.trim(),
+      `${c.where}: a \`trace close\` with no \`--turns\` - its dispatch's tool-call count `
+      + 'never reaches the record, and the role\'s turn total then reads as low rather '
+      + 'than as partial. All ten close sites carry it or none of them should.');
   }
   for (const p of lifecycle) {
     const event = String(p.event);
@@ -1578,12 +1824,21 @@ test('coordinator: a step\'s residue is its wall span minus the bracket inside i
   );
 });
 
-test('coordinator: one phase spanning two corr ids is still ONE coordinator stream', () => {
+test('coordinator: one phase spanning two corr ids is TWO coordinator streams (D-01)', () => {
   const dir = root();
   // A phase can hold more than one id even after the read-time repair: a RE-RUN
   // starts a new one. Every /cad-context marker fires before any anchor, so
   // `load_priors` joins the first anchor ahead of it and `git_guard` joins the
-  // second - one coordinator, two ids, or the rollup counts it twice.
+  // second - two ids, and each one's last marker closes at ITS OWN run's last
+  // event rather than at the phase's.
+  //
+  // The arithmetic, and what moved it: this fixture used to report 9 minutes,
+  // because `git_guard`'s window ran to the phase's newest timestamp - the
+  // 9-minute routing resolve, which belongs to `1-def5678`. It now reports 6.
+  // `1-abc1234` holds both markers and ends at `git_guard` itself, so
+  // `load_priors` keeps its 0..6 window and `git_guard` closes at itself for a
+  // zero-length one; `1-def5678` carries no marker at all and contributes
+  // nothing. The pairing rule is what changed, not the clipping arithmetic.
   mark(dir, 'load_priors', 0);
   appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'abc1234', ts: at(4) });
   mark(dir, 'git_guard', 6);
@@ -1593,7 +1848,11 @@ test('coordinator: one phase spanning two corr ids is still ONE coordinator stre
   const corrs = new Set(r.events.map((e) => e.corr));
   assert.deepEqual([...corrs].sort(), ['1-abc1234', '1-def5678']);
   assert.deepEqual(r.coordinator.steps.map((s) => s.step), ['load_priors', 'git_guard']);
-  assert.equal(r.coordinator.residue_ms, 9 * MIN);
+  // Both rows still report the PHASE they were marked in - the key moved, the
+  // row's field did not.
+  assert.deepEqual(r.coordinator.steps.map((s) => s.phase), [1, 1]);
+  assert.deepEqual(r.coordinator.steps.map((s) => s.residue_ms), [6 * MIN, 0]);
+  assert.equal(r.coordinator.residue_ms, 6 * MIN);
 });
 
 test('coordinator: two workers running at once subtract their overlap ONCE', () => {
@@ -1685,4 +1944,171 @@ test('appendEvent: an ordinary trace file still appends and reports written', ()
   assert.equal(second.written, true);
   assert.equal(lines(dir).length, 2);
   assert.equal(lstatSync(tracePath(dir)).isSymbolicLink(), false);
+});
+
+// --- the falsifier: a run's turns reach the record end to end (MSR-01) -------
+//
+// WATCHED FAILING AT 97eaf03, the tip of this plan's unpatched tree. Observed
+// there:
+//
+//   $ node cadence-core/bin/planning.mjs --dir <tmp>/.planning \
+//       trace close --phase 1 --plan 1 --role cad-executor --tokens 154523 --turns 83
+//   {"ok":true,"written":true,"corr":"1"}
+//
+//   $ tail -1 <tmp>/.planning/trace.jsonl
+//   {"corr":"1","phase":"1","ts":"...","family":"lifecycle","event":"return",
+//    "plan":"1","role":"cad-executor","tokens":154523}
+//
+//   $ node cadence-core/bin/planning.mjs --dir <tmp>/.planning trace render --phase 1
+//   ..."roles":{"cad-executor":{"dispatches":1,"tokens":154523}}...
+//
+// The seam ACCEPTED `--turns 83` and reported `written:true`, the line it wrote
+// carries no `turns` key at all, and the render prices the dispatch by tokens
+// alone. The same silence swallows a malformed value: `--turns -1` returned
+// `ok:true` there, which is the assertion this test dies on first
+// (`true !== false` at the `-1` case).
+//
+// The record priced a run from what a worker RETURNED, which is one of the two
+// terms the bill is made of; the other, the tool-call count the host already
+// puts on that return, was discarded at every one of the ten close sites.
+//
+// The case below is that absence as a check: the seams are reached through the
+// CLI ONLY and nothing this plan added is imported, so against 97eaf03 it fails
+// on its assertions rather than on a missing export - the unpatched seam
+// silently IGNORES `--turns`, writes the close anyway, and renders a role row
+// with no turn figure and no counter. To re-watch it:
+// `git worktree add --detach <tmp> 97eaf03`, copy this file into that
+// checkout's `cadence-core/bin/`, `node --test` it there, then remove the
+// worktree.
+
+test('falsifier: turns persist onto the close and reach both the bracket and the role row (MSR-01)', () => {
+  const dir = root();
+  for (const k of ['1', '2']) {
+    run(dir, ['trace', 'append', '--phase', '1', '--family', 'lifecycle',
+      '--event', 'dispatch', '--plan', k, '--role', 'cad-executor',
+      '--read', `.planning/phases/1/PLAN-${k}.md`]);
+  }
+
+  // 1. A close carrying a turn figure is accepted and persists it.
+  const closed = run(dir, ['trace', 'close', '--phase', '1', '--plan', '1',
+    '--role', 'cad-executor', '--tokens', '154523', '--turns', '83']);
+  assert.equal(closed.ok, true);
+  assert.equal(closed.written, true);
+
+  // 2. ...and a close carrying none is the ROUTINE case, not an error.
+  const bare = run(dir, ['trace', 'close', '--phase', '1', '--plan', '2',
+    '--role', 'cad-executor', '--tokens', '47717']);
+  assert.equal(bare.ok, true);
+
+  // 3. A malformed value is a malformed CALL: nothing at all is appended.
+  const before = readFileSync(tracePath(dir), 'utf8');
+  for (const bad of ['-1', '1.5', 'abc', '1,234']) {
+    const r = run(dir, ['trace', 'close', '--phase', '1', '--plan', '3',
+      '--role', 'cad-executor', '--tokens', '900', '--turns', bad]);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(readFileSync(tracePath(dir), 'utf8'), before,
+      `a malformed --turns ${bad} still wrote to the record`);
+  }
+
+  const r = run(dir, ['trace', 'render', '--phase', '1']);
+
+  // The BRACKET row carries the figure, and the figureless close carries no
+  // turn key at all rather than a zero.
+  assert.equal(r.brackets.length, 2);
+  const [withTurns, without] = r.brackets;
+  assert.equal(withTurns.turns, 83);
+  assert.equal('turns' in without, false, JSON.stringify(without));
+
+  // The ROLE row carries the total and its OWN unrecorded counter. Both
+  // dispatches reported tokens, so the token `unrecorded` is absent - which is
+  // the whole point of the second counter: one shared counter could not have
+  // said "measured for cost, unmeasured for turns" about the same pair.
+  assert.deepEqual(r.roles, {
+    'cad-executor': { dispatches: 2, tokens: 202240, turns: 83, turns_unrecorded: 1 },
+  });
+});
+
+// --- the falsifier: a step window closes inside its own run (MSR-04) ---------
+//
+// WATCHED FAILING AT d94c79d, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/trace.test.mjs
+//   x falsifier: every step window closes inside the corr that opened it (MSR-04)
+//     AssertionError [ERR_ASSERTION]: `commit`: a 18180000 ms window opened by
+//     `1-aaa1111`, whose own record ends 120000 ms after the marker - the window
+//     closed at another run's event.
+//   i pass 108
+//   i fail 2
+//
+// 18,180,000 ms is 303 minutes: run A's last marker paired with run B's last
+// event, five hours of clock across a boundary nobody worked over, reported as
+// coordinator time. Run A's own record ends 120,000 ms after that marker.
+//
+// The second failure in that run is `coordinator: one phase spanning two corr
+// ids is TWO coordinator streams (D-01)`, which is the same fact read from the
+// other end - the shipped fixture whose arithmetic task 1 moved from 9 minutes
+// to 6 - and it is expected there.
+//
+// The subject is the RULE and not a figure: this repository's trace grows while
+// the phase runs and no residue is ever stored, so the check asserts that no
+// window outruns the tail of the `corr` that opened it, over a fixture built by
+// this file's own `at`/`mark`/`bracket` helpers.
+//
+// To re-watch: `git worktree add --detach <tmp> d94c79d`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/trace.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+test('falsifier: every step window closes inside the corr that opened it (MSR-04)', () => {
+  const dir = root();
+  // Run A: its anchor, a marker, a worker bracket, the run's LAST marker, and
+  // one outcome event two minutes after it.
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'aaa1111', ts: at(0) });
+  mark(dir, 'dispatch_plans', 1);
+  bracket(dir, '1', 2, 5);
+  mark(dir, 'commit', 10);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(12) });
+  // Five hours of clock nobody was working, then run B - a re-run filed under
+  // the same phase NUMBER, which is what a phase-keyed rollup pairs run A's
+  // last marker against.
+  appendEvent(dir, { phase: 1, family: 'lifecycle', event: ANCHOR, sha: 'bbb2222', ts: at(312) });
+  mark(dir, 'replan', 313);
+  appendEvent(dir, { phase: 1, family: 'outcome', event: 'gate', ts: at(320) });
+
+  const r = renderTrace(dir, 1);
+  const markers = r.events.filter((e) => e.family === 'lifecycle' && e.event === COORDINATOR);
+  assert.equal(new Set(markers.map((m) => String(m.corr))).size, 2,
+    'the fixture must hold two runs, or there is nothing here to close early');
+
+  // The newest timestamp carrying each `corr` - the only end that run's own
+  // record offers for its last marker.
+  /** @type {Map<string, number>} */
+  const lastByCorr = new Map();
+  for (const e of r.events) {
+    const t = Date.parse(e.ts);
+    if (!Number.isFinite(t)) continue;
+    const c = String(e.corr === undefined || e.corr === null ? '' : e.corr);
+    const seen = lastByCorr.get(c);
+    if (seen === undefined || t > seen) lastByCorr.set(c, t);
+  }
+
+  // The INVARIANT AC5 pins, asserted rather than a figure: the record grows
+  // while this phase runs and no residue is ever stored, so a number measured
+  // off the live trace would rot. A window may be shorter than its run's tail -
+  // the next marker closes it - but it can never be longer, because the only
+  // thing past that tail belongs to somebody else's run.
+  for (const s of r.coordinator.steps) {
+    const m = markers.find((x) => x.ts === s.ts && x.step === s.step);
+    assert.ok(m, `no marker event behind the steps[] row ${JSON.stringify(s)}`);
+    const own = lastByCorr.get(String(m.corr)) - Date.parse(m.ts);
+    assert.ok(s.residue_ms <= own,
+      `\`${s.step}\`: a ${s.residue_ms} ms window opened by \`${m.corr}\`, whose own `
+      + `record ends ${own} ms after the marker - the window closed at another run's event.`);
+  }
+
+  // And the row that pairing rule used to stretch, named: run A's last marker
+  // carries run A's own two-minute gap, not the five hours to run B's end.
+  const commit = r.coordinator.steps.find((s) => s.step === 'commit');
+  assert.equal(commit.residue_ms, 2 * MIN);
 });

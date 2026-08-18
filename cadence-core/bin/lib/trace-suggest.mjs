@@ -15,10 +15,25 @@
 // Every rule needs a floor of evidence before it speaks (MIN_* below). A
 // suggestion computed from one event is a guess wearing a verdict, and the
 // whole point of reading the trace is to not guess.
+//
+// A keyed suggestion also names WHICH WAY to move the key and what it holds now
+// (SGT-01), and that is why `suggestFromRender` takes a second argument. The
+// values behind those keys live on disk - the merged config layers, the gate
+// ladder in `route-table.json`, the resolved task ceiling - and reading them
+// here would end the purity above. So the CALLER resolves them and passes them
+// in: `planning.mjs`'s `suggest` arm owns every read, this file owns every
+// rule, and the argument is optional so a test can still call
+// `suggestFromRender(render(...))` with one argument and get an honest "unset"
+// rather than a throw. `direction` is assigned per RULE rather than by the
+// caller (phase 5 plan-2 note): the caller cannot know whether R1 fired on its
+// gate arm or its reviewer arm until these rules have run.
 
 /**
  * @typedef {{kind: 'suggest'|'info', subject: string, evidence: string,
- *            action: string|null}} Suggestion
+ *            action: string|null, direction?: 'raise'|'lower',
+ *            current?: any, proposed?: any}} Suggestion
+ * @typedef {{values?: Record<string, any>, gates?: string[], rungs?: string[],
+ *            stakes?: string|null, checkpointTasks?: (number|null)[]}} Resolution
  * @typedef {{counts: Record<string, number>,
  *            roles: Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>,
  *            events: any[],
@@ -48,11 +63,133 @@ export const MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION = 2;
 export const MIN_RESIDUE_MS_FOR_COORDINATOR_INFO = 600000;
 
 /**
+ * The three sources the recorded token total DOES NOT include, in the words
+ * every reader of that total states.
+ *
+ * Exported and frozen for the reason `lib/trace.mjs` exports
+ * `DISPATCH`/`TERMINAL`/`ANCHOR` rather than letting the bracket census hold
+ * its own copy of them: this claim has TWO readers - R5's `evidence` string
+ * below, which `/cad-suggest` relays unchanged, and the spend line in
+ * `cadence-core/workflows/report.md` - and a second copy of the list is green
+ * on the day the two stop claiming the same thing. `prose-agreement.test.mjs`
+ * reads THIS array to check the prose, so there is one list and one claim.
+ *
+ * Why these three, and why they are not a hedge:
+ *   1. the orchestrator's own turns - a figure is read off a subagent RETURN
+ *      and the coordinator has no return, so it contributes nothing to a total
+ *      that most of the run's spend belongs to;
+ *   2. cross-model provider calls - no lifecycle bracket and no token field on
+ *      that arm at all, by design;
+ *   3. figureless returns - a close that carried no `--tokens`, the advisory
+ *      fire among them, counted under `unrecorded` rather than as a zero.
+ *
+ * No fourth entry is a ratio or a correction factor, and none is coming: the
+ * terms are what MSR-03 and PLN-01 need, and a stored product is the
+ * maintenance loop `v2.7.0` deleted.
+ */
+export const SPEND_EXCLUDES = Object.freeze([
+  "the orchestrator's own turns",
+  'cross-model provider calls',
+  'figureless returns',
+]);
+
+/**
  * A duration in whole minutes, the unit a run record is read in.
  * @param {number} ms
  */
 function minutes(ms) {
   return `${Math.round(ms / 60000)} min`;
+}
+
+/**
+ * The value a config layer (or the caller's schema-default fallback) holds for
+ * `key`, or `undefined` when nothing does. `null` reads as nothing on purpose:
+ * that is the schema sentinel for "no layer pins this, the stakes level decides
+ * it", not a value anybody set.
+ * @param {Resolution|undefined} resolution
+ * @param {string} key
+ */
+function resolved(resolution, key) {
+  const values = resolution && typeof resolution.values === 'object' && resolution.values
+    ? resolution.values
+    : null;
+  if (!values) return undefined;
+  const v = /** @type {any} */ (values)[key];
+  return v === undefined || v === null ? undefined : v;
+}
+
+/**
+ * What an unset key prints as `current`: the refusal `config.mjs get` makes, in
+ * the same words and for the same reason (D-06). It names the DECIDER - the
+ * stakes level the record carries - and never the value that level would fire,
+ * because printing an effective value invites the user to set it and pin the
+ * key at every level, which is the pinning the schema's own purpose text warns
+ * about. A record carrying no `routing/resolve` event names no level rather
+ * than one it does not carry.
+ * @param {Resolution|undefined} resolution
+ */
+function unsetCurrent(resolution) {
+  const level = resolution && typeof resolution.stakes === 'string' && resolution.stakes.trim()
+    ? resolution.stakes.trim()
+    : null;
+  return level
+    ? `unset: no config layer pins this, so the stakes level (${level}) decides it`
+    : 'unset: no config layer pins this, so the stakes level decides it';
+}
+
+/**
+ * `current` and, where one can be READ rather than guessed, `proposed` - as the
+ * fragment a suggestion spreads into itself. `proposed` is OMITTED rather than
+ * set to null or 0 (D-07/D-12), the omit-not-zero rule `--turns` already
+ * follows: a key nobody computed a target for must be invisible, not zero.
+ * @param {Resolution|undefined} resolution
+ * @param {string} key
+ * @param {(current: any) => any} [target] priced only when the key is SET
+ */
+function keyState(resolution, key, target) {
+  const value = resolved(resolution, key);
+  const proposed = value === undefined || !target ? undefined : target(value);
+  return {
+    current: value === undefined ? unsetCurrent(resolution) : value,
+    ...(proposed === undefined ? {} : { proposed }),
+  };
+}
+
+/**
+ * The rung the record shows a role's escalated resolves landing on, kept only
+ * where it names an actual RAISE. A rung a config layer SET is compared against
+ * it on the caller's rung ladder and must sit strictly BELOW it, so a target
+ * equal to the current rung - a retune that changes nothing - or under it -
+ * a target contradicting the `raise` it ships beside - is omitted instead.
+ * An UNSET key has no rung to compare and keeps the target: the record's rung
+ * is still a change from a default nobody stated. No ladder means no
+ * comparison and no target, the same omission `oneStepDown` reports.
+ * @param {Resolution|undefined} resolution
+ * @param {string} key
+ * @param {string|undefined} rung
+ */
+function raiseTarget(resolution, key, rung) {
+  if (!rung) return undefined;
+  const current = resolved(resolution, key);
+  if (current === undefined) return rung;
+  const rungs = resolution && Array.isArray(resolution.rungs) ? resolution.rungs : null;
+  if (!rungs) return undefined;
+  const i = rungs.indexOf(current);
+  return i >= 0 && rungs.indexOf(rung) > i ? rung : undefined;
+}
+
+/**
+ * One step DOWN the gate ladder `route-table.json` states, or `undefined` when
+ * there is no ladder, the value is not on it, or it is already the bottom rung.
+ * The ladder is the caller's: an absent one omits `proposed`, and that omission
+ * IS the report - no ladder is substituted from memory here.
+ * @param {string[]|undefined} gates
+ * @param {any} value
+ */
+function oneStepDown(gates, value) {
+  if (!Array.isArray(gates)) return undefined;
+  const i = gates.indexOf(value);
+  return i > 0 ? gates[i - 1] : undefined;
 }
 
 /**
@@ -114,9 +251,12 @@ export function parseAdjudication(input) {
  * All suggestions the render supports, most actionable first (`suggest`
  * before `info`, then by subject for a stable order tests can pin).
  * @param {RenderLike} render
+ * @param {Resolution} [resolution] the values the caller read off disk for the
+ *   keys these rules name - absent, every keyed suggestion still carries a
+ *   direction and reports its `current` as unset.
  * @returns {Suggestion[]}
  */
-export function suggestFromRender(render) {
+export function suggestFromRender(render, resolution) {
   /** @type {Suggestion[]} */
   const out = [];
   const events = Array.isArray(render.events) ? render.events : [];
@@ -137,7 +277,13 @@ export function suggestFromRender(render) {
    * @param {any} e
    */
   const corrOf = (e) => (typeof e.corr === 'string' || typeof e.corr === 'number' ? String(e.corr) : '');
-  /** @type {Map<string, {resolves: number, escalated: number}>} */
+  /**
+   * Per role: the resolve counts R3 reads, and the rung its ESCALATED resolves
+   * actually landed on, off the `effort` field those events carry. That rung is
+   * R3's `proposed` - a rung the routing table really resolved for this role,
+   * rather than a legal one it would never produce (D-07).
+   * @type {Map<string, {resolves: number, escalated: number, rung?: string}>}
+   */
   const rungs = new Map();
   /** @type {Map<string, number>} */
   const checkpoints = new Map();
@@ -181,7 +327,10 @@ export function suggestFromRender(render) {
       row.resolves++;
       // Either spelling of a climb counts: the seam's own `escalated` flag, or
       // a retry attempt (`--attempt 2`) that lands on the retry rung.
-      if (e.escalated === true || (typeof e.attempt === 'number' && e.attempt >= 2)) row.escalated++;
+      if (e.escalated === true || (typeof e.attempt === 'number' && e.attempt >= 2)) {
+        row.escalated++;
+        if (typeof e.effort === 'string' && e.effort.trim()) row.rung = e.effort.trim();
+      }
       rungs.set(role, row);
     } else if (e.family === 'lifecycle' && e.event === 'checkpoint') {
       const role = typeof e.role === 'string' ? e.role : '';
@@ -220,6 +369,13 @@ export function suggestFromRender(render) {
   }
   for (const [trigger, row] of [...triggers.entries()].sort()) {
     if (row.empty >= MIN_FIRES_FOR_GATE_SUGGESTION) {
+      // The two arms move OPPOSITE ways, which is the whole reason the split
+      // exists: the gate arm's evidence is fires that keep coming back empty,
+      // so the move is DOWN the ladder; the reviewer arm's evidence is a gate
+      // catching work in front of a reviewer set that killed all of it, so the
+      // move is to STRENGTHEN that set. `raise`/`lower` is the whole vocabulary
+      // - widening it is a schema-shaped decision, and `lower` on the reviewer
+      // arm would name the opposite move.
       out.push(row.raised > 0
         ? {
           kind: 'suggest',
@@ -227,12 +383,23 @@ export function suggestFromRender(render) {
           evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors of ${row.raised} raised`
             + ' - the gate caught work; the reviewer set is what looks miscalibrated',
           action: 'review.reviewers',
+          direction: 'raise',
+          // No `proposed`: which backend to add is not a thing the record
+          // names, and a guessed reviewer set beside two measured targets is
+          // the credibility the no-fabricated-figures guardrail protects.
+          ...keyState(resolution, 'review.reviewers'),
         }
         : {
           kind: 'suggest',
           subject: trigger,
           evidence: `${row.empty} of ${row.total} adjudicated fire(s), 0 survivors, no re-arm`,
           action: `review.triggers.${trigger}.gate`,
+          direction: 'lower',
+          // Priced only off a value a LAYER set: an unset gate has no position
+          // on the ladder to step down from, and reading the level's value to
+          // find one is exactly what D-06 refuses.
+          ...keyState(resolution, `review.triggers.${trigger}.gate`,
+            (current) => oneStepDown(resolution && resolution.gates, current)),
         });
     }
   }
@@ -250,11 +417,20 @@ export function suggestFromRender(render) {
   // R3: escalation pressure per role, both directions.
   for (const [role, row] of [...rungs.entries()].sort()) {
     if (row.escalated >= MIN_ESCALATIONS_FOR_RUNG_SUGGESTION) {
+      // The target is a rung the record SHOWS this role's escalated resolves
+      // landing on, never a step guessed off `rung_order`: a rung the routing
+      // table actually resolved cannot be one the table would never produce.
+      // It still has to name a CHANGE against the rung in force - see
+      // `raiseTarget`.
+      const proposed = raiseTarget(resolution, `model.effort.${role}`, row.rung);
       out.push({
         kind: 'suggest',
         subject: role,
         evidence: `${row.escalated} of ${row.resolves} resolves climbed to the retry rung`,
         action: `model.effort.${role}`,
+        direction: 'raise',
+        ...keyState(resolution, `model.effort.${role}`),
+        ...(proposed ? { proposed } : {}),
       });
     } else if (row.escalated === 0 && row.resolves >= MIN_DISPATCHES_FOR_RUNG_INFO) {
       out.push({
@@ -269,17 +445,53 @@ export function suggestFromRender(render) {
   // R4: executor checkpoint pressure. A checkpoint is a fresh-context
   // continuation paid at full dispatch price; repeated ones say the plans are
   // outrunning one context.
+  //
+  // SUPPRESSED - not returned with a caveat - when every checkpoint it counted
+  // maps to a readable plan whose task count is UNDER the resolved ceiling
+  // (D-08). A suggestion the evidence does not support is the thing that made
+  // `/cad-suggest` read as a report rather than advice: telling a user to lower
+  // a ceiling their plans never reached is a sentence they can only ignore, and
+  // a caveat printed beside it still leaves the retune list to be sorted by
+  // hand. This is a new class of check, not a tightened floor - the four MIN_*
+  // constants above are untouched.
+  //
+  // The comparison is against the ceiling the suggestion PRINTS as `current`,
+  // never a hardcoded 8 (D-10): a project that raised it to 12 must not be told
+  // to lower one its plans never touched. An unknown count - a checkpoint whose
+  // plan file cannot be read - is never under-ceiling (D-09), so a single one
+  // leaves the rule speaking; a count EQUAL to the ceiling is not under it
+  // either. And with no ceiling resolved at all, or no per-checkpoint counts
+  // passed, there is nothing to bind against and the rule speaks exactly as it
+  // did before this check existed.
   const execCp = checkpoints.get('cad-executor') || 0;
-  if (execCp >= MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION) {
+  const ceiling = resolved(resolution, 'workflow.max_plan_tasks');
+  const counted = resolution && Array.isArray(resolution.checkpointTasks)
+    ? resolution.checkpointTasks
+    : [];
+  const bounded = typeof ceiling === 'number' && Number.isFinite(ceiling)
+    && counted.length === execCp && execCp > 0
+    && counted.every((n) => typeof n === 'number' && Number.isFinite(n) && n < ceiling);
+  if (execCp >= MIN_CHECKPOINTS_FOR_SIZE_SUGGESTION && !bounded) {
     out.push({
       kind: 'suggest',
       subject: 'cad-executor',
       evidence: `${execCp} checkpoint return(s) - plans may exceed one context`,
       action: 'workflow.max_plan_tasks',
+      direction: 'lower',
+      // No `proposed`, and none is derivable: no field in the record names a
+      // plan's task count, so the only target available would be a number
+      // invented here (D-07). The key is OMITTED rather than sent as null.
+      ...keyState(resolution, 'workflow.max_plan_tasks'),
     });
   }
 
-  // R5: the spend receipt. Names where the tokens went; asks for nothing.
+  // R5: the spend receipt. Names where the recorded tokens went and what that
+  // total is NOT - the three `SPEND_EXCLUDES` names ride the evidence string
+  // rather than the envelope, because `workflows/suggest.md` relays evidence
+  // unchanged and adds no flag, so this is the only way the caveat reaches a
+  // `/cad-suggest` reader at all. Asks for nothing: still `kind: 'info'`,
+  // still `action: null`, still silent when no role carried a figure, and the
+  // only arithmetic is the share it already computed.
   const roles = render.roles && typeof render.roles === 'object' ? render.roles : {};
   let top = null;
   let total = 0;
@@ -292,7 +504,7 @@ export function suggestFromRender(render) {
     out.push({
       kind: 'info',
       subject: top.role,
-      evidence: `largest recorded spend: ${top.tokens.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} recorded tokens (${Math.round((top.tokens / total) * 100)}%)`,
+      evidence: `largest recorded spend: ${top.tokens.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} recorded tokens (${Math.round((top.tokens / total) * 100)}%); excludes ${SPEND_EXCLUDES.join(', ')}`,
       action: null,
     });
   }
@@ -302,6 +514,14 @@ export function suggestFromRender(render) {
   // billed for. Receipt only, and `action` is null on purpose: no
   // `config.schema.json` key governs coordinator spend, and this file's own
   // test refuses an action naming a key the schema lacks.
+  //
+  // The figure it relays is CORR-SCOPED (phase 5 D-01): `lib/trace.mjs` keys the
+  // residue accumulators on `corr`, so each run's last marker closes at that
+  // run's own last event and no window spans the clock between two runs that
+  // share a phase number. A `--phase` render can still pool several runs, and
+  // this receipt then relays the sum of their windows - never a span across
+  // them. The evidence string below is unchanged byte for byte: D-02 keeps the
+  // name, which the corrected arithmetic earns rather than outgrows.
   //
   // SILENT on a render with no `coordinator` block, never an "absent
   // coordinator record" line (D-06). Every trace written before the marker

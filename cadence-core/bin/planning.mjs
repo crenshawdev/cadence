@@ -69,7 +69,7 @@
 //                                   when one carries none; the optional triple
 //                                   requires a record for THAT range, so an
 //                                   earlier narrower one does not satisfy it
-//   trace append --phase N --family <f> --event <e> [--plan k] [--sha s]
+//   trace append --phase N --family <f> --event <e> [--plan k] [--base b] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
 //                                   one line onto .planning/trace.jsonl.
@@ -96,7 +96,9 @@
 //                                   return/checkpoint/escalation, the per-role
 //                                   dispatch/token totals, and - where markers
 //                                   were written - the coordinator's own
-//                                   per-step residue between those brackets.
+//                                   per-step residue between those brackets,
+//                                   scoped per RUN by `corr` so no window spans
+//                                   two runs that share a phase number.
 //                                   By default the response carries the paired
 //                                   `brackets` rows and every `outcome` event
 //                                   in place of the raw event array; --events
@@ -113,6 +115,15 @@
 //                                   _archive-<label>/ (untagged), and their
 //                                   requirements move from Active/Traceability
 //                                   into ## Shipped rows carrying the label
+//   trace window [--phase N]        every paired bracket's terminal `tokens`
+//                                   figure against its role's
+//                                   workflow.max_dispatch_tokens ceiling, as
+//                                   budget-overrun problems. A REPORT about a
+//                                   run that already finished - nothing on the
+//                                   dispatch path reads a ceiling - plus the
+//                                   rows it could not compare: roles with no
+//                                   ceiling, and terminals that carried no
+//                                   figure
 //   trace ignore [--root <path>] [--check]
 //                                   keep .planning/trace.jsonl out of git:
 //                                   append-if-absent at scaffold time, or
@@ -138,10 +149,11 @@ import {
   classifyAcceptanceCriteria, UAT_ORIGINS, UAT_SOURCES, UAT_FIELDS_VERSION,
   sectionBound, phaseRequirements, phaseCriteria, planTaskTitles,
   captureSections, CAPTURE_WALK_SECTIONS,
+  parseArchiveRows, appendArchiveRows,
 } from './lib/planning-files.mjs';
 import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
-  appendCapture, replaceSection, withCaptureLock, CAPTURE_KINDS, EMPTY_CAPTURE,
+  appendCapture, replaceSection, withPlanningFileLock, CAPTURE_KINDS, EMPTY_CAPTURE,
 } from './lib/capture-file.mjs';
 import { mergeLayers } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
@@ -155,7 +167,8 @@ import { normalizeTargetVersion } from './lib/release-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { appendEvent, renderTrace, FAMILIES } from './lib/trace.mjs';
 import { READS_FILE, summarizeReads, joinReads } from './lib/read-trace.mjs';
-import { suggestFromRender } from './lib/trace-suggest.mjs';
+import { suggestFromRender, parseAdjudication } from './lib/trace-suggest.mjs';
+import { windowBudget } from './lib/window-budget.mjs';
 import { buildIndex, search } from './lib/bm25.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-int.mjs';
@@ -2062,6 +2075,23 @@ function cmdRecall(dir, query, opts) {
     corpus.push({ text: item.text, source: 'CAPTURE.md',
       ...(item.phase !== undefined ? { phase: item.phase } : {}) });
   }
+  // ARCHIVE.md LAST, and the position is load-bearing: `search()` orders hits
+  // by (score desc, corpus position asc), so appending here leaves every
+  // existing corpus index where it was and a tree with no ARCHIVE.md emits the
+  // bytes it emitted before this walk existed. Read through the same guarded
+  // `read()` the CAPTURE walk uses - an absent file is empty data, never an
+  // ENOENT throw, which is what the empty-corpus contract rests on.
+  //
+  // ONE flat ranking with the live rows (D-05): no recency term, no per-source
+  // cap, archived rows competing on score alone. Measured 2026-08-16 over a
+  // 265-to-986-snippet rebuild, archived rows took 2, 1, 3 and 3 of the top 5
+  // on four representative queries and displaced the live CAPTURE.md hit from
+  // rank 1 twice. That crowding is the accepted cost: each row names its
+  // milestone in `source` so the caller discounts retired work itself, which is
+  // a judgment it can make and a cap's N cannot - no measured basis exists for
+  // one.
+  const archive = read(join(dir, 'ARCHIVE.md'));
+  if (archive) for (const row of parseArchiveRows(archive)) corpus.push(row);
 
   if (!corpus.length) return ok({ results: [], total: 0, ...warn });
 
@@ -2870,6 +2900,185 @@ function cmdReads(dir, opts) {
   });
 }
 
+/**
+ * The per-role dispatch-window ceilings the `window` arm falls back to when no
+ * config layer sets one.
+ *
+ * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these numbers -
+ * its rows carry the defaults, the sample sizes behind them and the reach
+ * phrase, and `cadence-core/references/seams.md` carries the argument. This map
+ * is the unset-layer fallback and nothing else, the same duplication
+ * `cmdRecall`'s `?? 'builtin'` already accepts: this seam reads the merged
+ * config, not the schema, so an unset key has to resolve to something here.
+ * A number changed in one place and not the other makes the report disagree
+ * with the row a user reads before setting the key.
+ */
+const DISPATCH_WINDOW_DEFAULTS = Object.freeze({
+  'cad-planner': 200000,
+  'cad-assumptions-analyzer': 150000,
+  'cad-verifier': 100000,
+  'cad-reviewer': 150000,
+  'cad-executor': 200000,
+  'cad-plan-checker': 75000,
+});
+
+/**
+ * The values the `suggest` arm falls back to for the keys its rules NAME when
+ * no config layer holds one - and only for the keys whose schema default is a
+ * real value. A key defaulting to `null` is not in here on purpose: `null` is
+ * the schema's sentinel for "no layer pins this, the stakes level decides it",
+ * and the suggestion reports that state as unset rather than inventing the
+ * value the level would fire (D-06).
+ *
+ * `cadence-core/config.schema.json` IS THE SOURCE OF TRUTH for these values -
+ * its rows carry the defaults and the argument behind them. This map is the
+ * unset-layer fallback and nothing else, the same duplication
+ * `DISPATCH_WINDOW_DEFAULTS` above already accepts: this seam reads the merged
+ * config, not the schema, so an unset key has to resolve to something here. The
+ * schema is deliberately NOT parsed at runtime (D-15) - neither this file nor
+ * `lib/trace-suggest.mjs` reads it today. A value changed in one place and not
+ * the other makes `/cad-suggest` print a `current` that disagrees with the row
+ * `/cad-config` shows, which `prose-agreement.test.mjs` fails on.
+ */
+const SUGGEST_KEY_DEFAULTS = Object.freeze({
+  'workflow.max_plan_tasks': 8,
+  'review.reviewers': ['claude-subagent'],
+});
+
+/**
+ * The gate ladder `cadence-core/route-table.json` states, resolved against THIS
+ * file's own directory the way `route.mjs` resolves the same file - and without
+ * honouring `CADENCE_ROUTE_TABLE`: an env-supplied ladder is the ungated
+ * override class EXP-01 closed, and this one decides what a suggestion tells a
+ * user to set a review gate to.
+ *
+ * A table that cannot be read or parsed degrades to NO ladder, which makes the
+ * gate arm omit `proposed`. That omission is the report; no ladder is
+ * substituted from memory here.
+ * @returns {string[]|undefined}
+ */
+function gateLadder() {
+  return routeLadder('gates');
+}
+
+/**
+ * The rung ladder `route-table.json` states, on the same terms as the gate one:
+ * R3 compares its target against the rung a config layer set, and an absent
+ * ladder omits the target rather than substituting an order from memory.
+ * @returns {string[]|undefined}
+ */
+function rungLadder() {
+  return routeLadder('rung_order');
+}
+
+/**
+ * One ordered ladder off `route-table.json`, or `undefined` when the table is
+ * unreadable, malformed, or names that ladder as anything but a non-empty array
+ * of non-empty strings.
+ * @param {string} key
+ * @returns {string[]|undefined}
+ */
+function routeLadder(key) {
+  try {
+    const table = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+    const ladder = table[key];
+    if (Array.isArray(ladder) && ladder.length
+      && ladder.every((g) => typeof g === 'string' && g)) return ladder;
+  } catch { /* unreadable or malformed: no ladder, and the omission says so */ }
+  return undefined;
+}
+
+/**
+ * The task count of the plan a `cad-executor` checkpoint names, or `null` when
+ * the checkpoint maps to no readable plan - UNKNOWN, never under-ceiling
+ * (D-09). Unknown is the common case and stays so: a `plan` that is a WORKER
+ * key rather than a plan number (`1-cut`, `1-fix`) names no file, an archived
+ * cycle keeps its phase dirs under a different milestone dir and filename
+ * shape, and a delete-mode close removes them outright.
+ *
+ * The `phase` is read through `requirePhaseArg`, which is the traversal guard
+ * as much as the shape one: this value comes off a RECORD line rather than a
+ * flag, and it is about to be a directory component. The `plan` needs no such
+ * guard - it is only ever compared against `readdirSync` entries, so a `../`
+ * in it matches nothing.
+ * @param {string} dir the planning dir
+ * @param {any} event a `lifecycle/checkpoint` event
+ * @returns {number|null}
+ */
+function checkpointPlanTasks(dir, event) {
+  const phase = requirePhaseArg(typeof event.phase === 'number' ? String(event.phase) : event.phase);
+  if (!phase.ok) return null;
+  const plan = typeof event.plan === 'string' || typeof event.plan === 'number'
+    ? String(event.plan).trim()
+    : '';
+  if (!plan) return null;
+  const pdir = join(dir, 'phases', phase.raw);
+  const { plans } = listPlanFiles(pdir);
+  // `PLAN.md` is plan 1 spelled bare - the same equivalence `listPlanFiles`'s
+  // own conforming set carries.
+  const file = plans.find((f) => f === `PLAN-${plan}.md`)
+    || (plan === '1' ? plans.find((f) => f === 'PLAN.md') : undefined);
+  if (!file) return null;
+  const text = read(join(pdir, file));
+  if (text === null) return null;
+  return planTaskTitles(text).length;
+}
+
+/**
+ * Everything the pure rules in `lib/trace-suggest.mjs` need to name a
+ * direction, a current value and - where one can be READ - a target: the
+ * resolved config value behind each key the record's own events reach, the gate
+ * ladder, and the stakes level the record carries. Resolved HERE because that
+ * file is pure and stays that way (D-05); it owns the rules, this owns the
+ * reads.
+ *
+ * Keyed off the RECORD rather than the schema's key space: a trigger that never
+ * fired and a role that never resolved are keys no rule can name, so resolving
+ * them would read config nothing asked about.
+ *
+ * `checkpointTasks` is the FILE half of R4's binding check, here for the same
+ * reason as everything else in this function: reading a plan file is I/O.
+ * @param {string} dir the planning dir
+ * @param {any} render
+ * @param {any} config the merged config layers
+ */
+function suggestResolution(dir, render, config) {
+  /** @type {Record<string, any>} */
+  const values = {};
+  // An absent or null value is NOT recorded: `lib/trace-suggest.mjs` reads a
+  // missing key as unset, which is the state D-06 makes it print.
+  const set = (key, value) => { if (value !== undefined && value !== null) values[key] = value; };
+  const triggers = config?.review?.triggers || {};
+  const effort = config?.model?.effort || {};
+  const events = Array.isArray(render?.events) ? render.events : [];
+  // The level the most recent `routing/resolve` event in scope carries, and
+  // nothing when the scope holds none - never a level the record does not
+  // carry.
+  let stakes = null;
+  // One entry per counted checkpoint, in record order, so the rule can tell
+  // "every one of them was measured" from "some were".
+  /** @type {(number|null)[]} */
+  const checkpointTasks = [];
+  for (const e of events) {
+    if (!e || typeof e !== 'object') continue;
+    if (e.family === 'outcome' && e.event === 'adjudication') {
+      const parsed = parseAdjudication(e);
+      if (parsed) set(`review.triggers.${parsed.trigger}.gate`, triggers?.[parsed.trigger]?.gate);
+    } else if (e.family === 'routing' && e.event === 'resolve') {
+      if (typeof e.role === 'string' && e.role) set(`model.effort.${e.role}`, effort?.[e.role]);
+      if (typeof e.stakes === 'string' && e.stakes.trim()) stakes = e.stakes.trim();
+    } else if (e.family === 'lifecycle' && e.event === 'checkpoint' && e.role === 'cad-executor') {
+      checkpointTasks.push(checkpointPlanTasks(dir, e));
+    }
+  }
+  set('review.reviewers', config?.review?.reviewers ?? SUGGEST_KEY_DEFAULTS['review.reviewers']);
+  set('workflow.max_plan_tasks',
+    config?.workflow?.max_plan_tasks ?? SUGGEST_KEY_DEFAULTS['workflow.max_plan_tasks']);
+  const gates = gateLadder();
+  const rungs = rungLadder();
+  return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), stakes, checkpointTasks };
+}
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -2952,6 +3161,32 @@ function cmdTrace(dir, sub, opts) {
         return fail('bad-args', `trace ${sub} --tokens needs a non-negative integer`);
       }
       tokens = parsed.value;
+    }
+
+    // --turns: how many TOOL CALLS the dispatch made, read off the same subagent
+    // return metadata `--tokens` is (lib/trace.mjs's TOKEN PROVENANCE header
+    // states that provenance once, for both). Tokens alone cannot price a run -
+    // the bill is turns times window - so a record carrying only the token half
+    // can describe what a worker returned and never what it cost to get there.
+    // Structured, and never parsed back out of `--detail`: that slot is not a
+    // machine-join surface (one trigger was spelled four different ways across
+    // 35 shipped `outcome/adjudication` events), so a figure recovered from it
+    // is exactly as trustworthy as the substitution that condemned it.
+    // Validated the way `--raised` is, and for the same reason: a malformed
+    // value is a malformed CALL and NOTHING is appended, never a best-effort
+    // append with the field dropped - a dropped count renders the role
+    // turn-unrecorded while the caller believes a figure landed, which is the
+    // zero/unrecorded/recorded conflation the per-role block exists to prevent.
+    // No comma-grouping exception: that one exists because this plugin PRINTS
+    // token figures grouped, and a tool-call count never is, so accepting
+    // `1,234` would only widen what can be mistyped.
+    let turns;
+    if ('turns' in opts) {
+      const parsed = requireInt(opts.turns);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', `trace ${sub} --turns needs a non-negative integer`);
+      }
+      turns = parsed.value;
     }
 
     // --raised: how many findings the reviewers RAISED before adjudication, so
@@ -3045,6 +3280,29 @@ function cmdTrace(dir, sub, opts) {
       reviewer = raw;
     }
 
+    // --trigger: WHICH review trigger this event belongs to, stored verbatim as
+    // one non-empty string, so an `outcome` event can be JOINED to the fire that
+    // produced it without reading prose. `risk-check status` is the first
+    // consumer: it demands a receipt for the `risk_surface` fire on a range its
+    // detector matched, and a receipt is only a receipt if the trigger it names
+    // is structured (D-12).
+    // Measured on this repository's 35 `outcome/adjudication` events, the
+    // trigger is spelled four different ways inside the free-text `--detail` -
+    // `risk_surface`, `risk_surface re-arm`, `risk_surface rearm`,
+    // `risk_surface plan-1` - and lib/trace-suggest.mjs discards that text
+    // entirely, so parsing it back out is exactly the substitution the `--raised`
+    // and `--reviewer` flags were added to avoid.
+    // Refused when present but bare or blank, the refusal `--step` and
+    // `--reviewer` make two paragraphs above and for the identical reason: a
+    // bare `--trigger` parses as boolean `true`, which would store the literal
+    // `true` as a trigger name and satisfy a join for a fire nobody made.
+    let trigger;
+    if ('trigger' in opts) {
+      const raw = typeof opts.trigger === 'string' ? opts.trigger.trim() : '';
+      if (!raw) return fail('bad-args', `trace ${sub} --trigger needs a trigger name after it: --trigger <name>`);
+      trigger = raw;
+    }
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
     // `escalation` store tokens identically. `--step` does not change that: the
@@ -3064,15 +3322,27 @@ function cmdTrace(dir, sub, opts) {
       event,
       ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
       ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
+      // `--base` beside `--sha`: a fire RECEIPT names both ends of the range it
+      // settled, because two ranges can share a head and differ at the base and
+      // are then different diffs over different surfaces. Same bare-flag guard
+      // as `--plan` and `--sha` - a bare `--base` parses as boolean `true` and
+      // records nothing rather than the literal.
+      ...(typeof opts.base === 'string' && opts.base ? { base: opts.base } : {}),
       ...(typeof detail === 'string' && detail ? { detail } : {}),
       // A bare `--role` parses as boolean `true`; the same guard `--plan` and
       // `--sha` use records nothing rather than the literal `true`.
       ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
       ...(tokens === undefined ? {} : { tokens }),
+      // OMITTED when the return carried no count, never sent as `0`: a zero
+      // claims a dispatch that used no tools, while an absent key is readable
+      // as "this host reported none". A real `--turns 0` still records a 0,
+      // exactly as `--tokens 0` already does.
+      ...(turns === undefined ? {} : { turns }),
       ...(raised === undefined ? {} : { raised }),
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
+      ...(trigger === undefined ? {} : { trigger }),
     });
     return ok({
       written: res.written,
@@ -3092,13 +3362,20 @@ function cmdTrace(dir, sub, opts) {
       phase = parsedPhase.raw;
     }
     const r = renderTrace(dir, phase);
-    const suggestions = suggestFromRender(r);
+    // warnings[] BOUND and ridden on the envelope when non-empty, the rule
+    // lib/merge-warnings.mjs holds every mergeLayers callsite to (D-13): a torn
+    // layer reads every key as unset, so every suggestion would report an unset
+    // `current` and a project that deliberately pinned one would be told to
+    // move a value the read never saw.
+    const { config: suggestConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+    const suggestions = suggestFromRender(r, suggestResolution(dir, r, suggestConfig));
     return ok({
       scope: phase === undefined ? 'all' : String(phase),
       events_read: r.events.length,
       ...(r.capped ? { capped: true } : {}),
       ...(r.malformed ? { malformed: r.malformed } : {}),
       suggestions,
+      ...(warnings.length ? { warnings } : {}),
     });
   }
   if (sub === 'render') {
@@ -3151,7 +3428,50 @@ function cmdTrace(dir, sub, opts) {
       ...(r.mismatched.length ? { mismatched: r.mismatched } : {}),
     });
   }
-  return fail('usage', 'trace <append|close|render|suggest|ignore>');
+  if (sub === 'window') {
+    // Scope exactly as `render` and `suggest` take it: no `--phase` is the
+    // WHOLE record, because a window ceiling is argued off a milestone's worth
+    // of dispatches rather than one phase's.
+    let phase;
+    if (opts.phase !== undefined) {
+      const parsedPhase = requirePhaseArg(opts.phase);
+      if (!parsedPhase.ok) return fail('bad-args', 'trace window --phase must be a phase number');
+      phase = parsedPhase.raw;
+    }
+    const r = renderTrace(dir, phase);
+    // warnings[] BOUND and ridden on the envelope when non-empty, the rule
+    // lib/merge-warnings.mjs holds every mergeLayers callsite to: a torn layer
+    // reads every ceiling as unset, so the report silently falls back to the
+    // defaults below and a project that deliberately raised one would see its
+    // crossings come back with nothing said.
+    const { config: windowConfig, warnings } = mergeLayers(join(dir, 'config.json'));
+    const set = windowConfig?.workflow?.max_dispatch_tokens;
+    /** @type {Record<string, number>} */
+    const ceilings = {};
+    for (const [role, fallback] of Object.entries(DISPATCH_WINDOW_DEFAULTS)) {
+      const v = set?.[role];
+      ceilings[role] = v === undefined || v === null ? fallback : v;
+    }
+    const w = windowBudget(r.file, r.brackets, ceilings);
+    return ok({
+      checked: 'dispatch-window',
+      scope: phase === undefined ? 'all' : String(phase),
+      // The record the crossings were read from, which is also the `file` on
+      // every problem: a finding that cannot name its source is a number.
+      file: r.file,
+      ceilings,
+      problems: w.problems,
+      // Stated at zero rather than omitted, unlike `render`'s conditional keys.
+      // This subcommand has no byte-stable envelope to preserve, and the whole
+      // point of the two counters is that a reader can tell how much of the
+      // record was actually compared - an absent count would read as none.
+      compared: w.compared,
+      unbudgeted: w.unbudgeted,
+      unrecorded: w.unrecorded,
+      ...(warnings.length ? { warnings } : {}),
+    });
+  }
+  return fail('usage', 'trace <append|close|render|suggest|window|ignore>');
 }
 
 // ---------------------------------------------------------------------------
@@ -3377,6 +3697,28 @@ function cmdRiskCheckRun(dir, opts) {
  */
 const planKey = (v) => (v === undefined || v === null ? '' : String(v));
 
+/** The trigger a risk RECEIPT has to name. One constant, because the detector
+ * that writes the record and the gate that fires on it are the same trigger,
+ * and a second spelling is how the two halves start clearing each other. */
+const RISK_TRIGGER = 'risk_surface';
+
+/**
+ * The four `outcome` event names a blocking `risk_surface` fire can settle at,
+ * and the whole vocabulary `risk-check status` accepts as proof the fire
+ * HAPPENED (GAT-04):
+ *   - `adjudication` - the adjudicated arm reported its survivors
+ *   - `rearm`        - the one-round re-arm fired a narrowed second round
+ *   - `gate_pass`    - the fire came back with nothing blocker/high
+ *   - `override`     - the user cleared a FAIL deliberately, reason on file
+ * `gate_pass` is here because the roadmap's stated acceptance set has no arm
+ * for a clean pass and a blocking PASS wrote nothing: without it, every matched
+ * range whose fire found no blocker would be permanently unclearable, and this
+ * tree has already stated its verdict on that shape - an unclearable gate is
+ * one that gets bypassed. A FIFTH name would be a state nothing produces; the
+ * producers are references/triage-gate.md and references/review-triggers.md.
+ */
+const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override'];
+
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'risk-check status needs --phase <N>');
@@ -3601,10 +3943,127 @@ function cmdRiskCheckStatus(dir, opts) {
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
       inconclusive: e.inconclusive === true,
+      // The category TOKENS `cmdRiskCheckRun` writes onto every record and this
+      // reader used to drop. They are what makes a range FIRED: a record
+      // carrying one is a range workflows/execute.md was obliged to fire the
+      // blocking `risk_surface` gate on. A non-array (an older seam, a
+      // hand-edited line) reads as no tokens, never as a match nobody can name.
+      matches: Array.isArray(e.matches) ? e.matches.filter((m) => typeof m === 'string') : [],
+      // A non-empty `matches` whose elements are not strings is a range the
+      // detector MATCHED and this reader cannot name. Filtering it to `[]`
+      // silently turned a fired range into a clean one, so the two cases are
+      // separated: `matches` stays the tokens that can be reported, and this
+      // flag carries "something matched" independently. Widening is the only
+      // safe direction on the one gate that is blocking at every stakes level,
+      // which is the same rule `inconclusive` already encodes.
+      matched_unnamed: Array.isArray(e.matches) && e.matches.length > 0
+        && e.matches.filter((m) => typeof m === 'string').length === 0,
     };
     records.get(k).push(rec);
     byPlan.get(p).push(rec);
   }
+
+  /**
+   * THE FIRE'S OWN RECEIPTS, keyed the same way the records are (GAT-04).
+   *
+   * The defect: `risk-check status` proved a range was READ and RECORDED, and
+   * stopped there. A coordinator could run the detector, watch it match
+   * `secrets`, skip the blocking `risk_surface` fire entirely and still be told
+   * `ok:true` - the gate reporting success for the one thing it exists to make
+   * unskippable. "The detector ran" and "the fire happened" are two different
+   * claims, so they are two different receipts and this reader demands both.
+   *
+   * Four event names, because those are the four outcomes a blocking fire can
+   * reach: the adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
+   * and references/triage-gate.md's two settle points - `gate_pass` when
+   * nothing blocker/high survived, `override` when the user cleared a FAIL
+   * deliberately. A fifth name would be a state nothing produces.
+   *
+   * The trigger is read off the STRUCTURED `trigger` field and never parsed out
+   * of `detail` (D-12): measured on this repository's 35 `outcome/adjudication`
+   * events the trigger is spelled four different ways in that free text, so a
+   * reader that parsed it would clear a range on a spelling and refuse an
+   * identical one on another.
+   * Each receipt carries the row identity it was written under plus the RANGE
+   * it settled, so a later matched range cannot ride in on an earlier fire.
+   * @type {{key: string, sha: string|null, base: string|null}[]}
+   */
+  const receipts = [];
+  for (const e of r.events) {
+    if (!inCycle(e)) continue;
+    if (e.family !== 'outcome' || !FIRE_RECEIPTS.includes(e.event)) continue;
+    if (e.trigger !== RISK_TRIGGER) continue;
+    // An `override` is the one receipt a coordinator writes on its OWN say-so
+    // rather than as the settled outcome of a review, so it is the one that has
+    // to carry a reason. Without this, `trace append --family outcome --event
+    // override --trigger risk_surface --plan k` with no detail at all mints a
+    // clear for a fire nobody made - the same manufactured-receipt shape the
+    // structured `--trigger` field exists to refuse (D-12).
+    if (e.event === 'override') {
+      const why = typeof e.detail === 'string' ? e.detail.trim() : '';
+      if (!why) continue;
+    }
+    receipts.push({ key: rowKey(e.corr, e.plan), sha: typeof e.sha === 'string' ? e.sha : null, base: typeof e.base === 'string' ? e.base : null });
+  }
+
+  /**
+   * Does a receipt settle THIS range?
+   *
+   * The join used to be `rowKey(corr, plan)` alone, and that cleared every later
+   * matched range for the plan on the strength of one earlier fire: run the
+   * detector, fire once, fix something, re-run the detector on the widened
+   * range, skip the second fire - and status still answered `ok:true`. That is
+   * the defect GAT-04 exists to close, one level up inside the control itself.
+   *
+   * So a receipt names the range it settles, with `trace append --sha <head>`.
+   * Short and full spellings both resolve to the same commit, so the comparison
+   * is prefix-wise in whichever direction is shorter, exactly as a caller who
+   * passed `git rev-parse --short HEAD` would expect.
+   *
+   * A receipt carrying NO sha settles nothing. That is the transition cost,
+   * stated rather than hidden: a receipt that cannot say which range it judged
+   * is the ambiguity this fix removes, and accepting it as a wildcard would
+   * leave the hole open under a different name.
+   */
+  const shaMatches = (/** @type {string|null} */ a, /** @type {string|null} */ b) => {
+    if (!a || !b) return false;
+    const [x, y] = a.length <= b.length ? [a, b] : [b, a];
+    return x.length >= 7 && y.startsWith(x);
+  };
+  /**
+   * Does a receipt settle THIS ONE record?
+   *
+   * Both ends of the range, not the head alone: two records can share a head
+   * and differ at the base, and they are then different diffs over different
+   * risk surfaces. A receipt for `B..C` must not settle `A..C`.
+   *
+   * A record that carries no resolved ids has no range identity to bind to - it
+   * predates those fields, or its refs did not resolve - so the join falls back
+   * to the run and the plan for THAT record alone. The alternative is a range
+   * no receipt can ever settle, and an unclearable gate is one that gets
+   * bypassed. Every record `risk-check run` writes today carries the ids, so
+   * this is the legacy arm, exactly as wide as the records that lack them.
+   */
+  const settledBy = (/** @type {any} */ rc, /** @type {any} */ f) => (
+    f.head_id === null && f.base_id === null
+      ? true
+      // Both ends REQUIRED, never "matched if supplied". Letting a receipt with
+      // no `--base` pass on the head alone reopened the widened-range bypass
+      // under a different name: a fire over `B..C` would settle `A..C`, which
+      // is a different diff over a different surface.
+      : shaMatches(rc.sha, f.head_id) && shaMatches(rc.base, f.base_id));
+  /**
+   * EVERY fired record this row answers for needs its own receipt.
+   *
+   * `.some()` here was the blocker's second half: on the phase-wide arm
+   * `satisfying` is every usable record for the plan, so one receipted range
+   * cleared a later unreceipted one - the same defect the range binding closed
+   * on the named arm, still open one branch over.
+   */
+  const settles = (/** @type {string} */ k, /** @type {any[]} */ satisfying) =>
+    satisfying
+      .filter((f) => f.matches.length > 0 || f.inconclusive || f.matched_unnamed)
+      .every((f) => receipts.some((rc) => rc.key === k && settledBy(rc, f)));
 
   const rows = [...completed.entries()].map(([k, row]) => {
     const asked0 = wanted && planKey(wanted.plan) === planKey(row.plan)
@@ -3627,27 +4086,63 @@ function cmdRiskCheckStatus(dir, opts) {
     // would otherwise pass on the record its earlier, narrower range left. Both
     // ref pairs are named so the reader can see which one it has. UNCHECKED is
     // the third state: the range was named and attempted, and nothing was read.
+    //
+    // The records that actually SATISFY the row, which is a narrower set than
+    // `usable` on the named-range arm: only a record for the asked commit pair
+    // answers there. Both the state below and the fire receipt read this same
+    // set, so the row cannot be `recorded` on one record and judged fired on
+    // another.
+    const satisfying = asked ? usable.filter(sameRange) : usable;
+    // A FIRED range: the detector read it and came back with category tokens or
+    // with `inconclusive: true`, which is the pair of conditions
+    // workflows/execute.md fires the blocking `risk_surface` gate on. Anything
+    // else is a range the gate had no reason to fire on, and demanding a
+    // receipt for it would refuse a clean phase.
+    const fired = satisfying.some((f) => f.matches.length > 0 || f.inconclusive || f.matched_unnamed);
+    // UNFIRED is the fifth state, and it sits ON TOP of the four above rather
+    // than in place of any of them: a record that never read its range is still
+    // `unchecked`, a stale one is still `stale`. This one is reached only where
+    // the range WAS read and recorded, matched, and no receipt says the fire
+    // that had to follow ever happened. The join is the row's own identity -
+    // `rowKey(corr, plan)`, which for the asked row is the
+    // `planRow(r.corr, wanted.plan)` this invocation registered.
     const state = asked
-      ? (usable.some(sameRange) ? 'recorded'
+      ? (usable.some(sameRange) ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
         : found.some(sameRange) ? 'unchecked'
           : found.length ? 'stale' : 'missing')
-      : (usable.length ? 'recorded' : (found.length ? 'unchecked' : 'missing'));
-    return { ...row, state, records: found, ...(asked ? { wanted: asked } : {}) };
+      : (usable.length ? (fired && !settles(k, satisfying) ? 'unfired' : 'recorded')
+        : (found.length ? 'unchecked' : 'missing'));
+    // `matched_unnamed` is this reader's own conservative flag, not part of the
+    // record a caller wrote, so it stays out of the reported shape - the rows
+    // report what the trace holds.
+    const pub = found.map(({ matched_unnamed: _u, ...rest }) => rest);
+    return { ...row, state, records: pub, ...(asked ? { wanted: asked } : {}) };
   });
 
   const offending = rows.filter((row) => row.state !== 'recorded');
   if (offending.length) {
+    // The hint names the step that is actually MISSING. Every offending row in
+    // the `unfired` state has its record already: telling that caller to re-run
+    // the detector would send it to re-do the half it did, and leave the gate
+    // refusing for the same reason a second time. Where the offending set is
+    // mixed, the record hint leads - the fire cannot be recorded for a range
+    // nothing has read.
+    const unfiredOnly = offending.every((row) => row.state === 'unfired');
     // Emitted directly rather than through fail(): its reason/detail/hint shape
     // has no channel for the list, and the list is the whole point of the
     // refusal - exactly as cmdLeaseCheck's `undeclared-files` arm reasons.
     return emit({
       ok: false,
-      reason: 'risk-record-missing',
+      reason: unfiredOnly ? 'risk-fire-missing' : 'risk-record-missing',
       phase: n,
       plans: rows,
       missing: offending.map((row) => row.plan),
-      hint: `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
-        + ' for each plan listed, then re-run this check',
+      hint: unfiredOnly
+        ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
+          + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
+          + ' then re-run this check'
+        : `run risk-check run --phase ${parsedPhase.raw} --plan <k> --base <ref> --head <ref>`
+          + ' for each plan listed, then re-run this check',
     });
   }
   // Nothing to require is not a failure: a phase with no completed executor
@@ -4134,7 +4629,7 @@ function cmdDebtHarvest(root) {
     // and a capture running at the same moment would otherwise each read the
     // same bytes and the second rename would erase the first one's work. That
     // is the whole point of naming all three writers.
-    guarded = withCaptureLock(captureFile, () => {
+    guarded = withPlanningFileLock(captureFile, () => {
       const existing = read(captureFile);
       const next = existing === null
         // Created with the same three headings /cad-capture creates - the same
@@ -4265,6 +4760,90 @@ function cmdMilestonePrune(dir, opts) {
     warnings.push(`${reqFile} is missing or unreadable; requirements were not archived`);
   }
 
+  // The recall residue, and the reason it is written HERE (RCL-07, D-01).
+  //
+  // Below this point the completed phases' directories leave the live tree, and
+  // with them every SUMMARY deviation, UAT item and CONTEXT decision `recall`
+  // indexes: the corpus Cadence writes in order to be remembered was reachable
+  // only while the directory was. So the rows are read and APPENDED before the
+  // loop, not after it. Emitting for the post-loop `applied` set would put the
+  // write after the removal, where an interrupt between the two deletes the
+  // directories, writes nothing, and reopens the reachability hole with no live
+  // artifact left to recover it from.
+  //
+  // The rows are the SAME snippets the live walk indexes, from the SAME three
+  // parsers `cmdRecall` runs, in the same fixed order (phases ascending, then
+  // SUMMARY, UAT, CONTEXT within a phase) - never a model-authored distillation
+  // (D-03). A prose-authored write puts the residue in the coordinator's hands,
+  // where an interrupted close writes nothing and nothing says so.
+  //
+  // The cost of moving the write ahead of the loop is that idempotence stops
+  // being free: a phase whose removal then FAILS is still live on a re-run and
+  // would be read a second time. So the candidate set is filtered by what this
+  // milestone's heading already contains - one containment test keyed on the
+  // label, read back through the grammar's own parser, rather than a dedup pass
+  // over the file or a written-labels sidecar. It is deliberately NOT in
+  // `appendArchiveRows`: "already present" is a PHASE-level judgment this seam
+  // can make and a pure text appender cannot, and folding it in there would
+  // refuse a second artifact from a phase the same call already landed one for.
+  const archiveFile = join(dir, 'ARCHIVE.md');
+  const residue = [];
+  // The read, the containment test and the write are ONE critical section, held
+  // under the same sibling lock `/cad-capture` takes on CAPTURE.md. Unserialized,
+  // two closes running with different labels both read the same text, each
+  // writes only its own rows, and the later `atomicWrite` wins - and this seam
+  // removes the phase directories immediately after, so the clobbered rows have
+  // no live source left. That consequence is why ARCHIVE.md takes a lock the
+  // ROADMAP and REQUIREMENTS writes below do not: those lose an edit git still
+  // holds, this loses the only remaining copy.
+  const archiveGuard = withPlanningFileLock(archiveFile, () => {
+  const archiveText = read(archiveFile) ?? '';
+  // Two properties this test must hold, both of them data-loss bugs when it
+  // does not, because a suppressed write is followed by the directory removal
+  // that makes the omission permanent:
+  //
+  // The label matches EXACTLY, never as a prefix of the composed source. A
+  // milestone label is free text; `source.startsWith(label + '/')` answers true
+  // for a row under a heading named `v1/anything` when the label is `v1`, so a
+  // section this close does not own could mark this close's phases done.
+  //
+  // The key is the ARTIFACT, not the phase. One row for a phase does not prove
+  // its other two were written: a close whose UAT.md was absent or unreadable
+  // on the first pass lands SUMMARY and CONTEXT only, and keyed on the phase
+  // number a retry - after the file is restored - skips the phase whole and
+  // then removes the directory, dropping the row it re-ran to land.
+  const alreadyArchived = new Set(parseArchiveRows(archiveText)
+    .filter((r) => r.label === label)
+    .map((r) => r.origin));
+  for (const n of [...completed].sort((a, b) => a - b)) {
+    const pdir = join(dir, 'phases', String(n));
+    const summaryOrigin = `phases/${n}/SUMMARY.md`;
+    const summary = alreadyArchived.has(summaryOrigin) ? null : read(join(pdir, 'SUMMARY.md'));
+    if (summary) for (const text of parseSummarySnippets(summary)) {
+      residue.push({ origin: summaryOrigin, text });
+    }
+    const uatOrigin = `phases/${n}/UAT.md`;
+    const uatText = alreadyArchived.has(uatOrigin) ? null : read(join(pdir, 'UAT.md'));
+    if (uatText) for (const it of parseUat(uatText).items) {
+      const text = `${it.name || ''} ${it.expected || ''}`.trim();
+      if (text) residue.push({ origin: uatOrigin, text });
+    }
+    const contextOrigin = `phases/${n}/CONTEXT.md`;
+    const context = alreadyArchived.has(contextOrigin) ? null : read(join(pdir, 'CONTEXT.md'));
+    if (context) for (const text of parseContextDecisions(context)) {
+      residue.push({ origin: contextOrigin, text });
+    }
+  }
+  // Nothing to say, no file: a project with no readable artifacts under its
+  // completed phases gets no ARCHIVE.md at all, the way the two document writes
+  // below already skip on an empty set.
+  if (residue.length) atomicWrite(archiveFile, appendArchiveRows(archiveText, label, residue));
+  }, 'archive-locked');
+  // A refused lock stops the close BEFORE any directory moves. Proceeding would
+  // remove the phases whose residue this run could not write, which is the exact
+  // permanent loss the lock exists to prevent.
+  if (archiveGuard.ok === false) return fail(archiveGuard.reason, archiveGuard.detail);
+
   // Directories FIRST, and the documents describe only what this pass actually
   // accomplished.
   //
@@ -4335,6 +4914,11 @@ function cmdMilestonePrune(dir, opts) {
       ? { moved: reqResult.moved, created_shipped: reqResult.createdSection }
       : { moved: [], created_shipped: false },
     dirs,
+    // How many residue rows this invocation landed in ARCHIVE.md. Always
+    // present, including as 0: absence and silence are different answers here
+    // as everywhere, and a close that wrote nothing has to be legible as one
+    // rather than as a field the caller forgot to look for.
+    residue_rows: residue.length,
     ...(warnings.length ? { warnings } : {}),
   };
 

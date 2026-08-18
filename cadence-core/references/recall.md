@@ -38,6 +38,17 @@ Each rendered line carries that result's `snippet`, its `source` file and its
 when present, matching the omit-optionals convention; never substitute a blank,
 a placeholder or an inferred phase number. Empty `results` renders nothing.
 
+A `source` whose LEADING segment is a milestone label, as in
+`v3.5.2/phases/1/SUMMARY.md`, names an artifact from a CLOSED milestone.
+Everything after the label is the artifact itself, so a retired deviation, UAT
+item and decision stay as separable as their live counterparts.
+
+Those rows rank FLAT with the live ones: no recency term, no per-source cap.
+Retired work is sometimes the best answer in the corpus and only the caller
+knows whether this query wants it, so the discounting is deliberately the
+caller's - which a reader who does not know what the leading segment means
+cannot do. That is the whole reason this paragraph is here.
+
 ## /cad-context: a block in the analyzer payload
 
 Render the top results as a `<recalled_memory>` block in the

@@ -203,7 +203,7 @@ phase re-reads, plus that plan's own file. Once that executor comes back,
 append the CLOSE:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan <k> --role cad-executor --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
 ```
 
 ONE line per executor, and the detail is the executor's own return line - write
@@ -241,9 +241,11 @@ Handle the executor's return:
   remaining tasks (prompt carrying the report PATH and "continue from task
   <k>", as in handle_checkpoint) or stop here - the incomplete tasks become
   SUMMARY open items. Never silently re-run completed tasks.
-- **timeout or no report** -> the executor rewrites its report after every task
-  commit, so a file exists even when nothing was returned: read it, confirm it
-  against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
+- **turn cap or unusable return** -> two things produce this state:
+  the turn cap cut the dispatch, or the return is missing or unparseable.
+  The executor rewrites its report after every task commit, so a file exists
+  even when nothing was returned: read `<plandir>/reports/plan-<k>.md`, confirm
+  it against `git log {pre-plan HEAD}..HEAD` to see what actually landed, report
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 

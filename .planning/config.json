@@ -1,4 +1,5 @@
 {
+  "stakes": "shipped",
   "git": {
     "auto_branch": "auto",
     "base_branch": "main",
@@ -12,14 +13,60 @@
     "triggers": {
       "risk_surface": {
         "surfaces": [
+          "auth",
+          "migrations",
+          "billing",
+          "concurrency",
+          "destructive",
           "secrets",
           "api_contract",
-          "untrusted_input",
-          "destructive",
-          "concurrency",
-          "migrations"
+          "untrusted_input"
         ]
+      },
+      "diff": {
+        "gate": "blocking",
+        "tier": "flagship"
+      },
+      "phase_diff": {
+        "gate": "adjudicated"
+      },
+      "plan": {
+        "gate": "adjudicated"
       }
-    }
+    },
+    "providers": {
+      "deepseek": {
+        "tiers": {
+          "flagship": "deepseek-v4-pro",
+          "balanced": "deepseek-v4-pro",
+          "cheap": "deepseek-v4-flash"
+        }
+      },
+      "openai": {
+        "tiers": {
+          "flagship": "gpt-5.6-sol",
+          "balanced": "gpt-5.6-terra",
+          "cheap": "gpt-5.6-luna"
+        }
+      },
+      "gemini": {
+        "tiers": {
+          "flagship": "gemini-3.1-pro-preview",
+          "balanced": "gemini-3.6-flash",
+          "cheap": "gemini-3.5-flash-lite"
+        }
+      }
+    },
+    "reviewers": [
+      "openai",
+      "deepseek"
+    ]
+  },
+  "model": {
+    "effort": {
+      "cad-verifier": null,
+      "cad-plan-checker": null
+    },
+    "escalate_on_failure": true
   }
 }

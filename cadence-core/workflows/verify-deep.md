@@ -16,7 +16,7 @@ Close the bracket HERE, the moment the return is in hand and before either arm
 is taken - the dispatch ends exactly once, so it closes exactly once:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-verifier --role cad-verifier --tokens <the token count on the subagent return> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-verifier --role cad-verifier --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return> --detail-file <path>
 ```
 
 Carry a detail on a failed, empty or timed-out dispatch and the seam closes a

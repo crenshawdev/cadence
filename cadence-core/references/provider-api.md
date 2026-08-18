@@ -82,3 +82,21 @@ provider ships is selectable even if Cadence has never heard of it.
   dialect - OpenAI strict `json_schema`, Gemini `responseSchema`, DeepSeek as an
   in-prompt schema under json_object mode. Keep the shape we assert on return in
   sync with the shape we send.
+- **Constraint keywords that ride the wire** (checked 2026-08-17). The schema
+  carries `minimum`, `minLength`, `maxLength` and `maxItems`; all four are
+  supported on every shipped provider and are sent unchanged.
+  - OpenAI structured outputs: supported on BASE models, which are the only
+    models Cadence dispatches (fine-tuned models carry extra restrictions). The
+    UNSUPPORTED set is the composition keywords plus, for objects,
+    `unevaluatedProperties` / `propertyNames` / `minProperties` /
+    `maxProperties`, and for arrays `unevaluatedItems` / `contains` /
+    `minContains` / `maxContains` / `uniqueItems`. Do not add one of those to
+    `FINDING_SCHEMA` - strict mode 400s on it.
+  - Gemini `responseSchema` documents `minimum` / `maximum` and `minItems` /
+    `maxItems` explicitly for its OpenAPI subset. `additionalProperties` remains
+    the one key the adapter strips, and only for Gemini.
+  - DeepSeek enforces NOTHING server-side (json_object mode has no schema), so
+    the keywords are advisory prose in the system prompt there. That is what
+    makes LOCAL validation the guarantee everywhere regardless: `validateFindings`
+    mirrors every constraint in this schema, and a test runs both sides against
+    the same fixtures.

@@ -9,7 +9,7 @@
 // alone, and it would make `detail` useless for the thing it exists for.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { redactUrl } from './lib/redact-url.mjs';
+import { redactUrl, redactCredentials } from './lib/redact-url.mjs';
 
 /** The credential halves every arm below asserts are absent. */
 const USER = 'cad';
@@ -122,4 +122,151 @@ test('redactUrl: a non-string input is coerced, not passed through', () => {
   assert.equal(redactUrl(undefined), 'undefined');
   assert.equal(redactUrl(null), 'null');
   assert.equal(redactUrl(7), '7');
+});
+
+// --- redactCredentials: the spans a URL-position rule cannot see (RVP-01) -----
+//
+// The provider seam's HTTP failure envelope carries an excerpt of a body nobody
+// in this repo wrote. A misconfigured gateway echoes request headers; a proxy
+// error page quotes the URL it was given. Neither is in URL userinfo position,
+// so `redactUrl` sees nothing, and both carry the key the seam just sent.
+//
+// Every arm asserts BOTH halves, same as the arms above: the credential is gone
+// AND the diagnostic a reader needs is still there. A redactor that ate the
+// whole body would pass the first half and make the excerpt worthless.
+
+test('redactCredentials: an authorization echo loses the scheme word too', () => {
+  const out = redactCredentials('authorization: Bearer sk-live-abc123');
+  assert.equal(out.includes('Bearer'), false, out);
+  assert.equal(out.includes('sk-live-abc123'), false, out);
+  assert.equal(out, '<redacted>');
+
+  // The JSON spelling of the same header, where the name is quoted away from
+  // its colon so only the scheme word anchors the match.
+  const json = redactCredentials('{"headers": {"authorization": "Bearer sk-live-abc123"}}');
+  assert.equal(json.includes('Bearer'), false, json);
+  assert.equal(json.includes('sk-live-abc123'), false, json);
+  assert.ok(json.includes('headers'), json);
+});
+
+test('redactCredentials: a credential-shaped query parameter, name and value', () => {
+  const out = redactCredentials('proxy error fetching https://api.example/v1?key=sk-live-abc123&x=1');
+  assert.equal(out.includes('key='), false, out);
+  assert.equal(out.includes('sk-live-abc123'), false, out);
+  // The half that makes the excerpt worth carrying: the endpoint and the
+  // non-credential parameter survive, so a reader can still see WHAT failed.
+  assert.ok(out.includes('https://api.example/v1?'), out);
+  assert.ok(out.includes('&x=1'), out);
+  assert.ok(out.includes('proxy error fetching'), out);
+});
+
+test('redactCredentials: the JSON pair spelling, and the bare form-body one', () => {
+  const json = redactCredentials('{"api_token": "glpat-xyz", "model": "gpt-5"}');
+  assert.equal(json.includes('token'), false, json);
+  assert.equal(json.includes('glpat-xyz'), false, json);
+  assert.ok(json.includes('"model": "gpt-5"'), json);
+
+  const form = redactCredentials('secret=hunter2');
+  assert.equal(form.includes('secret'), false, form);
+  assert.equal(form.includes('hunter2'), false, form);
+
+  // The prefixed spellings a real header dump carries.
+  for (const line of ['x-api-key: sk-live-abc123', 'OPENAI_API_KEY=sk-live-abc123',
+    'access_token=sk-live-abc123', 'password: hunter2']) {
+    const out = redactCredentials(line);
+    assert.equal(out, '<redacted>', line);
+  }
+});
+
+test('redactCredentials: a bare credential WORD is not a credential shape', () => {
+  // The boundary that keeps this from eating the diagnostic the excerpt exists
+  // for: no separator, no value, nothing to redact.
+  const msg = 'the request carried an invalid token';
+  assert.equal(redactCredentials(msg), msg);
+
+  // The real one this protects: OpenAI's model_not_found body, which is the one
+  // thing /cad-config's review arm reads the envelope for.
+  const real = '{"error":{"message":"The model \'gpt-fault-fixture\' does not exist or you '
+    + 'do not have access to it.","type":"invalid_request_error","code":"model_not_found"}}';
+  assert.equal(redactCredentials(real), real);
+
+  // A name that merely ENDS in a credential word mid-token is not one.
+  assert.equal(redactCredentials('monkey=1'), 'monkey=1');
+});
+
+test('redactCredentials: total - a non-string input is coerced, nothing throws', () => {
+  assert.equal(redactCredentials(undefined), 'undefined');
+  assert.equal(redactCredentials(null), 'null');
+  assert.equal(redactCredentials(7), '7');
+  assert.equal(typeof redactCredentials(new Error('key=sk-live-abc123')), 'string');
+  assert.equal(redactCredentials(new Error('key=sk-live-abc123')).includes('sk-live-abc123'), false);
+});
+
+test('redactCredentials and redactUrl each keep their own coverage', () => {
+  // Neither is a superset. The split is the reason issue-check.mjs:41-47 can go
+  // on saying redactUrl covers URL position and nothing else.
+  const userinfo = 'https://cad:s3cr3t-tok@host.invalid/r.git';
+  assert.equal(redactCredentials(userinfo), userinfo, 'userinfo is redactUrl\'s job');
+  const pair = 'key=sk-live-abc123';
+  assert.equal(redactUrl(pair), pair, 'a name=value pair is redactCredentials\' job');
+});
+
+test('redactCredentials: a QUOTED value goes whole, spaces and all', () => {
+  // The value class stops at whitespace, so a multi-word secret used to lose
+  // only its first word and ride the excerpt with the rest intact. A quoted
+  // value now runs to its closing quote.
+  for (const [body, leak] of [
+    ['{"password":"correct horse battery staple"}', 'horse battery staple'],
+    ["{'passwd': 'hunter2 two'}", 'two'],
+    ['{"api_token": "glpat one two"}', 'one two'],
+  ]) {
+    const out = redactCredentials(body);
+    assert.equal(out.includes(leak), false, `${leak} survived in ${out}`);
+    assert.ok(out.includes("<redacted>"), `nothing was redacted in ${out}`);
+  }
+  // An UNquoted value still stops at the delimiter that ends it - the boundary
+  // that keeps this from eating the diagnostic around it.
+  assert.equal(redactCredentials('key=abc&next=1'), "<redacted>&next=1");
+});
+
+test('redactCredentials: camelCase names are credential names too', () => {
+  // Rule 4 crosses a `_`, `-` or `.` only, so the ordinary spelling of a JSON
+  // key went through byte-identical. Case is the discriminator here.
+  for (const name of ['apiSecret', 'clientSecret', 'apiKey', 'accessToken', 'refreshToken']) {
+    const body = `{"${name}":"sk-live-abc123"}`;
+    assert.equal(redactCredentials(body).includes('sk-live-abc123'), false,
+      `${name} leaked its value`);
+  }
+  // And the same false positives rule 4's lookbehind exists to prevent: a
+  // lowercase word merely ENDING in a credential word is not a credential name.
+  assert.equal(redactCredentials('monkey=1'), 'monkey=1');
+  assert.equal(redactCredentials('turkey: soup'), 'turkey: soup');
+  assert.equal(redactCredentials('mistoken=1'), 'mistoken=1');
+});
+
+test('redactCredentials: a quoted value cut before its closing quote still goes', () => {
+  // The window-edge case. `bodyExcerpt` sanitizes a bounded PREFIX of a large
+  // body, so a credential straddling that window arrives with its opening quote
+  // and no closing one. The terminated alternatives could not match it, the
+  // bare class excludes `"` and `'`, and the pair survived byte-identical.
+  for (const body of [
+    '{"other":1, "password":"SUPERSECRET_TAIL_KEEPS_GOING',
+    "{'other':1, 'passwd': 'SUPERSECRET_TAIL_KEEPS_GOING",
+    '{"apiSecret": "SUPERSECRET_TAIL_KEEPS_GOING',
+    '{"x-api-key":"SUPERSECRET_TAIL_KEEPS_GOING',
+  ]) {
+    const out = redactCredentials(body);
+    assert.equal(out.includes('SUPERSECRET'), false,
+      `a window-truncated value survived: ${out}`);
+    assert.ok(out.includes('<redacted>'), `nothing was redacted in ${out}`);
+  }
+  // The terminated forms are tried FIRST, so a well-formed body is untouched
+  // past the value it was always going to redact - the diagnostic the excerpt
+  // exists to carry must not be eaten by the new alternatives.
+  assert.equal(
+    redactCredentials('{"password":"hunter2", "error":"model not found: gpt-9"}'),
+    '{<redacted>, "error":"model not found: gpt-9"}');
+  // And a lone unmatched quote carrying no credential name is still not a
+  // credential span.
+  assert.equal(redactCredentials('the "quick brown fox'), 'the "quick brown fox');
 });

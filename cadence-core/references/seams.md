@@ -60,7 +60,38 @@ How a workflow dispatches work to a fresh-context subagent.
   running. A config key claimed a wall-clock kill until v2.7.0, when it was
   deleted for naming a control nothing could apply. Plan size is still the real
   lever on what one dispatch costs, which is what `workflow.max_plan_tasks` is
-  for.
+  for. So a dispatch that comes back unusable has exactly two producers:
+  the turn cap cut the dispatch, or the return is missing or unparseable. A
+  coordinator's recovery arm names those two rather than a wall-clock kill this
+  seam cannot produce (`cadence-core/workflows/execute.md`).
+- A window CEILING that is READ, never applied. Six
+  `workflow.max_dispatch_tokens` keys - one per dispatched role - say how large
+  a dispatch's context window may get before the record calls it a finding, and
+  `cadence-core/bin/planning.mjs` compares them against the record AFTER the
+  fact. The budgeted quantity is the `tokens` on a `brackets[]` row of the
+  rendered `.planning/trace.jsonl`: the terminal lifecycle event's figure, read
+  as a FINAL-WINDOW PROXY rather than as a sum across the dispatch's turns,
+  because that is the one window-shaped number the host hands back on a return
+  and Cadence records no other and captures none for itself. This adds no second
+  bound to the paragraph above: `maxTurns: 200` is still the only bound THIS
+  seam has, because a ceiling read after the return is not a bound at dispatch
+  time. Nothing can resize or cancel a dispatch already running - the same
+  sentence that got the wall-clock key deleted in v2.7.0 - so a crossing is a
+  REPORT and never a refusal, and the run it describes has already completed by
+  the time anything reads it.
+- Where those numbers come from. Each default is that role's 75th-percentile
+  terminal `tokens` figure on this repo's own record, rounded UP to the next
+  25,000, measured 2026-08-17 over every `return` and `checkpoint` event
+  carrying a numeric `tokens`: `cad-planner` 200000 (n=28, p75 188,135, max
+  247,585), `cad-executor` 200000 (n=72, p75 182,631, max 275,285),
+  `cad-verifier` 100000 (n=24, p75 82,633, max 131,728), `cad-reviewer` 150000
+  (n=2, p75 125,100), `cad-plan-checker` 75000 (n=5, p75 64,203, max 88,078),
+  `cad-assumptions-analyzer` 150000 (n=25, p75 145,054, max 188,149). That rule
+  fires on 26 of the record's 156 tokens-bearing terminals and on none of its
+  middle, which is what keeps a crossing worth reading rather than half of every
+  run. The numbers are config keys rather than a manifest pinned beside the
+  check because the quantity is per-PROJECT: a repository whose files are twice
+  this one's size needs different ones, and re-pinning is not a plugin release.
 - Every dispatch is fresh-context and self-contained; there is no resume or
   "continue the same agent". A re-dispatch (revision, continuation, escalation)
   is a NEW spawn that reads the prior artifact from disk - never a
@@ -117,16 +148,23 @@ sites used to pay two. `--bracket-plan` is the worker key when it is not the
 role name (an executor's plan number). The CLOSE half stays with the caller,
 which alone sees the return: ONE `trace close` per dispatch moment, keyed
 `--plan <the worker key>` and `--role <name>`, carrying
-`--tokens <the figure on the subagent return>`. The seam fixes the family and
+`--tokens <the figure on the subagent return>` and
+`--turns <the tool-call count on that same return>`. The seam fixes the family and
 picks the arm off the DETAIL, whichever flag carried it (`--detail`, or
 `--detail-file <path>` when the text is the worker's own): absent means
 `return`, present means `checkpoint` (the worker came back empty, unmarked or
 unusable). `escalation` on a path
 change is NOT inferred and stays on `trace append`. OMIT `--tokens` when the
 return carries no figure - never `--tokens 0`, which would claim a dispatch
-that cost nothing. A
+that cost nothing - and OMIT `--turns` on the same rule when the return carries
+no tool-call count, never `--turns 0`, which would claim a dispatch that used
+no tools. A
 figureless return is ROUTINE (`lib/trace.mjs` holds the provenance), and the
-`unrecorded` it produces names a silent return, never a skipped bracket. This
+`unrecorded` it produces names a silent return, never a skipped bracket. A
+turn-figureless return is routine in the same way and renders under a counter
+of its OWN, `turns_unrecorded`, distinct from the token `unrecorded`, so a
+dispatch that reported tokens but no turns stays readable apart from one that
+reported turns but no tokens. This
 paragraph is the ONE statement of that rule; dispatch sites point here rather
 than restating it.
 
@@ -288,17 +326,23 @@ script; workflows invoke the script and never inline HTTP or provider bytes.
 - The script resolves the key itself (env first, then the shared providers.env)
   and NEVER logs it; the workflow passes no key.
 - Degradation is structured, not exceptional: `ok:false` with `reason` one of
-  `no-key | transport | http | no-output | bad-json | bad-shape` (call-shape
-  problems surface as `over-cap | bad-payload | bad-provider | bad-args |
-  bad-command`, and an unforeseen bug as `internal`). `over-cap` is the prompt
-  bound: `review` and `consult` both refuse a payload over
+  `no-key | transport | http | over-response | no-output | bad-json | bad-shape`
+  (call-shape problems surface as `over-cap | bad-payload | bad-provider |
+  bad-args | bad-command`, and an unforeseen bug as `internal`). `over-cap` is
+  the prompt bound: `review` and `consult` both refuse a payload over
   `review.max_prompt_tokens` estimated tokens (chars/4, default 120000) BEFORE
-  any request is issued; `claude-subagent` never runs this script and is
-  exempt. On `no-key`
+  any request is issued; `claude-subagent` never runs this script and is exempt
+  from it, bounded instead by the spawn-agent turn cap, `maxTurns: 200`.
+  `over-response` is the same bound the other way round, on the response:
+  every command destroys the request once the body passes 4 MiB, so a flooding
+  provider meets a refusal Cadence owns rather than the execution host's wrapping
+  command timeout, and an `http` failure carries `detail.body` as a sanitized
+  1024-byte excerpt, always a string, never the body. On `no-key`
   the review subsystem falls back to `claude-subagent` and does not offer a
   consult; a `blocking` trigger reports the failure rather than silently pass.
 - The default backend `claude-subagent` does NOT use this seam - it goes
-  through spawn-agent with a fresh-context, refute-prompted reviewer.
+  through spawn-agent with a fresh-context, refute-prompted reviewer, and takes
+  that seam's turn cap as its bound in place of anything stated here.
 - Model, effort, and per-provider endpoint/key-file path come from config
   (`review.providers.<name>`; per-trigger `review.triggers.<t>.tier` resolves
   the model id, `.effort` the reasoning level).

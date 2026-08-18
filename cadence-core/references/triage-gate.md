@@ -11,6 +11,42 @@ What each gate arm does once a review's findings are in hand. The gate is one of
   PASS - report that the gate could not be evaluated and ask. The re-arm on that
   fix is CAPPED - see below.
 
+**Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
+status` refuses a range its detector matched until an outcome event says the
+fire happened, so all four settle points append one: `adjudication`
+(`references/review-triggers.md` step 5), `rearm` below, and the two here. Each
+carries `--trigger <trigger>` in that structured flag rather than inside a
+detail - a trigger parsed back out of free text clears a range on one spelling
+and refuses an identical one on another - plus `--plan <k>` when the fire is
+per-plan, omitted when it is not (`/cad-debug`, `/cad-task`, `/cad-verify`).
+
+**Every receipt names the RANGE it settles**, on `--base <base> --sha <head>` -
+BOTH ends, since two ranges can share a head and differ at the base, and they
+are then different diffs over different surfaces. A receipt keyed on the run and the plan alone clears every LATER
+matched range for that plan in the same cycle, so a coordinator could fire once,
+re-run the detector on a widened range after a fix, skip the second fire, and
+still be told the gate was satisfied. `risk-check status` therefore joins a
+receipt to a record by head commit, and a receipt carrying no `--sha` settles
+nothing. Pass the same head the fire's own artifact was built from.
+
+Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
+whose fire found no blocker becomes permanently unclearable:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --plan <k> --base <base> --sha <head>
+```
+
+The user explicitly overrides a FAIL - record that instead. The reason is the
+user's own words, so it rides `--detail-file <path>` and never an inline
+`--detail` (references/conventions.md states the transport). An `override` is
+the one receipt written on the coordinator's own say-so rather than as a
+review's settled outcome, so it is REFUSED as a receipt when that reason is
+empty - a blank override is indistinguishable from a manufactured clear:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --detail-file <path>
+```
+
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking
 FAIL is itself reviewable work, so the trigger re-arms on it; unbounded, that is
 a loop with no terminal state. It is bounded in the vocabulary the spine's other
@@ -36,15 +72,30 @@ blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
    its own workers (`workflows/execute.md`'s timeout-or-no-report arm).
 
 The round count PERSISTS in the trace, so a `/clear` between rounds cannot
-reset it. Before firing the narrowed round, run
-`planning.mjs trace render --phase <N>`: the envelope's `corr` is the current
-run's id, and a `rearm` outcome for this trigger already recorded under that
-same id means the one round is SPENT - do not fire again, go straight to the
-STOP-and-ask arm above. No such event -> record the round as you fire it:
+reset it. Before firing the narrowed round, read that count in two steps - the
+render is bulk output, so it rides a scratch file and only the ANSWER reaches
+the transcript (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md`
+states the rule; the scratch file is the model's own, never a phase artifact):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --detail "<trigger>"
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "${TMPDIR:-/tmp}/cad-rearm.json"
+node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log((r.outcomes||[]).filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr).length)' "${TMPDIR:-/tmp}/cad-rearm.json" "<trigger>"
 ```
+
+The envelope's `corr` is the current run's id, so that one number is the whole
+answer: non-zero means a `rearm` outcome for this trigger is already recorded
+under that same id and the one round is SPENT - do not fire again, go straight
+to the STOP-and-ask arm above. The match is on the event's `trigger` FIELD and
+never on its detail text, for the reason the receipt paragraph above states.
+Zero -> record the round as you fire it:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event rearm --trigger <trigger> --plan <k> --base <base> --sha <head> --detail "<trigger>"
+```
+
+The `--sha` is what makes this round a receipt for the range it re-armed on as
+well as the marker that spends the round; without it the narrowed round leaves
+that range looking unfired.
 
 A fresh `phase_start` (a genuine re-run) derives a new id and gets a fresh
 round. The append is best-effort by the trace seam's own contract: when the

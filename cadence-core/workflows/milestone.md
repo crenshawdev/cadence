@@ -106,6 +106,12 @@ the only copy. Relay `warnings[]` (a missing detail section, an unreadable
 REQUIREMENTS.md). `action:"skip"` means no checked phase existed - an
 interrupted close or the wrong milestone; stop and look rather than continue.
 
+The seam also writes `.planning/ARCHIVE.md` BEFORE it removes anything: the
+pruned phases' SUMMARY deviations, UAT items and CONTEXT decisions, which
+`recall` can index only while `phases/<N>/` is live. Relay `residue_rows`. `0`
+is an answer, not a failure: either nothing under those phases was indexable, or
+a re-run found this milestone's heading already carrying their rows.
+
 `ok:false` STOPS the close - do not commit, do not chain to `/cad-land`.
 `partial-prune` means `failed`'s phases did not clear and were left in BOTH
 documents on purpose, so tree and docs still agree: surface them with their
@@ -116,8 +122,11 @@ Unfinished phases, their dirs and their requirements are untouched by
 construction - a milestone can close with deferred work that rolls to the next.
 
 Commit this as `chore: prune <label> completed phases` (label = the version on
-a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md and
-any `_archive-<label>/` move. NOT the carry-forward file - it is transient.
+a release, else the milestone name), staging ROADMAP.md, REQUIREMENTS.md,
+`.planning/ARCHIVE.md` and any `_archive-<label>/` move. NOT the carry-forward
+file - it is transient, and ARCHIVE.md is its opposite: that file exists to be
+consumed and deleted by step 7, while the residue IS the recall corpus for every
+milestone this project has closed and dies with the working tree untracked.
 
 ## 4. Evolve PROJECT.md
 Bump the version/milestone and set the next cycle's goal and scope. Ask the user

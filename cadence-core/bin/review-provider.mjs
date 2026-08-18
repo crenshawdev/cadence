@@ -32,6 +32,14 @@
 //     non-string payload field is refused as bad-payload first, since an
 //     unmeasurable field is an unbounded one. The free claude-subagent
 //     reviewer never runs this script and is exempt.
+//   - The RESPONSE is bounded too, by bytes rather than by the host's wrapping
+//     command timeout (RVP-01): every command's read path crosses one counter
+//     inside `request()`, and a body past `MAX_RESPONSE_BYTES` destroys the
+//     request and degrades to {ok:false, reason:"over-response"} rather than
+//     being concatenated whole into memory. The `http` failure envelope's
+//     `detail.body` is ALWAYS a string on the same reasoning: sanitized through
+//     both lib/redact-url.mjs exports and capped at `MAX_HTTP_BODY_BYTES`, never
+//     the whole body and never a parsed object for a small one.
 //
 // Usage:
 //   review-provider.mjs review  --provider <openai|gemini|deepseek> --model <id>
@@ -82,6 +90,7 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
+import { redactUrl, redactCredentials } from './lib/redact-url.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -247,6 +256,51 @@ const MAX_REQUEST_TIMEOUT_MS = 600000;
 // smallest window a configured payload could be sent to, and `chars/4` is an
 // estimate rather than a tokenizer, so the margin is deliberate.
 const DEFAULT_MAX_PROMPT_TOKENS = 120000;
+
+// The RESPONSE byte ceiling (RVP-01, #143), the other side of the same bound.
+// `review.max_prompt_tokens` bounds what we SEND; nothing bounded what we HOLD,
+// so a proxy error page or a runaway answer was concatenated whole into one
+// string and the only thing stopping it was the execution host's wrapping
+// command timeout - a bound Cadence does not own.
+//
+// Derived rather than round. The shipped request-side bound is 120000 estimated
+// tokens, which is 480000 chars under the chars/4 proxy this file already uses,
+// and a structured-output response is smaller than the artifact that produced it
+// in every observed run. So 4 MiB sits at roughly 8.7x the largest payload this
+// seam will ever send, and the finding bounds local validation enforces put the
+// largest response it can ever ACCEPT near 0.5 MB, about 8x under this. A body
+// that crosses this is not a review; it is something else wearing a 200.
+//
+// Not a config key (D-03): a knob nothing needs is what v2.7.0 deleted
+// `workflow.subagent_timeout` for.
+const MAX_RESPONSE_BYTES = 4194304;
+
+// The tag that makes a ceiling crossing DISTINGUISHABLE from an ordinary socket
+// error at the two catch arms below. A symbol on the error object, never a match
+// on its message: a diagnostic string that decides control flow is a parser, and
+// the message is free text nobody promised to keep.
+const OVER_RESPONSE = Symbol('cadence-over-response');
+
+// The HTTP failure envelope's body excerpt (RVP-01, D-04). ONE shape always - a
+// capped, sanitized STRING - never a parsed object for a small body and a string
+// for a large one, which would make every consumer branch on `typeof
+// detail.body`.
+//
+// 1024 bytes, measured rather than round: the largest real OpenAI error body in
+// this seam's own fixtures is 155 bytes (`model_not_found`) and a documented
+// invalid-schema rejection runs about 226, so the whole diagnostic
+// workflows/config-review.md reads this envelope FOR fits with more than 4x
+// headroom, while a proxy HTML error page is bounded to a readable head.
+const MAX_HTTP_BODY_BYTES = 1024;
+
+// Appended in place of what was cut, so a reader can tell an excerpt from a
+// whole body. Inside the cap, not added to it.
+const TRUNCATED = ' ...[truncated]';
+
+// How much of the raw body the sanitizers ever see. A COST bound, not a privacy
+// one - see `bodyExcerpt` for the measurement that forces it and for why the
+// window's edge cannot reach the excerpt.
+const SANITIZE_WINDOW_BYTES = MAX_HTTP_BODY_BYTES * 4;
 
 // Pure so the unit tests can exercise it without touching config or the network.
 // Anything unusable - absent, non-numeric, non-integer, zero, negative - falls
@@ -523,7 +577,33 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
       },
     }, (res) => {
       let data = '';
-      res.on('data', (c) => { data += c; });
+      let bytes = 0;
+      res.on('data', (c) => {
+        // Real BYTES, not string length: no encoding is set on `res`, so a chunk
+        // is a Buffer in production and a string in the fake, and
+        // `Buffer.byteLength` is correct for both where `.length` is correct for
+        // neither. Counted BEFORE the append, so the ceiling bounds what this
+        // process holds rather than what it held one chunk ago.
+        bytes += Buffer.byteLength(c);
+        if (bytes > MAX_RESPONSE_BYTES) {
+          // `req.destroy(err)` is the same abort the timeout handler below uses:
+          // it forces an 'error' so the promise rejects down the one path the
+          // callers already handle, and it stops the wire rather than reading a
+          // body we have already refused.
+          req.destroy(Object.assign(
+            new Error(`response body over ${MAX_RESPONSE_BYTES} bytes (read ${bytes})`),
+            { [OVER_RESPONSE]: true },
+          ));
+          return;
+        }
+        data += c;
+      });
+      // `req.destroy(err)` above (and the 'timeout' handler below) aborts an
+      // ACTIVE response, and an aborted IncomingMessage emits its own 'error'.
+      // Without this listener that is an unhandled 'error' event - the ceiling
+      // would crash the process instead of degrading to `over-response`.
+      // `reject` is first-wins, so whichever of req/res errors first decides.
+      res.on('error', reject);
       res.on('end', () => {
         let json = null;
         try { json = data ? JSON.parse(data) : null; } catch { /* leave null; caller inspects status */ }
@@ -539,28 +619,128 @@ function request(urlStr, { method = 'GET', headers = {}, body = null } = {}) {
   });
 }
 
+/**
+ * The ONE mapping from a rejected `request()` to its degradation reason, shared
+ * by the two callers so a third read path cannot be left knowing only
+ * `transport`. A rejection the response ceiling tagged is `over-response`;
+ * everything else is an ordinary socket failure and stays `transport` exactly as
+ * before.
+ *
+ * The two words are deliberately distinct (D-02). Riding `transport` would leave
+ * the trace, the caller and workflows/config-review.md unable to tell a provider
+ * that flooded us from a socket that died, which are different conditions with
+ * different recoveries - one is retryable, the other says this provider is
+ * returning something that is not a review.
+ *
+ * Never returns in practice: `fail` throws the DONE sentinel, exactly as the
+ * inline arms this replaced did.
+ * @param {any} meta @param {any} e
+ */
+function failRequest(meta, e) {
+  const reason = e && e[OVER_RESPONSE] ? 'over-response' : 'transport';
+  traceProvider(meta, reason, e.message);
+  fail(reason, e.message);
+}
+
+/**
+ * The `body` of every `http` failure envelope: a sanitized, capped STRING.
+ *
+ * Sanitize BEFORE the excerpt is cut, never after. Cutting first can slice a
+ * credential in half and leave its prefix in the envelope, which is a leak
+ * wearing a cap. Two sanitizers because neither covers the other: `redactUrl`
+ * takes credentials in URL position, `redactCredentials` takes the
+ * `authorization: Bearer ...` and `<name>=<value>` spans a misconfigured gateway
+ * echoes back.
+ *
+ * The WINDOW is a cost bound, and it is not optional. Measured 2026-08-17 on
+ * this box: `redactUrl` is quadratic in its input (78ms at 10KB, 337ms at 20KB,
+ * 5.1s at 80KB) because its scheme-less rule scans forward from every offset,
+ * and `MAX_RESPONSE_BYTES` above lets a body reach 4 MiB - which extrapolates to
+ * roughly four HOURS of CPU for one failure envelope. Sanitizing a bounded
+ * window instead keeps the worst case in the tens of milliseconds. Fixing the
+ * quadratic in `redactUrl` itself is the better repair and is not this plan's:
+ * its four other callers hand it a git error message, so the cost only became
+ * reachable here.
+ *
+ * The window's own edge is handled where it is CREATED, not here. Cutting a
+ * prefix can leave a credential's opening quote inside the window and its
+ * closing quote outside, so `redactCredentials` matches an unterminated quoted
+ * value to end-of-input - see rule 4's VALUE alternatives in lib/redact-url.mjs.
+ * The earlier reasoning on this line was that the cap discards anything near the
+ * edge unless sanitizing shrank the window below the cap, in which case the
+ * trailing token is dropped at the last whitespace. That arm is gated on
+ * `clean <= room`, so a body that is almost entirely credential spans could
+ * shrink to JUST PAST the cap, skip the safeguard, and carry 73 bytes of a value
+ * into the envelope. Both regression fixtures are in the test file; the
+ * whitespace arm below stays as a second line of defence, not the guarantee.
+ *
+ * The cut is by BYTES, and the head is trimmed back if slicing landed
+ * mid-code-point, so the returned string never exceeds the cap however the body
+ * was encoded.
+ * @param {unknown} raw @returns {string}
+ */
+function bodyExcerpt(raw) {
+  const full = raw == null ? '' : String(raw);
+  const buf = Buffer.from(full, 'utf8');
+  const windowed = buf.length > SANITIZE_WINDOW_BYTES;
+  let clean = redactCredentials(redactUrl(
+    windowed ? buf.subarray(0, SANITIZE_WINDOW_BYTES).toString('utf8') : full));
+  const room = MAX_HTTP_BODY_BYTES - Buffer.byteLength(TRUNCATED);
+  if (windowed && Buffer.byteLength(clean) <= room) {
+    const lastSpace = clean.search(/\s\S*$/);
+    clean = lastSpace >= 0 ? clean.slice(0, lastSpace) : '';
+  }
+  if (!windowed && Buffer.byteLength(clean) <= MAX_HTTP_BODY_BYTES) return clean;
+  let head = Buffer.from(clean, 'utf8').subarray(0, room).toString('utf8');
+  // A partial code point re-encodes as U+FFFD, which is wider than the bytes it
+  // replaced; drop characters until it fits rather than trusting the slice.
+  while (Buffer.byteLength(head) > room) head = head.slice(0, -1);
+  return head + TRUNCATED;
+}
+
 // ---------------------------------------------------------------------------
 // The normalized finding shape every provider adapter must return. Kept in
 // one place so the JSON schema we send and the shape we assert never drift.
 // ---------------------------------------------------------------------------
 const SEVERITY = ['blocker', 'high', 'medium', 'low'];
-const FINDING_SCHEMA = {
+
+// The bounds the finding shape has always implied and never stated (RVP-02).
+// Sized against what this tree has actually produced rather than picked round:
+// the longest values in the one committed findings file
+// (.planning/phases/1/REVIEW-risk_surface-plan-1.md) are file 39 chars, claim
+// 159 and failure_scenario 376, and the largest `raised` count across the 19
+// adjudication events in .planning/trace.jsonl is 9 - from a PANEL, the union
+// of every reviewer. So each bound sits an order of magnitude above the
+// observed longest, and their product caps what local validation can accept at
+// roughly 0.5 MB, well inside the 4 MiB response ceiling.
+//
+// There is deliberately NO `minItems`: an empty findings array is what a
+// reviewer that found nothing returns, and refusing it would turn a clean
+// review into a `bad-shape` degradation.
+const MIN_LINE = 1;
+const MAX_FILE_CHARS = 1024;
+const MAX_TEXT_CHARS = 2000;
+const MAX_FINDINGS = 100;
+const FINDING_KEYS = ['file', 'line', 'severity', 'claim', 'failure_scenario'];
+
+export const FINDING_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['findings'],
   properties: {
     findings: {
       type: 'array',
+      maxItems: MAX_FINDINGS,
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['file', 'line', 'severity', 'claim', 'failure_scenario'],
+        required: FINDING_KEYS,
         properties: {
-          file: { type: 'string' },
-          line: { type: 'integer' },
+          file: { type: 'string', minLength: 1, maxLength: MAX_FILE_CHARS },
+          line: { type: 'integer', minimum: MIN_LINE },
           severity: { type: 'string', enum: SEVERITY },
-          claim: { type: 'string' },
-          failure_scenario: { type: 'string' },
+          claim: { type: 'string', minLength: 1, maxLength: MAX_TEXT_CHARS },
+          failure_scenario: { type: 'string', minLength: 1, maxLength: MAX_TEXT_CHARS },
         },
       },
     },
@@ -742,16 +922,63 @@ export const ADAPTERS = {
 // Assert the model returned our exact shape. Enforced output should already
 // match; we still guard so a schema-ignoring model degrades cleanly.
 // ---------------------------------------------------------------------------
-/** @param {any} obj @returns {string|null} null when valid, else the defect */
+
+/**
+ * String length in Unicode CODE POINTS, which is what JSON Schema's
+ * `minLength`/`maxLength` count. JavaScript's `.length` counts UTF-16 code
+ * units, so one astral character (an emoji, most CJK extension blocks) reads
+ * as 2 and a `maxLength` check written on it refuses a string the schema
+ * accepts. `lib/schema-eval.mjs` counts the same way for the same reason, and
+ * the agreement test pins both against a non-BMP fixture.
+ * @param {string} s @returns {number}
+ */
+function codePoints(s) {
+  let n = 0;
+  for (const _ of s) n += 1;
+  return n;
+}
+
+/**
+ * Mirror of FINDING_SCHEMA's constraints, one named diagnostic each. Every
+ * refusal here is a refusal the canonical schema also makes - `line` below 1,
+ * an empty or over-long `file`/`claim`/`failure_scenario`, a findings array
+ * past `maxItems`, and an unknown key at either level, since
+ * `additionalProperties:false` sits at both. The two sides are checked against
+ * each other by test (the agreement table in review-provider.test.mjs runs
+ * every fixture through this function AND through a keyword-limited evaluator
+ * against the live schema), so the pairing is enforced rather than remembered:
+ * a keyword added to FINDING_SCHEMA without a mirror here reddens that test.
+ *
+ * The diagnostic is never a shared "invalid finding" string, because it is what
+ * reaches the user as `{ok:false, reason:"bad-shape", detail}` and a
+ * degradation the user cannot act on is the silent drop this guard exists to
+ * end. Pure and total: returns null or a string, never throws.
+ *
+ * @param {any} obj @returns {string|null} null when valid, else the defect
+ */
 export function validateFindings(obj) {
   if (!obj || !Array.isArray(obj.findings)) return 'missing findings[]';
+  for (const k of Object.keys(obj)) {
+    if (k !== 'findings') return `unknown top-level key: ${k}`;
+  }
+  if (obj.findings.length > MAX_FINDINGS) {
+    return `findings[] holds at most ${MAX_FINDINGS} entries, got ${obj.findings.length}`;
+  }
   for (const f of obj.findings) {
     if (!f || typeof f !== 'object') return 'finding not an object';
     for (const k of ['file', 'claim', 'failure_scenario']) {
       if (typeof f[k] !== 'string') return `finding.${k} must be a string`;
+      const max = k === 'file' ? MAX_FILE_CHARS : MAX_TEXT_CHARS;
+      const n = codePoints(f[k]);
+      if (n < 1) return `finding.${k} must not be empty`;
+      if (n > max) return `finding.${k} is at most ${max} characters, got ${n}`;
     }
     if (!Number.isInteger(f.line)) return 'finding.line must be an integer';
+    if (f.line < MIN_LINE) return `finding.line must be at least ${MIN_LINE}, got ${f.line}`;
     if (!SEVERITY.includes(f.severity)) return `bad severity: ${f.severity}`;
+    for (const k of Object.keys(f)) {
+      if (!FINDING_KEYS.includes(k)) return `finding has an unknown key: ${k}`;
+    }
   }
   return null;
 }
@@ -807,12 +1034,11 @@ async function callStructured(adapter, key, reqSpec, meta) {
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key), body });
   } catch (e) {
-    traceProvider(meta, 'transport', e.message);
-    fail('transport', e.message);
+    failRequest(meta, e);
   }
   if (res.status < 200 || res.status >= 300) {
     traceProvider(meta, 'http', `HTTP ${res.status}`);
-    fail('http', { status: res.status, body: res.json || res.raw });
+    fail('http', { status: res.status, body: bodyExcerpt(res.raw) });
   }
   const text = adapter.extractText(res.json);
   if (typeof text !== 'string') {
@@ -904,12 +1130,11 @@ async function cmdDetect(opts) {
   try {
     res = await request(adapter.base + p, { method, headers: adapter.authHeaders(key) });
   } catch (e) {
-    traceProvider(meta, 'transport', e.message);
-    fail('transport', e.message);
+    failRequest(meta, e);
   }
   if (res.status < 200 || res.status >= 300) {
     traceProvider(meta, 'http', `HTTP ${res.status}`);
-    fail('http', { status: res.status, body: res.json || res.raw });
+    fail('http', { status: res.status, body: bodyExcerpt(res.raw) });
   }
   const ids = adapter.extractModels(res.json);
   traceProvider(meta, 'ok');

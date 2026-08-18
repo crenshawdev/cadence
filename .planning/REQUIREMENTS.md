@@ -1,30 +1,44 @@
-# Requirements: Cadence (v3.5.3 open)
+# Requirements: Cadence (v3.5.4 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.3 - the bounds the review path never stated`, opened 2026-08-16. Scoped
-off the Forgejo milestone, which holds three issues: #168, #143 and #141. All
-three came from the same external deep dive, two adjudicated AGREE-low and one
-narrowed from a finding closed as not-a-Cadence-defect. None is a trust
-boundary; each is a bound the code was supposed to state and never did.
+`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18. Scoped from the
+capture queue's open review findings rather than from a tracker milestone.
 
-- **RVP-01**: A provider response is bounded by bytes, destroying the request
-  once the ceiling is crossed, and an HTTP failure envelope carries a capped
-  sanitized excerpt rather than the whole body (#143).
-- **RVP-02**: Local validation of provider findings refuses what the canonical
-  schema refuses - `line <= 0`, empty `file`/`claim`/`failure_scenario`,
-  unknown keys, and unbounded finding counts and field lengths (#141).
-- **WIR-01**: `execute.md`'s "timeout or no report" arm either names what
-  produces that state or the word goes, and the default reviewer stops being
-  the one unbounded arm beside it (#168).
+One shape: a gate that reports a verdict it did not earn. Each item is a check
+that already runs and already answers, and answers wrong in a way its own output
+cannot show.
+
+- **DRF-01**: `version_drift` stops FAILing a ship gate on correct docs - its
+  comparand reads the milestone `### Active` NAMES rather than the first version
+  token in its prose, so an Active section mentioning the predecessor first is
+  not reported as the current version.
+- **DRF-02**: the interrupted-close exemption holds in the state `audit.md`
+  declares exempt - a phase carrying a terminal `blocked` item, or sanctioned
+  rolled-over work, no longer fires `drift` with a remedy `verify.md` says is
+  impossible.
+- **VER-01**: `verify.md` stops treating `why_human` as proof an item is
+  human-only. The predicate becomes the bar the walk already states
+  (irreversible against real data, or outside the model's reach), so an
+  UNCERTAIN truth the verifier could not probe is executed rather than asked.
+- **CAP-02**: the one-round re-arm cap reaches the `risk_surface` fire sites that
+  never load `triage-gate.md`, and its scope is decided deliberately - per
+  correlation id gives a five-plan phase one round across all five.
+- **TAG-01**: `readTags` stops discovering upward from `.planning`, so a project
+  that is not itself a repository cannot be FAILed by a version an enclosing
+  umbrella repo published.
+- **EXP-02**: `bodyExcerpt`'s trailing-token safeguard runs on the path that
+  needs it - a sanitizer shrink can no longer pull a window-edge-truncated
+  credential's head under the cap while `clean` still exceeds it. Raised at the
+  `v3.5.3` phase-3 fire and still live at `v3.5.3`.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
-close (#181 through #187) and the seven filed at the `v3.5.2` close (#189
-through #195) are unassigned and are not scoped here.
+close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
+through #197) are unassigned and are not scoped here.
 
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
@@ -181,6 +195,19 @@ parses only the Traceability table).
 | TRK-01 (`issue-check.mjs` resolves the tracker by repository rather than by origin-URL host equality, so a Forgejo remote whose SSH endpoint differs from its web host still reports. Today the host parsed off `ssh://git@ssh.jcrenshaw.dev:2222/...` is matched against a `tea` login keyed on `git.jcrenshaw.dev`, nothing matches, and the seam takes its skip arm - by its own contract, which is why LND-01 has never once produced a report on this repository. A separate SSH endpoint on a non-standard port is a normal deployment shape, not a misconfiguration, and `tea --repo <owner>/<name>` already works against the same login. The one-line read-only degradation stays; what changes is that a correctly configured remote stops hitting it (#180).) | 2 | Complete | v3.5.1 |
 | TRN-01 (Caller-derived text reaches a seam through a transport that cannot execute it. `planning.mjs` already concedes the rule for one command - prose carrying `$(...)` or a backtick inside a double-quoted shell word executes before Node starts, and a path cannot - while roughly sixteen other workflow sites still prescribe the unsafe form for values derived from agent output or repository content. The rule is stated once and applied everywhere it governs, rather than sixteen local escapes, and a self-verify check is what keeps a seventeenth site from reintroducing it (#133).) | 1 | Complete | v3.5.2 |
 | LSE-01 (`plan-overlap` and `lease-check` read one declaration grammar through one module. Today the first intersects declared `files:` by exact string equality and the second reads a trailing slash as a directory prefix, so a phase declaring `src/` in one plan and `src/auth.js` in another produces an empty `overlaps`, passes the parallel-safety gate, and then authorizes both plans to stage the same file. Nested declarations (`src/` and `src/auth/`) have the same defect. `references/plan-frontmatter.md` documents no trailing-slash form, which bounds the likelihood and not the validity, since `lease-check` honours it. Whether the form becomes documented or refused is a decision the phase makes rather than an assumption it inherits (#132).) | 2 | Complete | v3.5.2 |
+| RCL-07 (The recall corpus survives a milestone close. `milestone-prune` deletes (or archives) `phases/<N>/`, and the corpus walker (`planning.mjs:2036-2064`) reads only live phase dirs plus `CAPTURE.md`, so every shipped SUMMARY, UAT and CONTEXT decision goes unreachable at the close. Reproduced live on this repo hours after the `v3.5.2` close (#203).) | 1 | Complete | v3.5.3 |
+| GAT-04 (`risk-check status` refuses a matched or inconclusive range that carries no corresponding outcome event, so proving the detector RAN stops standing in for proving the blocking fire HAPPENED (#205).) | 1 | Complete | v3.5.3 |
+| PAR-01 (The parallel execute path runs the same risk sequence the sequential one does. `execute.md` calls `risk-check` twice; `execute-parallel.md` calls it zero times, so the one gate that is `blocking` at every stakes level does not exist there and the two branches disagree about what "done" means (#204).) | 1 | Complete | v3.5.3 |
+| MSR-01 (`trace close` records the tool-call count the subagent return already carries, so turns per dispatch and per role become visible (#199).) | 2 | Complete | v3.5.3 |
+| MSR-02 (`/cad-report` and `/cad-suggest` price a run from a record that can see the whole window, rather than from worker-return tokens alone (#198).) | 2 | Complete | v3.5.3 |
+| RVP-01 (A provider response is bounded by bytes, destroying the request once the ceiling is crossed, and an HTTP failure envelope carries a capped sanitized excerpt rather than the whole body (#143).) | 3 | Complete | v3.5.3 |
+| RVP-02 (Local validation of provider findings refuses what the canonical schema refuses - `line <= 0`, empty `file`/`claim`/`failure_scenario`, unknown keys, and unbounded finding counts and field lengths (#141).) | 3 | Complete | v3.5.3 |
+| WIR-01 (`execute.md`'s "timeout or no report" arm either names what produces that state or the word goes, and the default reviewer stops being the one unbounded arm beside it (#168).) | 3 | Complete | v3.5.3 |
+| MSR-03 (A dispatch's live context window is budgeted and a crossing is reported, the way shipped prose surfaces already are (#202).) | 4 | Complete | v3.5.3 |
+| TRN-02 (Bulk tool OUTPUT rides a file the way caller-derived text now does, with the rule stated once, a register of the sites, and a self-verify check that reads it (#200).) | 4 | Complete | v3.5.3 |
+| PLN-01 (`workflow.max_plan_tasks` is re-decided against cold-prefix cost as well as context risk, on measured evidence rather than one of the two forces (#201).) | 4 | Complete | v3.5.3 |
+| MSR-04 (The coordinator figure excludes wall-clock the record cannot attribute to a coordinator, or it stops being labelled coordinator time.) | 5 | Complete | v3.5.3 |
+| SGT-01 (`trace suggest` returns a direction, a current value and a target value beside every `action`, and `/cad-suggest` prints the tweaks in a headed block of their own with the receipts separated below.) | 5 | Complete | v3.5.3 |
 
 ## Deferred
 

@@ -199,6 +199,12 @@ test('R1: the live record this repo has been writing for four cycles emits a sug
       evidence: '2 of 7 adjudicated fire(s), 0 survivors of 1 raised'
         + ' - the gate caught work; the reviewer set is what looks miscalibrated',
       action: 'review.reviewers',
+      // SGT-01, and read as the ONE-ARGUMENT degradation: this call passes no
+      // resolution, so the reviewer set resolves to nothing and the record
+      // carries no `routing/resolve` event to name a level with. The direction
+      // is the rule's own and is here whatever the caller passed.
+      direction: 'raise',
+      current: 'unset: no config layer pins this, so the stakes level decides it',
     },
     {
       kind: 'info',
@@ -289,6 +295,187 @@ test('R4: executor checkpoints at the floor suggest workflow.max_plan_tasks; oth
     'reviewer checkpoints are closes of failed reviews, not plan-size evidence');
 });
 
+// --- SGT-01: the direction, the current value and the target ------------------
+//
+// The rules above say WHICH key; these say which way to move it and what it
+// holds now. The resolution is the caller's second argument - `planning.mjs`
+// reads the merged config, the gate ladder and the stakes level, this file
+// stays pure - and every case below passes one by hand, which is what keeps the
+// pure-render discipline intact.
+
+/** The resolution shape `planning.mjs`'s suggest arm passes in. */
+const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const RUNGS = ['low', 'medium', 'high', 'xhigh', 'max'];
+const twoEmptyFires = (trigger, extra = {}) => Array.from(
+  { length: MIN_FIRES_FOR_GATE_SUGGESTION },
+  () => adjudication(`${trigger}: 0 survivors; voices openai`, extra),
+);
+
+test('SGT-01: R1s gate arm moves DOWN, prints the value a layer set, and proposes one step below it', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), {
+    values: { 'review.triggers.plan.gate': 'blocking' },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'lower');
+  assert.equal(s.current, 'blocking');
+  assert.equal(s.proposed, 'advisory', 'the target is one step down the ladder the caller passed');
+});
+
+test('SGT-01: an unset gate names the level that decides it and carries NO proposed', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES, stakes: 'shipped' });
+  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'lower');
+  assert.match(s.current, /unset/);
+  assert.match(s.current, /shipped/);
+  assert.ok(!/advisory|blocking|adjudicated/.test(String(s.current)),
+    'D-06: an unset gate names the DECIDER, never the value that level would fire');
+  // Key presence, never a null comparison: `proposed: null` would satisfy an
+  // equality check and is exactly what D-12 forbids.
+  assert.equal('proposed' in s, false, 'an unset gate has no rung on the ladder to step down from');
+});
+
+test('SGT-01: a record carrying no stakes level says unset without naming one', () => {
+  const out = suggestFromRender(render(twoEmptyFires('plan')), { gates: GATES });
+  const s = out.find((x) => x.action === 'review.triggers.plan.gate');
+  assert.ok(s);
+  assert.match(s.current, /unset/);
+  assert.match(s.current, /the stakes level decides it$/);
+});
+
+test('SGT-01: R1s reviewer arm moves UP - strengthen the set - and proposes nothing', () => {
+  const out = suggestFromRender(render(twoEmptyFires('diff', { raised: 9 })), {
+    values: { 'review.reviewers': ['openai'] },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const s = out.find((x) => x.action === 'review.reviewers');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'raise', 'lower would name the opposite move on a gate that caught work');
+  assert.deepEqual(s.current, ['openai']);
+  assert.equal('proposed' in s, false, 'which backend to add is not a thing the record names');
+});
+
+test('SGT-01: R3 proposes the rung the escalated resolves actually landed on', () => {
+  const out = suggestFromRender(render([
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { effort: 'high', stakes: 'shipped' }),
+  ]), { gates: GATES, stakes: 'shipped' });
+  const s = out.find((x) => x.action === 'model.effort.cad-planner');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'raise');
+  assert.match(s.current, /unset/);
+  assert.match(s.current, /shipped/);
+  assert.equal(s.proposed, 'xhigh');
+});
+
+test('SGT-01: R3 omits a target that names no raise against the rung in force', () => {
+  const climbed = [
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+  ];
+  const at = (rung) => suggestFromRender(render(climbed), {
+    values: { 'model.effort.cad-planner': rung },
+    gates: GATES,
+    rungs: RUNGS,
+    stakes: 'shipped',
+  }).find((x) => x.action === 'model.effort.cad-planner');
+
+  const same = at('xhigh');
+  assert.ok(same, 'the suggestion still stands - it is the TARGET that cannot be named');
+  assert.equal(same.direction, 'raise');
+  assert.equal(same.current, 'xhigh');
+  assert.equal('proposed' in same, false,
+    'a target equal to the rung in force is a retune that changes nothing');
+
+  const above = at('max');
+  assert.ok(above, JSON.stringify(above));
+  assert.equal(above.current, 'max');
+  assert.equal('proposed' in above, false,
+    'a target UNDER the rung in force would contradict the raise it ships beside');
+
+  const below = at('high');
+  assert.ok(below, JSON.stringify(below));
+  assert.equal(below.proposed, 'xhigh', 'a real raise still prices its target');
+});
+
+test('SGT-01: R3 keeps the record\'s rung when no layer pins the key, ladder or not', () => {
+  const climbed = [
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+    resolve('cad-planner', { escalated: true, effort: 'xhigh', stakes: 'shipped' }),
+  ];
+  const unset = suggestFromRender(render(climbed), { gates: GATES, rungs: RUNGS, stakes: 'shipped' })
+    .find((x) => x.action === 'model.effort.cad-planner');
+  assert.equal(unset.proposed, 'xhigh',
+    'nothing is in force to compare against, and the rung is still a change from a default nobody stated');
+
+  const noLadder = suggestFromRender(render(climbed), {
+    values: { 'model.effort.cad-planner': 'high' },
+    gates: GATES,
+    stakes: 'shipped',
+  }).find((x) => x.action === 'model.effort.cad-planner');
+  assert.equal('proposed' in noLadder, false,
+    'no ladder means no comparison, and the omission IS the report');
+});
+
+test('SGT-01: R4 moves DOWN, prints the resolved ceiling, and prices nothing', () => {
+  const out = suggestFromRender(render([checkpoint('cad-executor'), checkpoint('cad-executor')]), {
+    values: { 'workflow.max_plan_tasks': 8 },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const s = out.find((x) => x.action === 'workflow.max_plan_tasks');
+  assert.ok(s, JSON.stringify(out));
+  assert.equal(s.direction, 'lower');
+  assert.equal(s.current, 8);
+  assert.equal('proposed' in s, false, 'no field in the record names a plan task count');
+});
+
+test('SGT-01: R4 goes silent when every checkpoint it counted maps to a plan under the ceiling', () => {
+  const events = [checkpoint('cad-executor'), checkpoint('cad-executor')];
+  const base = { values: { 'workflow.max_plan_tasks': 8 }, gates: GATES, stakes: 'shipped' };
+  const ceilingOf = (out) => out.find((x) => x.action === 'workflow.max_plan_tasks');
+
+  assert.equal(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, 3] })),
+    undefined, 'the evidence does not bind: both plans are under the ceiling it would lower');
+
+  // D-09: one unreadable plan leaves the rule speaking. Unknown is never
+  // under-ceiling, or an archived cycle silences the rule permanently.
+  assert.ok(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, null] })),
+    'a checkpoint whose plan file cannot be read counts as unknown, not as under-ceiling');
+
+  // Equal is not under.
+  assert.ok(ceilingOf(suggestFromRender(render(events), { ...base, checkpointTasks: [4, 8] })),
+    'a plan AT the ceiling is evidence for the ceiling, not against it');
+
+  // D-10: the comparison is the RESOLVED ceiling, never a hardcoded 8. These
+  // two counts are over 8 and under 12, so a hardcoded comparison speaks here.
+  assert.equal(ceilingOf(suggestFromRender(render(events), {
+    values: { 'workflow.max_plan_tasks': 12 }, stakes: 'shipped', checkpointTasks: [9, 10],
+  })), undefined, 'a project that raised the ceiling is told to lower one its plans never touched');
+});
+
+test('SGT-01: a one-argument call still answers - a direction and an honest unset, never a throw', () => {
+  // Every pure-render test above calls the function this way; degrading to a
+  // throw or to a missing direction would take all of them with it.
+  const out = suggestFromRender(render([
+    ...twoEmptyFires('plan'),
+    resolve('cad-planner', { escalated: true }), resolve('cad-planner', { escalated: true }),
+    checkpoint('cad-executor'), checkpoint('cad-executor'),
+  ]));
+  const keyed = out.filter((x) => x.action !== null);
+  assert.ok(keyed.length >= 3, JSON.stringify(out));
+  for (const s of keyed) {
+    assert.ok(s.direction === 'raise' || s.direction === 'lower', `${s.action} has no direction`);
+    assert.match(String(s.current), /unset/);
+    assert.equal('proposed' in s, false, `${s.action} priced a target off no resolution at all`);
+  }
+});
+
 test('R5: the spend receipt names the top role, its share, and asks for nothing', () => {
   const out = suggestFromRender(render([], {
     'cad-executor': { dispatches: 2, tokens: 300000 },
@@ -348,6 +535,74 @@ test('R6: a render with no coordinator block says NOTHING about the coordinator 
   ]) {
     assert.equal(out.find((x) => x.subject === 'coordinator'), undefined);
     assert.equal(out.find((x) => /coordinator/i.test(x.evidence)), undefined);
+  }
+});
+
+test('D-12: an info receipt gains NONE of the three new keys, under every rule that emits one', () => {
+  // The silence is the proof the change is invisible where nothing was
+  // computed - and it is checked by key PRESENCE, never against null: a
+  // `direction: null` would satisfy an equality check and is exactly what D-12
+  // forbids. The resolution passed here is a FULL one, so the guard holds on
+  // the path where the caller resolved every value there is.
+  const full = {
+    values: {
+      'review.triggers.risk_surface.gate': 'blocking',
+      'review.reviewers': ['openai'],
+      'model.effort.cad-executor': 'xhigh',
+      'workflow.max_plan_tasks': 8,
+    },
+    gates: GATES,
+    stakes: 'shipped',
+  };
+  const outs = [
+    // R2's re-arm receipt, R3's held-rung receipt and R5's spend receipt.
+    suggestFromRender({
+      counts: {},
+      roles: { 'cad-executor': { dispatches: 4, tokens: 300000 }, 'cad-planner': { dispatches: 1, tokens: 100000 } },
+      events: [
+        rearm('risk_surface'),
+        ...Array.from({ length: MIN_DISPATCHES_FOR_RUNG_INFO }, () => resolve('cad-executor', {})),
+      ],
+    }, full),
+    // R6's coordinator receipt.
+    suggestFromRender(coordRender(
+      MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 2,
+      [{ phase: 1, step: 'analyze', ts: 'a', residue_ms: MIN_RESIDUE_MS_FOR_COORDINATOR_INFO * 2 }],
+    ), full),
+  ];
+  const infos = outs.flat().filter((x) => x.kind === 'info');
+  assert.equal(infos.length, 4,
+    `expected R2, R3's receipt, R5 and R6 - got ${JSON.stringify(infos.map((x) => x.subject))}`);
+  for (const e of infos) {
+    for (const key of ['direction', 'current', 'proposed']) {
+      assert.equal(key in e, false,
+        `an info receipt carries \`${key}\` - it asks for nothing, so there is nothing to move: `
+        + JSON.stringify(e));
+    }
+    assert.deepEqual(Object.keys(e).sort(), ['action', 'evidence', 'kind', 'subject'],
+      `an info receipt's shape moved off {kind, subject, evidence, action}: ${JSON.stringify(e)}`);
+    assert.equal(e.action, null);
+  }
+});
+
+test('D-12: a suggest entry that cannot be priced omits `proposed` by key, never as a null', () => {
+  // Both unpriceable arms at once: R1's reviewer arm (which backend to add is
+  // not a thing the record names) and R4 (no field in the record names a plan's
+  // task count).
+  const out = suggestFromRender(render([
+    ...twoEmptyFires('diff', { raised: 9 }),
+    checkpoint('cad-executor'), checkpoint('cad-executor'),
+  ]), {
+    values: { 'review.reviewers': ['openai'], 'workflow.max_plan_tasks': 8 },
+    gates: GATES,
+    stakes: 'shipped',
+  });
+  const priced = out.filter((x) => x.kind === 'suggest');
+  assert.equal(priced.length, 2, JSON.stringify(out));
+  for (const e of priced) {
+    assert.equal('proposed' in e, false,
+      `${e.action} carries a target nothing computed: ${JSON.stringify(e)}`);
+    assert.ok(e.direction && e.current !== undefined, JSON.stringify(e));
   }
 });
 
@@ -425,6 +680,17 @@ test('seam: a real trace written through appendEvent reads back through `trace s
 // recomputed from the fixture would agree with itself no matter what the rules
 // did. Any new rule that speaks on a trace carrying no coordinator markers
 // fails here, which is D-06 made falsifiable.
+//
+// RE-PINNED ONCE, in the MSR-02 commit that made R5 name what its total is not.
+// The arithmetic did NOT move and that is the point of recording it here: the
+// receipt still reads `423,846 of 968,705 recorded tokens (44%)`, the same
+// three figures this literal has carried since it was measured, because the
+// change appends `SPEND_EXCLUDES` to the evidence and computes nothing new -
+// no ratio and no second total. Only the trailing `; excludes ...`
+// clause is new, and it is a `join(', ')` over the frozen array in
+// `lib/trace-suggest.mjs`, so this literal moves again only when that array
+// does. D-12: a necessary re-pin carries its arithmetic rather than being
+// quietly edited until it agrees.
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'verbatim.trace.jsonl');
 
@@ -439,7 +705,8 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
       {
         kind: 'info',
         subject: 'cad-executor',
-        evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)',
+        evidence: 'largest recorded spend: 423,846 of 968,705 recorded tokens (44%)'
+          + '; excludes the orchestrator\'s own turns, cross-model provider calls, figureless returns',
         action: null,
       },
       {
@@ -452,4 +719,164 @@ test('fixture: the committed verbatim trace suggests exactly what it did before 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// --- MSR-02: the shipped shape of the spend receipt's evidence string --------
+//
+// WATCHED FAILING AT 4b1d659, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/trace-suggest.test.mjs
+//   x MSR-02: the spend receipt names all three excluded sources, from the one exported list
+//     AssertionError [ERR_ASSERTION]: the spend receipt does not name `the
+//     orchestrator's own turns` - a /cad-suggest reader is told a worker-return
+//     token sum is the run's cost. Got: largest recorded spend: 300,000 of
+//     400,000 recorded tokens (75%)
+//   i pass 23
+//   i fail 2
+//
+// The recipe uses the GUARDED-READ arm, not the copy-the-export arm, and the
+// distinction is the whole watch: copying this phase's `lib/trace-suggest.mjs`
+// into the old checkout would carry the fixed evidence string in with it and
+// the check would go GREEN there, proving nothing. So only this file is copied,
+// the old seam emits the old string, and the fallback list below supplies the
+// three names the absent export would have.
+//
+// The second failure in that run is the committed-fixture deepEqual, which is
+// the same fact read from the other end - the old seam's literal string against
+// this phase's re-pinned one - and it is expected there.
+//
+// To re-watch: `git worktree add --detach <tmp> 4b1d659`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/trace-suggest.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+// The subject is the RULE, not the committed fixture: the assertion runs over a
+// render built by this file's own `render()` helper, so a fixture re-pin can
+// never carry this check green. And the three names are READ from the frozen
+// export rather than copied here - a test holding its own copy of the list goes
+// green on the day the seam and `workflows/report.md` stop agreeing about what
+// the figure excludes, which is the one failure this check exists to catch.
+//
+// The read is GUARDED, and that guard is what makes the re-watch above possible
+// at all. A named `import { SPEND_EXCLUDES }` would die at module LINK against
+// an unpatched checkout, and a recorded FAIL that only proves a new export does
+// not exist yet says nothing about whether unpatched `/cad-suggest` makes the
+// wrong cost claim. A namespace import never fails on an absent name, so the
+// old tree reaches the assertion and fails on the CLAIM.
+import * as traceSuggestModule from './lib/trace-suggest.mjs';
+
+const SPEND_EXCLUDES_READ = Array.isArray(traceSuggestModule.SPEND_EXCLUDES)
+  ? traceSuggestModule.SPEND_EXCLUDES
+  : ["the orchestrator's own turns", 'cross-model provider calls', 'figureless returns'];
+
+// --- SGT-01: the whole path returns a retune, not a description -------------
+//
+// WATCHED FAILING AT 01b2ca1, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout's `cadence-core/bin/`:
+//
+//   $ node --test cadence-core/bin/trace-suggest.test.mjs
+//   x SGT-01: `trace suggest` returns a direction, a current, and a proposed
+//     where the record prices one
+//     AssertionError [ERR_ASSERTION]: `model.effort.cad-planner` came back with
+//     no direction - /cad-suggest names a key and leaves the user to work out
+//     which way to move it. Got: {"kind":"suggest","subject":"cad-planner",
+//     "evidence":"2 of 2 resolves climbed to the retry rung","action":
+//     "model.effort.cad-planner"}
+//   i pass 25
+//   i fail 11
+//
+// and that run exits 1. The other ten failures are this plan's own new
+// assertions read against the old seam - the direction/current cases, the
+// binding check and the receipt-silence guards - which is the same fact from
+// every other end; this one is the check the requirement is written on.
+//
+// To re-watch: `git worktree add --detach <tmp> 01b2ca1`, copy this file into
+// `<tmp>/cadence-core/bin/`, run `node --test cadence-core/bin/trace-suggest.test.mjs`
+// from `<tmp>`, then `git worktree remove <tmp>`.
+//
+// The subject is the whole PATH rather than the pure function: the values a
+// direction and a target are read from live on disk, so a check over
+// `suggestFromRender` alone would pass on a seam that resolved none of them and
+// passed nothing in. So the record is written through `appendEvent`, the config
+// layer is a real file, and the CLI is run end to end - what is asserted is the
+// RETURN a `/cad-suggest` reader gets.
+
+test('SGT-01: `trace suggest` returns a direction, a current, and a proposed where the record prices one', async () => {
+  const { appendEvent } = await import('./lib/trace.mjs');
+  const { writeFileSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'cad-suggest-sgt-'));
+  try {
+    const planning = join(dir, '.planning');
+    mkdirSync(planning, { recursive: true });
+    // A repo layer, so both currents are the layer's own whatever a global
+    // layer on the running machine holds - the repo wins at the merge.
+    writeFileSync(join(planning, 'config.json'), JSON.stringify({
+      review: { triggers: { plan: { gate: 'blocking' } } },
+      model: { effort: { 'cad-planner': 'high' } },
+    }));
+    for (let i = 0; i < MIN_FIRES_FOR_GATE_SUGGESTION; i++) {
+      appendEvent(planning, {
+        phase: '1', family: 'outcome', event: 'adjudication',
+        detail: 'plan: 0 survivors; voices openai',
+      });
+    }
+    for (let i = 0; i < MIN_ESCALATIONS_FOR_RUNG_SUGGESTION; i++) {
+      appendEvent(planning, {
+        phase: '1', family: 'routing', event: 'resolve',
+        role: 'cad-planner', escalated: true, effort: 'xhigh', stakes: 'shipped',
+      });
+    }
+
+    const res = JSON.parse(execFileSync('node', [BIN, 'trace', 'suggest', '--phase', '1'],
+      { cwd: dir, encoding: 'utf8' }).trim().split('\n').pop() || '{}');
+    assert.equal(res.ok, true);
+    const keyed = res.suggestions.filter((s) => s.action !== null);
+    assert.equal(keyed.length, 2, `expected the gate and the effort key: ${JSON.stringify(res.suggestions)}`);
+    for (const s of keyed) {
+      assert.ok(s.direction === 'raise' || s.direction === 'lower',
+        `\`${s.action}\` came back with no direction - /cad-suggest names a key and leaves the`
+        + ` user to work out which way to move it. Got: ${JSON.stringify(s)}`);
+      assert.ok(s.current !== undefined && s.current !== null,
+        `\`${s.action}\` came back with no current value - the retune describes the run instead`
+        + ` of advising a change. Got: ${JSON.stringify(s)}`);
+    }
+
+    const gate = keyed.find((s) => s.action === 'review.triggers.plan.gate');
+    assert.ok(gate, JSON.stringify(keyed));
+    assert.equal(gate.direction, 'lower');
+    assert.equal(gate.current, 'blocking');
+    assert.equal(gate.proposed, 'advisory',
+      'the gate arm prices its target one step down the ladder route-table.json states');
+
+    const effort = keyed.find((s) => s.action === 'model.effort.cad-planner');
+    assert.ok(effort, JSON.stringify(keyed));
+    assert.equal(effort.direction, 'raise');
+    assert.equal(effort.current, 'high');
+    assert.equal(effort.proposed, 'xhigh',
+      'the rung the record shows this role\'s escalated resolves landing on is the target');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('MSR-02: the spend receipt names all three excluded sources, from the one exported list', () => {
+  const out = suggestFromRender(render([], {
+    'cad-executor': { dispatches: 2, tokens: 300000 },
+    'cad-planner': { dispatches: 1, tokens: 100000 },
+  }));
+  const s = out.find((x) => x.evidence.includes('largest recorded spend'));
+  assert.ok(s, 'the spend receipt no longer fires on a render carrying token figures');
+
+  assert.equal(SPEND_EXCLUDES_READ.length, 3,
+    'the exclusion list is no longer the three sources the caveat is written about');
+  for (const name of SPEND_EXCLUDES_READ) {
+    assert.ok(s.evidence.includes(name),
+      `the spend receipt does not name \`${name}\` - a /cad-suggest reader is told a`
+      + ` worker-return token sum is the run's cost. Got: ${s.evidence}`);
+  }
+
+  // Still a receipt, not a suggestion: D-11 forbids the /cad-suggest half
+  // growing a flag, an envelope key or anything to act on.
+  assert.equal(s.kind, 'info');
+  assert.equal(s.action, null);
 });

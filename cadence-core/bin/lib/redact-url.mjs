@@ -5,6 +5,23 @@
 // retired-keys.mjs pattern: node builtins only (it uses none), no I/O, no emit,
 // never throws.
 //
+// TWO exports, deliberately split (RVP-01):
+//   `redactUrl`         - credentials in URL POSITION and nothing else. Its
+//                         coverage is stated in exactly those words at
+//                         issue-check.mjs:41-47, and that statement stays true
+//                         because this export was not widened.
+//   `redactCredentials` - credential-shaped SPANS a URL-position rule cannot
+//                         see: an `authorization: Bearer <value>` echo and a
+//                         `<name>=<value>` / `"<name>": "<value>"` pair whose
+//                         name is credential-shaped. Added for the provider
+//                         seam's HTTP failure excerpt, where the body is
+//                         whatever a provider or an intermediary proxy chose to
+//                         echo back - including, on a misconfigured gateway, the
+//                         request headers.
+// A caller that wants both composes them; neither is a superset of the other.
+// The split is what lets a per-site regex stay out of the tree (D-14) without
+// making one function's documented coverage a lie.
+//
 // ONE shared helper rather than a regex at each emit site (D-14). Four sites put
 // a caught error's message into a `detail` - git-publish.mjs's push-failed,
 // reap-failed and dispatch-internal arms, and planning.mjs's no-staged-set arm -
@@ -69,4 +86,79 @@ export function redactUrl(s) {
   return String(s)
     .replace(SCHEME_USERINFO, `$1${MARK}@`)
     .replace(BARE_USERINFO, `${MARK}@`);
+}
+
+// 3. An HTTP authorization echo: `Bearer <token>`, optionally with its header
+//    name in front so `authorization: Bearer x` goes whole rather than leaving
+//    the header name pointing at a hole. The scheme word is consumed TOO - an
+//    excerpt that still reads `Bearer <redacted>` has told a reader nothing the
+//    name did not, and AC2 asks for the lead-in gone.
+const AUTH_SCHEME = /(?:authorization\s*[:=]\s*)?(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+
+// 4. A credential-shaped NAME=VALUE pair, in the four spellings a body actually
+//    carries it: `key=v` in a query string, `key: v` in a header dump,
+//    `"api_token": "v"` in JSON, and `secret=v` in a form body.
+//
+//    Shape, not a prefix list, exactly as rules 1 and 2: the discriminator is
+//    that a NAME a credential is stored under is followed by a separator and a
+//    value. `an invalid token` in an error sentence has neither and survives
+//    byte-identical, which is the boundary that keeps this from eating provider
+//    diagnostics - the one thing the excerpt exists to carry.
+//
+//    The leading lookbehind is what stops `monkey=1` from matching on its last
+//    three characters: a name may be PREFIXED (`x-api-key`, `openai_api_key`)
+//    but only across a `_`, `-` or `.` boundary, never mid-word. The prefix
+//    repetition is bounded at four rather than left open: an unbounded nested
+//    quantifier backtracks quadratically on a long separator run, and this runs
+//    against a provider-controlled body up to the response ceiling.
+const CRED_NAME = '(?:[A-Za-z0-9]+[_.-]){0,4}'
+  + '(?:api[_.-]?key|access[_.-]?token|refresh[_.-]?token|passwd|password|secret|token|key)';
+//    The VALUE is five alternatives, not one class. A quoted value runs to its
+//    closing quote so a secret containing a space (`"password": "hunter2 xyz"`)
+//    goes whole - the bare class stops at the first space and left the tail in
+//    the excerpt, which is the leak this whole rule exists to prevent.
+//
+//    The UNTERMINATED quoted forms exist because a caller may hand this a
+//    PREFIX of a larger body: `bodyExcerpt` sanitizes a bounded window, so a
+//    credential straddling that window arrives carrying its opening quote and
+//    no closing one. The terminated alternatives cannot match it, and the bare
+//    class excludes `"` and `'` so it cannot match either - the whole pair used
+//    to survive byte-identical, and 73 bytes of a value reached the failure
+//    envelope in the measured case. Running to end-of-input closes that. The
+//    terminated forms are tried FIRST, so a well-formed body is untouched, and
+//    the worst an unterminated quote costs is over-redaction of a malformed
+//    tail - never a leak.
+//
+//    All four quoted forms are `[^"]*` / `[^']*`: one bounded quantifier each,
+//    so the linear-time property the prefix bound above protects is unchanged.
+const CRED_VALUE = `(?:"[^"]*"|'[^']*'|"[^"]*$|'[^']*$|[^\\s&"',;)\\]}>]+)`;
+const CRED_PAIR = new RegExp(
+  `(?<![A-Za-z0-9_.-])["']?${CRED_NAME}["']?\\s*[:=]\\s*${CRED_VALUE}`, 'gi');
+
+// 5. The same pair in camelCase, which rule 4 structurally cannot reach: its
+//    prefix crosses a `_`, `-` or `.` only, and its lookbehind blocks a
+//    mid-word terminal, so `apiSecret` and `clientSecret` - the ordinary
+//    spelling of a JSON key - passed through byte-identical. Case is the
+//    discriminator here rather than a separator, so this pattern is
+//    case-SENSITIVE (no `i`) and that is what keeps `monkey` from matching on
+//    its last three characters exactly as the lookbehind does for rule 4.
+const CRED_PAIR_CAMEL = new RegExp(
+  `(?<![A-Za-z0-9_.-])["']?[a-z][A-Za-z0-9]{0,30}(?:Key|Token|Secret|Passwd|Password)["']?`
+  + `\\s*[:=]\\s*${CRED_VALUE}`, 'g');
+
+/**
+ * `s` with every credential-shaped span replaced by `<redacted>` - the NAME, the
+ * separator and the value together, never the value alone. Everything else is
+ * byte-identical, including a bare credential WORD carrying no value.
+ *
+ * Coerces rather than passing through, and never throws, for the same reasons
+ * `redactUrl` above does.
+ * @param {unknown} s
+ * @returns {string}
+ */
+export function redactCredentials(s) {
+  return String(s)
+    .replace(AUTH_SCHEME, MARK)
+    .replace(CRED_PAIR, MARK)
+    .replace(CRED_PAIR_CAMEL, MARK);
 }

@@ -107,44 +107,53 @@ context-gathering, and debugging — without any external memory system.
 
 - ✓ `v3.5.2 - one reader, one transport`: caller-derived free text rides a file path at every seam flag that carries it, with the rule stated once in `conventions.md` and a 36-row register that a new `self-verify` check reads, so a seventeenth inline site is refused rather than noticed later (TRN-01); and `plan-overlap` and `lease-check` reach containment through one `lib/lease-grammar.mjs` predicate, so the pre-flight gate can no longer admit a plan pair the commit-time enforcement would refuse, with `./` and redundant separators refused at both declaration doors and a census test that reddens on a paste-back (LSE-01) - v3.5.2
 
+- ✓ `v3.5.3 - bounds not stated, costs not counted`: the provider response gained a 4 MiB ceiling Cadence owns with its own `over-response` reason and a sanitized 1024-byte failure excerpt, local finding validation was pinned to the canonical schema by an 18-fixture agreement table, and the recovery arm stopped naming a timeout the dispatch path cannot produce (RVP-01, RVP-02, WIR-01); the run record learned turns per dispatch and per role and the three surfaces pricing a run now name what that figure excludes (MSR-01, MSR-02); six per-role window ceilings derived from this repo's own p75, a bulk-output file transport with a 17-row register, and `workflow.max_plan_tasks` re-decided against both its forces and left at 8 (MSR-03, TRN-02, PLN-01); the coordinator residue re-keyed on `corr` so one run's marker stops closing at another run's event, and every retune suggestion gained a direction, a current value and a read target with an offer to route it (MSR-04, SGT-01); plus three controls that existed and never reached their path - the recall corpus surviving a close, a receipt naming the range it settles, and the parallel branch reaching the sequential risk sequence (RCL-07, GAT-04, PAR-01) - v3.5.3
+
 ### Active
 
-`v3.5.3 - the bounds the review path never stated`, opened 2026-08-16. Scoped
-off the Forgejo milestone, which holds three issues: #168, #143 and #141.
+`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18. Scoped from the
+capture queue's open review findings rather than from a tracker milestone.
 
-**The theme is one sentence: the review path accepts whatever comes back, and
-one workflow arm recovers from a state that cannot happen.** All three were
-adjudicated from the same external deep dive, two AGREE-low and one narrowed
-from a finding closed as not-a-Cadence-defect. None is a trust boundary, which
-is why they sit at low severity; each is a stated bound the code never actually
-states.
+**The theme is one sentence: a gate that reports a verdict it did not earn.**
+Every item below is a check that already runs and already answers - and answers
+wrong in a way its own output cannot show. That is the shape `v3.5.3` closed for
+controls that never reached their path; this one closes it for controls that
+reach the path and mis-answer once they are there.
 
-`#143` is the response body. `review-provider.mjs` concatenates a provider
-response into an unbounded string with no byte ceiling and no destroy path, so
-a proxy error page or an unexpectedly large answer is held whole in memory, and
-an HTTP failure envelope carries the entire body rather than a capped excerpt.
-The host's wrapping command timeout bounds it in practice, which is a bound
-Cadence does not own.
+Five came out of the `v3.5.2` and `v3.5.3` diff reviews, grounded against the
+live files and left open at the time because each sat outside the firing phase's
+lease:
 
-`#141` is the shape of what came back. Local validation of a provider's
-findings checks an integer `line` and three string fields and nothing else, so
-it admits `line <= 0`, empty strings, unknown keys and arbitrarily many
-arbitrarily large findings, while the canonical schema says
-`additionalProperties: false`. The output goes to a human for triage, so this
-is a degradation guard rather than a boundary, and it should still refuse what
-the schema refuses.
+- `version_drift`'s comparand is `activeVersion()`, a first-version-token scan
+  over the free prose of `PROJECT.md ### Active`. A section naming the
+  predecessor before the current milestone reports the predecessor and hard-FAILs
+  the ship gate on correct docs. This file is one clause reorder from that state.
+- The interrupted-close exemption is `derivePhases(...).every(complete)`, but the
+  close is sanctioned to carry rolled-over work and a UAT holding a `blocked`
+  item can never derive complete. Drift fires in the state `audit.md` declares
+  exempt, with a remedy `verify.md` says is impossible.
+- `verify.md` treats `why_human` as proof an item is human-only, while the
+  verifier contract writes it for every UNCERTAIN truth too, so model-executable
+  checks route to the one-at-a-time ask - the exact defect FRI-01 targeted.
+- The one-round re-arm cap lives only in `triage-gate.md`, which the
+  `risk_surface` fire sites never load, and every "RE-READ triage-gate.md"
+  instruction is scoped to the `adjudicated` arm. The bound misses the one
+  trigger that is blocking at every stakes level, and it is scoped per
+  correlation id, so a five-plan phase gets ONE round across all five plans.
+- `readTags` lets `git -C` discover upward from `.planning`, so a project that is
+  not itself a repo inherits an enclosing repo's tags and can be FAILed by a
+  version an unrelated umbrella repo published.
 
-`#168` is the wiring. `execute.md` opens a recovery arm labelled "timeout or no
-report" when nothing in the dispatch path can time out - `seams.md` says so in
-those words, and `subagent_timeout` was deleted in v2.7.0 rather than kept as a
-knob nothing enforces. Either the word is dead or it silently means "the user
-interrupted", which is a different condition with a different recovery. The
-default reviewer arm is the one unbounded path left beside it.
+One more is a live credential-leak path found while carrying the `v3.5.3`
+`risk_surface` survivors forward at the close: `bodyExcerpt`'s trailing-token
+safeguard runs only when `clean <= room`, so a sanitizer shrink can pull a
+window-edge-truncated credential's head under the cap while `clean` still
+exceeds it. Raised at the phase-3 fire, still true at `v3.5.3`.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted. The open items filed at the `v3.5.1`
 close (#181 through #187) and the seven filed at the `v3.5.2` close (#189
-through #195) are unassigned and are not scoped here.
+through #197) are unassigned and are not scoped here.
 
 ## Key Decisions
 

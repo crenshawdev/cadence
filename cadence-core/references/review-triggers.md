@@ -5,7 +5,8 @@ a trigger point runs `fire(<trigger>)` as defined here - it never inlines its ow
 reviewer loop. Two backends, one finding schema, so the adjudicator merges them
 blind:
 - `claude-subagent` (default, zero-dep): spawn the `cad-reviewer` agent via the
-  spawn-agent seam, prompted to REFUTE the artifact.
+  spawn-agent seam, prompted to REFUTE the artifact. Bounded by that seam's turn
+  cap, `maxTurns: 200`.
 - cross-model (`openai` / `gemini` / `deepseek`, ... - any provider with an
   adapter): the call-review-provider seam (`bin/review-provider.mjs`), a
   provider API call.
@@ -128,7 +129,7 @@ set never does. Per backend:
   OMIT `--tokens` on a figureless return (seams.md's bracket rule):
 
   ```
-  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return>
+  node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace close --phase <N> --plan cad-reviewer --role cad-reviewer --reviewer claude-subagent --tokens <the token count on the subagent return> --turns <the tool-call count on the subagent return>
   ```
 
   A dispatch that failed, returned nothing, or returned an unparseable object
@@ -281,17 +282,33 @@ actually ran>` - to a scratch file and pass its path; the voice list is composed
 from what actually ran (caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --raised <findings the reviewers raised before adjudication> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --detail-file <path>
 ```
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
 that makes a nine-findings-all-killed fire visible in the session and not only
 in the record.
 
+`--plan <k>` is required whenever the fire was per-plan: `risk-check status`
+joins a receipt to a record on the run AND the plan, so a receipt written
+without it keys to no plan and joins nothing, leaving a range that WAS fired and
+adjudicated reading as never fired. Omit it only for a fire that is not per-plan
+(`/cad-debug`, `/cad-task`, `/cad-verify`).
+
+`--base <base> --sha <head>` name the RANGE this adjudication settled - BOTH
+ends, since two ranges can share a head and differ at the base and are then
+different diffs over different surfaces. That is what lets `risk-check status`
+tell an adjudication of THIS range from one of an earlier, narrower range for
+the same plan. A receipt missing either end settles nothing, so omitting one
+leaves a matched range reading as never fired.
+
 The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
 figure parsed back out of that free-text slot would be exactly as trustworthy
 as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in.
+helpfully fold it back in. The TRIGGER travels the same way, on `--trigger`,
+and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
+range to its receipt on those two structured fields and never on the detail
+(`references/triage-gate.md` states the rule at all four settle points).
 
 `<N>` is the phase in hand, or the STATE cursor's phase for a trigger whose
 range spans phases. The VOICE LIST is load-bearing, not decoration: a

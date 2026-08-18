@@ -29,7 +29,27 @@ import {
   resolveMaxPromptTokens, estimatePromptTokens,
   __setTransportForTests, __runCommandForTests,
 } from './review-provider.mjs';
+// FINDING_SCHEMA reaches these tests through a NAMESPACE import rather than the
+// named list above, deliberately. A named import of a symbol the module does
+// not export is a LINK error - the whole file fails to load before a single
+// test runs - and the RVP-02 falsifier at the end of this file has to be
+// runnable against the unpatched tree, where `FINDING_SCHEMA` was module-local.
+// Through a namespace it is simply `undefined` there, so the falsifier fails on
+// its assertions (what it is watching) instead of on module resolution.
+import * as reviewProvider from './review-provider.mjs';
+import { evaluateSchema } from './lib/schema-eval.mjs';
 import { renderCursor } from './lib/planning-files.mjs';
+
+const FINDING_SCHEMA = reviewProvider.FINDING_SCHEMA;
+// The bounds FINDING_SCHEMA states, read OUT of it rather than restated here -
+// a copied number is the drift these tests exist to catch. Optional chaining
+// throughout for the same reason the namespace import exists: against the
+// unpatched tree these resolve to `undefined` instead of throwing at module
+// load, which would take the falsifier down with them.
+const F_PROPS = FINDING_SCHEMA?.properties?.findings?.items?.properties ?? {};
+const MAX_FINDINGS = FINDING_SCHEMA?.properties?.findings?.maxItems;
+const MAX_FILE_CHARS = F_PROPS.file?.maxLength;
+const MAX_TEXT_CHARS = F_PROPS.claim?.maxLength;
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), 'review-provider.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-provider-'));
@@ -179,6 +199,76 @@ test('stripAdditionalProperties: removes the key at every depth, nothing else', 
   assert.deepEqual(arr, [{ type: 'object', required: ['a'] }, 'scalar']);
 });
 
+/** Every object key appearing anywhere in a JSON tree. */
+function keysDeep(node, out = new Set()) {
+  if (Array.isArray(node)) { for (const v of node) keysDeep(v, out); return out; }
+  if (node && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) { out.add(k); keysDeep(v, out); }
+  }
+  return out;
+}
+
+test('FINDING_SCHEMA: the bounds are stated on the wire, in every dialect (RVP-02)', () => {
+  // The settled numbers, pinned literally exactly once - everything else in
+  // this file reads them back off the schema. Derived from what the tree has
+  // produced (file 39, claim 159, failure_scenario 376 chars in the one
+  // committed findings file; largest panel round 9 findings), not rounded.
+  assert.equal(F_PROPS.line.minimum, 1);
+  assert.equal(F_PROPS.file.minLength, 1);
+  assert.equal(F_PROPS.claim.minLength, 1);
+  assert.equal(F_PROPS.failure_scenario.minLength, 1);
+  assert.equal(F_PROPS.file.maxLength, 1024);
+  assert.equal(F_PROPS.claim.maxLength, 2000);
+  assert.equal(F_PROPS.failure_scenario.maxLength, 2000);
+  assert.equal(FINDING_SCHEMA.properties.findings.maxItems, 100);
+  // NO minItems: a review that found nothing returns [], and refusing that
+  // would turn a clean result into a bad-shape degradation.
+  assert.equal('minItems' in FINDING_SCHEMA.properties.findings, false);
+  // None of OpenAI's structured-output UNSUPPORTED set rode in with them
+  // (provider-api.md, checked 2026-08-17).
+  const present = keysDeep(FINDING_SCHEMA);
+  for (const banned of ['unevaluatedProperties', 'propertyNames', 'minProperties',
+    'maxProperties', 'unevaluatedItems', 'contains', 'minContains', 'maxContains',
+    'uniqueItems']) {
+    assert.equal(present.has(banned), false, `${banned} is unsupported on OpenAI strict mode`);
+  }
+
+  const args = {
+    model: 'm', system: 's', user: 'u',
+    schema: FINDING_SCHEMA, schemaName: 'cadence_review',
+  };
+
+  // OpenAI strict json_schema: the schema rides verbatim under text.format.
+  const sent = ADAPTERS.openai.structuredRequest(args).body.text.format.schema;
+  assert.equal(sent.properties.findings.maxItems, 100);
+  assert.equal(sent.properties.findings.items.properties.line.minimum, 1);
+  assert.equal(sent.properties.findings.items.properties.claim.minLength, 1);
+  assert.equal(sent.properties.findings.items.properties.claim.maxLength, 2000);
+
+  // Gemini responseSchema: the same four keywords, and additionalProperties
+  // stripped at every depth - the ONLY thing that adapter removes.
+  const gem = ADAPTERS.gemini.structuredRequest(args).body.generationConfig.responseSchema;
+  assert.equal(gem.properties.findings.maxItems, 100);
+  assert.equal(gem.properties.findings.items.properties.line.minimum, 1);
+  assert.equal(gem.properties.findings.items.properties.file.minLength, 1);
+  assert.equal(gem.properties.findings.items.properties.file.maxLength, 1024);
+  assert.equal(keysDeep(gem).has('additionalProperties'), false);
+
+  // DeepSeek has no server-side schema enforcement, so the schema is serialized
+  // into the system prompt - the keywords have to survive that too.
+  const sys = ADAPTERS.deepseek.structuredRequest(args).body.messages[0].content;
+  for (const kw of ['"minimum":1', '"minLength":1', '"maxLength":2000', '"maxItems":100']) {
+    assert.ok(sys.includes(kw), `${kw} must reach DeepSeek in-prompt`);
+  }
+
+  // The carve-out stays a carve-out: one key removed, the bounds untouched.
+  const stripped = stripAdditionalProperties(FINDING_SCHEMA);
+  assert.equal(keysDeep(stripped).has('additionalProperties'), false);
+  for (const kw of ['minimum', 'minLength', 'maxLength', 'maxItems']) {
+    assert.equal(keysDeep(stripped).has(kw), true, `${kw} must survive the strip`);
+  }
+});
+
 test('validateFindings: accepts the exact shape, names the first defect', () => {
   const good = { findings: [{ file: 'a.ts', line: 3, severity: 'high', claim: 'c', failure_scenario: 'f' }] };
   assert.equal(validateFindings(good), null);
@@ -187,10 +277,197 @@ test('validateFindings: accepts the exact shape, names the first defect', () => 
   assert.match(validateFindings({ findings: [{ ...good.findings[0], severity: 'catastrophic' }] }), /bad severity/);
 });
 
+test('validateFindings: every schema bound refuses by its own name (RVP-02)', () => {
+  const good = () => ({ file: 'a.ts', line: 3, severity: 'high', claim: 'c', failure_scenario: 'f' });
+  const one = (/** @type {any} */ patch) => validateFindings({ findings: [{ ...good(), ...patch }] });
+
+  // The seven the requirement names. Seven calls, seven DIFFERENT strings, no
+  // null - a shared "invalid finding" message would collapse the set and fail
+  // the size assertion, which is the point of asserting on the set.
+  const diagnostics = [
+    one({ line: 0 }),
+    one({ file: '' }),
+    one({ claim: '' }),
+    one({ failure_scenario: '' }),
+    one({ note: 'an unknown key' }),
+    validateFindings({ findings: Array.from({ length: MAX_FINDINGS + 1 }, good) }),
+    one({ claim: 'x'.repeat(MAX_TEXT_CHARS + 1) }),
+  ];
+  for (const [i, d] of diagnostics.entries()) {
+    assert.equal(typeof d, 'string', `diagnostic ${i} must be a named refusal, got ${d}`);
+  }
+  assert.equal(new Set(diagnostics).size, 7, `seven distinct diagnostics: ${JSON.stringify(diagnostics)}`);
+
+  // Each names the offending field and the bound it crossed.
+  assert.match(diagnostics[0], /finding\.line must be at least 1, got 0/);
+  assert.match(diagnostics[1], /finding\.file must not be empty/);
+  assert.match(diagnostics[2], /finding\.claim must not be empty/);
+  assert.match(diagnostics[3], /finding\.failure_scenario must not be empty/);
+  assert.match(diagnostics[4], /unknown key: note/);
+  assert.match(diagnostics[5], new RegExp(`at most ${MAX_FINDINGS} entries, got ${MAX_FINDINGS + 1}`));
+  assert.match(diagnostics[6], new RegExp(`claim is at most ${MAX_TEXT_CHARS} characters`));
+  // `file` carries its OWN maximum, not the text one.
+  assert.match(one({ file: 'p'.repeat(MAX_FILE_CHARS + 1) }),
+    new RegExp(`file is at most ${MAX_FILE_CHARS} characters`));
+  // `line: 0` is distinct from a non-integer line, and an empty string is
+  // distinct from a non-string - the pre-existing diagnostics still stand.
+  assert.match(one({ line: 'three' }), /line must be an integer/);
+  assert.match(one({ claim: 7 }), /claim must be a string/);
+
+  // additionalProperties:false sits at BOTH levels in the schema, so the
+  // validator refuses at both, and the top-level diagnostic names the key.
+  assert.match(validateFindings({ findings: [], scratch: 1 }), /unknown top-level key: scratch/);
+
+  // An EMPTY findings array is what a review with nothing to report returns.
+  assert.equal(validateFindings({ findings: [] }), null);
+  assert.equal(validateFindings({ findings: [good()] }), null);
+
+  // Lengths are CODE POINTS, as JSON Schema specifies. A `.length` reading
+  // counts one emoji as 2 and would refuse the accepting case below.
+  assert.equal(one({ claim: '\u{1F600}'.repeat(MAX_TEXT_CHARS) }), null);
+  assert.match(one({ claim: '\u{1F600}'.repeat(MAX_TEXT_CHARS + 1) }),
+    new RegExp(`got ${MAX_TEXT_CHARS + 1}`));
+});
+
 test('validateConsult: angles need all three string fields', () => {
   assert.equal(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r', how_to_check: 'c' }] }), null);
   assert.match(validateConsult({ angles: [{ hypothesis: 'h', rationale: 'r' }] }), /how_to_check/);
   assert.match(validateConsult({}), /missing angles/);
+});
+
+test('schema-eval: every implemented keyword, both directions (RVP-02)', () => {
+  const s = (/** @type {any} */ schema) => (/** @type {any} */ v) => evaluateSchema(schema, v);
+
+  const typed = s({ type: 'string' });
+  assert.equal(typed('ok'), null);
+  assert.match(String(typed(7)), /expected string/);
+  assert.equal(evaluateSchema({ type: 'integer' }, 3), null);
+  assert.match(String(evaluateSchema({ type: 'integer' }, 3.5)), /expected integer/);
+
+  const req = s({ type: 'object', properties: { a: { type: 'string' } }, required: ['a'] });
+  assert.equal(req({ a: 'x' }), null);
+  assert.match(String(req({})), /missing required `a`/);
+
+  const closed = s({ type: 'object', additionalProperties: false, properties: { a: { type: 'string' } } });
+  assert.equal(closed({ a: 'x' }), null);
+  assert.match(String(closed({ a: 'x', b: 1 })), /unknown key `b`/);
+
+  const enumd = s({ type: 'string', enum: ['low', 'high'] });
+  assert.equal(enumd('high'), null);
+  assert.match(String(enumd('catastrophic')), /is not one of/);
+
+  const minimum = s({ type: 'integer', minimum: 1 });
+  assert.equal(minimum(1), null);
+  assert.match(String(minimum(0)), /below minimum 1/);
+
+  const len = s({ type: 'string', minLength: 1, maxLength: 3 });
+  assert.equal(len('ab'), null);
+  assert.match(String(len('')), /shorter than minLength 1/);
+  assert.match(String(len('abcd')), /longer than maxLength 3/);
+
+  const items = s({ type: 'array', maxItems: 2, items: { type: 'integer' } });
+  assert.equal(items([1, 2]), null);
+  assert.match(String(items([1, 2, 3])), /more than maxItems 2/);
+
+  // CODE POINTS, not UTF-16 units. Four astral characters are 8 `.length`
+  // units, so a `.length` implementation would REJECT this accepting case -
+  // the direction a shared bug between this evaluator and validateFindings
+  // would hide, and the reason both are pinned on it.
+  const astral = '\u{1F600}'.repeat(4);
+  assert.equal(astral.length, 8);
+  assert.equal(evaluateSchema({ type: 'string', minLength: 4, maxLength: 4 }, astral), null);
+  assert.match(String(evaluateSchema({ type: 'string', minLength: 5 }, astral)), /shorter than minLength 5/);
+  assert.match(String(evaluateSchema({ type: 'string', maxLength: 3 }, astral)), /longer than maxLength 3/);
+
+  // Nesting: a violation inside findings[].claim is found and its path named.
+  const nested = evaluateSchema(FINDING_SCHEMA, {
+    findings: [{ file: 'a.ts', line: 1, severity: 'low', claim: '', failure_scenario: 'f' }],
+  });
+  assert.match(String(nested), /findings\[0\]\.claim/);
+  assert.match(String(nested), /minLength/);
+
+  // The load-bearing half: an unimplemented keyword THROWS rather than being
+  // treated as satisfied. Ignoring it would make the agreement test below go
+  // green on an agreement it never checked.
+  assert.throws(() => evaluateSchema({ type: 'string', pattern: '^a' }, 'a'),
+    /unimplemented keyword `pattern`/);
+  // Including one buried in a branch no value ever reaches.
+  assert.throws(() => evaluateSchema(
+    { type: 'object', properties: { deep: { type: 'array', uniqueItems: true } } }, {}),
+  /unimplemented keyword `uniqueItems` at \$\.deep/);
+  // And an `additionalProperties` value other than `false`, the only form used.
+  assert.throws(() => evaluateSchema({ type: 'object', additionalProperties: true }, {}),
+    /unimplemented additionalProperties/);
+  assert.throws(() => evaluateSchema({ type: 'object', properties: { a: { type: ['string', 'null'] } } }, {}),
+    /unimplemented type/);
+});
+
+test('agreement: the schema and validateFindings give the same verdict, every fixture (RVP-02)', () => {
+  // The pairing, machine-run on BOTH sides. Every fixture goes through the
+  // keyword-limited evaluator against the LIVE FINDING_SCHEMA (never a copy - a
+  // copied schema is exactly the drift this exists to kill) and through
+  // validateFindings, and the two must agree on accept-vs-reject. Deliberately
+  // NOT a hand-paired (fixture, expected verdict) table: the schema column
+  // would then be asserted by human reading, which is the shape D-08 rejects.
+  const ok = () => ({
+    file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+    claim: 'the response is unbounded', failure_scenario: 'a proxy error page arrives whole',
+  });
+  const withFinding = (/** @type {any} */ patch) => ({ findings: [{ ...ok(), ...patch }] });
+  const emoji = (/** @type {number} */ n) => '\u{1F600}'.repeat(n);
+
+  /** @type {{name: string, value: any}[]} */
+  const fixtures = [
+    { name: 'a clean single finding', value: withFinding({}) },
+    { name: 'an empty findings array', value: { findings: [] } },
+    { name: 'line: 0', value: withFinding({ line: 0 }) },
+    { name: 'a negative line', value: withFinding({ line: -1 }) },
+    { name: 'a non-integer line', value: withFinding({ line: 1.5 }) },
+    { name: 'an empty file', value: withFinding({ file: '' }) },
+    { name: 'an empty claim', value: withFinding({ claim: '' }) },
+    { name: 'an empty failure_scenario', value: withFinding({ failure_scenario: '' }) },
+    { name: 'a claim one past maxLength', value: withFinding({ claim: 'x'.repeat(MAX_TEXT_CHARS + 1) }) },
+    { name: 'a file one past maxLength', value: withFinding({ file: 'p'.repeat(MAX_FILE_CHARS + 1) }) },
+    { name: 'a findings array one past maxItems', value: { findings: Array.from({ length: MAX_FINDINGS + 1 }, ok) } },
+    { name: 'an unknown key on a finding', value: withFinding({ note: 'extra' }) },
+    { name: 'an unknown key at the top level', value: { findings: [ok()], scratch: 1 } },
+    { name: 'a missing required field', value: (() => {
+      // Actually ABSENT, not present-and-undefined: `required` is a
+      // hasOwnProperty question and the two are different fixtures.
+      const f = ok(); delete (/** @type {any} */ (f)).failure_scenario; return { findings: [f] };
+    })() },
+    { name: 'a bad severity', value: withFinding({ severity: 'catastrophic' }) },
+    { name: 'a findings that is not an array', value: { findings: 'one finding, honest' } },
+    // The two rows that stop the AGREEMENT from being the bug. Both sides were
+    // written in this phase, so a shared UTF-16 `.length` reading of
+    // minLength/maxLength agrees perfectly while both disagree with the schema -
+    // and every BMP-only row above is blind to it.
+    { name: `a claim of exactly ${MAX_TEXT_CHARS} astral characters`, value: withFinding({ claim: emoji(MAX_TEXT_CHARS) }) },
+    { name: `a claim of ${MAX_TEXT_CHARS + 1} astral characters`, value: withFinding({ claim: emoji(MAX_TEXT_CHARS + 1) }) },
+  ];
+
+  let accepts = 0;
+  let rejects = 0;
+  for (const { name, value } of fixtures) {
+    const bySchema = evaluateSchema(FINDING_SCHEMA, value);
+    const byValidator = validateFindings(value);
+    const schemaAccepts = bySchema === null;
+    const validatorAccepts = byValidator === null;
+    assert.equal(schemaAccepts, validatorAccepts,
+      `${name}: FINDING_SCHEMA says ${schemaAccepts ? 'ACCEPT' : `REJECT (${bySchema})`}` +
+      ` but validateFindings says ${validatorAccepts ? 'ACCEPT' : `REJECT (${byValidator})`}`);
+    if (schemaAccepts) accepts += 1; else rejects += 1;
+  }
+  // A table whose every row rejects would pass a validator that rejects
+  // everything, and one whose every row accepts would pass one that accepts
+  // everything. Both kinds have to have reached both sides.
+  assert.ok(accepts >= 1, 'the table must hold at least one ACCEPT case');
+  assert.ok(rejects >= 1, 'the table must hold at least one REJECT case');
+  assert.equal(accepts + rejects, fixtures.length);
+  // Named, so a future edit that drops the astral rows is visible: the exactly-
+  // at-maxLength emoji row is the one that must land in the accept column.
+  assert.equal(evaluateSchema(FINDING_SCHEMA, withFinding({ claim: emoji(MAX_TEXT_CHARS) })), null);
+  assert.equal(validateFindings(withFinding({ claim: emoji(MAX_TEXT_CHARS) })), null);
 });
 
 test('classify: tier hints applied, non-text modalities excluded, unknowns kept', () => {
@@ -695,16 +972,44 @@ function providerEvents() {
 }
 
 /**
- * The wire, faked. `wire` is `{timeout:true}` or `{status, body}`; `seen`
- * collects what the seam handed the transport, so a test can assert the
- * destination and the options as well as the outcome.
+ * The wire, faked. `wire` is one of:
+ *   `{timeout:true}`                 - the socket goes quiet and 'timeout' fires
+ *   `{status, body}`                 - one chunk, the whole body at once
+ *   `{status, chunks:[...]}`         - the body arriving in order, chunk by chunk
+ * `body` and `chunks` are the same thing at different granularities: a real
+ * response arrives in as many pieces as the network chose, and a bound counted
+ * PER CHUNK cannot be exercised by a fake that only ever emits one.
+ *
+ * `seen` collects what the seam handed the transport, so a test can assert the
+ * destination and the options as well as the outcome. Each entry also carries
+ * `chunksEmitted` - how many of the list actually reached the seam - which is
+ * how a test tells a stream that was CUT from one that was drained.
+ *
+ * Destroying either half stops the emit loop before the next chunk: `req.destroy`
+ * (the seam's own abort mechanism, which also emits 'error' so the promise
+ * rejects) and `res.destroy`. A fake that kept emitting after a destroy could not
+ * distinguish a seam that aborted the request from one that merely stopped
+ * appending, which is the whole distinction the response bound turns on. A cut
+ * stream never emits 'end' either - a destroyed socket does not finish.
  */
 function fakeTransport(wire, seen) {
   return (/** @type {URL} */ url, /** @type {any} */ options, /** @type {any} */ cb) => {
-    seen.push({ url: String(url), options });
+    const record = { url: String(url), options, chunksEmitted: 0 };
+    seen.push(record);
+    let destroyed = false;
+    /** @type {any} */
+    let live = null;
     const req = Object.assign(new EventEmitter(), {
       write: () => true,
       destroy: (/** @type {any} */ err) => {
+        destroyed = true;
+        // A real `ClientRequest.destroy()` during an ACTIVE response aborts the
+        // IncomingMessage too, and that emits its OWN 'error' - unhandled, it
+        // takes the process down rather than rejecting the promise. The fake
+        // emitted on `req` alone, so the response ceiling's abort looked clean
+        // here while it could crash in production. Emit on both, res first, and
+        // let the first rejection win.
+        if (live) live.emit('error', err || new Error('aborted'));
         req.emit('error', err || new Error('socket destroyed'));
       },
       end: () => {
@@ -712,9 +1017,20 @@ function fakeTransport(wire, seen) {
         // are attached first, exactly as they are against a real socket.
         queueMicrotask(() => {
           if (wire.timeout) { req.emit('timeout'); return; }
-          const res = Object.assign(new EventEmitter(), { statusCode: wire.status });
+          const res = Object.assign(new EventEmitter(), {
+            statusCode: wire.status,
+            destroy: () => { destroyed = true; },
+          });
+          live = res;
           cb(res);
-          if (wire.body !== undefined) res.emit('data', wire.body);
+          const chunks = wire.chunks !== undefined ? wire.chunks
+            : wire.body !== undefined ? [wire.body] : [];
+          for (const c of chunks) {
+            if (destroyed) return;
+            res.emit('data', c);
+            record.chunksEmitted += 1;
+          }
+          if (destroyed) return;
           res.emit('end');
         });
       },
@@ -744,7 +1060,17 @@ async function runFaked(argv, wire, env = {}) {
   }
   process.chdir(faultCwd);
   process.exitCode = 0;
-  process.stdout.write = (/** @type {any} */ chunk) => { out += chunk; return true; };
+  // Capture the SEAM's writes only. `emit` writes a string; the test runner
+  // writes its own `test:complete` events to this same stdout as v8-serialized
+  // BUFFERS, and those flush on whatever tick the runtime picks - observed
+  // landing inside this window and turning the one JSON line into unparseable
+  // bytes. Forwarding a non-string through keeps the runner's protocol intact
+  // and keeps `out` the seam's own output whatever the tick alignment is.
+  process.stdout.write = (/** @type {any} */ chunk, /** @type {any[]} */ ...rest) => {
+    if (typeof chunk !== 'string') return realWrite.call(process.stdout, chunk, ...rest);
+    out += chunk;
+    return true;
+  };
   try {
     await __runCommandForTests(argv);
   } finally {
@@ -759,6 +1085,56 @@ async function runFaked(argv, wire, env = {}) {
   process.exitCode = prevExit;
   return { line: out, envelope: JSON.parse(out), code, seen };
 }
+
+test('harness: a body split across chunks reaches the seam as the same body', async () => {
+  // The equivalence the chunk list has to hold before anything can be counted
+  // per chunk: three pieces of one JSON document, split mid-token so no piece
+  // parses alone, must produce byte-for-byte the envelope the whole body does.
+  const body = JSON.stringify({
+    output_text: JSON.stringify({
+      findings: [{
+        file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+        claim: 'the response body is concatenated without a ceiling',
+        failure_scenario: 'a proxy error page is held whole in memory',
+      }],
+    }),
+  });
+  const whole = await runFaked(REVIEW_ARGS, { status: 200, body });
+  const split = await runFaked(REVIEW_ARGS, {
+    status: 200, chunks: [body.slice(0, 17), body.slice(17, 90), body.slice(90)],
+  });
+  assert.equal(whole.envelope.ok, true, whole.line);
+  assert.deepEqual(split.envelope, whole.envelope);
+  assert.equal(split.envelope.findings.length, 1);
+  assert.equal(whole.seen[0].chunksEmitted, 1);
+  assert.equal(split.seen[0].chunksEmitted, 3);
+});
+
+test('harness: a destroyed response stops the emit loop mid-list', () => {
+  // The load-bearing half of the fake. Driven directly rather than through
+  // runFaked because the seam does not destroy a response of its own accord -
+  // this pins the MECHANISM the byte ceiling will reach for, so a later test
+  // asserting "fewer chunks emitted than the list holds" is asserting something
+  // the harness can actually report.
+  /** @type {any[]} */
+  const seen = [];
+  const wire = { status: 200, chunks: ['one', 'two', 'three'] };
+  let ended = false;
+  const req = fakeTransport(wire, seen)(
+    new URL('https://api.openai.com/v1/responses'), {},
+    (/** @type {any} */ res) => {
+      res.on('end', () => { ended = true; });
+      res.on('data', () => res.destroy());
+    },
+  );
+  req.on('error', () => {});
+  req.end();
+  return new Promise((resolve) => setImmediate(() => {
+    assert.equal(seen[0].chunksEmitted, 1, 'the stream was cut, not drained');
+    assert.equal(ended, false);
+    resolve(undefined);
+  }));
+});
 
 test('fault: the destination is the adapter base, and no environment variable moves it', async () => {
   // The reason the transport seam is a module-private reference and not an env
@@ -833,7 +1209,12 @@ test('fault mode 2/6 - HTTP 4xx: the caller sees http with the status, and the t
   assert.equal(r.envelope.ok, false);
   assert.equal(r.envelope.reason, 'http');
   assert.equal(r.envelope.detail.status, 401);
-  assert.equal(r.envelope.detail.body.error.code, 'invalid_api_key');
+  // ONE envelope shape: `body` is always a sanitized string excerpt, never a
+  // parsed object for a small body and a string for a large one (D-04). What the
+  // tests here have always protected - that the user reads WHICH refusal it was
+  // rather than a bare status - is matched as TEXT inside that excerpt.
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.match(r.envelope.detail.body, /invalid_api_key/);
   assert.equal(r.code, 1);
   const ev = providerEvents().slice(before);
   assert.equal(ev.length, 1);
@@ -848,6 +1229,8 @@ test('fault mode 3/6 - HTTP 5xx: the caller sees http with the status, not a ret
   const r = await runFaked(REVIEW_ARGS, { status: 503, body });
   assert.equal(r.envelope.reason, 'http');
   assert.equal(r.envelope.detail.status, 503);
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.match(r.envelope.detail.body, /temporarily unavailable/);
   assert.equal(r.code, 1);
   const ev = providerEvents().slice(before);
   assert.equal(ev.length, 1);          // one call, one event: no hidden retry
@@ -865,10 +1248,14 @@ test('fault mode 4/6 - a dead or unknown model id: the provider 404 reaches the 
   const r = await runFaked(REVIEW_ARGS, { status: 404, body });
   assert.equal(r.envelope.reason, 'http');
   assert.equal(r.envelope.detail.status, 404);
-  // The body is passed through, so the user reads WHICH model was refused
-  // rather than a bare 404.
-  assert.equal(r.envelope.detail.body.error.code, 'model_not_found');
-  assert.match(r.envelope.detail.body.error.message, /gpt-fault-fixture/);
+  // The one thing /cad-config's review arm reads this envelope FOR: WHICH model
+  // was refused, rather than a bare 404. It survives as text inside the excerpt -
+  // the whole 155-byte body fits under the 1024-byte cap with room to spare,
+  // which is why the cap is that number and not a round one.
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.match(r.envelope.detail.body, /model_not_found/);
+  assert.match(r.envelope.detail.body, /gpt-fault-fixture/);
+  assert.equal(r.envelope.detail.body.includes('...[truncated]'), false);
   const ev = providerEvents().slice(before);
   assert.equal(ev[0].outcome, 'http');
   assert.equal(ev[0].model, 'gpt-fault-fixture');
@@ -927,6 +1314,159 @@ test('fault: consult and detect-models degrade through the same six-mode mapping
   assert.equal(ev.command, 'detect-models');
   assert.equal(ev.model, null);
   assert.equal(ev.tier, null);
+});
+
+// --- the RESPONSE bound (RVP-01, AC1) -----------------------------------------
+//
+// The bound the seam did not own. Everything above degrades on what the provider
+// SAID; this degrades on how much of it there was, which until now was bounded
+// only by the execution host's wrapping command timeout.
+
+/** Kept in step with `MAX_RESPONSE_BYTES` in review-provider.mjs, by hand and
+ * on purpose: a test that imported the constant would pass against any value,
+ * including a wrong one. */
+const MAX_RESPONSE_BYTES = 4194304;
+
+/**
+ * An openai-shaped 200 body of EXACTLY `total` ASCII bytes carrying one valid
+ * finding, so a size test is a size test and not a shape test in disguise.
+ *
+ * The filler rides a SIBLING key of `output_text`, not the finding's `claim`.
+ * It used to pad the claim, which stopped being a valid finding the moment
+ * RVP-02 gave `claim` a 2000-character maximum - and a fixture that degrades
+ * to `bad-shape` proves nothing about the response ceiling. `extractText`
+ * reads `output_text` and ignores everything beside it, so the bytes on the
+ * wire are unchanged and the finding stays inside every schema bound.
+ * @param {number} total
+ */
+function bodyOfBytes(total) {
+  const make = (/** @type {number} */ pad) => JSON.stringify({
+    output_text: JSON.stringify({
+      findings: [{
+        file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+        claim: 'the body is held whole in memory',
+        failure_scenario: 'a proxy error page arrives unbounded',
+      }],
+    }),
+    _filler: 'x'.repeat(pad),
+  });
+  const base = make(0).length;
+  const out = make(total - base);
+  assert.equal(Buffer.byteLength(out), total, 'the filler must not be escaped');
+  return out;
+}
+
+test('bound: a response past the ceiling is over-response, and the stream is CUT', async () => {
+  const before = providerEvents().length;
+  // Eight 1 MiB chunks. The running total crosses on the fifth (4 MiB exactly is
+  // AT the ceiling, not over it), so a seam that destroys the request stops
+  // three chunks short of the list - and a seam that merely stopped appending
+  // would drain all eight.
+  const chunks = Array.from({ length: 8 }, () => 'A'.repeat(1048576));
+  const r = await runFaked(REVIEW_ARGS, { status: 200, chunks });
+  assert.equal(r.envelope.ok, false, r.line);
+  assert.equal(r.envelope.reason, 'over-response');
+  assert.equal(r.code, 1);
+  assert.match(r.envelope.detail, new RegExp(`over ${MAX_RESPONSE_BYTES} bytes`));
+  assert.equal(r.seen[0].chunksEmitted, 5, 'the stream was cut on the crossing chunk');
+  const ev = providerEvents().slice(before);
+  assert.equal(ev.length, 1, JSON.stringify(ev));
+  assert.equal(ev[0].outcome, 'over-response');
+  assert.equal(ev[0].degraded, true);
+  assert.equal(ev[0].command, 'review');
+});
+
+test('bound: one read path, so consult and detect-models are bounded by the same change', async () => {
+  const chunks = Array.from({ length: 8 }, () => 'A'.repeat(1048576));
+  const consult = await runFaked(['consult', '--provider', 'openai', '--model', 'gpt-fault-fixture',
+    '--payload', FAULT_PAYLOAD_CONSULT], { status: 200, chunks });
+  assert.equal(consult.envelope.reason, 'over-response');
+  assert.equal(consult.seen[0].chunksEmitted, 5);
+  const detect = await runFaked(['detect-models', '--provider', 'openai'], { status: 200, chunks });
+  assert.equal(detect.envelope.reason, 'over-response');
+  assert.equal(detect.seen[0].chunksEmitted, 5);
+  const ev = providerEvents().slice(-2);
+  assert.deepEqual(ev.map((e) => e.command), ['consult', 'detect-models']);
+  assert.deepEqual(ev.map((e) => e.outcome), ['over-response', 'over-response']);
+});
+
+test('bound: a body one byte under the ceiling still resolves exactly as before', async () => {
+  // The half a ceiling makes easy to break. Under the bound nothing changes:
+  // same envelope, same parse, same findings.
+  const r = await runFaked(REVIEW_ARGS, { status: 200, body: bodyOfBytes(MAX_RESPONSE_BYTES - 1) });
+  assert.equal(r.envelope.ok, true, r.line.slice(0, 300));
+  assert.equal(r.envelope.findings.length, 1);
+  assert.equal(r.envelope.findings[0].severity, 'low');
+  assert.equal(r.code, 0);
+});
+
+test('bound: an ordinary socket error is still transport, not over-response', async () => {
+  // The discrimination the tag exists for. Both paths reject out of the same
+  // `request()` promise, so a seam that matched on the message text - or that
+  // mapped every rejection to one word - would be indistinguishable here.
+  const r = await runFaked(REVIEW_ARGS, { timeout: true });
+  assert.equal(r.envelope.reason, 'transport');
+  assert.equal(providerEvents().slice(-1)[0].outcome, 'transport');
+});
+
+/** Kept in step with `MAX_HTTP_BODY_BYTES` by hand, for the same reason. */
+const MAX_HTTP_BODY_BYTES = 1024;
+
+test('bound: the http envelope carries a capped, sanitized excerpt - one shape always', async () => {
+  // The body a misconfigured gateway actually returns: the upstream error PLUS
+  // an echo of the request it could not forward, headers and query string
+  // included. None of it is in URL userinfo position, so this is exactly what
+  // `redactUrl` alone could not see.
+  const body = JSON.stringify({
+    error: { message: 'upstream rejected the request', code: 'bad_gateway' },
+    request: {
+      authorization: 'Bearer sk-live-abc123',
+      url: 'https://api.example/v1/responses?key=sk-live-abc123&x=1',
+      api_token: 'glpat-xyz',
+      secret: 'hunter2',
+    },
+  });
+  const r = await runFaked(REVIEW_ARGS, { status: 502, body });
+  assert.equal(r.envelope.reason, 'http');
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.ok(Buffer.byteLength(r.envelope.detail.body) <= MAX_HTTP_BODY_BYTES, r.envelope.detail.body);
+  for (const planted of ['key=', 'token', 'secret', 'Bearer',
+    'sk-live-abc123', 'glpat-xyz', 'hunter2']) {
+    assert.equal(r.envelope.detail.body.includes(planted), false,
+      `${planted} survived: ${r.envelope.detail.body}`);
+  }
+  // The other half: an excerpt that redacted everything would be worthless, so
+  // the diagnostic a reader acts on must still be there.
+  assert.match(r.envelope.detail.body, /upstream rejected the request/);
+  assert.match(r.envelope.detail.body, /bad_gateway/);
+});
+
+test('bound: a body over the excerpt cap is cut, and says so', async () => {
+  // The proxy HTML error page - the case the cap exists for. `detail.body` is a
+  // string here and a string in the 155-byte model_not_found case above: ONE
+  // shape, so no consumer branches on `typeof detail.body`.
+  const page = `<html><head><title>504 Gateway Time-out</title></head><body>${'p'.repeat(20000)}</body></html>`;
+  const r = await runFaked(REVIEW_ARGS, { status: 504, body: page });
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.equal(Buffer.byteLength(r.envelope.detail.body), MAX_HTTP_BODY_BYTES);
+  assert.ok(r.envelope.detail.body.endsWith('...[truncated]'), r.envelope.detail.body);
+  assert.match(r.envelope.detail.body, /504 Gateway Time-out/);
+  assert.equal(r.envelope.detail.status, 504);
+});
+
+test('bound: a body near the RESPONSE ceiling is excerpted in bounded time', async () => {
+  // The two bounds meet here. `MAX_RESPONSE_BYTES` lets a non-2xx body reach
+  // 4 MiB, and `redactUrl` is quadratic in its input - measured 78ms at 10KB,
+  // 5.1s at 80KB - so sanitizing the whole body would cost hours for one failure
+  // envelope. The generous wall-clock bound is deliberate: it is not a benchmark,
+  // it is the difference between milliseconds and geological time, and it
+  // reddens by TIMING OUT if the sanitize window is ever removed.
+  const body = 'p'.repeat(1048576);
+  const started = Date.now();
+  const r = await runFaked(REVIEW_ARGS, { status: 502, body });
+  assert.ok(Date.now() - started < 5000, `took ${Date.now() - started}ms`);
+  assert.equal(typeof r.envelope.detail.body, 'string');
+  assert.equal(Buffer.byteLength(r.envelope.detail.body), MAX_HTTP_BODY_BYTES);
 });
 
 // --- the drop-outs BEFORE the wire (QW-05, AC7) -------------------------------
@@ -1019,4 +1559,160 @@ test('fault: a 200 the schema does not match is bad-shape, distinct from bad-jso
   // `validateFindings` names the FIRST defect, which for a `{file}`-only
   // finding is `claim` - the field order it checks, not the schema's order.
   assert.match(r.envelope.detail, /finding\.claim must be a string/);
+});
+
+// --- the RVP-01 falsifier -----------------------------------------------------
+//
+// WATCHED FAILING AT e1e6c0a, the tip of this plan's unpatched tree. Observed
+// there, with this file copied into that checkout:
+//
+//   $ node --test --test-name-pattern='RVP-01' cadence-core/bin/review-provider.test.mjs
+//   AssertionError [ERR_ASSERTION]: a flooding provider must meet a bound
+//   Cadence owns, got: {"ok":false,"reason":"internal","detail":"Cannot read
+//   properties of null (reading 'output_text')"}
+//     + actual - expected
+//     + 'internal'
+//     - 'over-response'
+//
+// Which is the defect exactly: 8 MiB was concatenated whole into one string, the
+// parse of it failed, and what the caller got back for a flooding provider was
+// `internal` with a TypeError in it. Nothing named the bound because nothing
+// held one.
+//
+// Both halves of RVP-01 in one test, driven through the seam's own entry unwind
+// and the existing fault fixture, importing nothing this plan added - so against
+// the unpatched tree it fails on an ASSERTION rather than on a missing export,
+// which is the difference between proving the behaviour changed and proving the
+// module did. To re-watch it: `git worktree add --detach <tmp> e1e6c0a`, copy
+// this file into that checkout's `cadence-core/bin/`, `node --test` it there,
+// then remove the worktree.
+
+test('RVP-01: the response is bounded by bytes Cadence owns, and the failure envelope is capped', async () => {
+  // Half one. 8 MiB arriving in 1 MiB chunks. Unbounded, the seam concatenates
+  // all of it and reports on whatever the string turned out to be; bounded, it
+  // destroys the request on the crossing chunk and names its own refusal.
+  const flood = await runFaked(REVIEW_ARGS, {
+    status: 200, chunks: Array.from({ length: 8 }, () => 'A'.repeat(1048576)),
+  });
+  assert.equal(flood.envelope.reason, 'over-response',
+    `a flooding provider must meet a bound Cadence owns, got: ${flood.line}`);
+  assert.ok(flood.seen[0].chunksEmitted < 8,
+    'the request must be destroyed, not drained to the end of the body');
+
+  // Half two. A gateway that echoes the request it could not forward - the key
+  // in the query string, the authorization header, and two credential-shaped
+  // fields - inside a body far past the excerpt cap.
+  const echo = JSON.stringify({
+    error: { message: 'upstream rejected the request', code: 'bad_gateway' },
+    request: {
+      authorization: 'Bearer sk-live-abc123',
+      url: 'https://api.example/v1/responses?key=sk-live-abc123',
+      api_token: 'glpat-xyz',
+      secret: 'hunter2',
+    },
+    padding: 'q'.repeat(4096),
+  });
+  const failure = await runFaked(REVIEW_ARGS, { status: 502, body: echo });
+  assert.equal(typeof failure.envelope.detail.body, 'string',
+    `the envelope must carry ONE shape, got: ${typeof failure.envelope.detail.body}`);
+  assert.ok(Buffer.byteLength(failure.envelope.detail.body) <= 1024,
+    `the excerpt must be capped, got ${Buffer.byteLength(failure.envelope.detail.body)} bytes`);
+  for (const planted of ['Bearer', 'key=', 'token', 'secret', 'sk-live-abc123', 'glpat-xyz', 'hunter2']) {
+    assert.equal(failure.envelope.detail.body.includes(planted), false,
+      `${planted} rode the failure envelope`);
+  }
+  assert.match(failure.envelope.detail.body, /upstream rejected the request/);
+});
+
+test('bound: a credential straddling the sanitize window does not reach the envelope', async () => {
+  // The window-edge case the phase-3 deep pass found and this fixes at the
+  // root. `bodyExcerpt` sanitizes a bounded 4096-byte window, so a credential
+  // whose closing quote falls OUTSIDE that window arrives at `redactCredentials`
+  // unterminated. The trailing-token safeguard cannot catch it either: that arm
+  // is gated on `clean <= room`, and this body is built so redaction shrinks the
+  // window to JUST PAST the cap - 73 bytes of the value rode the envelope.
+  //
+  // The prefix must be COMPRESSIBLE for that to happen: 77 credential pairs of
+  // 48 bytes each collapse to 12, which is the ~4:1 ratio that puts the
+  // straddling value inside the first `room` bytes of the sanitized result.
+  const filler = '"token":"' + 'A'.repeat(36) + '", ';
+  const body = filler.repeat(77)
+    + '"password":"SUPERSECRET_' + 'S'.repeat(400) + '"'
+    + 'x'.repeat(8000);
+  const failure = await runFaked(REVIEW_ARGS, { status: 502, body });
+  assert.equal(failure.envelope.detail.body.includes('SUPERSECRET'), false,
+    `a window-straddling credential rode the envelope: ${failure.envelope.detail.body}`);
+  assert.ok(Buffer.byteLength(failure.envelope.detail.body) <= 1024,
+    'the excerpt is still capped');
+});
+
+// --- the RVP-02 falsifier -----------------------------------------------------
+//
+// WATCHED FAILING AT 15b5d4c, the tip of this plan's unpatched tree. Observed
+// there, with this file AND cadence-core/bin/lib/schema-eval.mjs copied into
+// that checkout:
+//
+//   $ node --test --test-name-pattern='RVP-02: local validation' \
+//       cadence-core/bin/review-provider.test.mjs
+//   AssertionError [ERR_ASSERTION]: a zero line number must not reach the
+//   caller as a finding, got: {"ok":true,"provider":"openai","model":
+//   "gpt-fault-fixture","findings":[{"file":"cadence-core/bin/
+//   review-provider.mjs","line":0,"severity":"low","claim":"the shape came
+//   back unchecked","failure_scenario":"it reaches a human for triage as if
+//   it were a finding"}]}
+//     + actual - expected
+//     + true
+//     - false
+//   (exit 1)
+//
+// Which is the defect exactly: local validation checked an integer `line` and
+// three string fields and nothing else, so a provider answer the canonical
+// schema refuses - a zero line number, an empty claim, a key nobody declared -
+// came back `ok:true` and went to a human for triage as if it were a finding.
+//
+// Driven through the seam's own entry unwind and the existing fault fixture,
+// importing nothing this plan added, so against the unpatched tree it fails on
+// its ASSERTIONS rather than on a missing export. That is also why
+// FINDING_SCHEMA reaches this file through a namespace import (see the top): a
+// named import of a symbol the unpatched module does not export is a LINK
+// error, and the file would never load.
+//
+// To re-watch it: `git worktree add --detach <tmp> <SHA>`, copy this file into
+// that checkout's `cadence-core/bin/` AND `cadence-core/bin/lib/schema-eval.mjs`
+// into that checkout's `cadence-core/bin/lib/`, run
+// `node --test --test-name-pattern='RVP-02' cadence-core/bin/review-provider.test.mjs`
+// there, then remove the worktree. The SECOND copy is not optional: the
+// evaluator cases earlier in this file `import` that module, so a checkout
+// carrying only the test file fails at module resolution before any assertion
+// runs - a green-to-red transition that proves nothing about RVP-02. The
+// `--test-name-pattern` scope is what keeps the other new cases in this file,
+// which also redden there, from being mistaken for the watched failure.
+
+test('RVP-02: local validation refuses exactly what the canonical schema refuses', async () => {
+  const finding = (/** @type {any} */ patch) => JSON.stringify({
+    output_text: JSON.stringify({
+      findings: [{
+        file: 'cadence-core/bin/review-provider.mjs', line: 526, severity: 'low',
+        claim: 'the shape came back unchecked',
+        failure_scenario: 'it reaches a human for triage as if it were a finding',
+        ...patch,
+      }],
+    }),
+  });
+
+  // Three answers the schema refuses and the unpatched validator admitted.
+  const cases = [
+    { name: 'a zero line number', body: finding({ line: 0 }), names: /line/ },
+    { name: 'an empty claim', body: finding({ claim: '' }), names: /claim/ },
+    { name: 'a key nobody declared', body: finding({ confidence: 0.4 }), names: /confidence/ },
+  ];
+  for (const c of cases) {
+    const r = await runFaked(REVIEW_ARGS, { status: 200, body: c.body });
+    assert.equal(r.envelope.ok, false,
+      `${c.name} must not reach the caller as a finding, got: ${r.line}`);
+    assert.equal(r.envelope.reason, 'bad-shape',
+      `${c.name} must degrade as bad-shape, got: ${r.line}`);
+    assert.match(r.envelope.detail, c.names,
+      `${c.name}: the diagnostic must name the offending field, got: ${r.envelope.detail}`);
+  }
 });

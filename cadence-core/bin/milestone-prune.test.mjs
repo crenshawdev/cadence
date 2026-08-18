@@ -699,7 +699,323 @@ test('seam: every --label-file refusal is bad-args and leaves the tree untouched
   }
 });
 
+// --- the recall residue: what a close leaves behind (RCL-07) ----------------
+// The residue is written BEFORE the directories go, so every assertion here is
+// about ordering as much as content: the rows have to be on disk in the arm
+// where the removal FAILED, and they have to be there exactly once after the
+// re-run that clears it.
+//
+// This block reads ARCHIVE.md with a local regex and imports nothing new. That
+// is deliberate: the end-to-end falsifier below runs this same FILE against the
+// unpatched tree, where an import of a not-yet-written export would fail the
+// file on load instead of on its assertion.
+
+/** The origin paths an ARCHIVE.md carries, in document order. */
+const originsIn = (text) => [...text.matchAll(/^- `([^`]+)`: /gm)].map((m) => m[1]);
+
+/** The `## ` milestone headings an ARCHIVE.md carries, in document order. */
+const labelsIn = (text) => [...text.matchAll(/^## (.*)$/gm)].map((m) => m[1]);
+
+const PHASE1_SUMMARY = `---
+phase: 1
+status: complete
+---
+
+## Deviations
+
+- [deviation] the zarquon guard fired on a range it did not own
+
+## Open items
+
+- None.
+`;
+
+const PHASE1_UAT = `---
+status: complete
+phase: 1
+---
+
+## Items
+
+### 1. Walk the zarquon install
+expected: a cold clone reaches the plugin
+status: pass
+
+## Summary
+
+total: 1
+`;
+
+const PHASE1_CONTEXT = `# Phase 1 Context
+
+## Durable decisions
+
+- D-01 (RCL-07): the zarquon residue is written before the dirs go
+
+## Decisions
+
+- D-02 (RCL-07): a phase-local note that is not durable
+`;
+
+/**
+ * The scaffold, with phase 1 carrying one real artifact of each indexed kind.
+ * Phase 2.1 keeps its section-less `patched` SUMMARY, which is how these rows
+ * assert that only a parsed snippet lands - not every completed phase.
+ */
+function scaffoldWithArtifacts() {
+  const dir = scaffold();
+  writeFileSync(join(dir, 'phases', '1', 'SUMMARY.md'), PHASE1_SUMMARY);
+  writeFileSync(join(dir, 'phases', '1', 'UAT.md'), PHASE1_UAT);
+  writeFileSync(join(dir, 'phases', '1', 'CONTEXT.md'), PHASE1_CONTEXT);
+  return dir;
+}
+
+const RESIDUE_ORIGINS = ['phases/1/SUMMARY.md', 'phases/1/UAT.md', 'phases/1/CONTEXT.md'];
+
+test('seam: a delete-mode close writes its residue before the directories go', () => {
+  const dir = scaffoldWithArtifacts();
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 3, 'the envelope states the count, so a no-op is legible');
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(labelsIn(text), ['v3.5.2'], 'one heading for one milestone');
+  assert.deepEqual(originsIn(text), RESIDUE_ORIGINS,
+    'SUMMARY then UAT then CONTEXT, the order the live walk uses');
+  assert.match(text, /- `phases\/1\/SUMMARY\.md`: the zarquon guard fired on a range it did not own$/m,
+    'the `[deviation]` tag is stripped exactly as the live walk strips it');
+  assert.match(text, /- `phases\/1\/UAT\.md`: Walk the zarquon install a cold clone reaches the plugin$/m);
+  assert.match(text, /- `phases\/1\/CONTEXT\.md`: D-01 \(RCL-07\): the zarquon residue/m);
+  assert.ok(!/D-02/.test(text), 'a phase-local ## Decisions row is not durable and does not land');
+  // And the directories the rows describe are gone, which is the whole point.
+  assert.ok(!existsSync(join(dir, 'phases', '1')));
+});
+
+test('seam: the archive arm writes the same rows the delete arm does', () => {
+  const dir = scaffoldWithArtifacts();
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'archive']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 3);
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(originsIn(text), RESIDUE_ORIGINS);
+  assert.ok(existsSync(join(dir, '_archive-v3.5.2', '1', 'SUMMARY.md')));
+});
+
+test('seam: a second identical run adds no row and leaves ARCHIVE.md byte-identical', () => {
+  const dir = scaffoldWithArtifacts();
+  run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  const before = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  const again = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(again.action, 'skip');
+  assert.equal(readFileSync(join(dir, 'ARCHIVE.md'), 'utf8'), before);
+});
+
+test('seam: an interrupted close keeps its rows, and the re-run neither duplicates nor drops them', () => {
+  const dir = scaffoldWithArtifacts();
+  // Block phase 1's move the way the partial-prune tests above do. The residue
+  // is written before that failure, which is exactly the interrupt D-01 exists
+  // for: the directory is still live and its rows are already on disk.
+  mkdirSync(join(dir, '_archive-v3.5.2', '1', 'squatter'), { recursive: true });
+  const first = run(dir, ['--label', 'v3.5.2', '--mode', 'archive']);
+  assert.equal(first.ok, false);
+  assert.equal(first.reason, 'partial-prune');
+  assert.deepEqual(first.failed, [1]);
+  assert.equal(first.residue_rows, 3, 'the rows were written ahead of the removal that failed');
+  const after = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(originsIn(after), RESIDUE_ORIGINS);
+  assert.ok(existsSync(join(dir, 'phases', '1', 'SUMMARY.md')), 'the failed phase is still live');
+
+  // Clear what blocked it and re-run: phase 1 is a candidate again and its
+  // artifacts are readable again, so without the containment guard this run
+  // writes a second copy of all three rows.
+  rmDirHack(join(dir, '_archive-v3.5.2', '1'));
+  const second = run(dir, ['--label', 'v3.5.2', '--mode', 'archive']);
+  assert.equal(second.ok, true);
+  assert.deepEqual(second.phases, [1]);
+  assert.equal(second.residue_rows, 0, 'a phase already under this heading is skipped, not re-read');
+  assert.equal(readFileSync(join(dir, 'ARCHIVE.md'), 'utf8'), after, 'byte-identical after the re-run');
+  assert.deepEqual(originsIn(after), RESIDUE_ORIGINS, 'present exactly once');
+  assert.ok(existsSync(join(dir, '_archive-v3.5.2', '1', 'SUMMARY.md')), 'and the phase finally moved');
+});
+
+test('seam: phases holding no readable artifact write no ARCHIVE.md at all', () => {
+  // The bare scaffold: both completed SUMMARYs are section-less prose, so the
+  // three parsers return nothing and there is no residue to write.
+  const dir = scaffold();
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 0);
+  assert.ok(!existsSync(join(dir, 'ARCHIVE.md')), 'no rows, no file');
+});
+
+// --- the falsifier: close a milestone, then recall out of it (RCL-07) -------
+//
+// WATCHED FAILING AT 182d2e1, the tip of this plan's unpatched tree. Observed
+// there, on this repository's own live corpus:
+//
+//   $ node cadence-core/bin/planning.mjs recall --root . b912d06
+//   {"ok":true,"results":[],"total":0}
+//
+// `b912d06` is a commit hash that appears only in the v3.5.2 phase-1 SUMMARY
+// this project pruned at its close - a deviation Cadence wrote down in order to
+// remember it, unreachable from the corpus the moment the phase retired. Every
+// hit `recall` returned on that tree, for any query, came from CAPTURE.md.
+//
+// The two cases below are that observation as a check: the seams are reached
+// through the CLI ONLY and nothing task 1 exported is imported, so against
+// 182d2e1 these fail on their assertion rather than on a missing export. To
+// re-watch it: `git worktree add --detach <tmp> 182d2e1`, copy this file into
+// that checkout's `cadence-core/bin/`, `node --test` it there, then remove the
+// worktree.
+
+const FALSIFIER_ROADMAP = `# Roadmap: Falsifier
+
+## Overview
+
+Prose.
+
+## Phases
+
+- [x] **Phase 1: Closed** - the milestone that retired
+- [ ] **Phase 2: Open** - still live
+
+## Phase Details
+
+### Phase 1: Closed
+**Goal:** retire
+
+### Phase 2: Open
+**Goal:** continue
+`;
+
+/**
+ * A `.planning` holding one completed phase with one artifact of each indexed
+ * kind. `quixotrope` appears in the SUMMARY deviation and NOWHERE else in the
+ * fixture; `zarquon` appears once in each of the three, which is what makes the
+ * three sources separable in one result list.
+ */
+function falsifierTree() {
+  const root = mkdtempSync(join(tmpdir(), 'cad-rcl07-'));
+  const dir = join(root, '.planning');
+  mkdirSync(join(dir, 'phases', '1'), { recursive: true });
+  mkdirSync(join(dir, 'phases', '2'), { recursive: true });
+  writeFileSync(join(dir, 'ROADMAP.md'), FALSIFIER_ROADMAP);
+  writeFileSync(join(dir, 'phases', '1', 'SUMMARY.md'),
+    '---\nphase: 1\nstatus: complete\n---\n\n## Deviations\n\n'
+    + '- [deviation] the quixotrope guard fired on a zarquon range it did not own\n');
+  writeFileSync(join(dir, 'phases', '1', 'UAT.md'),
+    '---\nstatus: complete\nphase: 1\n---\n\n## Items\n\n'
+    + '### 1. Walk the zarquon install\nexpected: a cold clone reaches the plugin\nstatus: pass\n'
+    + '\n## Summary\n\ntotal: 1\n');
+  writeFileSync(join(dir, 'phases', '1', 'CONTEXT.md'),
+    '# Phase 1 Context\n\n## Durable decisions\n\n'
+    + '- D-01 (RCL-07): the zarquon residue is written before the directories go\n');
+  writeFileSync(join(dir, 'phases', '2', 'CONTEXT.md'), '# Phase 2 Context\n');
+  return dir;
+}
+
+/**
+ * `planning.mjs recall` over a fixture. The global config layer is pinned off a
+ * nonexistent path the way planning.test.mjs pins it: a developer's real
+ * ~/.claude/cadence/config.json setting `memory.backend: none` would otherwise
+ * empty these results locally while CI stayed green.
+ */
+function recallIn(dir, query) {
+  try {
+    return JSON.parse(execFileSync('node', [PLANNING, 'recall', query, '--dir', dir], {
+      encoding: 'utf8',
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-no-such-global.json') },
+    }));
+  } catch (e) {
+    return JSON.parse(e.stdout);
+  }
+}
+
+for (const mode of ['delete', 'archive']) {
+  test(`falsifier: a close in \`${mode}\` mode leaves its phase recallable (RCL-07)`, () => {
+    const dir = falsifierTree();
+
+    // It is recallable BEFORE the close - otherwise this case could pass on a
+    // fixture that never had a corpus at all.
+    assert.equal(recallIn(dir, 'quixotrope').results.length, 1, 'live before the close');
+
+    const pruned = run(dir, ['--label', 'v9.9.9', '--mode', mode]);
+    assert.equal(pruned.ok, true, JSON.stringify(pruned));
+    assert.ok(!existsSync(join(dir, 'phases', '1')),
+      'the phase directory is out of the live walk, whichever arm ran');
+
+    // The SUMMARY deviation, by a term that exists nowhere else in the fixture.
+    const one = recallIn(dir, 'quixotrope');
+    assert.equal(one.ok, true);
+    assert.equal(one.results.length, 1, JSON.stringify(one.results));
+    assert.equal(one.results[0].source, 'v9.9.9/phases/1/SUMMARY.md',
+      'the milestone that retired it AND the artifact it came from');
+    assert.equal(one.results[0].phase, 1);
+    assert.match(one.results[0].snippet, /the quixotrope guard fired/);
+
+    // And the three artifacts stay separable from each other in one result set.
+    const all = recallIn(dir, 'zarquon');
+    assert.deepEqual(all.results.map((r) => r.source).sort(), [
+      'v9.9.9/phases/1/CONTEXT.md',
+      'v9.9.9/phases/1/SUMMARY.md',
+      'v9.9.9/phases/1/UAT.md',
+    ], JSON.stringify(all.results));
+  });
+}
+
 // rm helper without importing rmSync at top (test file stays minimal).
 function rmDirHack(p) {
   execFileSync('rm', ['-rf', p]);
 }
+
+// --- the two containment defects the risk_surface gate caught ----------------
+//
+// Both are data-loss shapes rather than dirty-output shapes: a false "already
+// archived" suppresses the residue write, and the directory removal right after
+// it makes the omission permanent. Both assert on ORIGINS, because the phase
+// number alone is exactly the resolution that was too coarse.
+
+test('seam: a foreign heading that prefixes this label does not suppress the write', () => {
+  const dir = scaffoldWithArtifacts();
+  // A section this close does not own, named so the old
+  // `source.startsWith(label + "/")` test answers true for it.
+  writeFileSync(join(dir, 'ARCHIVE.md'),
+    '## v3.5.2/forged\n\n- `phases/1/SUMMARY.md`: a row from somewhere else\n');
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 3, 'phase 1 is unarchived under THIS label, so all three land');
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(labelsIn(text), ['v3.5.2/forged', 'v3.5.2'], 'the foreign section is untouched');
+  const own = text.slice(text.indexOf('## v3.5.2\n'));
+  assert.deepEqual(originsIn(own), RESIDUE_ORIGINS);
+});
+
+test('seam: a partial section re-runs the artifacts it is missing, not the phase whole', () => {
+  const dir = scaffoldWithArtifacts();
+  // What a close that landed SUMMARY and CONTEXT but could not read UAT.md
+  // leaves behind. Keyed on the phase number, the retry skips all three.
+  writeFileSync(join(dir, 'ARCHIVE.md'),
+    '## v3.5.2\n\n- `phases/1/SUMMARY.md`: already landed\n'
+    + '- `phases/1/CONTEXT.md`: already landed\n');
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.equal(r.residue_rows, 1, 'only the missing artifact is re-read');
+  const text = readFileSync(join(dir, 'ARCHIVE.md'), 'utf8');
+  assert.deepEqual(originsIn(text),
+    ['phases/1/SUMMARY.md', 'phases/1/CONTEXT.md', 'phases/1/UAT.md'],
+    'the UAT row lands; neither pre-existing row is duplicated');
+  assert.equal(originsIn(text).filter((o) => o === 'phases/1/SUMMARY.md').length, 1);
+});
+
+test('seam: a held ARCHIVE.md lock refuses the close before any directory moves', () => {
+  // The blocking `diff` gate's finding: unserialized, two closes clobber each
+  // other's rows and then remove the directories that were the only other copy.
+  // A refused lock must therefore stop BEFORE the removal, not after it.
+  const dir = scaffoldWithArtifacts();
+  writeFileSync(join(dir, 'ARCHIVE.md.lock'), ''); // a fresh mtime: a live writer holds it
+  const r = run(dir, ['--label', 'v3.5.2', '--mode', 'delete']);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'archive-locked');
+  assert.match(r.detail, /ARCHIVE\.md\.lock/, 'the reason must name the lock');
+  assert.ok(existsSync(join(dir, 'phases', '1')), 'the phase directory must survive a refused close');
+  assert.ok(!existsSync(join(dir, 'ARCHIVE.md')), 'and nothing was written');
+});

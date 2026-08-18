@@ -1,5 +1,7 @@
 # Cadence
 
+[![test](https://git.jcrenshaw.dev/crenshawdev/cadence/badges/workflows/test.yml/badge.svg)](https://git.jcrenshaw.dev/crenshawdev/cadence/actions?workflow=test.yml)
+
 The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
 
 ## Install
@@ -94,7 +96,7 @@ Then you work one phase at a time:
 
 Between commands you `/clear`, every one, not just the phase boundaries. The window empties and you lose nothing, because each command reads `.planning/` and git back into context, and a window carried across commands is spend without information. Even a review still in flight survives the cut: an advisory reviewer writes its own findings file and its own trace line, so the session that fired it can end freely. The first external project run went through the whole cycle one command per session. Run `/cad-progress` after a clear and it tells you that phase 1 is verified and phase 2 is next, then you plan phase 2 the same way. When you hit a wall mid-build, `/cad-debug` runs the scientific method with hypotheses that survive a clear, and `/cad-capture` parks a stray todo or idea without derailing the phase you're in.
 
-When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, bumps the version, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. It also reads the run record back at you: `trace suggest` turns the milestone's own trace into evidence-backed retune suggestions, a gate whose fires kept coming back empty, a role that never needed its escalation, each named with its config key and its receipts, and applies none of them without your say. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that. Before it asks, it names the issues this branch's commits reference and which of them are still open on the host your origin points at, so you decide to ship knowing what the work did and did not answer; it closes nothing, and `git.issue_check: false` turns the report off.
+When the phases that make up a release are done, `/cad-milestone` audits that nothing was silently dropped, bumps the version, prunes the completed phases from the live roadmap, and evolves the docs for the next cycle. It also reads the run record back at you: `/cad-suggest` turns the milestone's own trace into evidence-backed retune suggestions, a gate whose fires kept coming back empty, a role that never needed its escalation, each named with its config key, the value in force, the direction to move it and the target value where the record can price one, and it ends by offering to route the tweaks you accept to `/cad-config` rather than writing any of them itself. To publish, `/cad-land` asks how you want to ship, push, MR or PR, tag, or leave it local, with no preselected default, and does exactly that. Before it asks, it names the issues this branch's commits reference and which of them are still open on the host your origin points at, so you decide to ship knowing what the work did and did not answer; it closes nothing, and `git.issue_check: false` turns the report off.
 
 That's the whole shape of it: define once, then loop `context -> plan -> execute -> verify` per phase, clearing aggressively, until the milestone is ready to cut.
 
@@ -125,7 +127,7 @@ Everything is a `/cad-*` command. `/cad-help` prints the full reference, `/cad-h
 - **`/cad-spike`** — a time-boxed experiment to resolve one unknown before you bet on it.
 - **`/cad-task`** — a small off-roadmap task with atomic commits.
 - **`/cad-report`** — the run record as receipts: what each dispatch cost, what the gates caught, what got refuted. The trace prices every subagent Cadence runs; this is where you read the bill.
-- **`/cad-suggest`** — the same record read as a retune: each suggestion carries the trace figures behind it and names the one config key it concerns, and applies none of them.
+- **`/cad-suggest`** — the same record read as a retune: each tweak names its config key, the value in force, a direction and a target where the record can price one, and the run ends by offering to route the ones you accept to `/cad-config`.
 - **`/cad-health`** — a quick planning-health check.
 - **`/cad-help`** — the command reference.
 

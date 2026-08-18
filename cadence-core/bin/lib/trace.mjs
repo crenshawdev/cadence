@@ -317,17 +317,27 @@ export function appendEvent(planningRoot, event) {
  * @property {boolean} capped true when the file is at or over MAX_TRACE_BYTES
  * @property {{routing: number, provider: number, lifecycle: number, outcome: number}} counts
  * @property {number} malformed lines that did not parse as JSON
- * @property {Record<string, {dispatches: number, tokens?: number, unrecorded?: number}>} roles
- *   what each role COST, keyed by the lifecycle events' `role` field
+ * @property {Record<string, {dispatches: number, tokens?: number, turns?: number, unrecorded?: number, turns_unrecorded?: number}>} roles
+ *   what each role's returns REPORTED, keyed by the lifecycle events' `role`
+ *   field. Two independent figures with two independent counters: `tokens` with
+ *   `unrecorded` (dispatches whose return carried no token figure) and `turns`
+ *   with `turns_unrecorded` (dispatches whose return carried no tool-call
+ *   count). Collapsing the two counters would make a dispatch that reported
+ *   tokens but no turns indistinguishable from the reverse. Each figure and its
+ *   counter appear only where at least one figure of that kind landed on the
+ *   role, so a record written before either flag existed renders unchanged.
  * @property {Record<string, any>[]} events
- * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null}[]} brackets
+ * @property {{corr: any, phase: any, plan: any, role: string, event: any, ts: any, end: any, ms: number|null, tokens: number|null, turns?: number}[]} brackets
  *   every dispatch that PAIRED, one row each, in the order its terminal was
  *   read. The pairing was already computed here for the accounting; exposing it
  *   is what lets a caller print per-worker rows without re-deriving `open` and
  *   `seenTerminals` for itself - and re-deriving them is how two readers of one
  *   record start disagreeing about which bracket closed. `role` is the
  *   DISPATCH's, the same authority `roles` bills on; `event` is the terminal's,
- *   so a `checkpoint` row is distinguishable from a `return` one.
+ *   so a `checkpoint` row is distinguishable from a `return` one. `turns` is
+ *   the one OPTIONAL key: `ms` and `tokens` are on every row (null where they
+ *   could not be computed), while a bracket whose close carried no tool-call
+ *   count has no `turns` key at all.
  * @property {{corr: any, phase: any, plan: any, ts: any}[]} unpaired dispatches with no terminal event
  * @property {{corr: any, phase: any, plan: any, ts: any, event: any, dispatched: string, closed: string}[]} mismatched
  *   paired brackets whose terminal named a role its dispatch did not
@@ -426,30 +436,66 @@ export function renderTrace(planningRoot, phase) {
   // emitted. Gating the total on `recorded` instead would silently drop the
   // figure carried by an UNMATCHED terminal - a real number, on an event that
   // funds no dispatch.
-  /** @type {Map<string, {dispatches: number, tokens: number, recorded: number, figures: number}>} */
+  //
+  // TURNS get their OWN `turns`/`turnsRecorded`/`turnsFigures` triple rather
+  // than sharing the token ones (D-03). The two figures are read off the same
+  // subagent return but arrive independently - a host can surface one and not
+  // the other, and a close site can carry one flag and drop the other - so a
+  // single `recorded` counter would make a dispatch that reported tokens but no
+  // turns indistinguishable from the reverse, and `unrecorded` would stop
+  // meaning "no token figure was reported" without one test going red.
+  /** @type {Map<string, {dispatches: number, tokens: number, recorded: number, figures: number, turns: number, turnsRecorded: number, turnsFigures: number}>} */
   const roleTotals = new Map();
   /** @param {string} k */
   const roleRow = (k) => {
     let row = roleTotals.get(k);
-    if (!row) { row = { dispatches: 0, tokens: 0, recorded: 0, figures: 0 }; roleTotals.set(k, row); }
+    if (!row) {
+      row = {
+        dispatches: 0, tokens: 0, recorded: 0, figures: 0,
+        turns: 0, turnsRecorded: 0, turnsFigures: 0,
+      };
+      roleTotals.set(k, row);
+    }
     return row;
   };
 
-  // Coordinator-residue accumulators, keyed by PHASE and never by `corr`. One
-  // phase can still hold more than one id - a RE-RUN starts a new one, and a
-  // phase whose anchor is missing entirely (a head-truncated read) keeps the
-  // bare form the pre-anchor repair above could not resolve - so a corr-keyed
-  // rollup would split ONE coordinator's record into two and report its time
-  // twice. `last` is the phase's newest timestamp across every family,
-  // because the final marker's window has no next marker to close it and the
-  // phase's own last event is the only honest end for it.
-  /** @type {Map<string, {phase: any, markers: {step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
+  // Coordinator-residue accumulators, keyed by `corr` and never by PHASE
+  // (phase 5 D-01). A phase NUMBER is not a run: every re-run and every later
+  // milestone that reaches the same number files under it, so a phase-keyed
+  // rollup pairs one run's last marker with a DIFFERENT run's last event and
+  // bills the clock between two sessions as coordinator time. Measured on this
+  // repository 2026-08-17, phase "2" holds 9 distinct `corr` ids spanning
+  // 2026-08-08 to 2026-08-17, and its 4,677-minute `commit` window was opened
+  // at 2026-08-13T20:30:13.500Z by `2-6790224`, a run whose OWN last event is
+  // 25 seconds later at 20:30:38. Keying on `corr` closes that window where its
+  // run closed.
+  //
+  // This REVERSES the choice this block shipped with, which rolled a phase's
+  // ids up together so a re-run - or a phase whose anchor is missing entirely,
+  // where a head-truncated read leaves the bare form behind - could not split
+  // ONE coordinator's record in two and report its time twice. The PASS-2
+  // pre-anchor repair above now joins a phase's pre-anchor events to the anchor
+  // that follows them, which is most of that case; where it does not, two ids
+  // really are two runs, and reporting them apart is the answer rather than the
+  // defect.
+  //
+  // `last` is therefore the newest timestamp across every family carrying THIS
+  // `corr`, because the final marker's window has no next marker to close it
+  // and its own run's last event is the only honest end for it. A marker that
+  // IS its run's last event closes at itself and contributes a ZERO-length
+  // window: the record holds no evidence the coordinator kept working after its
+  // own last act, and inventing an end is the class of guess this key exists to
+  // remove. An event carrying no `corr` at all keys the empty string, exactly
+  // as the worker key already does with a missing `plan` - one rule, no second
+  // case. The `phase` a `steps[]` row reports comes from the MARKER's own
+  // event, since the accumulator key is no longer a phase.
+  /** @type {Map<string, {markers: {phase: any, step: any, ts: any, t: number}[], spans: {a: number, b: number}[], last: number}>} */
   const coord = new Map();
-  /** @param {any} p */
-  const coordRow = (p) => {
-    const k = key(p);
+  /** @param {any} c */
+  const coordRow = (c) => {
+    const k = key(c);
     let row = coord.get(k);
-    if (!row) { row = { phase: p, markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
+    if (!row) { row = { markers: [], spans: [], last: -Infinity }; coord.set(k, row); }
     return row;
   };
 
@@ -537,7 +583,7 @@ export function renderTrace(planningRoot, phase) {
   // Each pending entry carries the two accounting fields beyond the identity
   // `unpaired` renders: `role` so a terminal bills the half that OPENED the
   // worker, and `funded` so one dispatch can be funded exactly once.
-  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean, tokens: number|null}[]>} */
+  /** @type {Map<string, {corr: any, phase: any, plan: any, ts: any, role: string, funded: boolean, tokens: number|null, turnsFunded: boolean, turns: number|null}[]>} */
   const open = new Map();
 
   // Every terminal's full identity, so the SECOND copy of one funds nothing. A
@@ -561,13 +607,13 @@ export function renderTrace(planningRoot, phase) {
   /** @type {Set<string>} */
   const seenTerminals = new Set();
   for (const e of out.events) {
-    // Every family feeds the phase's end-of-record mark, not the lifecycle one
+    // Every family feeds the RUN's end-of-record mark, not the lifecycle one
     // alone: the coordinator's last step is still running while the routing and
     // outcome events it produced are being written, so an end taken from
     // lifecycle events only would stop the clock early.
     const t = millis(e.ts);
     if (t !== null) {
-      const row = coordRow(e.phase);
+      const row = coordRow(e.corr);
       if (t > row.last) row.last = t;
     }
 
@@ -578,7 +624,7 @@ export function renderTrace(planningRoot, phase) {
     // event carries no `--role` at all (D-07), and a branch that keyed the empty
     // string would render a nameless worker row through `workflows/progress.md`.
     if (e.event === COORDINATOR) {
-      if (t !== null) coordRow(e.phase).markers.push({ step: e.step, ts: e.ts, t });
+      if (t !== null) coordRow(e.corr).markers.push({ phase: e.phase, step: e.step, ts: e.ts, t });
       continue;
     }
 
@@ -596,6 +642,10 @@ export function renderTrace(planningRoot, phase) {
     // hand-edited or foreign-producer line contributes NOTHING and is never
     // string-concatenated onto the total.
     const tokens = typeof e.tokens === 'number' && Number.isFinite(e.tokens) ? e.tokens : null;
+    // The same guard, for the same reason: a non-numeric or non-finite `turns`
+    // on a hand-edited or foreign-producer line contributes NOTHING and is
+    // never string-concatenated onto a total.
+    const turns = typeof e.turns === 'number' && Number.isFinite(e.turns) ? e.turns : null;
 
     const worker = `${key(e.corr)}\0${key(e.phase)}\0${key(e.plan)}`;
     if (e.event === DISPATCH) {
@@ -605,8 +655,18 @@ export function renderTrace(planningRoot, phase) {
       // A figure on the OPEN half is unusual - prose writes it at the close -
       // but it is counted rather than dropped, and it marks THIS dispatch
       // funded so its own terminal cannot fund it a second time.
-      const entry = { corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role, funded: false, tokens: null };
+      const entry = {
+        corr: e.corr, phase: e.phase, plan: e.plan, ts: e.ts, role,
+        funded: false, tokens: null, turnsFunded: false, turns: null,
+      };
       if (tokens !== null) { row.tokens += tokens; row.recorded++; row.figures++; entry.funded = true; entry.tokens = tokens; }
+      // Funded SEPARATELY from the token half: a dispatch already marked funded
+      // by a token figure must still be able to have its turn count recorded,
+      // and neither flag may let one dispatch be counted twice on its own side.
+      if (turns !== null) {
+        row.turns += turns; row.turnsRecorded++; row.turnsFigures++;
+        entry.turnsFunded = true; entry.turns = turns;
+      }
       const pending = open.get(worker) || [];
       pending.push(entry);
       open.set(worker, pending);
@@ -618,7 +678,10 @@ export function renderTrace(planningRoot, phase) {
       // in `role` is NOT a replay - it pairs normally and surfaces in
       // `mismatched` above, and a real replay carries the same role, so
       // discriminating on role costs this rule nothing.
-      const identity = `${worker}\0${e.event}\0${key(e.role)}\0${key(e.ts)}\0${tokens === null ? '' : tokens}`;
+      // The turn figure discriminates a replay exactly as the token figure
+      // does: two closes differing only in their turn count are two closes, not
+      // one replay, and folding them would drop a real figure off the record.
+      const identity = `${worker}\0${e.event}\0${key(e.role)}\0${key(e.ts)}\0${tokens === null ? '' : tokens}\0${turns === null ? '' : turns}`;
       if (seenTerminals.has(identity)) continue;
       seenTerminals.add(identity);
 
@@ -632,7 +695,7 @@ export function renderTrace(planningRoot, phase) {
       // gap the marker exists to show.
       if (matched) {
         const a = millis(matched.ts);
-        if (a !== null && t !== null && t > a) coordRow(e.phase).spans.push({ a, b: t });
+        if (a !== null && t !== null && t > a) coordRow(e.corr).spans.push({ a, b: t });
         // The bracket ROW, taken here because this is the one place the two
         // halves are both in hand. `ms` is null rather than 0 when either
         // timestamp is unreadable: a duration of zero and a duration nobody
@@ -645,6 +708,16 @@ export function renderTrace(planningRoot, phase) {
           event: e.event, ts: matched.ts, end: e.ts,
           ms: a !== null && t !== null ? t - a : null,
           tokens: tokens !== null ? tokens : matched.tokens,
+          // `turns` is the one bracket field that is OMITTED rather than null
+          // when no figure exists. `ms` and `tokens` predate the flag and a
+          // reader already expects those keys on every row, but a `turns: null`
+          // would put a NEW key on every bracket of every trace written before
+          // the flag - the exact opposite of the omit-not-zero rule at the
+          // writer, and it would contradict the role row one clause below,
+          // which emits no turn key at all where nothing landed.
+          ...(turns !== null || matched.turns !== null
+            ? { turns: turns !== null ? turns : matched.turns }
+            : {}),
         });
         // REPORTED, never billed. The accounting below is unchanged - the
         // dispatch is still the authority for whose bill this is - but a
@@ -678,6 +751,15 @@ export function renderTrace(planningRoot, phase) {
         // would otherwise vanish from the `unrecorded` count.
         if (matched && !matched.funded) { row.recorded++; matched.funded = true; }
       }
+      if (turns !== null) {
+        // Bills the DISPATCH's role, on the same authority and with the same
+        // unmatched-terminal fallback the token half states directly above:
+        // the dispatch is the half that opened the worker.
+        const row = roleRow(matched ? matched.role : key(e.role));
+        row.turns += turns;
+        row.turnsFigures++;
+        if (matched && !matched.turnsFunded) { row.turnsRecorded++; matched.turnsFunded = true; }
+      }
     }
   }
   // `unpaired` carries the bracket's identity only - the accounting fields
@@ -699,14 +781,28 @@ export function renderTrace(planningRoot, phase) {
   // role name erasing every other role's accounting. `fromEntries` defines own
   // properties, and unlike `Object.create(null)` it leaves the ordinary
   // prototype every caller (and every deep-equal assertion) already expects.
-  /** @type {[string, {dispatches: number, tokens?: number, unrecorded?: number}][]} */
+  //
+  // BOTH turn keys are gated on `turnsFigures`, which is where they part from
+  // the token pair: `unrecorded` is emitted whenever it is nonzero, but a
+  // `turns_unrecorded` on the same footing would put a new key on every role of
+  // every trace written before the flag existed - the committed
+  // `fixtures/verbatim.trace.jsonl` carries no turn field on any of its 52
+  // lines, and its rendered `roles` is pinned byte-for-byte as the proof this
+  // change is invisible on an old record (D-12). So a role that reported no
+  // turns at all is ABSENT from the turn accounting rather than reported as
+  // wholly unrecorded, and `turns_unrecorded` reads as "of the dispatches this
+  // role did report turns for, N reported none".
+  /** @type {[string, {dispatches: number, tokens?: number, turns?: number, unrecorded?: number, turns_unrecorded?: number}][]} */
   const rows = [];
   for (const [role, row] of roleTotals) {
     const unrecorded = Math.max(0, row.dispatches - row.recorded);
+    const turnsUnrecorded = Math.max(0, row.dispatches - row.turnsRecorded);
     rows.push([role, {
       dispatches: row.dispatches,
       ...(row.figures ? { tokens: row.tokens } : {}),
+      ...(row.turnsFigures ? { turns: row.turns } : {}),
       ...(unrecorded ? { unrecorded } : {}),
+      ...(row.turnsFigures && turnsUnrecorded ? { turns_unrecorded: turnsUnrecorded } : {}),
     }]);
   }
   out.roles = Object.fromEntries(rows);
@@ -716,8 +812,9 @@ export function renderTrace(planningRoot, phase) {
   // report different numbers for the same run - the arithmetic is D-01's, and
   // the only thing that changed is that it lives in one place.
   //
-  // A step's window runs from its marker to the NEXT marker in the same phase,
-  // and the last marker's window ends at that phase's last event. Inside the
+  // A step's window runs from its marker to the NEXT marker in the same RUN,
+  // and the last marker's window ends at that run's own last event - never at a
+  // later run that happens to share the phase number (D-01). Inside the
   // window, the merged bracket spans are clipped to it and subtracted; what
   // survives is what the coordinator was doing while no worker was running.
   // Floored at zero because a window can be shorter than the brackets clipped
@@ -743,7 +840,7 @@ export function renderTrace(planningRoot, phase) {
         if (hi > lo) bracket += hi - lo;
       }
       const residue = Math.max(0, wall - bracket);
-      stepRows.push({ phase: row.phase, step: m.step, ts: m.ts, t: m.t, residue_ms: residue });
+      stepRows.push({ phase: m.phase, step: m.step, ts: m.ts, t: m.t, residue_ms: residue });
       wallMs += wall;
       bracketMs += bracket;
       residueMs += residue;

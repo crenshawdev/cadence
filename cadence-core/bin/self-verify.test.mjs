@@ -308,6 +308,7 @@ test('placeholder keys expand: <t> prose covers every trigger key', () => {
     '`workflow.research` `workflow.plan_check` `workflow.verifier` `workflow.skip_discuss`\n' +
     '`workflow.inline_plan_threshold` `workflow.test_command`\n' +
     '`workflow.lint_command` `workflow.max_plan_tasks`\n' +
+    '`workflow.max_dispatch_tokens`\n' +
     '`parallelization.enabled` `parallelization.max_concurrent_agents`\n' +
     '`parallelization.min_plans_for_parallel` `parallelization.use_worktrees`\n' +
     '`git.protected_branches` `git.on_protected` `git.integration_branch`\n' +
@@ -1552,10 +1553,10 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
-test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an arm', () => {
+test('check 12: the live tree is FOURTEEN callsites over NINE files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a
-  // twelfth callsite cannot be added without choosing an arm.
+  // new callsite cannot be added without choosing an arm.
   const binDir = join(REPO, 'cadence-core', 'bin');
   const skip = join(binDir, 'lib', 'config-merge.mjs');
   /** @param {string} dir @returns {string[]} */
@@ -1588,7 +1589,7 @@ test('check 12: the live tree is ELEVEN callsites over EIGHT files, each in an a
       }
     }
   }
-  assert.equal(total, 12, `callsites: ${files.join(', ')}`);
+  assert.equal(total, 14, `callsites: ${files.join(', ')}`);
   assert.equal(files.length, 9, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
@@ -2222,4 +2223,53 @@ test('check 19: the LIVE tree is clean of all three text-transport codes', () =>
   assert.deepEqual(p.filter((x) => x.kind === 'text-transport-inline'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'text-transport-unregistered'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'text-transport-unclear'), []);
+});
+
+// --- check 20: bulk tool output rides a file ---------------------------------
+// The CLI wiring only. The rule itself, the three kinds and the register's
+// shape are bulk-output.test.mjs's; what has to be true HERE is that the walk
+// reaches the rule, that the envelope names it, and that a site the register
+// does not classify comes back as a problem rather than as silence.
+
+test('check 20: a registered site back on the transcript reports the inline kind', () => {
+  // Synthetic prose at a REGISTERED path: the row is the shipped one, so this
+  // proves the register the CLI reads is the register the module ships - not a
+  // fixture's own copy of it.
+  const root = fixture('nothing to see\n');
+  writeFileSync(join(root, 'cadence-core', 'references', 'triage-gate.md'),
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N>\n');
+  const hits = run(['--root', root]).problems
+    .filter((p) => p.kind === 'bulk-output-inline');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, 'cadence-core/references/triage-gate.md');
+  assert.match(hits[0].detail, /conventions\.md/);
+});
+
+test('check 20: a prescribed bulk call no register row classifies is reported', () => {
+  // `cadence-core/workflows/x.md` is a synthetic surface, so nothing in the
+  // shipped register speaks for it - which is exactly the new site.
+  const root = fixture('node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --all\n');
+  const j = run(['--root', root]);
+  assert.match(j.checked, /bulk-output/);
+  const hits = j.problems.filter((p) => p.kind === 'bulk-output-unregistered');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+  assert.match(hits[0].detail, /--all/);
+});
+
+test('check 20: prose that merely names a bulk call stays green through the CLI', () => {
+  const root = fixture('a worker with none of them is what `trace render` reports as unpaired.\n');
+  assert.deepEqual(run(['--root', root]).problems
+    .filter((p) => p.kind.startsWith('bulk-output-')), []);
+});
+
+test('check 20: the LIVE tree is clean of all three bulk-output codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the half a fixture can never state - and it is
+  // what makes a site that goes back to reading a 68,044 B render into the
+  // transcript redden the suite as well as the linter.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-inline'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-unregistered'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-unclear'), []);
 });
