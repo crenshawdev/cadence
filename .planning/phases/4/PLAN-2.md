@@ -11,6 +11,7 @@ files:
   - cadence-core/bin/review-provider.test.mjs
   - cadence-core/bin/config.mjs
   - cadence-core/bin/config.test.mjs
+  - cadence-core/bin/trace.test.mjs
 ---
 
 # Phase 4: One argument contract instead of nine - Plan 2

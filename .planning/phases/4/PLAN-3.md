@@ -14,6 +14,7 @@ files:
   - cadence-core/bin/lib/arg-contract.mjs
   - cadence-core/bin/seam-input.test.mjs
   - cadence-core/bin/helper-census.test.mjs
+  - cadence-core/bin/git-publish.test.mjs
 ---
 
 # Phase 4: One argument contract instead of nine - Plan 3
