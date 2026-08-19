@@ -296,6 +296,17 @@ test('the declarations the CONTEXT decisions bind are the ones in the table', ()
     ['release-bump.mjs', 'bump', '--version', { bare: 'fallback' }, 'D-12'],
     ['release-bump.mjs', 'bump', '--date', { bare: 'refuse' },
       'a valueless --date must refuse rather than silently date today'],
+    // The three UAT item 8 reproduced: each declared `refuse` while the CLI
+    // wrote the boolean `true` through. Pinned here as well as exercised live
+    // by arg-contract-adoption.test.mjs, because the census SKIPS an axis that
+    // stops saying `refuse` - so without these rows the whole defect could be
+    // re-opened by loosening the declaration rather than by loosening the door.
+    ['planning.mjs', 'cursor set', '--name', { value: 'refuse', bare: 'refuse' },
+      'UAT 8: the bare form wrote `Phase: 1 of 5 (true)` into STATE.md'],
+    ['planning.mjs', 'uat init', '--sources', { value: 'refuse', bare: 'refuse' },
+      'UAT 8: the bare form wrote `sources: true` into the UAT front-matter'],
+    ['planning.mjs', 'uat record', '--reason', { value: 'refuse', bare: 'refuse' },
+      'UAT 8: the bare form wrote `reason: true` into the file the gate merges onto'],
     ['planning.mjs', 'trace append', '--role', { bare: 'refuse' },
       'AC3/D-05: a bare --role wrote a record with no role key and render aggregated it under ""'],
     ['planning.mjs', 'trace append', '--step', { bare: 'refuse' }, 'D-05, the same arm'],
