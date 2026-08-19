@@ -58,7 +58,10 @@ SHP-01 in `lib/milestone-prune.mjs` and `lib/planning-files.mjs`.
   and the run record stops attributing work to the worker that caused it.
 - D-04 (RCH-01 probe target): the PATH check probes the command's DRIVER (first
   word) AND, for an `npx`-delegated arm, `<root>/node_modules/.bin/<tool>` - which
-  is where `npx` actually resolves it. Measured 2026-08-18: `npm`, `npx`, `cargo`,
+  is where `npx` actually resolves it. [corrected by plan-1 deviation: `npx` walks
+  ANCESTOR directories too, so a root-only probe nulls a command `npx` would run -
+  measured 2026-08-19, `npx --no-install tsc --version` prints `Version 7.0.2` from
+  a directory two levels under this repo with no local `node_modules`] Measured 2026-08-18: `npm`, `npx`, `cargo`,
   `python3` present; `ruff`, `mypy`, `eslint`, `tsc`, `go` absent from PATH; `tsc`
   present at `node_modules/.bin/tsc` and `npx --no-install tsc --version` prints
   `Version 7.0.2`. Driver-only nulls `npx tsc -p tsconfig.ci.json`, this
