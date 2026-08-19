@@ -66,10 +66,20 @@ function normalizeState(raw) {
  * as a STRING and `tea issues <index>` prints it as a NUMBER (both measured
  * 2026-08-15), so the two readers below share one normalization rather than
  * disagreeing about which `42` is the referenced one.
+ *
+ * A number OUTSIDE the safe-integer range is no readable number, and `null` -
+ * this function's existing "no readable number" answer, which both call sites
+ * already act on - is what it gets. Unguarded, `9007199254740993` read back as
+ * `9007199254740992` and a 400-digit one as `Infinity`, so `partitionIssues`
+ * answered about a DIFFERENT issue than the tracker holds, which is the whole
+ * value of "#42 is still open" gone.
  * @param {unknown} raw @returns {number|null} */
 function normalizeNumber(raw) {
-  if (typeof raw === 'number') return raw;
-  if (typeof raw === 'string' && /^\d+$/.test(raw)) return Number(raw);
+  if (typeof raw === 'number') return Number.isSafeInteger(raw) ? raw : null;
+  if (typeof raw === 'string' && /^\d+$/.test(raw)) {
+    const n = Number(raw);
+    return Number.isSafeInteger(n) ? n : null;
+  }
   return null;
 }
 
@@ -383,6 +393,11 @@ export function classifyOrigin(originUrl, teaLogins) {
  *                      `##3` spelling is refused by the no-`#`-before rule
  * and `#42abc` is refused by the trailing boundary.
  *
+ * A reference outside the safe-integer range is EXCLUDED from the array rather
+ * than carried: this function returns a bare `number[]` with no envelope to
+ * refuse into, and a 400-digit `#` reference names no issue - letting it
+ * through would make the seam ask the tracker about `Infinity`.
+ *
  * @param {unknown} logText @returns {number[]}
  */
 export function scanIssueRefs(logText) {
@@ -390,7 +405,10 @@ export function scanIssueRefs(logText) {
   const found = new Set();
   const re = /(^|[^\w#])#(\d+)\b/g;
   let m;
-  while ((m = re.exec(logText)) !== null) found.add(Number(m[2]));
+  while ((m = re.exec(logText)) !== null) {
+    const n = Number(m[2]);
+    if (Number.isSafeInteger(n)) found.add(n);
+  }
   return [...found].sort((a, b) => a - b);
 }
 

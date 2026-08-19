@@ -1814,6 +1814,24 @@ const CAPTURE_TAG_ROWS = [
     phase: undefined, text: 'wire the path (phase 2) next' },
   { name: 'an unclosed (phase 2', bullet: '[ ] (phase 2 wire the recall path',
     phase: undefined, text: '(phase 2 wire the recall path' },
+
+  // --- out of grammar: a number that does not round-trip (ARG-04) -----------
+  // The tag SHAPE matches, so only the number rules these out. Each used to
+  // emit a phase nobody wrote - Infinity, or a neighbouring phase's number -
+  // and each now keeps its parenthetical in the indexed text, the same answer
+  // every other out-of-grammar row gets.
+  { name: '(phase <400 digits>) is Infinity, not a phase',
+    bullet: `[ ] (phase ${'9'.repeat(400)}) budget the corpus`,
+    phase: undefined, text: `(phase ${'9'.repeat(400)}) budget the corpus` },
+  { name: '(phase 9007199254740993) reads back as a DIFFERENT number',
+    bullet: '[ ] (phase 9007199254740993) budget the corpus',
+    phase: undefined, text: '(phase 9007199254740993) budget the corpus' },
+  { name: '(phase 9007199254740990.1) rounds to a different phase under a magnitude bound',
+    bullet: '[ ] (phase 9007199254740990.1) budget the corpus',
+    phase: undefined, text: '(phase 9007199254740990.1) budget the corpus' },
+  { name: '(phase 1.10) is phases/1.10, never phases/1.1 (D-07)',
+    bullet: '[ ] (phase 1.10) budget the corpus',
+    phase: undefined, text: '(phase 1.10) budget the corpus' },
 ];
 
 for (const row of CAPTURE_TAG_ROWS) {
@@ -1937,6 +1955,27 @@ test('archive: a non-matching line under a section mints no row', () => {
     '',
   ].join('\n');
   assert.deepEqual(parseArchiveRows(text).map((r) => r.text), ['a real row']);
+});
+
+test('archive: a phase number that does not round-trip names no directory (ARG-04)', () => {
+  const text = [
+    '## v3.5.2',
+    '',
+    '- `phases/1.1/SUMMARY.md`: the sub-phase row beside them',
+    `- \`phases/${'9'.repeat(400)}/SUMMARY.md\`: Infinity in the corpus`,
+    '- `phases/9007199254740993/SUMMARY.md`: a neighbouring phase',
+    '- `phases/9007199254740990.1/SUMMARY.md`: under MAX_SAFE and still rounds',
+    '- `phases/01/SUMMARY.md`: phases/01 is not phases/1',
+    '',
+  ].join('\n');
+  // Only the sub-phase row survives, and it keeps its decimal.
+  assert.deepEqual(parseArchiveRows(text).map((r) => ({ phase: r.phase, origin: r.origin })), [
+    { phase: 1.1, origin: 'phases/1.1/SUMMARY.md' },
+  ]);
+  for (const row of parseArchiveRows(text)) {
+    assert.ok(Number.isFinite(row.phase), 'no row carries Infinity');
+    assert.equal(String(row.phase), row.origin.split('/')[1], 'no row names another phase');
+  }
 });
 
 test('archive: a row above the first heading belongs to no milestone and is skipped', () => {

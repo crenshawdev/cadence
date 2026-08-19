@@ -854,6 +854,18 @@ const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]
  * (D-05). The signal rides the string rather than growing a `done` field on
  * the result shape: without a marker a planner reads a shipped fix as live
  * prior evidence and re-plans closed work.
+ *
+ * THE NUMBER MUST ROUND-TRIP: `String(Number(n)) === n`, or the tag emits no
+ * `phase` AND stays in the indexed text, byte-identical, exactly as an
+ * out-of-grammar parenthetical does. A bare `Number()` put `Infinity` into the
+ * recall corpus for a 400-digit tag and a NEIGHBOURING phase's number for
+ * `9007199254740993` or `1.10` - the same collision `requirePhaseArg` carries
+ * a `raw` field for (D-07). The round trip is the predicate rather than
+ * `Number.isSafeInteger`, which would strip every legal `1.1` sub-phase tag,
+ * and rather than a magnitude bound, which still admits `9007199254740990.1`
+ * -> `9007199254740990`, a different phase. Leaving the tag in the text is
+ * what keeps the bullet whole in the corpus: it loses no bytes to a
+ * parenthetical that named no phase.
  * @param {string} text @returns {Array<{text:string, phase?:number}>}
  */
 export function parseCaptureSnippets(text) {
@@ -871,7 +883,13 @@ export function parseCaptureSnippets(text) {
       if (box) raw = raw.slice(box[0].length);
       /** @type {number|undefined} */
       let phase;
-      raw = raw.replace(CAPTURE_PHASE_TAG, (_m, n) => { phase = Number(n); return ''; });
+      raw = raw.replace(CAPTURE_PHASE_TAG, (whole, n) => {
+        // Out of range or otherwise not round-tripping: no phase, and the tag
+        // stays in the text rather than the bullet losing bytes to it.
+        if (String(Number(n)) !== n) return whole;
+        phase = Number(n);
+        return '';
+      });
       out.push({ text: closed ? `[closed] ${raw}` : raw, ...(phase !== undefined ? { phase } : {}) });
     }
   }
@@ -1015,7 +1033,15 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
  * A line that does not match `ARCHIVE_ROW` is not a row and is skipped, the
  * posture `parseContextDecisions` takes on a non-`D-NN` line, so a human note in
  * this file cannot mint a corpus entry. A row above the first `## ` heading
- * belongs to no milestone and is skipped for the same reason.
+ * belongs to no milestone and is skipped for the same reason. A row whose phase
+ * number does not ROUND-TRIP (`String(Number(n)) !== n`) is skipped by the same
+ * rule: `phases/<400 digits>/` and `phases/9007199254740990.1/` name a
+ * directory nothing in this tree can address, and a bare `Number()` put
+ * `Infinity` and a NEIGHBOURING phase's number into the corpus instead. The
+ * round trip rather than `Number.isSafeInteger`, which would drop every legal
+ * `phases/1.1/` row, and the declared `phase: number` return shape stays as it
+ * is rather than widening to `number|null`, which `cmdRecall`'s corpus and the
+ * `alreadyArchived` set would both have to learn.
  *
  * Pure reader, so it normalizes through the shared `normalize` (BOM, CRLF, lone
  * CR) exactly as `captureSections` does: a CRLF checkout must index as its
@@ -1033,6 +1059,7 @@ export function parseArchiveRows(text) {
     if (label === null) continue;
     const m = line.match(ARCHIVE_ROW);
     if (!m) continue;
+    if (String(Number(m[2])) !== m[2]) continue;
     // `label` and `origin` ride ALONGSIDE the composed `source` rather than
     // being recovered from it by the caller. A milestone label is free text, so
     // a label carrying a `/` makes `source` ambiguous about where the label

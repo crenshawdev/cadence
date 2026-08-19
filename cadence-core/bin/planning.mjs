@@ -188,6 +188,36 @@ function read(file) {
   try { return readFileSync(file, 'utf8'); } catch { return null; }
 }
 
+/**
+ * The `--phase` spellings the two WRITE faces cannot honour, as a refusal
+ * detail - or null when the spelling is one they can.
+ *
+ * `requirePhaseArg` deliberately returns the caller's OWN spelling beside the
+ * numeric value, and most reads in this file address `phases/<raw>/` with it.
+ * `cursor set` and `seed-reqs` cannot: both WRITE the numeric half - the
+ * cursor's `Phase:` line, and a Traceability cell that `parseRequirements` and
+ * `audit` compare against ROADMAP phase NUMBERS. So on a tree holding both
+ * `phases/1.1/` and `phases/1.10/`, `--phase 1.10` wrote `Phase: 1.1 of 2
+ * (One)` and `| BBB-01 | Phase 1.1 | Pending |` - the OTHER phase's name and
+ * the other phase's row, silently, with ok:true (measured 2026-08-18).
+ *
+ * The rule is the round trip `String(value) === raw`, the same predicate the
+ * CAPTURE.md and ARCHIVE.md phase readers carry (D-07), so `1.10`, `1.0` and
+ * `01` are refused while `2`, `2.1` and `10` pass. STATED COST: neither face
+ * can name a `phases/1.10/` directory any more, a capability
+ * `lib/require-int.mjs` deliberately built. The detail carries BOTH spellings
+ * because the caller's fix is exactly one of two things - retype the flag, or
+ * rename the directory - and nothing else in the envelope says which.
+ * @param {{raw: string, value: number}} parsed a `requirePhaseArg` success
+ * @returns {string|null}
+ */
+function phaseSpellingRefusal(parsed) {
+  const canonical = String(parsed.value);
+  if (canonical === parsed.raw) return null;
+  return `--phase "${parsed.raw}" is written here as phase ${canonical}, a different phase`
+    + ` - send --phase "${canonical}", or rename phases/${parsed.raw}/ to phases/${canonical}/`;
+}
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 // The one path this script resolves outside `--dir`. Read relative to the
 // SCRIPT, not the cwd, so it names the plugin actually executing - the whole
@@ -469,17 +499,22 @@ function cmdCursorGet(dir) {
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
-  // The shared reader, for the refusal WORDING - and it keeps writing the
-  // numeric value on purpose. `parseCursor` returns a Number that `renumber`'s
-  // shift arithmetic, `cmdStatus`'s `parsed.phase === current` agreement test
-  // and `phase-plans.mjs`' `cursorPhase` all consume, so a raw-spelled cursor
-  // is a wider change than the `--phase` directory fix, and a half-raw cursor
-  // would be worse than a numeric one. Stated cost: a cursor set at
-  // `--phase 1.10` still renders `Phase: 1.1`.
+  // The shared reader, for the refusal WORDING - and the cursor keeps holding
+  // the numeric value on purpose. `parseCursor` returns a Number that
+  // `renumber`'s shift arithmetic, `cmdStatus`'s `parsed.phase === current`
+  // agreement test and `phase-plans.mjs`' `cursorPhase` all consume, so a
+  // raw-spelled cursor is a wider change than the `--phase` directory fix, and
+  // a half-raw cursor would be worse than a numeric one. What used to be the
+  // stated cost of that - a cursor set at `--phase 1.10` rendering
+  // `Phase: 1.1`, the OTHER phase's name - is REFUSED at the door now (D-07)
+  // rather than carried. The raw spelling still addresses `phases/<raw>/` at
+  // the reads in this file that are not these two write faces.
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
   }
+  const spelling = phaseSpellingRefusal(parsedPhase);
+  if (spelling) return fail('bad-args', `cursor set ${spelling}`);
   const phase = parsedPhase.value;
   // `--next-file` is the path transport for a resume pointer the CALLER
   // composed - /cad-pause and `progress` build theirs from what the run was
@@ -1964,16 +1999,19 @@ function cmdPlanOverlap(dir, opts) {
 function cmdSeedReqs(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
+  // Before any read and before any write: the two halves of the phase argument
+  // must agree here, because this face uses BOTH.
+  const spelling = phaseSpellingRefusal(parsedPhase);
+  if (spelling) return fail('bad-args', `seed-reqs ${spelling}`);
   const n = parsedPhase.value;
   // The caller's own spelling, for the directory and for every diagnostic that
   // names one (D-02). The Traceability rows and the echoed `phase` below stay
-  // NUMERIC, and that is a KNOWN identity collision rather than an oversight:
-  // `parseRequirements` and `audit` compare that cell against ROADMAP phase
-  // NUMBERS, so `seed-reqs --phase 1.10` reads `phases/1.10` and writes
-  // `| <id> | Phase 1.1 | Pending |`, merging the two sub-phases in the audit.
-  // Closing it means carrying the raw spelling through `parseCursor`,
-  // `renumber` and `audit` - wider than this fix - and it is queued in
-  // `.planning/CAPTURE.md` naming both surviving sites.
+  // NUMERIC because `parseRequirements` and `audit` compare that cell against
+  // ROADMAP phase NUMBERS. What used to be a KNOWN identity collision carried
+  // here as a cost - `seed-reqs --phase 1.10` reading `phases/1.10` and writing
+  // `| <id> | Phase 1.1 | Pending |`, merging the two sub-phases in the audit -
+  // is refused above instead (D-07), so the spelling that reaches `pname` is
+  // the one the numeric half names.
   const pname = parsedPhase.raw;
 
   // #42/#45 rail: the flag is validated before any read.

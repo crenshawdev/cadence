@@ -454,6 +454,29 @@ test('cursor set: falls back to the existing cursor when ROADMAP is absent', () 
   assert.equal(r.cursor.status, 'executed');
 });
 
+test('cursor set: a --phase spelling that cannot round-trip is refused, STATE.md untouched (D-07)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: '2.1', name: 'Hotfix' }],
+    cursor: { phase: 1, total: 3, name: 'One', status: 'planned', next: '/cad-plan 1', updated: '2026-01-01' },
+  });
+  const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  for (const bad of ['1.10', '1.0', '01']) {
+    const r = run(['cursor', 'set', '--phase', bad, '--status', 'planned', '--next', '/cad-plan 1'], dir);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(r._exit, 1, bad);
+    assert.ok(r.detail.includes(`"${bad}"`), `${bad}: detail quotes what was sent`);
+    assert.ok(r.detail.includes(`"${String(Number(bad))}"`), `${bad}: detail quotes what is accepted`);
+  }
+  assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before, 'nothing written');
+
+  for (const good of ['2', '2.1']) {
+    const r = run(['cursor', 'set', '--phase', good, '--status', 'planned', '--next', `/cad-execute ${good}`], dir);
+    assert.equal(r.ok, true, good);
+    assert.equal(r.cursor.phase, Number(good), good);
+  }
+});
+
 test('cursor set: derives name/total from ROADMAP, stamps today, writes 4 lines', () => {
   const dir = makeTree({ roadmap: [{ n: 1, name: 'Foundation' }, { n: 2, name: 'Auth' }] });
   const before = today();
@@ -4606,6 +4629,40 @@ test('seed-reqs: --phase absent/non-numeric/negative all return bad-args, nothin
   assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), before);
 });
 
+test('seed-reqs: a --phase spelling that cannot round-trip is refused before any read (D-07)', () => {
+  // The fixture holds BOTH sub-phases, which is what makes the old answer
+  // wrong rather than merely odd: `--phase 1.10` used to seed `| B | Phase 1.1
+  // | Pending |` - the OTHER phase's row - with ok:true.
+  const dir = seedTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: {
+      '1.1': { plan: true, planReqs: ['A'] },
+      '1.10': { plan: true, planReqs: ['B'] },
+      2: { plan: true, planReqs: ['C'] },
+      '2.1': { plan: true, planReqs: ['D'] },
+    },
+    active: ['A', 'B', 'C', 'D'],
+  });
+  const before = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  for (const bad of ['1.10', '1.0', '01']) {
+    const r = run(['seed-reqs', '--phase', bad], dir);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(r._exit, 1, bad);
+    // Both spellings: the caller's fix is retype the flag OR rename the dir.
+    assert.ok(r.detail.includes(`"${bad}"`), `${bad}: detail quotes what was sent`);
+    assert.ok(r.detail.includes(`"${String(Number(bad))}"`), `${bad}: detail quotes what is accepted`);
+  }
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), before, 'nothing written');
+
+  // The spellings that DO round-trip are untouched, sub-phases included.
+  for (const [good, id] of [['1.1', 'A'], ['2', 'C'], ['2.1', 'D']]) {
+    const r = run(['seed-reqs', '--phase', good], dir);
+    assert.equal(r.ok, true, good);
+    assert.deepEqual(r.seeded, [id], good);
+  }
+});
+
 test('seed-reqs: a malformed requirements: line surfaces frontmatter_issues', () => {
   const dir = seedTree({
     roadmap: [{ n: 1, name: 'One' }],
@@ -5754,7 +5811,13 @@ test('uat: a malformed --phase is refused in the shared wording, before any read
   }
 });
 
-test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
+test('seed-reqs: --phase 08 is refused outright, never answering about phases/8', () => {
+  // The claim this row has always made is that `08` never becomes `8` at this
+  // face. It used to hold that by reading `phases/08` and reporting
+  // `no-phase-dir`; since D-07 the spelling is refused at the door instead,
+  // because this face WRITES the numeric half into a Traceability cell. The
+  // sibling `plan-overlap --phase 08` row above still gets `no-phase-dir`,
+  // which is what shows the refusal is scoped to the two write faces.
   const dir = makeTree({
     roadmap: [{ n: 8, name: 'Eight' }],
     phases: { 8: { plan: true, planReqs: ['FLD-01'] } },
@@ -5765,8 +5828,9 @@ test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
     + '| Requirement | Phase | Status |\n|---|---|---|\n');
   const r = run(['seed-reqs', '--phase', '08'], dir);
   assert.equal(r.ok, false, JSON.stringify(r));
-  assert.equal(r.reason, 'no-phase-dir');
-  assert.match(r.detail, /phases[/\\]08 not found$/);
+  assert.equal(r.reason, 'bad-args');
+  assert.ok(r.detail.includes('"08"') && r.detail.includes('"8"'), r.detail);
+  assert.equal(r._exit, 1);
   // ...and the legal spelling seeds.
   assert.deepEqual(run(['seed-reqs', '--phase', '8'], dir).seeded, ['FLD-01']);
 });

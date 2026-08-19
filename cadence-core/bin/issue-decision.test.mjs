@@ -176,6 +176,16 @@ test('scanIssueRefs is total on non-text and empty input', () => {
   for (const bad of ['', null, undefined, 5, {}]) assert.deepEqual(scanIssueRefs(bad), []);
 });
 
+test('scanIssueRefs excludes a reference outside the safe-integer range (ARG-04)', () => {
+  // Before the guard this returned a one-element array holding Infinity, and
+  // the seam then asked the tracker about Infinity.
+  assert.deepEqual(scanIssueRefs('fixes #' + '9'.repeat(400)), []);
+  assert.deepEqual(scanIssueRefs('fixes #9007199254740993'), []);
+  // The exclusion is per reference, not per log: the readable ones still land.
+  assert.deepEqual(scanIssueRefs('closes #42 and #' + '9'.repeat(400)), [42]);
+  assert.deepEqual(scanIssueRefs('fixes #42'), [42]);
+});
+
 // --- partitionIssues --------------------------------------------------------
 
 const COMPLETE = {
@@ -328,6 +338,32 @@ test('a RENAMED field is unreadable, not an empty record set', () => {
   }
   // An unreadable read can never reach a not-found verdict.
   assert.equal(partitionIssues([42], HOST_TABLE.github.normalize('[{"id":42}]', 200)), null);
+});
+
+test('a number OUTSIDE the safe-integer range is unreadable, never a neighbour (ARG-04)', () => {
+  // Measured 2026-08-18 before the guard: these answered complete:true with ONE
+  // record carrying 9007199254740992 and Infinity - a DIFFERENT issue than the
+  // tracker holds. Assert the VALUE, not the serialization: JSON.stringify
+  // prints Infinity as null.
+  for (const body of [
+    '[{"number":9007199254740993,"state":"open"}]',
+    '[{"number":"9007199254740993","state":"open"}]',
+    '[{"number":' + '9'.repeat(400) + ',"state":"open"}]',
+    '[{"number":"' + '9'.repeat(400) + '","state":"open"}]',
+  ]) {
+    const got = HOST_TABLE.github.normalize(body, 200);
+    assert.equal(got.complete, false, body.slice(0, 40));
+    assert.deepEqual(got.records, [], body.slice(0, 40));
+    assert.match(got.detail, /number/, body.slice(0, 40));
+  }
+  // tea's string-spelled `index` reads through the same normalization.
+  const tea = HOST_TABLE.forgejo.normalize('[{"index":"9007199254740993","state":"open"}]', 50);
+  assert.equal(tea.complete, false);
+  assert.deepEqual(tea.records, []);
+  // The bound is a bound: the numbers a tracker actually holds still read.
+  assert.deepEqual(HOST_TABLE.github.normalize('[{"number":14156,"state":"OPEN"}]', 200).records, [
+    { number: 14156, state: 'open' },
+  ]);
 });
 
 // --- decideIssueCheck: every reason distinct --------------------------------
