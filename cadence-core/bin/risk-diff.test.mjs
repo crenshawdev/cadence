@@ -1202,3 +1202,57 @@ test('risk-check run: the answer is judged against route-table.json\'s vocabular
   assert.deepEqual(table.risk_surface_categories, ALL,
     'route-table.json and lib/surface-scan.mjs disagree on the eight categories');
 });
+
+// --- the census: neither file matches the detector ----------------------------
+
+/**
+ * WATCHED FAILING at 0e7844b, the commit this phase forked from. A whole-file
+ * add of `lib/risk-diff.mjs` evidenced SIX categories there - auth, migrations,
+ * billing, concurrency, destructive and untrusted_input - and a whole-file add
+ * of this file evidenced FOUR - auth, migrations, destructive and
+ * untrusted_input. Every one came from a pattern's own source text or from a
+ * fixture that has to carry the construct it tests, never from anything either
+ * file DOES. The gate fed by that answer is `blocking` at every stakes level,
+ * so the cost was a phase editing the detector spending its one re-arm on a
+ * self-match, on a range where nothing risky happened.
+ *
+ * This row is the standing guard, and is load-bearing on its own: the fix is a
+ * spelling discipline in two files, and a discipline nothing tests is undone by
+ * the next edit under a green suite (phase 1's D-07). It asserts the CATEGORY
+ * SET and never a line number, so an unrelated edit to either file cannot
+ * redden it, and it reads both files with no try/catch - a file this cannot
+ * read is a failed guard, not a skipped one.
+ *
+ * One test() rather than four, against this file's own one-row-per-test rule,
+ * because the hazard that rule names is a loop whose count hides a row that
+ * never ran: `ran` is asserted at the end, so a skipped pair fails here.
+ */
+const wholeFileAdd = (rel, body) => {
+  const lines = body.split('\n');
+  return `diff --git a/${rel} b/${rel}\nnew file mode 100644\n`
+    + `index 0000000..1111111\n--- /dev/null\n+++ b/${rel}\n`
+    + `@@ -0,0 +1,${lines.length} @@\n`
+    + `${lines.map((l) => `+${l}`).join('\n')}\n`;
+};
+
+/** The answered surfaces this repository's gate fires under (`.planning`'s
+ * config layer), then all eight. The eight-category pass dominates the three -
+ * `scanDiff` only ever filters by the vocabulary it is handed - so a later
+ * change to the answer cannot make this row wrong; the three are here because
+ * they are what actually fires on this repository. */
+const CENSUS_SCOPES = [['secrets', 'destructive', 'untrusted_input'], ALL];
+
+test('the census: neither this file nor the detector matches the detector', () => {
+  let ran = 0;
+  for (const rel of ['lib/risk-diff.mjs', 'risk-diff.test.mjs']) {
+    const body = readFileSync(join(HERE, rel), 'utf8');
+    for (const scope of CENSUS_SCOPES) {
+      const r = scanDiff(wholeFileAdd(`cadence-core/bin/${rel}`, body), scope);
+      assert.equal(r.checked, true, `${rel} was not read as a diff at all`);
+      assert.deepEqual(r.matches, [],
+        `${rel} matched itself under ${scope.length} categories: ${JSON.stringify(r.matches)}`);
+      ran++;
+    }
+  }
+  assert.equal(ran, 4, 'the census skipped a file or a scope');
+});
