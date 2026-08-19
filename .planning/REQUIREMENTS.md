@@ -39,10 +39,13 @@ live rather than trusting its note.
 - **ARG-06** (#147): the per-seam refusals are expressed once as a declarative
   argument contract the seam CLIs share.
 - **RME-01**: `README.md` is a decision document, not a reference manual - the
-  command table, the cost-to-run section and the worked example move to
-  `docs/`, the audience section states the DEMAND rather than a label and sits
-  ABOVE Install, and every claim that survives the move is verified rather
-  than carried over. Promoted from the 2026-08-18 capture decision.
+  cost-to-run section and the worked example move to `docs/`, the command list
+  is cut in favour of a pointer at `/cad-help` and
+  `cadence-core/references/COMMANDS.md`, the audience section states the DEMAND
+  rather than a label and sits ABOVE Install, and every claim that survives the
+  move is verified rather than carried over. Promoted from the 2026-08-18
+  capture decision; the command-list clause revised 2026-08-19 at
+  `/cad-context 5` (phase 5 CONTEXT D-03).
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, with two caveats the 2026-08-18 audit

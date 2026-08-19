@@ -139,10 +139,17 @@ rather than material you look things up in: the opening, Install, the
 audience/demands section, The loop, a compressed How it works, Where it came
 from, and "What a break costs".
 
-Moves to `docs/`: the command table, the cost-to-run section, and the worked
-example. The cost-to-run section is already known stale, and isolating it gives
-the docs-drift sweep exactly one file to check instead of a section buried in a
+Moves to `docs/`: the cost-to-run section and the worked example. The
+cost-to-run section is already known stale, and isolating it gives the
+docs-drift sweep exactly one file to check instead of a section buried in a
 4,100-word page.
+
+The command list is CUT rather than moved, revised 2026-08-19 at `/cad-context
+5` (phase 5 CONTEXT D-03). `## The commands` is not a table but 21 bullets in
+argument voice that omit the six build-spine commands, and
+`cadence-core/references/COMMANDS.md` already publishes all 27 in reference
+voice where a browser can read them. README keeps one pointer line at
+`/cad-help` and that file; the sharpest bullets fold into How it works.
 
 The wording rule for the audience section is load-bearing and not a style note:
 state the DEMAND and never the label - how many times the run stops and waits
