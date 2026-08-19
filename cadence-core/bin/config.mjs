@@ -329,8 +329,23 @@ const argv = process.argv.slice(2);
 const cmd = argv[0];
 const rest = argv.slice(1);
 function optFile(tokens) {
+  // `--global` reads through its DECLARED row too, and reading it off the row
+  // is what makes this class unrepeatable at this seam: a subcommand that
+  // ACCEPTS a `--global` it does not declare stops being possible, because the
+  // read needs the row to exist. It was live on `get` while only `validate`
+  // and `set` declared it, and self-verify stayed green only because no
+  // workflow prose spelled that pair - the moment any did, correct prose would
+  // be reported `unknown-flag`.
+  //
+  // Tested FIRST and short-circuiting to the global file before `--file` is
+  // looked at, exactly as the hand-written probe did. The row is `boolean`,
+  // whose whole grammar is presence, so neither disposition can fire and the
+  // three flag spellings a valued row separates do not arise.
+  const globalRow = CONTRACTS['config.mjs'][cmd]['--global'];
   const gi = tokens.indexOf('--global');
-  if (gi >= 0) return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
+  if (globalRow !== undefined && evaluateFlag(tokens, '--global', globalRow).value === true) {
+    return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
+  }
   const i = tokens.indexOf('--file');
   if (i < 0) return { file: '.planning/config.json', global: false, tokens };
   // `--file` reads through its DECLARED row in lib/arg-contract.mjs (ARG-06)

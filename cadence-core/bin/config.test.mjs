@@ -9,6 +9,7 @@ import { basename, join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { RUNG_FILES } from './lib/rung-agent.mjs';
+import { CONTRACTS } from './lib/arg-contract.mjs';
 
 const CONFIG = join(dirname(fileURLToPath(import.meta.url)), 'config.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-config-'));
@@ -526,6 +527,29 @@ test('get: a BROKEN file reached under two spellings warns exactly once', () => 
     assert.match(r.warnings[0], /alias-broken-/, label); // names the file, once
     assert.equal(r.source, 'defaults', label);
   }
+});
+
+test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it off the row', () => {
+  // UAT item 9. `get --global` was live and undeclared while its two siblings
+  // each carried a row, so self-verify check 2 stayed green only because no
+  // workflow prose spelled the pair - the moment any did, correct prose would
+  // be reported `unknown-flag` against a flag this seam accepts.
+  //
+  // The row is now what the read NEEDS, which is what makes the class
+  // unrepeatable here: `optFile` asks `CONTRACTS['config.mjs'][cmd]` for the
+  // declaration, so a subcommand accepting a `--global` it does not declare is
+  // no longer expressible. Deleting the row below stops `get --global`
+  // answering `source: "global"` - watched failing.
+  const declared = { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' };
+  for (const cmd of ['validate', 'set', 'get']) {
+    assert.deepEqual(CONTRACTS['config.mjs'][cmd]['--global'], declared,
+      `${cmd} takes --global, so ${cmd} must declare it - with the same grammar its siblings carry`);
+  }
+  const gpath = join(dir, 'global-declared.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'critical' }));
+  const r = run(['get', '--global', 'stakes'], gpath);
+  assert.equal(r.source, 'global');
+  assert.equal(r.values['stakes'], 'critical');
 });
 
 test('get --global: the one file it reads by construction is the GLOBAL layer', () => {
