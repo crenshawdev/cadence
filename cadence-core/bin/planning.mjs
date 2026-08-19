@@ -66,13 +66,21 @@
 //                                   whether a COMMITTED range touched a risk
 //                                   surface, recorded on the trace whatever the
 //                                   answer - so "the check was skipped" stops
-//                                   reading like "it ran and matched nothing"
+//                                   reading like "it ran and matched nothing".
+//                                   --plan is the WORKER key, not a plan
+//                                   number: `1-fix` is a key a dispatch is
+//                                   bracketed under and is recorded verbatim
 //   risk-check status --phase N [--plan k --base <ref> --head <ref>]
 //                                   every COMPLETED executor range in that
 //                                   phase against the records, refusing by plan
 //                                   when one carries none; the optional triple
 //                                   requires a record for THAT range, so an
-//                                   earlier narrower one does not satisfy it
+//                                   earlier narrower one does not satisfy it.
+//                                   --plan is the same WORKER key `run` takes,
+//                                   read through the same grammar; a bracketed
+//                                   key that grammar refuses is reported in
+//                                   malformed[] rather than demanded in
+//                                   missing[], since no run could record it
 //   trace append --phase N --family <f> --event <e> [--plan k] [--base b] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
@@ -181,6 +189,7 @@ import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
+import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 
@@ -3739,14 +3748,22 @@ function cmdRiskCheckRun(dir, opts) {
   if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
   const n = parsedPhase.value;
 
-  // requireInt, not Number(): `parseArgs` gives a VALUELESS flag the boolean
-  // `true` and `Number(true)` is `1`, so `--plan` with nothing after it would
-  // record the answer against plan 1 (the VAL-01 rail).
+  // THE WORKER KEY, through the one grammar both faces read (RSK-03, D-02).
+  // Not `requireInt`: `status` derives what it demands from the lifecycle
+  // brackets, where `references/seams.md` permits a non-numeric worker key, so
+  // a fix pass bracketed `1-fix` used to leave a blocking gate no argv could
+  // satisfy - `run --plan 1-fix` answered `bad-args`. The VAL-01 rail
+  // `requireInt` was standing for survives inside the predicate: a VALUELESS
+  // flag arrives as the boolean `true`, `Number(true)` is `1`, and a non-string
+  // is refused first.
   let plan;
   if ('plan' in opts) {
-    const parsedPlan = requireInt(opts.plan);
-    if (!parsedPlan.ok) return fail('bad-args', 'risk-check run --plan needs a plan number after it: --plan <k>');
-    plan = parsedPlan.value;
+    const parsedPlan = requirePlanKey(opts.plan);
+    if (!parsedPlan.ok) {
+      return fail('bad-args', 'risk-check run --plan needs the worker key after it - a plan number '
+        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+    }
+    plan = parsedPlan.key;
   }
 
   // BOTH required, and neither defaulted: a defaulted head is a range the
@@ -3860,10 +3877,11 @@ function cmdRiskCheckRun(dir, opts) {
   // so a trace that could not be written is reported rather than silently
   // dropped, and it may NOT change the verdict.
   //
-  // `plan` is the parsed NUMBER while a prose `trace append --plan` stores the
-  // caller's string; `risk-check status` stringifies both sides before
-  // comparing, the way lib/trace.mjs's own `key()` does, so the two spellings
-  // join.
+  // `plan` is the caller's OWN spelling, verbatim, exactly as a prose
+  // `trace append --plan` stores it - the two must be one string or the receipt
+  // settles nothing (D-01's stated cost). `risk-check status` stringifies both
+  // sides before comparing, the way lib/trace.mjs's own `key()` does, so a
+  // record written `1` and a bracket written `"1"` still join.
   const res = appendEvent(dir, {
     phase: parsedPhase.raw,
     family: 'outcome',
@@ -3952,15 +3970,21 @@ function cmdRiskCheckStatus(dir, opts) {
   // half named - which reads as the phase-wide arm and passes on a record left
   // by some other range.
   const given = ['plan', 'base', 'head'].filter((f) => f in opts);
-  /** @type {{plan: number, base: string, head: string, base_id: string, head_id: string} | null} */
+  /** @type {{plan: string, base: string, head: string, base_id: string, head_id: string} | null} */
   let wanted = null;
   if (given.length) {
     if (given.length !== 3) {
       return fail('bad-args',
         'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three');
     }
-    const parsedPlan = requireInt(opts.plan);
-    if (!parsedPlan.ok) return fail('bad-args', 'risk-check status --plan needs a plan number after it: --plan <k>');
+    // The SAME predicate `risk-check run` reads (D-02). One consultation each,
+    // so the face that enforces the question and the face that reports it
+    // cannot disagree about which spellings are keys at all.
+    const parsedPlan = requirePlanKey(opts.plan);
+    if (!parsedPlan.ok) {
+      return fail('bad-args', 'risk-check status --plan needs the worker key after it - a plan '
+        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+    }
     const base = riskRef(opts.base);
     const head = riskRef(opts.head);
     if (!base || !head) {
@@ -3978,14 +4002,14 @@ function cmdRiskCheckStatus(dir, opts) {
         ok: false,
         reason: 'unresolved-range',
         phase: n,
-        plan: parsedPlan.value,
+        plan: parsedPlan.key,
         base,
         head,
         detail: resolved.error,
         hint: 'name a --base and --head this repository can resolve, then re-run this check',
       });
     }
-    wanted = { plan: parsedPlan.value, base, head, base_id: resolved.base, head_id: resolved.head };
+    wanted = { plan: parsedPlan.key, base, head, base_id: resolved.base, head_id: resolved.head };
   }
 
   // ONE reader of the record, through renderTrace and nothing else: a second
@@ -4104,9 +4128,33 @@ function cmdRiskCheckStatus(dir, opts) {
     }
     return row;
   };
+  /**
+   * A bracket carrying a key the worker-key grammar REFUSES (RSK-03).
+   *
+   * The ONE bounded exception to "status does not narrow" (D-01), and it is the
+   * opposite of the exclusion arm that decision rejected. A key `lib/plan-key.mjs`
+   * refuses is not a legal worker key at all, so `risk-check run --plan <it>`
+   * can never write the record this gate would demand: requiring one leaves a
+   * gate that is blocking at every stakes level permanently unsatisfiable, with
+   * no exit but an `override`. So it is REPORTED, on its own `malformed` list,
+   * rather than silently dropped - which is exactly what made the excluded-key
+   * arm fail-open. A key the predicate ACCEPTS is never dropped.
+   *
+   * An ABSENT plan is NOT malformed and keeps its row: `risk-check run` with no
+   * `--plan` writes a record that keys to '' and joins it, so an unidentified
+   * completed range stays required, exactly as the row comment above says.
+   * Nothing in the tree mints a refused key today - `workflows/execute.md` now
+   * states the continuation key - so this guards the write face D-03 leaves
+   * open on purpose, where `trace append --plan` still stores any non-empty
+   * string.
+   * @type {Set<string>}
+   */
+  const malformed = new Set();
   for (const b of r.brackets) {
     if (!inCycle(b)) continue;
     if (b.role !== 'cad-executor' || b.event !== 'return') continue;
+    const spelled = planKey(b.plan);
+    if (spelled !== '' && !requirePlanKey(b.plan).ok) { malformed.add(spelled); continue; }
     planRow(b.corr, b.plan).completed++;
   }
   // A named range is required whether or not its return has landed yet: the
@@ -4360,6 +4408,10 @@ function cmdRiskCheckStatus(dir, opts) {
       phase: n,
       plans: rows,
       missing: offending.map((row) => row.plan),
+      // Never folded into `missing`: these are not ranges awaiting a record,
+      // they are keys no record can be written for, and a caller sent to
+      // `risk-check run --plan <one of them>` would be sent to a refusal.
+      ...(malformed.size ? { malformed: [...malformed] } : {}),
       hint: unfiredOnly
         ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
           + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
@@ -4370,8 +4422,11 @@ function cmdRiskCheckStatus(dir, opts) {
   }
   // Nothing to require is not a failure: a phase with no completed executor
   // range at all is ok:true with an empty list, or a gate here would block the
-  // first plan of every phase.
-  ok({ phase: n, plans: rows });
+  // first plan of every phase. A malformed key rides the PASS too, for the
+  // reason it exists: the reader has to be able to see that a bracket was
+  // skipped rather than judged, and a pass that said nothing about it would be
+  // the silent exclusion D-01 refused.
+  ok({ phase: n, plans: rows, ...(malformed.size ? { malformed: [...malformed] } : {}) });
 }
 
 function cmdRiskCheck(dir, sub, opts) {
