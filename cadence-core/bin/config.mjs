@@ -268,10 +268,29 @@ function get(file, keys, asGlobal) {
   /** @type {Record<string, any>} */
   const values = {};
   const wanted = keys.length ? keys : Object.keys(SCHEMA);
-  const unknown = wanted.filter((k) => !SCHEMA[k]);
+  // hasOwn, not a bare `SCHEMA[k]` - the guard `validate` already carries at
+  // :138-142, for the same reason one face over. A bare lookup answers a
+  // requested key named `__proto__`, `constructor`, `toString` or any other
+  // Object.prototype member with Object.prototype itself: a truthy "spec"
+  // carrying no `type` and no `default`, so the key passed this filter as
+  // though the schema held it. The value line below then read `.default` off
+  // that (undefined), and assigning it into `values` at the name `__proto__`
+  // ran the object's own setter and stored NOTHING - which is how
+  // `get __proto__` answered {"ok":true,"values":{}} at exit 0, and
+  // `get stakes __proto__` answered about one key of the two asked for with
+  // nothing saying the other had gone missing. `fail('unknown-key', ...)` was
+  // always the right answer; the whole fix is that a prototype member now
+  // reaches it.
+  const unknown = wanted.filter((k) => !Object.hasOwn(SCHEMA, k));
   if (unknown.length) fail('unknown-key', unknown);
   for (const k of wanted) {
-    values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
+    // Guarded for the same reason, though the filter above now makes every `k`
+    // an own schema key: the keyless arm walks Object.keys(SCHEMA) and the
+    // explicit arm is refused, so nothing reaches here off the prototype
+    // chain today. A future caller path that builds `wanted` some third way
+    // would inherit the hole, and this is the read the hole is spent through.
+    const spec = Object.hasOwn(SCHEMA, k) ? SCHEMA[k] : undefined;
+    values[k] = layered[k] !== undefined ? layered[k] : spec && spec.default;
     // The read face says WHICH of the two states one of these keys is in. The
     // value line above is unchanged (D-06) - the schema sentinel does that work
     // - but a bare `null` cannot tell a reader "no layer set one, the level

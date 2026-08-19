@@ -1217,3 +1217,79 @@ test('check: null is still refused at the write face - the sentinel is not a val
   assert.equal(r.detail[0].key, 'review.triggers.diff.gate');
   assert.match(r.detail[0].error, /must be one of: off, advisory, blocking, adjudicated/);
 });
+
+// --- ARG-05: a prototype member is an unknown key at the READ face ------------
+//
+// The counterpart the merge-path block above says it lacks. Those three rows
+// PIN `constructor` and `prototype` on the merge path and distinguish nothing
+// about a repair; these rows go red the moment either `Object.hasOwn` in `get`
+// is reverted to the bare index read, because a bare `SCHEMA[k]` resolves every
+// Object.prototype member truthy through the prototype chain.
+//
+// The set is WALKED, never hand-listed (D-13): Object.prototype carries twelve
+// own names, and `__defineGetter__` and its three siblings are as much a hole
+// as the obvious `constructor` / `toString` / `valueOf`. A hand-list is how the
+// next member the language adds stops being covered.
+const PROTO_MEMBERS = Object.getOwnPropertyNames(Object.prototype);
+
+// `run` above discards the exit status; these rows assert it, because a
+// refusal that exits 0 is the shape being repaired.
+function runStatus(args, globalPath) {
+  const env = { ...process.env };
+  if (globalPath) env.CADENCE_GLOBAL_CONFIG = globalPath;
+  try {
+    return { status: 0, json: JSON.parse(execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env })) };
+  } catch (e) {
+    return { status: e.status, json: JSON.parse(e.stdout) };
+  }
+}
+
+test('get: every Object.prototype member is refused as an unknown key at exit 1', () => {
+  const gpath = join(dir, 'proto-read-no-global.json');
+  assert.ok(PROTO_MEMBERS.length >= 12, JSON.stringify(PROTO_MEMBERS));
+  for (const key of PROTO_MEMBERS) {
+    // `--file` at an absent path, so the answer comes from the schema alone and
+    // no layer can be blamed for it.
+    const { status, json } = runStatus(['get', '--file', join(dir, 'proto-read-absent.json'), key], gpath);
+    assert.equal(json.ok, false, `${key}: ${JSON.stringify(json)}`);
+    assert.equal(json.reason, 'unknown-key', key);
+    assert.deepEqual(json.detail, [key], key);
+    assert.equal(status, 1, key);
+    // The measured pre-repair answer, named so a reader knows what changed:
+    // `{"ok":true,"values":{}}` at exit 0 for `__proto__` (the assignment ran
+    // Object.prototype's setter and stored nothing) and for the rest (the
+    // spec's `.default` is undefined, which JSON.stringify drops).
+    assert.equal(json.values, undefined, key);
+  }
+});
+
+test('get: a mix of a real key and a prototype member refuses, never answers for one', () => {
+  const gpath = join(dir, 'proto-mixed-no-global.json');
+  const { status, json } = runStatus(
+    ['get', '--file', join(dir, 'proto-mixed-absent.json'), 'stakes', '__proto__'], gpath);
+  assert.equal(json.ok, false, JSON.stringify(json));
+  assert.equal(json.reason, 'unknown-key');
+  assert.deepEqual(json.detail, ['__proto__']);   // names the offender, not the pair
+  assert.equal(status, 1);
+  // Measured before the repair: {"ok":true,"values":{"stakes":"shipped"}} at
+  // exit 0 - one key of the two asked for, with nothing saying the other was
+  // dropped.
+  assert.equal(json.values, undefined);
+});
+
+test('get: the repair costs a live key nothing - one named and the keyless read both answer', () => {
+  const gpath = join(dir, 'proto-live-no-global.json');
+  const one = runStatus(['get', '--file', join(dir, 'proto-live-absent.json'), 'stakes'], gpath);
+  assert.equal(one.json.ok, true, JSON.stringify(one.json));
+  assert.equal(one.json.values['stakes'], 'shipped');
+  assert.equal(one.status, 0);
+
+  // The keyless arm walks Object.keys(SCHEMA), which yields own keys only, so
+  // it must still return every schema key with its default resolved.
+  const all = runStatus(['get', '--file', join(dir, 'proto-live-absent.json')], gpath);
+  assert.equal(all.json.ok, true, JSON.stringify(all.json).slice(0, 200));
+  const schemaKeys = Object.keys(run(['keys']).keys);
+  assert.deepEqual(Object.keys(all.json.values), schemaKeys);
+  assert.equal(all.json.values['stakes'], 'shipped');
+  assert.equal(all.status, 0);
+});
