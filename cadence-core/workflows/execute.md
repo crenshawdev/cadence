@@ -453,11 +453,14 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" cursor set --phase <N
 ```
 
 If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
-`<plandir>/reports/plan-<k>.md`, `.planning/phases/<N>/CONTEXT.md` if the
+`<plandir>/reports/` DIRECTORY, `.planning/phases/<N>/CONTEXT.md` if the
 summary step annotated a corrected decision, and `.planning/CAPTURE.md` if the
 summary step appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
-those files. Never stage a `plan-<k>-risk-task-<n>.diff`: it is the transient
-flagged diff and the continuation deletes it. With the key false the reports
+those paths. The DIRECTORY, never one report by name: an executor rotates a
+previous run's report aside to a suffixed sibling before its first write, so a
+by-name stage would commit only the new bytes and leave that record untracked in
+a dirty tree. Never stage a `plan-<k>-risk-task-<n>.diff` from inside that
+directory: it is the transient flagged diff and the continuation deletes it. With the key false the reports
 stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
 that key is the user's standing answer for all of them - the worktree path
 commits regardless not as a docs decision but because the commit is the only
