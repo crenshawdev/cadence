@@ -408,6 +408,142 @@ test('a `## Active` heading inside a code fence is not the section', () => {
   assert.ok(r.text.indexOf('## Shipped') < r.text.indexOf('## Traceability'));
 });
 
+// --- the OTHER two locators in the same function (D-08/D-13) ----------------
+//
+// `## Active` was read fence-aware while `## Shipped` and the Traceability row
+// filter, both a few lines below it in the same function, were not. The
+// document that makes all three matter at once is the one this plugin ships:
+// `templates/REQUIREMENTS.md` carries its whole body inside a markdown fence,
+// so a template-seeded project's only `## Active`, `## Shipped` and
+// `## Traceability` headings are EXAMPLES of them.
+
+// The template's own example. Asserted as one substring: the transform must
+// leave every byte of it exactly where it was.
+const FENCED_EXAMPLE = `\`\`\`markdown
+## Active
+
+- **STOR-01**: an example bullet inside a code fence
+
+## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+| EXA-09 | 9 | Complete | v0.0.1 |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+\`\`\``;
+
+const REAL_SHIPPED = `## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+| OLD-01 | 0 | Complete | v0.1.0 |
+
+`;
+
+/** The fenced example above real sections, with or without a real `## Shipped`. */
+const fencedDoc = (realShipped) => `# Requirements: Fixture
+
+## Template
+
+The shipped template carries its whole body as an example:
+
+${FENCED_EXAMPLE}
+
+## Active
+
+- **STOR-01**: bytes survive
+- **REC-01**: bytes are findable
+
+${realShipped ? REAL_SHIPPED : ''}## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+| REC-01 | Phase 3 | Pending |
+`;
+
+/** Occurrences of `needle` in `hay`, as whole lines. */
+const lineCount = (hay, needle) => hay.split('\n').filter((l) => l === needle).length;
+
+test('a fenced `## Shipped` is not the section - the row lands under the real one', () => {
+  const r = archiveRequirements(fencedDoc(true), [1], 'v9.9.0');
+  assert.equal(r.createdSection, false, 'the real section exists, so none is created');
+  assert.ok(r.text.includes(FENCED_EXAMPLE), 'the template example survives byte-identical');
+  // The archived row is inside the REAL `## Shipped`: below its existing last
+  // row, above `## Traceability`. `lastIndexOf` because the fenced heading
+  // comes first in the document.
+  const row = r.text.indexOf('| STOR-01 (bytes survive) | 1 | Complete | v9.9.0 |');
+  assert.ok(row > -1, 'the row was archived');
+  assert.ok(row > r.text.indexOf('| OLD-01 | 0 | Complete | v0.1.0 |'));
+  assert.ok(row < r.text.lastIndexOf('## Traceability'));
+  assert.ok(row > r.text.lastIndexOf('## Shipped'));
+  // Nothing was taken out of the fenced table: the example's Traceability row
+  // is the ONLY `| STOR-01 | Phase 1 | Complete |` left, the real one having
+  // been removed.
+  assert.equal(lineCount(r.text, '| STOR-01 | Phase 1 | Complete |'), 1);
+  assert.equal(lineCount(r.text, '| EXA-09 | 9 | Complete | v0.0.1 |'), 1);
+  assert.ok(!r.text.split('\n').includes('- **STOR-01**: bytes survive'),
+    'the real bullet is the one removed');
+});
+
+test('a document whose only `## Shipped` is fenced gets a REAL section created', () => {
+  const r = archiveRequirements(fencedDoc(false), [1], 'v9.9.0');
+  assert.equal(r.createdSection, true);
+  assert.ok(r.text.includes(FENCED_EXAMPLE), 'the template example survives byte-identical');
+  // Two headings now: the example's, and the one this call created.
+  assert.equal(lineCount(r.text, '## Shipped'), 2);
+  const created = r.text.lastIndexOf('## Shipped');
+  assert.ok(created > r.text.indexOf('- **REC-01**: bytes are findable'),
+    'created after the REAL ## Active span, not inside the fenced example');
+  assert.ok(created < r.text.lastIndexOf('## Traceability'));
+  assert.ok(r.text.includes('| STOR-01 (bytes survive) | 1 | Complete | v9.9.0 |'));
+});
+
+// D-13: the append scan's END. A fenced `## ` line inside `## Shipped` broke
+// the loop, so new rows landed above rows already in the table.
+const FENCED_INSIDE_SHIPPED = `# Requirements: Fixture
+
+## Active
+
+- **STOR-01**: bytes survive
+
+## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+| OLD-01 | 0 | Complete | v0.1.0 |
+
+The next section is spelled:
+
+\`\`\`markdown
+## Traceability
+\`\`\`
+
+| OLD-02 | 0 | Complete | v0.1.0 |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+`;
+
+test('a fenced `## ` inside ## Shipped does not cut the append scan short', () => {
+  const r = archiveRequirements(FENCED_INSIDE_SHIPPED, [1], 'v9.9.0');
+  assert.equal(r.createdSection, false);
+  const lines = r.text.split('\n');
+  assert.equal(lines[lines.indexOf('| OLD-02 | 0 | Complete | v0.1.0 |') + 1],
+    '| STOR-01 (bytes survive) | 1 | Complete | v9.9.0 |',
+    'the new row follows the LAST row of the table, not the last one before the fence');
+  assert.ok(r.text.includes('```markdown\n## Traceability\n```'),
+    'the fenced example survives byte-identical');
+});
+
 // --- the corpus: this repository's own planning documents -------------------
 
 // This arm reads the LIVE planning documents, so its subject exists only while
@@ -526,6 +662,101 @@ test('seam: missing REQUIREMENTS.md degrades to a warning, roadmap half still la
   assert.deepEqual(r.requirements.moved, []);
   assert.ok(r.warnings.some((w) => /REQUIREMENTS\.md/.test(w)));
   assert.ok(!readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'));
+});
+
+// --- AC7 at the seam: a document whose sections are only fenced -------------
+//
+// The pure transforms above prove the locators; these two prove the ANSWER a
+// close gives, which is where the damage happened. The document is the shape a
+// template-seeded project actually has (D-15): `templates/REQUIREMENTS.md`
+// puts its whole body inside a markdown fence, so `## Active`, `## Shipped`
+// and `## Traceability` exist only as examples of themselves. Read
+// fence-blind, this close shipped the example's own row - removing it from the
+// fenced Traceability table and appending an archived row inside the fenced
+// `## Shipped` one.
+//
+// "No section found" needs no new field: the seam already reports the moved
+// list and the created-shipped flag, and already writes REQUIREMENTS.md only
+// when the transform moved a row, so an empty `moved` with the file
+// byte-identical IS that answer.
+
+const FENCED_BODY = `\`\`\`markdown
+# Requirements: [Project Name]
+
+## Active
+
+- **STOR-01**: [requirement]
+
+## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+\`\`\``;
+
+const TEMPLATE_SHAPED = `# REQUIREMENTS.md template
+
+Fill and write to .planning/REQUIREMENTS.md.
+
+${FENCED_BODY}
+
+Bare headers - cad-plan seeds a row per requirement when its phase is planned.
+`;
+
+const TEMPLATE_PLUS_REAL = `${TEMPLATE_SHAPED}
+## Active
+
+- **STOR-01**: bytes survive
+
+## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+| OLD-01 | 0 | Complete | v0.1.0 |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+`;
+
+test('seam: a REQUIREMENTS.md whose sections are only fenced comes back byte-identical', () => {
+  const dir = scaffold();
+  writeFileSync(join(dir, 'REQUIREMENTS.md'), TEMPLATE_SHAPED);
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements.moved, [], 'no section outside a fence: nothing to move');
+  assert.equal(r.requirements.created_shipped, false);
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), TEMPLATE_SHAPED,
+    'the fenced example keeps every byte, the file is never written');
+  // The roadmap half is unaffected: this is a REQUIREMENTS-only answer.
+  assert.ok(!readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'));
+});
+
+test('seam: with real sections below the fence, the row lands under the REAL ## Shipped', () => {
+  const dir = scaffold();
+  writeFileSync(join(dir, 'REQUIREMENTS.md'), TEMPLATE_PLUS_REAL);
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements.moved, [{ id: 'STOR-01', phase: 1 }]);
+  assert.equal(r.requirements.created_shipped, false, 'the real section already exists');
+  const out = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.ok(out.includes(FENCED_BODY), 'the fenced example survives byte-identical');
+  const row = out.indexOf('| STOR-01 (bytes survive) | 1 | Complete | v1.2.0 |');
+  assert.ok(row > -1, 'the row was archived');
+  assert.ok(row > out.indexOf('| OLD-01 | 0 | Complete | v0.1.0 |'),
+    'under the REAL ## Shipped, after its last row');
+  assert.ok(row < out.lastIndexOf('## Traceability'));
+  // The real bullet and the real Traceability row are the ones that went.
+  assert.ok(!out.split('\n').includes('- **STOR-01**: bytes survive'));
+  assert.equal(out.split('\n').filter((l) => l === '| STOR-01 | Phase 1 | Complete |').length, 1,
+    'only the fenced example still carries that row');
 });
 
 // --- partial application: the arm that used to answer ok:true ---------------
