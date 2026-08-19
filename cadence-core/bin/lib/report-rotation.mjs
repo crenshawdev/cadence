@@ -92,8 +92,19 @@ export function rotationTarget(planKey, entries) {
     }
   }
 
-  const from = `plan-${k}.md`;
-  if (!entries.includes(from)) return { rotate: false };
+  // Case-insensitively, for the SAME reason the suffix scan below is: on a
+  // case-folding filesystem a report stored as `PLAN-1.MD` IS `plan-1.md`, and
+  // an exact-name miss here answers `rotate: false` about a directory that
+  // holds a report - the caller then writes the canonical spelling straight
+  // over it, the one outcome this module exists to prevent. `from` is the
+  // entry's OWN spelling, never the canonical one, because that is the name
+  // the caller's rename has to resolve on a case-SENSITIVE filesystem too.
+  // Exact match wins when a case-sensitive tree holds both spellings: the
+  // canonical name is the one the caller is about to write.
+  const canonical = `plan-${k}.md`;
+  const base = new RegExp(`^plan-${k}\\.md$`, 'i');
+  const from = entries.includes(canonical) ? canonical : entries.find((e) => base.test(e));
+  if (from === undefined) return { rotate: false };
 
   // `k` reaches the RegExp only past PLAN_NUMBER, so the interpolation is
   // digits and cannot carry pattern syntax. The trailing `.md` and the dot
@@ -107,10 +118,12 @@ export function rotationTarget(planKey, entries) {
     if (m) taken.add(Number(m[1]));
   }
 
-  // Case-insensitively above, deliberately: on a case-folding filesystem a
-  // `PLAN-1.1.MD` left by hand IS `plan-1.1.md`, and renaming onto it would
-  // destroy a report - the one outcome this module exists to prevent. The name
-  // produced is always the canonical lower-case spelling.
+  // Case-insensitively above, deliberately, and for the same reason the base
+  // check is: on a case-folding filesystem a `PLAN-1.1.MD` left by hand IS
+  // `plan-1.1.md`, and renaming onto it would destroy a report. The name
+  // PRODUCED is always the canonical lower-case spelling, so a suffix is never
+  // minted in a spelling the next run would have to match case-insensitively
+  // in turn.
   let n = 1;
   while (taken.has(n)) n += 1;
   return { rotate: true, from, to: `plan-${k}.${n}.md` };

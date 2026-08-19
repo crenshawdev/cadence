@@ -112,6 +112,36 @@ test('the rotate-twice round trip leaves three readable reports, the earliest by
   assert.equal(readFileSync(join(dir, 'plan-1.md'), 'utf8'), 'RUN C\nPLAN COMPLETE\n');
 });
 
+test('a base report stored in another case is FOUND, not read as absent', () => {
+  // The half the suffix scan already protected and this one did not. On a
+  // case-folding filesystem `PLAN-1.MD` and `plan-1.md` are one file, so an
+  // exact-name miss answers `rotate: false` about a directory that holds a
+  // report - and the caller acts on `false` by writing the canonical spelling
+  // straight over it. Pure-string fixtures, deliberately: the property is the
+  // module's answer about a NAME, and a case-sensitive test filesystem cannot
+  // produce the collision the answer has to survive.
+  assert.deepEqual(rotationTarget(1, ['PLAN-1.MD']),
+    { rotate: true, from: 'PLAN-1.MD', to: 'plan-1.1.md' });
+  assert.deepEqual(rotationTarget(1, ['Plan-1.Md']),
+    { rotate: true, from: 'Plan-1.Md', to: 'plan-1.1.md' });
+
+  // `from` is the entry's OWN spelling: the canonical name would not resolve
+  // for the caller's rename on a case-SENSITIVE filesystem, where the two names
+  // are two different files and only one of them exists.
+  assert.deepEqual(rotationTarget(1, ['PLAN-1.MD', 'PLAN-1.1.MD']),
+    { rotate: true, from: 'PLAN-1.MD', to: 'plan-1.2.md' });
+
+  // Both spellings present - a case-sensitive tree - rotates the CANONICAL one,
+  // because that is the name the caller is about to write over.
+  assert.deepEqual(rotationTarget(1, ['PLAN-1.MD', 'plan-1.md']),
+    { rotate: true, from: 'plan-1.md', to: 'plan-1.1.md' });
+
+  // Still nothing to widen to: another plan's report in any case is not this
+  // plan's, and the transient risk diff is not a report at all.
+  assert.deepEqual(rotationTarget(1, ['PLAN-2.MD', 'PLAN-11.MD', 'plan-1-risk.diff']),
+    { rotate: false });
+});
+
 test('unreadable inputs throw rather than answering "nothing to rotate"', () => {
   // Fail-open is the destructive arm: the caller acts on `rotate: false` by
   // writing over the file, so a malformed input must stop it, not license it.
