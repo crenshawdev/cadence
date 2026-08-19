@@ -116,6 +116,27 @@ const HELPERS = [
       + 'declarations by exact equality while enforcement read a trailing '
       + 'slash as a directory prefix. Ask the module, do not re-derive it.',
   },
+  {
+    name: 'the executable-resolution predicate (onPath / executableIn)',
+    home: 'lib/on-path.mjs',
+    // The access probe itself, which is the whole contract: "can this NAME be
+    // run from here". The PATH walk around it is the cheap half - a second
+    // copy would re-derive THIS line, under whatever name, and answer for the
+    // driver of a lint command differently from the way the land seam answers
+    // for a forge CLI.
+    //
+    // `X_O[K]` is a one-character class rather than the plain literal, for the
+    // reason every other pattern here is an escaped string: the text a rule
+    // matches must not appear verbatim in this file, and a bracket is the only
+    // escape a bare identifier admits.
+    re: new RegExp('accessSync\\(join\\(dir, name\\), constants\\.X_O[K]\\)', 'g'),
+    note: 'Import { onPath, executableIn } from ./lib/on-path.mjs. It reads no '
+      + 'CADENCE_* variable on purpose: issue-check.mjs promises a test injects '
+      + 'a stub by prepending a directory to the CHILD\'s PATH so the '
+      + 'PRODUCTION resolver runs, and detect-commands keeps its own gated '
+      + 'override at its call site instead. A second copy would also drop the '
+      + 'PATHEXT arm, which is the only reason npm/npx/tsc resolve on win32.',
+  },
 ];
 
 const MODULES = everyModule(BIN);
