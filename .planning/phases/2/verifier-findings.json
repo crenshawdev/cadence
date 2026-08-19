@@ -1,0 +1,94 @@
+{
+  "status": "delivered",
+  "score": "7/7",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "All six --dir seams refuse an empty and a trailing valueless --dir with one JSON line naming the flag, exit 1; an ABSENT --dir still resolves to the process cwd",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Ran all 12 arms in /code/cadence. Each of git-publish.mjs reap --dir '' --branch nosuchbranch-xyz / --dir (valueless), git-branch.mjs tags, release-bump.mjs bump --version 1.1.0, land-cleanup.mjs gate, worktree-base.mjs resolve, issue-check.mjs check answered exactly {\"ok\":false,\"reason\":\"missing-flag-value\",\"detail\":\"--dir\"} at exit=1. Baseline reversed: git-branch.mjs tags --dir '' no longer prints the tag list. Regression control: git-branch.mjs tags with NO --dir still returns {\"ok\":true,\"tags\":[\"v1.0.0\",...]} exit 0."
+    },
+    {
+      "n": 2,
+      "truth": "The full bin test suite passes with zero failures and lib/seam-input.mjs's header no longer claims two surviving --dir contracts",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "node --test 'cadence-core/bin/*.test.mjs' -> tests 2321, pass 2321, fail 0, duration 17.5s (one full-suite run). cadence-core/bin/lib/seam-input.mjs:19-20 now reads 'THE TWO FLAG READERS ARE TWO CONTRACTS, AND BOTH ARE LIVE' about optionalFlag vs flagValue generally, and :41-45 states '`--dir` reads through flagValue at EVERY seam (phase 2 D-01), reversing this header's earlier guarantee that its five callers kept the permissive reader.' The old two-surviving---dir-contracts claim is gone."
+    },
+    {
+      "n": 3,
+      "truth": "release-bump bump --date refuses every malformed spelling under a new bad-date code at exit 1 leaving CHANGELOG.md byte-identical, while a well-formed --date still writes the dated heading",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "In-place refusal arms (release-bump.mjs bump --version 1.1.0 --date X): not-a-date, 2026-13-45, 2026-8-1, '' and a trailing valueless --date each returned {\"ok\":false,\"action\":\"refuse\",\"reason\":\"bad-date\",\"detail\":\"--date must be YYYY-MM-DD ...\"} exit 1; the newline-carrying value ('2026-08-18\\n## [9.9.9] - forged') returned the distinct detail '--date cannot contain a newline: ... a newline forges a second release section' exit 1. CHANGELOG.md sha256 1a96df56e76bda2bff04bab87b95cfe817b152fd6ebc9b3f96430f534a01320d identical before and after all six runs; git status clean. Accepted arm in a throwaway fixture (scratchpad/rbfix with .claude-plugin/plugin.json at 1.0.0): --version 1.1.0 --date 2026-08-18 returned ok:true action:bumped and the file now carries '## [1.1.0] - 2026-08-18'. Absent --date still dates today ('## [1.1.0] - 2026-08-19' in a second fixture)."
+    },
+    {
+      "n": 4,
+      "truth": "A malformed --date refuses ahead of bump(), including against a directory with no plugin manifest where nothing would be written",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Empty throwaway dir: release-bump.mjs bump --dir <tmp> --version 1.1.0 --date not-a-date -> {\"ok\":false,\"action\":\"refuse\",\"reason\":\"bad-date\",...} exit 1. Control on the same dir with no --date -> {\"ok\":true,\"action\":\"skip\",\"reason\":\"no-plugin-manifest\",...} exit 0, so the refusal genuinely precedes the manifest read rather than the dir simply erroring."
+    },
+    {
+      "n": 5,
+      "truth": "A phase spelling that cannot round-trip is refused at seed-reqs and cursor set; 2 and 2.1 still succeed and phase-done --n 02 still checks its roadmap box",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "In place (no writes, git status unchanged): planning.mjs seed-reqs --phase 1.10 -> {\"ok\":false,\"reason\":\"bad-args\",\"detail\":\"seed-reqs --phase \\\"1.10\\\" is written here as phase 1.1, a different phase - send --phase \\\"1.1\\\", or rename phases/1.10/ to phases/1.1/\"}; cursor set --phase 1.10 the same with the cursor-set prefix; also 1.0 -> 'written here as phase 1' and 01 -> 'written here as phase 1'. Accepted arms in a copied fixture (scratchpad/fx/.planning): seed-reqs --phase 2 -> {\"ok\":true,\"phase\":2,...}; cursor set --phase 2 --status planned --next x -> ok:true; cursor set --phase 2.1 --status planned --next x --name Sub --total 5 -> {\"ok\":true,\"cursor\":{\"phase\":2.1,...}}; seed-reqs --phase 2.1 passes the spelling gate (fails later on no-plans, not bad-args). phase-done --n 02 -> {\"ok\":true,\"roadmap\":{\"line\":37,\"now\":\"[x]\"},...} and the fixture ROADMAP line 37 is now '[x]'."
+    },
+    {
+      "n": 6,
+      "truth": "The shared numeric readers (requireInt, requireCursorNumber, normalizeNumber, scanIssueRefs) refuse values outside the safe-integer range instead of rounding or yielding Infinity",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Direct calls: requireInt('9007199254740993') -> {\"ok\":false}, requireInt('1'+400 digits) -> {\"ok\":false}, requireInt('42') -> {ok:true,value:42}; requireCursorNumber same three results; scanIssueRefs('fixes #9007199254740993') -> [] and the 400-digit form -> [], while 'fixes #42' -> [42]. normalizeNumber is module-private (cadence-core/bin/lib/issue-decision.mjs:77, guarded by Number.isSafeInteger at :78 and :81); its behavior is pinned by the named test 'a number OUTSIDE the safe-integer range is unreadable, never a neighbour (ARG-04)' (issue-decision.test.mjs:343, exercising HOST_TABLE.forgejo.normalize). Ran by name: 5/5 pass (require-int.test.mjs safe-range tests for requireInt, requireCursorNumber, requirePhaseArg plus both issue-decision ARG-04 tests)."
+    },
+    {
+      "n": 7,
+      "truth": "config.mjs reports Object.prototype members as unknown keys at every face, and does not fabricate a retirement, while real retirements keep their vocabulary",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "config.mjs get __proto__ / get constructor / get toString each -> {\"ok\":false,\"reason\":\"unknown-key\",\"detail\":[\"<key>\"]} exit 1; get stakes __proto__ -> the same unknown-key refusal (no longer answering about one key of two), while get stakes alone still -> {\"ok\":true,\"values\":{\"stakes\":\"shipped\"},...} exit 0; check '__proto__=1' -> {\"ok\":false,\"reason\":\"invalid\",\"detail\":[{\"key\":\"__proto__\",\"error\":\"unknown key\"}]}, the fabricated 'retired in v2.0.0: undefined' is gone. Retirement vocabulary intact: check 'model.profile=1' still -> error 'retired in v2.0.0: use \"stakes\" instead ...' (the flagged assumption on lib/retired-keys.mjs holds)."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "--dir refuses empty and valueless at all six seams",
+      "evidence": "All 12 arms across git-publish/release-bump/land-cleanup/git-branch/worktree-base/issue-check returned {\"ok\":false,\"reason\":\"missing-flag-value\",\"detail\":\"--dir\"} exit 1; absent --dir still resolves to cwd (git-branch tags returned the tag list at ok:true)."
+    },
+    {
+      "k": 2,
+      "name": "Full bin test suite passes and the two-reader header is gone",
+      "evidence": "node --test 'cadence-core/bin/*.test.mjs': tests 2321, pass 2321, fail 0. seam-input.mjs:41-45 explicitly reverses the earlier five-callers-keep-the-permissive-reader guarantee."
+    },
+    {
+      "k": 3,
+      "name": "release-bump --date refuses every malformed spelling, CHANGELOG untouched",
+      "evidence": "not-a-date, 2026-13-45, 2026-8-1, '', valueless and newline all -> action:refuse reason:bad-date exit 1; CHANGELOG.md sha256 unchanged (1a96df56...); fixture run with --date 2026-08-18 wrote '## [1.1.0] - 2026-08-18'."
+    },
+    {
+      "k": 4,
+      "name": "Malformed --date refuses even where nothing would be written",
+      "evidence": "Empty dir + --date not-a-date -> bad-date refusal exit 1; same dir without --date still -> {\"ok\":true,\"action\":\"skip\",\"reason\":\"no-plugin-manifest\"}."
+    },
+    {
+      "k": 5,
+      "name": "A phase spelling that cannot round-trip is refused at both write faces",
+      "evidence": "seed-reqs and cursor set both refuse 1.10 (and 1.0, 01) with bad-args naming the spelling and the rename remedy; 2 and 2.1 accepted in a fixture; phase-done --n 02 checked the fixture roadmap box at line 37."
+    },
+    {
+      "k": 6,
+      "name": "The shared numeric readers refuse out-of-safe-range values",
+      "evidence": "requireInt/requireCursorNumber -> ok:false for 9007199254740993 and a 400-digit string, ok:true value 42 for '42'; scanIssueRefs -> [] for both, [42] for '#42'; normalizeNumber guarded at issue-decision.mjs:78/:81 and pinned by two named ARG-04 tests, 5/5 passing when run by name."
+    },
+    {
+      "k": 7,
+      "name": "config.mjs reports prototype members as unknown keys",
+      "evidence": "get __proto__ / constructor / toString and get stakes __proto__ all -> unknown-key exit 1; check '__proto__=1' -> 'unknown key'; genuine retirement model.profile still reports 'retired in v2.0.0: use \"stakes\" instead ...'."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
