@@ -108,6 +108,22 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
   that file publishes, while the seams that end in an `e.seam` catch arm raise
   it and refuse with `missing-flag-value`. The module mints no reason code of
   its own, so adopting it adds nothing to a seam's published list.
+- The DECLARATION is what refuses. An adopting bin runs its resolved row at the
+  door of its dispatch rather than restating the rule at each handler, and
+  `cadence-core/bin/arg-contract-adoption.test.mjs` walks the whole table
+  against the shipped binaries, so a row declaring a refusal nothing carries out
+  reddens there. That census is what the gap needed: 98 rows were declared for
+  one script and two of them were read, so a valueless flag wrote the boolean
+  `true` into a cursor, a checklist's front-matter and a recorded UAT result.
+- PRESENCE is the stated exception. The shared door judges only the flags a
+  caller actually PASSED, and a flag that is genuinely ABSENT is answered by the
+  bin that owns the wording, because the diagnostic for a missing enum-valued
+  flag - which of three kinds a capture is, which of two modes a prune takes -
+  is not expressible in a declaration. So `required` records a fact for the bins
+  that choose to read it, never a rule the door enforces.
+- The contract governs VALUE grammar only, and never refuses an UNDECLARED flag
+  at runtime. Membership is the prose-side lint's job, so a flag missing from
+  the table is caught where prose spells it rather than at a caller's expense.
 
 ## Caller-derived text
 

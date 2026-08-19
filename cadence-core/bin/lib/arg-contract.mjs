@@ -11,6 +11,30 @@
 // So the rules are DECLARED here, once, and a tenth seam inherits them rather
 // than restating them.
 //
+// THE DECLARATION IS WHAT REFUSES, and that sentence was once bigger than the
+// truth. The table declared 98 rows for planning.mjs and that script consulted
+// two of them, so a row could say `refuse` while the CLI wrote the value
+// through - `cursor set --name` with nothing after it answered ok:true and
+// wrote `Phase: 1 of 5 (true)` into STATE.md. An adopting bin now runs its
+// RESOLVED ROW at the door of its dispatch (`subcommandKey` then
+// `evaluateRow`) rather than restating the rule at each handler, and
+// arg-contract-adoption.test.mjs walks the whole table against the shipped
+// binaries so a declared refusal nothing carries out reddens. What that census
+// cannot catch is stated where it lives: a row declaring only `fallback` or
+// `warn` has no refusal arm to exercise.
+//
+// PRESENCE IS THE STATED EXCEPTION. `evaluateRow` is a VALUE door: it judges
+// only the flags a caller actually PASSED, and a genuinely ABSENT flag is
+// answered by the bin that owns the wording. review-provider.mjs has held that
+// position in code since its adoption - its `parseArgs` skips a flag with `if
+// (!rest.includes(flag)) continue;` - and this is where it is written down.
+// The reason is that the diagnostics for a missing enum-valued flag are not
+// expressible in a declaration: `capture --kind must be one of todo | seed |
+// note` and `milestone-prune needs --mode <delete|archive>` would each become
+// one generic sentence. So `required` below records a fact for the bins that
+// choose to read it (route.mjs's `--role`, review-provider.mjs's handlers),
+// never a rule the shared door enforces.
+//
 // TWO HALVES, both in this file (D-06/D-10). The declarations are DATA - per
 // script, per subcommand, per flag - and the evaluator is a pure CLASSIFIER
 // beside them. Data alone would be a second table drifting from the code that
@@ -102,7 +126,9 @@
 // ONE HARD BOUNDARY: this module governs VALUE grammar only. It never refuses
 // an UNDECLARED flag at runtime - flag membership is self-verify check 2's
 // prose-side job, and a runtime refusal would break callers no decision here
-// asks about. The table's own completeness is likewise a TEST-time question,
+// asks about. Nor does it own any refusal WORDING: the caller composes the
+// sentence, which is what leaves a bin free to keep a diagnostic no row can
+// state (planning.mjs's decimal-phase answer is the case). The table's own completeness is likewise a TEST-time question,
 // not a runtime one: arg-contract.test.mjs walks every row and reddens on a
 // missing or misspelled field, so the evaluator carries no spec-validation
 // branch that would only ever fire on a table this repo cannot ship.
