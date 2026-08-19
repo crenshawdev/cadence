@@ -91,6 +91,7 @@ import { measure } from './lib/surface-weight.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { redactUrl, redactCredentials } from './lib/redact-url.mjs';
+import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,16 +165,57 @@ process.on('uncaughtException', (/** @type {any} */ e) => {
 });
 
 // ---------------------------------------------------------------------------
-// Arg parsing (minimal, no deps). --flag value pairs + a leading subcommand.
+// Arg parsing: a leading subcommand, then each declared flag read through its
+// row in lib/arg-contract.mjs (ARG-06).
+//
+// THE DEFECT THIS ENDS. The loop this replaced did `opts[a.slice(2)] =
+// rest[i + 1]` with no flag-shape test, so a valueless flag ate the flag after
+// it and the one after that was skipped: measured 2026-08-19,
+// `review-provider.mjs consult --payload --provider openai` returned
+// `{"ok":false,"reason":"bad-provider","detail":"unknown provider: undefined"}`
+// - a refusal about a flag the caller DID pass, naming the wrong problem.
+//
+// THE VALUE DOOR ONLY. A flag PRESENT with a missing, empty or flag-shaped
+// value is refused here by name; a flag genuinely ABSENT is not, even where its
+// row says `required: true`. Presence belongs to the command handlers that own
+// the wording - `resolveProvider` answers an absent `--provider` with
+// `bad-provider` and an absent `--model` with `${cmd} needs --model`, and
+// references/seams.md publishes both - so answering presence here would change
+// which reason a caller sees for an input this phase was never about.
+//
+// PURE, and it stays that way: this function is exported and the test file
+// imports it, so it emits nothing and throws nothing. A refusal rides back as
+// `badArg`, a third field beside the `{cmd, opts}` shape its callers destructure,
+// and `main` renders it as this bin's own `bad-args` - the contract mints no
+// reason code (D-07) and references/seams.md already publishes that one.
 // ---------------------------------------------------------------------------
+
+/** What each flag needs after it, in this bin's own wording. */
+const NEEDS = {
+  '--provider': 'a provider name after it: --provider <openai|gemini|deepseek>',
+  '--model': 'a model id after it: --model <id>',
+  '--effort': 'a reasoning effort after it: --effort <name>',
+  '--payload': 'a payload file after it: --payload <file> (or omit it for stdin)',
+  '--trigger': 'a trigger name after it: --trigger <name>',
+  '--key-file': 'a path after it: --key-file <env file>',
+};
+
 export function parseArgs(argv) {
   const [cmd, ...rest] = argv;
   const opts = {};
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i];
-    if (a.startsWith('--')) { opts[a.slice(2)] = rest[i + 1]; i++; }
+  const script = CONTRACTS['review-provider.mjs'];
+  // The subcommand's own row plus the script-global one. An unrecognised
+  // subcommand declares nothing and reads nothing; `main` answers it with
+  // `bad-command`, exactly as it did before.
+  const rows = { ...(script[cmd] || {}), ...script['*'] };
+  let badArg;
+  for (const flag of Object.keys(rows)) {
+    if (!rest.includes(flag)) continue;
+    const parsed = evaluateFlag(rest, flag, rows[flag]);
+    if (!parsed.ok) { badArg = `${cmd} ${flag} needs ${NEEDS[flag]}`; break; }
+    if (parsed.value !== undefined) opts[flag.slice(2)] = parsed.value;
   }
-  return { cmd, opts };
+  return { cmd, opts, ...(badArg ? { badArg } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -1212,8 +1254,12 @@ async function main(argv) {
   // subject this call never had.
   activeMeta = null;
   traceRecorded = false;
-  const { cmd, opts } = parseArgs(argv || process.argv.slice(2));
-  if (cmd === 'review') await cmdReview(opts);
+  const { cmd, opts, badArg } = parseArgs(argv || process.argv.slice(2));
+  // The argument-shape refusal comes first: a flag present with nothing usable
+  // after it is a malformed CALL, and answering it as a domain problem
+  // (`bad-provider: unknown provider: undefined`) is what this closes.
+  if (badArg) fail('bad-args', badArg);
+  else if (cmd === 'review') await cmdReview(opts);
   else if (cmd === 'consult') await cmdConsult(opts);
   else if (cmd === 'detect-models') await cmdDetect(opts);
   else fail('bad-command', `use: review | consult | detect-models (got: ${cmd || 'none'})`);
