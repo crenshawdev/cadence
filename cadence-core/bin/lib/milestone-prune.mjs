@@ -161,7 +161,14 @@ export function archiveRequirements(text, completed, label) {
   if (activeAt !== -1) {
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
-      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
+      // The lead line admits the tracker suffix this milestone's bullets carry -
+      // `- **GRD-01** (#219): ...` - which the bare `**<ID>**:` form did not
+      // match at all, so such a bullet was never removed and never summarized:
+      // its whole span survived into the pruned document as orphaned prose, and
+      // its Shipped row was built with no parenthetical. Still the NARROW form
+      // (D-03) - the suffix is `(#<digits>)` and nothing else, so a
+      // `- **Note**:` prose bullet remains unmatchable.
+      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
       const kept = [];
       for (let i = 0; i < body.length; i++) {
         const m = body[i].match(bulletRe);
@@ -172,7 +179,10 @@ export function archiveRequirements(text, completed, label) {
         // bullet apart from the whitespace join. A heuristic that lowercased the
         // lead word to match past hand repairs would mangle a span opening on a
         // proper noun or an identifier, which is the worse failure.
-        const parts = [m[1].trim()];
+        // The tracker ref rides the summary rather than being dropped on the
+        // colon split: it is the bullet's only pointer back to the issue, and
+        // the archived row is where a reader goes looking for it afterwards.
+        const parts = [m[1] ? `${m[1]}:` : '', m[2].trim()];
         let j = i + 1;
         while (j < body.length && body[j].trim() && /^\s/.test(body[j])) {
           parts.push(body[j].trim());

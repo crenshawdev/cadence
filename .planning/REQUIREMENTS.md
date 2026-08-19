@@ -10,19 +10,39 @@ from the tracker milestone `v3.5.5`. Each id names its issue; #219 through #224
 were filed at the open from a capture-queue audit that re-verified every defect
 live rather than trusting its note.
 
-- **GRD-01** (#219): a string `git.protected_branches` resolves to a list that actually protects, never to `[""]`, which protects nothing while reading as set.
-- **SCR-01** (#223): the bulk-output transport uses a per-run scratch path coupled to its write, so a concurrent run cannot answer another run's blocking re-arm cap, and the read-back refuses a truncated or stale file.
-- **ARG-01** (#137): every seam reading `--dir` reads it through a strict reader, so an empty or absent flag is refused rather than answered about the process cwd.
-- **ARG-02** (#142): `release-bump --date` is validated against the format its own documentation states.
-- **ARG-03** (#144): a phase spelling the numeric grammar cannot round-trip is refused at `seed-reqs` and `cursor set`, so `1.10` can never be silently merged into `1.1`.
-- **ARG-04** (#182): the shared numeric readers refuse a digit string outside the safe-integer range instead of rounding it or yielding `Infinity`.
-- **ARG-05** (#220): every `config.mjs` face reports a prototype-member key as unknown rather than a silent success or a fabricated retirement claim.
-- **RCH-01** (#221): `detect-commands` names a lint or typecheck command only when its binary is reachable.
-- **RSK-03** (#222): `risk-check status` is satisfiable for every worker key `seams.md` permits, not only a numeric one.
-- **RSK-04** (#224): `risk-diff` does not fire the blocking gate on its own test fixtures.
-- **SHP-01** (#183): `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.
-- **ARG-06** (#147): the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.
-- **RME-01**: `README.md` is a decision document, not a reference manual - the command table, the cost-to-run section and the worked example move to `docs/`, the audience section states the DEMAND rather than a label and sits ABOVE Install, and every claim that survives the move is verified rather than carried over. Promoted from the 2026-08-18 capture decision.
+- **GRD-01** (#219): a string `git.protected_branches` resolves to a list that
+  actually protects, never to `[""]`, which protects nothing while reading as
+  set.
+- **SCR-01** (#223): the bulk-output transport uses a per-run scratch path
+  coupled to its write, so a concurrent run cannot answer another run's
+  blocking re-arm cap, and the read-back refuses a truncated or stale file.
+- **ARG-01** (#137): every seam reading `--dir` reads it through a strict
+  reader, so an empty or absent flag is refused rather than answered about the
+  process cwd.
+- **ARG-02** (#142): `release-bump --date` is validated against the format its
+  own documentation states.
+- **ARG-03** (#144): a phase spelling the numeric grammar cannot round-trip is
+  refused at `seed-reqs` and `cursor set`, so `1.10` can never be silently
+  merged into `1.1`.
+- **ARG-04** (#182): the shared numeric readers refuse a digit string outside
+  the safe-integer range instead of rounding it or yielding `Infinity`.
+- **ARG-05** (#220): every `config.mjs` face reports a prototype-member key as
+  unknown rather than a silent success or a fabricated retirement claim.
+- **RCH-01** (#221): `detect-commands` names a lint or typecheck command only
+  when its binary is reachable.
+- **RSK-03** (#222): `risk-check status` is satisfiable for every worker key
+  `seams.md` permits, not only a numeric one.
+- **RSK-04** (#224): `risk-diff` does not fire the blocking gate on its own
+  test fixtures.
+- **SHP-01** (#183): `## Shipped` is located fence-aware, by the same
+  `sectionSpan` its own function already uses for `## Active`.
+- **ARG-06** (#147): the per-seam refusals are expressed once as a declarative
+  argument contract the seam CLIs share.
+- **RME-01**: `README.md` is a decision document, not a reference manual - the
+  command table, the cost-to-run section and the worked example move to
+  `docs/`, the audience section states the DEMAND rather than a label and sits
+  ABOVE Install, and every claim that survives the move is verified rather
+  than carried over. Promoted from the 2026-08-18 capture decision.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, with two caveats the 2026-08-18 audit

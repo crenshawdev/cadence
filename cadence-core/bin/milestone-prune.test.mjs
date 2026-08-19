@@ -239,7 +239,9 @@ function activeSpan(text, id) {
     if (/^## /.test(lines[i])) { end = i; break; }
   }
   const body = lines.slice(start + 1, end);
-  const lead = body.findIndex((l) => new RegExp(`^- \\*\\*${id}\\*\\*:`).test(l));
+  // The id may carry its tracker number before the colon - `- **GRD-01** (#219):`
+  // - which is the convention this milestone's `## Active` bullets are written in.
+  const lead = body.findIndex((l) => new RegExp(`^- \\*\\*${id}\\*\\*(?: \\(#\\d+\\))?:`).test(l));
   if (lead === -1) return [];
   const span = [body[lead]];
   for (let i = lead + 1; i < body.length; i++) {
@@ -254,8 +256,12 @@ function activeSpan(text, id) {
  *  for the table cell (D-04). No lowercasing - D-05 makes the archived text
  *  byte-faithful to the bullet apart from the whitespace join. */
 function parenthetical(span) {
+  // The lead marker is stripped the way the seam strips it, tracker suffix
+  // included - and the suffix is KEPT, as `#219:`, because the seam carries the
+  // bullet's only pointer back to its issue into the archived row rather than
+  // dropping it on the colon split.
   return span.map((l) => l.trim()).join(' ')
-    .replace(/^- \*\*[^*]+\*\*:\s*/, '')
+    .replace(/^- \*\*[^*]+\*\*(?: \((#\d+)\))?:\s*/, (_m, ref) => (ref ? `${ref}: ` : ''))
     .replace(/\|/g, '\\|');
 }
 
@@ -1018,4 +1024,41 @@ test('seam: a held ARCHIVE.md lock refuses the close before any directory moves'
   assert.match(r.detail, /ARCHIVE\.md\.lock/, 'the reason must name the lock');
   assert.ok(existsSync(join(dir, 'phases', '1')), 'the phase directory must survive a refused close');
   assert.ok(!existsSync(join(dir, 'ARCHIVE.md')), 'and nothing was written');
+});
+
+test('a bullet carrying its tracker suffix is removed WHOLE, and keeps the ref', () => {
+  // The regression the live corpus caught the moment phase 1 completed: the
+  // lead-line form was the bare `- **<ID>**:`, so a `- **GRD-01** (#219): ...`
+  // bullet matched nothing. It was never removed - its whole span survived as
+  // orphaned prose - and its Shipped row was built with no parenthetical at
+  // all, silently losing the requirement text AND the issue pointer.
+  const reqs = [
+    '## Active',
+    '',
+    '- **AAA-01** (#219): a wrapped bullet whose lead line carries the tracker',
+    '  number the milestone opened it with, continuing here.',
+    '- **BBB-01**: a bullet in the older form, with no tracker suffix.',
+    '',
+    '## Traceability',
+    '',
+    '| Requirement | Phase | Status |',
+    '|-------------|-------|--------|',
+    '| AAA-01 | Phase 1 | Complete |',
+    '| BBB-01 | Phase 1 | Complete |',
+    '',
+  ].join('\n');
+  const r = archiveRequirements(reqs, [1], 'v9.9.9');
+  const out = r.text;
+  // Scoped to `## Active`: the span's WORDS survive on purpose, inside the
+  // archived row's parenthetical - what must not survive is the bullet.
+  const active = out.split('## Shipped')[0];
+  assert.ok(!active.includes('- **AAA-01**'), 'the suffixed bullet survived the prune');
+  assert.ok(!active.includes('number the milestone opened it with'),
+    'the suffixed bullet left its continuation line behind as orphaned prose');
+  assert.match(out,
+    /\| AAA-01 \(#219: a wrapped bullet whose lead line carries the tracker number the milestone opened it with, continuing here\.\) \| 1 \| Complete \| v9\.9\.9 \|/,
+    'the archived row lost the summary or the tracker ref');
+  // The older form is untouched by the widening.
+  assert.match(out,
+    /\| BBB-01 \(a bullet in the older form, with no tracker suffix\.\) \| 1 \| Complete \| v9\.9\.9 \|/);
 });
