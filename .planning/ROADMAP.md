@@ -151,10 +151,14 @@ argument voice that omit the six build-spine commands, and
 voice where a browser can read them. README keeps one pointer line at
 `/cad-help` and that file; the sharpest bullets fold into How it works.
 
-The wording rule for the audience section is load-bearing and not a style note:
-state the DEMAND and never the label - how many times the run stops and waits
+The wording rule for the audience material is load-bearing and not a style note:
+state the DEMAND and never the label - the moments the run stops and waits
 for a decision, and the sentence "if you want to describe a feature and come
 back to a merged PR, this is the wrong tool". It goes ABOVE Install, because the
 current order asks for the install decision before disclosing the price. Labels
 invite people to self-identify into the flattering box; a demand makes them do
-the arithmetic.
+the arithmetic. Revised 2026-08-19 at /cad-verify 5: the rule asked for a
+separate audience SECTION, and phase 5's second review round rejected that
+framing and dissolved the material into the opening paragraphs (commit
+47d7214). The placement and the sentence both still bind; the section shape
+does not.

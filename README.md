@@ -2,7 +2,7 @@
 
 [![test](https://git.jcrenshaw.dev/crenshawdev/cadence/badges/workflows/test.yml/badge.svg)](https://git.jcrenshaw.dev/crenshawdev/cadence/actions?workflow=test.yml)
 
-Cadence is an engineering methodology for Claude Code, for code that has to keep working after you ship it. It assumes you are the engineer of record. The model plans, builds and reviews, and you approve the plan, triage what the reviewers find, and authorize every push. Nothing is certified by the thing that wrote it.
+Cadence is an engineering methodology for Claude Code, for code that has to keep working after you ship it. It assumes you are the engineer of record. The model plans, builds and reviews, and you approve the plan, triage what the reviewers find, and authorize every push. Nothing is certified by the thing that wrote it. It costs you attention at each of those points: if you want to describe a feature and come back to a merged PR, this is the wrong tool.
 
 The methodology ships as controls. Each step of the loop has named checks around it, each check records that it ran, and a check that did not run is not a check that passed. The record is a file in your repo, not a claim in a chat window.
 

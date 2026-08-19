@@ -162,10 +162,15 @@ Plan shape: one plan.
       cost-to-run and worked-example material; no file under `docs/` lists the
       `/cad-*` commands; and `README.md` contains a line naming both
       `/cad-help` and `cadence-core/references/COMMANDS.md`.
-- [ ] AC2: The audience/demand section appears above `## Install` in
+- [ ] AC2: The audience/demand material appears above `## Install` in
       `README.md`, contains "if you want to describe a feature and come back to
       a merged PR, this is the wrong tool" verbatim, and states no count of
-      decision points or gates.
+      decision points or gates. [corrected at /cad-verify 5: written as
+      "section", but the register review that produced `47d7214` dissolved
+      `## What it asks of you` into the opening paragraphs. The placement and
+      the verbatim sentence both still bind and are what this criterion tests;
+      the section shape does not. `.planning/ROADMAP.md` and RME-01 carry the
+      same revision, and `9afdc3d` landed the sentence]
 - [ ] AC3: From line 1 through the end of `## Install`, `README.md` contains
       none of: gate, seam, rung, dispatch, adversarial, traceability, subagent.
 - [ ] AC4: `node cadence-core/bin/self-verify.mjs` returns `ok:true` with an

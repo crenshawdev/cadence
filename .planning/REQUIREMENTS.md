@@ -41,11 +41,15 @@ live rather than trusting its note.
 - **RME-01**: `README.md` is a decision document, not a reference manual - the
   cost-to-run section and the worked example move to `docs/`, the command list
   is cut in favour of a pointer at `/cad-help` and
-  `cadence-core/references/COMMANDS.md`, the audience section states the DEMAND
+  `cadence-core/references/COMMANDS.md`, the audience material states the DEMAND
   rather than a label and sits ABOVE Install, and every claim that survives the
   move is verified rather than carried over. Promoted from the 2026-08-18
   capture decision; the command-list clause revised 2026-08-19 at
-  `/cad-context 5` (phase 5 CONTEXT D-03).
+  `/cad-context 5` (phase 5 CONTEXT D-03); the audience clause revised
+  2026-08-19 at `/cad-verify 5` from "section" to "material", because the
+  register review that produced commit `47d7214` dissolved the section into the
+  opening paragraphs while keeping both the placement and the load-bearing
+  sentence.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, with two caveats the 2026-08-18 audit
