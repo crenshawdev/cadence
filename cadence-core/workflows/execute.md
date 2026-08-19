@@ -168,7 +168,12 @@ successive executors in the phase share a cached prefix: phase-level context
 - The `surfaces` the executor's own `route.mjs resolve` answered, verbatim -
   the bar the work is written to, not a review that fires later. On
   `surfaces_answered: false` say that no layer answered, so ALL of the
-  table's categories stand rather than none.
+  table's categories stand rather than none. That widening is THIS moment's
+  answer and not a general reading of the flag: the executor is being told what
+  bar to write to, where all eight is the safe direction. The FIRE is the
+  opposite - `risk-check run` refuses `surfaces-unanswered` rather than
+  detecting on a set nobody chose (`references/review-triggers.md`). One flag,
+  two moments, and the difference is which direction is safe in each.
 - Then the plan-specific tail: the plan file to read, commit scope
   `{phase}-{plan}` (e.g. `feat(3-2): ...`), and the mode line "Sequential
   executor on the normal working tree."

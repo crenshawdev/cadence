@@ -97,6 +97,7 @@ import { requireInt, requirePhaseArg } from './lib/require-int.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
+import { answeredSurfaces } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // TABLE is loaded lazily, inside the dispatch try block below, so a missing
@@ -627,15 +628,16 @@ function resolve(opts) {
   const tableCategories = Array.isArray(TABLE.risk_surface_categories)
     ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : [];
   const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
-  let surfaces = tableCategories;
-  let surfacesAnswered = false;
+  // The predicate itself lives in lib/surface-scan.mjs, because
+  // `planning.mjs risk-check run` REFUSES on the same answer this line
+  // REPORTS: two copies would let the seam that enforces the one-time question
+  // disagree with the resolve that names it. The wording of the warnings below
+  // stays here - the diagnostics are this face's, the rule is not.
+  const decided = answeredSurfaces(wroteSurfaces, tableCategories);
+  let surfaces = decided.surfaces;
+  let surfacesAnswered = decided.answered;
   if (wroteSurfaces !== undefined) {
-    // Defensive at every hop, like every other config read here: a scalar where
-    // a list belongs, and an entry outside the vocabulary, contribute NOTHING
-    // and are named - never a silent narrowing of a blocking gate's scope.
-    const list = Array.isArray(wroteSurfaces) ? wroteSurfaces : [];
-    const kept = list.filter((x) => typeof x === 'string' && tableCategories.includes(x));
-    const bad = list.filter((x) => !(typeof x === 'string' && tableCategories.includes(x)));
+    const { kept, bad } = decided;
     if (!Array.isArray(wroteSurfaces)) {
       warnings.push(`review.triggers.risk_surface.surfaces=${JSON.stringify(wroteSurfaces)} is not a list; `
         + `all ${tableCategories.length} categories stand`);
@@ -651,8 +653,7 @@ function resolve(opts) {
     // gate. Widening is the safe direction; a warning the user may not read is
     // not a substitute for it.
     if (kept.length && !bad.length) {
-      surfaces = kept;
-      surfacesAnswered = true;
+      // decided.answered already carried this arm; nothing to set here.
     } else if (bad.length) {
       warnings.push('review.triggers.risk_surface.surfaces carries an unrecognised entry; '
         + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);

@@ -472,8 +472,16 @@ report.
 
 **The set is chosen ONCE, at the first fire that needs it.** A `risk_surface`
 fire whose step-1 resolve reports `surfaces_answered: false` does not proceed to
-detection until the project has answered. Run the structural scan FIRST, so the
-question arrives carrying evidence instead of asking the user to supply it:
+detection until the project has answered, and the SEAM enforces that, not this
+sentence: `risk-check run` reads the config itself and returns
+`{"ok":false,"reason":"surfaces-unanswered"}` when no layer answered and the
+caller named no `--surfaces`. Until it did, this paragraph was the whole gate,
+and an unanswered project was byte-identical to an answered one at every point
+after the resolve - measured on a sibling project 2026-08-19, seven blocking
+fires across three phases with the question never put to the user. A caller
+naming `--surfaces` has already resolved the scope and is not refused. Run the
+structural scan FIRST, so the question arrives carrying evidence instead of
+asking the user to supply it:
 
 ```
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" detect-surfaces --root .
@@ -502,7 +510,9 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/config.mjs" set 'review.triggers.ri
 
 The choice cannot be skipped and cannot be defaulted: the seam forbids
 fabricating an answer it was supposed to collect, so an unanswered project does
-not fire and does not proceed past the question. It is asked HERE and not in
+not fire and does not proceed past the question. The answer then SCOPES
+detection - `risk-check run` checks the categories the project chose, not the
+eight it did not. It is asked HERE and not in
 `/cad-new-project` or `/cad-adopt` because both front doors forbid configuration
 questions in their own prose AND in their own success criteria (D-15), and it
 costs nothing on a project that never trips this trigger.

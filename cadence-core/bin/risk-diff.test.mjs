@@ -26,6 +26,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
 const ALL = [...CATEGORIES];
 
+/** A path no config layer occupies, so the global layer cannot answer for a fixture. */
+const NO_GLOBAL = join(tmpdir(), 'cad-risk-no-global-config.json');
+
 /** A one-file unified diff with the given added lines. */
 const diffOf = (path, added) => `diff --git a/${path} b/${path}\n`
   + `index 1111111..2222222 100644\n--- a/${path}\n+++ b/${path}\n`
@@ -171,7 +174,7 @@ test('context lines are not an input - only added and removed lines are read', (
 
 /** A scratch repository with its own `.planning/`, so the trace written here is
  * the fixture's and never this project's own record. */
-function riskRepo() {
+function riskRepo({ answered = true } = {}) {
   const repo = mkdtempSync(join(tmpdir(), 'cad-risk-'));
   execFileSync('git', ['init', '-q'], { cwd: repo });
   execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: repo });
@@ -179,6 +182,15 @@ function riskRepo() {
   execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repo });
   const dir = join(repo, '.planning');
   mkdirSync(dir, { recursive: true });
+  // The one-time surface question, answered at the repo layer for every row
+  // that is about DETECTION rather than about the question itself: since the
+  // seam refuses `surfaces-unanswered` on an unanswered project, a fixture
+  // that skipped this would be asserting the refusal in every row.
+  // `answered: false` is the opt-out the two rows below it use.
+  if (answered) {
+    writeFileSync(join(dir, 'config.json'),
+      JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ALL } } } }));
+  }
   return { repo, dir };
 }
 
@@ -198,7 +210,11 @@ function riskCheck(repo, dir, args) {
   let code = 0;
   try {
     stdout = execFileSync('node', [PLANNING, '--dir', dir, 'risk-check', ...args],
-      { encoding: 'utf8', cwd: repo });
+      // NO_GLOBAL pins the global layer out: the seam now reads config to
+      // decide whether the surface question was answered, so a developer whose
+      // own ~/.config/cadence/config.json answers it would otherwise see rows
+      // pass here and fail in CI, or the reverse.
+      { encoding: 'utf8', cwd: repo, env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL } });
   } catch (e) { stdout = e.stdout; code = e.status; }
   return { ...JSON.parse(stdout), _exit: code };
 }
@@ -1070,4 +1086,101 @@ test('risk-check status: a receipt written with no --plan joins nothing', () => 
   const r = riskStatus(dir, ['--phase', '1']);
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.plans[0].state, 'unfired');
+});
+
+test('risk-check run: an UNANSWERED project is refused rather than detected on a defaulted scope', () => {
+  // The teeth on the one-time surface question. references/review-triggers.md
+  // says a fire whose resolve reports `surfaces_answered: false` "does not
+  // proceed to detection until the project has answered" - and nothing enforced
+  // it: route.mjs emitted the flag, every consumer read the surfaces array
+  // beside it, and an unanswered project was byte-identical to an answered one
+  // at every point after the resolve. Measured on a sibling project 2026-08-19:
+  // seven blocking risk_surface fires across three phases, the question never
+  // put to the user.
+  const { repo, dir } = riskRepo({ answered: false });
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'surfaces-unanswered');
+  assert.equal(r._exit, 1);
+  assert.match(r.detail, /detect-surfaces/, 'the refusal does not name what settles it');
+  assert.deepEqual(traceLines(dir), [],
+    'a refused call recorded a detection that never happened');
+});
+
+test('risk-check run: an unanswered project with --surfaces named is NOT refused', () => {
+  // The refusal is precisely for the caller that let the default stand. A
+  // caller that named the scope has already resolved it, and refusing there
+  // would break every fire site that passes the resolved set through.
+  const { repo, dir } = riskRepo({ answered: false });
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--base', base, '--head', 'HEAD', '--surfaces', 'auth,secrets']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.categories, ['auth', 'secrets']);
+  assert.equal(riskRecords(dir).length, 1);
+});
+
+test('risk-check run: a half-answered list fails SAFE - refused, not narrowed to its valid subset', () => {
+  // `["auth", "secret"]` is a typo for `secrets`, not a decision to stop
+  // reviewing secret handling. The shared predicate in lib/surface-scan.mjs
+  // reads that as unanswered, which is what keeps a mistyped entry from
+  // suppressing the question forever while shrinking the only blocking gate.
+  const { repo, dir } = riskRepo({ answered: false });
+  writeFileSync(join(dir, 'config.json'),
+    JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ['auth', 'secret'] } } } }));
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'surfaces-unanswered');
+});
+
+test('risk-check run: the ANSWERED set scopes detection, rather than being resolved and dropped', () => {
+  // route.mjs:172 states the key IS "the categories the one blocking trigger is
+  // scoped to". Before this, `risk-check run` defaulted to all eight whatever
+  // the project had answered, so the answer reached the resolve and died there.
+  const { repo, dir } = riskRepo({ answered: false });
+  writeFileSync(join(dir, 'config.json'),
+    JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ['secrets'] } } } }));
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.categories, ['secrets'],
+    'detection ran on a scope the project did not choose');
+  assert.deepEqual(r.matches, [],
+    'an auth-only diff matched under a secrets-only scope');
+});
+
+test('risk-check run: a TORN config layer is refused even when --surfaces was named', () => {
+  // The torn-layer rule is fail-closed or it is not a rule. Placed inside the
+  // no-flag arm it would have been a guard an explicit flag stepped around,
+  // which the blocking risk_surface gate cannot afford: a syntax error in a
+  // config layer must not be readable past on the way to scoping that gate.
+  const { repo, dir } = riskRepo({ answered: false });
+  writeFileSync(join(dir, 'config.json'), '{"review": {"triggers":');
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  for (const args of [[], ['--surfaces', 'auth']]) {
+    const r = riskCheck(repo, dir,
+      ['run', '--phase', '1', '--base', base, '--head', 'HEAD', ...args]);
+    assert.equal(r.ok, false, `${JSON.stringify(args)}: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'surfaces-unanswered', JSON.stringify(args));
+  }
+  assert.deepEqual(traceLines(dir), [], 'a torn layer recorded a detection anyway');
+});
+
+test('risk-check run: the answer is judged against route-table.json\'s vocabulary, not a local list', () => {
+  // The divergence the shared predicate exists to prevent, at its one remaining
+  // seam: route.mjs judges the configured list against route-table.json's
+  // `risk_surface_categories`, so a token outside THAT list is unanswered to
+  // the resolve. Reading the module's own CATEGORIES here instead would let
+  // this seam accept the same value and narrow a blocking gate to a scope the
+  // routing authority rejected.
+  const table = JSON.parse(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+  assert.deepEqual(table.risk_surface_categories, ALL,
+    'route-table.json and lib/surface-scan.mjs disagree on the eight categories');
 });

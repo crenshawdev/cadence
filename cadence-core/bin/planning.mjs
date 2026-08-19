@@ -155,7 +155,7 @@ import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
   appendCapture, replaceSection, withPlanningFileLock, CAPTURE_KINDS, EMPTY_CAPTURE,
 } from './lib/capture-file.mjs';
-import { mergeLayers } from './lib/config-merge.mjs';
+import { mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
 // exist rather than growing second ones: the SAME prose version reader branch
 // naming uses (`### Active` -> ROADMAP title), the SAME membership test, and the
@@ -176,7 +176,7 @@ import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
-import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
+import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
@@ -3005,6 +3005,25 @@ function rungLadder() {
 }
 
 /**
+ * The risk-surface vocabulary `route-table.json` states - the SAME list
+ * `route.mjs` hands `answeredSurfaces`, read here so the seam that REFUSES on
+ * the one-time surface question and the resolve that REPORTS it cannot
+ * disagree about which tokens are a valid answer. A table naming a proper
+ * subset is the case that separates them: a configured category outside it is
+ * unanswered to `route.mjs`, and reading `CATEGORIES` here instead would let
+ * this seam accept that same value and narrow a blocking gate's scope to a set
+ * the routing authority had rejected.
+ *
+ * An unreadable or malformed table falls back to the eight rather than to
+ * nothing: no vocabulary at all would read every configured answer as invalid
+ * and refuse every call.
+ * @returns {readonly string[]}
+ */
+function surfaceVocabulary() {
+  return routeLadder('risk_surface_categories') || CATEGORIES;
+}
+
+/**
  * One ordered ladder off `route-table.json`, or `undefined` when the table is
  * unreadable, malformed, or names that ladder as anything but a non-empty array
  * of non-empty strings.
@@ -3617,6 +3636,24 @@ function cmdRiskCheckRun(dir, opts) {
   // rule `trace append --tokens` already states - because a caller who mistyped
   // the scope of a blocking gate must see a refusal rather than a narrowed
   // clean answer.
+  // THE ONE-TIME SURFACE QUESTION, read BEFORE the `--surfaces` branch so both
+  // arms see the same two facts.
+  //
+  // mergeLayers warnings[]: a layer that did not PARSE is refused here whatever
+  // the caller passed - this envelope is the surfacing, and the detail names
+  // what tore. It sits ahead of the branch deliberately: a torn layer that only
+  // an unflagged call noticed would be a fail-closed rule an explicit flag
+  // could step around, which is not a rule.
+  const { config: surfaceConfig, warnings: surfaceWarnings } = mergeLayers(join(dir, 'config.json'));
+  if (surfaceWarnings.length) {
+    return fail('surfaces-unanswered',
+      `a config layer did not parse, so the surface question cannot be read as answered: ${surfaceWarnings.join('; ')}`);
+  }
+  const surfaceTriggers = isPlainObject(surfaceConfig.review)
+    && isPlainObject(surfaceConfig.review.triggers) ? surfaceConfig.review.triggers : {};
+  const wrote = isPlainObject(surfaceTriggers.risk_surface)
+    ? surfaceTriggers.risk_surface.surfaces : undefined;
+
   let categories = [...CATEGORIES];
   if ('surfaces' in opts) {
     const raw = typeof opts.surfaces === 'string' ? opts.surfaces : '';
@@ -3630,6 +3667,33 @@ function cmdRiskCheckRun(dir, opts) {
         `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
     }
     categories = [...new Set(tokens)];
+  } else {
+    // THE TEETH ON THE ONE-TIME SURFACE QUESTION.
+    // `references/review-triggers.md` states that a `risk_surface` fire whose
+    // resolve reports `surfaces_answered: false` "does not proceed to detection
+    // until the project has answered". Detection is THIS subcommand, and until
+    // now that sentence was enforced by nothing: `route.mjs` emitted the flag,
+    // every consumer read the surfaces array beside it, and an unanswered
+    // project was byte-identical to an answered one at every point after the
+    // resolve. Measured on a sibling project 2026-08-19: seven blocking
+    // `risk_surface` fires across three phases, the question never put to the
+    // user, found only because the user asked why no scan had happened.
+    //
+    // A caller that NAMED `--surfaces` has already resolved the scope and is
+    // untouched by this arm - the refusal is precisely for the caller that
+    // let the default stand, because that default is the all-eight set nobody
+    // chose. `detail` names the two commands that settle it rather than only
+    // reporting the state, since the ask lives on this path alone
+    // (`detect-surfaces` has no other caller in the tree).
+    const decided = answeredSurfaces(wrote, surfaceVocabulary());
+    if (!decided.answered) {
+      return fail('surfaces-unanswered',
+        'no config layer answered review.triggers.risk_surface.surfaces, so detection would run '
+        + `on the ${CATEGORIES.length} categories nobody chose. Run \`detect-surfaces --root .\` `
+        + 'and put the choice to the user (references/review-triggers.md), or pass '
+        + '--surfaces <a,b,c> to state this run\'s scope explicitly');
+    }
+    categories = [...new Set(decided.surfaces)];
   }
 
   let body = null;
