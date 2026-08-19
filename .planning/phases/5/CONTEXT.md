@@ -30,7 +30,11 @@ Plan shape: one plan.
 
 - D-01 (Register): Plain language runs from line 1 through the end of
   `## Install` - no gate, seam, rung, dispatch, adversarial, traceability or
-  subagent vocabulary in that stretch. Cadence's own vocabulary starts at
+  subagent vocabulary in that stretch. [corrected by plan-1 deviation:
+  the ban produced marketing register, not plain language - forbidding the
+  system's nouns pushed the writing to "ceremony", "friction" and "the honest
+  test is". Retired and replaced: every sentence above `## Install` names
+  something a reader can point at, and no sentence describes the reader] Cadence's own vocabulary starts at
   `## The loop`, on the reasoning that a reader who has installed it has
   bought in. Rejected: plain opening only (the demand section is the one that
   has to make a stranger do arithmetic about their own habits, so jargon there
@@ -38,7 +42,9 @@ Plan shape: one plan.
   are sections whose specificity IS the argument). Evidence:
   `README.md:1-22`, `.planning/ROADMAP.md:137-145`.
 - D-02 (Audience): The demand section names the moments the run stops - before
-  it plans, at every check it runs, before it pushes anything - states NO
+  it plans, at every check it runs, before it pushes anything [corrected by
+  plan-1 deviation: a check that passes stops nobody, so the second moment is
+  "when a check comes back with findings"] - states NO
   count, and carries verbatim "if you want to describe a feature and come back
   to a merged PR, this is the wrong tool". It sits ABOVE `## Install`.
   Rejected: stating fifteen (`docs/WORKFLOW.md:32` counts decision points, of

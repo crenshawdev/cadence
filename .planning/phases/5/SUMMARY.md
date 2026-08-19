@@ -86,6 +86,21 @@ ledger rows were re-pointed, retired or re-pinned against the post-change file.
   bytes back in the same section: `## How it works` is 4,488 B (under task 6's
   4,500) and `README.md` is 14,287 B (under 15,000). (6d3fcf3)
 
+- [deviation] Post-execution review rejected the section above `## Install` as
+  marketing register. Root cause was D-01 itself: banning the system's
+  vocabulary there pushed the writing to "ceremony", "friction" and "the honest
+  test is how often you actually want to be asked". D-01 is retired and D-02's
+  "at every check it runs" corrected (a check that passes stops nobody); both
+  lines in `CONTEXT.md` are annotated. The opening now defines the software
+  before stating its assumption, the demand section names the three stop
+  moments and points at `cadence-core/bin/git-guard.mjs`, and two new
+  paragraphs state what `route-table.json` actually does: the `solo` /
+  `shipped` / `critical` gate map, and the eight risk surfaces whose review
+  blocks at every level and refuses when the question was never answered. All
+  61 non-provenance `README-*` ledger pins re-derived (+4); README-01, -02,
+  -25 and -28 held at provenance per the ledger's own rule. `README.md` is
+  14,581 B, self-verify `ok:true`, 2380 tests pass.
+
 ## Open items
 
 - `workflow.lint_command` is unset and `detect-commands` reports `lint: null`,

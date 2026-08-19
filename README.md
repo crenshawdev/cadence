@@ -2,15 +2,19 @@
 
 [![test](https://git.jcrenshaw.dev/crenshawdev/cadence/badges/workflows/test.yml/badge.svg)](https://git.jcrenshaw.dev/crenshawdev/cadence/actions?workflow=test.yml)
 
-The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
+Cadence is a planning and execution system for Claude Code. The roadmap, the per-phase plan, the verification checklist and a four-line state cursor live in `.planning/` and in git. Each plan runs in a fresh subagent that reads it off disk, and each task lands as one commit.
+
+It is built on one assumption: the model will now and then hand you something that looks finished and is not, and you will not always catch it by reading.
 
 ## What it asks of you
 
-Cadence is slower than not using Cadence. It makes you gather context before you plan and plan before you build, and then it stops and waits for you: before it plans, at every check it runs, and before it pushes anything. Most of that is not configurable, because most of it is not a preference.
+Cadence is slower than not using Cadence. It gathers context before it plans and plans before it builds, and it stops for you at three kinds of moment: before it plans, when a check comes back with findings, and before it pushes anything. That last one is a `PreToolUse` hook (`cadence-core/bin/git-guard.mjs`) rather than a line in a prompt, and it has no exemption.
 
-Every one of those stops is a question only you can answer, so the honest test is how often you actually want to be asked. Answering is the work rather than the overhead around it; if you want to describe a feature and come back to a merged PR, this is the wrong tool.
+How hard the rest leans on you is one setting. At `solo` the plan review is advisory and you can ignore it. At `shipped`, the default, it blocks. At `critical` the plan and every phase diff come back as a numbered list you triage, and the default is none of it.
 
-That trade pays off when the code has to keep working. When somebody maintains it later, when it touches money or auth or user data, when a quiet failure costs you more than the extra twenty minutes cost you. If you are sketching something you will throw away Thursday, the ceremony is pure friction and you should skip it. Nobody needs a blocking review on a script that renames photos.
+One thing is not on that dial. A diff touching any of eight risk surfaces (auth, migrations, billing, concurrency, destructive operations, secrets, API contracts, untrusted input) gets a blocking review at every level. If you have never told Cadence which of the eight apply to your project, that check refuses rather than passes.
+
+If you want to describe a feature and come back to a merged PR, this is the wrong tool. If you are sketching something you will throw away, the stops are pure overhead and you should skip it.
 
 ## Install
 
