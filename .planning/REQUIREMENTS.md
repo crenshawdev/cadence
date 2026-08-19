@@ -289,6 +289,7 @@ section only, bounded at the next `## ` heading.
 | RSK-04 | Phase 3 | Complete |
 | SHP-01 | Phase 3 | Complete |
 | ARG-06 | Phase 4 | Complete |
+| RME-01 | Phase 5 | Pending |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
