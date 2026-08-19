@@ -1,6 +1,6 @@
 // @ts-check
 // seam-input.mjs - the ONE home for the argv and file INPUT helpers the bin
-// scripts had each copied into themselves: two flag readers and the
+// scripts had each copied into themselves: the throwing flag reader and the
 // ''-on-failure text reader. Zero-dep, node builtins only, pure (no emit, no
 // mergeLayers, no process): the caller owns its envelope.
 //
@@ -13,41 +13,41 @@
 // definitions (git-branch, git-publish, land-cleanup, release-bump,
 // worktree-base), two `flagValue` definitions (weight, self-verify) and three
 // `readText` definitions - twelve copies of three contracts, which is a drift
-// surface rather than a convenience. helper-census.test.mjs pins each of them
-// at exactly one definition so a sixth copy reddens instead of drifting.
+// surface rather than a convenience. helper-census.test.mjs pins each of the
+// surviving contracts at exactly one definition so a re-copy reddens instead
+// of drifting.
 //
-// THE TWO FLAG READERS ARE TWO CONTRACTS, AND BOTH ARE LIVE. They answer
-// DIFFERENTLY for a present-but-valueless flag, which is the reason there are
-// two of them:
+// ONE FLAG READER NOW, AND THE OTHER CONTRACT IS A DECLARED DISPOSITION
+// (ARG-06). There were two live readers here, answering DIFFERENTLY for a
+// present-but-valueless flag: `optionalFlag` read absent and
+// present-with-no-value both as `undefined` so the caller's own `|| fallback`
+// applied, and `flagValue` refused. The first has collapsed into
+// lib/arg-contract.mjs - a flag that legitimately defaults (`--branch`,
+// `--base`, `--remote`, `--merged`, `--version`, `--timeout-ms`) now DECLARES
+// the `fallback` disposition on its row, which is the same answer reached from
+// a declaration rather than from a second reader. That is the second reversal
+// of this header's two-contract guarantee, after phase 2 reversed it for
+// `--dir`, and it closed a defect the positional reader carried: it returned
+// the NEXT FLAG as a value, so `git-branch.mjs decide --branch --dir <p>` read
+// `--dir` as the branch name (D-13). A declared `fallback` reads that spelling
+// as ABSENT instead.
 //
-//   optionalFlag - absent OR present-with-no-value both read as `undefined`,
-//     never a throw. It is the reader for the flags that legitimately default
-//     when nothing is given - `--branch`, `--base`, `--remote`, `--merged`,
-//     `--version`, `--timeout-ms` - where the caller's own `|| fallback` is the
-//     whole contract. `--date` was on that list and is NOT: it still reads
-//     through this reader, but release-bump.mjs tests the flag's own presence in
-//     argv beside it, because a trailing valueless `--date` must refuse
-//     `bad-date` rather than default to today. A caller that must tell the two
-//     apart without also refusing an empty value does it that way; `flagValue`
-//     is for the callers whose empty and valueless answers are the same
-//     refusal.
 //   flagValue - a missing, empty or flag-shaped value THROWS
-//     `{seam:'missing-flag-value', detail}`. Every caller holds an `e.seam`
-//     catch arm that turns that object into a named refusal, and the refusal
-//     is the point: `--root` with nothing after it used to fall through to the
+//     `{seam:'missing-flag-value', detail}`, built by `missingFlagValue`
+//     below. It is the rule lib/arg-contract.mjs CONSULTS for the
+//     absent-versus-nothing-usable split rather than re-spelling, so this stays
+//     the one place that line is drawn for the whole seam layer. The refusal is
+//     the point: `--root` with nothing after it used to fall through to the
 //     plugin's own tree and report confident numbers about a tree the caller
 //     never named.
 //
-// `--dir` reads through flagValue at EVERY seam (phase 2 D-01), reversing this
-// header's earlier guarantee that its five callers kept the permissive reader.
-// That guarantee rested on the mutating seams being the only place a wrong
-// tree costs anything, and the advisory ones showed the identical defect:
-// measured 2026-08-18, `git-branch.mjs tags --dir ''` answered with this
-// repository's own 33 tags about a tree the caller never named. So the
-// divergence was reversed for `--dir`, and for `--dir` alone. Each migrated
-// bin took its own `e.seam` catch arm with the move (D-09) - a seam reading
-// `--dir` through flagValue without one surfaces the refusal as
-// `{"ok":false,"reason":"internal","detail":"[object Object]"}`.
+// No bin calls it directly any more: each declares its flags and reads them
+// through lib/arg-contract.mjs, whose `requireFlag` raises this module's
+// refusal object for the bins holding an `e.seam` catch arm and whose
+// `evaluateFlag` returns a classification for the bins that name their own
+// refusal. A seam reading a `refuse` row through the raising form without that
+// arm surfaces the refusal as
+// `{"ok":false,"reason":"internal","detail":"[object Object]"}` (D-09).
 //
 // `readText` here is the ''-on-failure contract (a missing surface is not
 // fatal). lib/include-consumers.mjs:123-130 keeps a DIFFERENT `readText` - an
@@ -60,29 +60,12 @@
 import { readFileSync } from 'node:fs';
 
 /**
- * The argv entry positionally after `name`, or `undefined` when the flag is
- * absent. NEVER throws, and deliberately does not distinguish
- * present-with-no-value from absent - both are `undefined` so the caller's own
- * `|| fallback` applies. Callers that must tell those apart use `flagValue`.
- *
- * Takes `argv` as a parameter because each copy this replaced closed over its
- * own module-level `argv`; the bins bridge with a one-line partial application
- * (`const flag = (name) => optionalFlag(argv, name)`), which is an adapter
- * binding, not a second definition of the reader.
- *
- * @param {string[]} argv @param {string} name @returns {string|undefined}
- */
-export function optionalFlag(argv, name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
-}
-
-/**
  * The refusal object, as a VALUE. One construction, two raisers: `flagValue`
  * throws it below for the missing, empty and flag-shaped spellings, and
  * lib/arg-contract.mjs's `requireFlag` throws the same object for a flag whose
  * declared row refuses on the VALUE axis - `--root "   "` is neither empty nor
  * flag-shaped, so `flagValue` waves it through and the row is what refuses it.
+ * Two raisers, ONE construction: helper-census.test.mjs pins this body here.
  *
  * It is a function rather than a literal at each site for the reason
  * helper-census.test.mjs states about every helper here: a second construction

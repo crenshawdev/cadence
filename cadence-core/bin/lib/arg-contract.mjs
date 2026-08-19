@@ -156,6 +156,20 @@ const CLASSIFIERS = {
 /**
  * Apply one disposition. `raw` is the caller's own spelling, kept by `warn`
  * and discarded by the other two.
+ *
+ * The `fallback` arm is where lib/seam-input.mjs's second flag reader ENDED UP
+ * (D-09). That module used to export a permissive positional reader beside
+ * `flagValue`, for the flags whose `|| default` was the whole contract, and the
+ * five bins that copied it read the NEXT FLAG as a value when one was given
+ * with nothing after it - `decide --branch --dir <p>` answered `--dir` as the
+ * branch name (D-13). Declaring `fallback` is the same "reads as absent"
+ * answer without that: the token is never consulted at all.
+ * helper-census.test.mjs's row for that reader moved here with it and pins THIS
+ * arm's body to this file, so the disposition has exactly one spelling. What it
+ * can no longer catch is a hand-written positional reader pasted into a bin
+ * under a new name: that idiom is not a shared contract any more, it is just an
+ * expression, and what refuses it is the declaration this module requires.
+ *
  * @param {string} disposition @param {string} flag @param {string|undefined} raw
  * @returns {{ok: boolean, value: any, detail: string}}
  */
