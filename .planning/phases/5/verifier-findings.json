@@ -1,0 +1,111 @@
+{
+  "status": "gaps",
+  "score": "6/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "The landing page carries no reference material: `## The commands`, `## What it costs to run` and `## A worked example` are gone from README.md, two real docs/ pages carry the relocated material and are linked from the page, no docs/ page re-creates the command list, and one line names both `/cad-help` and `cadence-core/references/COMMANDS.md`",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "`grep -c '## The commands\\|## What it costs to run\\|## A worked example' README.md` = 0; `grep -n '^## ' README.md` = Install(9), The loop(20), The controls(40), How it works(61), What a break costs(75), Where it came from(110). docs/COST.md (3,839 B, `# What Cadence costs to run` + bold subtitle, 5 paragraphs incl. the 7,548-request usage figures and `weight.mjs resident` pointer) and docs/EXAMPLE.md (2,868 B, `# A worked example` + bold subtitle, the full CLI walk-through) both exist; `grep -c 'docs/COST.md' README.md` = 1 and `grep -c 'docs/EXAMPLE.md' README.md` = 1, both in the pointer paragraph at README.md:73. ``grep -c '^- \\*\\*`/cad-'`` = 0 in README.md and in all five docs/ pages, and `grep -c '^- '` = 0 in both new pages, so no list was re-created; docs/EXAMPLE.md names 12 commands only inside narrative prose, which the plan explicitly authorized. README.md:38 is the single line matching both `/cad-help` and `cadence-core/references/COMMANDS.md`. `awk 'length>97'` prints nothing for either new page."
+    },
+    {
+      "n": 2,
+      "truth": "An audience/demand section sits above `## Install`, carries the verbatim sentence \"if you want to describe a feature and come back to a merged PR, this is the wrong tool\", and states no count of decision points or gates",
+      "status": "FAILED",
+      "uat_item": 2,
+      "evidence": "`grep -c 'if you want to describe a feature and come back to a merged PR, this is the wrong tool' README.md` = 0, and `grep -rn 'come back to a merged PR' --include='*.md' .` finds the sentence in NO shipped file - only in .planning/phases/5/PLAN.md, .planning/CAPTURE.md and .planning/phases/5/UAT.md. There is no demand/audience section at all: the first `## ` heading in README.md is `## Install` at line 9, and the two paragraphs above it (README.md:5, README.md:7) define what Cadence is and what a control is. The section named `## What it asks of you` in SUMMARY.md:24 was deleted by commit 47d7214 (SUMMARY.md's final deviation records the reframe). Only the third clause holds: no count of stops or gates appears above Install. Partial substitute above Install: README.md:5 states \"you approve the plan, triage what the reviewers find, and authorize every push\", which names the three stop moments D-02 asked for, but as a clause inside the definition paragraph rather than as the section RME-01 (.planning/REQUIREMENTS.md:41-48) and the ROADMAP wording (.planning/ROADMAP.md:153-160) both require."
+    },
+    {
+      "n": 3,
+      "truth": "From line 1 through the end of `## Install`, README.md names none of gate, seam, rung, dispatch, adversarial, traceability, subagent",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "`awk '/^## /&&seen{exit} /^## Install$/{seen=1} {print}' README.md | grep -Eic 'gate|seam|rung|dispatch|adversarial|traceabilit|subagent'` = 0. The stretch is README.md:1-19; the system's vocabulary first appears at README.md:36 (\"decision gate\" inside the figure alt text under `## The loop`)."
+    },
+    {
+      "n": 4,
+      "truth": "docs/ is on self-verify's markdown walk and the walk is clean: the directory is read by the same checks that read README.md, a docs/ defect surfaces reported by its own docs/ path, and the live tree returns ok:true with an empty problems array",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "`node cadence-core/bin/self-verify.mjs` prints {\"ok\":true,...,\"problems\":[]} over 25 named checks. `join(root, 'docs')` sits in the `mdFiles` `dirs` array at cadence-core/bin/self-verify.mjs:310, with the two enumerating comments updated at :7-8 and :348. Traced end to end rather than by presence: the named test 'D-05: a page under docs/ is on the markdown walk and reports by its own path' (cadence-core/bin/self-verify.test.mjs, added in 11c2040) writes a fixture docs/COST.md carrying `weight.mjs resident --nope` and asserts the returned problem has kind `unknown-flag` AND `file === 'docs/COST.md'` - so the docs/ path enters the walk and lands in the reported problem. Ran it by name: 163/163 pass, that test green."
+    },
+    {
+      "n": 5,
+      "truth": "The full test suite passes, including prose-agreement's \"27 skills and 6 agent roles across 19 rung files\" match against the live tree",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "`node cadence-core/bin/test.mjs` (single full-suite run): tests 2380, pass 2380, fail 0. `node --test cadence-core/bin/prose-agreement.test.mjs` reports the named test 'README's \"Today it is N skills and M agent roles across K rung files\" matches the tree' passing (31/31). The test measures both sides at run time (cadence-core/bin/prose-agreement.test.mjs:700-716) rather than pinning a literal, and README.md:112 carries the sentence once."
+    },
+    {
+      "n": 6,
+      "truth": "The claim ledger still joins on doc + claim text: no README.md-doc row's claim lives in a docs/ file, the six command-list rows are retired, and every surviving row's pin resolves to its claim",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "86 `README-*` rows: 70 doc=README.md, 8 doc=docs/COST.md, 8 doc=docs/EXAMPLE.md (.planning/DOCS-CLAIMS.md). Independent re-pin check (throwaway script, kept out of the repo): every literal-bearing row's pinned line/range in the CURRENT file contains one of its backticked literals - 0 misses across README.md, docs/COST.md and docs/EXAMPLE.md - and all 27 literal-free rows were read individually against their pinned line and state their claim there (README-06/-07 at :67, -08/-11/-12/-52 at :71, -14/-15/-16 at :57, -22 at :87, -27 at :100, -31 at :24, -42/-44/-83 at :112, -45 at :114, -66/-67/-68 at :102-106, -41/-48/-79/-51/-82 in docs/COST.md). No README.md-doc row's claim was found in a docs/ page. README-39, -40, -76, -77, -78 and -86 each carry `RETIRED - <reason>` with `—` in the line cell (lines 558, 559, 1227, 1228, 1229, 1113), as do README-34, -50, -53 and -55, for 10 RETIRED rows total against PLAN-03's precedent. Two documented deltas, neither a defect: (a) RETIRED sits in the RESOLUTION cell with the swept `verdict` left intact, which is the ledger's own convention and was flagged in advance at PLAN.md:426-429; (b) README-01, -02, -25 and -28 hold run-1 provenance line cells (36, 38, 56, 58) that no longer address their claims - `git show 11c2040^` confirms all four are byte-identical to the pre-phase values, the ledger states the rule at .planning/DOCS-CLAIMS.md:213,221,231,444-445 (a `corrected - <sha>` or `divergence` line is provenance, not an address), and SUMMARY.md:73-75 discloses it."
+    },
+    {
+      "n": 7,
+      "truth": "No figure survived the move unverified: `5,397` is gone from README.md and every docs/ page, and LINEAGE.md's Agents and Skills rows agree with the tree",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`grep -rc '5,397' README.md docs/` matches nothing in any of the six files, and `8,550` is likewise absent from docs/ and README.md. LINEAGE.md:16-17 now read `| Agents | 34 | 19 rung files (6 roles) | 56% |` and `| Skills | 71 | 33 (27 user-invocable, 6 contract) | 46% |`; live tree gives `ls agents/*.md | wc -l` = 19, `ls -d skills/*/ | wc -l` = 33, `grep -L 'user-invocable: false' skills/*/SKILL.md | wc -l` = 27 - all three match, and the decomposition agrees with README.md:112's counts sentence. `grep -c '| 34 | 7 |'` and `grep -c '| 71 | 22 |'` both 0."
+    },
+    {
+      "n": 8,
+      "truth": "The landing page reads as a decision document: a stranger learns what Cadence is and can decide to install before hitting mechanism, in a register that is not marketing",
+      "status": "UNCERTAIN",
+      "uat_item": 8,
+      "evidence": "The structural half is observable and holds: README.md:5-7 define the software and the control model in two paragraphs, `## Install` is at line 9, and every mechanism section (The loop 20, The controls 40, How it works 61, What a break costs 75) sits below it; the page is 14,297 B against 24,850 at the phase start. The register half cannot be settled by inspection - two prior review rounds inside this phase (commits 0d55dfc and 47d7214) each rejected the text above Install as marketing, so the judgement that the current wording finally clears that bar is the same human read that reversed twice. It is also entangled with truth 2: the price the reader is being asked to weigh (the three stop moments) is now one clause at README.md:5 rather than the disclosed demand section the roadmap required."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Relocation and the command cut landed",
+      "evidence": "No `## The commands` / `## What it costs to run` / `## A worked example` heading remains; docs/COST.md (3,839 B) and docs/EXAMPLE.md (2,868 B) carry the material in the siblings' shape and are both linked from README.md:73; zero `- **`/cad-*` bullets in README.md and all five docs/ pages; README.md:38 names both `/cad-help` and `cadence-core/references/COMMANDS.md`."
+    },
+    {
+      "k": 3,
+      "name": "Plain register through Install",
+      "evidence": "The awk stretch README.md:1-19 greps 0 for gate|seam|rung|dispatch|adversarial|traceabilit|subagent; the first occurrence is \"decision gate\" in the figure alt text at README.md:36, below Install."
+    },
+    {
+      "k": 4,
+      "name": "self-verify clean with docs/ on the walk",
+      "evidence": "self-verify.mjs returns ok:true with problems:[] over 25 checks; `join(root, 'docs')` is in the mdFiles dirs array at cadence-core/bin/self-verify.mjs:310; the D-05 regression test asserts a fixture docs/ page's defect is reported with file === 'docs/COST.md' and passes (163/163 in that file)."
+    },
+    {
+      "k": 5,
+      "name": "Test suite passes including the counts sentence",
+      "evidence": "node cadence-core/bin/test.mjs: 2380 tests, 2380 pass, 0 fail. The counts test passes by name and measures both sides at run time; README.md:112 carries the sentence."
+    },
+    {
+      "k": 6,
+      "name": "Claim ledger re-pointed, retired and re-pinned",
+      "evidence": "86 README-* rows split 70/8/8 across README.md, docs/COST.md, docs/EXAMPLE.md; 0 pin misses on every literal-bearing row and all 27 literal-free rows confirmed by reading their pinned line; README-39/-40/-76/-77/-78/-86 all carry `RETIRED - <reason>` with an em-dash line cell. The RETIRED-in-resolution convention (PLAN.md:426-429) and the four unchanged run-1 provenance rows (.planning/DOCS-CLAIMS.md:444-445) are documented, disclosed departures, not drift."
+    },
+    {
+      "k": 7,
+      "name": "Stale figures gone and LINEAGE counts live",
+      "evidence": "`5,397` and `8,550` absent from README.md and all docs/ pages; LINEAGE.md:16-17 read 19 rung files (6 roles) and 33 (27 user-invocable, 6 contract), matching `ls agents/*.md`=19, `ls -d skills/*/`=33, `grep -L 'user-invocable: false' skills/*/SKILL.md`=27."
+    }
+  ],
+  "gaps": [
+    {
+      "k": 2,
+      "name": "Demand section sits above Install",
+      "reason": "missing - the audience/demand section no longer exists in README.md, and the verbatim sentence the roadmap called load-bearing is in no shipped file. Commit 47d7214's reframe deleted `## What it asks of you` (the section SUMMARY.md:24 reports as delivered) and replaced it with `## The controls`, which sits at line 40, below `## Install` at line 9.",
+      "evidence": "`grep -c 'if you want to describe a feature and come back to a merged PR, this is the wrong tool' README.md` = 0; `grep -rn 'come back to a merged PR' --include='*.md' .` finds it only in .planning/phases/5/PLAN.md, .planning/CAPTURE.md and .planning/phases/5/UAT.md, never in README.md or docs/. `grep -n '^## ' README.md` shows `## Install` as the FIRST heading (line 9), so nothing above Install is a section. RME-01 at .planning/REQUIREMENTS.md:41-48 requires \"the audience section states the DEMAND rather than a label and sits ABOVE Install\", and .planning/ROADMAP.md:153-160 names both the ordering and the sentence as a wording rule that is \"load-bearing and not a style note\"; CONTEXT.md D-02 (:44-55) locks the same two clauses. The third clause is met: nothing above Install states a count of stops or gates. Partial substitute: README.md:5 names the three stop moments (\"you approve the plan, triage what the reviewers find, and authorize every push\") inside the definition paragraph.",
+      "severity": "major",
+      "missing": "Either restore a demand/audience section above `## Install` carrying the verbatim sentence \"if you want to describe a feature and come back to a merged PR, this is the wrong tool\" and the three stop moments with no count, or - if the engineering-methodology reframe is the decision that stands - amend RME-01 and D-02 so the phase is not accepted against a requirement clause the shipped page does not meet, and record the sentence's retirement in CONTEXT.md the way D-01 was annotated."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "Read README.md top to bottom cold, as someone who has never seen Cadence, and stop at `## Install` (line 9)",
+      "expected": "By line 8 you can say what Cadence is, what it will demand of you, and whether you want it - and nothing in lines 1-8 reads as marketing rather than as a description of what the code does",
+      "why_human": "Register is a taste judgement no probe settles, and this phase's own history shows why: two review rounds inside phase 5 (commits 0d55dfc then 47d7214) each rejected the text above Install as marketing, so a third read by John is the only thing that can call it clear. The structural half I did settle - the definition is at README.md:5-7 and every mechanism section is below Install. What needs the human eye specifically is whether the demand is legible now that it is one clause at README.md:5 instead of the section gap 2 reports as missing."
+    }
+  ]
+}

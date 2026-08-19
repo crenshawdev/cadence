@@ -37,7 +37,7 @@ The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 - [x] **Phase 2: Readers that accept what they have a rule against** - the `--dir`, `--date`, phase-id, `Number` and prototype-key faces refuse malformed input instead of answering as if it were well-formed
 - [x] **Phase 3: Gates that fire on themselves or cannot be satisfied** - `detect-commands` stops naming an unreachable binary, `risk-check status` accepts the worker key `seams.md` permits, `risk-diff` stops matching its own fixtures, and `## Shipped` is located fence-aware
 - [x] **Phase 4: One argument contract instead of nine** - the per-seam refusals phase 2 wrote become a declarative contract the CLIs share
-- [ ] **Phase 5: A README that asks for a decision** - the landing page keeps the argument for why the gates exist, the reference material moves to `docs/`, and the audience section states the demand above Install
+- [x] **Phase 5: A README that asks for a decision** - the landing page keeps the argument for why the gates exist, the reference material moves to `docs/`, and the audience section states the demand above Install
 
 ## Phase Details
 
