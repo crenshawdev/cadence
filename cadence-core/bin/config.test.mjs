@@ -587,6 +587,34 @@ test('a QUOTED empty --file is refused too, not answered about the global layer'
   }
 });
 
+test('ARG-06: a FLAG-SHAPED --file value is refused too, not read as a path', () => {
+  // The third spelling, and the one `if (!tokens[i + 1])` could not see: a
+  // truthy token that is a FLAG. Measured 2026-08-19, `config.mjs validate
+  // --file --nonsense` returned `{"ok":false,"reason":"read","detail":"cannot
+  // read/parse --nonsense: ENOENT ..."}` - an answer about a file the caller
+  // never named, the same class as the two rows above one spelling further out.
+  // `--file` reads through its declared row in lib/arg-contract.mjs now, so all
+  // three are one rule, and the reason stays this bin's own `usage` (D-07).
+  const gpath = join(dir, 'flagshaped-file-global.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped' }));
+  for (const args of [['set', 'stakes=solo', '--file', '--nonsense'], ['get', '--file', '--nonsense', 'stakes'],
+    ['validate', '--file', '--nonsense']]) {
+    const r = run(args, gpath);
+    assert.equal(r.ok, false, args.join(' '));
+    assert.equal(r.reason, 'usage', `${args.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--file/, args.join(' '));
+    assert.equal(r.values, undefined, args.join(' '));
+  }
+  // The two mechanics that must not move: `--global` is tested FIRST and
+  // short-circuits before `--file` is looked at...
+  assert.equal(run(['get', '--global', 'stakes'], gpath).values.stakes, 'shipped');
+  // ...and a real path still resolves, with the consumed flag and its value
+  // filtered out of the key list `get` reads.
+  const repo = join(dir, 'flagshaped-file-repo.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  assert.equal(run(['get', '--file', repo, 'stakes'], gpath).values.stakes, 'solo');
+});
+
 test('a path under a missing directory is a read failure naming it, never internal', () => {
   // Measured at HEAD: `set` answered reason:"internal" with a raw Node
   // TypeError thrown outside its try. A diagnosable input must stay

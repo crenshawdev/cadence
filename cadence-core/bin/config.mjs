@@ -27,6 +27,7 @@ import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
+import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
@@ -332,21 +333,32 @@ function optFile(tokens) {
   if (gi >= 0) return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
   const i = tokens.indexOf('--file');
   if (i < 0) return { file: '.planning/config.json', global: false, tokens };
-  // A `--file` with nothing usable after it is what an interpolated
-  // `--file $VAR` on an unset variable produces. Left alone it fell through as
-  // `file: undefined`: `set` degraded to reason:"internal" with a raw Node type
-  // error, `validate` said "cannot read/parse undefined", and `get` answered
-  // ok:true - a full effective read of the user-global layer alone, silently
-  // answering about a file the caller never named.
+  // `--file` reads through its DECLARED row in lib/arg-contract.mjs (ARG-06)
+  // rather than through a hand-written value rule. The row is per SUBCOMMAND -
+  // `validate`, `set` and `get` each declare one - and is read at the call
+  // rather than at module load, because `check` and `keys` declare none and
+  // never reach this function.
   //
-  // Both spellings, because the shell produces both: unquoted `$VAR` drops the
-  // token entirely (undefined), quoted `"$VAR"` passes an EMPTY one. Testing
-  // only for undefined left the quoted spelling - the one a careful script
-  // writer uses - falling through to that silent `get`.
-  if (!tokens[i + 1]) {
+  // WHAT THE ROW CATCHES THAT THE HAND-WRITTEN RULE DID NOT. `if (!tokens[i+1])`
+  // covered the two spellings an interpolated `--file $VAR` produces on an unset
+  // variable - unquoted drops the token entirely, quoted `"$VAR"` passes an
+  // EMPTY one - and left alone those fell through as `file: undefined`, so `set`
+  // degraded to reason:"internal" with a raw Node type error, `validate` said
+  // "cannot read/parse undefined", and `get` answered ok:true with a full
+  // effective read of the user-global layer alone. What it missed is the
+  // FLAG-SHAPED token: measured 2026-08-19, `config.mjs validate --file
+  // --nonsense` returned `{"ok":false,"reason":"read","detail":"cannot
+  // read/parse --nonsense: ENOENT ..."}` - answering about a file the caller
+  // never named, which is the same class one spelling further out. One rule now
+  // refuses all three.
+  //
+  // The refusal keeps this bin's own `usage` and its published wording (D-07);
+  // the contract mints no reason code.
+  const parsed = evaluateFlag(tokens, '--file', CONTRACTS['config.mjs'][cmd]['--file']);
+  if (!parsed.ok) {
     fail('usage', '--file needs a path after it: --file <config file> (or --global)');
   }
-  return { file: tokens[i + 1], global: false, tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
+  return { file: parsed.value, global: false, tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
 }
 
 try {
