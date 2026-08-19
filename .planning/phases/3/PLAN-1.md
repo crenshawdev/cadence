@@ -230,7 +230,18 @@ a plan FILE on disk.
   NOT narrow `status`'s derivation from the lifecycle brackets: D-01 rejects the
   exclusion arm recorded in `.planning/CAPTURE.md`'s phase-3 entry, because
   dropping a key the coordinator actually bracketed is fail-open on the one
-  trigger that is blocking at every stakes level. Update the two `risk-check`
+  trigger that is blocking at every stakes level. One bounded exception, and it
+  is the opposite of that arm: a bracketed key task 3's predicate REFUSES is not
+  a legal worker key at all, so `status` cannot demand a `risk-check run` record
+  for it - `run` can never write one, and the gate would be permanently
+  unsatisfiable with no exit but an `override`. Such a key goes in a `malformed`
+  array on the envelope, the shape `trace render` already uses
+  (`planning.mjs:3466`), and NOT in `missing`. The distinction D-01 protects is
+  intact: a key the predicate accepts is never dropped, and a key it refuses is
+  REPORTED rather than silently excluded, which is what made the CAPTURE arm
+  fail-open. Nothing in the tree mints such a key today - task 5 pins the
+  continuation and fix-pass key to the plan number - so this is the guard for a
+  spelling that reaches the write face D-03 leaves open. Update the two `risk-check`
   usage-header lines so `--plan` is described as the worker key rather than a
   plan number. Put the end-to-end rows in `plan-key.test.mjs` rather than in
   `risk-diff.test.mjs`, where the other risk-check seam cases live: plan 2 of
@@ -250,7 +261,10 @@ a plan FILE on disk.
   record is there and its range matched, and answers `ok:true` once a `gate_pass`
   receipt carrying `--plan 1-fix --base <base> --sha <head>` is appended; and a
   test walks every row of task 3's table through BOTH faces, asserting each
-  spelling is accepted by both or refused by both.
+  spelling is accepted by both or refused by both; and a trace whose
+  `cad-executor` return bracket carries a trailing-space key `1-fix ` answers
+  `ok:true` with that key in `malformed` and absent from `missing`, so the gate
+  is not left unsatisfiable by a spelling `run` can never record.
 
 ### Task 5: `workflows/execute.md` states the key a continuation or fix-pass dispatch carries
 
