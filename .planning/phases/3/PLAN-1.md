@@ -14,6 +14,7 @@ files:
   - cadence-core/bin/lib/plan-key.mjs
   - cadence-core/bin/plan-key.test.mjs
   - cadence-core/workflows/execute.md
+  - cadence-core/bin/weight-budgets.json
 ---
 
 # Phase 3: Gates that fire on themselves or cannot be satisfied - Plan 1
