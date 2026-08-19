@@ -473,10 +473,11 @@ If `planning.commit_docs` is true, commit SUMMARY.md, STATE.md, every plan's
 summary step annotated a corrected decision, and `.planning/CAPTURE.md` if the
 summary step appended open items to it - `docs(<N>): phase <N> summary` - staging exactly
 those paths. The DIRECTORY, never one report by name: an executor rotates a
-previous run's report aside to a suffixed sibling before its first write, so a
-by-name stage would commit only the new bytes and leave that record untracked in
-a dirty tree. Never stage a `plan-<k>-risk-task-<n>.diff` from inside that
-directory: it is the transient flagged diff and the continuation deletes it. With the key false the reports
+previous run's report aside to a suffixed sibling, which a by-name stage leaves
+untracked. It takes everything in there, so the flagged diffs
+(`plan-<k>-risk.diff`, `plan-<k>-risk-task-<n>.diff`) go out by PATHSPEC, not a
+rule naming a file: `git add <plandir>/reports/
+':(exclude)<plandir>/reports/*.diff'`. With the key false the reports
 stay uncommitted exactly like SUMMARY.md, because a report IS a planning doc and
 that key is the user's standing answer for all of them - the worktree path
 commits regardless not as a docs decision but because the commit is the only
