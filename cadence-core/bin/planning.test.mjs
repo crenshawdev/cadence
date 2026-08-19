@@ -1673,11 +1673,19 @@ test('uat merge: an omitted list is not a malformed one', () => {
   assert.equal(r.added, 1);
 });
 
-test('uat merge: --payload with no path is no-payload, never a read of fd 1', () => {
+test('uat merge: --payload with no path refuses, never a read of fd 1', () => {
+  // The invariant is that a valueless `--payload` never falls through to a read
+  // of fd 1. It is answered EARLIER now, and by a different vocabulary: the
+  // declared row refuses the bare spelling at the dispatch door, which names
+  // `bad-args` because this file has one refusal vocabulary (D-07). The
+  // `no-payload` arm is still what answers a path that is missing, unreadable
+  // or empty - the spellings a declaration cannot judge - and the code reaches
+  // no prose surface, so nothing branches on which of the two fires here.
   const dir = uatTree();
   const r = refusedMerge(dir, ['--payload']);
   assert.equal(r.ok, false);
-  assert.equal(r.reason, 'no-payload');
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /--payload/);
   assert.equal(r._exit, 1);
 });
 

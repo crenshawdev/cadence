@@ -192,7 +192,7 @@ import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
-import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
+import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
 
 // The raw argument list, kept beside the envelope helpers because the flags
 // that read through lib/arg-contract.mjs need the SPELLING and not parseArgs'
@@ -3307,12 +3307,9 @@ function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
     // there while the line it carries is `.planning/trace.jsonl`. A `--root`
-    // present with nothing usable after it is REFUSED rather than falling
-    // through to the cwd, which would edit a different tree than the caller
-    // named (the `#42/#45` rail).
-    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
-      return fail('bad-args', 'trace ignore --root needs a path after it: --root <project root>');
-    }
+    // present with nothing usable after it is REFUSED by its declared row at
+    // the dispatch door rather than falling through to the cwd, which would
+    // edit a different tree than the caller named (the `#42/#45` rail).
     return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
   }
   // `close` is `append` with the two fields a dispatch site used to restate
@@ -4635,12 +4632,11 @@ function cmdRenumber(dir, sub, opts) {
   // requireInt refuses `2.1` and `--n` alike, and those are different repairs,
   // so a well-formed decimal is re-tested here and keeps its own wording.
   const parsedAt = requireInt(rawAt);
-  if (!parsedAt.ok) {
-    if (requirePhaseArg(rawAt).ok) {
-      return fail('bad-args', 'renumber operates on integer phases; re-place decimal phases by hand');
-    }
-    return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
-  }
+  // ABSENT only: a PRESENT `--at`/`--n` was already judged by its declared row
+  // at the dispatch door, decimal wording included (see `decimalRefusal`), so
+  // the well-formed-decimal re-test that used to sit here can no longer be
+  // reached and is not left behind as a second home for that sentence.
+  if (!parsedAt.ok) return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
   const at = parsedAt.value;
   if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
   if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
@@ -5385,6 +5381,85 @@ function cmdMilestonePrune(dir, opts) {
 
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
+// The refusal SENTENCE for a flag this script's rows declare, and the ONE home
+// for that wording. lib/arg-contract.mjs names the FLAG and nothing else
+// (D-07): this file owns its refusal vocabulary - `bad-args`, never the
+// `missing-flag-value` throw, which has no `e.seam` catch arm here to render it
+// as anything but `internal`.
+//
+// Only the spellings that already SHIP are listed. Everything else COMPOSES
+// from the flag's own name and its declared type, so a row added to the table
+// tomorrow refuses with a sentence naming its flag rather than with an entry
+// somebody has to remember to write here - which is the second table this
+// requirement exists to prevent, one wording over.
+const FLAG_SENTENCES = {
+  '--dir': 'needs a path after it: --dir <planning dir>',
+  '--root': 'needs a path after it: --root <project root>',
+  '--role': 'needs a role name after it: --role <name>',
+  '--step': 'needs a step name after it: --step <name>',
+  '--reviewer': 'needs a reviewer name after it: --reviewer <name>',
+  '--trigger': 'needs a trigger name after it: --trigger <name>',
+};
+
+/**
+ * The sentence a refused flag carries, without its subcommand prefix.
+ *
+ * The `-file` arm composes lib/text-flag-file.mjs's own wording character for
+ * character, because the door refuses a bare `--<field>-file` BEFORE that
+ * module is reached and its callers must see no change. The `int`/`cursor` arm
+ * is the sentence the four hand-written integer guards in this file already
+ * publish.
+ * @param {string} flag @param {{type: string}} spec @returns {string}
+ */
+function flagSentence(flag, spec) {
+  if (FLAG_SENTENCES[flag]) return FLAG_SENTENCES[flag];
+  if (flag.endsWith('-file')) return `needs a path after it: ${flag} <path>`;
+  if (spec.type === 'int' || spec.type === 'cursor') return 'needs a non-negative integer';
+  if (spec.type === 'phase') return `needs a phase number: ${flag} <N>`;
+  return `needs a value after it: ${flag} <value>`;
+}
+
+/**
+ * The one refusal in this script whose wording depends on the VALUE rather than
+ * on the flag, and which a declaration therefore cannot state at all.
+ *
+ * `renumber` is integer arithmetic - a decimal insertion like 2.1 neither
+ * displaces integers nor is displaced by them - so a WELL-FORMED decimal is a
+ * different repair from a missing or non-numeric value, and cmdRenumber
+ * re-tested the value to say so. The declared `int` row refuses both spellings
+ * at the door before that re-test can run, so the wording moved HERE rather
+ * than being lost: without it a caller whose real problem is that 2.1 has to be
+ * re-placed by hand is told "needs a non-negative integer". It is the same
+ * species as the PRESENCE carve-out - a diagnostic no row can express stays
+ * with the bin that owns the wording - and it reads the raw token the door
+ * itself judged, which is the one after the flag's first appearance.
+ * @param {string} key @param {string|undefined} raw @returns {string}
+ */
+function decimalRefusal(key, raw) {
+  return key.startsWith('renumber ') && typeof raw === 'string' && requirePhaseArg(raw).ok
+    ? 'renumber operates on integer phases; re-place decimal phases by hand'
+    : '';
+}
+
+/**
+ * Compose the whole refusal detail for the flag the door refused.
+ *
+ * A flag on the script-global `'*'` row carries NO subcommand prefix - `--dir
+ * needs a path after it` is the line every caller of every subcommand sees -
+ * while a flag on a subcommand's own row is prefixed with that subcommand, the
+ * way `detect-commands --root ...` and `trace append --role ...` already read.
+ * @param {string} key the subcommand key the words resolved to
+ * @param {string} flag @returns {string}
+ */
+function argRefusal(key, flag) {
+  const table = CONTRACTS['planning.mjs'];
+  const global = table['*'][flag];
+  const spec = global || (table[key] || {})[flag];
+  const domain = decimalRefusal(key, ARGV[ARGV.indexOf(flag) + 1]);
+  if (domain) return domain;
+  return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
+}
+
 function parseArgs(argv) {
   const words = [];
   const opts = {};
@@ -5428,23 +5503,17 @@ const COMMANDS = {
   'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
-  // cwd, which would report a different tree than the caller named (#42/#45).
-  // The predicate is `debt-harvest`'s below, character for character, TRIM
-  // clause included: a valueless `--root` was already refused, but `--root ""`
-  // answered `ok:true` about the cwd - exactly the silent substitution #42/#45
-  // closed - and `--root "   "` fell through to a `no-root` ENOENT, one refusal
-  // vocabulary answering in two. The refusal is `fail('bad-args', ...)` and not
-  // the `missing-flag-value` throw `weight.mjs`/`self-verify.mjs` raise: this
-  // file has ONE refusal vocabulary and no `e.seam` catch arm to render that
-  // throw as anything but `internal`.
-  'detect-commands': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
-    ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
-    : cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd())),
-  // Same --root rule, same predicate, same refusal: a flag present with nothing
-  // usable after it is never silently answered about the cwd.
-  'detect-surfaces': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
-    ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
-    : cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd())),
+  // cwd, which would report a different tree than the caller named (#42/#45) -
+  // and the refusal is the DECLARED row's now, applied at the dispatch door
+  // below, rather than a predicate this arm restates. The row says the same
+  // thing the predicate did, trim clause included: `--root ""` answered
+  // `ok:true` about the cwd and `--root "   "` fell through to a `no-root`
+  // ENOENT, one refusal vocabulary answering in two.
+  'detect-commands': (_dir, _sub, opts) =>
+    cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
+  // Same --root row, same refusal, same door.
+  'detect-surfaces': (_dir, _sub, opts) =>
+    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd()),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
@@ -5454,14 +5523,9 @@ const COMMANDS = {
   // drift kind inside it (D-07) - see cmdCaptureSections.
   'capture-sections': (dir, _sub, opts) => cmdCaptureSections(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
-  // SOURCE and writes into `.planning`. Same present-but-unusable refusal
-  // `trace ignore` carries.
-  'debt-harvest': (_dir, _sub, opts) => {
-    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
-      return fail('bad-args', 'debt-harvest --root needs a path after it: --root <project root>');
-    }
-    return cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd());
-  },
+  // SOURCE and writes into `.planning`. Same declared row, same door.
+  'debt-harvest': (_dir, _sub, opts) =>
+    cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd()),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
   'milestone-prune': (dir, _sub, opts) => cmdMilestonePrune(dir, opts),
 };
@@ -5469,25 +5533,40 @@ const COMMANDS = {
 try {
   const { words, opts } = parseArgs(ARGV);
   const [cmd, sub] = words;
-  // `--dir` reads through its DECLARED row in lib/arg-contract.mjs rather than
-  // off `opts`, and it is read from raw argv on purpose: parseArgs mints the
-  // boolean `true` for a bare `--dir`, which used to reach `existsSync(true)`
-  // and print a DEP0187 deprecation warning on STDERR beside the answer -
-  // stdout is the single channel the seam layer parses, and that deprecation is
-  // scheduled to become a throw. The empty spelling was worse than noisy:
-  // `status --dir ''` answered ok:true about `./.planning`, a tree the caller
-  // never named. The row says refuse on both axes; a genuinely ABSENT --dir
-  // still falls through to `.planning`.
+  // EVERY flag the resolved row declares is judged here, at the door, before
+  // any handler runs - not just `--dir`, and not at the two sites this file
+  // used to consult its own table from. 98 of the table's entries are this
+  // script's, and while only two of them were read, a row could say `refuse`
+  // while the CLI wrote the value through: `cursor set --name` (bare) answered
+  // ok:true and wrote `Phase: 1 of 5 (true)` into STATE.md.
+  //
+  // It is read from raw ARGV on purpose: parseArgs mints the boolean `true` for
+  // a bare flag, so by the time a value reaches `opts` the three spellings a
+  // declared row separates - bare, empty and flag-shaped - have collapsed into
+  // one. A bare `--dir` reached `existsSync(true)` that way and printed a
+  // DEP0187 deprecation warning on STDERR beside the answer, and stdout is the
+  // single channel the seam layer parses.
+  //
+  // The door judges PRESENCE-free: an absent flag is left to the handler that
+  // owns its wording, so `cursor set` with no `--phase` still answers `cursor
+  // set needs --phase <N>` and `capture` with no `--kind` still names its three
+  // kinds. The `'*'` row is evaluated first, which keeps `--dir`'s refusal the
+  // one that answers ahead of an unknown subcommand exactly as it did.
+  //
+  // `opts` is deliberately NOT mutated. The handlers pass their own values to
+  // `requireInt`, `requirePhaseArg` and `resolveTextFlag`, and overwriting or
+  // deleting a key here would change what `resolveTextFlag` sees and silently
+  // drop its "takes --x or --x-file, never both" refusal.
   //
   // The refusal is `fail('bad-args', ...)` and never the `missing-flag-value`
   // throw the seam-input readers raise (D-07): this file has ONE refusal
   // vocabulary and no `e.seam` catch arm to render that throw as anything but
-  // `internal` - the same reason the `--root` guards above state in code.
-  const dirFlag = evaluateFlag(ARGV, '--dir', CONTRACTS['planning.mjs']['*']['--dir']);
+  // `internal`.
+  const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], subcommandKey(words));
   const handler = COMMANDS[cmd];
-  if (!dirFlag.ok) fail('bad-args', '--dir needs a path after it: --dir <planning dir>');
+  if (!args.ok) fail('bad-args', argRefusal(subcommandKey(words), args.detail));
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(dirFlag.value || '.planning', sub, opts, words.slice(1));
+  else handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }

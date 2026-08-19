@@ -379,6 +379,16 @@ export function evaluateRow(argv, table, key) {
 //     two subcommands. That split is D-05, and it is why the two axes are two
 //     fields: a bare `--role` wrote a record with no `role` key and `trace
 //     render` then aggregated it under the empty-string key.
+//   `--tokens` declares `fallback` on the VALUE axis alone, on both trace
+//     rows, because the body's grammar is WIDER than any type here can state:
+//     it accepts a strict comma-grouped integer (`146,405`), which is the form
+//     this plugin PRINTS token figures in and therefore the transcription its
+//     own prose models, and it refuses a negative one, which `int` accepts.
+//     Declaring `refuse` made the door reject `146,405` after the `dispatch`
+//     half of the bracket was already written, stranding the worker unpaired
+//     forever - a recording error escalated into loss of the bracket it was
+//     recording. The BARE axis still refuses: that spelling has no grammar to
+//     be wider than.
 //   `--date` refuses the bare form, which release-bump.mjs hand-writes today by
 //     testing the flag's own appearance in argv beside the permissive reader: a
 //     valueless `--date` must refuse rather than silently date today.
@@ -574,7 +584,7 @@ export const CONTRACTS = {
       '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--tokens': { required: false, type: 'int', value: 'fallback', bare: 'refuse' },
       '--raised': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--read-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -601,7 +611,7 @@ export const CONTRACTS = {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--plan': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
-      '--tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--tokens': { required: false, type: 'int', value: 'fallback', bare: 'refuse' },
       '--turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
       '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
