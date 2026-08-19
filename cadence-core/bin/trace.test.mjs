@@ -2150,3 +2150,24 @@ test('falsifier: every step window closes inside the corr that opened it (MSR-04
   const commit = r.coordinator.steps.find((s) => s.step === 'commit');
   assert.equal(commit.residue_ms, 2 * MIN);
 });
+
+
+// --- one sentence per refusal, not two -----------------------------------------
+
+test('the four refusing trace flags carry ONE sentence each, in one map', () => {
+  // The trap this pins. The dispatch door refuses these four for `trace
+  // append` off the declared row, and the shared `append|close` body refuses
+  // them again for the subcommands whose row does not declare them - the
+  // `trace close` row deliberately declares no `--step` or `--trigger`,
+  // because a flag row is a prose allowlist that never widens what a
+  // subcommand accepts. Two refusers is fine; two SENTENCES is not, and a
+  // second copy is what silently drifts until one side says something the
+  // other does not.
+  const src = readFileSync(new URL('./planning.mjs', import.meta.url), 'utf8');
+  for (const sentence of ['needs a role name after it', 'needs a step name after it',
+    'needs a reviewer name after it', 'needs a trigger name after it']) {
+    const n = src.split(sentence).length - 1;
+    assert.equal(n, 1, `"${sentence}" is written ${n} times in planning.mjs; `
+      + 'the flag->sentence map beside the dispatch door is its one home');
+  }
+});

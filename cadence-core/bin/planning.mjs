@@ -3293,16 +3293,6 @@ const TRACE_GRAMMAR = {
 // stated once in the table instead of seven times here.
 const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger'];
 
-// The SENTENCE each refusal carries. The contract names the FLAG and nothing
-// else: this file owns its refusal vocabulary and its wording (D-07), and the
-// four entries here are exactly the rows that say `refuse`.
-const TRACE_REFUSALS = {
-  '--role': 'needs a role name after it: --role <name>',
-  '--step': 'needs a step name after it: --step <name>',
-  '--reviewer': 'needs a reviewer name after it: --reviewer <name>',
-  '--trigger': 'needs a trigger name after it: --trigger <name>',
-};
-
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -3513,7 +3503,11 @@ function cmdTrace(dir, sub, opts) {
     const flags = {};
     for (const flag of TRACE_STRING_FLAGS) {
       const parsedFlag = evaluateFlag(ARGV, flag, TRACE_GRAMMAR[flag]);
-      if (!parsedFlag.ok) return fail('bad-args', `trace ${sub} ${flag} ${TRACE_REFUSALS[flag]}`);
+      // The wording comes from the ONE flag->sentence map the dispatch door
+      // composes from, so `trace append --role` (bare) answers with the same
+      // sentence whichever of the two refuses it first - the door for the flags
+      // the resolved row declares, this loop for the ones only the UNION does.
+      if (!parsedFlag.ok) return fail('bad-args', argRefusal(`trace ${sub}`, flag));
       flags[flag] = parsedFlag.value;
     }
     // Trimmed for the four that refuse, because a stored name is a JOIN KEY and
@@ -5409,13 +5403,20 @@ const FLAG_SENTENCES = {
  * module is reached and its callers must see no change. The `int`/`cursor` arm
  * is the sentence the four hand-written integer guards in this file already
  * publish.
- * @param {string} flag @param {{type: string}} spec @returns {string}
+ *
+ * `spec` may be ABSENT, and that is not a missing row: the shared `trace
+ * append|close` body validates flags the `trace close` row deliberately does
+ * not declare, because a flag row is a prose allowlist that never widens what
+ * a subcommand accepts. Such a flag is named by `FLAG_SENTENCES` and needs no
+ * type at all; the `string` default is what keeps the arm total.
+ * @param {string} flag @param {{type: string}|undefined} spec @returns {string}
  */
 function flagSentence(flag, spec) {
+  const type = spec ? spec.type : 'string';
   if (FLAG_SENTENCES[flag]) return FLAG_SENTENCES[flag];
   if (flag.endsWith('-file')) return `needs a path after it: ${flag} <path>`;
-  if (spec.type === 'int' || spec.type === 'cursor') return 'needs a non-negative integer';
-  if (spec.type === 'phase') return `needs a phase number: ${flag} <N>`;
+  if (type === 'int' || type === 'cursor') return 'needs a non-negative integer';
+  if (type === 'phase') return `needs a phase number: ${flag} <N>`;
   return `needs a value after it: ${flag} <value>`;
 }
 
