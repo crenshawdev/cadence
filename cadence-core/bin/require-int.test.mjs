@@ -2,7 +2,7 @@
 // Only node: builtins, per the repo's zero-dep ethos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { requireInt, requirePhaseArg } from './lib/require-int.mjs';
+import { requireInt, requireCursorNumber, requirePhaseArg } from './lib/require-int.mjs';
 
 test('requireInt: accepts a clean integer string', () => {
   assert.deepEqual(requireInt('4'), { ok: true, value: 4 });
@@ -49,4 +49,42 @@ test('requirePhaseArg: refuses everything the cursor shape refuses', () => {
   }
   assert.deepEqual(requirePhaseArg(true), { ok: false });
   assert.deepEqual(requirePhaseArg(undefined), { ok: false });
+});
+
+// --- the safe range is part of the grammar (ARG-04) --------------------------
+
+const PAST_SAFE = '9007199254740993'; // Number() of this is ...992, a different number
+const FOUR_HUNDRED_DIGITS = '9'.repeat(400); // Number() of this is Infinity
+
+test('requireInt: refuses a value past the safe-integer range', () => {
+  // Before the guard this answered { ok: true, value: 9007199254740992 } - the
+  // flag reader handing `--total`/`--attempt`/`--turns` a number nobody typed.
+  assert.deepEqual(requireInt(PAST_SAFE), { ok: false });
+  assert.deepEqual(requireInt(FOUR_HUNDRED_DIGITS), { ok: false });
+  assert.deepEqual(requireInt(String(Number.MAX_SAFE_INTEGER)), {
+    ok: true,
+    value: Number.MAX_SAFE_INTEGER,
+  });
+});
+
+test('requireCursorNumber: refuses a value past the safe-integer range in both forms', () => {
+  for (const opts of [{}, { decimal: true }]) {
+    assert.deepEqual(requireCursorNumber(PAST_SAFE, opts), { ok: false }, JSON.stringify(opts));
+    assert.deepEqual(requireCursorNumber(FOUR_HUNDRED_DIGITS, opts), { ok: false }, JSON.stringify(opts));
+  }
+  // The bound is a bound, not a narrowing: the shapes the cursor file holds
+  // still read exactly as they did.
+  assert.deepEqual(requireCursorNumber('4'), { ok: true, value: 4 });
+  assert.deepEqual(requireCursorNumber('2.1', { decimal: true }), { ok: true, value: 2.1 });
+});
+
+test('requirePhaseArg: refuses a value past the safe-integer range', () => {
+  assert.deepEqual(requirePhaseArg(PAST_SAFE), { ok: false });
+  assert.deepEqual(requirePhaseArg(FOUR_HUNDRED_DIGITS), { ok: false });
+});
+
+test('requirePhaseArg: the spellings the range guard must NOT touch still read', () => {
+  assert.deepEqual(requirePhaseArg('2.1'), { ok: true, raw: '2.1', value: 2.1 });
+  assert.deepEqual(requirePhaseArg('1.10'), { ok: true, raw: '1.10', value: 1.1 });
+  assert.deepEqual(requirePhaseArg('08'), { ok: true, raw: '08', value: 8 });
 });
