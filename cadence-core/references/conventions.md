@@ -73,6 +73,42 @@ It layers repo (.planning/config.json) over the user-global file over the
 schema defaults, so a raw file read sees at most one layer and lies about the
 rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 
+## Seam arguments
+
+- A flag declares a DISPOSITION, not merely a type: what the seam does when the
+  value is wrong, chosen from exactly three words - refuse, warn, fall back. All
+  three are positions this tree already holds, so a contract that made every
+  typed flag refuse would reverse two of them. `issue-check.mjs` falls back to a
+  constant on a malformed `--timeout-ms`, because that seam's whole contract is
+  that it never fails a land; `route.mjs` warns on a `--phase` outside the
+  accepted shape and still resolves, because refusing there would route the
+  phase LOWER than its own risk baseline; the `--dir` family refuses.
+- Falling back means the flag reads as ABSENT and the caller's own default
+  answers. The token after it is never consulted, which is what stopped a
+  valueless `--branch` from reading the following `--dir` as a branch name.
+- The BARE form's disposition is declared SEPARATELY from the value's, in its
+  own field, because one function body in `planning.mjs` already runs both
+  side by side. In the body shared by `trace append` and `trace close`, a bare
+  `--step`, `--reviewer`, `--trigger` or `--role` refuses, while a bare
+  `--plan`, `--sha` or `--base` is dropped. One word for both axes would
+  either start refusing every shipped close that omits `--plan`, or extend the
+  drop to the refusals written against exactly the complete-looking event that
+  defeats attribution: a bare `--role` wrote a record with no role key, and the
+  renderer then aggregated it under the empty string. The two axes differ on
+  ordinary flags too - `release-bump.mjs`'s `--version` refuses a blank value
+  and falls back on a bare one.
+- A new seam DECLARES its flags in `cadence-core/bin/lib/arg-contract.mjs`, one
+  row per flag carrying all four fields (`required`, `type`, `value`, `bare`),
+  rather than restating the rules in a parser of its own. That same table is
+  what self-verify checks documented invocations against, so a flag with no row
+  is a flag no prose may spell.
+- The contract CLASSIFIES and the CALLER owns its own `reason` string, which is
+  why one `--dir` rule surfaces under two names: `planning.mjs` reads the
+  classification back and refuses with `bad-args`, the single refusal vocabulary
+  that file publishes, while the seams that end in an `e.seam` catch arm raise
+  it and refuse with `missing-flag-value`. The module mints no reason code of
+  its own, so adopting it adds nothing to a seam's published list.
+
 ## Caller-derived text
 
 - The derivation test, asked once per value: is it derived from agent output or
