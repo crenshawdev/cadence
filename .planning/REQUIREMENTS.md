@@ -10,46 +10,6 @@ from the tracker milestone `v3.5.5`. Each id names its issue; #219 through #224
 were filed at the open from a capture-queue audit that re-verified every defect
 live rather than trusting its note.
 
-- **GRD-01** (#219): a string `git.protected_branches` resolves to a list that
-  actually protects, never to `[""]`, which protects nothing while reading as
-  set.
-- **SCR-01** (#223): the bulk-output transport uses a per-run scratch path
-  coupled to its write, so a concurrent run cannot answer another run's
-  blocking re-arm cap, and the read-back refuses a truncated or stale file.
-- **ARG-01** (#137): every seam reading `--dir` reads it through a strict
-  reader, so an empty or absent flag is refused rather than answered about the
-  process cwd.
-- **ARG-02** (#142): `release-bump --date` is validated against the format its
-  own documentation states.
-- **ARG-03** (#144): a phase spelling the numeric grammar cannot round-trip is
-  refused at `seed-reqs` and `cursor set`, so `1.10` can never be silently
-  merged into `1.1`.
-- **ARG-04** (#182): the shared numeric readers refuse a digit string outside
-  the safe-integer range instead of rounding it or yielding `Infinity`.
-- **ARG-05** (#220): every `config.mjs` face reports a prototype-member key as
-  unknown rather than a silent success or a fabricated retirement claim.
-- **RCH-01** (#221): `detect-commands` names a lint or typecheck command only
-  when its binary is reachable.
-- **RSK-03** (#222): `risk-check status` is satisfiable for every worker key
-  `seams.md` permits, not only a numeric one.
-- **RSK-04** (#224): `risk-diff` does not fire the blocking gate on its own
-  test fixtures.
-- **SHP-01** (#183): `## Shipped` is located fence-aware, by the same
-  `sectionSpan` its own function already uses for `## Active`.
-- **ARG-06** (#147): the per-seam refusals are expressed once as a declarative
-  argument contract the seam CLIs share.
-- **RME-01**: `README.md` is a decision document, not a reference manual - the
-  cost-to-run section and the worked example move to `docs/`, the command list
-  is cut in favour of a pointer at `/cad-help` and
-  `cadence-core/references/COMMANDS.md`, the audience material states the DEMAND
-  rather than a label and sits ABOVE Install, and every claim that survives the
-  move is verified rather than carried over. Promoted from the 2026-08-18
-  capture decision; the command-list clause revised 2026-08-19 at
-  `/cad-context 5` (phase 5 CONTEXT D-03); the audience clause revised
-  2026-08-19 at `/cad-verify 5` from "section" to "material", because the
-  register review that produced commit `47d7214` dissolved the section into the
-  opening paragraphs while keeping both the placement and the load-bearing
-  sentence.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted, with two caveats the 2026-08-18 audit
@@ -240,6 +200,19 @@ parses only the Traceability table).
 | RVW-03 (raising `stakes` moves BOTH halves of a cross-model review panel. `route-table.json` carries three separate vocabularies for what a user reads as one dial, so the subagent reviewer upgrades and the cross-model one stays where it was.) | 3 | Complete | v3.5.4 |
 | REL-01 (`git.create_tag` governs the tag and nothing else. It is documented as "Tag on milestone" and read as the release-mode discriminator for the whole of `milestone.md` step 2, so setting it false silently skips the manifest bump as well. Hit live at the v3.4.1 close.) | 3 | Complete | v3.5.4 |
 | ISS-01 (the per-issue resolve bound is a land's budget, not a per-call one. `issue-check.mjs` stops its resolve loop only on `timedOut`, so a `tea` that answers slowly and exits non-zero is never marked timed out and each capped resolve can burn nearly the full call timeout.) | 3 | Complete | v3.5.4 |
+| GRD-01 (#219: a string `git.protected_branches` resolves to a list that actually protects, never to `[""]`, which protects nothing while reading as set.) | 1 | Complete | v3.5.5 |
+| SCR-01 (#223: the bulk-output transport uses a per-run scratch path coupled to its write, so a concurrent run cannot answer another run's blocking re-arm cap, and the read-back refuses a truncated or stale file.) | 1 | Complete | v3.5.5 |
+| ARG-01 (#137: every seam reading `--dir` reads it through a strict reader, so an empty or absent flag is refused rather than answered about the process cwd.) | 2 | Complete | v3.5.5 |
+| ARG-02 (#142: `release-bump --date` is validated against the format its own documentation states.) | 2 | Complete | v3.5.5 |
+| ARG-03 (#144: a phase spelling the numeric grammar cannot round-trip is refused at `seed-reqs` and `cursor set`, so `1.10` can never be silently merged into `1.1`.) | 2 | Complete | v3.5.5 |
+| ARG-04 (#182: the shared numeric readers refuse a digit string outside the safe-integer range instead of rounding it or yielding `Infinity`.) | 2 | Complete | v3.5.5 |
+| ARG-05 (#220: every `config.mjs` face reports a prototype-member key as unknown rather than a silent success or a fabricated retirement claim.) | 2 | Complete | v3.5.5 |
+| RCH-01 (#221: `detect-commands` names a lint or typecheck command only when its binary is reachable.) | 3 | Complete | v3.5.5 |
+| RSK-03 (#222: `risk-check status` is satisfiable for every worker key `seams.md` permits, not only a numeric one.) | 3 | Complete | v3.5.5 |
+| RSK-04 (#224: `risk-diff` does not fire the blocking gate on its own test fixtures.) | 3 | Complete | v3.5.5 |
+| SHP-01 (#183: `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.) | 3 | Complete | v3.5.5 |
+| ARG-06 (#147: the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.) | 4 | Complete | v3.5.5 |
+| RME-01 (`README.md` is a decision document, not a reference manual - the cost-to-run section and the worked example move to `docs/`, the command list is cut in favour of a pointer at `/cad-help` and `cadence-core/references/COMMANDS.md`, the audience material states the DEMAND rather than a label and sits ABOVE Install, and every claim that survives the move is verified rather than carried over. Promoted from the 2026-08-18 capture decision; the command-list clause revised 2026-08-19 at `/cad-context 5` (phase 5 CONTEXT D-03); the audience clause revised 2026-08-19 at `/cad-verify 5` from "section" to "material", because the register review that produced commit `47d7214` dissolved the section into the opening paragraphs while keeping both the placement and the load-bearing sentence.) | 5 | Complete | v3.5.5 |
 
 ## Deferred
 
@@ -281,19 +254,6 @@ section only, bounded at the next `## ` heading.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRD-01 | Phase 1 | Complete |
-| SCR-01 | Phase 1 | Complete |
-| ARG-01 | Phase 2 | Complete |
-| ARG-02 | Phase 2 | Complete |
-| ARG-03 | Phase 2 | Complete |
-| ARG-04 | Phase 2 | Complete |
-| ARG-05 | Phase 2 | Complete |
-| RCH-01 | Phase 3 | Complete |
-| RSK-03 | Phase 3 | Complete |
-| RSK-04 | Phase 3 | Complete |
-| SHP-01 | Phase 3 | Complete |
-| ARG-06 | Phase 4 | Complete |
-| RME-01 | Phase 5 | Complete |
 
 Empty between milestones. `v2.3.0`'s eleven rows moved to `## Shipped` at its
 close, so the next cycle's audit starts clean. Rows come back one at a time
