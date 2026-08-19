@@ -69,11 +69,18 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-// `--dir` takes the THROWING reader (D-01) - it names the repository every
-// read is bound to; `--base` and `--timeout-ms` keep the permissive one, the
-// latter deliberately falling back to DEFAULT_TIMEOUT_MS rather than refusing.
-import { flagValue, optionalFlag } from './lib/seam-input.mjs';
-import { requireInt } from './lib/require-int.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what each flag may be, and what it costs when it is not, are DECLARED
+// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
+// throwing form the catch arm at the foot of this file already renders. `--dir`
+// declares `refuse` (D-01) - it names the repository every read is bound to.
+// `--base` and `--timeout-ms` declare `fallback`, the latter deliberately
+// landing on DEFAULT_TIMEOUT_MS rather than refusing (D-04): this seam's whole
+// contract is that it never fails a land, and a contract that made every typed
+// flag refuse would hand it the power to fail one. The `int` type it declares
+// is lib/require-int.mjs's own classifier, consulted through the row rather
+// than called here.
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { onPath } from './lib/on-path.mjs';
@@ -299,30 +306,37 @@ function check(dir, baseArg, timeout) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['issue-check.mjs'];
+/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
+ * this binding owns nothing: it is an adapter over this file's own argv, never
+ * a second statement of what a flag may be. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
   if (cmd === 'check') {
-    const raw = flag('--timeout-ms');
-    const parsed = raw === undefined ? null : requireInt(raw);
-    // A malformed or non-positive --timeout-ms falls back to the constant
-    // rather than refusing: this seam's whole contract is that it never fails a
-    // land, and an unbounded call is the one thing it may never do instead.
-    const timeout = parsed && parsed.ok && parsed.value > 0 ? parsed.value : DEFAULT_TIMEOUT_MS;
-    // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
-    // default is unchanged; the empty, valueless and flag-shaped spellings
-    // throw before any spawn and the e.seam arm names them.
-    check(flagValue(argv, '--dir') || process.cwd(), flag('--base'), timeout);
+    // `--timeout-ms` declares the `int` type with the `fallback` disposition on
+    // both axes, so a malformed, empty or valueless one reads as ABSENT and the
+    // constant answers - no refusal, ever. What the shared `int` type does NOT
+    // carry is positivity, so this seam's own extra term stays spelled here: an
+    // unbounded call is the one thing it may never do instead of refusing.
+    const ms = arg('check', '--timeout-ms');
+    const timeout = ms !== undefined && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
+    // `--dir` declares `refuse` on both axes: a genuinely ABSENT one still
+    // reads as undefined and the cwd default is unchanged, while the empty,
+    // valueless and flag-shaped spellings raise before any spawn and the
+    // e.seam arm names them. `--base` declares `fallback`, so a spelling
+    // carrying no usable value reads as absent and `git.base_branch` answers.
+    check(arg('check', '--dir') || process.cwd(), arg('check', '--base'), timeout);
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
-  // no `message`, so without it a valueless --dir emits detail
-  // "[object Object]". Its detail is the flag name this file wrote, never
-  // third-party bytes, so the no-output-reaches-the-envelope rule holds.
+  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
+  // refusal object carries no `message`, so without it a valueless --dir emits
+  // detail "[object Object]". Its detail is the flag name this file wrote,
+  // never third-party bytes, so the no-output-reaches-the-envelope rule holds.
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
   else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }
