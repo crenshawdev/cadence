@@ -101,6 +101,32 @@ ledger rows were re-pointed, retired or re-pinned against the post-change file.
   -25 and -28 held at provenance per the ledger's own rule. `README.md` is
   14,789 B with the Ko-fi link, self-verify `ok:true`, 2380 tests pass.
 
+- [deviation] Review rejected the whole landing-page framing, not just its
+  register. The page led with what Cadence costs the reader, before it had
+  shown what the reader would be weighing that cost against, and the demand
+  material sat 60 lines from `## What a break costs`, which is the same
+  subject. Reframed on John's own reading of the tool: an engineering
+  methodology for code that has to keep working, where the senior engineer
+  makes the decisions and the controls around each step produce the evidence
+  they ran. `## What it asks of you` is gone as a section; a new
+  `## The controls` names all eight in a table (plan review, risk surface, push
+  rail, protected branch, verification, traceability audit, coverage audit, the
+  record) and carries the adversarial-reviewer and `/cad-suggest` material. The
+  gate map at the old line 84 is now a real table read off
+  `cadence-core/route-table.json`. Aphoristic closers cut at three sites; the
+  `isPlainPush` history reworked to say it was paid for twice. `README.md` is
+  14,297 B, 0 em-dashes, `prose-agreement`'s counts sentence preserved verbatim.
+  D-01 and D-02 were already annotated as corrected; this goes further than
+  either and is recorded here rather than as a third annotation.
+- [deviation] The rewrite moved every `README-*` claim, so all 56 non-provenance
+  pins were re-derived against the new file by locating each claim's own text,
+  not by shifting line numbers. README-34 RETIRES: its claim was the
+  `docs/WORKFLOW.md` inventory (fifteen decision points, the eighteen-cell grid,
+  the trigger-by-level table), and that paragraph was cut deliberately. Three
+  claims now span a fence or the gate table and carry ranges rather than single
+  lines (README-03, -24, -26). All 35 literal-bearing rows verified to land on
+  text that states their claim, 0 misses.
+
 ## Open items
 
 - `workflow.lint_command` is unset and `detect-commands` reports `lint: null`,
