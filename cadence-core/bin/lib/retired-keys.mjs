@@ -152,7 +152,23 @@ export const RETIRED_KEYS = Object.freeze({
  * @returns {string|null}
  */
 export function retiredKeyError(key) {
-  const spec = typeof key === 'string' ? RETIRED_KEYS[key] : undefined;
+  // hasOwn, not a bare `RETIRED_KEYS[key]`: this map is a plain frozen object,
+  // so a key named `__proto__`, `constructor`, `toString` or any other
+  // Object.prototype member resolved to Object.prototype itself - a truthy
+  // "spec" whose `since`, `replacement` and `detail` are all undefined. That is
+  // how `config.mjs check '__proto__=1'` answered `retired in v2.0.0:
+  // undefined`: a WRONG diagnostic rather than a missing one, naming a
+  // retirement that never happened and sending the user to look for a
+  // replacement that never existed.
+  //
+  // The guard lives HERE rather than at the caller so every caller inherits it,
+  // and it is `hasOwn` rather than a check on the spec's shape: a spec whose
+  // `replacement` is null is a legitimate row - 14 of the 16 ship that way - so
+  // filtering by value would delete most of the vocabulary. A genuinely retired
+  // key is an own property of the frozen literal above, so this changes nothing
+  // for it.
+  const spec = typeof key === 'string' && Object.hasOwn(RETIRED_KEYS, key)
+    ? RETIRED_KEYS[key] : undefined;
   if (!spec) return null;
   const since = spec.since || 'v2.0.0';
   return spec.replacement
