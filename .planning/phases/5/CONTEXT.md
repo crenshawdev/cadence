@@ -110,7 +110,9 @@ Plan shape: one plan.
 - D-04 (docs/ conventions): New pages match their three siblings - `# Title`,
   a bold one-line subtitle, no front matter, no `../README.md` back-link (a
   link class no existing docs page has and no check validates), figures linked
-  relatively. Relocated paragraphs are re-wrapped to ~80 columns; README wraps
+  relatively. [corrected by plan-1 deviation: `docs/EVIDENCE.md:3` is a plain
+  paragraph, not a bold subtitle, so only two of the three siblings carry one]
+  Relocated paragraphs are re-wrapped to ~80 columns; README wraps
   at up to 1,635 today, so a byte-for-byte move would hide which words the
   accuracy pass changed. Evidence: `docs/DISCOVERY.md:1-3`,
   `docs/WORKFLOW.md:1-3,19`, `docs/EVIDENCE.md:1-4`.
