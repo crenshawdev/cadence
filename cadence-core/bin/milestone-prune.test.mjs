@@ -664,6 +664,101 @@ test('seam: missing REQUIREMENTS.md degrades to a warning, roadmap half still la
   assert.ok(!readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'));
 });
 
+// --- AC7 at the seam: a document whose sections are only fenced -------------
+//
+// The pure transforms above prove the locators; these two prove the ANSWER a
+// close gives, which is where the damage happened. The document is the shape a
+// template-seeded project actually has (D-15): `templates/REQUIREMENTS.md`
+// puts its whole body inside a markdown fence, so `## Active`, `## Shipped`
+// and `## Traceability` exist only as examples of themselves. Read
+// fence-blind, this close shipped the example's own row - removing it from the
+// fenced Traceability table and appending an archived row inside the fenced
+// `## Shipped` one.
+//
+// "No section found" needs no new field: the seam already reports the moved
+// list and the created-shipped flag, and already writes REQUIREMENTS.md only
+// when the transform moved a row, so an empty `moved` with the file
+// byte-identical IS that answer.
+
+const FENCED_BODY = `\`\`\`markdown
+# Requirements: [Project Name]
+
+## Active
+
+- **STOR-01**: [requirement]
+
+## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+\`\`\``;
+
+const TEMPLATE_SHAPED = `# REQUIREMENTS.md template
+
+Fill and write to .planning/REQUIREMENTS.md.
+
+${FENCED_BODY}
+
+Bare headers - cad-plan seeds a row per requirement when its phase is planned.
+`;
+
+const TEMPLATE_PLUS_REAL = `${TEMPLATE_SHAPED}
+## Active
+
+- **STOR-01**: bytes survive
+
+## Shipped
+
+| Requirement | Phase | Status | Milestone |
+|-------------|-------|--------|-----------|
+| OLD-01 | 0 | Complete | v0.1.0 |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| STOR-01 | Phase 1 | Complete |
+`;
+
+test('seam: a REQUIREMENTS.md whose sections are only fenced comes back byte-identical', () => {
+  const dir = scaffold();
+  writeFileSync(join(dir, 'REQUIREMENTS.md'), TEMPLATE_SHAPED);
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements.moved, [], 'no section outside a fence: nothing to move');
+  assert.equal(r.requirements.created_shipped, false);
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), TEMPLATE_SHAPED,
+    'the fenced example keeps every byte, the file is never written');
+  // The roadmap half is unaffected: this is a REQUIREMENTS-only answer.
+  assert.ok(!readFileSync(join(dir, 'ROADMAP.md'), 'utf8').includes('Phase 1: Store'));
+});
+
+test('seam: with real sections below the fence, the row lands under the REAL ## Shipped', () => {
+  const dir = scaffold();
+  writeFileSync(join(dir, 'REQUIREMENTS.md'), TEMPLATE_PLUS_REAL);
+  const r = run(dir, ['--label', 'v1.2.0', '--mode', 'delete']);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.requirements.moved, [{ id: 'STOR-01', phase: 1 }]);
+  assert.equal(r.requirements.created_shipped, false, 'the real section already exists');
+  const out = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  assert.ok(out.includes(FENCED_BODY), 'the fenced example survives byte-identical');
+  const row = out.indexOf('| STOR-01 (bytes survive) | 1 | Complete | v1.2.0 |');
+  assert.ok(row > -1, 'the row was archived');
+  assert.ok(row > out.indexOf('| OLD-01 | 0 | Complete | v0.1.0 |'),
+    'under the REAL ## Shipped, after its last row');
+  assert.ok(row < out.lastIndexOf('## Traceability'));
+  // The real bullet and the real Traceability row are the ones that went.
+  assert.ok(!out.split('\n').includes('- **STOR-01**: bytes survive'));
+  assert.equal(out.split('\n').filter((l) => l === '| STOR-01 | Phase 1 | Complete |').length, 1,
+    'only the fenced example still carries that row');
+});
+
 // --- partial application: the arm that used to answer ok:true ---------------
 // Both tests below redden on the pre-fix seam, which caught a directory failure
 // into `warnings` and then pruned the documents for every completed phase
