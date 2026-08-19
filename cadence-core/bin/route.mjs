@@ -93,7 +93,6 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
-import { requirePhaseArg } from './lib/require-int.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { appendEvent } from './lib/trace.mjs';
@@ -133,10 +132,13 @@ const DEFAULT_TIER_NAMES = ['flagship', 'balanced', 'cheap'];
 const DEFAULT_EFFORT_NAMES = ['high', 'medium', 'low', 'minimal'];
 
 // The `--phase` shape rule lives in ONE place (`lib/require-int.mjs`'s
-// `requirePhaseArg`, imported above), not in a local regex per script: three
-// independent copies is how the same input came to be refused in three
-// different wordings, and how the directory component came to be normalized on
-// some surfaces and not others.
+// `requirePhaseArg`), not in a local regex per script: three independent copies
+// is how the same input came to be refused in three different wordings, and how
+// the directory component came to be normalized on some surfaces and not
+// others. This file no longer calls it DIRECTLY - the flag's declared row in
+// lib/arg-contract.mjs names `phase` as its type and that table maps the type
+// to this one classifier, so the rule is reached through the declaration rather
+// than named twice.
 
 // Resolve the effective config from global + repo layers (repo wins, via the
 // shared merge lib), falling back to DEFAULTS for anything unset. _source
@@ -252,11 +254,25 @@ function resolve(opts) {
   const planningRoot = dirname(opts.file);
   let tracePhase = null;
   try {
-    const parsed = requirePhaseArg(opts.phase);
-    tracePhase = opts.phase !== undefined && parsed.ok
-      ? parsed.raw
-      : cursorPhase(planningRoot);
+    // `opts.phase` is set ONLY when it parsed clean: `parseArgs` already judged
+    // it against its declared row, so a malformed spelling arrives here as an
+    // absent phase carrying `opts.phaseWarning` beside it.
+    tracePhase = opts.phase !== undefined ? opts.phase : cursorPhase(planningRoot);
   } catch { /* a record of a decision may never change the decision */ }
+
+  // The ARGUMENT-level diagnostics, seeded ahead of the config layer's own so
+  // they ride every arm below (DOC-01: `warnings[]` rides every result shape,
+  // ok:false included). Today `--phase` is the only flag that produces one,
+  // because it is the only one declaring `warn`.
+  //
+  // Before this it produced NOTHING: `requirePhaseArg(opts.phase)` sat inside
+  // the try above and its `!parsed.ok` arm fell silently through to the cursor,
+  // so measured 2026-08-19 `resolve --role cad-planner --phase 1.10.3` returned
+  // ok:true with no mention of `--phase` at all - the routing event keyed to a
+  // different phase than the caller named, silently. The comment that used to
+  // sit here said the shape check belonged where the risk FLOOR was computed;
+  // that floor is retired (see this file's header), so nothing carried it.
+  const argWarnings = opts.phaseWarning ? [opts.phaseWarning] : [];
 
   // The dispatch half of the worker's lifecycle bracket (`--bracket-read` is
   // the switch; `--bracket-plan` the worker key, defaulting to the role). It is
@@ -295,9 +311,10 @@ function resolve(opts) {
   // the question to be asked of.
   const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
   if (!roles.includes(opts.role)) {
+    const degraded = [...argWarnings, ...cfg._warnings];
     out({ ok: false, reason: 'unknown-role', role: opts.role,
       detail: `known roles: ${roles.join(', ')}`,
-      ...(cfg._warnings.length ? { warnings: cfg._warnings } : {}) });
+      ...(degraded.length ? { warnings: degraded } : {}) });
     return;
   }
 
@@ -312,8 +329,9 @@ function resolve(opts) {
   // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
   // retired key, an unreadable PLAN, a gate disagreement and an unknown pin
   // alias can all be true at once. Built before the floor so the floor's own
-  // diagnostics ride on it.
-  const warnings = [...cfg._warnings];
+  // diagnostics ride on it, and seeded with the argument-level ones so a
+  // malformed `--phase` is said out loud on the ok:true arm too.
+  const warnings = [...argWarnings, ...cfg._warnings];
 
   // The stakes LEVEL for this dispatch: the configured baseline, full stop.
   // All four knobs come from the floored row through the one cell grid.
@@ -792,11 +810,22 @@ function parseArgs(a) {
     // carrying a diagnostic.
     if (parsed.value !== undefined) o[key] = parsed.value;
   }
-  // Stored RAW: a `--phase` outside the accepted shape is a warning at the
-  // resolve envelope, never a `usage` refusal, so the shape check belongs where
-  // the warning is built and not here.
-  const p = a.indexOf('--phase');
-  if (p >= 0) o.phase = a[p + 1];
+  // `--phase` is the one flag here declaring the WARN disposition (D-04), and
+  // the only place this bin reads `evaluateFlag`'s third answer: ok:true with a
+  // NON-EMPTY `detail`. A `usage` refusal on a bad phase would route the phase
+  // LOWER than its own risk baseline, so a bad shape costs a diagnostic and the
+  // resolution stands. `o.phase` is set only when the spelling parsed clean -
+  // the caller falls back to the cursor otherwise, exactly as it always did -
+  // and `o.phaseWarning` is what the resolve envelope says about it.
+  const phase = evaluateFlag(a, '--phase', rows['--phase']);
+  if (!phase.detail) { if (phase.value !== undefined) o.phase = phase.value; }
+  else {
+    o.phaseWarning = `--phase ${phase.value === undefined
+      ? 'has no value after it'
+      : `${JSON.stringify(phase.value)} is not a phase number (N or N.M)`}`
+      + '; the routing event is keyed to the cursor phase instead, and the '
+      + 'resolved bundle is unaffected';
+  }
   return o;
 }
 
