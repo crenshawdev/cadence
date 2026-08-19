@@ -31,9 +31,13 @@
 // Behaviour stated holds for Claude Code >= 2.1.208; before that a `fresh`
 // worktree used whatever `origin/HEAD` happened to be cached locally.
 //
-// Subcommand (prints one JSON line, exit 0):
+// Subcommand (prints one JSON line; every resolve is ok:true and exits 0, a
+// malformed CALL exits 1):
 //   resolve [--dir <path>]
-//     --dir  repo/planning root (default cwd).
+//     --dir  repo/planning root. ABSENT means the process cwd; an EMPTY or
+//            valueless --dir REFUSES (`missing-flag-value`, exit 1) rather than
+//            resolving the base ref of a tree the caller never named (phase 2
+//            D-01).
 // Emits { ok, baseRef, source, parallelSafe, reason }.
 //
 // Test hooks (also honest relocations): CADENCE_MANAGED_SETTINGS and
@@ -46,8 +50,11 @@ import { join, resolve, dirname } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { emit } from './lib/seam-io.mjs';
 // The argv reader this file used to define for itself; both flag contracts and
-// the reason there are two of them live in lib/seam-input.mjs.
-import { optionalFlag } from './lib/seam-input.mjs';
+// the reason there are two of them live in lib/seam-input.mjs. `--dir` takes
+// the THROWING one (D-01): this seam mutates nothing, but the ref it resolves
+// is what a worktree is then forked from, so an answer about the wrong tree is
+// not cheaper for being advisory.
+import { flagValue, optionalFlag } from './lib/seam-input.mjs';
 
 /** The documented default when no layer sets the key. */
 const DEFAULT_BASE_REF = 'fresh';
@@ -146,11 +153,18 @@ const cmd = argv[0];
 const flag = (name) => optionalFlag(argv, name);
 
 try {
+  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
+  // default is unchanged; only the empty, valueless and flag-shaped spellings
+  // throw, and the e.seam arm below turns each into a named refusal.
   if (cmd === 'resolve') {
-    resolveBaseRef(flag('--dir') || process.cwd());
+    resolveBaseRef(flagValue(argv, '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: resolve [--dir <path>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
+  // no `message`, so without it a valueless --dir emits detail
+  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

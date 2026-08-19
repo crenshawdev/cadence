@@ -4,7 +4,7 @@
 // through the seam with an explicit --branch so no live git repo is needed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -265,3 +265,33 @@ test('warnings[] rides the envelope, and a torn layer puts the parse failure on 
   assert.equal(r.warnings.length, 1);
   assert.match(r.warnings[0], /failed to parse/);
 });
+
+// --- --dir refuses rather than answering about the process cwd (D-01) --------
+
+/** Run the seam raw, keeping the JSON line AND the exit status: a refusal's
+ * whole contract is ok:false mirrored into exit 1 (lib/seam-io.mjs). */
+function seamStatus(args) {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const r = spawnSync('node', [SEAM, ...args], { encoding: 'utf8', env });
+  return { json: JSON.parse(r.stdout), status: r.status };
+}
+
+// This seam is ADVISORY - it mutates nothing - and it is in scope on purpose.
+// Measured 2026-08-18 before the fix, `tags --dir ''` printed THIS repository's
+// 33 tags, so a caller asking about another tree got a confident answer about
+// the one the process happened to stand in. An ABSENT --dir still means the
+// cwd; the empty, valueless and flag-shaped spellings refuse.
+for (const [sub, rest] of [['decide', ['--branch', 'main']], ['tags', []]]) {
+  for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+    test(`${sub}: ${label} --dir refuses by name, exit 1, no tree read`, () => {
+      const { json, status } = seamStatus([sub, ...dirArgs, ...rest]);
+      assert.equal(json.ok, false);
+      // The e.seam catch arm, not the generic one: the thrown refusal object
+      // carries no `message`, so without it this reads internal/"[object Object]".
+      assert.equal(json.reason, 'missing-flag-value', JSON.stringify(json));
+      assert.equal(json.detail, '--dir');
+      assert.equal(status, 1);
+      assert.equal(json.tags, undefined, 'no tag list rides a refusal');
+    });
+  }
+}

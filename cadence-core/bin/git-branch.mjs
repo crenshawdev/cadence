@@ -9,7 +9,10 @@
 //
 // Subcommands (each prints one JSON line):
 //   decide [--dir <path>] [--branch <name>]
-//     --dir     planning root (default cwd); reads <dir>/.planning/config.json,
+//     --dir     planning root. ABSENT means the process cwd; an EMPTY or
+//               valueless --dir REFUSES (`missing-flag-value`, exit 1) rather
+//               than answering about a tree the caller never named (phase 2
+//               D-01) - true of `tags` too. Reads <dir>/.planning/config.json,
 //               PROJECT.md, ROADMAP.md, and the repo's tag list (`git tag
 //               --list`) - the versions already published, none of which a new
 //               integration branch may be named after.
@@ -17,8 +20,9 @@
 //               `git -C <dir> rev-parse --abbrev-ref HEAD`, degrading to "" on
 //               failure (no repo / no commits -> treated as not-on-a-base).
 //   tags [--dir <path>]
-//     --dir     project root (default cwd); prints `tags[]` - every tag the
-//               repository AT that root carries, in `git tag --list` order.
+//     --dir     project root (same refusal rule as above); prints `tags[]` -
+//               every tag the repository AT that root carries, in
+//               `git tag --list` order.
 //               Read-only in the strongest sense: `git rev-parse` and `git tag
 //               --list` and nothing else, degrading to an empty list on every
 //               failure, so a caller in a non-repository reads "this project
@@ -37,8 +41,11 @@ import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
 import { readTags } from './lib/git-tags.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The argv and file readers this file used to define for itself; both contracts
-// and the reason there are two of them live in lib/seam-input.mjs.
-import { optionalFlag, readText } from './lib/seam-input.mjs';
+// and the reason there are two of them live in lib/seam-input.mjs. `--dir`
+// takes the THROWING one even though this seam mutates nothing (D-01): an
+// advisory reader that answers confidently about the wrong tree is the same
+// quiet-wrong-answer class, and `tags --dir ''` did exactly that.
+import { flagValue, optionalFlag, readText } from './lib/seam-input.mjs';
 // The current-branch reader, shared with git-guard.mjs and git-publish.mjs. It
 // degrades to "" on failure, which is the degradation the header above states:
 // no repo / no commits reads as not-on-a-base.
@@ -105,14 +112,21 @@ const cmd = argv[0];
 const flag = (name) => optionalFlag(argv, name);
 
 try {
+  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
+  // default is unchanged; only the empty, valueless and flag-shaped spellings
+  // throw, and the e.seam arm below turns each into a named refusal.
   if (cmd === 'decide') {
-    decide(flag('--dir') || process.cwd(), flag('--branch'));
+    decide(flagValue(argv, '--dir') || process.cwd(), flag('--branch'));
   } else if (cmd === 'tags') {
-    tags(flag('--dir') || process.cwd());
+    tags(flagValue(argv, '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommands: decide [--dir <path>] [--branch <name>] | tags [--dir <path>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
+  // no `message`, so without it a valueless --dir emits detail
+  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
