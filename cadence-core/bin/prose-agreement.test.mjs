@@ -695,6 +695,69 @@ test('WIR-01: the recovery arm names its producers in both documents, and the de
     `review-triggers.md's \`claude-subagent\` bullet names no maxTurns ${bound} bound`);
 });
 
+// --- #195: the locate step's re-run refusal, and its unconditional status call
+
+/** The body of a named `<step>` in a workflow, read by its own anchor. */
+const stepBody = (text, name, where) => {
+  const m = text.match(new RegExp(`<step name="${name}">([\\s\\S]*?)</step>`));
+  assert.ok(m, `${where} has no <step name="${name}">`);
+  return m[1];
+};
+
+test('#195: execute.md locates unconditionally and refuses an already-executed phase', () => {
+  // The defect. `/cad-execute <N>` re-dispatched a phase whose plans were
+  // already committed, and the second run's first task write landed on top of
+  // the first run's `reports/plan-<k>.md` - destroying the only per-task record
+  // of the run being re-run. Two halves fix it (CONTEXT D-04), and each has its
+  // own way of silently coming back:
+  //   - the refusal itself, which a later edit can narrow to `executed` alone,
+  //     leaving `complete` re-running identically one status later; and
+  //   - the `status` call, which was under an `else` that `$ARGUMENTS`
+  //     short-circuited, so `/cad-execute 3` reached this step with no derived
+  //     status to refuse ON. Restoring that `else` turns the refusal into dead
+  //     prose while every word of it is still on the page.
+  // So both are read out of the step by its own anchor rather than grepped for
+  // across the file, and no report-path literal is asserted anywhere here: the
+  // current run's path is still `plan-<k>.md`, so a literal would be a string
+  // this same commit writes and could never fail.
+  const locate = stepBody(doc('cadence-core', 'workflows', 'execute.md'), 'locate', 'execute.md');
+
+  // 1. The status call is not conditioned on the phase argument. Extracted, not
+  //    grepped: the sentence that CARRIES the invocation is the one that would
+  //    have to say "else" for the call to be skippable.
+  const call = sentenceAround(locate, 'planning.mjs" status', "execute.md's locate step");
+  assert.doesNotMatch(call, /\belse\b|\botherwise\b|\bonly (?:if|when)\b/i,
+    'execute.md runs `planning.mjs status` conditionally, so a phase number on the command '
+    + `line skips the derivation the refusal below reads: ${call}`);
+  assert.doesNotMatch(call, /\$ARGUMENTS/,
+    'execute.md\'s `planning.mjs status` call is back inside the `$ARGUMENTS` bullet, which '
+    + `is the branch that short-circuited it: ${call}`);
+
+  // 2. The refusal arm, found by the recovery path it names - a refusal that
+  //    named no way forward would fail this at the anchor itself.
+  const arms = locate.split(/\n- /).slice(1);
+  const refusal = arms.find((a) => a.includes('/cad-undo'));
+  assert.ok(refusal,
+    "execute.md's locate step names no /cad-undo route, so it either refuses nothing or "
+    + 'refuses without naming the supported path');
+  for (const derived of ['executed', 'complete']) {
+    assert.match(refusal, new RegExp(`\`${derived}\``),
+      `that refusal does not name derived status \`${derived}\`, which re-runs and overwrites `
+      + 'the executor reports of the run that committed the phase');
+  }
+  assert.match(refusal, /\/cad-undo <N>/, 'the refusal does not name `/cad-undo <N>`');
+  assert.match(refusal, /\/cad-execute <N>/, 'the refusal does not name `/cad-execute <N>`');
+  assert.match(refusal, /--rerun/,
+    'the refusal names no deliberate way through, so an intentional re-run has no route but '
+    + 'editing the workflow');
+
+  // 3. It stops BEFORE the guard and the trace anchor, which is what makes it a
+  //    refusal rather than a late apology: `locate` is the first step, and the
+  //    arm is inside it.
+  assert.ok(locate.indexOf('/cad-undo') > locate.indexOf('planning.mjs" status'),
+    'the refusal is read before the derivation it refuses on');
+});
+
 // --- DOC-02: README counts its own skills, roles and rung files --------------
 
 test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {
