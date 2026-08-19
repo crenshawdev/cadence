@@ -355,3 +355,19 @@ test('unknown subcommand: usage, ok false', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
 });
+
+// --- --dir refuses rather than writing into the process cwd (phase 2 D-01) ---
+
+// This seam WRITES: `--dir` names the tree whose plugin.json and CHANGELOG.md
+// get rewritten. An ABSENT --dir still means the cwd (every arm above passes
+// one explicitly); the empty, valueless and flag-shaped spellings refuse
+// through flagValue's thrown object and the dispatch's e.seam arm.
+for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+  test(`bump: ${label} --dir refuses by name, exit 1, writes nothing`, () => {
+    const { json, status } = seamStatus(['bump', ...dirArgs, '--version', '2.0.0', '--date', '2026-08-03']);
+    assert.equal(json.ok, false);
+    assert.equal(json.reason, 'missing-flag-value', JSON.stringify(json));
+    assert.equal(json.detail, '--dir');
+    assert.equal(status, 1);
+  });
+}

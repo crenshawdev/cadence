@@ -16,7 +16,10 @@
 // Subcommand (prints one JSON line, seam convention lib/seam-io.mjs; never
 // process.exit() after emit):
 //   bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]
-//     --dir      repo/planning root (default cwd).
+//     --dir      repo/planning root. An ABSENT --dir is the process cwd; an
+//                EMPTY or valueless one REFUSES (`missing-flag-value`, exit 1,
+//                nothing written) rather than bumping a manifest in a tree the
+//                caller never named (phase 2 D-01).
 //     --version  REQUIRED: the shipping release number, the one the milestone
 //                workflow already confirmed with the user. Its absence refuses
 //                (`no-target-version`) - the seam derives no number of its own.
@@ -56,9 +59,12 @@ import {
 } from './lib/release-decision.mjs';
 // The argv and file readers this file used to define for itself; both flag
 // contracts and the reason there are two of them live in lib/seam-input.mjs.
+// `--dir` takes the THROWING one - it names the tree this seam WRITES, so an
+// empty or valueless one refuses instead of defaulting to the cwd (D-01);
+// `--version` and `--date` keep the permissive reader.
 // `readFileSync` stays imported above for the manifest parse below, which must
 // tell an unreadable manifest from an empty one.
-import { optionalFlag, readText } from './lib/seam-input.mjs';
+import { flagValue, optionalFlag, readText } from './lib/seam-input.mjs';
 
 /**
  * Build the release-tag URL a CHANGELOG link reference points at, from the
@@ -209,12 +215,19 @@ const cmd = argv[0];
 const flag = (name) => optionalFlag(argv, name);
 
 try {
+  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
+  // default is unchanged; only the empty, valueless and flag-shaped spellings
+  // throw, and the e.seam arm below turns each into a named refusal.
   if (cmd === 'bump') {
-    bump(flag('--dir') || process.cwd(), flag('--version'), flag('--date'));
+    bump(flagValue(argv, '--dir') || process.cwd(), flag('--version'), flag('--date'));
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommand: bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
+  // no `message`, so without it a valueless --dir emits detail
+  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

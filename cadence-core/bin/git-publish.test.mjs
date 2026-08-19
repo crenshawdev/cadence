@@ -489,3 +489,27 @@ test('source: every git-publish failure detail goes through redactUrl', () => {
     assert.match(pub, new RegExp(`reason: '${reason}'[\\s\\S]{0,120}?detail: redactUrl\\(`), reason);
   }
 });
+
+// --- --dir refuses rather than acting on the process cwd (phase 2 D-01) ------
+
+// This seam PUSHES and DELETES, and `--dir` is what names the tree it does that
+// in. Measured 2026-08-18 before the fix, `reap --dir '' --branch
+// nosuchbranch-xyz` answered {"ok":true,"action":"already-absent"} - a
+// confident answer about whatever tree the process happened to be standing in.
+// An ABSENT --dir still means the cwd (every fixture-driven arm above passes
+// one explicitly, and they all still pass); only the empty, valueless and
+// flag-shaped spellings refuse.
+for (const [sub, rest] of [['publish', []], ['reap', ['--branch', 'cadence/v2.2.0']],
+  ['authorized', []]]) {
+  for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+    test(`${sub}: ${label} --dir refuses by name, exit 1, nothing run`, () => {
+      const { d, status } = seamStatus([sub, ...dirArgs, ...rest]);
+      assert.equal(d.ok, false);
+      // The e.seam catch arm, not the generic one: without it the thrown
+      // refusal object (no `message`) reads as internal/"[object Object]".
+      assert.equal(d.reason, 'missing-flag-value', JSON.stringify(d));
+      assert.equal(d.detail, '--dir');
+      assert.equal(status, 1);
+    });
+  }
+}
