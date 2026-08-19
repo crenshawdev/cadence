@@ -98,8 +98,16 @@ Plan shape: one plan.
 - [ ] AC5: `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true`
       with an empty `problems` array, with `cadence-core/bin/weight-budgets.json`
       rows 65 and 91 re-pinned in the same commit as the prose edits.
-- [ ] AC6: `/cad-report <N>` on a phase carrying a rotated report lists both
-      reports.
+- [ ] AC6: On a SUMMARY-less phase carrying a rotated report, `/cad-report <N>`
+      lists both reports. Restated 2026-08-19 at the `plan` gate, which found the
+      original wording unsatisfiable: `cadence-core/workflows/report.md` opens
+      `.planning/phases/<N>/reports/plan-*.md` ONLY when `SUMMARY.md` is absent,
+      so on a finished phase `/cad-report` reads the SUMMARY and lists no reports
+      at all, whatever they are named. The intent is unchanged - rotation must not
+      hide the older record from the reader that consumes reports - and the
+      SUMMARY-less qualifier is what makes it observable. Changing `report.md`'s
+      selection rule was rejected as out of scope: `report.md` is not in this
+      phase's In: list.
 
 ## Flagged assumptions
 
