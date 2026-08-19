@@ -137,6 +137,21 @@ const HELPERS = [
       + 'override at its call site instead. A second copy would also drop the '
       + 'PATHEXT arm, which is the only reason npm/npx/tsc resolve on win32.',
   },
+  {
+    name: 'the worker-key grammar (requirePlanKey)',
+    home: 'lib/plan-key.mjs',
+    // The outer-whitespace clause, which is the arm that distinguishes this
+    // grammar from every other string guard in the tree: it REFUSES rather
+    // than normalizing, because trimming would mint a second spelling of one
+    // key and the record and the receipt would stop joining.
+    re: new RegExp('if \\(raw !== raw\\.trim\\(\\)\\) return \\{ ok: false \\};', 'g'),
+    note: 'Import { requirePlanKey } from ./lib/plan-key.mjs. Two copies of '
+      + 'this rule are the RSK-03 defect itself one spelling over: risk-check '
+      + 'run guarded --plan with requireInt while risk-check status derived '
+      + 'what it demanded from the lifecycle brackets, so a fix pass bracketed '
+      + '`1-fix` left a blocking gate no argv could satisfy. lease-check --plan '
+      + 'is NOT a caller: it names a plan FILE on disk and stays numeric.',
+  },
 ];
 
 const MODULES = everyModule(BIN);
