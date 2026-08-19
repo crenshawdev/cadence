@@ -5182,11 +5182,45 @@ function projectTree(files) {
   return root;
 }
 
-/** detect-commands takes --root (the PROJECT root), never --dir. */
-function detect(root, extra = []) {
+/** Executable stubs at `<root>/node_modules/.bin`, which is where `npx`
+ *  resolves a delegated tool. Bytes in the fixture's own tree, so the
+ *  npx-delegated arm is pinned without any machine's install. */
+function nodeModulesBin(root, tools) {
+  const dir = join(root, 'node_modules', '.bin');
+  mkdirSync(dir, { recursive: true });
+  for (const t of tools) writeFileSync(join(dir, t), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return root;
+}
+
+/**
+ * Every tool this block's fixtures name. Passed as the reachable set by
+ * default, so a row asserting WHICH command an arm produces is not also an
+ * assertion about what is installed on the machine running the suite (RCH-01,
+ * D-11): with the reachability rule live and no override, the `ruff`, `mypy`
+ * and two `go` rows fail on a dev box without those tools, and the
+ * `npx eslint`/`npx tsc` rows fail in every mkdtemp tree, which has no
+ * `node_modules`. A row that is ABOUT reachability passes its own narrower set.
+ */
+const EVERY_TOOL = 'npm,npx,cargo,ruff,mypy,go,eslint,tsc';
+
+/**
+ * detect-commands takes --root (the PROJECT root), never --dir.
+ *
+ * `reachable` is the set the seam reads in place of its own probe, behind the
+ * `CADENCE_TEST_SEAM` sentinel; `null` runs the real probe, and `seam: false`
+ * sets the variable with NO sentinel, which must be ignored. A row that needs
+ * the LIVE probe stays hermetic by putting its binaries in the fixture's own
+ * `node_modules/.bin` (see nodeModulesBin) rather than relying on the machine.
+ */
+function detect(root, { extra = [], reachable = EVERY_TOOL, seam = true } = {}) {
+  const env = { ...process.env };
+  delete env.CADENCE_TEST_SEAM;
+  delete env.CADENCE_DETECT_REACHABLE;
+  if (seam) env.CADENCE_TEST_SEAM = '1';
+  if (reachable !== null) env.CADENCE_DETECT_REACHABLE = reachable;
   try {
     return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root', root, ...extra],
-      { encoding: 'utf8' }));
+      { encoding: 'utf8', env }));
   } catch (e) {
     return JSON.parse(e.stdout);
   }
@@ -5329,6 +5363,83 @@ test('detect-commands: an unlistable root is ok:false, never a silent nothing', 
   assert.equal(r.reason, 'no-root');
 });
 
+// --- detect-commands: a command is named only when it can be RUN (RCH-01) ----
+
+test('detect-commands: an unreachable winning arm nulls its slot and never falls through', () => {
+  // The measured shape D-05 refuses: `[tool.ruff]` names the lint arm, `go.mod`
+  // sits below it, and ruff is absent. Falling through would tell this project
+  // to run `go vet ./...` - a linter its maintainers did not choose, over a
+  // language the change may not touch.
+  const r = detect(projectTree({
+    'pyproject.toml': '[tool.ruff]\nline-length = 100\n',
+    'go.mod': 'module example.com/x\n',
+  }), { reachable: 'go' });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.lint, null);
+  assert.equal(r.source.lint, null, 'a nulled slot claims no provenance');
+  assert.notEqual(r.lint, 'go vet ./...');
+  assert.equal(r.warnings.filter((w) => w.includes('ruff')).length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings.find((w) => w.includes('ruff')), /pyproject\.toml/);
+  // The lower arm is still available to its OWN slot: `go` is reachable here,
+  // so the typecheck answer is unaffected. Nulling is per slot, not per tree.
+  assert.equal(r.typecheck, 'go build ./...');
+  assert.equal(r.source.typecheck, 'go.mod');
+});
+
+test('detect-commands: an npx arm probes the DELEGATED tool, not the driver alone', () => {
+  // `npx` is on PATH almost everywhere, so a driver-only rule would leave
+  // `npx eslint .` naming an eslint nobody has (D-04).
+  const tree = { 'eslint.config.mjs': 'export default [];\n' };
+  const without = detect(projectTree(tree), { reachable: 'npx' });
+  assert.equal(without.lint, null);
+  assert.equal(without.source.lint, null);
+  assert.equal(without.warnings.filter((w) => w.includes('eslint')).length, 1,
+    JSON.stringify(without.warnings));
+  const with_ = detect(projectTree(tree), { reachable: 'npx,eslint' });
+  assert.equal(with_.lint, 'npx eslint .');
+  assert.equal(with_.source.lint, 'eslint.config.mjs');
+});
+
+test('detect-commands: the LIVE probe resolves a delegated tool out of node_modules/.bin', () => {
+  // Where `npx` itself looks, and the half a PATH-only rule would drop: this is
+  // the shape of a TypeScript repo whose only static-analysis command is the
+  // one CI runs, with `tsc` installed as a dependency and absent from PATH.
+  // Both binaries live in the FIXTURE's node_modules/.bin, so the row proves
+  // the production probe without depending on what this machine has installed.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const r = detect(root, { reachable: null });
+  assert.equal(r.typecheck, 'npx tsc -p tsconfig.ci.json', JSON.stringify(r));
+  assert.equal(r.source.typecheck, 'tsconfig.ci.json');
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+  // Only the POSITIVE half is asserted against the live probe, deliberately. A
+  // fixture can guarantee a binary is PRESENT (it wrote it), and nothing on the
+  // machine can take it away; it cannot guarantee one is ABSENT, because a box
+  // with tsc installed answers `true` correctly and the row would fail for
+  // being right. The unreachable-delegated-tool half is pinned above, through
+  // the override, where the set is stated rather than discovered.
+});
+
+test('detect-commands: an EMPTY reachable set means nothing is reachable', () => {
+  // The `||` hazard, pinned: an empty override is falsy, so a seam that read it
+  // through `|| probe` would silently run the live probe and answer about the
+  // machine. The fixture's own node_modules/.bin would otherwise resolve both
+  // binaries, which is exactly what makes this row discriminating.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const r = detect(root, { reachable: '' });
+  assert.equal(r.typecheck, null, JSON.stringify(r));
+  assert.equal(r.source.typecheck, null);
+});
+
+test('detect-commands: the reachable set WITHOUT the sentinel is ignored', () => {
+  // The gate EXP-01 asks for: this variable decides which static-analysis
+  // command an executor is told to run, so a repo-supplied .envrc setting it
+  // must change nothing. Same fixture and same empty value as the row above,
+  // which answered `null` there and answers the live probe here.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const r = detect(root, { reachable: '', seam: false });
+  assert.equal(r.typecheck, 'npx tsc -p tsconfig.ci.json', JSON.stringify(r));
+});
+
 // --- a blank --root is refused by BOTH --root subcommands (COR-01) ----------
 // `detect-surfaces` is tested here rather than beside its scanner for the same
 // reason `trace ignore` is: this is the `--root` refusal, and the two rows sit
@@ -5362,8 +5473,11 @@ for (const cmd of ['detect-commands', 'detect-surfaces']) {
 }
 
 test('detect-commands: a real --root still answers about THAT tree', () => {
+  // Through `detect` rather than `runPlanning` - the argv is the same, and the
+  // helper pins the reachable set so this row asserts WHICH tree was read
+  // rather than whether the machine running the suite has npm (RCH-01, D-11).
   const root = projectTree({ 'package.json': { scripts: { lint: 'eslint .' } } });
-  const r = runPlanning('detect-commands', '--root', root);
+  const r = detect(root);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.root, root);
   assert.equal(r.lint, 'npm run lint');
