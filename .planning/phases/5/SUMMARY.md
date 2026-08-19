@@ -99,7 +99,7 @@ ledger rows were re-pointed, retired or re-pinned against the post-change file.
   blocks at every level and refuses when the question was never answered. All
   61 non-provenance `README-*` ledger pins re-derived (+4); README-01, -02,
   -25 and -28 held at provenance per the ledger's own rule. `README.md` is
-  14,581 B, self-verify `ok:true`, 2380 tests pass.
+  14,789 B with the Ko-fi link, self-verify `ok:true`, 2380 tests pass.
 
 ## Open items
 
@@ -124,11 +124,11 @@ All four are filed in `.planning/CAPTURE.md` against phase 5.
 ## Goal check
 
 The eight commits plausibly deliver the goal. The size claim holds directly:
-`wc -c README.md` reads 14,287 against the 24,850 the roadmap called a
+`wc -c README.md` reads 14,789 against the 24,850 the roadmap called a
 reference manual, and `grep '^## ' README.md` returns exactly the six staying
-sections in the decided order - `## What it asks of you` (line 7), `## Install`
-(15), `## The loop` (26), `## How it works` (48), `## What a break costs` (64),
-`## Where it came from` (86) - with `## The commands`, `## A worked example` and
+sections in the decided order - `## What it asks of you` (line 9), `## Install`
+(19), `## The loop` (30), `## How it works` (52), `## What a break costs` (68),
+`## Where it came from` (90) - with `## The commands`, `## A worked example` and
 `## What it costs to run` all absent. The relocation landed as two real files,
 `docs/COST.md` (3,839 B) and `docs/EXAMPLE.md` (2,868 B), and the enforcement
 half of the phase is what makes the move more than a move: `node
