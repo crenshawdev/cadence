@@ -5432,12 +5432,20 @@ function flagSentence(flag, spec) {
  * than being lost: without it a caller whose real problem is that 2.1 has to be
  * re-placed by hand is told "needs a non-negative integer". It is the same
  * species as the PRESENCE carve-out - a diagnostic no row can express stays
- * with the bin that owns the wording - and it reads the raw token the door
- * itself judged, which is the one after the flag's first appearance.
+ * with the bin that owns the wording - and it reads a raw token the door
+ * itself judged.
+ *
+ * The DECIMAL test is explicit rather than implied by `requirePhaseArg`, which
+ * accepts a plain integer as readily as `2.1`. Implied, this sentence fired on
+ * a well-formed `--at 1`, telling a caller to re-place a decimal they never
+ * typed - reachable the moment the door began judging every occurrence of a
+ * flag rather than its first, since `--at 1 --at` is a refusal whose first
+ * token is an integer.
  * @param {string} key @param {string|undefined} raw @returns {string}
  */
 function decimalRefusal(key, raw) {
-  return key.startsWith('renumber ') && typeof raw === 'string' && requirePhaseArg(raw).ok
+  return key.startsWith('renumber ') && typeof raw === 'string'
+    && raw.includes('.') && requirePhaseArg(raw).ok
     ? 'renumber operates on integer phases; re-place decimal phases by hand'
     : '';
 }
@@ -5456,7 +5464,13 @@ function argRefusal(key, flag) {
   const table = CONTRACTS['planning.mjs'];
   const global = table['*'][flag];
   const spec = global || (table[key] || {})[flag];
-  const domain = decimalRefusal(key, ARGV[ARGV.indexOf(flag) + 1]);
+  // EVERY occurrence is offered to the domain wording, because `evaluateRow`
+  // names only the flag (D-07) and now judges every occurrence: the decimal a
+  // caller has to re-place by hand is not always the first one they typed.
+  let domain = '';
+  for (let i = 0; i < ARGV.length && !domain; i++) {
+    if (ARGV[i] === flag) domain = decimalRefusal(key, ARGV[i + 1]);
+  }
   if (domain) return domain;
   return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
 }

@@ -62,6 +62,20 @@ const MALFORMED = Object.freeze({
   'plan-key': ' 1',
 });
 
+/**
+ * One WELL-FORMED sample per declared type, for the repeat arm below. Each is
+ * a value its type's classifier accepts, so an earlier occurrence of the flag
+ * under test reads as a clean one and the refusal the arm asserts can only be
+ * coming from the LATER, malformed occurrence.
+ */
+const WELL_FORMED = Object.freeze({
+  string: 'x',
+  int: '1',
+  cursor: '1',
+  phase: '1',
+  'plan-key': '1',
+});
+
 /** A scratch tree, so no invocation can reach this repository's own .planning. */
 const SCRATCH = mkdtempSync(join(tmpdir(), 'cad-adoption-'));
 mkdirSync(join(SCRATCH, '.planning'), { recursive: true });
@@ -114,11 +128,24 @@ function census() {
   return rows;
 }
 
-/** The argv for one entry on one axis, with the flag under test LAST. */
-function argvFor(entry, axis) {
+/**
+ * The argv for one entry on one axis, with the flag under test LAST.
+ *
+ * `repeat` prefixes a WELL-FORMED occurrence of that same flag. The bins do
+ * not agree with each other on which occurrence wins - `planning.mjs`'s
+ * `parseArgs` keeps the LAST while `flagValue` answers about the first - so a
+ * door judging only one position leaves the declaration bypassable by typing
+ * the flag twice: `cursor set --name valid --name` passed on `valid` and wrote
+ * boolean `true` into STATE.md against the same row whose single-occurrence
+ * spelling this census already proved. The arm is the whole table's rather
+ * than that one case's, because the position a refusal happens to be provable
+ * at is not a property any row declares.
+ */
+function argvFor(entry, axis, repeat) {
   const globalRow = CONTRACTS[entry.script]['*'];
   const prefix = globalRow['--dir'] && entry.flag !== '--dir' ? ['--dir', SCRATCH_DIR] : [];
-  return [...entry.words, ...prefix, entry.flag,
+  const earlier = repeat ? [entry.flag, WELL_FORMED[entry.spec.type]] : [];
+  return [...entry.words, ...prefix, ...earlier, entry.flag,
     ...(axis === 'value' ? [MALFORMED[entry.spec.type]] : [])];
 }
 
@@ -138,16 +165,19 @@ test('every declared REFUSAL is one the shipped CLI actually carries out', () =>
     }
     for (const axis of ['bare', 'value']) {
       if (entry.spec[axis] !== 'refuse') { skippedDisposition += 1; continue; }
-      const argv = argvFor(entry, axis);
-      const where = `${entry.script} ${entry.sub || '(bare form)'} ${entry.flag} [${axis}]`;
-      const { status, out } = run(entry.script, argv);
-      const lines = out.trim() === '' ? [] : out.trim().split('\n');
-      let parsed;
-      try { parsed = JSON.parse(lines[0] || ''); } catch { parsed = null; }
-      if (status !== 1 || lines.length !== 1 || !parsed || parsed.ok !== false
-        || !lines[0].includes(entry.flag)) {
-        failures.push(`${where}: \`${argv.join(' ')}\` -> exit ${status}, `
-          + `${lines.length} stdout line(s): ${JSON.stringify(out.slice(0, 200))}`);
+      for (const repeat of [false, true]) {
+        const argv = argvFor(entry, axis, repeat);
+        const where = `${entry.script} ${entry.sub || '(bare form)'} ${entry.flag} `
+          + `[${axis}${repeat ? ', repeated' : ''}]`;
+        const { status, out } = run(entry.script, argv);
+        const lines = out.trim() === '' ? [] : out.trim().split('\n');
+        let parsed;
+        try { parsed = JSON.parse(lines[0] || ''); } catch { parsed = null; }
+        if (status !== 1 || lines.length !== 1 || !parsed || parsed.ok !== false
+          || !lines[0].includes(entry.flag)) {
+          failures.push(`${where}: \`${argv.join(' ')}\` -> exit ${status}, `
+            + `${lines.length} stdout line(s): ${JSON.stringify(out.slice(0, 200))}`);
+        }
       }
       exercised += 1;
     }

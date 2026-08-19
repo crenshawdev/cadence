@@ -209,6 +209,32 @@ function dispose(disposition, flag, raw) {
 }
 
 /**
+ * Classify ONE occurrence of `flag` against its declaration. `tail` is `argv`
+ * sliced so that occurrence sits at index 0, which is what lets `flagValue` -
+ * an `indexOf` reader that answers about the FIRST spelling it finds - be
+ * consulted per occurrence instead of re-spelled here.
+ *
+ * The absent arm is deliberately not this function's: `tail` starts AT an
+ * occurrence, so `flagValue` never answers `undefined`, and absence is a fact
+ * about the whole list rather than about one position in it.
+ *
+ * @param {string[]} tail @param {string} flag
+ * @param {{required: boolean, type: string, value: string, bare: string}} spec
+ * @returns {{ok: boolean, value: any, detail: string}}
+ */
+function evaluateOccurrence(tail, flag, spec) {
+  let raw;
+  try {
+    raw = flagValue(tail, flag);
+  } catch {
+    return dispose(spec.bare, flag, undefined);
+  }
+  const parsed = CLASSIFIERS[spec.type](raw);
+  if (!parsed.ok) return dispose(spec.value, flag, raw);
+  return { ok: true, value: parsed.value, detail: '' };
+}
+
+/**
  * Classify `flag`'s value in `argv` against its declaration.
  *
  * ABSENT and PRESENT-WITH-NOTHING-USABLE are different inputs and are answered
@@ -220,6 +246,18 @@ function dispose(disposition, flag, raw) {
  * copy is what silently drifts). The throw is caught and turned into a
  * classification: THIS function never throws at its caller. `requireFlag`
  * below is the throwing half, for the bins that hold an `e.seam` arm.
+ *
+ * EVERY OCCURRENCE IS JUDGED, not just the first. `flagValue` answers about
+ * the first spelling, but the bins' own parsers do not agree with it on which
+ * one wins - planning.mjs's `parseArgs` keeps the LAST - so a row declaring
+ * `refuse` was bypassable by repeating the flag: `cursor set --phase 1 --total
+ * 5 --status planned --next /x --name valid --name` passed this door on
+ * `valid` and then wrote boolean `true` through as the phase name, the exact
+ * corruption the declaration exists to refuse. A declaration that holds only
+ * at the position one reader happens to pick is not a contract, so the
+ * refusing occurrence wins wherever it sits; a warning one wins over a clean
+ * one for the same reason, and only when nothing else fired does the first
+ * occurrence's accepted value stand.
  *
  * @param {string[]} argv the argument list, subcommand words included
  * @param {string} flag the flag as it is spelled on the command line (`--dir`)
@@ -234,20 +272,22 @@ export function evaluateFlag(argv, flag, spec) {
   // fire and an absent one is `false` rather than `undefined`.
   if (spec.type === 'boolean') return { ok: true, value: argv.includes(flag), detail: '' };
 
-  let raw;
-  try {
-    raw = flagValue(argv, flag);
-  } catch {
-    return dispose(spec.bare, flag, undefined);
+  /** @type {{ok: boolean, value: any, detail: string}|undefined} */
+  let first;
+  /** @type {{ok: boolean, value: any, detail: string}|undefined} */
+  let warned;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== flag) continue;
+    const r = evaluateOccurrence(argv.slice(i), flag, spec);
+    if (!r.ok) return r;
+    if (r.detail && warned === undefined) warned = r;
+    if (first === undefined) first = r;
   }
-  if (raw === undefined) {
-    return spec.required
-      ? { ok: false, value: undefined, detail: flag }
-      : { ok: true, value: undefined, detail: '' };
-  }
-  const parsed = CLASSIFIERS[spec.type](raw);
-  if (!parsed.ok) return dispose(spec.value, flag, raw);
-  return { ok: true, value: parsed.value, detail: '' };
+  if (warned !== undefined) return warned;
+  if (first !== undefined) return first;
+  return spec.required
+    ? { ok: false, value: undefined, detail: flag }
+    : { ok: true, value: undefined, detail: '' };
 }
 
 /**

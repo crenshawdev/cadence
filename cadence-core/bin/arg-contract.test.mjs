@@ -65,6 +65,26 @@ const ROWS = [
     { ok: false, value: undefined, detail: '--head' },
     'risk-check run requires --base and --head: a defaulted head is a range the caller never stated'],
 
+  // --- a REPEATED flag: every occurrence is judged, not just the first ------
+  // The bins disagree about which occurrence wins - planning.mjs's `parseArgs`
+  // keeps the LAST, `flagValue` answers about the first - so a door reading one
+  // position leaves the declaration bypassable by typing the flag twice.
+  ['repeated: a later bare occurrence refuses', ['--name', 'valid', '--name'], '--name', spec({ bare: 'refuse' }),
+    { ok: false, value: undefined, detail: '--name' },
+    'cursor set --name valid --name passed on `valid` and wrote boolean `true` into STATE.md as the phase name'],
+  ['repeated: a later malformed value refuses', ['--total', '5', '--total', 'abc'], '--total', spec({ type: 'cursor' }),
+    { ok: false, value: undefined, detail: '--total' },
+    'the value axis has the same hole as the bare one, and one fix closes both'],
+  ['repeated: an EARLIER bare occurrence still refuses', ['--dir', '--dir', '.planning'], '--dir', spec({ bare: 'refuse' }),
+    { ok: false, value: undefined, detail: '--dir' },
+    'the refusing occurrence wins wherever it sits - a reader keeping the last one is not the only reader'],
+  ['repeated: two well-formed values yield the FIRST', ['--dir', 'a', '--dir', 'b'], '--dir', spec({}),
+    { ok: true, value: 'a', detail: '' },
+    "no refusal fired, so flagValue's shipped answer stands rather than being re-picked"],
+  ['repeated: a warning occurrence wins over a clean one', ['--phase', '1', '--phase', '1.x'], '--phase', spec({ type: 'phase', value: 'warn' }),
+    { ok: true, value: '1.x', detail: '--phase' },
+    'a declared warn that fires at the second spelling and is dropped is a rule the row states and nothing carries out'],
+
   // --- the type vocabulary, one accepted and one refused spelling each -------
   ['string accepts', ['--dir', '.planning'], '--dir', spec({}),
     { ok: true, value: '.planning', detail: '' }, 'the ordinary path value'],
