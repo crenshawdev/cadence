@@ -74,15 +74,20 @@ blast radius is five sites that must move together: three read sites in
 `execute.md` and two declarations in the executor contract, which is a preloaded
 surface under a weight budget, so the shorter spelling is the cheaper one.
 
-**Success criteria**
-- [ ] `/cad-execute <N>` against a phase whose derived status is `executed`
-      refuses, names `/cad-undo <N>` then `/cad-execute <N>`, and dispatches no
-      executor; an explicit override flag is the only way through
-- [ ] Two runs of the same plan leave two readable reports, and the first run's
-      report is byte-identical before and after the second run completes
-- [ ] No site derives the unscoped `reports/plan-<k>.md` path: the three
-      `execute.md` read sites and the two executor-contract declarations all
-      derive the run-scoped one
-- [ ] The two-command reproduction (execute a phase, note the report, execute it
-      again) is committed as a failing-capable test BEFORE the fix
+**Success Criteria:**
 
+1. The suffix-picker's tests pass across three fixture states - no report
+   present, one present, several already rotated - and mutating the picker to
+   return the base name unchanged fails at least one case.
+2. In a fixture plan directory, rotating twice leaves three readable reports,
+   and the earliest one is byte-identical to its pre-rotation content.
+3. A prose-agreement test asserts that `execute.md`'s locate step refuses derived
+   status `executed` and `complete`, and that its `status` call is not under the
+   `else` branch; the test fails when either is reverted.
+4. `/cad-execute <N>` against a phase whose derived status is `executed` refuses,
+   names `/cad-undo <N>` then `/cad-execute <N>`, and the phase trace records no
+   executor dispatch for that invocation.
+5. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
+   empty `problems` array, with `cadence-core/bin/weight-budgets.json` re-pinned
+   in the same commit as the prose edits.
+6. `/cad-report <N>` on a phase carrying a rotated report lists both reports.
