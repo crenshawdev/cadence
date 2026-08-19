@@ -257,8 +257,9 @@ function badDateDetail(value) {
   }
   if (!DATE_RE.test(value)) {
     return '--date must be YYYY-MM-DD (zero-padded month 01-12 and day 01-31),'
-      + ' the format this seam writes into the CHANGELOG heading. An EMPTY --date'
-      + ' refuses here rather than dating today: omit the flag to do that.';
+      + ' the format this seam writes into the CHANGELOG heading. An EMPTY or'
+      + ' VALUELESS --date refuses here rather than dating today: omit the flag'
+      + ' to do that.';
   }
   return null;
 }
@@ -278,10 +279,18 @@ try {
   // throw, and the e.seam arm below turns each into a named refusal.
   if (cmd === 'bump') {
     const dir = flagValue(argv, '--dir') || process.cwd();
-    // Presence is `!== undefined`, never truthiness: `''` is falsy, so a
-    // truthiness test would BE the absent-vs-empty collapse D-05 refuses.
+    // Presence is the flag's OWN appearance in argv, never truthiness and never
+    // `dateArg !== undefined`. `''` is falsy, so a truthiness test would BE the
+    // absent-vs-empty collapse D-05 refuses - and `optionalFlag` answers
+    // `undefined` for a TRAILING valueless `--date` exactly as it does for an
+    // absent one, so reading presence off the VALUE lets that one spelling date
+    // today: the same collapse arriving by the other door. A present `--date`
+    // carrying no value is a malformed value, not an omitted flag.
     const dateArg = flag('--date');
-    const badDate = dateArg === undefined ? null : badDateDetail(dateArg);
+    const datePresent = argv.includes('--date');
+    const badDate = !datePresent
+      ? null
+      : badDateDetail(dateArg === undefined ? '' : dateArg);
     // Validated HERE, beside --version and before bump() is entered (D-06), so
     // the refusal does not depend on a manifest this path never read. That is
     // why the envelope carries no `manifest`, `siblings` or `changelog` - the

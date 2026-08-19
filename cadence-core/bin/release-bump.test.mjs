@@ -421,6 +421,39 @@ for (const [value, why] of BAD_DATES) {
   });
 }
 
+// The VALUELESS spelling, which the BAD_DATES loop cannot reach: it passes a
+// value, and this one carries none. `optionalFlag` answers `undefined` for a
+// trailing `--date` exactly as it does for an ABSENT one, so a presence test
+// read off the value dated today and wrote the manifest - the same
+// absent-vs-empty collapse D-05 refuses for `''`, arriving by the other door.
+// Measured against the pre-fix seam: `bump --version 1.1.0 --date` wrote
+// `## [1.1.0] - <today>` and reported ok:true.
+test('bump: a trailing valueless --date refuses, writing nothing', () => {
+  const dir = fixture();
+  const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+  const manifestBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+  const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0', '--date']);
+  assert.equal(json.ok, false, JSON.stringify(json));
+  assert.equal(json.action, 'refuse');
+  assert.equal(json.reason, 'bad-date', JSON.stringify(json));
+  assert.equal(status, 1);
+
+  assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore, 'CHANGELOG.md must be byte-identical');
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), manifestBefore);
+});
+
+// The other half of the same contract: an ABSENT --date still dates today
+// rather than refusing, so the presence test did not turn the default into a
+// requirement. Asserted on the SHAPE of the heading, never on a clock reading.
+test('bump: an ABSENT --date still dates today', () => {
+  const dir = fixture();
+  const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0']);
+  assert.equal(json.ok, true, JSON.stringify(json));
+  assert.equal(status, 0);
+  assert.match(readRaw(join(dir, 'CHANGELOG.md')), /## \[1\.1\.0\] - \d{4}-\d{2}-\d{2}/);
+});
+
 test('bump: a well-formed --date still writes its dated heading', () => {
   const dir = fixture();
   const r = seam(['bump', '--dir', dir, '--version', '1.1.0', '--date', '2026-08-18']);

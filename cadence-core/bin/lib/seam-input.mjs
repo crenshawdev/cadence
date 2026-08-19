@@ -23,8 +23,14 @@
 //   optionalFlag - absent OR present-with-no-value both read as `undefined`,
 //     never a throw. It is the reader for the flags that legitimately default
 //     when nothing is given - `--branch`, `--base`, `--remote`, `--merged`,
-//     `--version`, `--date`, `--timeout-ms` - where the caller's own
-//     `|| fallback` is the whole contract.
+//     `--version`, `--timeout-ms` - where the caller's own `|| fallback` is the
+//     whole contract. `--date` was on that list and is NOT: it still reads
+//     through this reader, but release-bump.mjs tests the flag's own presence in
+//     argv beside it, because a trailing valueless `--date` must refuse
+//     `bad-date` rather than default to today. A caller that must tell the two
+//     apart without also refusing an empty value does it that way; `flagValue`
+//     is for the callers whose empty and valueless answers are the same
+//     refusal.
 //   flagValue - a missing, empty or flag-shaped value THROWS
 //     `{seam:'missing-flag-value', detail}`. Every caller holds an `e.seam`
 //     catch arm that turns that object into a named refusal, and the refusal
