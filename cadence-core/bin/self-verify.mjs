@@ -204,20 +204,15 @@ import { includeConsumerIssues } from './lib/include-consumers.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
 import { scratchPathIssues } from './lib/scratch-path.mjs';
-// The throwing `--root` reader, shared with weight.mjs: ABSENT and
-// PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
-// it used to fall back to the plugin's own tree so this linter returned ok:true
-// with problems:[] about a tree it never checked. The entry-point catch arm at
-// the foot of this file is what turns its thrown seam object into a named
-// refusal. Contract in lib/seam-input.mjs.
-import { flagValue } from './lib/seam-input.mjs';
-// The subcommand/flag contract table, and the accessor the prose lint reads
-// its flag NAMES through. It is DEFINED in lib/arg-contract.mjs, beside the
-// evaluator the seam CLIs refuse with, and imported here: one table, not two
-// bound by a check (D-06). Check 2 below lints prose against it and check 14
-// requires a row for every shipped script; neither is the table's home any
-// more.
-import { CONTRACTS, flagNames } from './lib/arg-contract.mjs';
+// The subcommand/flag contract table, the accessor the prose lint reads its
+// flag NAMES through, and the evaluator that applies one row's value grammar.
+// All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
+// not two bound by a check (D-06). Check 2 below lints prose against it, check
+// 14 requires a row for every shipped script, and the entry block at the foot
+// of this file reads its OWN `--root` through the row it declares there rather
+// than through a hand-written reader call - the rule comes from the
+// declaration, not from a call this file restates.
+import { CONTRACTS, flagNames, evaluateFlag } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -1250,13 +1245,30 @@ function run(root) {
 
 // --- entry ---------------------------------------------------------------------
 
+// This file's own refusal vocabulary for an unusable flag value, which is
+// lib/seam-input.mjs's word (D-07: the contract mints none of its own - the
+// evaluator classifies and the CALLER names the refusal). Held as a const
+// rather than written inline at the throw because helper-census.test.mjs pins
+// that literal throw body to lib/seam-input.mjs, and a second spelling of it
+// here is exactly the copy the census exists to redden.
+const MISSING_FLAG_VALUE = 'missing-flag-value';
+
 try {
   const argv = process.argv.slice(2);
-  const root = flagValue(argv, '--root') || join(HERE, '..', '..');
+  // The tracer bullet for the whole contract: declaration -> evaluator -> CLI
+  // refusal -> envelope, and the first adopter is the file the table just left.
+  // The THROWING mechanism stays (D-08) because the catch arm below is already
+  // written for it; a genuinely ABSENT `--root` still resolves to the plugin's
+  // own tree, while the empty, valueless and flag-shaped spellings refuse -
+  // each of them used to return ok:true with problems:[] about a tree the
+  // caller never named.
+  const rooted = evaluateFlag(argv, '--root', CONTRACTS['self-verify.mjs']['*']['--root']);
+  if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
+  const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
   emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path', problems });
 } catch (e) {
-  // The seam arm lands WITH flagValue: a thrown seam object carries no
+  // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });

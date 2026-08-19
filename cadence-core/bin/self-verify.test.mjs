@@ -2145,7 +2145,7 @@ test('the contract table is ONE table, and this file is not its home (D-06)', ()
   assert.equal(/^const CONTRACTS = \{/m.test(src), false,
     'self-verify.mjs defines a CONTRACTS table of its own again - import it from '
     + 'lib/arg-contract.mjs instead, so the CLI and the prose lint answer from one row');
-  assert.match(src, /import \{ CONTRACTS, flagNames \} from '\.\/lib\/arg-contract\.mjs';/);
+  assert.match(src, /^import \{ CONTRACTS, flagNames.*\} from '\.\/lib\/arg-contract\.mjs';$/m);
   // And the imported table is the one the checks actually answer from: every
   // top-level bin script has a row in IT, which is check 14's question asked
   // from the module side.
@@ -2210,12 +2210,38 @@ test('entry: a valueless or empty --root refuses instead of linting the cwd', ()
   // flagValue closes. The detail assertion is the second half: a thrown seam
   // object has no `message`, so without the catch's seam arm this envelope
   // reports "[object Object]" instead of the flag.
+  //
+  // It reads that rule off its OWN declared row now (ARG-06) rather than off a
+  // hand-written reader call: `--root` refuses the empty, bare and flag-shaped
+  // spellings because lib/arg-contract.mjs says `bare: 'refuse'` for it, and
+  // the throwing mechanism survives underneath because the catch arm is what
+  // renders the seam object as this envelope.
+  assert.deepEqual(CONTRACTS['self-verify.mjs']['*']['--root'],
+    { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    'the declaration IS the rule; loosening this row loosens the CLI');
   for (const args of [['--root'], ['--root', '']]) {
     const j = run(args);
     assert.equal(j.ok, false, JSON.stringify(j));
     assert.equal(j.reason, 'missing-flag-value');
     assert.equal(j.detail, '--root');
+    // ONE line on stdout, exit 1, and NOTHING on stderr: lib/seam-io.mjs states
+    // stdout is the single channel the seam layer parses, so a refusal that
+    // also wrote a warning there would be read as part of the verdict.
+    let status = 0;
+    let stdout = '';
+    let stderr = '';
+    try {
+      stdout = execFileSync('node', [VERIFY, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      status = e.status; stdout = e.stdout; stderr = e.stderr;
+    }
+    assert.equal(status, 1, `exit code for ${JSON.stringify(args)}`);
+    assert.equal(stderr, '', `stderr for ${JSON.stringify(args)}`);
+    assert.equal(stdout.trimEnd().split('\n').length, 1, `one stdout line: ${stdout}`);
   }
+  // A genuinely ABSENT --root still falls through to the plugin's own tree.
+  assert.equal(run([]).ok, true);
+  assert.equal(run(['--root', '.']).ok, true);
 });
 
 // --- check 2: the BARE form -------------------------------------------------
