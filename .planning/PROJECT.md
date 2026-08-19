@@ -130,7 +130,16 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open.
+**`v3.5.6`, opened 2026-08-19.** Scoped from the tracker milestone `v3.5.6`,
+which holds four issues: #139, #140, #145 and #195. The theme is an operation
+that claims more than it delivered - a multi-file transition reported as
+all-or-nothing over independent writes, and a re-run that destroys the record of
+the run before it. Phase 1 is #195, ordered first because every other item costs
+a partial mutation that `/cad-audit` reports and a re-run repairs, while that one
+costs the evidence itself. #145's shared journal primitive goes last on the same
+reasoning that put `ARG-06` last in `v3.5.5`: the primitive is only worth writing
+once the case-by-case fixes have said what it has to express. Phases 2 onward are
+not yet added.
 
 `v3.5.5 - a seam that accepts what it should refuse` closed on 2026-08-19:
 thirteen requirements (`GRD-01`, `SCR-01`, `ARG-01` through `ARG-06`, `RCH-01`,
@@ -140,9 +149,8 @@ covered across five phases), the manifest at `3.5.5`. Its thirteen rows sit in
 `.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in `CHANGELOG.md`,
 its per-phase residue in `.planning/ARCHIVE.md` at 127 rows, and its phase record
 in git history at the pruning commit - this close ran `--mode delete`, so there
-is no `_archive-v3.5.5/`. The merge and the release tag are both outstanding:
-`/cad-land` on `cadence/v3.5.5`, which cuts `v3.5.5` on the pulled base after the
-merge confirms.
+is no `_archive-v3.5.5/`. Both the merge and the release tag landed: `cadence/v3.5.5`
+merged to `main` at `ea8488c`, and the tag `v3.5.5` is cut.
 
 What it delivered: the readers that accept what they have a rule against, closed
 by replacing nine hand-rolled argument parsers with one declarative table. A

@@ -33,5 +33,56 @@ The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 
 ## Phases
 
+- [ ] **Phase 1: The re-run that overwrites its own evidence** - `/cad-execute` refuses a phase that already executed, and a plan's per-task report becomes run-scoped so a second run cannot destroy the first run's record
 
 ## Phase Details
+
+### Phase 1: The re-run that overwrites its own evidence
+**Goal:** Re-running an executed plan stops being both unguarded and
+destructive: the locate step refuses a phase whose derived status is `executed`
+and names the supported path, and `reports/plan-<k>.md` becomes run-scoped by
+the correlation id that already exists, so two runs of one plan leave two
+readable records instead of one.
+**Depends on:** Nothing
+**Requirements:** (seeded at /cad-context)
+
+`#195` is two halves with one fix site each, and the pair is what makes it the
+first phase of this cycle. Every other item scoped to `v3.5.6` costs a partial
+mutation reported as success, which `/cad-audit` reports and a re-run repairs.
+This one costs the evidence itself.
+
+The first half: `cadence-core/workflows/execute.md`'s locate step stops on
+unplanned and on missing plan files, and on nothing else. A phase whose cursor
+status is `executed` is dispatched again exactly like a fresh one, a new
+executor starting at task 1 against a plan whose tasks are already committed.
+The within-run protections already read `reports/plan-<k>.md` for completed task
+numbers so a continuation cannot repeat a finished task; that reasoning is
+simply not applied across runs.
+
+The second half: `skills/cad-executor-contract/SKILL.md` rewrites
+`<plandir>/reports/plan-<k>.md` after every task commit and fixes the path with
+no run component, so the second run's FIRST task commit overwrites the first
+run's report before anything has read it. That report is the only per-task
+record of what ran and what it printed. SUMMARY maps task to hash, the
+risk-check record is keyed to the run, and the trace brackets carry the token
+figure - every one of those is run-scoped or append-only EXCEPT the most
+detailed one.
+
+The correlation id is already unique per run and already derives from
+`PHASE_START`, so the scoping key is in hand and costs nothing to adopt. The
+blast radius is five sites that must move together: three read sites in
+`execute.md` and two declarations in the executor contract, which is a preloaded
+surface under a weight budget, so the shorter spelling is the cheaper one.
+
+**Success criteria**
+- [ ] `/cad-execute <N>` against a phase whose derived status is `executed`
+      refuses, names `/cad-undo <N>` then `/cad-execute <N>`, and dispatches no
+      executor; an explicit override flag is the only way through
+- [ ] Two runs of the same plan leave two readable reports, and the first run's
+      report is byte-identical before and after the second run completes
+- [ ] No site derives the unscoped `reports/plan-<k>.md` path: the three
+      `execute.md` read sites and the two executor-contract declarations all
+      derive the run-scoped one
+- [ ] The two-command reproduction (execute a phase, note the report, execute it
+      again) is committed as a failing-capable test BEFORE the fix
+
