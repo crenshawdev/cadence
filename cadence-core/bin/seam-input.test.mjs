@@ -2,9 +2,14 @@
 // helpers. Pure functions; the only fixtures are real paths for readText.
 //
 // The load-bearing arm is the DIVERGENCE one: the two flag readers answer
-// differently for the same input and both answers are contracts (D-03), so a
-// future harmonization reddens here rather than turning five seams' valueless
-// `--dir` into an internal error.
+// differently for the same input and both answers are contracts, so a future
+// harmonization reddens here rather than silently changing what a defaulting
+// flag does when it is given with nothing after it.
+//
+// The optionalFlag arms below are spelled on `--branch`, not on `--dir`: phase
+// 2 D-01 moved `--dir` to flagValue at all six seams, so `--dir` no longer
+// reaches this reader anywhere and spelling its arms with it would teach a
+// contributor the reversed rule.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -15,27 +20,29 @@ import { optionalFlag, flagValue, readText } from './lib/seam-input.mjs';
 // --- optionalFlag: never throws ---------------------------------------------
 
 test('optionalFlag: absent flag is undefined', () => {
-  assert.equal(optionalFlag(['decide', '--branch', 'x'], '--dir'), undefined);
-  assert.equal(optionalFlag([], '--dir'), undefined);
+  assert.equal(optionalFlag(['decide', '--dir', 'x'], '--branch'), undefined);
+  assert.equal(optionalFlag([], '--branch'), undefined);
 });
 
 test('optionalFlag: the value positionally after the flag', () => {
-  assert.equal(optionalFlag(['cleanup', '--dir', '/tmp/p'], '--dir'), '/tmp/p');
-  assert.equal(optionalFlag(['--dir', '/a', '--base', 'main'], '--base'), 'main');
+  assert.equal(optionalFlag(['cleanup', '--branch', 'topic'], '--branch'), 'topic');
+  assert.equal(optionalFlag(['--branch', 'topic', '--base', 'main'], '--base'), 'main');
 });
 
 test('optionalFlag: present-and-valueless is undefined, NOT a throw', () => {
-  // This is the whole reason the five callers keep this contract: they default
-  // through `|| process.cwd()` and carry no e.seam catch arm.
-  assert.equal(optionalFlag(['cleanup', '--dir'], '--dir'), undefined);
+  // This is the whole reason the defaulting flags keep this contract: each
+  // resolves through `|| <its default>` at its seam, so a valueless `--branch`
+  // reads as the absent one and the seam's own fallback answers.
+  assert.equal(optionalFlag(['cleanup', '--branch'], '--branch'), undefined);
 });
 
 test('optionalFlag: an empty or flag-shaped value is returned as-is', () => {
   // Positional, not validating - the caller's `|| fallback` turns '' into its
-  // default, and `--base` after `--dir` is the caller's own spelling to answer
-  // for. Stated so the divergence from flagValue is visible in both directions.
-  assert.equal(optionalFlag(['cleanup', '--dir', ''], '--dir'), '');
-  assert.equal(optionalFlag(['cleanup', '--dir', '--base'], '--dir'), '--base');
+  // default, and `--base` after `--branch` is the caller's own spelling to
+  // answer for. Stated so the divergence from flagValue is visible in both
+  // directions.
+  assert.equal(optionalFlag(['cleanup', '--branch', ''], '--branch'), '');
+  assert.equal(optionalFlag(['cleanup', '--branch', '--base'], '--branch'), '--base');
 });
 
 // --- flagValue: refuses what optionalFlag waves through ----------------------
@@ -61,7 +68,7 @@ test('flagValue: missing, empty and flag-shaped values each throw missing-flag-v
   }
 });
 
-test('the two readers DISAGREE on a present-but-valueless flag, deliberately (D-03)', () => {
+test('the two readers DISAGREE on a present-but-valueless flag, deliberately', () => {
   const argv = ['resident', '--root'];
   assert.equal(optionalFlag(argv, '--root'), undefined);
   assert.throws(() => flagValue(argv, '--root'), (e) => e.seam === 'missing-flag-value');

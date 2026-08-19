@@ -69,9 +69,12 @@ const HELPERS = [
     // object whose two fields the callers' catch arms emit.
     re: new RegExp("throw \\{ seam: 'missing-flag-value'", 'g'),
     note: 'Import { flagValue } from ./lib/seam-input.mjs. It stays SEPARATE '
-      + 'from optionalFlag on purpose (D-03): the five seams that default '
-      + 'through `|| fallback` carry no e.seam catch arm, so folding the two '
-      + 'would turn a valueless --dir into an internal error at all of them.',
+      + 'from optionalFlag on purpose: the two readers answer differently for '
+      + 'a present-but-valueless flag, and the flags that legitimately default '
+      + '(--branch, --base, --remote, --merged, --version, --date, '
+      + '--timeout-ms) still resolve through `|| fallback`. --dir reads '
+      + 'through flagValue at every seam (phase 2 D-01), each of which holds '
+      + 'its own e.seam catch arm for the refusal.',
   },
   {
     name: "the ''-on-failure file reader (readText)",

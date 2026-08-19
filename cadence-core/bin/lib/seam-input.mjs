@@ -16,21 +16,32 @@
 // surface rather than a convenience. helper-census.test.mjs pins each of them
 // at exactly one definition so a sixth copy reddens instead of drifting.
 //
-// THE TWO FLAG READERS ARE TWO CONTRACTS, AND BOTH SURVIVE (D-03). Do not
-// "fix" this into one:
+// THE TWO FLAG READERS ARE TWO CONTRACTS, AND BOTH ARE LIVE. They answer
+// DIFFERENTLY for a present-but-valueless flag, which is the reason there are
+// two of them:
 //
 //   optionalFlag - absent OR present-with-no-value both read as `undefined`,
-//     never a throw. The five seams that call it default through
-//     `optionalFlag(argv,'--dir') || process.cwd()` and carry NO `e.seam` catch
-//     arm, so folding them into the throwing contract would turn a valueless
-//     `--dir` into `{"ok":false,"reason":"internal","detail":"[object Object]"}`
-//     at five seams.
+//     never a throw. It is the reader for the flags that legitimately default
+//     when nothing is given - `--branch`, `--base`, `--remote`, `--merged`,
+//     `--version`, `--date`, `--timeout-ms` - where the caller's own
+//     `|| fallback` is the whole contract.
 //   flagValue - a missing, empty or flag-shaped value THROWS
-//     `{seam:'missing-flag-value', detail}`. Its two callers (weight.mjs,
-//     self-verify.mjs) each carry the `e.seam` catch arm that turns that object
-//     into a named refusal, and the refusal is the point: `--root` with nothing
-//     after it used to fall through to the plugin's own tree and report
-//     confident numbers about a tree the caller never named.
+//     `{seam:'missing-flag-value', detail}`. Every caller holds an `e.seam`
+//     catch arm that turns that object into a named refusal, and the refusal
+//     is the point: `--root` with nothing after it used to fall through to the
+//     plugin's own tree and report confident numbers about a tree the caller
+//     never named.
+//
+// `--dir` reads through flagValue at EVERY seam (phase 2 D-01), reversing this
+// header's earlier guarantee that its five callers kept the permissive reader.
+// That guarantee rested on the mutating seams being the only place a wrong
+// tree costs anything, and the advisory ones showed the identical defect:
+// measured 2026-08-18, `git-branch.mjs tags --dir ''` answered with this
+// repository's own 33 tags about a tree the caller never named. So the
+// divergence was reversed for `--dir`, and for `--dir` alone. Each migrated
+// bin took its own `e.seam` catch arm with the move (D-09) - a seam reading
+// `--dir` through flagValue without one surfaces the refusal as
+// `{"ok":false,"reason":"internal","detail":"[object Object]"}`.
 //
 // `readText` here is the ''-on-failure contract (a missing surface is not
 // fatal). lib/include-consumers.mjs:123-130 keeps a DIFFERENT `readText` - an
