@@ -21,15 +21,20 @@ dispatch; none of them applies on the sequential path.
 - Stay inside the worktree path; keep every file operation within it.
 - Commit the report file on EVERY return that ends your turn - `PLAN COMPLETE`,
   `PLAN PARTIAL` and any CHECKPOINT, not only after the last task. Write it
-  first, then commit by PATHSPEC:
-  `git commit -- <plandir>/reports/plan-<k>.md`, message
-  `docs({phase}-{plan}): plan {k} executor report`. Both halves are
+  first, then commit by PATHSPEC, naming the rotated report too whenever your
+  first write rotated a previous run's aside - unnamed it stays untracked, never
+  reaches the branch, and dies with the worktree, which is the evidence the
+  rotation exists to keep:
+  `git commit -- <plandir>/reports/plan-<k>.md [<plandir>/reports/plan-<k>.<n>.md]`
+  with message `docs({phase}-{plan}): plan {k} executor report`. Both halves are
   load-bearing. The pathspec keeps a guardrail intact: a `risk_surface`
   checkpoint deliberately leaves the flagged changes STAGED, and a bare
   `git commit` after a `git add` would sweep them in - turning a blocking gate
-  into a landed commit. Naming the path commits the report and leaves
-  everything else staged exactly as it was. Committing on the non-final
-  branches is what makes the report survive at all: a partial or checkpointed
+  into a landed commit. Naming the paths commits the reports and leaves
+  everything else staged exactly as it was; the enclosing `<plandir>/reports/`
+  directory is NOT a pathspec you may use here, because the flagged diff below
+  lives inside it. Committing on the non-final branches is what makes the report
+  survive at all: a partial or checkpointed
   worktree is the one most likely to be removed or abandoned before you are
   dispatched again, and an uncommitted report dies with it - the re-run hazard
   the file exists to prevent. NEVER commit `plan-<k>-risk-task-<n>.diff`: it
