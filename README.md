@@ -4,6 +4,14 @@
 
 The failure that costs you is the one that looks like success: generated code that is present, plausible, and wired to nothing. Cadence is a planning and execution system for Claude Code built around refusing to let that pass. It runs one loop, plan then build then verify, and a check that did not run never reads as a check that passed.
 
+## What it asks of you
+
+Cadence is slower than not using Cadence. It makes you gather context before you plan and plan before you build, and then it stops and waits for you: before it plans, at every check it runs, and before it pushes anything. Most of that is not configurable, because most of it is not a preference.
+
+Every one of those stops is a question only you can answer, so the honest test is how often you actually want to be asked. Answering is the work rather than the overhead around it; if you want to describe a feature and come back to a merged PR, this is the wrong tool.
+
+That trade pays off when the code has to keep working. When somebody maintains it later, when it touches money or auth or user data, when a quiet failure costs you more than the extra twenty minutes cost you. If you are sketching something you will throw away Thursday, the ceremony is pure friction and you should skip it. Nobody needs a blocking review on a script that renames photos.
+
 ## Install
 
 Cadence is a Claude Code plugin. Add the marketplace, then install:
@@ -14,12 +22,6 @@ Cadence is a Claude Code plugin. Add the marketplace, then install:
 ```
 
 Update with `/plugin update cadence@cadence`, remove with `/plugin uninstall cadence@cadence`. Requires Claude Code with plugin support, plus `node` and `git` on your PATH. The scripts inside are zero-dependency: there is no npm install, ever.
-
-## What it costs you
-
-Cadence is slower than not using Cadence. It makes you gather context before you plan and plan before you build, it stops you at gates you did not ask for, and it says no to things you did ask for. Most of it is not configurable, because most of it is not a preference.
-
-That trade pays off when the code has to keep working. When somebody maintains it later, when it touches money or auth or user data, when a quiet failure costs you more than the extra twenty minutes cost you. If you are sketching something you will throw away Thursday, the ceremony is pure friction and you should skip it. Nobody needs a blocking review gate on a script that renames photos.
 
 ## How it works
 
