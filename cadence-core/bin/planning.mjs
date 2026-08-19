@@ -194,6 +194,13 @@ import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
+// The raw argument list, kept beside the envelope helpers because the flags
+// that read through lib/arg-contract.mjs need the SPELLING and not parseArgs'
+// digest of it: parseArgs mints the boolean `true` for a bare flag, so by the
+// time a value reaches `opts` the three spellings a declared row separates -
+// bare, empty and flag-shaped - have already collapsed into one.
+const ARGV = process.argv.slice(2);
+
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
   emit({ ok: false, reason, ...(detail ? { detail } : {}), ...(hint ? { hint } : {}) });
@@ -3267,6 +3274,35 @@ function suggestResolution(dir, render, config) {
   return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), stakes, checkpointTasks };
 }
 
+// The grammar the SHARED `trace append|close` body judges its string flags by,
+// read off lib/arg-contract.mjs rather than restated as seven guards below.
+//
+// The two rows are UNIONED because ONE body validates both subcommands. A flag
+// row is a prose allowlist that never widens what a subcommand accepts, so
+// `trace close` declares no `--sha`, `--base`, `--step` or `--trigger` row even
+// though this body reads them for it; every key both rows do declare, they
+// declare identically, so the union states no grammar either row denies.
+const TRACE_GRAMMAR = {
+  ...CONTRACTS['planning.mjs']['trace append'],
+  ...CONTRACTS['planning.mjs']['trace close'],
+};
+
+// The flags whose whole rule is the value grammar, in the order they are read.
+// The first four declare `fallback` on both axes and the last four `refuse` -
+// the two dispositions this one body has always run side by side (D-05), now
+// stated once in the table instead of seven times here.
+const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger'];
+
+// The SENTENCE each refusal carries. The contract names the FLAG and nothing
+// else: this file owns its refusal vocabulary and its wording (D-07), and the
+// four entries here are exactly the rows that say `refuse`.
+const TRACE_REFUSALS = {
+  '--role': 'needs a role name after it: --role <name>',
+  '--step': 'needs a step name after it: --step <name>',
+  '--reviewer': 'needs a reviewer name after it: --reviewer <name>',
+  '--trigger': 'needs a trigger name after it: --trigger <name>',
+};
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
@@ -3438,58 +3474,58 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
-    // --step: the workflow step a COORDINATOR marker names, stored verbatim as
-    // one non-empty string. Refused when the flag is present but bare or blank,
-    // the same refusal `--read` makes at its own site and for the same reason: a
-    // marker naming no step is a complete-looking event that defeats the
-    // per-step attribution the marker exists for, and a bare `--step` parses as
-    // boolean `true`, which would store the literal `true` as a step name.
-    let step;
-    if ('step' in opts) {
-      const raw = typeof opts.step === 'string' ? opts.step.trim() : '';
-      if (!raw) return fail('bad-args', `trace ${sub} --step needs a step name after it: --step <name>`);
-      step = raw;
+    // The seven string flags, each read through its DECLARED row. One loop
+    // where seven hand-written guards used to state the same two rules, and
+    // the ONE place this body's two bare-flag dispositions are decided (D-05):
+    // `--plan`, `--sha` and `--base` declare `fallback` and read as absent, so
+    // every shipped `trace close` written without them keeps answering ok:true,
+    // while `--role`, `--step`, `--reviewer` and `--trigger` REFUSE.
+    //
+    // `--role` MOVED to refuse, and that is the behaviour change. Measured
+    // 2026-08-19, `trace append --phase 1 --family lifecycle --event dispatch
+    // --role --tokens 5` returned `{"ok":true,"written":true}`, wrote a line
+    // carrying no `role` key, and `trace render` then aggregated it under the
+    // EMPTY STRING key - `"roles":{"":{"dispatches":2,...}}`, a
+    // complete-looking dispatch whose attribution is gone. `--role ''` was
+    // identical. The other direction - extending the drop arm to the three
+    // refusals beside it - was the alternative, and those three are written
+    // against exactly this shape.
+    //
+    // What each of the four refusing flags IS:
+    //   --step      the workflow step a COORDINATOR marker names. A marker
+    //               naming no step defeats the per-step attribution it exists
+    //               for.
+    //   --reviewer  WHICH reviewer actually ran this fire, so a cross-model
+    //               review and a subagent review of one trigger stop being one
+    //               shape in the record (RVW-02). It names the reviewer that
+    //               RAN, never the one the trigger asked for - nothing refuses
+    //               a dispatch to a reviewer outside the resolved set (D-07),
+    //               so this mark is the whole enforcement.
+    //   --trigger   WHICH review trigger this event belongs to, so an `outcome`
+    //               event JOINS to the fire that produced it without reading
+    //               prose; `risk-check status` demands one for a matched range
+    //               (D-12). Measured across this repository's 35
+    //               `outcome/adjudication` events the trigger is spelled four
+    //               different ways inside the free-text `--detail`, and
+    //               lib/trace-suggest.mjs discards that text entirely, so
+    //               parsing it back out is the substitution this flag exists to
+    //               avoid.
+    //   --role      the role the per-role token block aggregates under.
+    // A bare one of them parses as boolean `true` in `parseArgs`, which is why
+    // the read is against ARGV: the refusal has to see the spelling.
+    const flags = {};
+    for (const flag of TRACE_STRING_FLAGS) {
+      const parsedFlag = evaluateFlag(ARGV, flag, TRACE_GRAMMAR[flag]);
+      if (!parsedFlag.ok) return fail('bad-args', `trace ${sub} ${flag} ${TRACE_REFUSALS[flag]}`);
+      flags[flag] = parsedFlag.value;
     }
-
-    // --reviewer: WHICH reviewer actually ran this fire, so a cross-model
-    // review and a subagent review of the same trigger stop being one shape in
-    // the record (RVW-02). It names the reviewer that RAN, never the one the
-    // trigger asked for - nothing refuses a dispatch to a reviewer outside the
-    // resolved set (D-07), so this mark is the whole enforcement, and a figure
-    // parsed back out of step 5's free-text voice list would not be one:
-    // lib/trace-suggest.mjs discards that text.
-    // Refused when present but bare or blank, the refusal `--step` makes for
-    // the same reason: a bare `--reviewer` parses as boolean `true` and would
-    // store the literal `true` as a reviewer name.
-    let reviewer;
-    if ('reviewer' in opts) {
-      const raw = typeof opts.reviewer === 'string' ? opts.reviewer.trim() : '';
-      if (!raw) return fail('bad-args', `trace ${sub} --reviewer needs a reviewer name after it: --reviewer <name>`);
-      reviewer = raw;
-    }
-
-    // --trigger: WHICH review trigger this event belongs to, stored verbatim as
-    // one non-empty string, so an `outcome` event can be JOINED to the fire that
-    // produced it without reading prose. `risk-check status` is the first
-    // consumer: it demands a receipt for the `risk_surface` fire on a range its
-    // detector matched, and a receipt is only a receipt if the trigger it names
-    // is structured (D-12).
-    // Measured on this repository's 35 `outcome/adjudication` events, the
-    // trigger is spelled four different ways inside the free-text `--detail` -
-    // `risk_surface`, `risk_surface re-arm`, `risk_surface rearm`,
-    // `risk_surface plan-1` - and lib/trace-suggest.mjs discards that text
-    // entirely, so parsing it back out is exactly the substitution the `--raised`
-    // and `--reviewer` flags were added to avoid.
-    // Refused when present but bare or blank, the refusal `--step` and
-    // `--reviewer` make two paragraphs above and for the identical reason: a
-    // bare `--trigger` parses as boolean `true`, which would store the literal
-    // `true` as a trigger name and satisfy a join for a fire nobody made.
-    let trigger;
-    if ('trigger' in opts) {
-      const raw = typeof opts.trigger === 'string' ? opts.trigger.trim() : '';
-      if (!raw) return fail('bad-args', `trace ${sub} --trigger needs a trigger name after it: --trigger <name>`);
-      trigger = raw;
-    }
+    // Trimmed for the four that refuse, because a stored name is a JOIN KEY and
+    // ` cad-executor ` must not read as a second role. The `fallback` three are
+    // stored VERBATIM, exactly as they always were.
+    const trimmed = (flag) => (flags[flag] === undefined ? undefined : String(flags[flag]).trim());
+    const step = trimmed('--step');
+    const reviewer = trimmed('--reviewer');
+    const trigger = trimmed('--trigger');
 
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
@@ -3508,18 +3544,17 @@ function cmdTrace(dir, sub, opts) {
       phase: parsedPhase.raw,
       family,
       event,
-      ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
-      ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
+      // The four below carry no guard of their own any more: the loop above
+      // already applied each flag's declared disposition, so an absent flag and
+      // a `fallback` one both arrive here as `undefined` and omit their key.
+      ...(flags['--plan'] === undefined ? {} : { plan: flags['--plan'] }),
+      ...(flags['--sha'] === undefined ? {} : { sha: flags['--sha'] }),
       // `--base` beside `--sha`: a fire RECEIPT names both ends of the range it
       // settled, because two ranges can share a head and differ at the base and
-      // are then different diffs over different surfaces. Same bare-flag guard
-      // as `--plan` and `--sha` - a bare `--base` parses as boolean `true` and
-      // records nothing rather than the literal.
-      ...(typeof opts.base === 'string' && opts.base ? { base: opts.base } : {}),
+      // are then different diffs over different surfaces.
+      ...(flags['--base'] === undefined ? {} : { base: flags['--base'] }),
       ...(typeof detail === 'string' && detail ? { detail } : {}),
-      // A bare `--role` parses as boolean `true`; the same guard `--plan` and
-      // `--sha` use records nothing rather than the literal `true`.
-      ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
+      ...(trimmed('--role') === undefined ? {} : { role: trimmed('--role') }),
       ...(tokens === undefined ? {} : { tokens }),
       // OMITTED when the return carried no count, never sent as `0`: a zero
       // claims a dispatch that used no tools, while an absent key is readable
@@ -5432,8 +5467,7 @@ const COMMANDS = {
 };
 
 try {
-  const argv = process.argv.slice(2);
-  const { words, opts } = parseArgs(argv);
+  const { words, opts } = parseArgs(ARGV);
   const [cmd, sub] = words;
   // `--dir` reads through its DECLARED row in lib/arg-contract.mjs rather than
   // off `opts`, and it is read from raw argv on purpose: parseArgs mints the
@@ -5449,7 +5483,7 @@ try {
   // throw the seam-input readers raise (D-07): this file has ONE refusal
   // vocabulary and no `e.seam` catch arm to render that throw as anything but
   // `internal` - the same reason the `--root` guards above state in code.
-  const dirFlag = evaluateFlag(argv, '--dir', CONTRACTS['planning.mjs']['*']['--dir']);
+  const dirFlag = evaluateFlag(ARGV, '--dir', CONTRACTS['planning.mjs']['*']['--dir']);
   const handler = COMMANDS[cmd];
   if (!dirFlag.ok) fail('bad-args', '--dir needs a path after it: --dir <planning dir>');
   else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);

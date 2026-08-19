@@ -637,12 +637,50 @@ test('seam: a malformed --raised appends NOTHING at all', () => {
   assert.equal(traceBytes(dir), null);
 });
 
-test('seam: a bare --role writes no role key rather than the literal true', () => {
+test('seam: a bare or blank --role appends NOTHING at all', () => {
+  // REVERSES this row's earlier guarantee, which was that a bare `--role` wrote
+  // the event with no `role` key rather than the literal `true`. Dropping the
+  // key was the wrong half of the fix: measured 2026-08-19, `trace append
+  // --phase 1 --family lifecycle --event dispatch --role --tokens 5` returned
+  // `{"ok":true,"written":true}` and `trace render` then aggregated that
+  // dispatch under the EMPTY STRING key - `"roles":{"":{"dispatches":2,...}}` -
+  // so a complete-looking dispatch with a token figure landed against no role
+  // at all. `--role` is a per-role JOIN KEY, which is the same thing `--step`,
+  // `--reviewer` and `--trigger` are, and it now carries their disposition:
+  // ARG-06/D-05 declares `bare: 'refuse'` for all four on this subcommand and
+  // this body reads that declaration rather than restating it.
   const dir = root();
-  run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
-    '--event', 'return', '--plan', '1', '--role']);
-  const [e] = lines(dir);
-  assert.equal('role' in e, false, JSON.stringify(e));
+  for (const args of [['--role'], ['--role', ''], ['--role', '  ']]) {
+    const r = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+      '--event', 'return', '--plan', '1', ...args]);
+    assert.equal(r.ok, false, JSON.stringify(args));
+    assert.equal(r.reason, 'bad-args', JSON.stringify(args));
+  }
+  assert.equal(traceBytes(dir), null);
+});
+
+test('seam: a bare --plan, --sha or --base still appends, key omitted', () => {
+  // The OTHER half of D-05, pinned beside the refusal above so the two
+  // dispositions this one body runs cannot silently collapse into each other.
+  // These three declare `bare: 'fallback'`: the flag reads as absent and the
+  // caller's own key-omission answers. Making them refuse would start refusing
+  // every shipped `trace close` written without them.
+  const dir = root();
+  const closed = run(dir, ['trace', 'close', '--phase', '4', '--role', 'cad-executor',
+    '--tokens', '12', '--plan']);
+  assert.equal(closed.ok, true, JSON.stringify(closed));
+  assert.equal(closed.written, true);
+  assert.equal('plan' in lines(dir)[0], false, JSON.stringify(lines(dir)[0]));
+
+  const appended = run(dir, ['trace', 'append', '--phase', '4', '--family', 'lifecycle',
+    '--event', 'return', '--role', 'cad-executor', '--sha', '--base']);
+  assert.equal(appended.ok, true, JSON.stringify(appended));
+  const [, e] = lines(dir);
+  assert.equal('sha' in e, false, JSON.stringify(e));
+  assert.equal('base' in e, false, JSON.stringify(e));
+  // The role still rides both, so this is the fallback arm and not a refusal
+  // that happened to write nothing.
+  assert.equal(e.role, 'cad-executor');
 });
 
 test('seam: --reviewer stores the reviewer that ACTUALLY ran, as a string', () => {
