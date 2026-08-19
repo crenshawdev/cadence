@@ -54,15 +54,19 @@
 // nothing to pay for that. Not a second regex; no third-party bytes at all.
 //
 // NO CADENCE ENV OVERRIDE AND NO --cli-dir. The forge binary is resolved on
-// PATH, in ONE place, because PATH is the OS's own lookup: a test injects a
-// stub by prepending a directory to the child's PATH and the PRODUCTION
-// resolver is what runs. A test-only override honoured in production is exactly
-// what review-provider.mjs:445-460 and EXP-01 refused.
+// PATH, in ONE place - `lib/on-path.mjs`, which this seam imports rather than
+// carries - because PATH is the OS's own lookup: a test injects a stub by
+// prepending a directory to the child's PATH and the PRODUCTION resolver is
+// what runs. A test-only override honoured in production is exactly what
+// review-provider.mjs:445-460 and EXP-01 refused, and that module reads no
+// Cadence variable of its own for the same reason. It moved to lib/ when
+// `detect-commands` needed the same question answered about a lint driver
+// (RCH-01): one rule, two callers, and no way for the seam that advises a land
+// and the seam that names an executor's command to disagree about "reachable".
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
-import { join, delimiter } from 'node:path';
+import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
 // `--dir` takes the THROWING reader (D-01) - it names the repository every
@@ -72,6 +76,7 @@ import { flagValue, optionalFlag } from './lib/seam-input.mjs';
 import { requireInt } from './lib/require-int.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
+import { onPath } from './lib/on-path.mjs';
 import {
   HOST_TABLE, classifyOrigin, scanIssueRefs, partitionIssues, decideIssueCheck,
 } from './lib/issue-decision.mjs';
@@ -134,16 +139,6 @@ function run(bin, args, { cwd, timeout }) {
       timedOut: err.signal === 'SIGKILL',
     };
   }
-}
-
-/** Is `bin` an executable on the CHILD's PATH? The one resolution site.
- * @param {string} bin @returns {boolean} */
-function onPath(bin) {
-  for (const dir of (process.env.PATH || '').split(delimiter)) {
-    if (!dir) continue;
-    try { accessSync(join(dir, bin), constants.X_OK); return true; } catch { /* next */ }
-  }
-  return false;
 }
 
 /**

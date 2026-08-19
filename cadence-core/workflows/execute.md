@@ -254,6 +254,17 @@ Handle the executor's return:
   the state, and ask the user (ask-user seam) whether to re-dispatch the
   remainder or stop. Never silently re-run a plan on top of partial commits.
 
+**The worker key of a SECOND dispatch.** Three of those arms dispatch again, and
+the key is `<k>` - the plan number the first dispatch took, never a coined
+`1-fix`. A continuation, a re-dispatched remainder and a `risk_surface` fix pass
+are second dispatches against the SAME plan's range, and a minted key splits one
+range across two identities in the run record. Whatever key a dispatch carries,
+this plan's `risk-check run --plan` record and its fire receipt's
+`trace append --plan` (references/triage-gate.md) must be written with that ONE
+spelling, or the receipt settles nothing and the gate refuses a range that was
+checked. The seam does not require a NUMBER - `--plan` takes the worker key - so
+keeping one spelling is the coordinator's job, not the seam's.
+
 After each plan completes, ASK THE SEAM whether the plan's committed range
 touched a risk surface - never by reading the diff against a prose list, which
 left no record at all when it matched nothing:
@@ -364,7 +375,9 @@ re-arm on the execute path beside the review triggers' own, which
 Then dispatch a FRESH cad-executor for the same plan, its prompt carrying the
 report PATH `<plandir>/reports/plan-<k>.md`, the checkpoint outcome, and
 "continue from task <k>". Fresh context each time - never resume, and never
-re-inline the table.
+re-inline the table. Bracket it under the SAME worker key `<k>` the first
+dispatch took, and write this plan's risk record and receipt with that one
+spelling.
 </step>
 
 <step name="execute_parallel">

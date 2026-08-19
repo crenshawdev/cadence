@@ -50,8 +50,12 @@
 //                                   declared files: list (the executor's
 //                                   commit-step gate)
 //   detect-commands [--root <path>]  the project's own lint/typecheck commands,
-//                                   read from its manifests (NOT --dir: --root
-//                                   is the PROJECT root, one level deep only)
+//                                   read from its manifests AND offered only
+//                                   when their binaries resolve - an
+//                                   unreachable arm is null with the tool named
+//                                   in warnings[], never a fall-through to a
+//                                   lower one (NOT --dir: --root is the
+//                                   PROJECT root, one level deep only)
 //   detect-surfaces [--root <path>]  which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
 //                                   manifests, file types, never source text
@@ -62,13 +66,21 @@
 //                                   whether a COMMITTED range touched a risk
 //                                   surface, recorded on the trace whatever the
 //                                   answer - so "the check was skipped" stops
-//                                   reading like "it ran and matched nothing"
+//                                   reading like "it ran and matched nothing".
+//                                   --plan is the WORKER key, not a plan
+//                                   number: `1-fix` is a key a dispatch is
+//                                   bracketed under and is recorded verbatim
 //   risk-check status --phase N [--plan k --base <ref> --head <ref>]
 //                                   every COMPLETED executor range in that
 //                                   phase against the records, refusing by plan
 //                                   when one carries none; the optional triple
 //                                   requires a record for THAT range, so an
-//                                   earlier narrower one does not satisfy it
+//                                   earlier narrower one does not satisfy it.
+//                                   --plan is the same WORKER key `run` takes,
+//                                   read through the same grammar; a bracketed
+//                                   key that grammar refuses is reported in
+//                                   malformed[] rather than demanded in
+//                                   missing[], since no run could record it
 //   trace append --phase N --family <f> --event <e> [--plan k] [--base b] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
@@ -176,6 +188,8 @@ import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
+import { onPath, executableIn } from './lib/on-path.mjs';
+import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 
@@ -2478,6 +2492,18 @@ function cmdLeaseCheck(dir, opts) {
 // Detecting nothing is ok:true with both null - a successful check with a
 // negative answer, like plan-overlap. An unreadable or malformed manifest
 // contributes nothing and is NAMED in warnings[] rather than throwing.
+//
+// A MANIFEST IS EVIDENCE OF INTENT, NOT OF A BINARY (RCH-01). A tree carrying
+// `[tool.ruff]` says its maintainers chose ruff; it does not say ruff is
+// installed on the machine reading it, and this seam's answer is handed to an
+// executor that runs it before every commit. So a winning arm is offered only
+// when the command's binaries RESOLVE - the driver, plus the delegated tool for
+// an `npx` arm, which is where npx itself would look (D-04). An unreachable arm
+// NULLS its slot and names the tool in warnings[]; it never falls through to a
+// lower arm (D-05), because falling through tells a tree holding `[tool.ruff]`
+// and a `go.mod` to run `go vet ./...` - a linter its maintainers did not
+// choose, over a language the change may not touch, which is the exact ordering
+// rule the ladder below states.
 // ---------------------------------------------------------------------------
 
 // The flat-config spellings, in the order they are probed. A legacy `.eslintrc*`
@@ -2565,6 +2591,77 @@ function cmdDetectCommands(root) {
   else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
   else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
   else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
+
+  // --- reachability (RCH-01) -------------------------------------------------
+  //
+  // THE OVERRIDE IS GATED, and gated for the reason EXP-01 states: this
+  // variable decides which static-analysis command an executor is told to run,
+  // and an ungated test hook that changes an enforcement answer is the shape
+  // that milestone refused. It is read only when `CADENCE_TEST_SEAM` holds, and
+  // read by PRESENCE rather than through `||`: an empty value means "nothing on
+  // PATH", which is a set a `||` chain cannot express because it is falsy.
+  //
+  // Present, it stands in for the WHOLE answer - no filesystem is consulted at
+  // all - rather than for the PATH half with the directory probe left live.
+  // One rule is what makes the hook testable in both directions: a fixture
+  // carrying its own `node_modules/.bin` proves the live probe hermetically
+  // (both binaries resolve out of the fixture's own bytes), and the SAME
+  // fixture under an empty override proves the variable had force, which a
+  // half-replacement could never show. lib/on-path.mjs reads no Cadence
+  // variable of its own (see its header); the hook lives here, at the one call
+  // site that needs it.
+  const reachOverride = testSeamOpen() && 'CADENCE_DETECT_REACHABLE' in process.env
+    ? new Set(String(process.env.CADENCE_DETECT_REACHABLE).split(',').map((t) => t.trim()).filter(Boolean))
+    : null;
+  const nodeBin = join(root, 'node_modules', '.bin');
+  const reachable = (/** @type {string} */ tool) => (reachOverride
+    ? reachOverride.has(tool)
+    : onPath(tool) || executableIn(nodeBin, tool));
+
+  /**
+   * The binaries a command needs before it can be NAMED: its driver, and - for
+   * an `npx` arm - the tool npx would delegate to. Both halves are load-bearing
+   * on measured facts (D-04). `npx` is on PATH almost everywhere, so a
+   * driver-only rule leaves `npx eslint .` naming an eslint nobody has; and
+   * `tsc` is routinely absent from PATH while present at
+   * `node_modules/.bin/tsc`, so a PATH-only rule nulls the one command a
+   * TypeScript repo's CI actually runs.
+   *
+   * Every command in the ladder above is a fixed literal, so the split is over
+   * text this file wrote - no repo content is ever parsed into a binary name.
+   * @param {string} cmd @returns {string[]}
+   */
+  const needs = (cmd) => {
+    const words = cmd.split(/\s+/).filter(Boolean);
+    const delegated = words[0] === 'npx' && words[1] && !words[1].startsWith('-') ? words[1] : null;
+    return delegated ? [words[0], delegated] : [words[0]];
+  };
+
+  /**
+   * A slot's answer once reachability has been asked. `source` follows the
+   * command: a nulled slot claims no provenance, because a manifest that named
+   * a command nobody can run did not supply this run's command. The WARNING
+   * carries both the tool and the manifest, so the caller can still tell "found
+   * nothing" from "found something unreachable" - which is the same distinction
+   * the always-both-keys `source` block exists for.
+   * @param {string} slot @param {string|null} cmd @param {string|null} src
+   */
+  const offer = (slot, cmd, src) => {
+    if (cmd === null) return { command: null, source: null };
+    const missing = needs(cmd).filter((t) => !reachable(t));
+    if (!missing.length) return { command: cmd, source: src };
+    warnings.push(`${slot}: ${missing.join(' and ')} `
+      + `${missing.length > 1 ? 'are' : 'is'} not on PATH or in node_modules/.bin, so \`${cmd}\` `
+      + `(from ${src}) was not offered; no lower arm was taken in its place`);
+    return { command: null, source: null };
+  };
+
+  const lintOffer = offer('lint', lint, lintSource);
+  lint = lintOffer.command;
+  lintSource = lintOffer.source;
+  const typecheckOffer = offer('typecheck', typecheck, typecheckSource);
+  typecheck = typecheckOffer.command;
+  typecheckSource = typecheckOffer.source;
 
   ok({
     root,
@@ -3651,14 +3748,22 @@ function cmdRiskCheckRun(dir, opts) {
   if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
   const n = parsedPhase.value;
 
-  // requireInt, not Number(): `parseArgs` gives a VALUELESS flag the boolean
-  // `true` and `Number(true)` is `1`, so `--plan` with nothing after it would
-  // record the answer against plan 1 (the VAL-01 rail).
+  // THE WORKER KEY, through the one grammar both faces read (RSK-03, D-02).
+  // Not `requireInt`: `status` derives what it demands from the lifecycle
+  // brackets, where `references/seams.md` permits a non-numeric worker key, so
+  // a fix pass bracketed `1-fix` used to leave a blocking gate no argv could
+  // satisfy - `run --plan 1-fix` answered `bad-args`. The VAL-01 rail
+  // `requireInt` was standing for survives inside the predicate: a VALUELESS
+  // flag arrives as the boolean `true`, `Number(true)` is `1`, and a non-string
+  // is refused first.
   let plan;
   if ('plan' in opts) {
-    const parsedPlan = requireInt(opts.plan);
-    if (!parsedPlan.ok) return fail('bad-args', 'risk-check run --plan needs a plan number after it: --plan <k>');
-    plan = parsedPlan.value;
+    const parsedPlan = requirePlanKey(opts.plan);
+    if (!parsedPlan.ok) {
+      return fail('bad-args', 'risk-check run --plan needs the worker key after it - a plan number '
+        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+    }
+    plan = parsedPlan.key;
   }
 
   // BOTH required, and neither defaulted: a defaulted head is a range the
@@ -3772,10 +3877,11 @@ function cmdRiskCheckRun(dir, opts) {
   // so a trace that could not be written is reported rather than silently
   // dropped, and it may NOT change the verdict.
   //
-  // `plan` is the parsed NUMBER while a prose `trace append --plan` stores the
-  // caller's string; `risk-check status` stringifies both sides before
-  // comparing, the way lib/trace.mjs's own `key()` does, so the two spellings
-  // join.
+  // `plan` is the caller's OWN spelling, verbatim, exactly as a prose
+  // `trace append --plan` stores it - the two must be one string or the receipt
+  // settles nothing (D-01's stated cost). `risk-check status` stringifies both
+  // sides before comparing, the way lib/trace.mjs's own `key()` does, so a
+  // record written `1` and a bracket written `"1"` still join.
   const res = appendEvent(dir, {
     phase: parsedPhase.raw,
     family: 'outcome',
@@ -3864,15 +3970,21 @@ function cmdRiskCheckStatus(dir, opts) {
   // half named - which reads as the phase-wide arm and passes on a record left
   // by some other range.
   const given = ['plan', 'base', 'head'].filter((f) => f in opts);
-  /** @type {{plan: number, base: string, head: string, base_id: string, head_id: string} | null} */
+  /** @type {{plan: string, base: string, head: string, base_id: string, head_id: string} | null} */
   let wanted = null;
   if (given.length) {
     if (given.length !== 3) {
       return fail('bad-args',
         'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three');
     }
-    const parsedPlan = requireInt(opts.plan);
-    if (!parsedPlan.ok) return fail('bad-args', 'risk-check status --plan needs a plan number after it: --plan <k>');
+    // The SAME predicate `risk-check run` reads (D-02). One consultation each,
+    // so the face that enforces the question and the face that reports it
+    // cannot disagree about which spellings are keys at all.
+    const parsedPlan = requirePlanKey(opts.plan);
+    if (!parsedPlan.ok) {
+      return fail('bad-args', 'risk-check status --plan needs the worker key after it - a plan '
+        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+    }
     const base = riskRef(opts.base);
     const head = riskRef(opts.head);
     if (!base || !head) {
@@ -3890,14 +4002,14 @@ function cmdRiskCheckStatus(dir, opts) {
         ok: false,
         reason: 'unresolved-range',
         phase: n,
-        plan: parsedPlan.value,
+        plan: parsedPlan.key,
         base,
         head,
         detail: resolved.error,
         hint: 'name a --base and --head this repository can resolve, then re-run this check',
       });
     }
-    wanted = { plan: parsedPlan.value, base, head, base_id: resolved.base, head_id: resolved.head };
+    wanted = { plan: parsedPlan.key, base, head, base_id: resolved.base, head_id: resolved.head };
   }
 
   // ONE reader of the record, through renderTrace and nothing else: a second
@@ -4016,9 +4128,33 @@ function cmdRiskCheckStatus(dir, opts) {
     }
     return row;
   };
+  /**
+   * A bracket carrying a key the worker-key grammar REFUSES (RSK-03).
+   *
+   * The ONE bounded exception to "status does not narrow" (D-01), and it is the
+   * opposite of the exclusion arm that decision rejected. A key `lib/plan-key.mjs`
+   * refuses is not a legal worker key at all, so `risk-check run --plan <it>`
+   * can never write the record this gate would demand: requiring one leaves a
+   * gate that is blocking at every stakes level permanently unsatisfiable, with
+   * no exit but an `override`. So it is REPORTED, on its own `malformed` list,
+   * rather than silently dropped - which is exactly what made the excluded-key
+   * arm fail-open. A key the predicate ACCEPTS is never dropped.
+   *
+   * An ABSENT plan is NOT malformed and keeps its row: `risk-check run` with no
+   * `--plan` writes a record that keys to '' and joins it, so an unidentified
+   * completed range stays required, exactly as the row comment above says.
+   * Nothing in the tree mints a refused key today - `workflows/execute.md` now
+   * states the continuation key - so this guards the write face D-03 leaves
+   * open on purpose, where `trace append --plan` still stores any non-empty
+   * string.
+   * @type {Set<string>}
+   */
+  const malformed = new Set();
   for (const b of r.brackets) {
     if (!inCycle(b)) continue;
     if (b.role !== 'cad-executor' || b.event !== 'return') continue;
+    const spelled = planKey(b.plan);
+    if (spelled !== '' && !requirePlanKey(b.plan).ok) { malformed.add(spelled); continue; }
     planRow(b.corr, b.plan).completed++;
   }
   // A named range is required whether or not its return has landed yet: the
@@ -4272,6 +4408,10 @@ function cmdRiskCheckStatus(dir, opts) {
       phase: n,
       plans: rows,
       missing: offending.map((row) => row.plan),
+      // Never folded into `missing`: these are not ranges awaiting a record,
+      // they are keys no record can be written for, and a caller sent to
+      // `risk-check run --plan <one of them>` would be sent to a refusal.
+      ...(malformed.size ? { malformed: [...malformed] } : {}),
       hint: unfiredOnly
         ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
           + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
@@ -4282,8 +4422,11 @@ function cmdRiskCheckStatus(dir, opts) {
   }
   // Nothing to require is not a failure: a phase with no completed executor
   // range at all is ok:true with an empty list, or a gate here would block the
-  // first plan of every phase.
-  ok({ phase: n, plans: rows });
+  // first plan of every phase. A malformed key rides the PASS too, for the
+  // reason it exists: the reader has to be able to see that a bracket was
+  // skipped rather than judged, and a pass that said nothing about it would be
+  // the silent exclusion D-01 refused.
+  ok({ phase: n, plans: rows, ...(malformed.size ? { malformed: [...malformed] } : {}) });
 }
 
 function cmdRiskCheck(dir, sub, opts) {

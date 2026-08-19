@@ -4,7 +4,20 @@
 // `CADENCE_PLUGIN_MANIFEST` each redirect a file the seams read as GROUND TRUTH
 // - the route table sets every review trigger's gate, the schema decides which
 // keys are known and which carry the `src: "global"` marker, and the manifest is
-// what every version-skew answer is computed from. Each carried a comment saying
+// what every version-skew answer is computed from. A fourth,
+// `CADENCE_DETECT_REACHABLE`, redirects a READING rather than a file:
+// `detect-commands` takes it as the set of binaries that resolve on PATH, in
+// place of its own probe, so the seam's 23 fixture assertions stop depending on
+// which tools the machine running them happens to have installed (RCH-01,
+// phase 3 D-11). It is gated for the same reason as the three above rather than
+// as a courtesy: the value decides which static-analysis command an executor is
+// told to run before every commit, which is an enforcement answer. Read by
+// PRESENCE, never through `||` - an empty value legitimately means "nothing is
+// on PATH", and a falsy value read through `||` would silently become the live
+// probe. Present, it stands in for the whole reachability answer: no filesystem
+// is consulted, which is what lets one fixture prove the live probe (a tree
+// carrying its own `node_modules/.bin`) and the same fixture prove the
+// variable had force. Each carried a comment saying
 // "hermetic test injection only" and was honored in production with nothing
 // gating it, so the comment described an intent the code did not enforce.
 // Reading the override only when this sentinel holds closes that gap: the
