@@ -286,6 +286,22 @@ test('the weight.mjs contract entry has teeth: a phantom flag on `resident` is f
     || x.kind === 'unknown-subcommand'));
 });
 
+test('D-05: a page under docs/ is on the markdown walk and reports by its own path', () => {
+  // v3.5.5 handed the landing page's reference material to docs/. If a later
+  // edit drops the directory from `mdFiles`, every config key, script
+  // invocation and repo path that MOVED there goes unlinted silently - the
+  // exact state docs/EVIDENCE.md's two unchecked weight.mjs invocations were
+  // in before this. Asserting the reported `file` (not just the kind) is what
+  // pins the walk rather than the check.
+  const root = fixture('nothing to see\n');
+  mkdirSync(join(root, 'docs'), { recursive: true });
+  writeFileSync(join(root, 'docs', 'COST.md'),
+    'Run `node cadence-core/bin/weight.mjs resident --nope` for the numbers.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && x.file === join('docs', 'COST.md')
+    && /weight\.mjs resident --nope/.test(x.detail)), JSON.stringify(p));
+});
+
 test('an unknown subcommand and a missing path are flagged', () => {
   const root = fixture(
     'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" frobnicate\n' +

@@ -4,9 +4,9 @@
 // sweep found that nearly every defect in this repo was prose describing a
 // flag, key, or path the code did not have; this script makes that whole
 // class mechanical. Checks run over the LIVE prose surfaces (workflows,
-// references, skills, agents, templates, plus README and INTERNALS -
-// deliberately not the historical docs DESIGN/LINEAGE/CHANGELOG, which may
-// name cut keys while explaining the cut):
+// references, skills, agents, templates, docs/, plus README, INTERNALS and
+// METHOD - deliberately not the historical docs DESIGN/LINEAGE/CHANGELOG,
+// which may name cut keys while explaining the cut):
 //
 //   1. config keys   every dotted config token in prose must exist in
 //                    config.schema.json (placeholders <t>/<name> expanded),
@@ -302,6 +302,12 @@ function* mdFiles(root) {
     join(root, 'cadence-core', 'templates'),
     join(root, 'skills'),
     join(root, 'agents'),
+    // `docs/` carries the published pages the landing page hands its
+    // reference material to (v3.5.5, D-05). They are as key-and-path-dense as
+    // README itself, so leaving them off the walk would mean a claim stops
+    // being CI-enforced at the moment it MOVES - which is exactly what the
+    // two unchecked `weight.mjs` invocations in docs/EVIDENCE.md were.
+    join(root, 'docs'),
   ];
   /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
   function* walk(dir) {
@@ -339,8 +345,9 @@ function* mdFiles(root) {
     yield* walk(d);
   }
   // README, INTERNALS and METHOD name user-facing switches and live file paths -
-  // they are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay
-  // out: they legitimately name keys that were later cut, while explaining the cut.
+  // they are live surfaces too, as is every page under `docs/` walked above.
+  // Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out: they legitimately name
+  // keys that were later cut, while explaining the cut.
   for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
     const p = join(root, doc);
     if (existsSync(p)) yield { file: p };
