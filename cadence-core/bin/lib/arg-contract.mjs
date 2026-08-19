@@ -77,6 +77,14 @@
 // the way lib/require-int.mjs leaves `bad-args` vs `usage` to its callers
 // (D-07: this module mints no reason code of its own).
 //
+// THE TABLE MOVED HERE, it was not copied (D-06). `CONTRACTS` was defined in
+// self-verify.mjs beside the prose lint that reads it; it is defined here now
+// and self-verify.mjs imports it. Two tables is the drift ARG-06 exists to end
+// reintroduced by the fix - a flag added to one and not the other is either
+// silently accepted at the CLI or reported `unknown-flag` against correct
+// prose. The prose side reads flag NAMES through `flagNames` rather than
+// spreading a row, so the lint keeps working now that a row is a grammar.
+//
 // PURE. It never emits, never reads `process` or the environment, never touches
 // the filesystem, and holds no state. The caller owns its envelope.
 //
@@ -188,4 +196,272 @@ export function evaluateFlag(argv, flag, spec) {
   const parsed = CLASSIFIERS[spec.type](raw);
   if (!parsed.ok) return dispose(spec.value, flag, raw);
   return { ok: true, value: parsed.value, detail: '' };
+}
+
+// --- the contract table: script -> subcommand -> allowed flags --------------
+// Global flags allowed everywhere on that script are listed under '*'.
+//
+// The '' key is the BARE form - the script invoked with flags and no
+// subcommand, e.g. `weight.mjs --root <path>`. Without it check 2 reads the
+// first flag AS the subcommand and reports `unknown-subcommand` on correct
+// prose, so every script with a no-subcommand form must declare one.
+//
+// Every top-level script under cadence-core/bin must appear here: check 14
+// enforces it, because check 2 skips a script it finds no row for. A missing
+// row is therefore a silent opt-out of the flag lint, not a script that
+// happens to be unlinted - which is exactly how `weight.mjs`'s own row could
+// be deleted with self-verify still returning ok:true.
+export const CONTRACTS = {
+  'planning.mjs': {
+    '*': ['--dir'],
+    status: [],
+    'cursor get': [],
+    // `--next-file` is `--next`'s path transport, for the two sites that COMPOSE
+    // a resume pointer (/cad-pause, `progress`) rather than authoring a literal
+    // `/cad-<command> N`. The seven literal sites keep the inline form.
+    'cursor set': ['--phase', '--status', '--next', '--next-file', '--name', '--total'],
+    'phase-done': ['--n', '--reqs', '--undo'],
+    'uat init': ['--phase', '--sources'],
+    'uat refresh': ['--phase'],
+    // `--fields-file` is the path transport for the five FREE-TEXT fields
+    // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
+    // one file per failing item rather than three, on the workflow whose
+    // per-item round-trip discipline is explicit. The enum-validated flags gain
+    // no file form: a value that must survive `UAT_RESULTS.includes()` or an
+    // `AC<N>` test is not caller-derived prose.
+    'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
+      '--severity', '--cause', '--fix', '--evidence', '--fields-file', '--source',
+      '--origin', '--criterion'],
+    'uat merge': ['--phase', '--payload'],
+    'uat status': ['--phase'],
+    audit: [],
+    'criteria-coverage': [],
+    // The criteria-count ceilings, as the CALLER's literal numbers. Four bounds
+    // rather than two because the two grammars have different ones - CONTEXT's
+    // acceptance criteria 3-7, ROADMAP's per-phase criteria 2-5 - and folding
+    // them onto one pair would make a workflow state a bound it does not hold.
+    // No config keys: D-04, the rule `plan-size`'s row above already follows.
+    'criteria-size': ['--phase', '--context-min', '--context-max',
+      '--roadmap-min', '--roadmap-max'],
+    'plan-overlap': ['--phase'],
+    'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
+    // `--label-file` is `--label`'s path transport: an untagged close takes the
+    // label from PROJECT.md's milestone NAME, which is repository content. The
+    // table term (`|` or a newline) and the containment term run on the
+    // resolved value either way - the transport changes how it arrives, never
+    // what it must satisfy.
+    'milestone-prune': ['--label', '--label-file', '--mode'],
+    'seed-reqs': ['--phase'],
+    'lease-check': ['--phase', '--plan'],
+    'detect-commands': ['--root'],
+    'detect-surfaces': ['--root'],
+    recall: ['--top'],
+    // `--join` ties each record to the `trace.jsonl` dispatch bracket that
+    // caused it, by role normalization and timestamp containment. Off by
+    // default so the envelope every existing reader parses is unchanged, and
+    // whole-record by construction: `reads.jsonl` carries no phase scoping, so
+    // the brackets it joins to must span every phase.
+    reads: ['--join'],
+    // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
+    // keeps only the last). Its grammar is deliberately heterogeneous: an
+    // element is any verbatim string naming something the site caused the
+    // worker to read - a path, a glob, or a non-path reference (a
+    // `<base>..<head>` ref range) the worker resolves for itself.
+    // `--step` names the workflow step a COORDINATOR marker marks. It rides the
+    // same event-agnostic seam as every other flag here; what keeps it off a
+    // worker bracket is the prose and the census, not this table.
+    // `--raised` is the ADJUDICATED arm's kill count - how many findings the
+    // reviewers raised before adjudication, structured so a 0-of-0 fire and a
+    // 0-of-9 one stop reading alike. It lives here rather than in `--detail`
+    // because this row is what makes the flag the only structured route.
+    // `--reviewer` names the reviewer that ACTUALLY ran a fire (RVW-02), so two
+    // fires of one trigger - one cross-model, one subagent - are distinguishable
+    // in the record. Nothing refuses a dispatch to a reviewer outside the
+    // resolved set, so this mark is the whole enforcement.
+    // The detection the blocking `risk_surface` gate fires on, and the record
+    // that proves it ran. `--base` and `--head` are both REQUIRED - a defaulted
+    // head is a range the caller never stated - and `--surfaces` narrows the
+    // scope to the project's resolved set, refusing any token outside the
+    // eight rather than answering about a narrower one.
+    'risk-check run': ['--phase', '--plan', '--base', '--head', '--surfaces'],
+    // The completion gate. `--phase` alone keeps plan-level matching; the
+    // optional `--plan --base --head` triple requires a record for THAT range,
+    // so a record left by an earlier, narrower range of the same plan does not
+    // satisfy a later one.
+    'risk-check status': ['--phase', '--plan', '--base', '--head'],
+    // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
+    // derived: the inline form puts that text in a double-quoted shell word,
+    // where `$(...)` and a backtick execute before Node starts. Additive - the
+    // inline form stays for a human typing at a shell (lib/text-flag-file.mjs).
+    // `--read-file` is `--read`'s path transport, split by the same comma
+    // grammar. It is NOT on the close row below: `--read` is not either, and
+    // the transport never widens what a subcommand accepts.
+    // `--trigger` names WHICH review trigger an event belongs to, structured so
+    // an `outcome` receipt can be joined to the fire that produced it -
+    // `risk-check status` demands one for a matched range (GAT-04/D-12). It is
+    // listed here or check 2 reports `unknown-flag` against correct prose. Not
+    // on the `close` row below, for the reason `--read` is not: `close` fixes
+    // its own family and event, and a flag row never widens what a subcommand
+    // accepts.
+    'trace append': ['--phase', '--family', '--event', '--plan', '--base', '--sha', '--detail',
+      '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
+      '--step', '--reviewer', '--trigger'],
+    // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
+    // family is fixed to `lifecycle` in the seam and the arm is inferred from
+    // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
+    // states what it closes and nothing about how the record spells it. A row
+    // that listed them would let the restated spelling back in through the lint.
+    // The inference reads the RESOLVED detail, so `--detail-file` selects the
+    // checkpoint arm exactly as the inline form does.
+    // `--turns` is the tool-call count on the same subagent return `--tokens`
+    // is read off - the second of the two terms a run's price is made of, and
+    // the reason it is a STRUCTURED flag rather than a phrase inside `--detail`
+    // is that `--detail` is not a machine-join surface (one trigger name was
+    // spelled four different ways across 35 shipped events). Listed on the
+    // CLOSE row only, exactly as `--raised` is listed on `append` only: the
+    // flag is validated in the ONE shared `append|close` body, and this row is
+    // a prose allowlist that never widens what a subcommand accepts.
+    'trace close': ['--phase', '--plan', '--role', '--tokens', '--turns', '--detail',
+      '--detail-file', '--reviewer'],
+    // `--events` asks for the RAW event array. The default response carries the
+    // paired `brackets` rows plus every `outcome` event instead, which is what
+    // the two shipped readers (triage-gate's `rearm` lookup, report.md's
+    // dispatch table) actually consume - and one to three of the bytes.
+    'trace render': ['--phase', '--events'],
+    'trace suggest': ['--phase'],
+    // The dispatch-window report. `--phase` ALONE, and the absence of every
+    // other flag is the point: the ceilings are CONFIG (six
+    // `workflow.max_dispatch_tokens.<role>` keys), so a flag that could name a
+    // role or a number here would be a second, un-layered way to set one - the
+    // ad-hoc override that makes a run's report disagree with the project's own
+    // configured bound. `--phase` only scopes which brackets are read, exactly
+    // as it does on `render` and `suggest`.
+    'trace window': ['--phase'],
+    'trace ignore': ['--root', '--check'],
+    // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s
+    // global queue alone - there is no `--section`, and that absence is the
+    // point: a caller that could name a heading is how five filed bullets
+    // landed outside the recall walk.
+    capture: ['--kind', '--text', '--text-file', '--phase', '--file'],
+    // The read side of the same file, and the same `--file` override. No
+    // `--section` and no allowlist flag either: the census is unconditional
+    // (D-06), and a flag that could hide a section is what would have hidden
+    // the five lost bullets.
+    'capture-sections': ['--file'],
+    'debt-harvest': ['--root'],
+    'renumber insert': ['--at', '--dry-run'],
+    'renumber remove': ['--n', '--dry-run'],
+  },
+  'config.mjs': {
+    '*': [],
+    validate: ['--file', '--global'],
+    check: [],
+    set: ['--file', '--global'],
+    get: ['--file'],
+    keys: [],
+  },
+  'git-branch.mjs': {
+    '*': ['--dir'],
+    decide: ['--branch'],
+    // The read-only tags arm. No flags of its own: `--dir` is the whole input
+    // and it is BOTH the directory the question is asked from and the project
+    // root the answer must belong to (TAG-01), so a second flag here would be
+    // the way to ask one of those two questions without the other - which is
+    // the upward discovery the bound closed.
+    tags: [],
+  },
+  'git-publish.mjs': {
+    '*': ['--dir'],
+    publish: ['--remote'],
+    reap: ['--branch'],
+    authorized: [],
+  },
+  'land-cleanup.mjs': {
+    '*': ['--dir'],
+    cleanup: ['--branch', '--base', '--merged'],
+    gate: [],
+  },
+  'issue-check.mjs': {
+    '*': ['--dir'],
+    check: ['--base', '--timeout-ms'],
+  },
+  'release-bump.mjs': {
+    '*': ['--dir'],
+    bump: ['--version', '--date'],
+  },
+  'route.mjs': {
+    '*': [],
+    resolve: ['--role', '--attempt', '--file', '--phase', '--bracket-read', '--bracket-plan'],
+    table: [],
+  },
+  'worktree-base.mjs': {
+    '*': ['--dir'],
+    resolve: [],
+  },
+  'review-provider.mjs': {
+    '*': ['--key-file'],
+    // `--trigger` names the review trigger the call was fired for; it rides the
+    // provider trace event so a cross-model fire JOINS to its trigger through
+    // the correlation id, which is what makes it distinguishable from the
+    // subagent fire of the same trigger (RVW-02). Optional and review-only: a
+    // consult has no trigger.
+    review: ['--provider', '--model', '--effort', '--payload', '--trigger'],
+    consult: ['--provider', '--model', '--effort', '--payload'],
+    'detect-models': ['--provider'],
+  },
+  'weight.mjs': {
+    '*': ['--root'],
+    '': [],
+    resident: ['--command', '--role'],
+  },
+  // Two scripts with no subcommand at all. They carry rows because check 14
+  // requires one, and the rows have teeth: the bare form's flag list is what
+  // check 2 lints `self-verify.mjs --root <path>` against.
+  'self-verify.mjs': {
+    '*': ['--root'],
+    '': [],
+  },
+  // git-guard.mjs is the commit hook - it reads its input on stdin and takes
+  // no flags, so the bare form allows none.
+  'git-guard.mjs': {
+    '*': [],
+    '': [],
+  },
+
+  // read-trace.mjs is the PostToolUse recorder - like git-guard.mjs it reads
+  // its input on stdin and takes no flags and no subcommand at all.
+  'read-trace.mjs': {
+    '*': [],
+    '': [],
+  },
+  // skim.mjs takes a FILE as its positional argument, never a subcommand, so
+  // the bare row carries the whole flag set.
+  'skim.mjs': {
+    '*': [],
+    '': ['--stats', '--no-numbers'],
+  },
+  // test.mjs takes GROUP NAMES as positional arguments, never subcommands, so
+  // the bare form is the only form and `--list` is its one flag.
+  'test.mjs': {
+    '*': ['--list'],
+    '': ['--list'],
+  },
+};
+
+/**
+ * The flag NAMES a row declares, for the prose lint that reads this table from
+ * the other side. self-verify.mjs check 2 asks it twice per invocation it finds
+ * in prose - once for the subcommand's own row and once for the script's `'*'`
+ * row - and unions the two.
+ *
+ * It exists so the lint never spreads a row DIRECTLY: a row is a value-grammar
+ * object, and a check that spread one would read its flag specs as flag names
+ * the moment the grammar landed. Asking for the names keeps the prose side
+ * working across that change and keeps the table one source (D-06).
+ * @param {Record<string, any>|string[]|undefined} row
+ * @returns {string[]}
+ */
+export function flagNames(row) {
+  if (!row) return [];
+  return Array.isArray(row) ? row : Object.keys(row);
 }

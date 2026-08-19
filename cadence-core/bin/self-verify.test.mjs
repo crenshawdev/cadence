@@ -13,6 +13,7 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { WAIVED } from './lib/include-consumers.mjs';
 import { GLOBAL_ONLY_KEYS, globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
+import { CONTRACTS, flagNames } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -2133,11 +2134,36 @@ test('check 14: the repo is clean - every top-level bin script has a contract', 
     (p) => p.kind === 'uncontracted-script'), []);
 });
 
+test('the contract table is ONE table, and this file is not its home (D-06)', () => {
+  // ARG-06's whole point. `CONTRACTS` used to be defined here, beside the
+  // prose lint; it is defined in lib/arg-contract.mjs now, beside the
+  // evaluator the seam CLIs refuse with, and imported. A SECOND definition
+  // here is the drift this requirement exists to end reintroduced by the fix:
+  // a flag added to one table and not the other is either silently accepted at
+  // the CLI or reported `unknown-flag` against correct prose.
+  const src = readFileSync(VERIFY, 'utf8');
+  assert.equal(/^const CONTRACTS = \{/m.test(src), false,
+    'self-verify.mjs defines a CONTRACTS table of its own again - import it from '
+    + 'lib/arg-contract.mjs instead, so the CLI and the prose lint answer from one row');
+  assert.match(src, /import \{ CONTRACTS, flagNames \} from '\.\/lib\/arg-contract\.mjs';/);
+  // And the imported table is the one the checks actually answer from: every
+  // top-level bin script has a row in IT, which is check 14's question asked
+  // from the module side.
+  const scripts = readdirSync(join(REPO, 'cadence-core', 'bin'))
+    .filter((f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs'));
+  assert.ok(scripts.length > 10, `only ${scripts.length} bin scripts found`);
+  for (const f of scripts) assert.ok(CONTRACTS[f], `${f} has no row in lib/arg-contract.mjs`);
+  // The prose lint reads flag NAMES through the accessor rather than spreading
+  // a row, which is what keeps check 2 working once a row carries a grammar.
+  assert.deepEqual(flagNames(CONTRACTS['planning.mjs']['plan-overlap']), ['--phase']);
+});
+
 test('check 14: a bin script with no CONTRACTS row is reported, not silently unlinted', () => {
   // The falsifier AC2 names. Copy the real bin directory into a fixture and
-  // add a script the table cannot know about: the table lives in
-  // self-verify.mjs itself, so a NEW script is the deletable-row case in the
-  // only direction a fixture can express it.
+  // add a script the table cannot know about: the table is a MODULE this
+  // linter imports (lib/arg-contract.mjs), not a fixture input, so a NEW
+  // script is the deletable-row case in the only direction a fixture can
+  // express it.
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-uncontracted-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
     'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
