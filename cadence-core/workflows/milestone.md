@@ -66,9 +66,9 @@ Three halts, each before the bump commit:
 
 - `ok:false` (exit 1). The seam wrote NOTHING and named a `reason`:
   `no-target-version`, `unparseable-version`, `unreadable-manifest`,
-  `downgrade` or `not-an-upgrade`. Report that reason and STOP the close. A
-  close continued past a refused bump ships a manifest still carrying the
-  previous version.
+  `downgrade`, `not-an-upgrade` or `bad-date`. Report it and STOP. A close
+  continued past a refused bump ships a manifest still carrying the previous
+  version.
 - a `siblings[]` entry with `action:"refuse"`. Top-level `ok` stays true (the
   primary manifest already wrote), but that sibling still ships the old
   version - name the file and STOP.

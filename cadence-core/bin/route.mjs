@@ -93,10 +93,11 @@ import { mergeLayers } from './lib/config-merge.mjs';
 import { rungFile, RUNG_FILES } from './lib/rung-agent.mjs';
 import { retiredKeysIn } from './lib/retired-keys.mjs';
 import { emit as out, DONE } from './lib/seam-io.mjs';
-import { requireInt, requirePhaseArg } from './lib/require-int.mjs';
+import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 import { cursorPhase } from './lib/phase-plans.mjs';
 import { appendEvent } from './lib/trace.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
+import { answeredSurfaces } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // TABLE is loaded lazily, inside the dispatch try block below, so a missing
@@ -131,10 +132,13 @@ const DEFAULT_TIER_NAMES = ['flagship', 'balanced', 'cheap'];
 const DEFAULT_EFFORT_NAMES = ['high', 'medium', 'low', 'minimal'];
 
 // The `--phase` shape rule lives in ONE place (`lib/require-int.mjs`'s
-// `requirePhaseArg`, imported above), not in a local regex per script: three
-// independent copies is how the same input came to be refused in three
-// different wordings, and how the directory component came to be normalized on
-// some surfaces and not others.
+// `requirePhaseArg`), not in a local regex per script: three independent copies
+// is how the same input came to be refused in three different wordings, and how
+// the directory component came to be normalized on some surfaces and not
+// others. This file no longer calls it DIRECTLY - the flag's declared row in
+// lib/arg-contract.mjs names `phase` as its type and that table maps the type
+// to this one classifier, so the rule is reached through the declaration rather
+// than named twice.
 
 // Resolve the effective config from global + repo layers (repo wins, via the
 // shared merge lib), falling back to DEFAULTS for anything unset. _source
@@ -250,11 +254,25 @@ function resolve(opts) {
   const planningRoot = dirname(opts.file);
   let tracePhase = null;
   try {
-    const parsed = requirePhaseArg(opts.phase);
-    tracePhase = opts.phase !== undefined && parsed.ok
-      ? parsed.raw
-      : cursorPhase(planningRoot);
+    // `opts.phase` is set ONLY when it parsed clean: `parseArgs` already judged
+    // it against its declared row, so a malformed spelling arrives here as an
+    // absent phase carrying `opts.phaseWarning` beside it.
+    tracePhase = opts.phase !== undefined ? opts.phase : cursorPhase(planningRoot);
   } catch { /* a record of a decision may never change the decision */ }
+
+  // The ARGUMENT-level diagnostics, seeded ahead of the config layer's own so
+  // they ride every arm below (DOC-01: `warnings[]` rides every result shape,
+  // ok:false included). Today `--phase` is the only flag that produces one,
+  // because it is the only one declaring `warn`.
+  //
+  // Before this it produced NOTHING: `requirePhaseArg(opts.phase)` sat inside
+  // the try above and its `!parsed.ok` arm fell silently through to the cursor,
+  // so measured 2026-08-19 `resolve --role cad-planner --phase 1.10.3` returned
+  // ok:true with no mention of `--phase` at all - the routing event keyed to a
+  // different phase than the caller named, silently. The comment that used to
+  // sit here said the shape check belonged where the risk FLOOR was computed;
+  // that floor is retired (see this file's header), so nothing carried it.
+  const argWarnings = opts.phaseWarning ? [opts.phaseWarning] : [];
 
   // The dispatch half of the worker's lifecycle bracket (`--bracket-read` is
   // the switch; `--bracket-plan` the worker key, defaulting to the role). It is
@@ -293,9 +311,10 @@ function resolve(opts) {
   // the question to be asked of.
   const roles = Array.isArray(TABLE.roles) ? TABLE.roles : [];
   if (!roles.includes(opts.role)) {
+    const degraded = [...argWarnings, ...cfg._warnings];
     out({ ok: false, reason: 'unknown-role', role: opts.role,
       detail: `known roles: ${roles.join(', ')}`,
-      ...(cfg._warnings.length ? { warnings: cfg._warnings } : {}) });
+      ...(degraded.length ? { warnings: degraded } : {}) });
     return;
   }
 
@@ -310,8 +329,9 @@ function resolve(opts) {
   // `warnings` is an ARRAY (matching config.mjs get): a torn config layer, a
   // retired key, an unreadable PLAN, a gate disagreement and an unknown pin
   // alias can all be true at once. Built before the floor so the floor's own
-  // diagnostics ride on it.
-  const warnings = [...cfg._warnings];
+  // diagnostics ride on it, and seeded with the argument-level ones so a
+  // malformed `--phase` is said out loud on the ok:true arm too.
+  const warnings = [...argWarnings, ...cfg._warnings];
 
   // The stakes LEVEL for this dispatch: the configured baseline, full stop.
   // All four knobs come from the floored row through the one cell grid.
@@ -627,15 +647,16 @@ function resolve(opts) {
   const tableCategories = Array.isArray(TABLE.risk_surface_categories)
     ? TABLE.risk_surface_categories.filter((c) => typeof c === 'string' && c) : [];
   const wroteSurfaces = cfg.triggerSurfaces.risk_surface;
-  let surfaces = tableCategories;
-  let surfacesAnswered = false;
+  // The predicate itself lives in lib/surface-scan.mjs, because
+  // `planning.mjs risk-check run` REFUSES on the same answer this line
+  // REPORTS: two copies would let the seam that enforces the one-time question
+  // disagree with the resolve that names it. The wording of the warnings below
+  // stays here - the diagnostics are this face's, the rule is not.
+  const decided = answeredSurfaces(wroteSurfaces, tableCategories);
+  let surfaces = decided.surfaces;
+  let surfacesAnswered = decided.answered;
   if (wroteSurfaces !== undefined) {
-    // Defensive at every hop, like every other config read here: a scalar where
-    // a list belongs, and an entry outside the vocabulary, contribute NOTHING
-    // and are named - never a silent narrowing of a blocking gate's scope.
-    const list = Array.isArray(wroteSurfaces) ? wroteSurfaces : [];
-    const kept = list.filter((x) => typeof x === 'string' && tableCategories.includes(x));
-    const bad = list.filter((x) => !(typeof x === 'string' && tableCategories.includes(x)));
+    const { kept, bad } = decided;
     if (!Array.isArray(wroteSurfaces)) {
       warnings.push(`review.triggers.risk_surface.surfaces=${JSON.stringify(wroteSurfaces)} is not a list; `
         + `all ${tableCategories.length} categories stand`);
@@ -651,8 +672,7 @@ function resolve(opts) {
     // gate. Widening is the safe direction; a warning the user may not read is
     // not a substitute for it.
     if (kept.length && !bad.length) {
-      surfaces = kept;
-      surfacesAnswered = true;
+      // decided.answered already carried this arm; nothing to set here.
     } else if (bad.length) {
       warnings.push('review.triggers.risk_surface.surfaces carries an unrecognised entry; '
         + `all ${tableCategories.length} stand, and the surface question reads as unanswered`);
@@ -726,36 +746,85 @@ function resolve(opts) {
 
 // --- arg parsing -------------------------------------------------------------
 
+// The whole synopsis, printed when `--role` is ABSENT rather than merely
+// valueless: with no role there is no call to describe, so the refusal is the
+// help. A role present with nothing usable after it gets the specific sentence
+// in the table below instead - the caller who wrote `--role "$R"` against an
+// unset variable knows what a role is and needs to be told which token vanished.
+const SYNOPSIS = 'resolve --role <name> [--attempt N] [--file <config>] [--phase N]'
+  + ' [--bracket-read <csv> [--bracket-plan <key>]]';
+
+// The five value-carrying flags of `resolve`, each read through its DECLARED
+// row in lib/arg-contract.mjs (ARG-06). The rows own the RULE - required-ness,
+// which classifier judges the value, and what a malformed or valueless one
+// costs - and this table owns only the SENTENCE, because route.mjs mints no
+// reason code of its own (D-07): every refusal here is this bin's own `usage`,
+// in the wording it already published.
+//
+// THE DEFECT THIS ENDS. The loop this replaced read a value as `a[++i]` with no
+// flag-shape test, so a flag ate the flag after it: measured 2026-08-19,
+// `route.mjs resolve --role --attempt 2` returned
+// `{"ok":false,"reason":"unknown-role","role":"--attempt"}` - a refusal about a
+// role the caller never named, with the attempt silently reverted to 1, which
+// is the exact shape lib/seam-input.mjs's `flagValue` was written against. The
+// declared rows refuse the missing, empty and flag-shaped spellings by one rule.
+//
+// ORDER IS LOAD-BEARING: the first failing flag names the refusal, and this is
+// the order the five `else if` arms ran in, so a call malformed in two places
+// still reports the same one it reported before.
+//
+// `--phase` is deliberately NOT here. It declares the `warn` disposition (D-04)
+// and stays RAW - a `usage` refusal on a bad phase would route the phase LOWER
+// than its own risk baseline - so it is read positionally below and its
+// diagnostic rides `warnings[]` at the resolve envelope.
+const RESOLVE_FLAGS = {
+  '--role': ['role', 'resolve --role needs a role name after it: --role <name>'],
+  '--attempt': ['attempt', 'resolve --attempt must be an integer'],
+  // `o.file` reaches `dirname()` on the way to the layer read, so a valueless
+  // one escaped as reason:"internal" carrying a raw Node type error. Both
+  // spellings, matching config.mjs's own guard - unquoted `$VAR` drops the
+  // token, quoted `"$VAR"` passes an empty one - and defaulting either to
+  // .planning/config.json would answer about a file the caller never named.
+  '--file': ['file', 'resolve --file needs a path after it: --file <config file>'],
+  // The bracket pair: `--bracket-read` switches the lifecycle dispatch event on
+  // and carries the site's read-set (ONE comma-separated value, like `trace
+  // append --read`); `--bracket-plan` is the worker key when it is not the role
+  // name (an executor's plan number). Recording a bracket for a read-set the
+  // caller never named would claim a site read nothing when the token merely
+  // went missing.
+  '--bracket-read': ['bracketRead', 'resolve --bracket-read needs a comma-separated path list after it'],
+  '--bracket-plan': ['bracketPlan', 'resolve --bracket-plan needs a worker key after it'],
+};
+
 function parseArgs(a) {
+  const rows = CONTRACTS['route.mjs'].resolve;
   const o = { file: '.planning/config.json', attempt: 1 };
-  for (let i = 0; i < a.length; i++) {
-    const k = a[i];
-    if (k === '--role') o.role = a[++i];
-    else if (k === '--attempt') {
-      const raw = a[++i];
-      const parsed = requireInt(raw);
-      if (parsed.ok) o.attempt = parsed.value;
-      else { o.attempt = raw; o.attemptInvalid = true; }
+  for (const [flag, [key, detail]] of Object.entries(RESOLVE_FLAGS)) {
+    const parsed = evaluateFlag(a, flag, rows[flag]);
+    if (!parsed.ok) {
+      o.usage = flag === '--role' && !a.includes(flag) ? SYNOPSIS : detail;
+      return o;
     }
-    // Stored RAW: a `--phase` outside the accepted shape is a warning at the
-    // baseline, never a `usage` refusal (which would route the phase lower than
-    // its own baseline), so the check belongs where the floor is computed.
-    else if (k === '--phase') o.phase = a[++i];
-    // A `--file` with nothing usable after it is refused, not resolved: `o.file`
-    // reaches `dirname()` on the way to the layer read, so an undefined value
-    // escaped as reason:"internal" carrying a raw Node type error. Both
-    // spellings, matching config.mjs's own guard - unquoted `$VAR` drops the
-    // token, quoted `"$VAR"` passes an empty one, and defaulting either to
-    // .planning/config.json would answer about a file the caller never named.
-    else if (k === '--file') { o.file = a[++i]; if (!o.file) o.fileMissing = true; }
-    // The bracket pair: `--bracket-read` switches the lifecycle dispatch event
-    // on and carries the site's read-set (ONE comma-separated value, like
-    // `trace append --read`); `--bracket-plan` is the worker key when it is not
-    // the role name (an executor's plan number). Valueless forms are refused
-    // like `--file`: recording a bracket for a read-set the caller never named
-    // would claim a site read nothing when the token merely went missing.
-    else if (k === '--bracket-read') { o.bracketRead = a[++i]; if (!o.bracketRead) o.bracketReadMissing = true; }
-    else if (k === '--bracket-plan') { o.bracketPlan = a[++i]; if (!o.bracketPlan) o.bracketPlanMissing = true; }
+    // A `fallback` or absent flag reads as undefined and leaves this object's
+    // own default in place; no row here declares `warn`, so no value arrives
+    // carrying a diagnostic.
+    if (parsed.value !== undefined) o[key] = parsed.value;
+  }
+  // `--phase` is the one flag here declaring the WARN disposition (D-04), and
+  // the only place this bin reads `evaluateFlag`'s third answer: ok:true with a
+  // NON-EMPTY `detail`. A `usage` refusal on a bad phase would route the phase
+  // LOWER than its own risk baseline, so a bad shape costs a diagnostic and the
+  // resolution stands. `o.phase` is set only when the spelling parsed clean -
+  // the caller falls back to the cursor otherwise, exactly as it always did -
+  // and `o.phaseWarning` is what the resolve envelope says about it.
+  const phase = evaluateFlag(a, '--phase', rows['--phase']);
+  if (!phase.detail) { if (phase.value !== undefined) o.phase = phase.value; }
+  else {
+    o.phaseWarning = `--phase ${phase.value === undefined
+      ? 'has no value after it'
+      : `${JSON.stringify(phase.value)} is not a phase number (N or N.M)`}`
+      + '; the routing event is keyed to the cursor phase instead, and the '
+      + 'resolved bundle is unaffected';
   }
   return o;
 }
@@ -769,16 +838,13 @@ try {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
   if (cmd === 'resolve') {
-    // The three `usage` refusals below carry no `warnings` on purpose: they fail
-    // on ARGUMENT SHAPE before any config file is named, so there is no layer
-    // whose diagnostics could ride along. Every other ok:false return does carry
-    // them (D-04).
+    // The argument-shape refusal carries no `warnings` on purpose: it fails on
+    // ARGUMENT SHAPE before any config file is named, so there is no layer whose
+    // diagnostics could ride along. Every other ok:false return does carry them
+    // (D-04). One arm where five stood, because `parseArgs` now names the
+    // refusal from the declared row that produced it.
     const o = parseArgs(argv.slice(1));
-    if (!o.role) { out({ ok: false, reason: 'usage', detail: 'resolve --role <name> [--attempt N] [--file <config>] [--phase N] [--bracket-read <csv> [--bracket-plan <key>]]' }); }
-    else if (o.attemptInvalid) { out({ ok: false, reason: 'usage', detail: 'resolve --attempt must be an integer' }); }
-    else if (o.fileMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --file needs a path after it: --file <config file>' }); }
-    else if (o.bracketReadMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --bracket-read needs a comma-separated path list after it' }); }
-    else if (o.bracketPlanMissing) { out({ ok: false, reason: 'usage', detail: 'resolve --bracket-plan needs a worker key after it' }); }
+    if (o.usage) out({ ok: false, reason: 'usage', detail: o.usage });
     else resolve(o);
   } else if (cmd === 'table') {
     out({ ok: true, table: TABLE });

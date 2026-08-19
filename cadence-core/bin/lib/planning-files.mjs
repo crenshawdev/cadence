@@ -197,10 +197,12 @@ export function classifyPhaseList(text) {
  * cell names no phase (a dropped requirement - audit's concern, not an
  * error here).
  *
- * The section is BOUNDED at the next `## ` heading - the same idiom
- * parseRoadmapPhases/sectionBody use, and exactly the extent setReqStatus
- * already writes with, so the reader and the writer of this one table agree.
- * A table under any later `## ` section is somebody else's data.
+ * BOTH ends of the section come from `sectionSpan` (D-08), the same
+ * fence-aware reader `parseRoadmapPhases` and `classifyActiveSection` already
+ * take their spans from, and exactly the extent `setReqStatus` and
+ * `insertReqRows` now write with, so the reader and the two writers of this one
+ * table cannot disagree about where it is. A table under any later `## `
+ * section is somebody else's data.
  *
  * Header and separator rows are skipped. The separator skip is deliberately
  * a BLACKLIST - a cell made only of dashes, colons and spaces, a strict
@@ -211,12 +213,30 @@ export function classifyPhaseList(text) {
  * @param {string} text
  */
 export function parseRequirements(text) {
-  const section = text.split(/^## Traceability\s*$/m)[1];
-  if (!section) return [];
-  const body = section.split(/^## /m)[0];
+  const lines = text.split('\n');
+  // The LOCATOR is the whole change here (D-08); everything below it - the row
+  // regex, the separator blacklist, the phase-cell scan - is untouched.
+  //
+  // A `split` on the heading carries no fence state, so a FENCED
+  // `## Traceability` was read as the real section. That is not a hypothetical
+  // shape: the shipped `templates/REQUIREMENTS.md` puts its whole body inside a
+  // markdown fence, `## Traceability` included, so a template-seeded project
+  // parsed its own documentation's example rows - and `archiveRequirements`,
+  // which reads this function, then removed them from inside the code block.
+  // Fixing the `split(/^## /m)` end alone could not help: a start found
+  // fence-blind cannot be repaired by a fence-aware end, which is why both ends
+  // come from one `sectionSpan` walk.
+  //
+  // One accepted widening (D-14): `sectionSpan` matches a heading by TRIMMED
+  // equality where `/^## Traceability\s*$/m` allowed trailing whitespace only,
+  // so a heading indented up to three spaces now begins the section. CommonMark
+  // reads that as a heading and no shipped grammar document forbids it - the
+  // same widening `parseRoadmapPhases` already states as accepted.
+  const { start, end } = sectionSpan(lines, '## Traceability');
+  if (start < 0) return [];
   const rows = [];
-  for (const line of body.split('\n')) {
-    const cells = line.match(/^\|([^|]*)\|([^|]*)\|([^|]*)\|/);
+  for (let i = start + 1; i < end; i++) {
+    const cells = lines[i].match(/^\|([^|]*)\|([^|]*)\|([^|]*)\|/);
     if (!cells) continue;
     const id = cells[1].replace(/\*/g, '').trim();
     if (!id || id === 'Requirement' || /^[-:\s]+$/.test(id)) continue;
@@ -257,16 +277,26 @@ export function setPhaseBox(text, n, checked) {
  * Set the traceability Status cell for the given REQ-IDs. Only rows whose id
  * is in `ids` change; everything else is byte-preserved. Returns
  * {text, changed:[ids...]}.
+ *
+ * The section is located by `sectionSpan` (D-08), the same call
+ * `parseRequirements` makes, so this writer cannot edit a table its own reader
+ * says is not there. A fenced `## Traceability` is not the section: with no
+ * unfenced one the text comes back unchanged and `changed` is empty - the
+ * answer a document with no Traceability table already got.
  * @param {string} text @param {string[]} ids @param {string} status
  */
 export function setReqStatus(text, ids, status) {
   const lines = text.split('\n');
   const changed = [];
-  let inTable = false;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^## Traceability\s*$/.test(lines[i])) { inTable = true; continue; }
-    if (inTable && /^## /.test(lines[i])) inTable = false;
-    if (!inTable) continue;
+  // BOTH ends from one walk. The hand-rolled `inTable` flag this replaces set
+  // itself on a fenced heading and then rewrote rows inside somebody's code
+  // block; bounding it fence-aware while still finding the start fence-blind
+  // would have moved the damage, not stopped it. The D-14 widening rides along:
+  // a heading indented up to three spaces now opens the section, where the
+  // anchored `/^## Traceability\s*$/` refused it.
+  const { start, end } = sectionSpan(lines, '## Traceability');
+  if (start < 0) return { text, changed };
+  for (let i = start + 1; i < end; i++) {
     const cells = lines[i].match(/^(\|[^|]*\|[^|]*\|)([^|]*)(\|.*)$/);
     if (!cells) continue;
     const id = cells[1].split('|')[1].replace(/\*/g, '').trim();
@@ -665,9 +695,10 @@ export function parseActiveIds(text) {
  * keeps "no writer but cad-verify ever writes a non-`Pending` Status" true
  * by construction.
  *
- * The section is bounded at the next `## ` heading, exactly as
+ * The section is located and bounded by `sectionSpan`, exactly as
  * `parseRequirements`/`setReqStatus` already do - a table under a later
- * section is somebody else's data. Inside that bound, the header row's
+ * section is somebody else's data, and a table inside a code FENCE is
+ * documentation rather than data. Inside that bound, the header row's
  * all-dashes/colons separator is located; with no separator found, the text
  * is returned UNCHANGED alongside `error: 'no-traceability-table'` - never
  * fabricate a table.
@@ -694,11 +725,15 @@ export function parseActiveIds(text) {
  */
 export function insertReqRows(text, rows) {
   const lines = text.split('\n');
-  let start = -1, end = lines.length;
-  for (let i = 0; i < lines.length; i++) {
-    if (/^## Traceability\s*$/.test(lines[i])) { start = i; continue; }
-    if (start !== -1 && i > start && /^## /.test(lines[i])) { end = i; break; }
-  }
+  // BOTH ends from `sectionSpan` (D-08) rather than this function's own
+  // heading test plus `/^## /` bound: the fence-blind start took the
+  // `## Traceability` inside `templates/REQUIREMENTS.md`'s own markdown fence
+  // for the section and `seed-reqs` then wrote rows into the example. The
+  // absent-outside-a-fence case is the one this function already answers -
+  // text back unchanged, carrying `no-traceability-table` - and it must stay
+  // that answer: this seam never fabricates a table. D-14's widening applies
+  // here too, an indented heading now being admissible.
+  const { start, end } = sectionSpan(lines, '## Traceability');
   if (start === -1) {
     return { text, inserted: [], skipped: [], mismatched: [], error: 'no-traceability-table' };
   }
@@ -854,6 +889,18 @@ const CAPTURE_PHASE_TAG = /^\((?:v\d+(?:\.\d+)*\s)?phase (\d+(?:\.\d+)?)(?:,[^)]
  * (D-05). The signal rides the string rather than growing a `done` field on
  * the result shape: without a marker a planner reads a shipped fix as live
  * prior evidence and re-plans closed work.
+ *
+ * THE NUMBER MUST ROUND-TRIP: `String(Number(n)) === n`, or the tag emits no
+ * `phase` AND stays in the indexed text, byte-identical, exactly as an
+ * out-of-grammar parenthetical does. A bare `Number()` put `Infinity` into the
+ * recall corpus for a 400-digit tag and a NEIGHBOURING phase's number for
+ * `9007199254740993` or `1.10` - the same collision `requirePhaseArg` carries
+ * a `raw` field for (D-07). The round trip is the predicate rather than
+ * `Number.isSafeInteger`, which would strip every legal `1.1` sub-phase tag,
+ * and rather than a magnitude bound, which still admits `9007199254740990.1`
+ * -> `9007199254740990`, a different phase. Leaving the tag in the text is
+ * what keeps the bullet whole in the corpus: it loses no bytes to a
+ * parenthetical that named no phase.
  * @param {string} text @returns {Array<{text:string, phase?:number}>}
  */
 export function parseCaptureSnippets(text) {
@@ -871,7 +918,13 @@ export function parseCaptureSnippets(text) {
       if (box) raw = raw.slice(box[0].length);
       /** @type {number|undefined} */
       let phase;
-      raw = raw.replace(CAPTURE_PHASE_TAG, (_m, n) => { phase = Number(n); return ''; });
+      raw = raw.replace(CAPTURE_PHASE_TAG, (whole, n) => {
+        // Out of range or otherwise not round-tripping: no phase, and the tag
+        // stays in the text rather than the bullet losing bytes to it.
+        if (String(Number(n)) !== n) return whole;
+        phase = Number(n);
+        return '';
+      });
       out.push({ text: closed ? `[closed] ${raw}` : raw, ...(phase !== undefined ? { phase } : {}) });
     }
   }
@@ -1015,7 +1068,15 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
  * A line that does not match `ARCHIVE_ROW` is not a row and is skipped, the
  * posture `parseContextDecisions` takes on a non-`D-NN` line, so a human note in
  * this file cannot mint a corpus entry. A row above the first `## ` heading
- * belongs to no milestone and is skipped for the same reason.
+ * belongs to no milestone and is skipped for the same reason. A row whose phase
+ * number does not ROUND-TRIP (`String(Number(n)) !== n`) is skipped by the same
+ * rule: `phases/<400 digits>/` and `phases/9007199254740990.1/` name a
+ * directory nothing in this tree can address, and a bare `Number()` put
+ * `Infinity` and a NEIGHBOURING phase's number into the corpus instead. The
+ * round trip rather than `Number.isSafeInteger`, which would drop every legal
+ * `phases/1.1/` row, and the declared `phase: number` return shape stays as it
+ * is rather than widening to `number|null`, which `cmdRecall`'s corpus and the
+ * `alreadyArchived` set would both have to learn.
  *
  * Pure reader, so it normalizes through the shared `normalize` (BOM, CRLF, lone
  * CR) exactly as `captureSections` does: a CRLF checkout must index as its
@@ -1033,6 +1094,7 @@ export function parseArchiveRows(text) {
     if (label === null) continue;
     const m = line.match(ARCHIVE_ROW);
     if (!m) continue;
+    if (String(Number(m[2])) !== m[2]) continue;
     // `label` and `origin` ride ALONGSIDE the composed `source` rather than
     // being recovered from it by the caller. A milestone label is free text, so
     // a label carrying a `/` makes `source` ambiguous about where the label

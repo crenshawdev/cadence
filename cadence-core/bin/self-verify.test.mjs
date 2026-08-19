@@ -13,6 +13,7 @@ import { mergeWarningIssues } from './lib/merge-warnings.mjs';
 import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { WAIVED } from './lib/include-consumers.mjs';
 import { GLOBAL_ONLY_KEYS, globalOnlyMarkerIssues } from './lib/global-only-keys.mjs';
+import { CONTRACTS, flagNames } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VERIFY = join(HERE, 'self-verify.mjs');
@@ -283,6 +284,22 @@ test('the weight.mjs contract entry has teeth: a phantom flag on `resident` is f
   const clean = fixture('node cadence-core/bin/weight.mjs resident --root . --command cad-land --role cad-executor\n');
   assert.ok(!run(['--root', clean]).problems.some((x) => x.kind === 'unknown-flag'
     || x.kind === 'unknown-subcommand'));
+});
+
+test('D-05: a page under docs/ is on the markdown walk and reports by its own path', () => {
+  // v3.5.5 handed the landing page's reference material to docs/. If a later
+  // edit drops the directory from `mdFiles`, every config key, script
+  // invocation and repo path that MOVED there goes unlinted silently - the
+  // exact state docs/EVIDENCE.md's two unchecked weight.mjs invocations were
+  // in before this. Asserting the reported `file` (not just the kind) is what
+  // pins the walk rather than the check.
+  const root = fixture('nothing to see\n');
+  mkdirSync(join(root, 'docs'), { recursive: true });
+  writeFileSync(join(root, 'docs', 'COST.md'),
+    'Run `node cadence-core/bin/weight.mjs resident --nope` for the numbers.\n');
+  const p = run(['--root', root]).problems;
+  assert.ok(p.some((x) => x.kind === 'unknown-flag' && x.file === join('docs', 'COST.md')
+    && /weight\.mjs resident --nope/.test(x.detail)), JSON.stringify(p));
 });
 
 test('an unknown subcommand and a missing path are flagged', () => {
@@ -1598,7 +1615,7 @@ test('check 12: *.test.mjs is off the walk - a test may write any shape', () => 
   assert.deepEqual(mergeProblems(binFixture({ 'seam.test.mjs': BARE_CALL })), []);
 });
 
-test('check 12: the live tree is FOURTEEN callsites over NINE files, each in an arm', () => {
+test('check 12: the live tree is FIFTEEN callsites over NINE files, each in an arm', () => {
   // The count is taken here INDEPENDENTLY of the rule (a plain line scan), so a
   // miscount in either direction fails rather than passing quietly, and a
   // new callsite cannot be added without choosing an arm.
@@ -1634,7 +1651,7 @@ test('check 12: the live tree is FOURTEEN callsites over NINE files, each in an 
       }
     }
   }
-  assert.equal(total, 14, `callsites: ${files.join(', ')}`);
+  assert.equal(total, 15, `callsites: ${files.join(', ')}`);
   assert.equal(files.length, 9, files.join(', '));
   // Arm (b) is the exception, not the habit: exactly one file states the reason
   // in its header, and it is the one whose two other reads are memoized scalars.
@@ -2133,11 +2150,36 @@ test('check 14: the repo is clean - every top-level bin script has a contract', 
     (p) => p.kind === 'uncontracted-script'), []);
 });
 
+test('the contract table is ONE table, and this file is not its home (D-06)', () => {
+  // ARG-06's whole point. `CONTRACTS` used to be defined here, beside the
+  // prose lint; it is defined in lib/arg-contract.mjs now, beside the
+  // evaluator the seam CLIs refuse with, and imported. A SECOND definition
+  // here is the drift this requirement exists to end reintroduced by the fix:
+  // a flag added to one table and not the other is either silently accepted at
+  // the CLI or reported `unknown-flag` against correct prose.
+  const src = readFileSync(VERIFY, 'utf8');
+  assert.equal(/^const CONTRACTS = \{/m.test(src), false,
+    'self-verify.mjs defines a CONTRACTS table of its own again - import it from '
+    + 'lib/arg-contract.mjs instead, so the CLI and the prose lint answer from one row');
+  assert.match(src, /^import \{ CONTRACTS, flagNames.*\} from '\.\/lib\/arg-contract\.mjs';$/m);
+  // And the imported table is the one the checks actually answer from: every
+  // top-level bin script has a row in IT, which is check 14's question asked
+  // from the module side.
+  const scripts = readdirSync(join(REPO, 'cadence-core', 'bin'))
+    .filter((f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs'));
+  assert.ok(scripts.length > 10, `only ${scripts.length} bin scripts found`);
+  for (const f of scripts) assert.ok(CONTRACTS[f], `${f} has no row in lib/arg-contract.mjs`);
+  // The prose lint reads flag NAMES through the accessor rather than spreading
+  // a row, which is what keeps check 2 working once a row carries a grammar.
+  assert.deepEqual(flagNames(CONTRACTS['planning.mjs']['plan-overlap']), ['--phase']);
+});
+
 test('check 14: a bin script with no CONTRACTS row is reported, not silently unlinted', () => {
   // The falsifier AC2 names. Copy the real bin directory into a fixture and
-  // add a script the table cannot know about: the table lives in
-  // self-verify.mjs itself, so a NEW script is the deletable-row case in the
-  // only direction a fixture can express it.
+  // add a script the table cannot know about: the table is a MODULE this
+  // linter imports (lib/arg-contract.mjs), not a fixture input, so a NEW
+  // script is the deletable-row case in the only direction a fixture can
+  // express it.
   const root = mkdtempSync(join(tmpdir(), 'cad-selfverify-uncontracted-'));
   for (const d of ['cadence-core/workflows', 'cadence-core/references',
     'cadence-core/templates', 'cadence-core/bin', 'skills', 'agents']) {
@@ -2184,12 +2226,38 @@ test('entry: a valueless or empty --root refuses instead of linting the cwd', ()
   // flagValue closes. The detail assertion is the second half: a thrown seam
   // object has no `message`, so without the catch's seam arm this envelope
   // reports "[object Object]" instead of the flag.
+  //
+  // It reads that rule off its OWN declared row now (ARG-06) rather than off a
+  // hand-written reader call: `--root` refuses the empty, bare and flag-shaped
+  // spellings because lib/arg-contract.mjs says `bare: 'refuse'` for it, and
+  // the throwing mechanism survives underneath because the catch arm is what
+  // renders the seam object as this envelope.
+  assert.deepEqual(CONTRACTS['self-verify.mjs']['*']['--root'],
+    { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    'the declaration IS the rule; loosening this row loosens the CLI');
   for (const args of [['--root'], ['--root', '']]) {
     const j = run(args);
     assert.equal(j.ok, false, JSON.stringify(j));
     assert.equal(j.reason, 'missing-flag-value');
     assert.equal(j.detail, '--root');
+    // ONE line on stdout, exit 1, and NOTHING on stderr: lib/seam-io.mjs states
+    // stdout is the single channel the seam layer parses, so a refusal that
+    // also wrote a warning there would be read as part of the verdict.
+    let status = 0;
+    let stdout = '';
+    let stderr = '';
+    try {
+      stdout = execFileSync('node', [VERIFY, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (e) {
+      status = e.status; stdout = e.stdout; stderr = e.stderr;
+    }
+    assert.equal(status, 1, `exit code for ${JSON.stringify(args)}`);
+    assert.equal(stderr, '', `stderr for ${JSON.stringify(args)}`);
+    assert.equal(stdout.trimEnd().split('\n').length, 1, `one stdout line: ${stdout}`);
   }
+  // A genuinely ABSENT --root still falls through to the plugin's own tree.
+  assert.equal(run([]).ok, true);
+  assert.equal(run(['--root', '.']).ok, true);
 });
 
 // --- check 2: the BARE form -------------------------------------------------
@@ -2317,4 +2385,48 @@ test('check 20: the LIVE tree is clean of all three bulk-output codes', () => {
   assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-inline'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-unregistered'), []);
   assert.deepEqual(p.filter((x) => x.kind === 'bulk-output-unclear'), []);
+});
+
+// --- check 21: the scratch file belongs to this run --------------------------
+// The CLI wiring only. The three rules, their kinds and the gap they accept are
+// scratch-path.test.mjs's, per row - including the six shipped sites in both
+// directions; what has to be true HERE is that the walk reaches the rule, that
+// the envelope names it, and that the LIVE tree passes it. Check 20 is blind to
+// both halves, which is why re-introducing a fixed shared name has to redden
+// something and this is the something.
+
+test('check 21: a fixed shared scratch path reaches problems, naming the surface', () => {
+  // Synthetic prose at a REGISTERED path, so check 20 stays quiet about it -
+  // the line carries the redirect that check demands and shares the fixed name
+  // this one refuses, which is exactly the pair the two checks split.
+  const root = fixture('nothing to see\n');
+  writeFileSync(join(root, 'cadence-core', 'references', 'triage-gate.md'),
+    'node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "${TMPDIR:-/tmp}/cad-rearm.json"\n');
+  const j = run(['--root', root]);
+  assert.match(j.checked, /scratch-path/);
+  const hits = j.problems.filter((p) => p.kind === 'scratch-shared-path');
+  assert.equal(hits.length, 1, JSON.stringify(j.problems));
+  assert.equal(hits[0].file, 'cadence-core/references/triage-gate.md');
+  assert.match(hits[0].detail, /mktemp/);
+  assert.deepEqual(j.problems.filter((p) => p.kind === 'bulk-output-inline'), []);
+});
+
+test('check 21: an unguarded read-back reaches problems through the CLI', () => {
+  const root = fixture(
+    'node -e \'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(r.n)\' "$D/render.json"\n');
+  const hits = run(['--root', root]).problems
+    .filter((p) => p.kind === 'scratch-unguarded-readback');
+  assert.equal(hits.length, 1, JSON.stringify(hits));
+  assert.equal(hits[0].file, 'cadence-core/workflows/x.md');
+});
+
+test('check 21: the LIVE tree is clean of all three per-run scratch codes', () => {
+  // The synthetic roots above prove the check can fail. This one proves the
+  // TREE passes it, which is the half a fixture can never state - and it is
+  // what stops the next prose edit from putting a shared scratch name back
+  // with a green self-verify, the exact gap D-07 named.
+  const p = run(['--root', REPO]).problems;
+  assert.deepEqual(p.filter((x) => x.kind === 'scratch-shared-path'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'scratch-fixed-target'), []);
+  assert.deepEqual(p.filter((x) => x.kind === 'scratch-unguarded-readback'), []);
 });

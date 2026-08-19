@@ -72,15 +72,33 @@ blocking loop already uses (`workflows/plan.md`'s ONE revision, maximum):
    its own workers (`workflows/execute.md`'s timeout-or-no-report arm).
 
 The round count PERSISTS in the trace, so a `/clear` between rounds cannot
-reset it. Before firing the narrowed round, read that count in two steps - the
-render is bulk output, so it rides a scratch file and only the ANSWER reaches
-the transcript (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md`
-states the rule; the scratch file is the model's own, never a phase artifact):
+reset it. Before firing the narrowed round, read that count in ONE chained
+step - the render is bulk output, so it rides this RUN's own scratch directory
+and only the ANSWER reaches the transcript
+(`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/conventions.md` states the
+rule; the scratch file is the model's own, never a phase artifact):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "${TMPDIR:-/tmp}/cad-rearm.json"
-node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log((r.outcomes||[]).filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr).length)' "${TMPDIR:-/tmp}/cad-rearm.json" "<trigger>"
+D="$(mktemp -d "${TMPDIR:-/tmp}/cad-rearm-XXXXXX")" \
+  && node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace render --phase <N> > "$D/render.json" \
+  && node -e 'const f=require("fs");let r;try{r=JSON.parse(f.readFileSync(process.argv[1],"utf8"))}catch(e){console.error("scratch-unreadable: "+process.argv[1]+": "+e.message);process.exit(1)}if(!r||typeof r!=="object"){console.error("scratch-shape: "+process.argv[1]+" is not an object");process.exit(1)}if(!Array.isArray(r.outcomes)){console.error("scratch-shape: outcomes is not an array in "+process.argv[1]);process.exit(1)}if(!r.outcomes.every((o)=>o&&typeof o==="object")){console.error("scratch-shape: outcomes has a non-object entry in "+process.argv[1]);process.exit(1)}console.log(r.outcomes.filter((o)=>o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr).length)' "$D/render.json" "<trigger>"
 ```
+
+The directory is made for this run and the two calls are `&&`-chained to it,
+which is what makes the count this run's OWN. A fixed shared scratch name is
+one file that every concurrent run on the machine writes and reads, so a
+render taken in another repository could spend or refund the one round this
+gate has - and the chaining is what stops the read-back running on a render
+that failed.
+
+A NON-ZERO EXIT from that read-back is NEITHER answer. It names
+`scratch-unreadable` when the render could not be read or parsed and
+`scratch-shape` when `outcomes` is not an array, and in both cases the cap
+could not be EVALUATED, which is not the zero arm and not the non-zero arm.
+Treat it exactly as the `blocking` bullet above treats a reviewer that could
+not run: STOP and ask the user. The shape this replaced defaulted a missing
+array to `[]` and printed `0`, which reads as "the round is unspent" and
+re-fires a blocking gate off a file it never managed to read.
 
 The envelope's `corr` is the current run's id, so that one number is the whole
 answer: non-zero means a `rearm` outcome for this trigger is already recorded

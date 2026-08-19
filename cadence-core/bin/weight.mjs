@@ -27,27 +27,40 @@ import { fileURLToPath } from 'node:url';
 import { emit } from './lib/seam-io.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { residentWeight } from './lib/resident-weight.mjs';
-// The throwing flag reader, shared with self-verify.mjs. Its contract - and why
-// the NON-throwing sibling beside it in that module must stay a separate
-// export - live in lib/seam-input.mjs; the catch arm below is what turns the
-// thrown seam object into a named refusal instead of "[object Object]".
-import { flagValue } from './lib/seam-input.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what each flag may be, and what it costs when it is not, are DECLARED
+// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
+// throwing form the catch arm below already renders - without that arm the
+// raised object surfaces as detail "[object Object]". All three flags declare
+// `refuse` on both axes, which is the header's "never a silent default".
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 try {
   const argv = process.argv.slice(2);
-  const root = flagValue(argv, '--root') || join(HERE, '..', '..');
+  /** This script's declared rows. The bare form is the `''` row and `--root`,
+   * legal on both arms, is declared once under `'*'`. */
+  const ROWS = CONTRACTS['weight.mjs'];
+  const sub = argv[0] === 'resident' ? 'resident' : '';
+  /** One flag, read through its DECLARED row. The row owns the rule and this
+   * binding owns nothing: an adapter over this file's own argv, never a second
+   * statement of what a flag may be. */
+  const arg = (name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
+  const root = arg('--root') || join(HERE, '..', '..');
   if (argv[0] === 'resident') {
     const r = residentWeight(root);
     // Filters narrow the array they name and nothing else: `zeroResident` is
     // derived from EVERY command's reachable set, so a filter must not be able
     // to change it.
-    const command = flagValue(argv, '--command');
-    const role = flagValue(argv, '--role');
+    const command = arg('--command');
+    const role = arg('--role');
     let { commands, roles } = r;
     if (command !== undefined) {
       commands = commands.filter((c) => c.command === command);
+      // NOT an argument-shape refusal and so NOT the contract's business: the
+      // flag was well-formed and this seam is saying the filter matched
+      // nothing. It stays weight.mjs's own domain vocabulary.
       if (!commands.length) throw { seam: 'unknown-command', detail: command };
     }
     if (role !== undefined) {

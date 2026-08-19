@@ -355,3 +355,116 @@ test('unknown subcommand: usage, ok false', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
 });
+
+// --- --dir refuses rather than writing into the process cwd (phase 2 D-01) ---
+
+// This seam WRITES: `--dir` names the tree whose plugin.json and CHANGELOG.md
+// get rewritten. An ABSENT --dir still means the cwd (every arm above passes
+// one explicitly); the empty, valueless and flag-shaped spellings refuse
+// through flagValue's thrown object and the dispatch's e.seam arm.
+for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+  test(`bump: ${label} --dir refuses by name, exit 1, writes nothing`, () => {
+    const { json, status } = seamStatus(['bump', ...dirArgs, '--version', '2.0.0', '--date', '2026-08-03']);
+    assert.equal(json.ok, false);
+    assert.equal(json.reason, 'missing-flag-value', JSON.stringify(json));
+    assert.equal(json.detail, '--dir');
+    assert.equal(status, 1);
+  });
+}
+
+// --- --date is validated before bump() is entered (ARG-02) ------------------
+
+// Five malformed values, each refused with this seam's own bad-date code and
+// nothing written. `''` is in the list on purpose: before the fix it fell
+// through `dateArg || new Date()...` to today, so absent and empty gave the
+// same answer - measured 2026-08-18, `--date ''` wrote `## [1.1.0] - 2026-08-18`.
+// The newline value is the one that cost something: it wrote a forged second
+// release section `## [9.9.9] - forged` into CHANGELOG.md above the real one.
+const BAD_DATES = [
+  ['not-a-date', 'not a date at all'],
+  ['2026-13-45', 'a well-shaped value outside the month and day ranges'],
+  ['2026-8-1', 'unpadded month and day'],
+  ['', 'EMPTY - refuses rather than falling through to today (D-05)'],
+  ['2026-08-18\n## [9.9.9] - forged', 'a newline that forged a second release section'],
+];
+
+for (const [value, why] of BAD_DATES) {
+  test(`bump: --date refuses ${why}, writing nothing`, () => {
+    const dir = fixture();
+    const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+    const manifestBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+    const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0', '--date', value]);
+    assert.equal(json.ok, false, JSON.stringify(json));
+    assert.equal(json.action, 'refuse');
+    assert.equal(json.reason, 'bad-date', JSON.stringify(json));
+    assert.equal(status, 1);
+    // No manifest/siblings/changelog fields: this refusal fires before any
+    // manifest is read, so filling them would fabricate them (D-06).
+    assert.equal(json.manifest, undefined, JSON.stringify(json));
+    assert.equal(json.siblings, undefined);
+    assert.equal(json.changelog, undefined);
+
+    assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore, 'CHANGELOG.md must be byte-identical');
+    assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), manifestBefore);
+  });
+
+  test(`bump: --date refuses ${why} on a NON-plugin project too`, () => {
+    // D-06's stated consequence: the date is validated at the dispatch, so a
+    // malformed value no longer hides behind the manifest gate, which answered
+    // {"ok":true,"action":"skip","reason":"no-plugin-manifest"} here.
+    const dir = fixture({ plugin: null, marketplace: null });
+    const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0', '--date', value]);
+    assert.equal(json.reason, 'bad-date', JSON.stringify(json));
+    assert.equal(json.ok, false);
+    assert.equal(status, 1);
+  });
+}
+
+// The VALUELESS spelling, which the BAD_DATES loop cannot reach: it passes a
+// value, and this one carries none. `optionalFlag` answers `undefined` for a
+// trailing `--date` exactly as it does for an ABSENT one, so a presence test
+// read off the value dated today and wrote the manifest - the same
+// absent-vs-empty collapse D-05 refuses for `''`, arriving by the other door.
+// Measured against the pre-fix seam: `bump --version 1.1.0 --date` wrote
+// `## [1.1.0] - <today>` and reported ok:true.
+test('bump: a trailing valueless --date refuses, writing nothing', () => {
+  const dir = fixture();
+  const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+  const manifestBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+  const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0', '--date']);
+  assert.equal(json.ok, false, JSON.stringify(json));
+  assert.equal(json.action, 'refuse');
+  assert.equal(json.reason, 'bad-date', JSON.stringify(json));
+  assert.equal(status, 1);
+
+  assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore, 'CHANGELOG.md must be byte-identical');
+  assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), manifestBefore);
+});
+
+// The other half of the same contract: an ABSENT --date still dates today
+// rather than refusing, so the presence test did not turn the default into a
+// requirement. Asserted on the SHAPE of the heading, never on a clock reading.
+test('bump: an ABSENT --date still dates today', () => {
+  const dir = fixture();
+  const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0']);
+  assert.equal(json.ok, true, JSON.stringify(json));
+  assert.equal(status, 0);
+  assert.match(readRaw(join(dir, 'CHANGELOG.md')), /## \[1\.1\.0\] - \d{4}-\d{2}-\d{2}/);
+});
+
+test('bump: a well-formed --date still writes its dated heading', () => {
+  const dir = fixture();
+  const r = seam(['bump', '--dir', dir, '--version', '1.1.0', '--date', '2026-08-18']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.match(readRaw(join(dir, 'CHANGELOG.md')), /## \[1\.1\.0\] - 2026-08-18/);
+});
+
+test('bump: an ABSENT --date still dates today - only a PRESENT one is validated', () => {
+  const dir = fixture();
+  const r = seam(['bump', '--dir', dir, '--version', '1.1.0']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const today = new Date().toISOString().slice(0, 10);
+  assert.match(readRaw(join(dir, 'CHANGELOG.md')), new RegExp(`## \\[1\\.1\\.0\\] - ${today}`));
+});

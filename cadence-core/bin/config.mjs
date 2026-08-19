@@ -27,6 +27,7 @@ import { retiredKeyError, retiredKeysIn } from './lib/retired-keys.mjs';
 import { atomicWrite } from './lib/planning-files.mjs';
 import { DONE, emit } from './lib/seam-io.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
+import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // SCHEMA is loaded lazily, inside the dispatch try block below, so a missing
@@ -162,7 +163,13 @@ function checkPairs(tokens) {
     // read or write, so the refusal stays atomic.
     const retired = retiredKeyError(key);
     if (retired) { errors.push({ key, error: retired }); continue; }
-    const spec = SCHEMA[key];
+    // hasOwn, the third of the same guard (:142 in validate, :284 in get): a
+    // bare `SCHEMA[key]` answers `constructor` or any other Object.prototype
+    // member with a truthy "spec" carrying no `type`, which checkValue below
+    // reported as "unknown schema type undefined" instead of naming the key
+    // the schema does not hold. The retired lookup above carries its own half
+    // of this guard, inside retiredKeyError.
+    const spec = Object.hasOwn(SCHEMA, key) ? SCHEMA[key] : undefined;
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
     const msg = checkValue(spec, value);
@@ -268,10 +275,29 @@ function get(file, keys, asGlobal) {
   /** @type {Record<string, any>} */
   const values = {};
   const wanted = keys.length ? keys : Object.keys(SCHEMA);
-  const unknown = wanted.filter((k) => !SCHEMA[k]);
+  // hasOwn, not a bare `SCHEMA[k]` - the guard `validate` already carries at
+  // :138-142, for the same reason one face over. A bare lookup answers a
+  // requested key named `__proto__`, `constructor`, `toString` or any other
+  // Object.prototype member with Object.prototype itself: a truthy "spec"
+  // carrying no `type` and no `default`, so the key passed this filter as
+  // though the schema held it. The value line below then read `.default` off
+  // that (undefined), and assigning it into `values` at the name `__proto__`
+  // ran the object's own setter and stored NOTHING - which is how
+  // `get __proto__` answered {"ok":true,"values":{}} at exit 0, and
+  // `get stakes __proto__` answered about one key of the two asked for with
+  // nothing saying the other had gone missing. `fail('unknown-key', ...)` was
+  // always the right answer; the whole fix is that a prototype member now
+  // reaches it.
+  const unknown = wanted.filter((k) => !Object.hasOwn(SCHEMA, k));
   if (unknown.length) fail('unknown-key', unknown);
   for (const k of wanted) {
-    values[k] = layered[k] !== undefined ? layered[k] : SCHEMA[k].default;
+    // Guarded for the same reason, though the filter above now makes every `k`
+    // an own schema key: the keyless arm walks Object.keys(SCHEMA) and the
+    // explicit arm is refused, so nothing reaches here off the prototype
+    // chain today. A future caller path that builds `wanted` some third way
+    // would inherit the hole, and this is the read the hole is spent through.
+    const spec = Object.hasOwn(SCHEMA, k) ? SCHEMA[k] : undefined;
+    values[k] = layered[k] !== undefined ? layered[k] : spec && spec.default;
     // The read face says WHICH of the two states one of these keys is in. The
     // value line above is unchanged (D-06) - the schema sentinel does that work
     // - but a bare `null` cannot tell a reader "no layer set one, the level
@@ -303,25 +329,51 @@ const argv = process.argv.slice(2);
 const cmd = argv[0];
 const rest = argv.slice(1);
 function optFile(tokens) {
+  // `--global` reads through its DECLARED row too, and reading it off the row
+  // is what makes this class unrepeatable at this seam: a subcommand that
+  // ACCEPTS a `--global` it does not declare stops being possible, because the
+  // read needs the row to exist. It was live on `get` while only `validate`
+  // and `set` declared it, and self-verify stayed green only because no
+  // workflow prose spelled that pair - the moment any did, correct prose would
+  // be reported `unknown-flag`.
+  //
+  // Tested FIRST and short-circuiting to the global file before `--file` is
+  // looked at, exactly as the hand-written probe did. The row is `boolean`,
+  // whose whole grammar is presence, so neither disposition can fire and the
+  // three flag spellings a valued row separates do not arise.
+  const globalRow = CONTRACTS['config.mjs'][cmd]['--global'];
   const gi = tokens.indexOf('--global');
-  if (gi >= 0) return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
+  if (globalRow !== undefined && evaluateFlag(tokens, '--global', globalRow).value === true) {
+    return { file: GLOBAL_CONFIG, global: true, tokens: tokens.filter((_, j) => j !== gi) };
+  }
   const i = tokens.indexOf('--file');
   if (i < 0) return { file: '.planning/config.json', global: false, tokens };
-  // A `--file` with nothing usable after it is what an interpolated
-  // `--file $VAR` on an unset variable produces. Left alone it fell through as
-  // `file: undefined`: `set` degraded to reason:"internal" with a raw Node type
-  // error, `validate` said "cannot read/parse undefined", and `get` answered
-  // ok:true - a full effective read of the user-global layer alone, silently
-  // answering about a file the caller never named.
+  // `--file` reads through its DECLARED row in lib/arg-contract.mjs (ARG-06)
+  // rather than through a hand-written value rule. The row is per SUBCOMMAND -
+  // `validate`, `set` and `get` each declare one - and is read at the call
+  // rather than at module load, because `check` and `keys` declare none and
+  // never reach this function.
   //
-  // Both spellings, because the shell produces both: unquoted `$VAR` drops the
-  // token entirely (undefined), quoted `"$VAR"` passes an EMPTY one. Testing
-  // only for undefined left the quoted spelling - the one a careful script
-  // writer uses - falling through to that silent `get`.
-  if (!tokens[i + 1]) {
+  // WHAT THE ROW CATCHES THAT THE HAND-WRITTEN RULE DID NOT. `if (!tokens[i+1])`
+  // covered the two spellings an interpolated `--file $VAR` produces on an unset
+  // variable - unquoted drops the token entirely, quoted `"$VAR"` passes an
+  // EMPTY one - and left alone those fell through as `file: undefined`, so `set`
+  // degraded to reason:"internal" with a raw Node type error, `validate` said
+  // "cannot read/parse undefined", and `get` answered ok:true with a full
+  // effective read of the user-global layer alone. What it missed is the
+  // FLAG-SHAPED token: measured 2026-08-19, `config.mjs validate --file
+  // --nonsense` returned `{"ok":false,"reason":"read","detail":"cannot
+  // read/parse --nonsense: ENOENT ..."}` - answering about a file the caller
+  // never named, which is the same class one spelling further out. One rule now
+  // refuses all three.
+  //
+  // The refusal keeps this bin's own `usage` and its published wording (D-07);
+  // the contract mints no reason code.
+  const parsed = evaluateFlag(tokens, '--file', CONTRACTS['config.mjs'][cmd]['--file']);
+  if (!parsed.ok) {
     fail('usage', '--file needs a path after it: --file <config file> (or --global)');
   }
-  return { file: tokens[i + 1], global: false, tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
+  return { file: parsed.value, global: false, tokens: tokens.filter((_, j) => j !== i && j !== i + 1) };
 }
 
 try {

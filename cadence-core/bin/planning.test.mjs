@@ -3,7 +3,7 @@
 // spec file beyond them. Only node: builtins, per the repo ethos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -452,6 +452,29 @@ test('cursor set: falls back to the existing cursor when ROADMAP is absent', () 
   assert.equal(r.cursor.name, 'Solo');   // from the prior cursor (same phase)
   assert.equal(r.cursor.total, 3);       // prior total carried forward
   assert.equal(r.cursor.status, 'executed');
+});
+
+test('cursor set: a --phase spelling that cannot round-trip is refused, STATE.md untouched (D-07)', () => {
+  const dir = makeTree({
+    roadmap: [{ n: 1, name: 'One' }, { n: 2, name: 'Two' }, { n: '2.1', name: 'Hotfix' }],
+    cursor: { phase: 1, total: 3, name: 'One', status: 'planned', next: '/cad-plan 1', updated: '2026-01-01' },
+  });
+  const before = readFileSync(join(dir, 'STATE.md'), 'utf8');
+  for (const bad of ['1.10', '1.0', '01']) {
+    const r = run(['cursor', 'set', '--phase', bad, '--status', 'planned', '--next', '/cad-plan 1'], dir);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(r._exit, 1, bad);
+    assert.ok(r.detail.includes(`"${bad}"`), `${bad}: detail quotes what was sent`);
+    assert.ok(r.detail.includes(`"${String(Number(bad))}"`), `${bad}: detail quotes what is accepted`);
+  }
+  assert.equal(readFileSync(join(dir, 'STATE.md'), 'utf8'), before, 'nothing written');
+
+  for (const good of ['2', '2.1']) {
+    const r = run(['cursor', 'set', '--phase', good, '--status', 'planned', '--next', `/cad-execute ${good}`], dir);
+    assert.equal(r.ok, true, good);
+    assert.equal(r.cursor.phase, Number(good), good);
+  }
 });
 
 test('cursor set: derives name/total from ROADMAP, stamps today, writes 4 lines', () => {
@@ -1650,11 +1673,19 @@ test('uat merge: an omitted list is not a malformed one', () => {
   assert.equal(r.added, 1);
 });
 
-test('uat merge: --payload with no path is no-payload, never a read of fd 1', () => {
+test('uat merge: --payload with no path refuses, never a read of fd 1', () => {
+  // The invariant is that a valueless `--payload` never falls through to a read
+  // of fd 1. It is answered EARLIER now, and by a different vocabulary: the
+  // declared row refuses the bare spelling at the dispatch door, which names
+  // `bad-args` because this file has one refusal vocabulary (D-07). The
+  // `no-payload` arm is still what answers a path that is missing, unreadable
+  // or empty - the spellings a declaration cannot judge - and the code reaches
+  // no prose surface, so nothing branches on which of the two fires here.
   const dir = uatTree();
   const r = refusedMerge(dir, ['--payload']);
   assert.equal(r.ok, false);
-  assert.equal(r.reason, 'no-payload');
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /--payload/);
   assert.equal(r._exit, 1);
 });
 
@@ -4606,6 +4637,40 @@ test('seed-reqs: --phase absent/non-numeric/negative all return bad-args, nothin
   assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), before);
 });
 
+test('seed-reqs: a --phase spelling that cannot round-trip is refused before any read (D-07)', () => {
+  // The fixture holds BOTH sub-phases, which is what makes the old answer
+  // wrong rather than merely odd: `--phase 1.10` used to seed `| B | Phase 1.1
+  // | Pending |` - the OTHER phase's row - with ok:true.
+  const dir = seedTree({
+    roadmap: [{ n: 1, name: 'One' }],
+    phases: {
+      '1.1': { plan: true, planReqs: ['A'] },
+      '1.10': { plan: true, planReqs: ['B'] },
+      2: { plan: true, planReqs: ['C'] },
+      '2.1': { plan: true, planReqs: ['D'] },
+    },
+    active: ['A', 'B', 'C', 'D'],
+  });
+  const before = readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8');
+  for (const bad of ['1.10', '1.0', '01']) {
+    const r = run(['seed-reqs', '--phase', bad], dir);
+    assert.equal(r.ok, false, bad);
+    assert.equal(r.reason, 'bad-args', bad);
+    assert.equal(r._exit, 1, bad);
+    // Both spellings: the caller's fix is retype the flag OR rename the dir.
+    assert.ok(r.detail.includes(`"${bad}"`), `${bad}: detail quotes what was sent`);
+    assert.ok(r.detail.includes(`"${String(Number(bad))}"`), `${bad}: detail quotes what is accepted`);
+  }
+  assert.equal(readFileSync(join(dir, 'REQUIREMENTS.md'), 'utf8'), before, 'nothing written');
+
+  // The spellings that DO round-trip are untouched, sub-phases included.
+  for (const [good, id] of [['1.1', 'A'], ['2', 'C'], ['2.1', 'D']]) {
+    const r = run(['seed-reqs', '--phase', good], dir);
+    assert.equal(r.ok, true, good);
+    assert.deepEqual(r.seeded, [id], good);
+  }
+});
+
 test('seed-reqs: a malformed requirements: line surfaces frontmatter_issues', () => {
   const dir = seedTree({
     roadmap: [{ n: 1, name: 'One' }],
@@ -5125,11 +5190,45 @@ function projectTree(files) {
   return root;
 }
 
-/** detect-commands takes --root (the PROJECT root), never --dir. */
-function detect(root, extra = []) {
+/** Executable stubs at `<root>/node_modules/.bin`, which is where `npx`
+ *  resolves a delegated tool. Bytes in the fixture's own tree, so the
+ *  npx-delegated arm is pinned without any machine's install. */
+function nodeModulesBin(root, tools) {
+  const dir = join(root, 'node_modules', '.bin');
+  mkdirSync(dir, { recursive: true });
+  for (const t of tools) writeFileSync(join(dir, t), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  return root;
+}
+
+/**
+ * Every tool this block's fixtures name. Passed as the reachable set by
+ * default, so a row asserting WHICH command an arm produces is not also an
+ * assertion about what is installed on the machine running the suite (RCH-01,
+ * D-11): with the reachability rule live and no override, the `ruff`, `mypy`
+ * and two `go` rows fail on a dev box without those tools, and the
+ * `npx eslint`/`npx tsc` rows fail in every mkdtemp tree, which has no
+ * `node_modules`. A row that is ABOUT reachability passes its own narrower set.
+ */
+const EVERY_TOOL = 'npm,npx,cargo,ruff,mypy,go,eslint,tsc';
+
+/**
+ * detect-commands takes --root (the PROJECT root), never --dir.
+ *
+ * `reachable` is the set the seam reads in place of its own probe, behind the
+ * `CADENCE_TEST_SEAM` sentinel; `null` runs the real probe, and `seam: false`
+ * sets the variable with NO sentinel, which must be ignored. A row that needs
+ * the LIVE probe stays hermetic by putting its binaries in the fixture's own
+ * `node_modules/.bin` (see nodeModulesBin) rather than relying on the machine.
+ */
+function detect(root, { extra = [], reachable = EVERY_TOOL, seam = true } = {}) {
+  const env = { ...process.env };
+  delete env.CADENCE_TEST_SEAM;
+  delete env.CADENCE_DETECT_REACHABLE;
+  if (seam) env.CADENCE_TEST_SEAM = '1';
+  if (reachable !== null) env.CADENCE_DETECT_REACHABLE = reachable;
   try {
     return JSON.parse(execFileSync('node', [PLANNING, 'detect-commands', '--root', root, ...extra],
-      { encoding: 'utf8' }));
+      { encoding: 'utf8', env }));
   } catch (e) {
     return JSON.parse(e.stdout);
   }
@@ -5272,6 +5371,83 @@ test('detect-commands: an unlistable root is ok:false, never a silent nothing', 
   assert.equal(r.reason, 'no-root');
 });
 
+// --- detect-commands: a command is named only when it can be RUN (RCH-01) ----
+
+test('detect-commands: an unreachable winning arm nulls its slot and never falls through', () => {
+  // The measured shape D-05 refuses: `[tool.ruff]` names the lint arm, `go.mod`
+  // sits below it, and ruff is absent. Falling through would tell this project
+  // to run `go vet ./...` - a linter its maintainers did not choose, over a
+  // language the change may not touch.
+  const r = detect(projectTree({
+    'pyproject.toml': '[tool.ruff]\nline-length = 100\n',
+    'go.mod': 'module example.com/x\n',
+  }), { reachable: 'go' });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.lint, null);
+  assert.equal(r.source.lint, null, 'a nulled slot claims no provenance');
+  assert.notEqual(r.lint, 'go vet ./...');
+  assert.equal(r.warnings.filter((w) => w.includes('ruff')).length, 1, JSON.stringify(r.warnings));
+  assert.match(r.warnings.find((w) => w.includes('ruff')), /pyproject\.toml/);
+  // The lower arm is still available to its OWN slot: `go` is reachable here,
+  // so the typecheck answer is unaffected. Nulling is per slot, not per tree.
+  assert.equal(r.typecheck, 'go build ./...');
+  assert.equal(r.source.typecheck, 'go.mod');
+});
+
+test('detect-commands: an npx arm probes the DELEGATED tool, not the driver alone', () => {
+  // `npx` is on PATH almost everywhere, so a driver-only rule would leave
+  // `npx eslint .` naming an eslint nobody has (D-04).
+  const tree = { 'eslint.config.mjs': 'export default [];\n' };
+  const without = detect(projectTree(tree), { reachable: 'npx' });
+  assert.equal(without.lint, null);
+  assert.equal(without.source.lint, null);
+  assert.equal(without.warnings.filter((w) => w.includes('eslint')).length, 1,
+    JSON.stringify(without.warnings));
+  const with_ = detect(projectTree(tree), { reachable: 'npx,eslint' });
+  assert.equal(with_.lint, 'npx eslint .');
+  assert.equal(with_.source.lint, 'eslint.config.mjs');
+});
+
+test('detect-commands: the LIVE probe resolves a delegated tool out of node_modules/.bin', () => {
+  // Where `npx` itself looks, and the half a PATH-only rule would drop: this is
+  // the shape of a TypeScript repo whose only static-analysis command is the
+  // one CI runs, with `tsc` installed as a dependency and absent from PATH.
+  // Both binaries live in the FIXTURE's node_modules/.bin, so the row proves
+  // the production probe without depending on what this machine has installed.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const r = detect(root, { reachable: null });
+  assert.equal(r.typecheck, 'npx tsc -p tsconfig.ci.json', JSON.stringify(r));
+  assert.equal(r.source.typecheck, 'tsconfig.ci.json');
+  assert.equal('warnings' in r, false, JSON.stringify(r.warnings));
+  // Only the POSITIVE half is asserted against the live probe, deliberately. A
+  // fixture can guarantee a binary is PRESENT (it wrote it), and nothing on the
+  // machine can take it away; it cannot guarantee one is ABSENT, because a box
+  // with tsc installed answers `true` correctly and the row would fail for
+  // being right. The unreachable-delegated-tool half is pinned above, through
+  // the override, where the set is stated rather than discovered.
+});
+
+test('detect-commands: an EMPTY reachable set means nothing is reachable', () => {
+  // The `||` hazard, pinned: an empty override is falsy, so a seam that read it
+  // through `|| probe` would silently run the live probe and answer about the
+  // machine. The fixture's own node_modules/.bin would otherwise resolve both
+  // binaries, which is exactly what makes this row discriminating.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const r = detect(root, { reachable: '' });
+  assert.equal(r.typecheck, null, JSON.stringify(r));
+  assert.equal(r.source.typecheck, null);
+});
+
+test('detect-commands: the reachable set WITHOUT the sentinel is ignored', () => {
+  // The gate EXP-01 asks for: this variable decides which static-analysis
+  // command an executor is told to run, so a repo-supplied .envrc setting it
+  // must change nothing. Same fixture and same empty value as the row above,
+  // which answered `null` there and answers the live probe here.
+  const root = nodeModulesBin(projectTree({ 'tsconfig.ci.json': '{}' }), ['npx', 'tsc']);
+  const r = detect(root, { reachable: '', seam: false });
+  assert.equal(r.typecheck, 'npx tsc -p tsconfig.ci.json', JSON.stringify(r));
+});
+
 // --- a blank --root is refused by BOTH --root subcommands (COR-01) ----------
 // `detect-surfaces` is tested here rather than beside its scanner for the same
 // reason `trace ignore` is: this is the `--root` refusal, and the two rows sit
@@ -5305,8 +5481,11 @@ for (const cmd of ['detect-commands', 'detect-surfaces']) {
 }
 
 test('detect-commands: a real --root still answers about THAT tree', () => {
+  // Through `detect` rather than `runPlanning` - the argv is the same, and the
+  // helper pins the reachable set so this row asserts WHICH tree was read
+  // rather than whether the machine running the suite has npm (RCH-01, D-11).
   const root = projectTree({ 'package.json': { scripts: { lint: 'eslint .' } } });
-  const r = runPlanning('detect-commands', '--root', root);
+  const r = detect(root);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.root, root);
   assert.equal(r.lint, 'npm run lint');
@@ -5318,6 +5497,48 @@ test('detect-surfaces: a real --root still answers about THAT tree', () => {
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.root, root);
   assert.deepEqual(r.evidenced.map((e) => e.category), ['billing']);
+});
+
+// --- the GLOBAL --dir refuses the empty, bare and flag-shaped spellings ------
+// Phase 2 closed this at the six `--dir` seams and left planning.mjs's own door
+// open, where the defect was worse than the gap recorded: measured 2026-08-19,
+// `status --dir ''` answered `{"ok":true,"current":4,"total":5,...}` about
+// `./.planning` - this repository's own tree, which the caller never named -
+// and a BARE `--dir` minted the boolean `true`, reached `existsSync(true)` and
+// printed a `DEP0187` deprecation warning on STDERR beside the answer. stdout
+// is the single channel the seam layer parses and that deprecation is scheduled
+// to become a throw, so the STDERR BYTE COUNT is part of the assertion rather
+// than decoration - it is what would redden if the boolean reached fs again.
+// The flag now reads through its declared row in lib/arg-contract.mjs, whose
+// `--dir` grammar refuses on both axes.
+const BLANK_DIRS = [
+  { name: '--dir with nothing after it', args: ['--dir'] },
+  { name: 'an empty --dir ""', args: ['--dir', ''] },
+  { name: 'a whitespace-only --dir', args: ['--dir', '   '] },
+  { name: 'a flag-shaped --dir value', args: ['--dir', '--undo'] },
+];
+
+for (const row of BLANK_DIRS) {
+  test(`status: ${row.name} is bad-args naming the flag, and stderr stays empty`, () => {
+    const r = spawnSync('node', [PLANNING, 'status', ...row.args], { encoding: 'utf8' });
+    const body = JSON.parse(r.stdout);
+    assert.equal(body.ok, false, r.stdout);
+    assert.equal(body.reason, 'bad-args', r.stdout);
+    assert.match(body.detail, /--dir/);
+    assert.equal(r.status, 1);
+    assert.equal(r.stderr, '', `stderr: ${r.stderr}`);
+  });
+}
+
+test('status: a genuinely ABSENT --dir still defaults to ./.planning', () => {
+  // The other half of the refusal: absent and present-with-nothing-usable are
+  // different inputs, and only the second one refuses.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One', checked: false }] });
+  const r = spawnSync('node', [PLANNING, 'status'], { encoding: 'utf8', cwd: dirname(dir) });
+  const body = JSON.parse(r.stdout);
+  assert.equal(body.ok, true, r.stdout);
+  assert.equal(body.total, 1, r.stdout);
+  assert.equal(r.status, 0);
 });
 
 // --- lease-check: the declared file lease, enforced (QW-03) ------------------
@@ -5754,7 +5975,13 @@ test('uat: a malformed --phase is refused in the shared wording, before any read
   }
 });
 
-test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
+test('seed-reqs: --phase 08 is refused outright, never answering about phases/8', () => {
+  // The claim this row has always made is that `08` never becomes `8` at this
+  // face. It used to hold that by reading `phases/08` and reporting
+  // `no-phase-dir`; since D-07 the spelling is refused at the door instead,
+  // because this face WRITES the numeric half into a Traceability cell. The
+  // sibling `plan-overlap --phase 08` row above still gets `no-phase-dir`,
+  // which is what shows the refusal is scoped to the two write faces.
   const dir = makeTree({
     roadmap: [{ n: 8, name: 'Eight' }],
     phases: { 8: { plan: true, planReqs: ['FLD-01'] } },
@@ -5765,8 +5992,9 @@ test('seed-reqs: --phase 08 reports no-phase-dir naming phases/08', () => {
     + '| Requirement | Phase | Status |\n|---|---|---|\n');
   const r = run(['seed-reqs', '--phase', '08'], dir);
   assert.equal(r.ok, false, JSON.stringify(r));
-  assert.equal(r.reason, 'no-phase-dir');
-  assert.match(r.detail, /phases[/\\]08 not found$/);
+  assert.equal(r.reason, 'bad-args');
+  assert.ok(r.detail.includes('"08"') && r.detail.includes('"8"'), r.detail);
+  assert.equal(r._exit, 1);
   // ...and the legal spelling seeds.
   assert.deepEqual(run(['seed-reqs', '--phase', '8'], dir).seeded, ['FLD-01']);
 });

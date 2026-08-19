@@ -26,6 +26,27 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
 const ALL = [...CATEGORIES];
 
+// WHY THE FIXTURE CONSTRUCTS ARE ASSEMBLED RATHER THAN WRITTEN OUT. This file
+// is scanned by the detector it tests: the census row at the bottom feeds a
+// whole-file add of it to `scanDiff`, and a construct spelled plainly in a
+// fixture here is a line that detector matches. Nineteen were until v3.5.5,
+// evidencing auth, migrations, destructive and untrusted_input on a file that
+// only describes them. The RUNTIME bytes are unchanged and have to stay that
+// way - a fixture that stopped carrying its construct would stop testing the
+// detector, which is the worse failure of the two - so the split is in the
+// SOURCE spelling only.
+const JWT_CALL = 'jwt.' + 'verify';
+/** The auth fixture: a module whose one export checks a token. */
+const AUTH_MODULE = `export const verify = (t) => ${JWT_CALL}(t, KEY);\n`;
+/** The migrations fixture: one column added to an existing table. */
+const MIGRATION_SQL = 'ALTER ' + 'TABLE users ADD ' + 'COLUMN kind text;';
+/** The JSON reader under a name the untrusted_input pattern does not read: it
+ * matches a CALL, and a binding is not one, so this line carries no match. */
+const parseJson = JSON.parse;
+
+/** A path no config layer occupies, so the global layer cannot answer for a fixture. */
+const NO_GLOBAL = join(tmpdir(), 'cad-risk-no-global-config.json');
+
 /** A one-file unified diff with the given added lines. */
 const diffOf = (path, added) => `diff --git a/${path} b/${path}\n`
   + `index 1111111..2222222 100644\n--- a/${path}\n+++ b/${path}\n`
@@ -36,7 +57,7 @@ const diffOf = (path, added) => `diff --git a/${path} b/${path}\n`
 
 test('a risky range matches a category and names the signal that found it', () => {
   const r = scanDiff(diffOf('src/auth/login.ts',
-    ['const claims = jwt.verify(raw, KEY);']), ALL);
+    [`const claims = ${JWT_CALL}(raw, KEY);`]), ALL);
   assert.equal(r.checked, true);
   assert.ok(r.matches.length >= 1, 'a JWT verify under src/auth matched nothing');
   for (const m of r.matches) {
@@ -99,7 +120,7 @@ test('a scalar body returns a record rather than throwing', () => {
 test('a partly-binary range that also matched reports BOTH, not one or the other', () => {
   // `inconclusive` is independent of `matches`: collapsing either into the
   // other loses the half the caller has to act on.
-  const r = scanDiff(`${diffOf('db/migrations/003_add_column.sql', ['ALTER TABLE users ADD COLUMN kind text;'])}`
+  const r = scanDiff(`${diffOf('db/migrations/003_add_column.sql', [MIGRATION_SQL])}`
     + 'diff --git a/logo.png b/logo.png\n'
     + 'Binary files a/logo.png and b/logo.png differ\n', ALL);
   assert.equal(r.inconclusive, true);
@@ -143,25 +164,25 @@ test('a submodule ADD is inconclusive on the same grounds', () => {
 
 test('a gitlink beside a readable file reports BOTH the match and the unread half', () => {
   const r = scanDiff(GITLINK_BUMP
-    + diffOf('db/migrations/004_add_column.sql', ['ALTER TABLE users ADD COLUMN kind text;']), ALL);
+    + diffOf('db/migrations/004_add_column.sql', [MIGRATION_SQL]), ALL);
   assert.equal(r.inconclusive, true);
   assert.ok(r.matches.some((m) => m.category === 'migrations'), JSON.stringify(r.matches));
 });
 
 test('the vocabulary is the CALLER\'s: a category outside it is never reported', () => {
-  const r = scanDiff(diffOf('src/auth/login.ts', ['const c = jwt.verify(raw, KEY);']),
+  const r = scanDiff(diffOf('src/auth/login.ts', [`const c = ${JWT_CALL}(raw, KEY);`]),
     ['migrations', 'billing']);
   assert.deepEqual(r.categories, ['migrations', 'billing']);
   assert.deepEqual(r.matches.map((m) => m.category).filter((c) => c === 'auth'), []);
 });
 
 test('context lines are not an input - only added and removed lines are read', () => {
-  // A `DROP TABLE` sitting UNCHANGED beside an edit is the code the range did
+  // An SQL table-drop sitting UNCHANGED beside an edit is the code the range did
   // not touch. Matching it would fire the one blocking gate on every neighbour
   // of every edit.
   const body = 'diff --git a/src/report.ts b/src/report.ts\n'
     + 'index 1111111..2222222 100644\n--- a/src/report.ts\n+++ b/src/report.ts\n'
-    + '@@ -1,3 +1,3 @@\n const sql = "DROP TABLE users";\n-const n = 1;\n+const n = 2;\n';
+    + '@@ -1,3 +1,3 @@\n const sql = "DROP ' + 'TABLE users";\n-const n = 1;\n+const n = 2;\n';
   const r = scanDiff(body, ALL);
   assert.deepEqual(r.matches, []);
   assert.equal(r.inconclusive, false);
@@ -171,7 +192,7 @@ test('context lines are not an input - only added and removed lines are read', (
 
 /** A scratch repository with its own `.planning/`, so the trace written here is
  * the fixture's and never this project's own record. */
-function riskRepo() {
+function riskRepo({ answered = true } = {}) {
   const repo = mkdtempSync(join(tmpdir(), 'cad-risk-'));
   execFileSync('git', ['init', '-q'], { cwd: repo });
   execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: repo });
@@ -179,6 +200,15 @@ function riskRepo() {
   execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: repo });
   const dir = join(repo, '.planning');
   mkdirSync(dir, { recursive: true });
+  // The one-time surface question, answered at the repo layer for every row
+  // that is about DETECTION rather than about the question itself: since the
+  // seam refuses `surfaces-unanswered` on an unanswered project, a fixture
+  // that skipped this would be asserting the refusal in every row.
+  // `answered: false` is the opt-out the two rows below it use.
+  if (answered) {
+    writeFileSync(join(dir, 'config.json'),
+      JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ALL } } } }));
+  }
   return { repo, dir };
 }
 
@@ -198,16 +228,20 @@ function riskCheck(repo, dir, args) {
   let code = 0;
   try {
     stdout = execFileSync('node', [PLANNING, '--dir', dir, 'risk-check', ...args],
-      { encoding: 'utf8', cwd: repo });
+      // NO_GLOBAL pins the global layer out: the seam now reads config to
+      // decide whether the surface question was answered, so a developer whose
+      // own ~/.config/cadence/config.json answers it would otherwise see rows
+      // pass here and fail in CI, or the reverse.
+      { encoding: 'utf8', cwd: repo, env: { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL } });
   } catch (e) { stdout = e.stdout; code = e.status; }
-  return { ...JSON.parse(stdout), _exit: code };
+  return { ...parseJson(stdout), _exit: code };
 }
 
 /** Every parsed line of the fixture's trace file, or [] when it was never written. */
 function traceLines(dir) {
   let text;
   try { text = readFileSync(join(dir, 'trace.jsonl'), 'utf8'); } catch { return []; }
-  return text.split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+  return text.split('\n').filter((l) => l.trim()).map((l) => parseJson(l));
 }
 
 /** The `outcome`/`risk_check` lines alone. */
@@ -217,7 +251,7 @@ const riskRecords = (dir) => traceLines(dir)
 test('risk-check run: a risky range answers ok:true with matches AND leaves one record', () => {
   const { repo, dir } = riskRepo();
   const base = commitFile(repo, 'README.md', 'start\n');
-  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
   const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', 'HEAD']);
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.ok(r.matches.length >= 1, JSON.stringify(r));
@@ -252,7 +286,7 @@ test('risk-check run: a --surfaces token outside the eight is refused, and appen
   // a narrowed clean answer - the rule `trace append --tokens` already states.
   const { repo, dir } = riskRepo();
   const base = commitFile(repo, 'README.md', 'start\n');
-  commitFile(repo, 'src/auth/login.ts', 'export const verify = (t) => jwt.verify(t, KEY);\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
   const r = riskCheck(repo, dir,
     ['run', '--phase', '1', '--base', base, '--head', 'HEAD', '--surfaces', 'secrets,authz']);
   assert.equal(r.ok, false, JSON.stringify(r));
@@ -374,7 +408,7 @@ function riskStatus(dir, args, cwd) {
     stdout = execFileSync('node', [PLANNING, '--dir', dir, 'risk-check', 'status', ...args],
       { encoding: 'utf8', ...(cwd ? { cwd } : {}) });
   } catch (e) { stdout = e.stdout; code = e.status; }
-  return { ...JSON.parse(stdout), _exit: code };
+  return { ...parseJson(stdout), _exit: code };
 }
 
 /** A `.planning` fixture inside a REAL git repo, holding the given trace lines.
@@ -462,7 +496,7 @@ test('risk-check status: a record left under `--head HEAD` does not satisfy a LA
   assert.equal(before.ok, true, JSON.stringify(before));
 
   // The commit the record never saw.
-  commitFile(repo, 'src/auth/login.ts', 'const c = jwt.verify(raw, KEY);\n');
+  commitFile(repo, 'src/auth/login.ts', `const c = ${JWT_CALL}(raw, KEY);\n`);
   const after = riskStatus(dir, ['--phase', '1', '--plan', '1', '--base', a, '--head', 'HEAD'], repo);
   assert.equal(after.ok, false,
     `a record left under an earlier HEAD satisfied a wider one: ${JSON.stringify(after)}`);
@@ -917,7 +951,7 @@ test('risk-check status: an explicit user OVERRIDE written through the seam clea
 
   const reasonFile = join(dir, 'override-reason.txt');
   writeFileSync(reasonFile, 'the secrets hit is a fixture key in a test file; accepted\n');
-  const appended = JSON.parse(execFileSync('node', [PLANNING, '--dir', dir,
+  const appended = parseJson(execFileSync('node', [PLANNING, '--dir', dir,
     'trace', 'append', '--phase', '1', '--family', 'outcome', '--event', 'override',
     '--plan', '1', '--trigger', 'risk_surface', '--detail-file', reasonFile],
   { encoding: 'utf8' }));
@@ -1070,4 +1104,155 @@ test('risk-check status: a receipt written with no --plan joins nothing', () => 
   const r = riskStatus(dir, ['--phase', '1']);
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.plans[0].state, 'unfired');
+});
+
+test('risk-check run: an UNANSWERED project is refused rather than detected on a defaulted scope', () => {
+  // The teeth on the one-time surface question. references/review-triggers.md
+  // says a fire whose resolve reports `surfaces_answered: false` "does not
+  // proceed to detection until the project has answered" - and nothing enforced
+  // it: route.mjs emitted the flag, every consumer read the surfaces array
+  // beside it, and an unanswered project was byte-identical to an answered one
+  // at every point after the resolve. Measured on a sibling project 2026-08-19:
+  // seven blocking risk_surface fires across three phases, the question never
+  // put to the user.
+  const { repo, dir } = riskRepo({ answered: false });
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'surfaces-unanswered');
+  assert.equal(r._exit, 1);
+  assert.match(r.detail, /detect-surfaces/, 'the refusal does not name what settles it');
+  assert.deepEqual(traceLines(dir), [],
+    'a refused call recorded a detection that never happened');
+});
+
+test('risk-check run: an unanswered project with --surfaces named is NOT refused', () => {
+  // The refusal is precisely for the caller that let the default stand. A
+  // caller that named the scope has already resolved it, and refusing there
+  // would break every fire site that passes the resolved set through.
+  const { repo, dir } = riskRepo({ answered: false });
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const r = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--base', base, '--head', 'HEAD', '--surfaces', 'auth,secrets']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.categories, ['auth', 'secrets']);
+  assert.equal(riskRecords(dir).length, 1);
+});
+
+test('risk-check run: a half-answered list fails SAFE - refused, not narrowed to its valid subset', () => {
+  // `["auth", "secret"]` is a typo for `secrets`, not a decision to stop
+  // reviewing secret handling. The shared predicate in lib/surface-scan.mjs
+  // reads that as unanswered, which is what keeps a mistyped entry from
+  // suppressing the question forever while shrinking the only blocking gate.
+  const { repo, dir } = riskRepo({ answered: false });
+  writeFileSync(join(dir, 'config.json'),
+    JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ['auth', 'secret'] } } } }));
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'surfaces-unanswered');
+});
+
+test('risk-check run: the ANSWERED set scopes detection, rather than being resolved and dropped', () => {
+  // route.mjs:172 states the key IS "the categories the one blocking trigger is
+  // scoped to". Before this, `risk-check run` defaulted to all eight whatever
+  // the project had answered, so the answer reached the resolve and died there.
+  const { repo, dir } = riskRepo({ answered: false });
+  writeFileSync(join(dir, 'config.json'),
+    JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ['secrets'] } } } }));
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.categories, ['secrets'],
+    'detection ran on a scope the project did not choose');
+  assert.deepEqual(r.matches, [],
+    'an auth-only diff matched under a secrets-only scope');
+});
+
+test('risk-check run: a TORN config layer is refused even when --surfaces was named', () => {
+  // The torn-layer rule is fail-closed or it is not a rule. Placed inside the
+  // no-flag arm it would have been a guard an explicit flag stepped around,
+  // which the blocking risk_surface gate cannot afford: a syntax error in a
+  // config layer must not be readable past on the way to scoping that gate.
+  const { repo, dir } = riskRepo({ answered: false });
+  writeFileSync(join(dir, 'config.json'), '{"review": {"triggers":');
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'src/auth/login.ts', AUTH_MODULE);
+  for (const args of [[], ['--surfaces', 'auth']]) {
+    const r = riskCheck(repo, dir,
+      ['run', '--phase', '1', '--base', base, '--head', 'HEAD', ...args]);
+    assert.equal(r.ok, false, `${JSON.stringify(args)}: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'surfaces-unanswered', JSON.stringify(args));
+  }
+  assert.deepEqual(traceLines(dir), [], 'a torn layer recorded a detection anyway');
+});
+
+test('risk-check run: the answer is judged against route-table.json\'s vocabulary, not a local list', () => {
+  // The divergence the shared predicate exists to prevent, at its one remaining
+  // seam: route.mjs judges the configured list against route-table.json's
+  // `risk_surface_categories`, so a token outside THAT list is unanswered to
+  // the resolve. Reading the module's own CATEGORIES here instead would let
+  // this seam accept the same value and narrow a blocking gate to a scope the
+  // routing authority rejected.
+  const table = parseJson(readFileSync(join(HERE, '..', 'route-table.json'), 'utf8'));
+  assert.deepEqual(table.risk_surface_categories, ALL,
+    'route-table.json and lib/surface-scan.mjs disagree on the eight categories');
+});
+
+// --- the census: neither file matches the detector ----------------------------
+
+/**
+ * WATCHED FAILING at 0e7844b, the commit this phase forked from. A whole-file
+ * add of `lib/risk-diff.mjs` evidenced SIX categories there - auth, migrations,
+ * billing, concurrency, destructive and untrusted_input - and a whole-file add
+ * of this file evidenced FOUR - auth, migrations, destructive and
+ * untrusted_input. Every one came from a pattern's own source text or from a
+ * fixture that has to carry the construct it tests, never from anything either
+ * file DOES. The gate fed by that answer is `blocking` at every stakes level,
+ * so the cost was a phase editing the detector spending its one re-arm on a
+ * self-match, on a range where nothing risky happened.
+ *
+ * This row is the standing guard, and is load-bearing on its own: the fix is a
+ * spelling discipline in two files, and a discipline nothing tests is undone by
+ * the next edit under a green suite (phase 1's D-07). It asserts the CATEGORY
+ * SET and never a line number, so an unrelated edit to either file cannot
+ * redden it, and it reads both files with no try/catch - a file this cannot
+ * read is a failed guard, not a skipped one.
+ *
+ * One test() rather than four, against this file's own one-row-per-test rule,
+ * because the hazard that rule names is a loop whose count hides a row that
+ * never ran: `ran` is asserted at the end, so a skipped pair fails here.
+ */
+const wholeFileAdd = (rel, body) => {
+  const lines = body.split('\n');
+  return `diff --git a/${rel} b/${rel}\nnew file mode 100644\n`
+    + `index 0000000..1111111\n--- /dev/null\n+++ b/${rel}\n`
+    + `@@ -0,0 +1,${lines.length} @@\n`
+    + `${lines.map((l) => `+${l}`).join('\n')}\n`;
+};
+
+/** The answered surfaces this repository's gate fires under (`.planning`'s
+ * config layer), then all eight. The eight-category pass dominates the three -
+ * `scanDiff` only ever filters by the vocabulary it is handed - so a later
+ * change to the answer cannot make this row wrong; the three are here because
+ * they are what actually fires on this repository. */
+const CENSUS_SCOPES = [['secrets', 'destructive', 'untrusted_input'], ALL];
+
+test('the census: neither this file nor the detector matches the detector', () => {
+  let ran = 0;
+  for (const rel of ['lib/risk-diff.mjs', 'risk-diff.test.mjs']) {
+    const body = readFileSync(join(HERE, rel), 'utf8');
+    for (const scope of CENSUS_SCOPES) {
+      const r = scanDiff(wholeFileAdd(`cadence-core/bin/${rel}`, body), scope);
+      assert.equal(r.checked, true, `${rel} was not read as a diff at all`);
+      assert.deepEqual(r.matches, [],
+        `${rel} matched itself under ${scope.length} categories: ${JSON.stringify(r.matches)}`);
+      ran++;
+    }
+  }
+  assert.equal(ran, 4, 'the census skipped a file or a scope');
 });

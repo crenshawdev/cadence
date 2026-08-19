@@ -2,39 +2,36 @@
 
 ## Overview
 
-**`v3.5.4 - the gate that clears itself wrong`, opened 2026-08-18.** Scoped from
-the capture queue's open review findings and the v3.5.3 close, which holds nine
-issues: #215, #136, #210, #211, #214, #207, #176, #181 and #187.
+**`v3.5.5 - a seam that accepts what it should refuse`, opened 2026-08-18.**
+Scoped from the tracker milestone `v3.5.5`, which holds twelve issues: #137,
+#142, #144, #147, #182, #183, #219, #220, #221, #222, #223 and #224. Six of
+those (#219 through #224) were filed at the open, from a full audit of the
+capture queue that re-verified each defect live rather than trusting its note.
 
-**The theme is one sentence: a gate that reports a verdict it did not earn.**
-Every item is a check that already runs and already answers, and answers wrong in
-a way its own output cannot show. That is the shape `v3.5.3` closed for controls
-that never reached their path; this cycle closes it for controls that reach the
-path and mis-answer once they are there.
+**The theme is one sentence: an argument face that says yes to input it has a
+rule against.** `v3.5.4` closed the shape for a control that reaches its path
+and mis-answers. This cycle takes the door: a reader that accepts a malformed
+value and answers as if it were well-formed, a guard that reads an empty string
+as a configured one, a gate that cannot be satisfied by the key its own seam
+document permits.
 
-The three phases are ordered by what a wrong answer costs, not by where the code
-lives. Phase 1 carries the two whose wrong answer destroys something - a
-credential fragment left in an excerpt, and a recursive delete taken on a git
-state nobody could read. Phase 2 carries the ship gate that FAILs correct docs,
-which is the failure that stops a release rather than corrupting one. Phase 3
-carries three flags that do more or less than they say, where the cost is a user
-believing a control they do not have.
+The first four phases are ordered by what a wrong answer costs, not by where the
+code lives. Phase 1 carries the two that REMOVE a protection - one unprotects every
+branch, the other lets one repository answer another's blocking gate. Phase 2
+carries the readers that accept malformed input and answer anyway. Phase 3
+carries the gates that fire on themselves or cannot be satisfied at all. Phase 4
+is the structural form of phase 2, and goes last on purpose: a declarative
+argument contract is only worth writing once the case-by-case fixes have said
+what it has to express.
 
-Two of this cycle's candidates were cut before it opened rather than scheduled.
-`VER-01` and `CAP-02` each described a sentence that could be misread, and the
-v3.5.3 close was their counter-evidence: the deep verifier wrote `why_human` on
-two phase-5 UAT items and the walk executed them rather than handing them back,
-and the blocking `risk_surface` gate re-armed exactly once. Neither failure mode
-occurred. They are closed as #212 and #213, to be refiled on a run that carries a
-trace if one ever happens.
+Phase 5 is not part of that theme and does not pretend to be. It is the README
+restructure decided 2026-08-18, promoted into this cycle from the capture queue
+rather than held for a docs milestone. It shares no code with the four defect
+phases and depends on none of them.
 
-`#187` is not a phase. It is a verification item this cycle satisfies by having
-its own commits cite their issue numbers, so `/cad-land`'s tracker line exercises
-the `referenced` arm rather than falling back to the open list - which is what
-the v3.5.3 land did, and why the item is still open.
+The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 
 ## Phases
-
 
 
 ## Phase Details

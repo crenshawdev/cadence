@@ -169,6 +169,25 @@ test('an EMPTY protected_branches list still means nothing is protected (D-09)',
     project('main', { git: { protected_branches: [], on_protected: 'refuse' } })), null);
 });
 
+test('a protected_branches naming NO branch guards the default list (GRD-01)', () => {
+  // The hole this closes: `""` used to resolve to [""], a list that reads as
+  // configured and matches no branch, so a commit on main came back null -
+  // setting the key REMOVED the protection it names. A value naming no branch
+  // is a typo (D-02), so the default list applies and main is guarded again.
+  const ask = guard('git commit -m "x"',
+    project('main', { git: { protected_branches: '' } }));
+  assert.equal(ask.permissionDecision, 'ask');
+  assert.match(ask.permissionDecisionReason, /"main" is a protected branch/);
+  const deny = guard('git commit -m "x"',
+    project('main', { git: { protected_branches: '', on_protected: 'refuse' } }));
+  assert.equal(deny.permissionDecision, 'deny');
+  // The array spelling of the same hole: one grammar reached two ways (D-01).
+  const arr = guard('git commit -m "x"',
+    project('main', { git: { protected_branches: [''] } }));
+  assert.equal(arr.permissionDecision, 'ask');
+  assert.match(arr.permissionDecisionReason, /"main" is a protected branch/);
+});
+
 test('custom protected_branches list is honored', () => {
   const d = guard('git commit -m "x"',
     project('release', { git: { protected_branches: ['release'] } }));

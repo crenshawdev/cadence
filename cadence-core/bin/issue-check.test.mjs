@@ -225,6 +225,26 @@ test('a branch referencing NO issue still reports the open list as the fallback'
   assert.deepEqual(r.open, [42, 99]);
 });
 
+test('a protected_branches naming NO branch still names the referenced issues (GRD-01, D-02)', () => {
+  // With no --base and no git.base_branch, the base falls back to
+  // resolveProtectedBranches(git)[0] and is spent on `git log <base>..HEAD`.
+  // `""` used to resolve to [""], so the range became `..HEAD`, git read the
+  // empty side as HEAD, the log came back empty and the report named NO issue
+  // while still answering ok:true - a silently empty report, not a failure.
+  // Assert the NUMBERS: the pre-fix tree also answers action "report".
+  const dir = repo({
+    originUrl: 'https://github.com/org/repo.git',
+    commits: COMMITS,
+    gitConfig: { protected_branches: '' },
+  });
+  const r = seam(['check', '--dir', dir], { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.action, 'report', JSON.stringify(r));
+  assert.deepEqual(r.referenced, [
+    { number: 42, state: 'open' }, { number: 47, state: 'closed' }, { number: 99, state: 'open' },
+  ], JSON.stringify(r));
+});
+
 // --- the call is bound to the repository --dir names ------------------------
 
 test('the forge call names the --dir repo, not the one the process cwd sits in', () => {
@@ -684,4 +704,39 @@ test('a token-carrying CLI stderr never reaches the envelope, in ANY shape', () 
   assert.equal(r.detail, null, JSON.stringify(r));
   const wire = JSON.stringify(r);
   for (const secret of SECRETS) assert.ok(!wire.includes(secret), `${secret} reached the envelope: ${wire}`);
+});
+
+// --- --dir refuses rather than reading the process cwd's tracker (D-01) -----
+
+// The one shape where this seam DOES exit nonzero, and it is not a failed
+// tracker read: a malformed call never reaches the `check` arm, so there is no
+// degraded report to hand back. Nothing spawns - asserted through the same
+// marker file the issue_check:false arm uses.
+for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+  test(`check: ${label} --dir refuses by name, exit 1, no forge CLI spawned`, () => {
+    const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+    const { status, envelope } = seamRun(['check', ...dirArgs, '--base', 'main'],
+      { stubs: ALL_STUBS, marker });
+    assert.equal(envelope.ok, false);
+    // The e.seam catch arm, not the generic one: the thrown refusal object
+    // carries no `message`, so without it this reads internal/"[object Object]".
+    assert.equal(envelope.reason, 'missing-flag-value', JSON.stringify(envelope));
+    assert.equal(envelope.detail, '--dir');
+    assert.equal(status, 1);
+    assert.equal(envelope.action, undefined, 'no tracker verdict rides a refusal');
+    assert.equal(existsSync(marker), false,
+      `a malformed call must spawn nothing, but one ran: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
+  });
+}
+
+test('check: a malformed --timeout-ms still runs on the default, unlike --dir', () => {
+  // D-01 names --dir and nothing else. --timeout-ms keeps its stated fallback:
+  // this seam may never make an unbounded call, and refusing here would fail a
+  // land over a flag the caller could simply have omitted.
+  const dir = repo({ originUrl: GH_REPO, commits: COMMITS });
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main', '--timeout-ms', 'abc'],
+    { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(envelope.ok, true);
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'report');
 });

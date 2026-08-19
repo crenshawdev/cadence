@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import {
   normalize, readFrontmatterList, parseActiveIds, insertReqRows,
+  parseRequirements, setReqStatus,
   classifyPhaseList, cutPhaseDetail, parseRoadmapPhases, setPhaseBox,
   classifyActiveSection, isRequirementId, classifyAcceptanceCriteria,
   atomicWrite, parseCaptureSnippets, captureSections, phaseCriteria,
@@ -1677,6 +1678,129 @@ test('insertReqRows: a table with no separator returns no-traceability-table, te
   assert.equal(res.text, text);
 });
 
+// --- the three `## Traceability` locators, fence-aware (D-08) ---------------
+//
+// One table, three readers - `parseRequirements` parsed it, `setReqStatus`
+// rewrote its Status cells, `insertReqRows` appended to it - and each located
+// the heading its own fence-blind way. The shape that makes that matter is
+// shipped in this plugin: `templates/REQUIREMENTS.md` puts its whole body
+// inside a markdown fence, `## Traceability` included, so a template-seeded
+// project's only Traceability heading is an EXAMPLE of one. All three now take
+// both ends from `sectionSpan`.
+
+const FENCED_TRACE = `# Requirements: Fixture
+
+## Template
+
+The shipped template carries its own example of the table:
+
+\`\`\`markdown
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| EXA-01 | Phase 1 | Pending |
+\`\`\`
+
+## Notes
+
+Nothing outside the fence declares a table.
+`;
+
+test('traceability: a fenced-only heading is not the section - no rows are parsed', () => {
+  assert.deepEqual(parseRequirements(FENCED_TRACE), []);
+});
+
+test('traceability: a fenced-only heading is not written to - setReqStatus returns byte-identical text', () => {
+  const res = setReqStatus(FENCED_TRACE, ['EXA-01'], 'Complete');
+  assert.deepEqual(res.changed, []);
+  assert.equal(res.text, FENCED_TRACE, 'the example inside the code block is untouched');
+});
+
+test('traceability: a fenced-only heading is no-traceability-table - the table is never fabricated', () => {
+  const res = insertReqRows(FENCED_TRACE, [{ id: 'SPN-01', phase: 2 }]);
+  assert.equal(res.error, 'no-traceability-table');
+  assert.deepEqual(res.inserted, []);
+  assert.deepEqual(res.skipped, []);
+  assert.deepEqual(res.mismatched, []);
+  assert.equal(res.text, FENCED_TRACE);
+});
+
+// The same document with a REAL section below the fence: every reader has to
+// find the real one and leave the example alone.
+const FENCE_THEN_REAL = `# Requirements: Fixture
+
+## Template
+
+\`\`\`markdown
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| EXA-01 | Phase 1 | Pending |
+\`\`\`
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| GRM-01 | Phase 1 | Complete |
+
+Prose under the real table.
+`;
+
+test('traceability: with a real section below the fence, only the real rows parse', () => {
+  assert.deepEqual(parseRequirements(FENCE_THEN_REAL),
+    [{ id: 'GRM-01', phase: 1, status: 'Complete' }]);
+});
+
+test('traceability: setReqStatus writes the real row and leaves the fenced example alone', () => {
+  const res = setReqStatus(FENCE_THEN_REAL, ['GRM-01', 'EXA-01'], 'Pending');
+  assert.deepEqual(res.changed, ['GRM-01']);
+  assert.ok(res.text.split('\n').includes('| GRM-01 | Phase 1 | Pending |'));
+  assert.ok(res.text.split('\n').includes('| EXA-01 | Phase 1 | Pending |'),
+    'the fenced row keeps its own bytes');
+  // ...and that is the ONLY line that moved.
+  assert.equal(res.text.replace('| GRM-01 | Phase 1 | Pending |',
+    '| GRM-01 | Phase 1 | Complete |'), FENCE_THEN_REAL);
+});
+
+test('traceability: insertReqRows lands under the REAL separator, below the real last row', () => {
+  const res = insertReqRows(FENCE_THEN_REAL, [{ id: 'SPN-01', phase: 2 }]);
+  assert.equal(res.error, undefined);
+  assert.deepEqual(res.inserted, ['SPN-01']);
+  assert.equal(res.text, FENCE_THEN_REAL.replace(
+    '| GRM-01 | Phase 1 | Complete |\n',
+    '| GRM-01 | Phase 1 | Complete |\n| SPN-01 | Phase 2 | Pending |\n'));
+});
+
+// The END half of the same call, which is why both ends come from ONE walk. A
+// fenced `## ` line INSIDE the real section cut it short when the end came
+// from `split(/^## /m)`, so a row below the example vanished from the count
+// with no diagnostic anywhere.
+const FENCED_INSIDE = `## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AAA-01 | Phase 1 | Complete |
+
+The next section is spelled:
+
+\`\`\`markdown
+## Shipped
+\`\`\`
+
+| BBB-02 | Phase 2 | Pending |
+`;
+
+test('traceability: a fenced `## ` inside the section does not end it', () => {
+  assert.deepEqual(parseRequirements(FENCED_INSIDE), [
+    { id: 'AAA-01', phase: 1, status: 'Complete' },
+    { id: 'BBB-02', phase: 2, status: 'Pending' },
+  ]);
+  assert.deepEqual(setReqStatus(FENCED_INSIDE, ['BBB-02'], 'Complete').changed, ['BBB-02']);
+});
+
 // --- atomicWrite: the temp path is this call's alone (D-05) ------------------
 
 test('atomicWrite: a DIRECTORY squatting <file>.tmp does not stop the write', () => {
@@ -1814,6 +1938,24 @@ const CAPTURE_TAG_ROWS = [
     phase: undefined, text: 'wire the path (phase 2) next' },
   { name: 'an unclosed (phase 2', bullet: '[ ] (phase 2 wire the recall path',
     phase: undefined, text: '(phase 2 wire the recall path' },
+
+  // --- out of grammar: a number that does not round-trip (ARG-04) -----------
+  // The tag SHAPE matches, so only the number rules these out. Each used to
+  // emit a phase nobody wrote - Infinity, or a neighbouring phase's number -
+  // and each now keeps its parenthetical in the indexed text, the same answer
+  // every other out-of-grammar row gets.
+  { name: '(phase <400 digits>) is Infinity, not a phase',
+    bullet: `[ ] (phase ${'9'.repeat(400)}) budget the corpus`,
+    phase: undefined, text: `(phase ${'9'.repeat(400)}) budget the corpus` },
+  { name: '(phase 9007199254740993) reads back as a DIFFERENT number',
+    bullet: '[ ] (phase 9007199254740993) budget the corpus',
+    phase: undefined, text: '(phase 9007199254740993) budget the corpus' },
+  { name: '(phase 9007199254740990.1) rounds to a different phase under a magnitude bound',
+    bullet: '[ ] (phase 9007199254740990.1) budget the corpus',
+    phase: undefined, text: '(phase 9007199254740990.1) budget the corpus' },
+  { name: '(phase 1.10) is phases/1.10, never phases/1.1 (D-07)',
+    bullet: '[ ] (phase 1.10) budget the corpus',
+    phase: undefined, text: '(phase 1.10) budget the corpus' },
 ];
 
 for (const row of CAPTURE_TAG_ROWS) {
@@ -1937,6 +2079,27 @@ test('archive: a non-matching line under a section mints no row', () => {
     '',
   ].join('\n');
   assert.deepEqual(parseArchiveRows(text).map((r) => r.text), ['a real row']);
+});
+
+test('archive: a phase number that does not round-trip names no directory (ARG-04)', () => {
+  const text = [
+    '## v3.5.2',
+    '',
+    '- `phases/1.1/SUMMARY.md`: the sub-phase row beside them',
+    `- \`phases/${'9'.repeat(400)}/SUMMARY.md\`: Infinity in the corpus`,
+    '- `phases/9007199254740993/SUMMARY.md`: a neighbouring phase',
+    '- `phases/9007199254740990.1/SUMMARY.md`: under MAX_SAFE and still rounds',
+    '- `phases/01/SUMMARY.md`: phases/01 is not phases/1',
+    '',
+  ].join('\n');
+  // Only the sub-phase row survives, and it keeps its decimal.
+  assert.deepEqual(parseArchiveRows(text).map((r) => ({ phase: r.phase, origin: r.origin })), [
+    { phase: 1.1, origin: 'phases/1.1/SUMMARY.md' },
+  ]);
+  for (const row of parseArchiveRows(text)) {
+    assert.ok(Number.isFinite(row.phase), 'no row carries Infinity');
+    assert.equal(String(row.phase), row.origin.split('/')[1], 'no row names another phase');
+  }
 });
 
 test('archive: a row above the first heading belongs to no milestone and is skipped', () => {

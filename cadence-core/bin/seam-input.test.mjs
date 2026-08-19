@@ -1,44 +1,27 @@
 // Unit tests for lib/seam-input.mjs (COR-01, AC4) - the shared argv/file input
 // helpers. Pure functions; the only fixtures are real paths for readText.
 //
-// The load-bearing arm is the DIVERGENCE one: the two flag readers answer
-// differently for the same input and both answers are contracts (D-03), so a
-// future harmonization reddens here rather than turning five seams' valueless
-// `--dir` into an internal error.
+// There is ONE flag reader here now. This file used to carry a load-bearing
+// DIVERGENCE arm, because two readers answered differently for the same
+// present-but-valueless flag and both answers were contracts. ARG-06 collapsed
+// the permissive one into lib/arg-contract.mjs's `fallback` disposition, so
+// there is no second answer left to disagree with and the arm went with it -
+// the same commit as the collapse, the discipline phase 2 set when it edited
+// the header rather than leaving it to go red. What a defaulting flag does when
+// it is given with nothing after it is now arg-contract.test.mjs's question,
+// asked of the declaration.
+//
+// The arms below are spelled on `--root`, the flag weight.mjs and
+// self-verify.mjs read: `--dir` moved to this reader at every seam in phase 2
+// (D-01), so spelling an arm with it no longer teaches the divergence either.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { optionalFlag, flagValue, readText } from './lib/seam-input.mjs';
+import { flagValue, missingFlagValue, readText } from './lib/seam-input.mjs';
 
-// --- optionalFlag: never throws ---------------------------------------------
-
-test('optionalFlag: absent flag is undefined', () => {
-  assert.equal(optionalFlag(['decide', '--branch', 'x'], '--dir'), undefined);
-  assert.equal(optionalFlag([], '--dir'), undefined);
-});
-
-test('optionalFlag: the value positionally after the flag', () => {
-  assert.equal(optionalFlag(['cleanup', '--dir', '/tmp/p'], '--dir'), '/tmp/p');
-  assert.equal(optionalFlag(['--dir', '/a', '--base', 'main'], '--base'), 'main');
-});
-
-test('optionalFlag: present-and-valueless is undefined, NOT a throw', () => {
-  // This is the whole reason the five callers keep this contract: they default
-  // through `|| process.cwd()` and carry no e.seam catch arm.
-  assert.equal(optionalFlag(['cleanup', '--dir'], '--dir'), undefined);
-});
-
-test('optionalFlag: an empty or flag-shaped value is returned as-is', () => {
-  // Positional, not validating - the caller's `|| fallback` turns '' into its
-  // default, and `--base` after `--dir` is the caller's own spelling to answer
-  // for. Stated so the divergence from flagValue is visible in both directions.
-  assert.equal(optionalFlag(['cleanup', '--dir', ''], '--dir'), '');
-  assert.equal(optionalFlag(['cleanup', '--dir', '--base'], '--dir'), '--base');
-});
-
-// --- flagValue: refuses what optionalFlag waves through ----------------------
+// --- flagValue: the one flag reader ------------------------------------------
 
 test('flagValue: absent flag is undefined so the caller default applies', () => {
   assert.equal(flagValue(['resident'], '--root'), undefined);
@@ -61,10 +44,11 @@ test('flagValue: missing, empty and flag-shaped values each throw missing-flag-v
   }
 });
 
-test('the two readers DISAGREE on a present-but-valueless flag, deliberately (D-03)', () => {
-  const argv = ['resident', '--root'];
-  assert.equal(optionalFlag(argv, '--root'), undefined);
-  assert.throws(() => flagValue(argv, '--root'), (e) => e.seam === 'missing-flag-value');
+test('missingFlagValue: one construction, and both fields are on it', () => {
+  // lib/arg-contract.mjs's requireFlag raises this same object for a row that
+  // refuses on the VALUE axis, so two files throw it and exactly one builds it.
+  // An object without both fields surfaces at a caller as "[object Object]".
+  assert.deepEqual(missingFlagValue('--root'), { seam: 'missing-flag-value', detail: '--root' });
 });
 
 // --- readText: '' on any failure ---------------------------------------------

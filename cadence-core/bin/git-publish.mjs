@@ -29,7 +29,11 @@
 //
 // Subcommands (each prints one JSON line, seam convention lib/seam-io.mjs):
 //   publish [--dir <path>] [--remote <name>]
-//     --dir     repo/planning root (default cwd).
+//     --dir     repo/planning root. An ABSENT --dir is the process cwd; an
+//               EMPTY or valueless one REFUSES (`missing-flag-value`, exit 1,
+//               nothing run) rather than pushing or reaping in a tree the
+//               caller never named (phase 2 D-01). Applies to all three
+//               subcommands.
 //     --remote  the remote to publish to (default `origin`).
 //   reap [--dir <path>] --branch <name>
 //     --branch  the merged local integration branch to delete.
@@ -63,9 +67,15 @@ import { repoAutoClose } from './lib/repo-auto-close.mjs';
 import { emit } from './lib/seam-io.mjs';
 import { authorizationDetail, decidePublish, decideReap, tornLayerRefusal } from './lib/publish-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-// The argv reader this file used to define for itself; both flag contracts and
-// the reason there are two of them live in lib/seam-input.mjs.
-import { optionalFlag } from './lib/seam-input.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what each flag may be, and what it costs when it is not, are DECLARED
+// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
+// throwing form the catch arm at the foot of this file already renders. `--dir`
+// declares `refuse` because it names the tree this seam pushes into and deletes
+// branches from, so an empty or valueless one must refuse rather than default
+// to the cwd (D-01). Every other flag here declares `fallback` and legitimately
+// defaults.
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 // The current-branch reader, shared with git-guard.mjs and git-branch.mjs. It
 // degrades to '' rather than throwing; here that '' reaches decidePublish as
 // "no branch", which refuses the push.
@@ -260,23 +270,39 @@ function authorized(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - this file's own argv, so every
- * call site below keeps its spelling - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['git-publish.mjs'];
+/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
+ * this binding owns nothing: it is an adapter over this file's own argv, never
+ * a second statement of what a flag may be. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
+  // `--dir` declares `refuse` on both axes, so a genuinely ABSENT one still
+  // reads as undefined and the cwd default below is unchanged while the empty,
+  // valueless and flag-shaped spellings raise the refusal the e.seam arm names.
+  // `--remote` and `--branch` declare `fallback` (D-12): a spelling carrying no
+  // usable value reads as absent, so `|| 'origin'` still answers for the remote
+  // and `reap` still refuses `no-branch` rather than reaping a guessed one.
   if (cmd === 'publish') {
-    publish(flag('--dir') || process.cwd(), flag('--remote') || 'origin');
+    publish(arg('publish', '--dir') || process.cwd(), arg('publish', '--remote') || 'origin');
   } else if (cmd === 'reap') {
-    reap(flag('--dir') || process.cwd(), flag('--branch'));
+    reap(arg('reap', '--dir') || process.cwd(), arg('reap', '--branch'));
   } else if (cmd === 'authorized') {
-    authorized(flag('--dir') || process.cwd());
+    authorized(arg('authorized', '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommands: publish [--dir <path>] [--remote <name>] | reap [--dir <path>] --branch <name>'
         + ' | authorized [--dir <path>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
+  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
+  // refusal object carries no `message`, so without this arm a valueless --dir
+  // would surface as
+  // {"ok":false,"reason":"internal","detail":"[object Object]"}. It goes out
+  // through emit on stdout like every other verdict (D-02) - stderr is a
+  // channel no workflow reading this seam parses.
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

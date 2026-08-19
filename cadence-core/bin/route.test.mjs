@@ -540,6 +540,52 @@ test('usage degradation: missing --role and unknown subcommand', () => {
   };
   assert.equal(bare(['resolve']).reason, 'usage');
   assert.equal(bare(['nonsense']).reason, 'usage');
+  // The whole SYNOPSIS, because with no role there is no call to describe and
+  // the refusal is the help. A role present-but-valueless gets the specific
+  // sentence instead, pinned in the row below.
+  assert.match(bare(['resolve']).detail, /\[--bracket-read <csv>/);
+});
+
+test('ARG-06: a flag-shaped value is refused BY NAME, never swallowed as the value', () => {
+  // The defect the declared rows in lib/arg-contract.mjs end. `parseArgs` read
+  // a value as `a[++i]` with no flag-shape test, so a valueless flag ate the
+  // flag after it: measured 2026-08-19, `resolve --role --attempt 2` returned
+  // `{"ok":false,"reason":"unknown-role","role":"--attempt"}` - a refusal about
+  // a role the caller never named, with the attempt silently reverted to 1.
+  // That is the shape lib/seam-input.mjs's `flagValue` was written against, and
+  // the row is the whole rule now: missing, empty and flag-shaped are one
+  // refusal, naming the flag whose value went missing.
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const raw = (args) => {
+    try { return JSON.parse(execFileSync('node', [ROUTE, ...args], { encoding: 'utf8', env })); }
+    catch (e) { return JSON.parse(e.stdout); }
+  };
+  /** @type {[string[], string][]} the call, and the flag its refusal must name */
+  const cases = [
+    [['resolve', '--role', '--attempt', '2'], '--role'],
+    [['resolve', '--role', ''], '--role'],
+    [['resolve', '--file', '--role', 'cad-planner'], '--file'],
+    [['resolve', '--role', 'cad-planner', '--attempt', '--file', 'x.json'], '--attempt'],
+    [['resolve', '--role', 'cad-planner', '--bracket-read', '--bracket-plan', 'p'], '--bracket-read'],
+    [['resolve', '--role', 'cad-planner', '--bracket-plan'], '--bracket-plan'],
+  ];
+  for (const [args, flag] of cases) {
+    const where = args.join(' ');
+    const r = raw(args);
+    assert.equal(r.ok, false, where);
+    // route.mjs's OWN vocabulary, never a code the contract minted (D-07), and
+    // never a domain refusal about a value the caller never wrote.
+    assert.equal(r.reason, 'usage', `${where}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, new RegExp(flag), where);
+    // An ARGUMENT-SHAPE refusal fails before any config file is named, so there
+    // is no layer whose diagnostics could ride along.
+    assert.equal('warnings' in r, false, where);
+  }
+  // The control: every one of those flags spelled with a real value still
+  // resolves, so the rows refuse the gap and nothing else.
+  const good = resolve('cad-planner', cfg({ stakes: 'solo' }), ['--attempt', '2']);
+  assert.equal(good.ok, true, JSON.stringify(good));
+  assert.equal(good.attempt, 2);
 });
 
 test('table dumps the routing table - the five grids and the declared roles', () => {
@@ -1295,6 +1341,43 @@ test('the cursor supplies the phase when --phase is absent', () => {
   }));
   assert.equal(resolve('cad-executor', join(planning, 'config.json')).ok, true);
   assert.equal(traceLines(planning)[0].phase, 2);
+});
+
+test('ARG-06: a malformed --phase WARNS and still resolves, and still keys the cursor', () => {
+  // The `warn` disposition (D-04), which is the whole reason the contract has
+  // three words and not one: a `usage` refusal here would route the phase LOWER
+  // than its own risk baseline, so a bad shape may never refuse. But it produced
+  // NOTHING before this - `requirePhaseArg` sat inside the trace derivation's
+  // try/catch and its `!parsed.ok` arm fell silently through to the cursor, so
+  // measured 2026-08-19 `--phase 1.10.3` returned ok:true with no mention of
+  // `--phase` at all and the routing event keyed to a phase the caller never
+  // named. The comment there said the check belonged where the risk FLOOR was
+  // computed; that floor is retired, so nothing carried it.
+  const planning = traceRoot('trace-badphase', false);
+  writeFileSync(join(planning, 'STATE.md'), renderCursor({
+    phase: 2, total: 5, name: 'Fixture', status: 'planned',
+    next: '/cad-execute 2', updated: '2026-01-01',
+  }));
+  const cfgPath = join(planning, 'config.json');
+  for (const bad of [['--phase', '1.10.3'], ['--phase', 'abc'], ['--phase', ''], ['--phase']]) {
+    const r = resolve('cad-executor', cfgPath, bad);
+    assert.equal(r.ok, true, bad.join(' '));
+    assert.ok(Array.isArray(r.warnings), `${bad.join(' ')}: ${JSON.stringify(r)}`);
+    assert.equal(r.warnings.filter((w) => w.includes('--phase')).length, 1, bad.join(' '));
+  }
+  // The resolution is UNCHANGED and the event still keys to the cursor, never
+  // to the malformed spelling: four warned resolves, four lines under phase 2.
+  assert.deepEqual(traceLines(planning).map((e) => e.phase), [2, 2, 2, 2]);
+
+  // The control on both sides: a well-formed --phase says nothing at all...
+  const good = resolve('cad-executor', cfgPath, ['--phase', '3']);
+  assert.equal('warnings' in good, false, JSON.stringify(good));
+  // ...and the bundle a warned resolve returns is the bundle with no --phase at
+  // all, warnings aside - the diagnostic changes what is SAID, never what is
+  // resolved.
+  const { warnings, ...warned } = resolve('cad-executor', cfgPath, ['--phase', '1.10.3']);
+  const plain = resolve('cad-executor', cfgPath);
+  assert.deepEqual(warned, plain);
 });
 
 // --- the dispatch bracket riding resolve (--bracket-read / --bracket-plan) ----

@@ -631,6 +631,43 @@ test('parseArgs: subcommand plus --flag value pairs', () => {
   assert.deepEqual(opts, { provider: 'openai', model: 'm' });
 });
 
+test('ARG-06: a flag-shaped value is bad-args by NAME, never a domain refusal', () => {
+  // The defect the declared rows in lib/arg-contract.mjs end. `parseArgs` did
+  // `opts[a.slice(2)] = rest[i + 1]` with no flag-shape test, so a valueless
+  // flag ate the flag after it and the value after THAT was skipped: measured
+  // 2026-08-19, `consult --payload --provider openai` returned
+  // `{"ok":false,"reason":"bad-provider","detail":"unknown provider: undefined"}`
+  // - a refusal about a flag the caller DID pass, naming the wrong problem.
+  /** @type {[string[], string][]} the call, and the flag its refusal must name */
+  const cases = [
+    [['consult', '--payload', '--provider', 'openai'], '--payload'],
+    [['detect-models', '--provider'], '--provider'],
+    [['review', '--provider', 'openai', '--model', ''], '--model'],
+    [['review', '--provider', 'openai', '--model', 'm', '--key-file'], '--key-file'],
+  ];
+  for (const [args, flag] of cases) {
+    const where = args.join(' ');
+    const r = run(args);
+    assert.equal(r.ok, false, where);
+    // `bad-args` is already in this bin's published degradation list
+    // (references/seams.md); the contract mints no reason code of its own.
+    assert.equal(r.reason, 'bad-args', `${where}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, new RegExp(flag), where);
+  }
+  // The control on the other side of the door: an ABSENT flag is not this
+  // door's business. Presence stays with the handlers that own the wording, so
+  // an unknown provider is still `bad-provider` and not a shape refusal.
+  assert.equal(run(['detect-models', '--provider', 'skynet']).reason, 'bad-provider');
+  assert.equal(run(['review', '--provider', 'openai']).reason, 'bad-args');
+
+  // ...and `parseArgs` stays PURE: it names the refusal, it never emits one,
+  // and the `{cmd, opts}` shape its callers destructure is untouched.
+  const { cmd, opts, badArg } = parseArgs(['consult', '--payload', '--provider', 'openai']);
+  assert.equal(cmd, 'consult');
+  assert.deepEqual(opts, { provider: 'openai' });
+  assert.match(badArg, /--payload/);
+});
+
 // --- CLI: pre-network failure paths ---------------------------------------------
 
 test('cli: unknown command degrades to bad-command', () => {

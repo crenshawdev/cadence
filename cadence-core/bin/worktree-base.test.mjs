@@ -5,7 +5,7 @@
 // dirs (no git repo), so the seam falls back to --dir as the root.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -130,3 +130,26 @@ test('unknown subcommand: usage, never a fabricated verdict', () => {
   assert.equal(r.reason, 'usage');
   assert.equal(r.baseRef, undefined);
 });
+
+// --- --dir refuses rather than resolving for the process cwd (D-01) ----------
+
+/** Run the seam raw, keeping the JSON line AND the exit status. */
+function seamStatus(args) {
+  const env = { ...process.env, CADENCE_MANAGED_SETTINGS: ABSENT, CADENCE_USER_SETTINGS: ABSENT };
+  const r = spawnSync('node', [SEAM, ...args], { encoding: 'utf8', env });
+  return { json: JSON.parse(r.stdout), status: r.status };
+}
+
+// Advisory like git-branch, and in scope for the same reason: the ref this
+// resolves is what a parallel worktree is then forked from, so an answer about
+// a tree the caller never named is not cheaper for being read-only.
+for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+  test(`resolve: ${label} --dir refuses by name, exit 1, no fabricated verdict`, () => {
+    const { json, status } = seamStatus(['resolve', ...dirArgs]);
+    assert.equal(json.ok, false);
+    assert.equal(json.reason, 'missing-flag-value', JSON.stringify(json));
+    assert.equal(json.detail, '--dir');
+    assert.equal(status, 1);
+    assert.equal(json.baseRef, undefined);
+  });
+}

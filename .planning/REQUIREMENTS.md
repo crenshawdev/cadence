@@ -1,21 +1,29 @@
-# Requirements: Cadence (v3.5.4 open)
+# Requirements: Cadence (no cycle open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18;
-its eight requirements are under `## Shipped` below. The next cycle's headline
-requirements are unscoped - `/cad-phase add` opens one when there is a theme to
-open it for.
+No cycle open. `v3.5.5` closed on 2026-08-19; its thirteen shipped ids are in
+`## Shipped` below, each carrying the `v3.5.5` label. `/cad-phase add` opens the
+next cycle's first phase entry, and nothing is promoted here to fill the section
+in the meantime.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted. The open items filed at the `v3.5.1`
-close (#181 through #187) and the proposals filed at the `v3.5.2` close (#189
-through #197) are unassigned and are not scoped here. The eight medium
-`risk_surface` survivors carried forward at the `v3.5.4` close are unassigned
-too.
+deferral reasons and none is promoted, and the two caveats the 2026-08-18 audit
+recorded are still undecided rather than settled at this close: `CTX-02`'s two
+issues (#69, #29) are both closed and #29's ask shipped as
+`/cad-minimalism-review`, so its stated basis no longer holds; and `RCL-06`
+carries no deferral reason and no promotion trigger, so nothing can ever re-ask
+it. Both want a decision before either is scoped.
+
+Milestones `v3.5.6` (#139, #140, #145, #195) and `v3.5.7` (#167, #174, #189,
+#206) are scoped on the tracker and neither was opened here. Issues #190 through
+#193 carry no milestone. The open items filed at the `v3.5.1` close (#181
+through #187), the proposals filed at the `v3.5.2` close (#189 through #197),
+the eight medium `risk_surface` survivors carried forward at the `v3.5.4` close
+and the three carried forward at this one are all unassigned.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
@@ -192,6 +200,19 @@ parses only the Traceability table).
 | RVW-03 (raising `stakes` moves BOTH halves of a cross-model review panel. `route-table.json` carries three separate vocabularies for what a user reads as one dial, so the subagent reviewer upgrades and the cross-model one stays where it was.) | 3 | Complete | v3.5.4 |
 | REL-01 (`git.create_tag` governs the tag and nothing else. It is documented as "Tag on milestone" and read as the release-mode discriminator for the whole of `milestone.md` step 2, so setting it false silently skips the manifest bump as well. Hit live at the v3.4.1 close.) | 3 | Complete | v3.5.4 |
 | ISS-01 (the per-issue resolve bound is a land's budget, not a per-call one. `issue-check.mjs` stops its resolve loop only on `timedOut`, so a `tea` that answers slowly and exits non-zero is never marked timed out and each capped resolve can burn nearly the full call timeout.) | 3 | Complete | v3.5.4 |
+| GRD-01 (#219: a string `git.protected_branches` resolves to a list that actually protects, never to `[""]`, which protects nothing while reading as set.) | 1 | Complete | v3.5.5 |
+| SCR-01 (#223: the bulk-output transport uses a per-run scratch path coupled to its write, so a concurrent run cannot answer another run's blocking re-arm cap, and the read-back refuses a truncated or stale file.) | 1 | Complete | v3.5.5 |
+| ARG-01 (#137: every seam reading `--dir` reads it through a strict reader, so an empty or absent flag is refused rather than answered about the process cwd.) | 2 | Complete | v3.5.5 |
+| ARG-02 (#142: `release-bump --date` is validated against the format its own documentation states.) | 2 | Complete | v3.5.5 |
+| ARG-03 (#144: a phase spelling the numeric grammar cannot round-trip is refused at `seed-reqs` and `cursor set`, so `1.10` can never be silently merged into `1.1`.) | 2 | Complete | v3.5.5 |
+| ARG-04 (#182: the shared numeric readers refuse a digit string outside the safe-integer range instead of rounding it or yielding `Infinity`.) | 2 | Complete | v3.5.5 |
+| ARG-05 (#220: every `config.mjs` face reports a prototype-member key as unknown rather than a silent success or a fabricated retirement claim.) | 2 | Complete | v3.5.5 |
+| RCH-01 (#221: `detect-commands` names a lint or typecheck command only when its binary is reachable.) | 3 | Complete | v3.5.5 |
+| RSK-03 (#222: `risk-check status` is satisfiable for every worker key `seams.md` permits, not only a numeric one.) | 3 | Complete | v3.5.5 |
+| RSK-04 (#224: `risk-diff` does not fire the blocking gate on its own test fixtures.) | 3 | Complete | v3.5.5 |
+| SHP-01 (#183: `## Shipped` is located fence-aware, by the same `sectionSpan` its own function already uses for `## Active`.) | 3 | Complete | v3.5.5 |
+| ARG-06 (#147: the per-seam refusals are expressed once as a declarative argument contract the seam CLIs share.) | 4 | Complete | v3.5.5 |
+| RME-01 (`README.md` is a decision document, not a reference manual - the cost-to-run section and the worked example move to `docs/`, the command list is cut in favour of a pointer at `/cad-help` and `cadence-core/references/COMMANDS.md`, the audience material states the DEMAND rather than a label and sits ABOVE Install, and every claim that survives the move is verified rather than carried over. Promoted from the 2026-08-18 capture decision; the command-list clause revised 2026-08-19 at `/cad-context 5` (phase 5 CONTEXT D-03); the audience clause revised 2026-08-19 at `/cad-verify 5` from "section" to "material", because the register review that produced commit `47d7214` dissolved the section into the opening paragraphs while keeping both the placement and the load-bearing sentence.) | 5 | Complete | v3.5.5 |
 
 ## Deferred
 

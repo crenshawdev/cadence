@@ -73,6 +73,58 @@ It layers repo (.planning/config.json) over the user-global file over the
 schema defaults, so a raw file read sees at most one layer and lies about the
 rest. Read only the keys you need. Unknown keys are ignored, never fatal.
 
+## Seam arguments
+
+- A flag declares a DISPOSITION, not merely a type: what the seam does when the
+  value is wrong, chosen from exactly three words - refuse, warn, fall back. All
+  three are positions this tree already holds, so a contract that made every
+  typed flag refuse would reverse two of them. `issue-check.mjs` falls back to a
+  constant on a malformed `--timeout-ms`, because that seam's whole contract is
+  that it never fails a land; `route.mjs` warns on a `--phase` outside the
+  accepted shape and still resolves, because refusing there would route the
+  phase LOWER than its own risk baseline; the `--dir` family refuses.
+- Falling back means the flag reads as ABSENT and the caller's own default
+  answers. The token after it is never consulted, which is what stopped a
+  valueless `--branch` from reading the following `--dir` as a branch name.
+- The BARE form's disposition is declared SEPARATELY from the value's, in its
+  own field, because one function body in `planning.mjs` already runs both
+  side by side. In the body shared by `trace append` and `trace close`, a bare
+  `--step`, `--reviewer`, `--trigger` or `--role` refuses, while a bare
+  `--plan`, `--sha` or `--base` is dropped. One word for both axes would
+  either start refusing every shipped close that omits `--plan`, or extend the
+  drop to the refusals written against exactly the complete-looking event that
+  defeats attribution: a bare `--role` wrote a record with no role key, and the
+  renderer then aggregated it under the empty string. The two axes differ on
+  ordinary flags too - `release-bump.mjs`'s `--version` refuses a blank value
+  and falls back on a bare one.
+- A new seam DECLARES its flags in `cadence-core/bin/lib/arg-contract.mjs`, one
+  row per flag carrying all four fields (`required`, `type`, `value`, `bare`),
+  rather than restating the rules in a parser of its own. That same table is
+  what self-verify checks documented invocations against, so a flag with no row
+  is a flag no prose may spell.
+- The contract CLASSIFIES and the CALLER owns its own `reason` string, which is
+  why one `--dir` rule surfaces under two names: `planning.mjs` reads the
+  classification back and refuses with `bad-args`, the single refusal vocabulary
+  that file publishes, while the seams that end in an `e.seam` catch arm raise
+  it and refuse with `missing-flag-value`. The module mints no reason code of
+  its own, so adopting it adds nothing to a seam's published list.
+- The DECLARATION is what refuses. An adopting bin runs its resolved row at the
+  door of its dispatch rather than restating the rule at each handler, and
+  `cadence-core/bin/arg-contract-adoption.test.mjs` walks the whole table
+  against the shipped binaries, so a row declaring a refusal nothing carries out
+  reddens there. That census is what the gap needed: 98 rows were declared for
+  one script and two of them were read, so a valueless flag wrote the boolean
+  `true` into a cursor, a checklist's front-matter and a recorded UAT result.
+- PRESENCE is the stated exception. The shared door judges only the flags a
+  caller actually PASSED, and a flag that is genuinely ABSENT is answered by the
+  bin that owns the wording, because the diagnostic for a missing enum-valued
+  flag - which of three kinds a capture is, which of two modes a prune takes -
+  is not expressible in a declaration. So `required` records a fact for the bins
+  that choose to read it, never a rule the door enforces.
+- The contract governs VALUE grammar only, and never refuses an UNDECLARED flag
+  at runtime. Membership is the prose-side lint's job, so a flag missing from
+  the table is caught where prose spells it rather than at a caller's expense.
+
 ## Caller-derived text
 
 - The derivation test, asked once per value: is it derived from agent output or
@@ -95,21 +147,53 @@ rest. Read only the keys you need. Unknown keys are ignored, never fatal.
   `Read` response on this repository - 10,323 B over 780 recorded calls,
   `.planning/reads.jsonl`, measured 2026-08-17. If yes, then its output
   rides a file, not the transcript: redirect the call into a scratch path
-  (`> "${TMPDIR:-/tmp}/<name>"`) and hand the transcript a DIGEST of what the
+  inside THIS RUN's own directory (`> "$D/<name>"`, where `D` is a directory
+  this run made with `mktemp -d`) and hand the transcript a DIGEST of what the
   step actually needs. A response sitting in the transcript is re-paid on every
   later turn at the cache-read rate; a digest is paid once.
+- The directory is made for the run and never given a shared name:
+  `D="$(mktemp -d "${TMPDIR:-/tmp}/cad-XXXXXX")"`, and everything the step
+  writes goes inside it. A fixed scratch filename is ONE file that two runs
+  started in two repositories both write and both read, so one run's blocking
+  gate is answered by the other's bytes. Leave the directory for the operating
+  system's tmp reaping: a step that `rm -rf`s a path it computed itself is a
+  worse failure than a stale directory. The template is explicit because the
+  argument-less spelling of that call is GNU-only.
 - The conversion is a shell redirect plus a targeted read-back - never a new
   seam, flag or subcommand. Read back only the fields the step prints or
   branches on, one at a time; reading the scratch file WHOLE is the same bytes
   on the same turn and buys nothing. The file is the model's own scratch, never
   a phase artifact.
+- When the write and the read-back share ONE Bash invocation, chain both to the
+  directory-making call with `&&`: the read-back then cannot run on a write that
+  failed, and what it reads is a directory this run just created empty.
+- When they are SPLIT across two fenced blocks, a shell variable cannot carry
+  it - the Bash tool persists the working directory and not shell state. So the
+  writing block ECHOES the directory once, and beside it a run TOKEN it also
+  wrote into that directory; the later block carries both as literals, a path
+  and never a `$(...)`, which is the caller-derived-text rule above. A carried
+  path is the one arm where an EARLIER run's well-formed file still resolves, so
+  the later block compares the directory's token file against the token it was
+  handed and refuses when the two differ. Compare against an id carried
+  independently of the file: an id read out of the file itself is one that any
+  stale file answers self-consistently.
+- A read-back REFUSES rather than answering from a file it could not trust. It
+  names `scratch-unreadable` on stderr and exits non-zero when the file cannot
+  be read or parsed, `scratch-shape` when the field the step needs is absent,
+  and `scratch-stale` when the token does not match. No default may stand in for
+  a missing value: `(r.outcomes||[]).length` answers `0` and
+  `JSON.stringify({a:r.a})` prints `{}`, and both of those read as a successful
+  answer. At a blocking gate a refusal is NEITHER verdict - the gate could not
+  be evaluated, so it goes to that gate's STOP-and-ask arm.
 - If no, the call stays inline: a response under the threshold, a form its own
   flags already bound (`--stat`, `--name-only`), a call another agent runs in
   its own context.
 - No site decides this for itself. Every one is classified in
-  `cadence-core/bin/lib/bulk-output.mjs` with its measured figure, and
-  self-verify reports a site the register does not classify - so a NEW site is
-  registered, not argued.
+  `cadence-core/bin/lib/bulk-output.mjs` with its measured figure, and the
+  per-run path and the read-back's refusal are held at every site by
+  `cadence-core/bin/lib/scratch-path.mjs`; self-verify reports a site that
+  either one leaves unclassified or unguarded - so a NEW site is registered,
+  not argued.
 
 ## Parallel work
 

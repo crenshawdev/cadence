@@ -36,8 +36,10 @@ it would be wrong prose in the shipped plugin for every other project (D-01).
 Two constraints the sweep ran under:
 
 - `CONTRIBUTING.md` was swept by hand end to end, because no mechanical check
-  covers it — `cadence-core/bin/self-verify.mjs:303` lints only `README.md`,
-  `INTERNALS.md` and `METHOD.md` (D-15).
+  covers it — `cadence-core/bin/self-verify.mjs`'s `mdFiles` walk lints only
+  `README.md`, `INTERNALS.md` and `METHOD.md` at the top level (D-15). As of
+  `v3.5.5` that walk also covers every page under `docs/`; `CONTRIBUTING.md`
+  is still off it.
 - `CONTRIBUTING.md:13`'s "the same three checks CI runs" is verified accurate
   against `.github/workflows/test.yml` rather than left unverifiable: that
   workflow still executes, with `origin` self-hosted and GitHub a mirror
@@ -411,13 +413,62 @@ claims are unchanged and their anchors were already drifting before this phase,
 so the next sweep's fresh extraction is what re-seats them, exactly as it does
 for every other row this ledger has not settled.
 
+Phase 5 of `v3.5.5` moved two of `README.md`'s sections into `docs/` and cut a
+third, so the `README-*` rows split three ways and every surviving pin was
+re-derived from the post-change files rather than shifted. Eight rows follow the
+worked example to `docs/EXAMPLE.md` (README-35, -36, -37, -38, -73, -74, -75,
+-85) and eight follow the cost-to-run section to `docs/COST.md` (README-41, -48,
+-49, -51, -79, -80, -81, -82); their `doc` and `line` cells changed together and
+their claim text is untouched, so the join still holds. Nine RETIRE, because
+their sentence was cut rather than moved: the six command-list rows README-39,
+-40, -76, -77, -78 and -86 went with `## The commands`, which was CUT rather than
+relocated (D-03); README-50's `8,550 bytes to 5,397` clause was cut rather than
+re-measured (D-10); and README-53 and README-55 were cut when `## How it works`
+was compressed to its argument, the DeepSeek-adapter sentence and the routing
+parenthetical respectively. Those last two are not on the phase plan's
+retirement list - they are the compression's own cost, recorded here rather than
+left to the next sweep to report as claims that vanished.
+
+Two rows straddled the cut, each citing one line that moved and one that was cut.
+README-38's `/cad-land` publish claim was stated twice, in the worked example and
+in the `## The commands` bullet; the worked-example half survives, so the row
+re-points to `docs/EXAMPLE.md` with its text unchanged. README-75 was not so
+lucky: `## The commands` carried the half saying the tag is cut by `/cad-land`
+after the merge, and the landing page no longer states that anywhere, so the
+row's claim TEXT is rewritten to the half that survives. That rewrite is called
+out here for the same reason README-44's was - the join is `doc` plus claim text,
+so a silently rewritten claim joins to nothing in the next sweep.
+
+Four rows are deliberately NOT re-pinned. README-01, README-02 and README-25
+carry a `corrected - <sha>` resolution and README-28 says in its own resolution
+that its line is run-1 provenance, and this ledger's rule is that such a line is
+provenance rather than an address. README-49 is the one `corrected - <sha>` row
+that does move, because its section left `README.md` entirely: a `doc` cell
+naming a file that no longer carries anything like the sentence is worse than
+losing the run-1 line, which was `README.md:140`.
+
+Every other row is pinned to where the post-change file states its claim rather
+than shifted by a constant. A blanket shift would have been wrong in both
+directions: commit `c99b778` inserted two lines for the test badge on 2026-08-17,
+so rows pinned before that date were stale by two, while rows written after it -
+README-74 among them, already citing the correct line - were not, and shifting
+those would have broken rows that were right.
+
+Three claims the compression would otherwise have dropped were restored to
+`README.md` rather than retired, because the sentence carrying each one survived
+and only a detail inside it did not: README-05's `four-line` state cursor,
+README-11 and README-52's attribution of the 2,251 deleted lines to v2.2.0, and
+README-16's multi-select triage prompt. Retiring a row whose sentence is still on
+the page would have recorded a cut that never happened.
+
 **Resolution values.** Measured over all 933 rows, every cell is one of four
-forms: `accurate` on every row the sweep confirmed (845);
+forms: `accurate` on every row the sweep confirmed (837);
 `corrected - <sha>` on a stale or unverifiable row whose prose was edited, naming
 the commit that edited it (42); `divergence - <reason>` on one deliberately left
-standing (45); and `RETIRED - <reason>` on a row whose claimed SENTENCE was cut
-rather than corrected, so there is nothing left to re-verify (1, PLAN-03, whose
-`line` cell reads `—` for the same reason). `pending` is a transient placeholder
+standing (44); and `RETIRED - <reason>` on a row whose claimed SENTENCE was cut
+rather than corrected, so there is nothing left to re-verify (10 - PLAN-03 plus the
+nine `README-*` rows phase 5 of `v3.5.5` retired - each with its `line` cell
+reading `—` for the same reason). `pending` is a transient placeholder
 used only while a phase is executing, so that no cell is ever empty; zero rows
 read `pending` at the close. A row whose claim turned out to describe a code
 defect rather than stale prose carries the defect's `DFC-0k` id in its
@@ -468,55 +519,55 @@ fixed, which is what makes that link answer the only question it is asked.
 |---|---|---|---|---|---|---|
 | README-01 | README.md | 36 | An OpenAI, Gemini **or DeepSeek** key runs the identical review job "with the provider enforcing the output schema". | stale | corrected - b2bad1a | 1 |
 | README-02 | README.md | 38 | `docs/WORKFLOW.md` is "six figures and the three tables behind them". | stale | corrected - b2bad1a | 1 |
-| README-03 | README.md | 10 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate | 2 |
-| README-04 | README.md | 14 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate | 2 |
-| README-05 | README.md | 26 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate | 1 |
-| README-06 | README.md | 28 | Verifier scores every claim verified/failed/uncertain and uncertain counts toward neither side. | accurate | accurate | 1 |
-| README-07 | README.md | 28 | The coverage audit reads assertions rather than counting test files. | accurate | accurate | 1 |
-| README-08 | README.md | 30 | The git rails are a PreToolUse hook and every push stops and asks. | accurate | accurate | 2 |
-| README-09 | README.md | 32 | `isPlainPush` was deleted; the sanctioned push runs in a separate subprocess built from an argument vector. | accurate | accurate | 2 |
-| README-10 | README.md | 34 | What the guard reads now is eighty-five lines; a command counts if it starts with the word `git`. | accurate | accurate | 2 |
-| README-11 | README.md | 34 | v2.2.0 deleted 2,251 lines of tokenizer. | accurate | accurate | 1 |
-| README-12 | README.md | 34 | The hook fails open. | accurate | accurate | 1 |
-| README-13 | README.md | 34 | `bash -c "git push"` is invisible and that is written down. | accurate | accurate | 2 |
-| README-14 | README.md | 36 | Default reviewer is a fresh-context Claude subagent needing no API key. | accurate | accurate | 2 |
-| README-15 | README.md | 36 | Up to four independent voices on one plan. | accurate | accurate | 2 |
-| README-16 | README.md | 36 | Triage is a multi-select prompt with none as the default. | accurate | accurate | 2 |
-| README-17 | README.md | 45 | `/cad-config stakes=shipped` is the one key. | accurate | accurate | 2 |
-| README-18 | README.md | 48 | `solo` / `shipped` / `critical` are the three answers. | accurate | accurate | 1 |
-| README-19 | README.md | 50 | The grid is 18 cells, one per level+role pair, in `cadence-core/route-table.json`. | accurate | accurate | 2 |
-| README-20 | README.md | 50 | solo planner = Sonnet at `high`; shipped = Opus; critical = Opus `xhigh` with retry `max`. | accurate | accurate | 2 |
-| README-21 | README.md | 52 | Rungs are `low`, `medium`, `high`, `xhigh`, `max`. | accurate | accurate | 2 |
-| README-22 | README.md | 52 | Effort is frozen in agent frontmatter; self-verify fails on a cell naming a rung with no file and on a rung file no cell reaches. | accurate | accurate | 2 |
-| README-23 | README.md | 54 | `model.escalate_on_failure`, on by default. | accurate | accurate | 1 |
-| README-24 | README.md | 56 | Gates are `off`, `advisory`, `blocking`, `adjudicated`. | accurate | accurate | 2 |
+| README-03 | README.md | 14-15 | Install adds marketplace `https://git.jcrenshaw.dev/crenshawdev/cadence.git` then `/plugin install cadence@cadence`. | accurate | accurate | 2 |
+| README-04 | README.md | 18 | Runtime scripts are zero-dependency; "there is no npm install, ever". | accurate | accurate | 2 |
+| README-05 | README.md | 30 | All durable state lives in `.planning/` and git, incl. a four-line state cursor. | accurate | accurate | 1 |
+| README-06 | README.md | 67 | Verifier scores every claim verified/failed/uncertain and uncertain counts toward neither side. | accurate | accurate | 1 |
+| README-07 | README.md | 67 | The coverage audit reads assertions rather than counting test files. | accurate | accurate | 1 |
+| README-08 | README.md | 69 | The git rails are a PreToolUse hook and every push stops and asks. | accurate | accurate | 2 |
+| README-09 | README.md | 71 | `isPlainPush` was deleted; the sanctioned push runs in a separate subprocess built from an argument vector. | accurate | accurate | 2 |
+| README-10 | README.md | 3 | What the guard reads now is eighty-five lines; a command counts if it starts with the word `git`. | accurate | accurate | 2 |
+| README-11 | README.md | 71 | v2.2.0 deleted 2,251 lines of tokenizer. | accurate | accurate | 1 |
+| README-12 | README.md | 71 | The hook fails open. | accurate | accurate | 1 |
+| README-13 | README.md | 71 | `bash -c "git push"` is invisible and that is written down. | accurate | accurate | 2 |
+| README-14 | README.md | 57 | Default reviewer is a fresh-context Claude subagent needing no API key. | accurate | accurate | 2 |
+| README-15 | README.md | 57 | Up to four independent voices on one plan. | accurate | accurate | 2 |
+| README-16 | README.md | 57 | Triage is a multi-select prompt with none as the default. | accurate | accurate | 2 |
+| README-17 | README.md | 80 | `/cad-config stakes=shipped` is the one key. | accurate | accurate | 2 |
+| README-18 | README.md | 83 | `solo` / `shipped` / `critical` are the three answers. | accurate | accurate | 1 |
+| README-19 | README.md | 85 | The grid is 18 cells, one per level+role pair, in `cadence-core/route-table.json`. | accurate | accurate | 2 |
+| README-20 | README.md | 85 | solo planner = Sonnet at `high`; shipped = Opus; critical = Opus `xhigh` with retry `max`. | accurate | accurate | 2 |
+| README-21 | README.md | 87 | Rungs are `low`, `medium`, `high`, `xhigh`, `max`. | accurate | accurate | 2 |
+| README-22 | README.md | 87 | Effort is frozen in agent frontmatter; self-verify fails on a cell naming a rung with no file and on a rung file no cell reaches. | accurate | accurate | 2 |
+| README-23 | README.md | 89 | `model.escalate_on_failure`, on by default. | accurate | accurate | 1 |
+| README-24 | README.md | 93-98 | Gates are `off`, `advisory`, `blocking`, `adjudicated`. | accurate | accurate | 2 |
 | README-25 | README.md | 56 | Plan review is advisory at `solo`, adjudicated at `shipped` and `critical`. | stale | corrected - 39583ba - `README.md:56` now reads advisory at `solo`, off at `shipped`, adjudicated at `critical` | 2 |
-| README-26 | README.md | 56 | `risk_surface` is blocking at every level including `solo`. | accurate | accurate | 2 |
-| README-27 | README.md | 56 | The eight surfaces are auth, billing, secrets, migrations, destructive, concurrency, API contracts, untrusted input. | accurate | accurate | 2 |
+| README-26 | README.md | 93-100 | `risk_surface` is blocking at every level including `solo`. | accurate | accurate | 2 |
+| README-27 | README.md | 100 | The eight surfaces are auth, billing, secrets, migrations, destructive, concurrency, API contracts, untrusted input. | accurate | accurate | 2 |
 | README-28 | README.md | 58 | `risk.override.<surface>` waives one surface, repo config only; a global waiver is ignored and warned. | stale | divergence - run 2 half A: claim stated nowhere in the file, the `risk.override` family was retired in v2.7.0; line left at run-1 provenance | 1 |
-| README-29 | README.md | 60 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate | 2 |
-| README-30 | README.md | 64 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate | 2 |
-| README-31 | README.md | 66-70 | The five loop commands exist as named. | accurate | accurate | 2 |
-| README-32 | README.md | 76 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate | 2 |
-| README-33 | README.md | 78 | `docs/figures/phase-loop.svg` exists. | accurate | accurate | 2 |
-| README-34 | README.md | 80 | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | accurate | 2 |
-| README-35 | README.md | 84 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate | 1 |
-| README-36 | README.md | 92 | `/cad-verify` records in UAT.md. | accurate | accurate | 1 |
-| README-37 | README.md | 97 | `/cad-milestone` tags the release. | accurate | accurate | 1 |
-| README-38 | README.md | 97, 116 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate | 2 |
-| README-39 | README.md | 105-130 | Every command in the three command lists exists. | accurate | accurate | 1 |
-| README-40 | README.md | 123 | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | accurate | 1 |
-| README-41 | README.md | 136 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate | 2 |
-| README-42 | README.md | 146 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | unverifiable | divergence - run 2 half A: a measurement of an external tree this repo does not carry | 2 |
-| README-43 | README.md | 146 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate | 1 |
-| README-44 | README.md | 146 | Today it is 27 skills and 6 agent roles across 19 rung files. | accurate | corrected - fe9b9b9 | 2 |
-| README-45 | README.md | 148 | CI fails the build when the prose drifts from the code. | accurate | accurate | 2 |
-| README-46 | README.md | 150 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate | 2 |
-| README-47 | README.md | 10 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves | 1 |
-| README-48 | README.md | 136 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment | 1 |
-| README-49 | README.md | 140 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 | 1 |
-| README-50 | README.md | 140 | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | divergence - an explicitly historical v2.3.0 figure, left standing with its prose unedited; 1154790's "measured at v2.3.0" frame is scoped to the preceding sentence and does not reach this one | 2 |
-| README-51 | README.md | 142 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then | 1 |
+| README-29 | README.md | 83 | Deep verification off at `solo`, on at `shipped` and `critical`. | accurate | accurate | 2 |
+| README-30 | README.md | 22 | Commands are namespaced `/cadence:cad-*`. | accurate | accurate | 2 |
+| README-31 | README.md | 24 | The five loop commands exist as named. | accurate | accurate | 2 |
+| README-32 | README.md | 34 | `/cad-progress` auto-resumes incomplete work. | accurate | accurate | 2 |
+| README-33 | README.md | 36 | `docs/figures/phase-loop.svg` exists. | accurate | accurate | 2 |
+| README-34 | README.md | — | WORKFLOW.md holds fifteen decision points, the eighteen-cell grid, and the trigger-by-level table. | accurate | RETIRED - the docs/WORKFLOW.md inventory paragraph was cut in the controls rewrite | 2 |
+| README-35 | docs/EXAMPLE.md | 5-9 | `/cad-new-project` writes PROJECT.md, REQUIREMENTS.md and a phased ROADMAP.md into `.planning/` and sets a cursor. | accurate | accurate | 1 |
+| README-36 | docs/EXAMPLE.md | 17 | `/cad-verify` records in UAT.md. | accurate | accurate | 1 |
+| README-37 | docs/EXAMPLE.md | 32-34 | `/cad-milestone` tags the release. | accurate | accurate | 1 |
+| README-38 | docs/EXAMPLE.md | 40-42 | `/cad-land` asks push / MR or PR / tag / leave local with no preselected default. | accurate | accurate | 2 |
+| README-39 | README.md | — | Every command in the three command lists exists. | accurate | RETIRED - `## The commands` was CUT in v3.5.5 (phase 5, RME-01) rather than relocated; the three command lists this row counted no longer exist and `cadence-core/references/COMMANDS.md` publishes all 27 commands instead | 1 |
+| README-40 | README.md | — | `/cad-config` walks every switch; `key=value` sets one directly. | accurate | RETIRED - the `/cad-config` bullet was cut with `## The commands` in v3.5.5 (phase 5, RME-01); `cadence-core/references/COMMANDS.md` carries the entry | 1 |
+| README-41 | docs/COST.md | 13-15 | Cadence ships no instrumentation and phones nothing home. | accurate | accurate | 2 |
+| README-42 | README.md | 112 | GSD is 71 skills, 34 agents, 46 capabilities, ~1.1M words. | unverifiable | divergence - run 2 half A: a measurement of an external tree this repo does not carry | 2 |
+| README-43 | README.md | 112 | Cadence carries ~3% of GSD's documentary mass, measured 2026-07-10 against GSD `d010ea1`. | accurate | accurate | 1 |
+| README-44 | README.md | 112 | Today it is 27 skills and 6 agent roles across 19 rung files. | accurate | corrected - fe9b9b9 | 2 |
+| README-45 | README.md | 114 | CI fails the build when the prose drifts from the code. | accurate | accurate | 2 |
+| README-46 | README.md | 116 | MIT, original copyright in `LICENSE`, lineage in `NOTICE.md`. | accurate | accurate | 2 |
+| README-47 | README.md | 14 | The marketplace URL actually serves a plugin marketplace. | unverifiable | divergence - the URL resolves only over the network; `plugin.json`s homepage and the `origin` remote both name that host, and nothing in the tree can settle what it serves | 1 |
+| README-48 | docs/COST.md | 13-20 | Usage measurements: 7,548 requests / 2,845 Cadence, ~92k vs ~133k context, ~28c vs ~36c, 27% vs 8% Sonnet+Haiku. | unverifiable | divergence - personal account billing data, external to the repository; the paragraph already states it compares two piles of the authors own sessions rather than a controlled experiment | 1 |
+| README-49 | docs/COST.md | 33-36 | v2.3.0 eager totals 231,422 -> 199,687 across "the twelve main commands"; `/cad-pause` 18,523 -> 8,197; `/cad-land` 36,235 -> 31,016. | unverifiable | corrected - 1154790 | 1 |
+| README-50 | README.md | — | Skill and agent descriptions went from 8,550 to 5,397 bytes. | unverifiable | RETIRED - the `8,550 bytes to 5,397` clause was cut rather than re-measured when the section moved to `docs/COST.md` in v3.5.5 (phase 5, RME-01) (D-10); the live figure is 6,034 B across 52 skill and agent frontmatter blocks, and the page points at `weight.mjs resident` in its place | 2 |
+| README-51 | docs/COST.md | 55-58 | Five of the twelve commands ended up slightly heavier. | unverifiable | divergence - an explicitly historical note about the v2.3.0 change, recorded in that phases record; the preceding paragraph now frames the whole v2.3.0 account as a measurement taken then | 1 |
 | METHOD-01 | METHOD.md | 276 | `phase_diff`'s gate at `shipped` is "off (opt-in)". | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 | 1 |
 | METHOD-02 | METHOD.md | 279 | "Four of the five fire on their own; `phase_diff` ships off." | stale | corrected - b2bad1a + DFC-02 closed 98be3d2 | 1 |
 | METHOD-03 | METHOD.md | 91 | The plan checker "checks five dimensions - requirement coverage, task completeness, sequencing, goal-backward truths, and scope sanity". | stale | corrected - b2bad1a + DFC-03 closed f6eed02 | 1 |
@@ -1058,8 +1109,8 @@ mistake.
 | id | doc | line | claim | verdict | resolution | run |
 |---|---|---|---|---|---|---|
 | COMMANDS-01 | cadence-core/references/COMMANDS.md | 40 | `/cad-land [base]` reports git state PLUS the tracker - which issues this branch's commits reference and which are still open - reads only and closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the row's key exists in `config.schema.json` and self-verify check 1 is clean | - |
-| README-85 | README.md | 97 | Before `/cad-land` asks how to publish, it names the issues this branch's commits reference and which of them are still open on the host the origin points at; it closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); proved by `issue-check.test.mjs` (report arm, three hosts) and by the key-off spawn-marker case | - |
-| README-86 | README.md | 116 | The `## The commands` entry for `/cad-land` states the same tracker report and the same `git.issue_check` off switch. | accurate | filed with the code, v3.4.0 phase 1 (LND-01) | - |
+| README-85 | docs/EXAMPLE.md | 42-46 | Before `/cad-land` asks how to publish, it names the issues this branch's commits reference and which of them are still open on the host the origin points at; it closes nothing, and `git.issue_check: false` turns the report off. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); proved by `issue-check.test.mjs` (report arm, three hosts) and by the key-off spawn-marker case | - |
+| README-86 | README.md | — | The `## The commands` entry for `/cad-land` states the same tracker report and the same `git.issue_check` off switch. | accurate | RETIRED - the `## The commands` entry for `/cad-land` was cut in v3.5.5 (phase 5, RME-01); README-85 carries the same claim from `docs/EXAMPLE.md` | - |
 | CONFIG-CATALOG-13 | cadence-core/references/config-catalog.md | 46 | `git.issue_check` is a bool defaulting to `true`: `true` gives a read-only tracker report with one line naming the reason when it cannot be read, `false` says nothing about the tracker and runs no forge CLI. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the default is proved by `config.mjs get git.issue_check` over a config that omits it, the no-spawn half by the marker-file case in `issue-check.test.mjs` | - |
 | CAD-LAND-01 | skills/cad-land/SKILL.md | 32-54 | Step 1 runs `issue-check.mjs check` before any publish ask, on both step-3 arms, and on the `skip` action prints the envelope's `reason` verbatim as ONE line and carries on - never blocking, retrying, asking, or listing an issue the seam did not read. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); the one-line degradation is proved per path by the 9-case matrix in `issue-check.test.mjs`, each asserting exit 0, `ok:true`, an empty issue list and a reason unique across the matrix | - |
 | CAD-LAND-02 | skills/cad-land/SKILL.md | 55-56 | Landing closes no issue; closing one stays an explicit ask the user makes at publish time. | accurate | filed with the code, v3.4.0 phase 1 (LND-01); no argv in `lib/issue-decision.mjs`'s host table writes to a tracker, and the seam has one subcommand and no write path | - |
@@ -1149,39 +1200,39 @@ mistake.
 | SUGGEST-15 | cadence-core/workflows/suggest.md | 139-140 | Name no config key that `cadence-core/config.schema.json` does not carry | accurate | accurate | 2 |
 | SUGGEST-16 | cadence-core/workflows/suggest.md | 129-134 | This command writes nothing itself - no config file, not `.planning/config.json` and not the global layer - and on a yes to its offer the write is `/cad-config`'s | accurate | accurate | 2 |
 | SUGGEST-17 | cadence-core/workflows/suggest.md | 135-136 | No subagent is dispatched; a suggestion cannot PASS or FAIL anything | accurate | accurate | 2 |
-| README-52 | README.md | 34 | v2.2.0 deleted 2,251 lines of the shell tokenizer | accurate | accurate | 2 |
-| README-53 | README.md | 36 | OpenAI and Gemini enforce the output schema themselves; DeepSeek has no server-side schema, so its adapter puts the schema in the prompt and asserts the returned shape | accurate | accurate | 2 |
-| README-54 | README.md | 38 | `METHOD.md`, `INTERNALS.md`, `docs/WORKFLOW.md` and `docs/EVIDENCE.md` all exist | accurate | accurate | 2 |
-| README-55 | README.md | 38 | Routing is one question out and four knobs back - model, effort rung, review gates, deep verify | accurate | accurate | 2 |
-| README-56 | README.md | 38 | `docs/WORKFLOW.md` is five figures and the four tables behind them | accurate | accurate | 2 |
-| README-57 | README.md | 38 | `docs/EVIDENCE.md` defines the three weight terms and gives the `weight.mjs` commands | accurate | accurate | 2 |
-| README-58 | README.md | 11 | `/plugin install cadence@cadence` names an existing marketplace and plugin | accurate | accurate | 2 |
-| README-59 | README.md | 14 | `/plugin update cadence@cadence` and `/plugin uninstall cadence@cadence` | unverifiable | divergence - run 2 half A inv 1: a host command surface this repo neither defines nor constrains | 2 |
-| README-60 | README.md | 14 | Requires `node` and `git` on PATH | accurate | accurate | 2 |
-| README-61 | README.md | 50 | At `solo` the planner runs Sonnet at `high` | accurate | accurate | 2 |
-| README-62 | README.md | 50 | At `shipped` the planner runs Opus | accurate | accurate | 2 |
-| README-63 | README.md | 50 | The whole thing is `cadence-core/route-table.json` | accurate | accurate | 2 |
-| README-64 | README.md | 54 | `model.escalate_on_failure` is off by default | accurate | accurate | 2 |
-| README-65 | README.md | 56 | `review.triggers.risk_surface.surfaces` narrows the list, and leaving it unset keeps all eight | accurate | accurate | 2 |
-| README-66 | README.md | 56 | The subset is populated from a structural scan of manifests and directories rather than keyword greps | accurate | accurate | 2 |
-| README-67 | README.md | 58 | The list is checked against the diff itself, once per plan, on the completed commit range | accurate | accurate | 2 |
-| README-68 | README.md | 58 | The dispatch-time file-NAME detector that raised a whole phase is gone as of v2.7.0 | accurate | accurate | 2 |
-| README-69 | README.md | 72 | `/cad-adopt` is the second door into step 1 | accurate | accurate | 2 |
-| README-70 | README.md | 74 | `/cad-new-project --brief <file>` | accurate | accurate | 2 |
-| README-71 | README.md | 74 | `docs/DISCOVERY.md` | accurate | accurate | 2 |
-| README-72 | README.md | 80 | `docs/WORKFLOW.md` carries the eighteen-cell stakes grid | accurate | accurate | 2 |
-| README-73 | README.md | 95 | `/cad-debug` runs hypotheses that survive a clear; `/cad-capture` parks a todo | accurate | accurate | 2 |
-| README-74 | README.md | 99 | `/cad-suggest` turns the milestone's trace into evidence-backed retune suggestions, each with its config key, the value in force, a direction and a target where one can be priced, and ends by offering to route the accepted tweaks to `/cad-config` rather than writing any itself | accurate | accurate | 2 |
-| README-75 | README.md | 97, 115 | `/cad-milestone` audits, bumps the version and prunes completed phases; the tag is cut by `/cad-land` after the merge | accurate | accurate | 2 |
-| README-76 | README.md | 103 | `/cad-help` prints the full reference and `/cad-help <name>` shows one entry | accurate | accurate | 2 |
-| README-77 | README.md | 106-130 | All 21 commands listed under Review & quality, Lifecycle & git and Support exist | accurate | accurate | 2 |
-| README-78 | README.md | 124 | `/cad-capture --cadence` routes friction with Cadence to Cadence's own queue | accurate | accurate | 2 |
-| README-79 | README.md | 136 | Usage figures: 7,548 requests, 2,845 Cadence, ~92k/28c against ~133k/36c, 27% against 8% Sonnet-Haiku routing | unverifiable | divergence - run 2 half A inv 1: a measurement of the author's own account usage, not re-derivable here | 2 |
-| README-80 | README.md | 140 | v2.3.0 turn-one figures: 231,422 to 199,687 B overall, `/cad-pause` 18,523 to 8,197, `/cad-land` 36,235 to 31,016 | unverifiable | divergence - run 2 half A inv 1: turn-one figures for a past release, not re-derivable from this tree | 2 |
-| README-81 | README.md | 140 | `node cadence-core/bin/weight.mjs resident --root .` reports the current numbers | accurate | accurate | 2 |
-| README-82 | README.md | 140 | A subagent's full output no longer stays resident: it writes a file and the parent keeps a five-field digest | accurate | accurate | 2 |
-| README-83 | README.md | 146 | Today it is 27 skills | accurate | accurate | 2 |
-| README-84 | README.md | 148 | `DESIGN.md`, `INTERNALS.md`, `LINEAGE.md` and `MANIFESTO.md` exist | accurate | accurate | 2 |
+| README-52 | README.md | 71 | v2.2.0 deleted 2,251 lines of the shell tokenizer | accurate | accurate | 2 |
+| README-53 | README.md | — | OpenAI and Gemini enforce the output schema themselves; DeepSeek has no server-side schema, so its adapter puts the schema in the prompt and asserts the returned shape | accurate | RETIRED - the DeepSeek-adapter sentence was cut when `## How it works` was compressed to its argument in v3.5.5 (phase 5, RME-01); `METHOD.md` carries the mechanism | 2 |
+| README-54 | README.md | 73 | `METHOD.md`, `INTERNALS.md`, `docs/WORKFLOW.md` and `docs/EVIDENCE.md` all exist | accurate | accurate | 2 |
+| README-55 | README.md | — | Routing is one question out and four knobs back - model, effort rung, review gates, deep verify | accurate | RETIRED - the routing parenthetical was cut when the pointer paragraph was compressed in v3.5.5 (phase 5, RME-01); `INTERNALS.md` and README's own `## What a break costs` state all four knobs | 2 |
+| README-56 | README.md | 36 | `docs/WORKFLOW.md` is five figures and the four tables behind them | accurate | accurate | 2 |
+| README-57 | README.md | 73 | `docs/EVIDENCE.md` defines the three weight terms and gives the `weight.mjs` commands | accurate | accurate | 2 |
+| README-58 | README.md | 15 | `/plugin install cadence@cadence` names an existing marketplace and plugin | accurate | accurate | 2 |
+| README-59 | README.md | 18 | `/plugin update cadence@cadence` and `/plugin uninstall cadence@cadence` | unverifiable | divergence - run 2 half A inv 1: a host command surface this repo neither defines nor constrains | 2 |
+| README-60 | README.md | 18 | Requires `node` and `git` on PATH | accurate | accurate | 2 |
+| README-61 | README.md | 85 | At `solo` the planner runs Sonnet at `high` | accurate | accurate | 2 |
+| README-62 | README.md | 30 | At `shipped` the planner runs Opus | accurate | accurate | 2 |
+| README-63 | README.md | 85 | The whole thing is `cadence-core/route-table.json` | accurate | accurate | 2 |
+| README-64 | README.md | 89 | `model.escalate_on_failure` is off by default | accurate | accurate | 2 |
+| README-65 | README.md | 102 | `review.triggers.risk_surface.surfaces` narrows the list, and leaving it unset keeps all eight | accurate | accurate | 2 |
+| README-66 | README.md | 102 | The subset is populated from a structural scan of manifests and directories rather than keyword greps | accurate | accurate | 2 |
+| README-67 | README.md | 104 | The list is checked against the diff itself, once per plan, on the completed commit range | accurate | accurate | 2 |
+| README-68 | README.md | 106 | The dispatch-time file-NAME detector that raised a whole phase is gone as of v2.7.0 | accurate | accurate | 2 |
+| README-69 | README.md | 30 | `/cad-adopt` is the second door into step 1 | accurate | accurate | 2 |
+| README-70 | README.md | 32 | `/cad-new-project --brief <file>` | accurate | accurate | 2 |
+| README-71 | README.md | 32 | `docs/DISCOVERY.md` | accurate | accurate | 2 |
+| README-72 | README.md | 36 | `docs/WORKFLOW.md` carries the eighteen-cell stakes grid | accurate | accurate | 2 |
+| README-73 | docs/EXAMPLE.md | 28-30 | `/cad-debug` runs hypotheses that survive a clear; `/cad-capture` parks a todo | accurate | accurate | 2 |
+| README-74 | docs/EXAMPLE.md | 35-40 | `/cad-suggest` turns the milestone's trace into evidence-backed retune suggestions, each with its config key, the value in force, a direction and a target where one can be priced, and ends by offering to route the accepted tweaks to `/cad-config` rather than writing any itself | accurate | accurate | 2 |
+| README-75 | docs/EXAMPLE.md | 32-34 | `/cad-milestone` audits, bumps the version, prunes the completed phases from the live roadmap and evolves the docs for the next cycle | accurate | accurate | 2 |
+| README-76 | README.md | — | `/cad-help` prints the full reference and `/cad-help <name>` shows one entry | accurate | RETIRED - the `## The commands` intro line was cut in v3.5.5 (phase 5, RME-01); README.md:46 restates the `/cad-help` half in new words, which the next sweep extracts as its own row | 2 |
+| README-77 | README.md | — | All 21 commands listed under Review & quality, Lifecycle & git and Support exist | accurate | RETIRED - `## The commands` was CUT in v3.5.5 (phase 5, RME-01); the 21 bullets this row counted no longer exist | 2 |
+| README-78 | README.md | — | `/cad-capture --cadence` routes friction with Cadence to Cadence's own queue | accurate | RETIRED - the `/cad-capture` bullet was cut with `## The commands` in v3.5.5 (phase 5, RME-01); `cadence-core/references/COMMANDS.md` carries the entry | 2 |
+| README-79 | docs/COST.md | 13-20 | Usage figures: 7,548 requests, 2,845 Cadence, ~92k/28c against ~133k/36c, 27% against 8% Sonnet-Haiku routing | unverifiable | divergence - run 2 half A inv 1: a measurement of the author's own account usage, not re-derivable here | 2 |
+| README-80 | docs/COST.md | 33-36 | v2.3.0 turn-one figures: 231,422 to 199,687 B overall, `/cad-pause` 18,523 to 8,197, `/cad-land` 36,235 to 31,016 | unverifiable | divergence - run 2 half A inv 1: turn-one figures for a past release, not re-derivable from this tree | 2 |
+| README-81 | docs/COST.md | 41 | `node cadence-core/bin/weight.mjs resident --root .` reports the current numbers | accurate | accurate | 2 |
+| README-82 | docs/COST.md | 45-46 | A subagent's full output no longer stays resident: it writes a file and the parent keeps a five-field digest | accurate | accurate | 2 |
+| README-83 | README.md | 112 | Today it is 27 skills | accurate | accurate | 2 |
+| README-84 | README.md | 114 | `DESIGN.md`, `INTERNALS.md`, `LINEAGE.md` and `MANIFESTO.md` exist | accurate | accurate | 2 |
 | METHOD-83 | METHOD.md | 52-54 | Action names symbols that already exist and never invents an identifier, signature or call path | accurate | accurate | 2 |
 | METHOD-84 | METHOD.md | 55-57 | Verify is the task's authority: any implementation that satisfies it is authorized | accurate | accurate | 2 |
 | METHOD-85 | METHOD.md | 93-96 | The checker checks six dimensions, and proportionality asks about `workflow.max_plan_tasks` | accurate | accurate | 2 |
@@ -1388,7 +1439,7 @@ mistake.
 | TASK-14 | cadence-core/workflows/task.md | 80-82 | That file is transient exactly like `execute.md`'s `plan-<k>-risk-task-<n>.diff` | accurate | accurate | 2 |
 | TASK-15 | cadence-core/workflows/task.md | 85-88 | `planned_path` step 1 is the only writer of `.planning/tasks/{slug}/` | accurate | accurate | 2 |
 | TASK-16 | cadence-core/workflows/task.md | 100-101 | `Zero planning artifacts for inline tasks` is this workflow's own success criterion | accurate | accurate | 2 |
-| TASK-17 | cadence-core/workflows/task.md | 103-105 | The inline arm writes to `${TMPDIR:-/tmp}/cadence-risk-task-{slug}.diff` - still shape (c), which since v2.6.1 admits a flagged-diff file however it was produced | accurate | accurate | 2 |
+| TASK-17 | cadence-core/workflows/task.md | 125-129 | The inline arm makes this run's own directory with `mktemp -d` and writes the diff to `$D/cadence-risk-task-{slug}.diff` - still shape (c), which since v2.6.1 admits a flagged-diff file however it was produced | accurate | accurate | 2 |
 | UNDO-09 | cadence-core/workflows/undo.md | 10-12 | Fallback is `git log` filtered to the phase's conventional-commit scope, SHOWN before it is trusted | accurate | accurate | 2 |
 | UNDO-10 | cadence-core/workflows/undo.md | 30-32 | Only the protected-branch check applies; a recovery revert does not open an integration branch | accurate | accurate | 2 |
 | UNDO-11 | cadence-core/workflows/undo.md | 32-33 | The `--no-commit` form writes no commit, so it skips the guard | accurate | accurate | 2 |

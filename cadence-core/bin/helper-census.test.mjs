@@ -1,9 +1,8 @@
-// The helper-definition census (COR-01, AC4): each of the four helpers phase 3
-// extracted is DEFINED exactly once under cadence-core/bin/, and the census
-// names where that one home is. A fifth row joined them when the lease grammar
-// got one home: same contract, arrived at from the other direction - not a
-// helper extracted out of copies, but a rule two seams had each written their
-// own way until they disagreed about a declaration.
+// The helper-definition census (COR-01, AC4): each shared contract below is
+// DEFINED exactly once under cadence-core/bin/, and the census names where that
+// one home is. Four rows are the helpers phase 3 extracted out of copies; the
+// rest arrived from the other direction - a rule two seams had each written
+// their own way until they disagreed about a declaration.
 //
 // TREE-WIDE, over every .mjs file under cadence-core/bin/ - bins, lib/ and test
 // files alike. That is a deliberate deviation from the per-file `redactUrl`
@@ -13,13 +12,13 @@
 // exactly that way - five `flag`, two `flagValue`, three `readText`, three
 // branch readers, none of which any test could see.
 //
-// It matches DEFINITIONS, never call sites (D-16). The five bins keep calling
-// their flag reader after importing it, and each bridges with a one-line
-// adapter binding (`const flag = (name) => optionalFlag(argv, name)`) which is
-// not a definition either - a call-site census would redden on every legitimate
-// use, so the patterns below are the BODY IDIOM of each contract. Matching the
-// body rather than the name is also what makes a paste-back under a new name
-// fail here: a copy is a copy of the body.
+// It matches DEFINITIONS, never call sites (D-16). The bins keep reading flags
+// after importing the contract, and each bridges with a one-line adapter
+// binding over lib/arg-contract.mjs's reader, which is not a definition either
+// - a call-site census would redden on every legitimate use, so the patterns
+// below are the BODY IDIOM of each contract. Matching the body rather than the
+// name is also what makes a paste-back under a new name fail here: a copy is a
+// copy of the body.
 //
 // The rules are LEXICAL, which means a rule can match its own source - the
 // discipline lib/merge-warnings.mjs states, where the fix belongs at the
@@ -54,24 +53,35 @@ function everyModule(dir) {
  */
 const HELPERS = [
   {
-    name: 'the non-throwing positional flag reader (optionalFlag)',
-    home: 'lib/seam-input.mjs',
-    // The ternary the five bin copies shared, byte for byte.
-    re: new RegExp('i >= 0 \\? argv\\[i \\+ 1\\] : undefined', 'g'),
-    note: 'Import { optionalFlag } from ./lib/seam-input.mjs and bridge with '
-      + 'const flag = (name) => optionalFlag(argv, name) - that binding is an '
-      + 'adapter, not a definition, and this census does not count it.',
+    name: 'the defaulting disposition (fallback)',
+    home: 'lib/arg-contract.mjs',
+    // What used to be a second flag READER is a declared disposition (ARG-06):
+    // the arm answering "this spelling carries nothing usable, so read it as
+    // absent and let the caller's own `|| default` apply". The five bin copies
+    // of the positional ternary this replaced are gone with it. Anchored at the
+    // line start, since the same object is a legitimate early return elsewhere.
+    re: new RegExp("\\n  return \\{ ok: true, value: undefined, detail: '' \\};", 'g'),
+    note: 'Do not write a positional flag reader. Declare the flag with the '
+      + 'fallback disposition in this module\'s CONTRACTS table and read it '
+      + 'through evaluateFlag or requireFlag - the seam bins bridge with a '
+      + 'one-line adapter binding, which is not a definition and is not '
+      + 'counted here. A hand-written reader also returns the NEXT FLAG as a '
+      + 'value, which is the D-13 defect the disposition closed.',
   },
   {
     name: 'the throwing flag-value reader (flagValue)',
     home: 'lib/seam-input.mjs',
-    // The refusal itself: a missing, empty or flag-shaped value throws a seam
-    // object whose two fields the callers' catch arms emit.
-    re: new RegExp("throw \\{ seam: 'missing-flag-value'", 'g'),
-    note: 'Import { flagValue } from ./lib/seam-input.mjs. It stays SEPARATE '
-      + 'from optionalFlag on purpose (D-03): the five seams that default '
-      + 'through `|| fallback` carry no e.seam catch arm, so folding the two '
-      + 'would turn a valueless --dir into an internal error at all of them.',
+    // The refusal object itself, matched at its CONSTRUCTION rather than at the
+    // throw: lib/arg-contract.mjs's `requireFlag` raises the same object for a
+    // row that refuses on the value axis, so two files throw it and exactly one
+    // builds it. Its two fields are what the callers' catch arms emit.
+    re: new RegExp("return \\{ seam: 'missing-flag-value', detail: flag \\};", 'g'),
+    note: 'Do not build this object a second time. lib/seam-input.mjs is where '
+      + 'the absent-versus-nothing-usable line is drawn for the whole seam '
+      + 'layer, and lib/arg-contract.mjs CONSULTS it rather than re-spelling '
+      + 'it: requireFlag raises this same object for a row that refuses, and '
+      + 'every bin reading one holds its own e.seam catch arm, without which '
+      + 'the refusal surfaces as detail "[object Object]" (D-09).',
   },
   {
     name: "the ''-on-failure file reader (readText)",
@@ -113,6 +123,42 @@ const HELPERS = [
       + 'declarations by exact equality while enforcement read a trailing '
       + 'slash as a directory prefix. Ask the module, do not re-derive it.',
   },
+  {
+    name: 'the executable-resolution predicate (onPath / executableIn)',
+    home: 'lib/on-path.mjs',
+    // The access probe itself, which is the whole contract: "can this NAME be
+    // run from here". The PATH walk around it is the cheap half - a second
+    // copy would re-derive THIS line, under whatever name, and answer for the
+    // driver of a lint command differently from the way the land seam answers
+    // for a forge CLI.
+    //
+    // `X_O[K]` is a one-character class rather than the plain literal, for the
+    // reason every other pattern here is an escaped string: the text a rule
+    // matches must not appear verbatim in this file, and a bracket is the only
+    // escape a bare identifier admits.
+    re: new RegExp('accessSync\\(join\\(dir, name\\), constants\\.X_O[K]\\)', 'g'),
+    note: 'Import { onPath, executableIn } from ./lib/on-path.mjs. It reads no '
+      + 'CADENCE_* variable on purpose: issue-check.mjs promises a test injects '
+      + 'a stub by prepending a directory to the CHILD\'s PATH so the '
+      + 'PRODUCTION resolver runs, and detect-commands keeps its own gated '
+      + 'override at its call site instead. A second copy would also drop the '
+      + 'PATHEXT arm, which is the only reason npm/npx/tsc resolve on win32.',
+  },
+  {
+    name: 'the worker-key grammar (requirePlanKey)',
+    home: 'lib/plan-key.mjs',
+    // The outer-whitespace clause, which is the arm that distinguishes this
+    // grammar from every other string guard in the tree: it REFUSES rather
+    // than normalizing, because trimming would mint a second spelling of one
+    // key and the record and the receipt would stop joining.
+    re: new RegExp('if \\(raw !== raw\\.trim\\(\\)\\) return \\{ ok: false \\};', 'g'),
+    note: 'Import { requirePlanKey } from ./lib/plan-key.mjs. Two copies of '
+      + 'this rule are the RSK-03 defect itself one spelling over: risk-check '
+      + 'run guarded --plan with requireInt while risk-check status derived '
+      + 'what it demanded from the lifecycle brackets, so a fix pass bracketed '
+      + '`1-fix` left a blocking gate no argv could satisfy. lease-check --plan '
+      + 'is NOT a caller: it names a plan FILE on disk and stays numeric.',
+  },
 ];
 
 const MODULES = everyModule(BIN);
@@ -121,8 +167,8 @@ const SOURCE = new Map(MODULES.map((f) => [f, readFileSync(join(BIN, f), 'utf8')
 test('the census walks the whole bin tree, lib/ and test files included', () => {
   // A walk that silently reached nothing would make every arm below vacuous.
   assert.ok(MODULES.length > 60, `only ${MODULES.length} .mjs files found`);
-  for (const expected of ['lib/seam-input.mjs', 'lib/git-head.mjs', 'git-guard.mjs',
-    'lib/lease-grammar.mjs', 'helper-census.test.mjs']) {
+  for (const expected of ['lib/seam-input.mjs', 'lib/arg-contract.mjs', 'lib/git-head.mjs',
+    'git-guard.mjs', 'lib/lease-grammar.mjs', 'helper-census.test.mjs']) {
     assert.ok(MODULES.includes(expected), `${expected} missing from the walk`);
   }
 });

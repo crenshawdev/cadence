@@ -4,18 +4,20 @@
 // sweep found that nearly every defect in this repo was prose describing a
 // flag, key, or path the code did not have; this script makes that whole
 // class mechanical. Checks run over the LIVE prose surfaces (workflows,
-// references, skills, agents, templates, plus README and INTERNALS -
-// deliberately not the historical docs DESIGN/LINEAGE/CHANGELOG, which may
-// name cut keys while explaining the cut):
+// references, skills, agents, templates, docs/, plus README, INTERNALS and
+// METHOD - deliberately not the historical docs DESIGN/LINEAGE/CHANGELOG,
+// which may name cut keys while explaining the cut):
 //
 //   1. config keys   every dotted config token in prose must exist in
 //                    config.schema.json (placeholders <t>/<name> expanded),
 //                    and every schema key must be referenced somewhere -
 //                    an unreferenced key is inert and gets pruned, not kept.
 //   2. invocations   every `<script>.mjs <subcommand> --flag` in prose must
-//                    match the real subcommand/flag contract table below.
-//                    The table is maintained here, beside the checks; the
-//                    scripts' own tests keep the table honest.
+//                    match the real subcommand/flag contract table, which is
+//                    lib/arg-contract.mjs's `CONTRACTS` - the SAME table the
+//                    seam CLIs refuse against, imported here rather than
+//                    restated (D-06). This side reads its flag NAMES through
+//                    `flagNames`; the scripts' own tests keep it honest.
 //   3. paths         every ${CLAUDE_PLUGIN_ROOT}/<path> must exist in-repo.
 //   3b. internals    every backticked repo path cited in INTERNALS.md (the
 //                    deep-dive "Read the code" pointers) must exist in-repo.
@@ -73,12 +75,15 @@
 //                    register of removals and the sentence-level rule live in
 //                    lib/deferred-reads.mjs; this side only calls it.
 //  14. script        every top-level script under cadence-core/bin must have a
-//      contracts     row in the CONTRACTS table below. Check 2 SKIPS a script
-//                    it finds no row for - it has to, since prose names
-//                    third-party scripts too - so deleting a row was a silent
-//                    opt-out of the flag lint rather than a problem, and the
-//                    table's completeness could not be checked from the prose
-//                    side at all. It is checked from the tree side here.
+//      contracts     row in lib/arg-contract.mjs's `CONTRACTS`. Check 2 SKIPS
+//                    a script it finds no row for - it has to, since prose
+//                    names third-party scripts too - so deleting a row was a
+//                    silent opt-out of the flag lint rather than a problem, and
+//                    the table's completeness could not be checked from the
+//                    prose side at all. It is checked from the tree side here.
+//                    TOP-LEVEL only: a `lib/*.mjs` module is not invoked from
+//                    prose and takes no row, which is true of the table's own
+//                    home as much as of any other module there.
 //  15. NUL bytes     no file under cadence-core/bin may contain a literal
 //                    U+0000. One makes GNU `grep -rn` print nothing at all for
 //                    that file without `-a` and `rg` skip it silently, so the
@@ -157,6 +162,22 @@
 //                    check 19 states about its own seventeenth site. It takes
 //                    no CONTRACTS row, for the reason check 14 states about
 //                    `lib/*.mjs`.
+//  21. per-run       the scratch file a converted bulk-output site writes must
+//      scratch       belong to THIS RUN, and the read-back reading it must
+//                    REFUSE rather than answer from a file it could not read.
+//                    Check 20 holds neither half: it asserts a redirect EXISTS
+//                    and never sees what it points AT, so a fixed shared name
+//                    and `> /dev/stdout` pass it identically. That blind spot is
+//                    what let six sites share five fixed names under one
+//                    world-writable directory, where a concurrent run in another
+//                    repository could answer this run's blocking `risk_surface`
+//                    re-arm cap, and where a read-back defaulting a missing array
+//                    to `[]` reported that gate as unspent. The three line-local
+//                    rules and the gap they accept live in lib/scratch-path.mjs;
+//                    this side only decides that they apply to every prose
+//                    surface, for the reason check 19 states about its own scope.
+//                    It takes no CONTRACTS row, for the reason check 14 states
+//                    about `lib/*.mjs`.
 //
 // Seam convention: one JSON line on stdout, exit 0 clean / 1 problems found.
 // Usage: self-verify.mjs [--root <repo root>]
@@ -182,13 +203,16 @@ import { deferredReadIssues, DEFERRED_READS } from './lib/deferred-reads.mjs';
 import { includeConsumerIssues } from './lib/include-consumers.mjs';
 import { textTransportIssues } from './lib/text-transport.mjs';
 import { bulkOutputIssues } from './lib/bulk-output.mjs';
-// The throwing `--root` reader, shared with weight.mjs: ABSENT and
-// PRESENT-WITH-NO-VALUE are different inputs, and a `--root` with nothing after
-// it used to fall back to the plugin's own tree so this linter returned ok:true
-// with problems:[] about a tree it never checked. The entry-point catch arm at
-// the foot of this file is what turns its thrown seam object into a named
-// refusal. Contract in lib/seam-input.mjs.
-import { flagValue } from './lib/seam-input.mjs';
+import { scratchPathIssues } from './lib/scratch-path.mjs';
+// The subcommand/flag contract table, the accessor the prose lint reads its
+// flag NAMES through, and the evaluator that applies one row's value grammar.
+// All three are DEFINED in lib/arg-contract.mjs and imported here: one table,
+// not two bound by a check (D-06). Check 2 below lints prose against it, check
+// 14 requires a row for every shipped script, and the entry block at the foot
+// of this file reads its OWN `--root` through the row it declares there rather
+// than through a hand-written reader call - the rule comes from the
+// declaration, not from a call this file restates.
+import { CONTRACTS, flagNames, evaluateFlag, subcommandKey } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -241,259 +265,6 @@ const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 const WORKFLOWS_DIR = join('cadence-core', 'workflows') + sep;
 const REFERENCES_DIR = join('cadence-core', 'references') + sep;
 
-// --- the contract table: script -> subcommand -> allowed flags --------------
-// Global flags allowed everywhere on that script are listed under '*'.
-//
-// The '' key is the BARE form - the script invoked with flags and no
-// subcommand, e.g. `weight.mjs --root <path>`. Without it check 2 reads the
-// first flag AS the subcommand and reports `unknown-subcommand` on correct
-// prose, so every script with a no-subcommand form must declare one.
-//
-// Every top-level script under cadence-core/bin must appear here: check 14
-// enforces it, because check 2 skips a script it finds no row for. A missing
-// row is therefore a silent opt-out of the flag lint, not a script that
-// happens to be unlinted - which is exactly how `weight.mjs`'s own row could
-// be deleted with self-verify still returning ok:true.
-const CONTRACTS = {
-  'planning.mjs': {
-    '*': ['--dir'],
-    status: [],
-    'cursor get': [],
-    // `--next-file` is `--next`'s path transport, for the two sites that COMPOSE
-    // a resume pointer (/cad-pause, `progress`) rather than authoring a literal
-    // `/cad-<command> N`. The seven literal sites keep the inline form.
-    'cursor set': ['--phase', '--status', '--next', '--next-file', '--name', '--total'],
-    'phase-done': ['--n', '--reqs', '--undo'],
-    'uat init': ['--phase', '--sources'],
-    'uat refresh': ['--phase'],
-    // `--fields-file` is the path transport for the five FREE-TEXT fields
-    // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
-    // one file per failing item rather than three, on the workflow whose
-    // per-item round-trip discipline is explicit. The enum-validated flags gain
-    // no file form: a value that must survive `UAT_RESULTS.includes()` or an
-    // `AC<N>` test is not caller-derived prose.
-    'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--fields-file', '--source',
-      '--origin', '--criterion'],
-    'uat merge': ['--phase', '--payload'],
-    'uat status': ['--phase'],
-    audit: [],
-    'criteria-coverage': [],
-    // The criteria-count ceilings, as the CALLER's literal numbers. Four bounds
-    // rather than two because the two grammars have different ones - CONTEXT's
-    // acceptance criteria 3-7, ROADMAP's per-phase criteria 2-5 - and folding
-    // them onto one pair would make a workflow state a bound it does not hold.
-    // No config keys: D-04, the rule `plan-size`'s row above already follows.
-    'criteria-size': ['--phase', '--context-min', '--context-max',
-      '--roadmap-min', '--roadmap-max'],
-    'plan-overlap': ['--phase'],
-    'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
-    // `--label-file` is `--label`'s path transport: an untagged close takes the
-    // label from PROJECT.md's milestone NAME, which is repository content. The
-    // table term (`|` or a newline) and the containment term run on the
-    // resolved value either way - the transport changes how it arrives, never
-    // what it must satisfy.
-    'milestone-prune': ['--label', '--label-file', '--mode'],
-    'seed-reqs': ['--phase'],
-    'lease-check': ['--phase', '--plan'],
-    'detect-commands': ['--root'],
-    'detect-surfaces': ['--root'],
-    recall: ['--top'],
-    // `--join` ties each record to the `trace.jsonl` dispatch bracket that
-    // caused it, by role normalization and timestamp containment. Off by
-    // default so the envelope every existing reader parses is unchanged, and
-    // whole-record by construction: `reads.jsonl` carries no phase scoping, so
-    // the brackets it joins to must span every phase.
-    reads: ['--join'],
-    // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
-    // keeps only the last). Its grammar is deliberately heterogeneous: an
-    // element is any verbatim string naming something the site caused the
-    // worker to read - a path, a glob, or a non-path reference (a
-    // `<base>..<head>` ref range) the worker resolves for itself.
-    // `--step` names the workflow step a COORDINATOR marker marks. It rides the
-    // same event-agnostic seam as every other flag here; what keeps it off a
-    // worker bracket is the prose and the census, not this table.
-    // `--raised` is the ADJUDICATED arm's kill count - how many findings the
-    // reviewers raised before adjudication, structured so a 0-of-0 fire and a
-    // 0-of-9 one stop reading alike. It lives here rather than in `--detail`
-    // because this row is what makes the flag the only structured route.
-    // `--reviewer` names the reviewer that ACTUALLY ran a fire (RVW-02), so two
-    // fires of one trigger - one cross-model, one subagent - are distinguishable
-    // in the record. Nothing refuses a dispatch to a reviewer outside the
-    // resolved set, so this mark is the whole enforcement.
-    // The detection the blocking `risk_surface` gate fires on, and the record
-    // that proves it ran. `--base` and `--head` are both REQUIRED - a defaulted
-    // head is a range the caller never stated - and `--surfaces` narrows the
-    // scope to the project's resolved set, refusing any token outside the
-    // eight rather than answering about a narrower one.
-    'risk-check run': ['--phase', '--plan', '--base', '--head', '--surfaces'],
-    // The completion gate. `--phase` alone keeps plan-level matching; the
-    // optional `--plan --base --head` triple requires a record for THAT range,
-    // so a record left by an earlier, narrower range of the same plan does not
-    // satisfy a later one.
-    'risk-check status': ['--phase', '--plan', '--base', '--head'],
-    // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
-    // derived: the inline form puts that text in a double-quoted shell word,
-    // where `$(...)` and a backtick execute before Node starts. Additive - the
-    // inline form stays for a human typing at a shell (lib/text-flag-file.mjs).
-    // `--read-file` is `--read`'s path transport, split by the same comma
-    // grammar. It is NOT on the close row below: `--read` is not either, and
-    // the transport never widens what a subcommand accepts.
-    // `--trigger` names WHICH review trigger an event belongs to, structured so
-    // an `outcome` receipt can be joined to the fire that produced it -
-    // `risk-check status` demands one for a matched range (GAT-04/D-12). It is
-    // listed here or check 2 reports `unknown-flag` against correct prose. Not
-    // on the `close` row below, for the reason `--read` is not: `close` fixes
-    // its own family and event, and a flag row never widens what a subcommand
-    // accepts.
-    'trace append': ['--phase', '--family', '--event', '--plan', '--base', '--sha', '--detail',
-      '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
-      '--step', '--reviewer', '--trigger'],
-    // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
-    // family is fixed to `lifecycle` in the seam and the arm is inferred from
-    // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
-    // states what it closes and nothing about how the record spells it. A row
-    // that listed them would let the restated spelling back in through the lint.
-    // The inference reads the RESOLVED detail, so `--detail-file` selects the
-    // checkpoint arm exactly as the inline form does.
-    // `--turns` is the tool-call count on the same subagent return `--tokens`
-    // is read off - the second of the two terms a run's price is made of, and
-    // the reason it is a STRUCTURED flag rather than a phrase inside `--detail`
-    // is that `--detail` is not a machine-join surface (one trigger name was
-    // spelled four different ways across 35 shipped events). Listed on the
-    // CLOSE row only, exactly as `--raised` is listed on `append` only: the
-    // flag is validated in the ONE shared `append|close` body, and this row is
-    // a prose allowlist that never widens what a subcommand accepts.
-    'trace close': ['--phase', '--plan', '--role', '--tokens', '--turns', '--detail',
-      '--detail-file', '--reviewer'],
-    // `--events` asks for the RAW event array. The default response carries the
-    // paired `brackets` rows plus every `outcome` event instead, which is what
-    // the two shipped readers (triage-gate's `rearm` lookup, report.md's
-    // dispatch table) actually consume - and one to three of the bytes.
-    'trace render': ['--phase', '--events'],
-    'trace suggest': ['--phase'],
-    // The dispatch-window report. `--phase` ALONE, and the absence of every
-    // other flag is the point: the ceilings are CONFIG (six
-    // `workflow.max_dispatch_tokens.<role>` keys), so a flag that could name a
-    // role or a number here would be a second, un-layered way to set one - the
-    // ad-hoc override that makes a run's report disagree with the project's own
-    // configured bound. `--phase` only scopes which brackets are read, exactly
-    // as it does on `render` and `suggest`.
-    'trace window': ['--phase'],
-    'trace ignore': ['--root', '--check'],
-    // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s
-    // global queue alone - there is no `--section`, and that absence is the
-    // point: a caller that could name a heading is how five filed bullets
-    // landed outside the recall walk.
-    capture: ['--kind', '--text', '--text-file', '--phase', '--file'],
-    // The read side of the same file, and the same `--file` override. No
-    // `--section` and no allowlist flag either: the census is unconditional
-    // (D-06), and a flag that could hide a section is what would have hidden
-    // the five lost bullets.
-    'capture-sections': ['--file'],
-    'debt-harvest': ['--root'],
-    'renumber insert': ['--at', '--dry-run'],
-    'renumber remove': ['--n', '--dry-run'],
-  },
-  'config.mjs': {
-    '*': [],
-    validate: ['--file', '--global'],
-    check: [],
-    set: ['--file', '--global'],
-    get: ['--file'],
-    keys: [],
-  },
-  'git-branch.mjs': {
-    '*': ['--dir'],
-    decide: ['--branch'],
-    // The read-only tags arm. No flags of its own: `--dir` is the whole input
-    // and it is BOTH the directory the question is asked from and the project
-    // root the answer must belong to (TAG-01), so a second flag here would be
-    // the way to ask one of those two questions without the other - which is
-    // the upward discovery the bound closed.
-    tags: [],
-  },
-  'git-publish.mjs': {
-    '*': ['--dir'],
-    publish: ['--remote'],
-    reap: ['--branch'],
-    authorized: [],
-  },
-  'land-cleanup.mjs': {
-    '*': ['--dir'],
-    cleanup: ['--branch', '--base', '--merged'],
-    gate: [],
-  },
-  'issue-check.mjs': {
-    '*': ['--dir'],
-    check: ['--base', '--timeout-ms'],
-  },
-  'release-bump.mjs': {
-    '*': ['--dir'],
-    bump: ['--version', '--date'],
-  },
-  'route.mjs': {
-    '*': [],
-    resolve: ['--role', '--attempt', '--file', '--phase', '--bracket-read', '--bracket-plan'],
-    table: [],
-  },
-  'worktree-base.mjs': {
-    '*': ['--dir'],
-    resolve: [],
-  },
-  'review-provider.mjs': {
-    '*': ['--key-file'],
-    // `--trigger` names the review trigger the call was fired for; it rides the
-    // provider trace event so a cross-model fire JOINS to its trigger through
-    // the correlation id, which is what makes it distinguishable from the
-    // subagent fire of the same trigger (RVW-02). Optional and review-only: a
-    // consult has no trigger.
-    review: ['--provider', '--model', '--effort', '--payload', '--trigger'],
-    consult: ['--provider', '--model', '--effort', '--payload'],
-    'detect-models': ['--provider'],
-  },
-  'weight.mjs': {
-    '*': ['--root'],
-    '': [],
-    resident: ['--command', '--role'],
-  },
-  // Two scripts with no subcommand at all. They carry rows because check 14
-  // requires one, and the rows have teeth: the bare form's flag list is what
-  // check 2 lints `self-verify.mjs --root <path>` against.
-  'self-verify.mjs': {
-    '*': ['--root'],
-    '': [],
-  },
-  // git-guard.mjs is the commit hook - it reads its input on stdin and takes
-  // no flags, so the bare form allows none.
-  'git-guard.mjs': {
-    '*': [],
-    '': [],
-  },
-
-  // read-trace.mjs is the PostToolUse recorder - like git-guard.mjs it reads
-  // its input on stdin and takes no flags and no subcommand at all.
-  'read-trace.mjs': {
-    '*': [],
-    '': [],
-  },
-  // skim.mjs takes a FILE as its positional argument, never a subcommand, so
-  // the bare row carries the whole flag set.
-  'skim.mjs': {
-    '*': [],
-    '': ['--stats', '--no-numbers'],
-  },
-  // test.mjs takes GROUP NAMES as positional arguments, never subcommands, so
-  // the bare form is the only form and `--list` is its one flag.
-  'test.mjs': {
-    '*': ['--list'],
-    '': ['--list'],
-  },
-};
-
-// Subcommands whose first word takes a second word (sub-subcommand).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
-
 // The canonical Claude Code tool vocabulary the agents-only tools lint checks
 // against - a FIXED set, not derived from the tree, so a single-agent fixture
 // still has a full vocabulary to test with.
@@ -531,6 +302,12 @@ function* mdFiles(root) {
     join(root, 'cadence-core', 'templates'),
     join(root, 'skills'),
     join(root, 'agents'),
+    // `docs/` carries the published pages the landing page hands its
+    // reference material to (v3.5.5, D-05). They are as key-and-path-dense as
+    // README itself, so leaving them off the walk would mean a claim stops
+    // being CI-enforced at the moment it MOVES - which is exactly what the
+    // two unchecked `weight.mjs` invocations in docs/EVIDENCE.md were.
+    join(root, 'docs'),
   ];
   /** @param {string} dir @returns {Generator<{ file: string, unreadable?: string }>} */
   function* walk(dir) {
@@ -568,8 +345,9 @@ function* mdFiles(root) {
     yield* walk(d);
   }
   // README, INTERNALS and METHOD name user-facing switches and live file paths -
-  // they are live surfaces too. Historical docs (DESIGN/LINEAGE/CHANGELOG) stay
-  // out: they legitimately name keys that were later cut, while explaining the cut.
+  // they are live surfaces too, as is every page under `docs/` walked above.
+  // Historical docs (DESIGN/LINEAGE/CHANGELOG) stay out: they legitimately name
+  // keys that were later cut, while explaining the cut.
   for (const doc of ['README.md', 'INTERNALS.md', 'METHOD.md']) {
     const p = join(root, doc);
     if (existsSync(p)) yield { file: p };
@@ -794,18 +572,18 @@ function run(root) {
       // bare form. Reading it as a subcommand reported `unknown-subcommand` on
       // correct prose like `weight.mjs --root <path>`.
       const bare = w1.startsWith('-');
-      const sub = bare ? '' : (TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1);
+      const sub = subcommandKey([w1, w2]);
       if (!contract[sub]) {
         problems.push({ kind: 'unknown-subcommand', file: rel,
           detail: `${script} ${bare ? '(bare form)' : sub}` });
         continue;
       }
-      const allowed = new Set([...contract[sub], ...contract['*']]);
+      const allowed = new Set([...flagNames(contract[sub]), ...flagNames(contract['*'])]);
       // The bare form's own first word IS a flag, so it must be scanned; the
       // subcommand forms consume w1 as the name and scan from w2 on.
       const rest = bare
         ? ` ${w1} ${w2 || ''}${restRaw}`
-        : (TWO_WORD.has(w1) && w2 ? '' : ` ${w2 || ''}`) + restRaw;
+        : (sub.includes(' ') ? '' : ` ${w2 || ''}`) + restRaw;
       for (const f of rest.matchAll(/--[a-z-]+/g)) {
         if (!allowed.has(f[0])) {
           problems.push({ kind: 'unknown-flag', file: rel, detail: `${script} ${sub} ${f[0]}` });
@@ -872,6 +650,18 @@ function run(root) {
     // prose surface. It takes no CONTRACTS row, for the reason check 14 states
     // about `lib/*.mjs`.
     problems.push(...bulkOutputIssues(rel, text));
+
+    // 21. per-run scratch: a converted bulk-output site must write into a
+    // directory THIS run made, and its read-back must refuse a file it could
+    // not read, parse or recognise instead of answering from it. Every surface
+    // this walk yields, for the reason check 19 states about its own scope: a
+    // step in skills/ pays for a collision exactly as a workflow does. Check 20
+    // cannot stand in for it - it sees that a redirect is there and never what
+    // it points at, so nothing in this tree held the shape in place. The three
+    // rules and the gap they accept live in lib/scratch-path.mjs; this side
+    // only decides where they apply. It takes no CONTRACTS row, for the reason
+    // check 14 states about `lib/*.mjs`.
+    problems.push(...scratchPathIssues(rel, text));
   }
 
   // 3b. INTERNALS repo-path citations: every backticked repo path in
@@ -1459,13 +1249,30 @@ function run(root) {
 
 // --- entry ---------------------------------------------------------------------
 
+// This file's own refusal vocabulary for an unusable flag value, which is
+// lib/seam-input.mjs's word (D-07: the contract mints none of its own - the
+// evaluator classifies and the CALLER names the refusal). Held as a const
+// rather than written inline at the throw because helper-census.test.mjs pins
+// that literal throw body to lib/seam-input.mjs, and a second spelling of it
+// here is exactly the copy the census exists to redden.
+const MISSING_FLAG_VALUE = 'missing-flag-value';
+
 try {
   const argv = process.argv.slice(2);
-  const root = flagValue(argv, '--root') || join(HERE, '..', '..');
+  // The tracer bullet for the whole contract: declaration -> evaluator -> CLI
+  // refusal -> envelope, and the first adopter is the file the table just left.
+  // The THROWING mechanism stays (D-08) because the catch arm below is already
+  // written for it; a genuinely ABSENT `--root` still resolves to the plugin's
+  // own tree, while the empty, valueless and flag-shaped spellings refuse -
+  // each of them used to return ok:true with problems:[] about a tree the
+  // caller never named.
+  const rooted = evaluateFlag(argv, '--root', CONTRACTS['self-verify.mjs']['*']['--root']);
+  if (!rooted.ok) throw { seam: MISSING_FLAG_VALUE, detail: rooted.detail };
+  const root = rooted.value || join(HERE, '..', '..');
   const problems = run(root);
-  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output', problems });
+  emit({ ok: problems.length === 0, checked: 'config-keys, invocations, paths, internals-paths, budgets, tools, agent-skills, agent-behaviour, rung-effort, verifier-write-grant, routing-cells, effort-enums, config-reach, dispatch-phrasing, route-relay, merge-warnings, deferred-reads, script-contracts, nul-bytes, include-consumers, global-only-key-scope, gate-agreement, text-transport, bulk-output, scratch-path', problems });
 } catch (e) {
-  // The seam arm lands WITH flagValue: a thrown seam object carries no
+  // The seam arm lands WITH the throw above: a thrown seam object carries no
   // `message`, so without it the refusal emits detail "[object Object]".
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });

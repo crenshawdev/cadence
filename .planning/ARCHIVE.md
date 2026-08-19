@@ -212,3 +212,133 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/3/CONTEXT.md`: D-10 (ISS-01): The bound becomes a wall-clock BUDGET over the resolve LOOP,
 - `phases/3/CONTEXT.md`: D-11 (ISS-01): A FAST non-zero resolve does NOT stop the loop - only budget
 - `phases/3/CONTEXT.md`: D-12 (ISS-01): The budget derives from the existing
+
+## v3.5.5
+
+- `phases/1/SUMMARY.md`: The four shipped read-backs dereference `r` after a successful parse, so a scratch file holding literal `null` throws a TypeError outside the catch instead of the promised `scratch-shape` refusal (`workflows/progress.md:101`, `references/triage-gate.md`'s re-arm count). Adjudicated survivor of the `risk_surface` review, medium.
+- `phases/1/SUMMARY.md`: `scratchPathIssues` clears a whole LINE once `mktemp` appears anywhere on it, and `FIXED_TARGET_RE` requires an absolute literal, so a single line that both makes a run directory and redirects into `${TMPDIR:-/tmp}/<fixed>` passes check 21 (`cadence-core/bin/lib/scratch-path.mjs:85`). Adjudicated survivor, medium.
+- `phases/1/SUMMARY.md`: No `scratch-stale` fixture in `scratch-readback.test.mjs`. The stale arm was proved by running it at tasks 2-4 and 2-5 rather than pinned, and it is the one arm no shape guard can reach.
+- `phases/1/SUMMARY.md`: `.planning/DOCS-CLAIMS.md` rows TASK-13, TASK-14, TASK-15 and TASK-16 cite line spans in `workflows/task.md` that had rotted before this phase (TASK-16's bullet now opens at 122). Only TASK-17 was in plan 2's scope.
+- `phases/1/UAT.md`: Resolver returns a non-empty branch list for every grammar row node -e against lib/protected-branches.mjs returns "" -> ['main','master'], " " -> ['main','master'], [""] -> ['main','master'], ["","main"] -> ['main'], [] -> [], "release" -> ['release']; no returned list contains an empty or whitespace-only entry.
+- `phases/1/UAT.md`: git-guard refuses a commit on main under a string "" config With git.protected_branches: "" in the repo config layer, running git-guard.mjs against a `git commit` on main refuses it.
+- `phases/1/UAT.md`: land-cleanup and issue-check emit a defined base under a string "" Under git.protected_branches: "" with no git.base_branch and no --base, land-cleanup.mjs and issue-check.mjs each emit a defined base; the string `undefined` appears in neither the `git branch --merged` nor the `git log ..HEAD` invocation.
+- `phases/1/UAT.md`: All six scratch sites use a per-run path rg 'TMPDIR:-/tmp' cadence-core skills agents hooks shows a per-run path at all six sites of D-11; no fixed shared filename remains at any of them.
+- `phases/1/UAT.md`: A reintroduced fixed shared path fails a deterministic named check Reintroducing a fixed shared scratch path at any one of the six sites makes a deterministic check FAIL by name; with the tree as shipped, that same check passes.
+- `phases/1/UAT.md`: Every read-back refuses a truncated file by name Feeding a truncated file to each of the six read-backs produces a named refusal and a non-zero exit; none throws an unhandled parse error and none prints {} as a success. The five prose read-backs name the refusal on stderr; review-provider.mjs --payload names it in its stdout seam envelope ({"ok":false,"reason":"bad-payload"}).
+- `phases/1/UAT.md`: self-verify, the full suite, and the two doc claims all agree node cadence-core/bin/self-verify.mjs and the full test suite both pass, with references/conventions.md's stated rule showing the per-run form and the .planning/DOCS-CLAIMS.md TASK-17 row matching workflows/task.md's current line.
+- `phases/1/UAT.md`: A scratch file that parses to null crashes the read-backs instead of refusing by name behavior wrong - the four shipped node -e read-backs dereference the parsed value outside their try/catch, so a well-formed file holding literal `null` throws an uncaught TypeError rather than printing the promised scratch-shape refusal
+- `phases/1/CONTEXT.md`: D-01 (grammar): the `protected_branches` grammar applies to ARRAY ELEMENTS,
+- `phases/1/CONTEXT.md`: D-02 (grammar): an out-of-grammar value falls to the DEFAULT
+- `phases/1/CONTEXT.md`: D-03 (config face): prior D-08 is NOT reopened - `config.mjs validate` keeps
+- `phases/1/CONTEXT.md`: D-04 (transport rule): `references/conventions.md:98` states the bulk-output
+- `phases/1/CONTEXT.md`: D-05 (transport mechanism): the per-run path must survive BETWEEN Bash
+- `phases/1/CONTEXT.md`: D-06 (transport mechanism): the run's `corr` is NOT usable as the scratch
+- `phases/1/CONTEXT.md`: D-07 (what holds it): self-verify check 20 CANNOT verify the per-run
+- `phases/1/CONTEXT.md`: D-08 (gate semantics): a read-back's refusal lands on the STOP-and-ask arm,
+- `phases/2/SUMMARY.md`: Plan 2 task 4's `Verify:` line ran the accepted arm as
+- `phases/2/SUMMARY.md`: The blocking `risk_surface` gate on plan 1's range raised one
+- `phases/2/SUMMARY.md`: `cadence-core/workflows/milestone.md` sits under a byte-exact weight budget
+- `phases/2/SUMMARY.md`: `cadence-core/references/capture-grammar.md` is the stated prose home of the
+- `phases/2/SUMMARY.md`: Not queued, recorded here: the `bad-date` detail names the flag and the
+- `phases/2/SUMMARY.md`: Not queued, already roadmapped: `planning.mjs`'s own `parseArgs` `--dir`
+- `phases/2/UAT.md`: --dir refuses empty and valueless at all six seams Each of git-publish.mjs, release-bump.mjs, land-cleanup.mjs, git-branch.mjs, worktree-base.mjs, issue-check.mjs, run with --dir '' and with a trailing valueless --dir, prints ONE JSON line {"ok":false,...} naming the flag (--dir) and exits 1. Baseline before the fix: git-publish.mjs reap --dir '' --branch nosuchbranch-xyz returned {"ok":true,"action":"already-absent"} and git-branch.mjs tags --dir '' printed this repo's 33 tags.
+- `phases/2/UAT.md`: Full bin test suite passes and the two-reader header is gone node --test 'cadence-core/bin/*.test.mjs' passes with zero failures, and cadence-core/bin/lib/seam-input.mjs's header no longer claims two surviving --dir contracts.
+- `phases/2/UAT.md`: release-bump --date refuses every malformed spelling, CHANGELOG untouched release-bump.mjs bump --date with each of not-a-date, 2026-13-45, 2026-8-1, '' and a newline-carrying value returns {"ok":false,"action":"refuse"} with reason bad-date at exit 1, and CHANGELOG.md is byte-identical afterwards; --date 2026-08-18 still writes '## [<version>] - 2026-08-18'.
+- `phases/2/UAT.md`: Malformed --date refuses even where nothing would be written Against a directory with no plugin manifest, --date not-a-date returns the date refusal, NOT {"ok":true,"action":"skip","reason":"no-plugin-manifest"}.
+- `phases/2/UAT.md`: A phase spelling that cannot round-trip is refused at both write faces seed-reqs --phase 1.10 and cursor set --phase 1.10 each return ok:false naming the spelling; --phase 2.1 and --phase 2 still succeed; phase-done --n 02 still checks its roadmap box.
+- `phases/2/UAT.md`: The shared numeric readers refuse out-of-safe-range values requireInt, requireCursorNumber, normalizeNumber and scanIssueRefs each refuse 9007199254740993 and a 400-digit string, where before they returned 9007199254740992 and Infinity.
+- `phases/2/UAT.md`: config.mjs reports prototype members as unknown keys config.mjs get __proto__, get constructor and get toString each return unknown-key and exit 1; get stakes __proto__ refuses rather than answering about one key of two; check '__proto__=1' no longer reports 'retired in v2.0.0: undefined'.
+- `phases/2/CONTEXT.md`: D-01 (ARG-01 reach): ALL SIX `--dir` seams take `lib/seam-input.mjs`'s strict
+- `phases/2/CONTEXT.md`: D-02 (refusal shape): the refusal is the SEAM ENVELOPE - one JSON line on
+- `phases/2/CONTEXT.md`: D-03 (ARG-01 scope): `planning.mjs`'s `--dir` is OUT - it comes from that
+- `phases/2/CONTEXT.md`: D-04 (ARG-02 vocabulary): the malformed-date refusal mints a NEW seam-level
+- `phases/2/CONTEXT.md`: D-05 (ARG-02 grammar): `--date ""` REFUSES rather than falling through to
+- `phases/2/CONTEXT.md`: D-06 (ARG-02 ordering): the date is validated at the dispatch line beside
+- `phases/2/CONTEXT.md`: D-07 (ARG-03 mechanism): a phase spelling the numeric grammar cannot
+- `phases/2/CONTEXT.md`: D-08 (ARG-04 reach): the safe-integer guard lands in the SHARED numeric
+- `phases/3/SUMMARY.md`: Plan 1 task 5 was unsatisfiable as written: its `Action:` adds prose
+- `phases/3/SUMMARY.md`: Plan 1 task 2's `Verify:` asserts `detect-commands --root .` answers
+- `phases/3/SUMMARY.md`: This refutes D-04, and `CONTEXT.md` is annotated accordingly. D-04
+- `phases/3/SUMMARY.md`: All three executors were dispatched naming branch
+- `phases/3/SUMMARY.md`: `reachable()` does not walk parent directories for `node_modules/.bin`, which is
+- `phases/3/SUMMARY.md`: `parseRequirements` still counts a fenced example table nested INSIDE a real
+- `phases/3/SUMMARY.md`: The census row in `risk-diff.test.mjs` hardcodes this project's three answered
+- `phases/3/SUMMARY.md`: The range that lands plan 2's fix still fires `risk_surface` once, unavoidably:
+- `phases/3/UAT.md`: Unreachable configured tool nulls its slot On a fixture tree configuring ruff (or mypy, or eslint) with that binary absent from PATH and from node_modules/.bin, detect-commands returns that slot as null, names the unreachable tool in warnings[], and does NOT fall through to a lower matching arm.
+- `phases/3/UAT.md`: npx-delegated typecheck resolves in this repo Run in this repository, detect-commands returns `npx tsc -p tsconfig.ci.json` for the typecheck slot, with tsc absent from PATH and present at node_modules/.bin/tsc.
+- `phases/3/UAT.md`: detect-commands suite is machine-independent The full detect-commands test set passes with ruff, mypy, eslint, tsc and go all absent, and passes again with a stub for each made reachable.
+- `phases/3/UAT.md`: risk-check accepts the worker-key grammar `risk-check run --phase 3 --plan 1-fix --base <ref> --head <ref>` returns ok:true and records a risk row; `risk-check status` for a range whose brackets carry 1-fix returns ok:false before a receipt exists under that corr+1-fix and ok:true after one does.
+- `phases/3/UAT.md`: One predicate behind both risk-check faces risk-check run and risk-check status reach the plan-key grammar through one exported predicate, and a test asserts a key accepted by either face is accepted by both.
+- `phases/3/UAT.md`: Risk detector stops matching itself scanDiff over a whole-file add of cadence-core/bin/lib/risk-diff.mjs returns zero matches, and over a whole-file add of cadence-core/bin/risk-diff.test.mjs returns zero matches, under both this repo's configured surfaces and the full eight-surface set; a committed test asserts both and was watched failing against the pre-fix tree.
+- `phases/3/UAT.md`: Fence-aware Shipped and Traceability locators On a fixture whose ## Shipped and ## Traceability headings appear only inside a fenced block, milestone-prune leaves the fenced content unedited and reports no section found; on the same fixture with real headings below the fence, it archives rows under the real ## Shipped.
+- `phases/3/UAT.md`: Full suite passes on the merged tree `node cadence-core/bin/test.mjs` on the merged phase-3 tree reports 0 failures (SUMMARY records 2357 pass / 0 fail).
+- `phases/3/CONTEXT.md`: D-01 (RSK-03 direction): `run --plan` WIDENS to the worker-key grammar;
+- `phases/3/CONTEXT.md`: D-02 (RSK-03 mechanism): ONE shared plan-key predicate is consulted by both
+- `phases/3/CONTEXT.md`: D-03 (RSK-03 write face): the trace WRITE face is NOT where this is enforced.
+- `phases/3/CONTEXT.md`: D-04 (RCH-01 probe target): the PATH check probes the command's DRIVER (first
+- `phases/3/CONTEXT.md`: D-05 (RCH-01 fallback): an unreachable winning arm NULLS its slot and names the
+- `phases/3/CONTEXT.md`: D-06 (RSK-04 mechanism): the fix SPLITS the self-matching literals in both files
+- `phases/3/CONTEXT.md`: D-07 (RSK-04 reach): the self-match is NOT confined to the test file - the
+- `phases/3/CONTEXT.md`: D-08 (SHP-01 scope): every `## Traceability` locator routes through `sectionSpan`
+- `phases/3/CONTEXT.md`: D-09 (platform): the reachability predicate handles `PATHEXT` on win32, so
+- `phases/4/SUMMARY.md`: (plan 1, e0a19c8) Task 3 required every disposition to reproduce
+- `phases/4/SUMMARY.md`: (plan 3, 1963c8e) STRUCTURAL CHECKPOINT, user-resolved. Reading
+- `phases/4/SUMMARY.md`: (plan 2, 2306cfa) STRUCTURAL CHECKPOINT, user-resolved. Moving
+- `phases/4/SUMMARY.md`: (plan 3, 1963c8e/6bd11ea) The plan asserted no subcommand's output
+- `phases/4/SUMMARY.md`: (plan 3, df718c6) `release-bump bump --version "   "` moved from
+- `phases/4/SUMMARY.md`: (plan 4, 6985052) The first draft of the conventions section broke
+- `phases/4/SUMMARY.md`: (plan 5, 5d3143a) The plan's Context put re-dispositioning any flag
+- `phases/4/SUMMARY.md`: The `optionalFlag` collapse costs census coverage: `helper-census.test.mjs` can
+- `phases/4/SUMMARY.md`: `release-bump.test.mjs:424-428` still names `optionalFlag` in a comment. It is
+- `phases/4/SUMMARY.md`: `--dir "   "` (whitespace-only) now refuses `missing-flag-value` at four seams
+- `phases/4/SUMMARY.md`: No lint command exists for this repo (`workflow.lint_command` is null).
+- `phases/4/SUMMARY.md`: A repeated flag whose LATER occurrence takes the `fallback` disposition is
+- `phases/4/SUMMARY.md`: `uat merge --payload` (bare) now answers `bad-args` naming the flag instead of
+- `phases/4/SUMMARY.md`: A LOOSENED axis is a census skip, not a census failure, so emptying a row's
+- `phases/4/SUMMARY.md`: `planning.mjs`'s numeric rows approximate in both directions: `int` accepts a
+- `phases/4/UAT.md`: planning.mjs --dir refuses the empty and bare spellings `planning.mjs status --dir ''` and `planning.mjs status --dir` (bare) each print ONE JSON line `{"ok":false,...}` naming the flag, exit 1, and write nothing to stderr. Baseline was ok:true about ./.planning for the empty form, and a DEP0187 warning on stderr beside no-planning-dir for the bare one.
+- `phases/4/UAT.md`: route.mjs and review-provider.mjs stop swallowing the next flag `route.mjs resolve --role --attempt 2` and `review-provider.mjs consult --payload --provider openai` each refuse naming the valueless flag, each refusal's reason is a code that bin's own published vocabulary already contains, and references/seams.md lines 329-332 are unchanged. Baseline was unknown-role:"--attempt" and bad-provider:"unknown provider: undefined".
+- `phases/4/UAT.md`: a bare --role refuses; bare --plan and --sha still drop `trace append --phase 1 --family lifecycle --event dispatch --role --tokens 5` returns ok:false and `trace render` reports no "" key under roles. A `trace close` with a bare --plan or a bare --sha still returns ok:true and still omits that key.
+- `phases/4/UAT.md`: all three dispositions hold at a named flag issue-check with a malformed --timeout-ms still returns ok:true on its constant (fallback); `route.mjs resolve --phase <malformed>` still warns and resolves rather than refusing (warn); a valueless --dir refuses (refuse).
+- `phases/4/UAT.md`: one CONTRACTS table, and it is enforced self-verify.mjs no longer defines CONTRACTS and imports it from the shared module; `node cadence-core/bin/self-verify.mjs` returns {"ok":true,...,"problems":[]}; and removing one flag from a row in the shared spec makes self-verify report unknown-flag against the prose that names it.
+- `phases/4/UAT.md`: suite green and optionalFlag gone `node cadence-core/bin/test.mjs` passes with zero failures, cadence-core/bin/lib/seam-input.mjs no longer exports optionalFlag, and seam-input.test.mjs carries no surviving divergence arm.
+- `phases/4/UAT.md`: the rule is stated once in prose, and the budget matches references/conventions.md carries an arguments section stating the three dispositions and the bare-vs-empty split, its weight-budgets.json row equals its new byte size, and `npx tsc -p tsconfig.ci.json` reports zero errors.
+- `phases/4/UAT.md`: the table declares refuse where the CLI still writes the boolean through behavior wrong - a declared disposition that no reader applies. planning.mjs holds 98 of the table's 144 flag rows but consults the table at only two sites, so most of its rows state a rule the bin does not enforce, and for at least three of them the row and the shipped behavior disagree outright.
+- `phases/4/UAT.md`: config.mjs get accepts --global with no row to declare it missing - a live, exercised flag with no declaration on the subcommand that accepts it, inside the table whose completeness is the phase's product.
+- `phases/4/CONTEXT.md`: D-01 (reach): the contract reaches ALL FOUR remaining parsers AND the eight
+- `phases/4/CONTEXT.md`: D-02 (centre of gravity): `planning.mjs` is where the contract has to land,
+- `phases/4/CONTEXT.md`: D-03 (planning.mjs `--dir`): phase 2's D-03 gap closes here, and the defect is
+- `phases/4/CONTEXT.md`: D-04 (disposition, not type): each flag declares a DISPOSITION - refuse /
+- `phases/4/CONTEXT.md`: D-05 (bare-flag vs empty-value): the two dispositions are declared
+- `phases/4/CONTEXT.md`: D-06 (one table): `CONTRACTS` MOVES out of `self-verify.mjs:274-509` into the
+- `phases/4/CONTEXT.md`: D-07 (no new reason code on the four-parser side): the contract mints NO
+- `phases/4/CONTEXT.md`: D-08 (two mechanisms, picked per bin): the throwing form and the returning
+- `phases/4/CONTEXT.md`: D-09 (the collapse): `optionalFlag` collapses INTO the contract, and
+- `phases/5/SUMMARY.md`: Task 2's Verify wanted `docs/COST.md`'s head to match both D-04's
+- `phases/5/SUMMARY.md`: Task 2's Action said to cut the whole "went from 8,550 bytes to
+- `phases/5/SUMMARY.md`: Task 8's Action listed seven rows to retire; nine retired. Task
+- `phases/5/SUMMARY.md`: Task 8 retired README-50 against D-07's literal list, as the plan
+- `phases/5/SUMMARY.md`: Task 8's Verify predicted 47 pin misses against the pre-change
+- `phases/5/SUMMARY.md`: Task 6's compression dropped three details ledger rows cite while
+- `phases/5/SUMMARY.md`: Post-execution review rejected the section above `## Install` as
+- `phases/5/SUMMARY.md`: Review rejected the whole landing-page framing, not just its
+- `phases/5/SUMMARY.md`: The rewrite moved every `README-*` claim, so all 56 non-provenance
+- `phases/5/SUMMARY.md`: `workflow.lint_command` is unset and `detect-commands` reports `lint: null`,
+- `phases/5/SUMMARY.md`: README-76 retired with half its claim still live: `README.md:46` states
+- `phases/5/SUMMARY.md`: Pre-existing ledger contradiction, untouched here because task 8 changed no
+- `phases/5/SUMMARY.md`: No self-verify check enforces D-04's `docs/` page shape. Task 1's Verify asked
+- `phases/5/UAT.md`: Relocation and the command cut landed README.md has no `## The commands`, `## What it costs to run` or `## A worked example` heading; two files under docs/ carry the cost-to-run and worked-example material; no docs/ file lists the /cad-* commands; README.md has a line naming both /cad-help and cadence-core/references/COMMANDS.md
+- `phases/5/UAT.md`: Demand section sits above Install The audience/demand section appears above `## Install` in README.md, contains "if you want to describe a feature and come back to a merged PR, this is the wrong tool" verbatim, and states no count of decision points or gates
+- `phases/5/UAT.md`: Plain register through Install From line 1 through the end of `## Install`, README.md contains none of: gate, seam, rung, dispatch, adversarial, traceability, subagent
+- `phases/5/UAT.md`: self-verify clean with docs/ on the walk `node cadence-core/bin/self-verify.mjs` returns ok:true with an empty problems array, and grep 'docs/' cadence-core/bin/self-verify.mjs shows docs/ on the mdFiles walk
+- `phases/5/UAT.md`: Test suite passes including the counts sentence `node cadence-core/bin/test.mjs` passes, including prose-agreement.test.mjs:700's "27 skills and 6 agent roles across 19 rung files" match
+- `phases/5/UAT.md`: Claim ledger re-pointed, retired and re-pinned No .planning/DOCS-CLAIMS.md row has doc = README.md while its claim text lives in a docs/ file; the six command-list rows (README-39, -40, -76, -77, -78, -86) each carry a RETIRED verdict; and every surviving README-* row's cited line number resolves to that claim in the current README.md
+- `phases/5/UAT.md`: Stale figures gone and LINEAGE counts live The string 5,397 appears in neither README.md nor any docs/ file, and LINEAGE.md's Agents and Skills counts match the live repo counts
+- `phases/5/UAT.md`: The landing page reads as a decision document Reading README.md top to bottom, a stranger can tell what Cadence is and decide whether to install it before hitting any mechanism, and the register does not read as marketing
+- `phases/5/UAT.md`: Read README.md top to bottom cold, as someone who has never seen Cadence, and stop at `## Install` (line 9) By line 8 you can say what Cadence is, what it will demand of you, and whether you want it - and nothing in lines 1-8 reads as marketing rather than as a description of what the code does
+- `phases/5/CONTEXT.md`: D-01 (Register): Plain language runs from line 1 through the end of
+- `phases/5/CONTEXT.md`: D-02 (Audience): The demand section names the moments the run stops - before
+- `phases/5/CONTEXT.md`: D-03 (Split): `## The commands` is CUT from `README.md` and no `docs/`
+- `phases/5/CONTEXT.md`: D-05 (Enforcement): `docs/` joins the `mdFiles` walk in
+- `phases/5/CONTEXT.md`: D-07 (Ledger): The 23 `README-*` rows following the changed sections split
+- `phases/5/CONTEXT.md`: D-10 (Accuracy): `README.md:142`'s "went from 8,550 bytes to 5,397" is cut

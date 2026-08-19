@@ -47,6 +47,58 @@ export const CATEGORIES = Object.freeze(['auth', 'migrations', 'billing',
   'concurrency', 'destructive', 'secrets', 'api_contract', 'untrusted_input']);
 
 /**
+ * Whether a config layer ANSWERED the one-time surface question, and the set
+ * that stands either way. The ONE statement of that predicate: `route.mjs`
+ * reports it as `surfaces_answered` and `planning.mjs risk-check run` REFUSES
+ * on it, and two copies of this rule would let the seam that enforces the
+ * question disagree with the resolve that reports it.
+ *
+ * Fails SAFE in every direction that is not an exact, non-empty, fully
+ * recognised list: a scalar, an empty list, and a list carrying any
+ * unrecognised entry each leave every category standing AND the question
+ * reading as unanswered. `["auth", "secret"]` is a typo for `secrets`, not a
+ * decision to stop reviewing secret handling, and resolving it to its valid
+ * subset would suppress the question forever while silently shrinking the only
+ * blocking gate. Widening is the safe direction.
+ *
+ * The caller owns the diagnostics: this returns the DECISION and the two
+ * partitions behind it, so `route.mjs` can word its `warnings[]` and
+ * `risk-check run` its refusal detail without either re-deriving the rule.
+ * `surfaces` is `kept` verbatim, duplicates and all: this function decides
+ * whether the question was answered, and normalising the answer's SHAPE is a
+ * separate change nobody asked for - `risk-check run` de-duplicates at its own
+ * call site, where the value becomes a scan scope.
+ *
+ * @param {unknown} wrote the value `review.triggers.risk_surface.surfaces`
+ *   merged to, or `undefined` when no layer wrote the key at all
+ * @param {readonly string[]} [vocabulary] the recognised categories, defaulting
+ *   to CATEGORIES - `route.mjs` passes route-table.json's own list so a table
+ *   that names fewer is honoured
+ * @returns {{answered: boolean, surfaces: string[], kept: string[], bad: unknown[], written: boolean, list: boolean}}
+ */
+export function answeredSurfaces(wrote, vocabulary = CATEGORIES) {
+  const vocab = Array.isArray(vocabulary)
+    ? vocabulary.filter((c) => typeof c === 'string' && c) : [];
+  const all = [...vocab];
+  if (wrote === undefined) {
+    return { answered: false, surfaces: all, kept: [], bad: [], written: false, list: false };
+  }
+  const isList = Array.isArray(wrote);
+  const list = isList ? wrote : [];
+  const kept = list.filter((x) => typeof x === 'string' && vocab.includes(x));
+  const bad = list.filter((x) => !(typeof x === 'string' && vocab.includes(x)));
+  const answered = kept.length > 0 && bad.length === 0;
+  return {
+    answered,
+    surfaces: answered ? kept : all,
+    kept,
+    bad,
+    written: true,
+    list: isList,
+  };
+}
+
+/**
  * Directory BASE names that evidence a category. Conservative on purpose: a
  * name here has to mean the category on nearly every project that uses it, so
  * generic containers (`tasks`, `contracts`, `public`, `lib`) are absent even

@@ -50,8 +50,12 @@
 //                                   declared files: list (the executor's
 //                                   commit-step gate)
 //   detect-commands [--root <path>]  the project's own lint/typecheck commands,
-//                                   read from its manifests (NOT --dir: --root
-//                                   is the PROJECT root, one level deep only)
+//                                   read from its manifests AND offered only
+//                                   when their binaries resolve - an
+//                                   unreachable arm is null with the tool named
+//                                   in warnings[], never a fall-through to a
+//                                   lower one (NOT --dir: --root is the
+//                                   PROJECT root, one level deep only)
 //   detect-surfaces [--root <path>]  which of the eight risk-surface categories
 //                                   the project's STRUCTURE evidences - dirs,
 //                                   manifests, file types, never source text
@@ -62,13 +66,21 @@
 //                                   whether a COMMITTED range touched a risk
 //                                   surface, recorded on the trace whatever the
 //                                   answer - so "the check was skipped" stops
-//                                   reading like "it ran and matched nothing"
+//                                   reading like "it ran and matched nothing".
+//                                   --plan is the WORKER key, not a plan
+//                                   number: `1-fix` is a key a dispatch is
+//                                   bracketed under and is recorded verbatim
 //   risk-check status --phase N [--plan k --base <ref> --head <ref>]
 //                                   every COMPLETED executor range in that
 //                                   phase against the records, refusing by plan
 //                                   when one carries none; the optional triple
 //                                   requires a record for THAT range, so an
-//                                   earlier narrower one does not satisfy it
+//                                   earlier narrower one does not satisfy it.
+//                                   --plan is the same WORKER key `run` takes,
+//                                   read through the same grammar; a bracketed
+//                                   key that grammar refuses is reported in
+//                                   malformed[] rather than demanded in
+//                                   missing[], since no run could record it
 //   trace append --phase N --family <f> --event <e> [--plan k] [--base b] [--sha s]
 //               [--detail "<text>"] [--role <name>] [--tokens <n>]
 //               [--read "<a,b,c>"] [--step <name>]
@@ -155,7 +167,7 @@ import { debtMarkersIn, renderDebtSection } from './lib/debt-markers.mjs';
 import {
   appendCapture, replaceSection, withPlanningFileLock, CAPTURE_KINDS, EMPTY_CAPTURE,
 } from './lib/capture-file.mjs';
-import { mergeLayers } from './lib/config-merge.mjs';
+import { mergeLayers, isPlainObject } from './lib/config-merge.mjs';
 // The audit's version_drift signal (FRI-03) reuses the readers that already
 // exist rather than growing second ones: the SAME prose version reader branch
 // naming uses (`### Active` -> ROADMAP title), the SAME membership test, and the
@@ -176,8 +188,18 @@ import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
-import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
+import { onPath, executableIn } from './lib/on-path.mjs';
+import { requirePlanKey } from './lib/plan-key.mjs';
+import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
+import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
+
+// The raw argument list, kept beside the envelope helpers because the flags
+// that read through lib/arg-contract.mjs need the SPELLING and not parseArgs'
+// digest of it: parseArgs mints the boolean `true` for a bare flag, so by the
+// time a value reaches `opts` the three spellings a declared row separates -
+// bare, empty and flag-shaped - have already collapsed into one.
+const ARGV = process.argv.slice(2);
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -186,6 +208,36 @@ const fail = (reason, detail, hint) =>
 /** Read a file or return null - absence is data here, never a crash. */
 function read(file) {
   try { return readFileSync(file, 'utf8'); } catch { return null; }
+}
+
+/**
+ * The `--phase` spellings the two WRITE faces cannot honour, as a refusal
+ * detail - or null when the spelling is one they can.
+ *
+ * `requirePhaseArg` deliberately returns the caller's OWN spelling beside the
+ * numeric value, and most reads in this file address `phases/<raw>/` with it.
+ * `cursor set` and `seed-reqs` cannot: both WRITE the numeric half - the
+ * cursor's `Phase:` line, and a Traceability cell that `parseRequirements` and
+ * `audit` compare against ROADMAP phase NUMBERS. So on a tree holding both
+ * `phases/1.1/` and `phases/1.10/`, `--phase 1.10` wrote `Phase: 1.1 of 2
+ * (One)` and `| BBB-01 | Phase 1.1 | Pending |` - the OTHER phase's name and
+ * the other phase's row, silently, with ok:true (measured 2026-08-18).
+ *
+ * The rule is the round trip `String(value) === raw`, the same predicate the
+ * CAPTURE.md and ARCHIVE.md phase readers carry (D-07), so `1.10`, `1.0` and
+ * `01` are refused while `2`, `2.1` and `10` pass. STATED COST: neither face
+ * can name a `phases/1.10/` directory any more, a capability
+ * `lib/require-int.mjs` deliberately built. The detail carries BOTH spellings
+ * because the caller's fix is exactly one of two things - retype the flag, or
+ * rename the directory - and nothing else in the envelope says which.
+ * @param {{raw: string, value: number}} parsed a `requirePhaseArg` success
+ * @returns {string|null}
+ */
+function phaseSpellingRefusal(parsed) {
+  const canonical = String(parsed.value);
+  if (canonical === parsed.raw) return null;
+  return `--phase "${parsed.raw}" is written here as phase ${canonical}, a different phase`
+    + ` - send --phase "${canonical}", or rename phases/${parsed.raw}/ to phases/${canonical}/`;
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -469,17 +521,22 @@ function cmdCursorGet(dir) {
 function cmdCursorSet(dir, opts) {
   if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
   if (!opts.phase) return fail('bad-args', 'cursor set needs --phase <N>');
-  // The shared reader, for the refusal WORDING - and it keeps writing the
-  // numeric value on purpose. `parseCursor` returns a Number that `renumber`'s
-  // shift arithmetic, `cmdStatus`'s `parsed.phase === current` agreement test
-  // and `phase-plans.mjs`' `cursorPhase` all consume, so a raw-spelled cursor
-  // is a wider change than the `--phase` directory fix, and a half-raw cursor
-  // would be worse than a numeric one. Stated cost: a cursor set at
-  // `--phase 1.10` still renders `Phase: 1.1`.
+  // The shared reader, for the refusal WORDING - and the cursor keeps holding
+  // the numeric value on purpose. `parseCursor` returns a Number that
+  // `renumber`'s shift arithmetic, `cmdStatus`'s `parsed.phase === current`
+  // agreement test and `phase-plans.mjs`' `cursorPhase` all consume, so a
+  // raw-spelled cursor is a wider change than the `--phase` directory fix, and
+  // a half-raw cursor would be worse than a numeric one. What used to be the
+  // stated cost of that - a cursor set at `--phase 1.10` rendering
+  // `Phase: 1.1`, the OTHER phase's name - is REFUSED at the door now (D-07)
+  // rather than carried. The raw spelling still addresses `phases/<raw>/` at
+  // the reads in this file that are not these two write faces.
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) {
     return fail('bad-args', 'cursor set --phase needs a non-negative phase number (N or N.M)');
   }
+  const spelling = phaseSpellingRefusal(parsedPhase);
+  if (spelling) return fail('bad-args', `cursor set ${spelling}`);
   const phase = parsedPhase.value;
   // `--next-file` is the path transport for a resume pointer the CALLER
   // composed - /cad-pause and `progress` build theirs from what the run was
@@ -1964,16 +2021,19 @@ function cmdPlanOverlap(dir, opts) {
 function cmdSeedReqs(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'seed-reqs needs --phase <N>');
+  // Before any read and before any write: the two halves of the phase argument
+  // must agree here, because this face uses BOTH.
+  const spelling = phaseSpellingRefusal(parsedPhase);
+  if (spelling) return fail('bad-args', `seed-reqs ${spelling}`);
   const n = parsedPhase.value;
   // The caller's own spelling, for the directory and for every diagnostic that
   // names one (D-02). The Traceability rows and the echoed `phase` below stay
-  // NUMERIC, and that is a KNOWN identity collision rather than an oversight:
-  // `parseRequirements` and `audit` compare that cell against ROADMAP phase
-  // NUMBERS, so `seed-reqs --phase 1.10` reads `phases/1.10` and writes
-  // `| <id> | Phase 1.1 | Pending |`, merging the two sub-phases in the audit.
-  // Closing it means carrying the raw spelling through `parseCursor`,
-  // `renumber` and `audit` - wider than this fix - and it is queued in
-  // `.planning/CAPTURE.md` naming both surviving sites.
+  // NUMERIC because `parseRequirements` and `audit` compare that cell against
+  // ROADMAP phase NUMBERS. What used to be a KNOWN identity collision carried
+  // here as a cost - `seed-reqs --phase 1.10` reading `phases/1.10` and writing
+  // `| <id> | Phase 1.1 | Pending |`, merging the two sub-phases in the audit -
+  // is refused above instead (D-07), so the spelling that reaches `pname` is
+  // the one the numeric half names.
   const pname = parsedPhase.raw;
 
   // #42/#45 rail: the flag is validated before any read.
@@ -2440,6 +2500,18 @@ function cmdLeaseCheck(dir, opts) {
 // Detecting nothing is ok:true with both null - a successful check with a
 // negative answer, like plan-overlap. An unreadable or malformed manifest
 // contributes nothing and is NAMED in warnings[] rather than throwing.
+//
+// A MANIFEST IS EVIDENCE OF INTENT, NOT OF A BINARY (RCH-01). A tree carrying
+// `[tool.ruff]` says its maintainers chose ruff; it does not say ruff is
+// installed on the machine reading it, and this seam's answer is handed to an
+// executor that runs it before every commit. So a winning arm is offered only
+// when the command's binaries RESOLVE - the driver, plus the delegated tool for
+// an `npx` arm, which is where npx itself would look (D-04). An unreachable arm
+// NULLS its slot and names the tool in warnings[]; it never falls through to a
+// lower arm (D-05), because falling through tells a tree holding `[tool.ruff]`
+// and a `go.mod` to run `go vet ./...` - a linter its maintainers did not
+// choose, over a language the change may not touch, which is the exact ordering
+// rule the ladder below states.
 // ---------------------------------------------------------------------------
 
 // The flat-config spellings, in the order they are probed. A legacy `.eslintrc*`
@@ -2527,6 +2599,77 @@ function cmdDetectCommands(root) {
   else if (has('Cargo.toml')) { typecheck = 'cargo check --all-targets'; typecheckSource = 'Cargo.toml'; }
   else if (pyTable('[tool.mypy')) { typecheck = 'mypy .'; typecheckSource = 'pyproject.toml'; }
   else if (has('go.mod')) { typecheck = 'go build ./...'; typecheckSource = 'go.mod'; }
+
+  // --- reachability (RCH-01) -------------------------------------------------
+  //
+  // THE OVERRIDE IS GATED, and gated for the reason EXP-01 states: this
+  // variable decides which static-analysis command an executor is told to run,
+  // and an ungated test hook that changes an enforcement answer is the shape
+  // that milestone refused. It is read only when `CADENCE_TEST_SEAM` holds, and
+  // read by PRESENCE rather than through `||`: an empty value means "nothing on
+  // PATH", which is a set a `||` chain cannot express because it is falsy.
+  //
+  // Present, it stands in for the WHOLE answer - no filesystem is consulted at
+  // all - rather than for the PATH half with the directory probe left live.
+  // One rule is what makes the hook testable in both directions: a fixture
+  // carrying its own `node_modules/.bin` proves the live probe hermetically
+  // (both binaries resolve out of the fixture's own bytes), and the SAME
+  // fixture under an empty override proves the variable had force, which a
+  // half-replacement could never show. lib/on-path.mjs reads no Cadence
+  // variable of its own (see its header); the hook lives here, at the one call
+  // site that needs it.
+  const reachOverride = testSeamOpen() && 'CADENCE_DETECT_REACHABLE' in process.env
+    ? new Set(String(process.env.CADENCE_DETECT_REACHABLE).split(',').map((t) => t.trim()).filter(Boolean))
+    : null;
+  const nodeBin = join(root, 'node_modules', '.bin');
+  const reachable = (/** @type {string} */ tool) => (reachOverride
+    ? reachOverride.has(tool)
+    : onPath(tool) || executableIn(nodeBin, tool));
+
+  /**
+   * The binaries a command needs before it can be NAMED: its driver, and - for
+   * an `npx` arm - the tool npx would delegate to. Both halves are load-bearing
+   * on measured facts (D-04). `npx` is on PATH almost everywhere, so a
+   * driver-only rule leaves `npx eslint .` naming an eslint nobody has; and
+   * `tsc` is routinely absent from PATH while present at
+   * `node_modules/.bin/tsc`, so a PATH-only rule nulls the one command a
+   * TypeScript repo's CI actually runs.
+   *
+   * Every command in the ladder above is a fixed literal, so the split is over
+   * text this file wrote - no repo content is ever parsed into a binary name.
+   * @param {string} cmd @returns {string[]}
+   */
+  const needs = (cmd) => {
+    const words = cmd.split(/\s+/).filter(Boolean);
+    const delegated = words[0] === 'npx' && words[1] && !words[1].startsWith('-') ? words[1] : null;
+    return delegated ? [words[0], delegated] : [words[0]];
+  };
+
+  /**
+   * A slot's answer once reachability has been asked. `source` follows the
+   * command: a nulled slot claims no provenance, because a manifest that named
+   * a command nobody can run did not supply this run's command. The WARNING
+   * carries both the tool and the manifest, so the caller can still tell "found
+   * nothing" from "found something unreachable" - which is the same distinction
+   * the always-both-keys `source` block exists for.
+   * @param {string} slot @param {string|null} cmd @param {string|null} src
+   */
+  const offer = (slot, cmd, src) => {
+    if (cmd === null) return { command: null, source: null };
+    const missing = needs(cmd).filter((t) => !reachable(t));
+    if (!missing.length) return { command: cmd, source: src };
+    warnings.push(`${slot}: ${missing.join(' and ')} `
+      + `${missing.length > 1 ? 'are' : 'is'} not on PATH or in node_modules/.bin, so \`${cmd}\` `
+      + `(from ${src}) was not offered; no lower arm was taken in its place`);
+    return { command: null, source: null };
+  };
+
+  const lintOffer = offer('lint', lint, lintSource);
+  lint = lintOffer.command;
+  lintSource = lintOffer.source;
+  const typecheckOffer = offer('typecheck', typecheck, typecheckSource);
+  typecheck = typecheckOffer.command;
+  typecheckSource = typecheckOffer.source;
 
   ok({
     root,
@@ -3005,6 +3148,25 @@ function rungLadder() {
 }
 
 /**
+ * The risk-surface vocabulary `route-table.json` states - the SAME list
+ * `route.mjs` hands `answeredSurfaces`, read here so the seam that REFUSES on
+ * the one-time surface question and the resolve that REPORTS it cannot
+ * disagree about which tokens are a valid answer. A table naming a proper
+ * subset is the case that separates them: a configured category outside it is
+ * unanswered to `route.mjs`, and reading `CATEGORIES` here instead would let
+ * this seam accept that same value and narrow a blocking gate's scope to a set
+ * the routing authority had rejected.
+ *
+ * An unreadable or malformed table falls back to the eight rather than to
+ * nothing: no vocabulary at all would read every configured answer as invalid
+ * and refuse every call.
+ * @returns {readonly string[]}
+ */
+function surfaceVocabulary() {
+  return routeLadder('risk_surface_categories') || CATEGORIES;
+}
+
+/**
  * One ordered ladder off `route-table.json`, or `undefined` when the table is
  * unreadable, malformed, or names that ladder as anything but a non-empty array
  * of non-empty strings.
@@ -3112,16 +3274,32 @@ function suggestResolution(dir, render, config) {
   return { values, ...(gates ? { gates } : {}), ...(rungs ? { rungs } : {}), stakes, checkpointTasks };
 }
 
+// The grammar the SHARED `trace append|close` body judges its string flags by,
+// read off lib/arg-contract.mjs rather than restated as seven guards below.
+//
+// The two rows are UNIONED because ONE body validates both subcommands. A flag
+// row is a prose allowlist that never widens what a subcommand accepts, so
+// `trace close` declares no `--sha`, `--base`, `--step` or `--trigger` row even
+// though this body reads them for it; every key both rows do declare, they
+// declare identically, so the union states no grammar either row denies.
+const TRACE_GRAMMAR = {
+  ...CONTRACTS['planning.mjs']['trace append'],
+  ...CONTRACTS['planning.mjs']['trace close'],
+};
+
+// The flags whose whole rule is the value grammar, in the order they are read.
+// The first four declare `fallback` on both axes and the last four `refuse` -
+// the two dispositions this one body has always run side by side (D-05), now
+// stated once in the table instead of seven times here.
+const TRACE_STRING_FLAGS = ['--plan', '--sha', '--base', '--role', '--step', '--reviewer', '--trigger'];
+
 function cmdTrace(dir, sub, opts) {
   if (sub === 'ignore') {
     // `--root` is the PROJECT root, deliberately not `--dir`: `.gitignore` lives
     // there while the line it carries is `.planning/trace.jsonl`. A `--root`
-    // present with nothing usable after it is REFUSED rather than falling
-    // through to the cwd, which would edit a different tree than the caller
-    // named (the `#42/#45` rail).
-    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
-      return fail('bad-args', 'trace ignore --root needs a path after it: --root <project root>');
-    }
+    // present with nothing usable after it is REFUSED by its declared row at
+    // the dispatch door rather than falling through to the cwd, which would
+    // edit a different tree than the caller named (the `#42/#45` rail).
     return cmdTraceIgnore(typeof opts.root === 'string' ? opts.root : process.cwd(), opts);
   }
   // `close` is `append` with the two fields a dispatch site used to restate
@@ -3283,58 +3461,62 @@ function cmdTrace(dir, sub, opts) {
       read = list;
     }
 
-    // --step: the workflow step a COORDINATOR marker names, stored verbatim as
-    // one non-empty string. Refused when the flag is present but bare or blank,
-    // the same refusal `--read` makes at its own site and for the same reason: a
-    // marker naming no step is a complete-looking event that defeats the
-    // per-step attribution the marker exists for, and a bare `--step` parses as
-    // boolean `true`, which would store the literal `true` as a step name.
-    let step;
-    if ('step' in opts) {
-      const raw = typeof opts.step === 'string' ? opts.step.trim() : '';
-      if (!raw) return fail('bad-args', `trace ${sub} --step needs a step name after it: --step <name>`);
-      step = raw;
+    // The seven string flags, each read through its DECLARED row. One loop
+    // where seven hand-written guards used to state the same two rules, and
+    // the ONE place this body's two bare-flag dispositions are decided (D-05):
+    // `--plan`, `--sha` and `--base` declare `fallback` and read as absent, so
+    // every shipped `trace close` written without them keeps answering ok:true,
+    // while `--role`, `--step`, `--reviewer` and `--trigger` REFUSE.
+    //
+    // `--role` MOVED to refuse, and that is the behaviour change. Measured
+    // 2026-08-19, `trace append --phase 1 --family lifecycle --event dispatch
+    // --role --tokens 5` returned `{"ok":true,"written":true}`, wrote a line
+    // carrying no `role` key, and `trace render` then aggregated it under the
+    // EMPTY STRING key - `"roles":{"":{"dispatches":2,...}}`, a
+    // complete-looking dispatch whose attribution is gone. `--role ''` was
+    // identical. The other direction - extending the drop arm to the three
+    // refusals beside it - was the alternative, and those three are written
+    // against exactly this shape.
+    //
+    // What each of the four refusing flags IS:
+    //   --step      the workflow step a COORDINATOR marker names. A marker
+    //               naming no step defeats the per-step attribution it exists
+    //               for.
+    //   --reviewer  WHICH reviewer actually ran this fire, so a cross-model
+    //               review and a subagent review of one trigger stop being one
+    //               shape in the record (RVW-02). It names the reviewer that
+    //               RAN, never the one the trigger asked for - nothing refuses
+    //               a dispatch to a reviewer outside the resolved set (D-07),
+    //               so this mark is the whole enforcement.
+    //   --trigger   WHICH review trigger this event belongs to, so an `outcome`
+    //               event JOINS to the fire that produced it without reading
+    //               prose; `risk-check status` demands one for a matched range
+    //               (D-12). Measured across this repository's 35
+    //               `outcome/adjudication` events the trigger is spelled four
+    //               different ways inside the free-text `--detail`, and
+    //               lib/trace-suggest.mjs discards that text entirely, so
+    //               parsing it back out is the substitution this flag exists to
+    //               avoid.
+    //   --role      the role the per-role token block aggregates under.
+    // A bare one of them parses as boolean `true` in `parseArgs`, which is why
+    // the read is against ARGV: the refusal has to see the spelling.
+    const flags = {};
+    for (const flag of TRACE_STRING_FLAGS) {
+      const parsedFlag = evaluateFlag(ARGV, flag, TRACE_GRAMMAR[flag]);
+      // The wording comes from the ONE flag->sentence map the dispatch door
+      // composes from, so `trace append --role` (bare) answers with the same
+      // sentence whichever of the two refuses it first - the door for the flags
+      // the resolved row declares, this loop for the ones only the UNION does.
+      if (!parsedFlag.ok) return fail('bad-args', argRefusal(`trace ${sub}`, flag));
+      flags[flag] = parsedFlag.value;
     }
-
-    // --reviewer: WHICH reviewer actually ran this fire, so a cross-model
-    // review and a subagent review of the same trigger stop being one shape in
-    // the record (RVW-02). It names the reviewer that RAN, never the one the
-    // trigger asked for - nothing refuses a dispatch to a reviewer outside the
-    // resolved set (D-07), so this mark is the whole enforcement, and a figure
-    // parsed back out of step 5's free-text voice list would not be one:
-    // lib/trace-suggest.mjs discards that text.
-    // Refused when present but bare or blank, the refusal `--step` makes for
-    // the same reason: a bare `--reviewer` parses as boolean `true` and would
-    // store the literal `true` as a reviewer name.
-    let reviewer;
-    if ('reviewer' in opts) {
-      const raw = typeof opts.reviewer === 'string' ? opts.reviewer.trim() : '';
-      if (!raw) return fail('bad-args', `trace ${sub} --reviewer needs a reviewer name after it: --reviewer <name>`);
-      reviewer = raw;
-    }
-
-    // --trigger: WHICH review trigger this event belongs to, stored verbatim as
-    // one non-empty string, so an `outcome` event can be JOINED to the fire that
-    // produced it without reading prose. `risk-check status` is the first
-    // consumer: it demands a receipt for the `risk_surface` fire on a range its
-    // detector matched, and a receipt is only a receipt if the trigger it names
-    // is structured (D-12).
-    // Measured on this repository's 35 `outcome/adjudication` events, the
-    // trigger is spelled four different ways inside the free-text `--detail` -
-    // `risk_surface`, `risk_surface re-arm`, `risk_surface rearm`,
-    // `risk_surface plan-1` - and lib/trace-suggest.mjs discards that text
-    // entirely, so parsing it back out is exactly the substitution the `--raised`
-    // and `--reviewer` flags were added to avoid.
-    // Refused when present but bare or blank, the refusal `--step` and
-    // `--reviewer` make two paragraphs above and for the identical reason: a
-    // bare `--trigger` parses as boolean `true`, which would store the literal
-    // `true` as a trigger name and satisfy a join for a fire nobody made.
-    let trigger;
-    if ('trigger' in opts) {
-      const raw = typeof opts.trigger === 'string' ? opts.trigger.trim() : '';
-      if (!raw) return fail('bad-args', `trace ${sub} --trigger needs a trigger name after it: --trigger <name>`);
-      trigger = raw;
-    }
+    // Trimmed for the four that refuse, because a stored name is a JOIN KEY and
+    // ` cad-executor ` must not read as a second role. The `fallback` three are
+    // stored VERBATIM, exactly as they always were.
+    const trimmed = (flag) => (flags[flag] === undefined ? undefined : String(flags[flag]).trim());
+    const step = trimmed('--step');
+    const reviewer = trimmed('--reviewer');
+    const trigger = trimmed('--trigger');
 
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
@@ -3353,18 +3535,17 @@ function cmdTrace(dir, sub, opts) {
       phase: parsedPhase.raw,
       family,
       event,
-      ...(typeof opts.plan === 'string' && opts.plan ? { plan: opts.plan } : {}),
-      ...(typeof opts.sha === 'string' && opts.sha ? { sha: opts.sha } : {}),
+      // The four below carry no guard of their own any more: the loop above
+      // already applied each flag's declared disposition, so an absent flag and
+      // a `fallback` one both arrive here as `undefined` and omit their key.
+      ...(flags['--plan'] === undefined ? {} : { plan: flags['--plan'] }),
+      ...(flags['--sha'] === undefined ? {} : { sha: flags['--sha'] }),
       // `--base` beside `--sha`: a fire RECEIPT names both ends of the range it
       // settled, because two ranges can share a head and differ at the base and
-      // are then different diffs over different surfaces. Same bare-flag guard
-      // as `--plan` and `--sha` - a bare `--base` parses as boolean `true` and
-      // records nothing rather than the literal.
-      ...(typeof opts.base === 'string' && opts.base ? { base: opts.base } : {}),
+      // are then different diffs over different surfaces.
+      ...(flags['--base'] === undefined ? {} : { base: flags['--base'] }),
       ...(typeof detail === 'string' && detail ? { detail } : {}),
-      // A bare `--role` parses as boolean `true`; the same guard `--plan` and
-      // `--sha` use records nothing rather than the literal `true`.
-      ...(typeof opts.role === 'string' && opts.role.trim() ? { role: opts.role.trim() } : {}),
+      ...(trimmed('--role') === undefined ? {} : { role: trimmed('--role') }),
       ...(tokens === undefined ? {} : { tokens }),
       // OMITTED when the return carried no count, never sent as `0`: a zero
       // claims a dispatch that used no tools, while an absent key is readable
@@ -3594,14 +3775,22 @@ function cmdRiskCheckRun(dir, opts) {
   if (!parsedPhase.ok) return fail('bad-args', 'risk-check run needs --phase <N>');
   const n = parsedPhase.value;
 
-  // requireInt, not Number(): `parseArgs` gives a VALUELESS flag the boolean
-  // `true` and `Number(true)` is `1`, so `--plan` with nothing after it would
-  // record the answer against plan 1 (the VAL-01 rail).
+  // THE WORKER KEY, through the one grammar both faces read (RSK-03, D-02).
+  // Not `requireInt`: `status` derives what it demands from the lifecycle
+  // brackets, where `references/seams.md` permits a non-numeric worker key, so
+  // a fix pass bracketed `1-fix` used to leave a blocking gate no argv could
+  // satisfy - `run --plan 1-fix` answered `bad-args`. The VAL-01 rail
+  // `requireInt` was standing for survives inside the predicate: a VALUELESS
+  // flag arrives as the boolean `true`, `Number(true)` is `1`, and a non-string
+  // is refused first.
   let plan;
   if ('plan' in opts) {
-    const parsedPlan = requireInt(opts.plan);
-    if (!parsedPlan.ok) return fail('bad-args', 'risk-check run --plan needs a plan number after it: --plan <k>');
-    plan = parsedPlan.value;
+    const parsedPlan = requirePlanKey(opts.plan);
+    if (!parsedPlan.ok) {
+      return fail('bad-args', 'risk-check run --plan needs the worker key after it - a plan number '
+        + 'or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+    }
+    plan = parsedPlan.key;
   }
 
   // BOTH required, and neither defaulted: a defaulted head is a range the
@@ -3617,6 +3806,24 @@ function cmdRiskCheckRun(dir, opts) {
   // rule `trace append --tokens` already states - because a caller who mistyped
   // the scope of a blocking gate must see a refusal rather than a narrowed
   // clean answer.
+  // THE ONE-TIME SURFACE QUESTION, read BEFORE the `--surfaces` branch so both
+  // arms see the same two facts.
+  //
+  // mergeLayers warnings[]: a layer that did not PARSE is refused here whatever
+  // the caller passed - this envelope is the surfacing, and the detail names
+  // what tore. It sits ahead of the branch deliberately: a torn layer that only
+  // an unflagged call noticed would be a fail-closed rule an explicit flag
+  // could step around, which is not a rule.
+  const { config: surfaceConfig, warnings: surfaceWarnings } = mergeLayers(join(dir, 'config.json'));
+  if (surfaceWarnings.length) {
+    return fail('surfaces-unanswered',
+      `a config layer did not parse, so the surface question cannot be read as answered: ${surfaceWarnings.join('; ')}`);
+  }
+  const surfaceTriggers = isPlainObject(surfaceConfig.review)
+    && isPlainObject(surfaceConfig.review.triggers) ? surfaceConfig.review.triggers : {};
+  const wrote = isPlainObject(surfaceTriggers.risk_surface)
+    ? surfaceTriggers.risk_surface.surfaces : undefined;
+
   let categories = [...CATEGORIES];
   if ('surfaces' in opts) {
     const raw = typeof opts.surfaces === 'string' ? opts.surfaces : '';
@@ -3630,6 +3837,33 @@ function cmdRiskCheckRun(dir, opts) {
         `risk-check run --surfaces names ${unknown.join(', ')}, which is not one of ${CATEGORIES.join(', ')}`);
     }
     categories = [...new Set(tokens)];
+  } else {
+    // THE TEETH ON THE ONE-TIME SURFACE QUESTION.
+    // `references/review-triggers.md` states that a `risk_surface` fire whose
+    // resolve reports `surfaces_answered: false` "does not proceed to detection
+    // until the project has answered". Detection is THIS subcommand, and until
+    // now that sentence was enforced by nothing: `route.mjs` emitted the flag,
+    // every consumer read the surfaces array beside it, and an unanswered
+    // project was byte-identical to an answered one at every point after the
+    // resolve. Measured on a sibling project 2026-08-19: seven blocking
+    // `risk_surface` fires across three phases, the question never put to the
+    // user, found only because the user asked why no scan had happened.
+    //
+    // A caller that NAMED `--surfaces` has already resolved the scope and is
+    // untouched by this arm - the refusal is precisely for the caller that
+    // let the default stand, because that default is the all-eight set nobody
+    // chose. `detail` names the two commands that settle it rather than only
+    // reporting the state, since the ask lives on this path alone
+    // (`detect-surfaces` has no other caller in the tree).
+    const decided = answeredSurfaces(wrote, surfaceVocabulary());
+    if (!decided.answered) {
+      return fail('surfaces-unanswered',
+        'no config layer answered review.triggers.risk_surface.surfaces, so detection would run '
+        + `on the ${CATEGORIES.length} categories nobody chose. Run \`detect-surfaces --root .\` `
+        + 'and put the choice to the user (references/review-triggers.md), or pass '
+        + '--surfaces <a,b,c> to state this run\'s scope explicitly');
+    }
+    categories = [...new Set(decided.surfaces)];
   }
 
   let body = null;
@@ -3670,10 +3904,11 @@ function cmdRiskCheckRun(dir, opts) {
   // so a trace that could not be written is reported rather than silently
   // dropped, and it may NOT change the verdict.
   //
-  // `plan` is the parsed NUMBER while a prose `trace append --plan` stores the
-  // caller's string; `risk-check status` stringifies both sides before
-  // comparing, the way lib/trace.mjs's own `key()` does, so the two spellings
-  // join.
+  // `plan` is the caller's OWN spelling, verbatim, exactly as a prose
+  // `trace append --plan` stores it - the two must be one string or the receipt
+  // settles nothing (D-01's stated cost). `risk-check status` stringifies both
+  // sides before comparing, the way lib/trace.mjs's own `key()` does, so a
+  // record written `1` and a bracket written `"1"` still join.
   const res = appendEvent(dir, {
     phase: parsedPhase.raw,
     family: 'outcome',
@@ -3762,15 +3997,21 @@ function cmdRiskCheckStatus(dir, opts) {
   // half named - which reads as the phase-wide arm and passes on a record left
   // by some other range.
   const given = ['plan', 'base', 'head'].filter((f) => f in opts);
-  /** @type {{plan: number, base: string, head: string, base_id: string, head_id: string} | null} */
+  /** @type {{plan: string, base: string, head: string, base_id: string, head_id: string} | null} */
   let wanted = null;
   if (given.length) {
     if (given.length !== 3) {
       return fail('bad-args',
         'risk-check status takes --plan <k> --base <ref> --head <ref> together, or none of the three');
     }
-    const parsedPlan = requireInt(opts.plan);
-    if (!parsedPlan.ok) return fail('bad-args', 'risk-check status --plan needs a plan number after it: --plan <k>');
+    // The SAME predicate `risk-check run` reads (D-02). One consultation each,
+    // so the face that enforces the question and the face that reports it
+    // cannot disagree about which spellings are keys at all.
+    const parsedPlan = requirePlanKey(opts.plan);
+    if (!parsedPlan.ok) {
+      return fail('bad-args', 'risk-check status --plan needs the worker key after it - a plan '
+        + 'number or the key the dispatch was bracketed under (`1-fix`): --plan <k>');
+    }
     const base = riskRef(opts.base);
     const head = riskRef(opts.head);
     if (!base || !head) {
@@ -3788,14 +4029,14 @@ function cmdRiskCheckStatus(dir, opts) {
         ok: false,
         reason: 'unresolved-range',
         phase: n,
-        plan: parsedPlan.value,
+        plan: parsedPlan.key,
         base,
         head,
         detail: resolved.error,
         hint: 'name a --base and --head this repository can resolve, then re-run this check',
       });
     }
-    wanted = { plan: parsedPlan.value, base, head, base_id: resolved.base, head_id: resolved.head };
+    wanted = { plan: parsedPlan.key, base, head, base_id: resolved.base, head_id: resolved.head };
   }
 
   // ONE reader of the record, through renderTrace and nothing else: a second
@@ -3914,9 +4155,33 @@ function cmdRiskCheckStatus(dir, opts) {
     }
     return row;
   };
+  /**
+   * A bracket carrying a key the worker-key grammar REFUSES (RSK-03).
+   *
+   * The ONE bounded exception to "status does not narrow" (D-01), and it is the
+   * opposite of the exclusion arm that decision rejected. A key `lib/plan-key.mjs`
+   * refuses is not a legal worker key at all, so `risk-check run --plan <it>`
+   * can never write the record this gate would demand: requiring one leaves a
+   * gate that is blocking at every stakes level permanently unsatisfiable, with
+   * no exit but an `override`. So it is REPORTED, on its own `malformed` list,
+   * rather than silently dropped - which is exactly what made the excluded-key
+   * arm fail-open. A key the predicate ACCEPTS is never dropped.
+   *
+   * An ABSENT plan is NOT malformed and keeps its row: `risk-check run` with no
+   * `--plan` writes a record that keys to '' and joins it, so an unidentified
+   * completed range stays required, exactly as the row comment above says.
+   * Nothing in the tree mints a refused key today - `workflows/execute.md` now
+   * states the continuation key - so this guards the write face D-03 leaves
+   * open on purpose, where `trace append --plan` still stores any non-empty
+   * string.
+   * @type {Set<string>}
+   */
+  const malformed = new Set();
   for (const b of r.brackets) {
     if (!inCycle(b)) continue;
     if (b.role !== 'cad-executor' || b.event !== 'return') continue;
+    const spelled = planKey(b.plan);
+    if (spelled !== '' && !requirePlanKey(b.plan).ok) { malformed.add(spelled); continue; }
     planRow(b.corr, b.plan).completed++;
   }
   // A named range is required whether or not its return has landed yet: the
@@ -4170,6 +4435,10 @@ function cmdRiskCheckStatus(dir, opts) {
       phase: n,
       plans: rows,
       missing: offending.map((row) => row.plan),
+      // Never folded into `missing`: these are not ranges awaiting a record,
+      // they are keys no record can be written for, and a caller sent to
+      // `risk-check run --plan <one of them>` would be sent to a refusal.
+      ...(malformed.size ? { malformed: [...malformed] } : {}),
       hint: unfiredOnly
         ? `fire the blocking ${RISK_TRIGGER} review for each plan listed and record its outcome`
           + ` (one of ${FIRE_RECEIPTS.join(', ')}) under this phase's correlation id and that plan,`
@@ -4180,8 +4449,11 @@ function cmdRiskCheckStatus(dir, opts) {
   }
   // Nothing to require is not a failure: a phase with no completed executor
   // range at all is ok:true with an empty list, or a gate here would block the
-  // first plan of every phase.
-  ok({ phase: n, plans: rows });
+  // first plan of every phase. A malformed key rides the PASS too, for the
+  // reason it exists: the reader has to be able to see that a bracket was
+  // skipped rather than judged, and a pass that said nothing about it would be
+  // the silent exclusion D-01 refused.
+  ok({ phase: n, plans: rows, ...(malformed.size ? { malformed: [...malformed] } : {}) });
 }
 
 function cmdRiskCheck(dir, sub, opts) {
@@ -4354,12 +4626,11 @@ function cmdRenumber(dir, sub, opts) {
   // requireInt refuses `2.1` and `--n` alike, and those are different repairs,
   // so a well-formed decimal is re-tested here and keeps its own wording.
   const parsedAt = requireInt(rawAt);
-  if (!parsedAt.ok) {
-    if (requirePhaseArg(rawAt).ok) {
-      return fail('bad-args', 'renumber operates on integer phases; re-place decimal phases by hand');
-    }
-    return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
-  }
+  // ABSENT only: a PRESENT `--at`/`--n` was already judged by its declared row
+  // at the dispatch door, decimal wording included (see `decimalRefusal`), so
+  // the well-formed-decimal re-test that used to sit here can no longer be
+  // reached and is not left behind as a second home for that sentence.
+  if (!parsedAt.ok) return fail('bad-args', `renumber ${sub} needs --${flag} <N>`);
   const at = parsedAt.value;
   if (sub === 'insert' && (at < 1 || at > total + 1)) return fail('out-of-range', `--at must be 1..${total + 1}`);
   if (sub === 'remove' && !phases.some((p) => p.n === at)) return fail('unknown-phase', `phase ${at} is not in ROADMAP.md`);
@@ -5104,6 +5375,106 @@ function cmdMilestonePrune(dir, opts) {
 
 // Dispatch. Adding a subcommand = one entry here + its tests.
 // ---------------------------------------------------------------------------
+// The refusal SENTENCE for a flag this script's rows declare, and the ONE home
+// for that wording. lib/arg-contract.mjs names the FLAG and nothing else
+// (D-07): this file owns its refusal vocabulary - `bad-args`, never the
+// `missing-flag-value` throw, which has no `e.seam` catch arm here to render it
+// as anything but `internal`.
+//
+// Only the spellings that already SHIP are listed. Everything else COMPOSES
+// from the flag's own name and its declared type, so a row added to the table
+// tomorrow refuses with a sentence naming its flag rather than with an entry
+// somebody has to remember to write here - which is the second table this
+// requirement exists to prevent, one wording over.
+const FLAG_SENTENCES = {
+  '--dir': 'needs a path after it: --dir <planning dir>',
+  '--root': 'needs a path after it: --root <project root>',
+  '--role': 'needs a role name after it: --role <name>',
+  '--step': 'needs a step name after it: --step <name>',
+  '--reviewer': 'needs a reviewer name after it: --reviewer <name>',
+  '--trigger': 'needs a trigger name after it: --trigger <name>',
+};
+
+/**
+ * The sentence a refused flag carries, without its subcommand prefix.
+ *
+ * The `-file` arm composes lib/text-flag-file.mjs's own wording character for
+ * character, because the door refuses a bare `--<field>-file` BEFORE that
+ * module is reached and its callers must see no change. The `int`/`cursor` arm
+ * is the sentence the four hand-written integer guards in this file already
+ * publish.
+ *
+ * `spec` may be ABSENT, and that is not a missing row: the shared `trace
+ * append|close` body validates flags the `trace close` row deliberately does
+ * not declare, because a flag row is a prose allowlist that never widens what
+ * a subcommand accepts. Such a flag is named by `FLAG_SENTENCES` and needs no
+ * type at all; the `string` default is what keeps the arm total.
+ * @param {string} flag @param {{type: string}|undefined} spec @returns {string}
+ */
+function flagSentence(flag, spec) {
+  const type = spec ? spec.type : 'string';
+  if (FLAG_SENTENCES[flag]) return FLAG_SENTENCES[flag];
+  if (flag.endsWith('-file')) return `needs a path after it: ${flag} <path>`;
+  if (type === 'int' || type === 'cursor') return 'needs a non-negative integer';
+  if (type === 'phase') return `needs a phase number: ${flag} <N>`;
+  return `needs a value after it: ${flag} <value>`;
+}
+
+/**
+ * The one refusal in this script whose wording depends on the VALUE rather than
+ * on the flag, and which a declaration therefore cannot state at all.
+ *
+ * `renumber` is integer arithmetic - a decimal insertion like 2.1 neither
+ * displaces integers nor is displaced by them - so a WELL-FORMED decimal is a
+ * different repair from a missing or non-numeric value, and cmdRenumber
+ * re-tested the value to say so. The declared `int` row refuses both spellings
+ * at the door before that re-test can run, so the wording moved HERE rather
+ * than being lost: without it a caller whose real problem is that 2.1 has to be
+ * re-placed by hand is told "needs a non-negative integer". It is the same
+ * species as the PRESENCE carve-out - a diagnostic no row can express stays
+ * with the bin that owns the wording - and it reads a raw token the door
+ * itself judged.
+ *
+ * The DECIMAL test is explicit rather than implied by `requirePhaseArg`, which
+ * accepts a plain integer as readily as `2.1`. Implied, this sentence fired on
+ * a well-formed `--at 1`, telling a caller to re-place a decimal they never
+ * typed - reachable the moment the door began judging every occurrence of a
+ * flag rather than its first, since `--at 1 --at` is a refusal whose first
+ * token is an integer.
+ * @param {string} key @param {string|undefined} raw @returns {string}
+ */
+function decimalRefusal(key, raw) {
+  return key.startsWith('renumber ') && typeof raw === 'string'
+    && raw.includes('.') && requirePhaseArg(raw).ok
+    ? 'renumber operates on integer phases; re-place decimal phases by hand'
+    : '';
+}
+
+/**
+ * Compose the whole refusal detail for the flag the door refused.
+ *
+ * A flag on the script-global `'*'` row carries NO subcommand prefix - `--dir
+ * needs a path after it` is the line every caller of every subcommand sees -
+ * while a flag on a subcommand's own row is prefixed with that subcommand, the
+ * way `detect-commands --root ...` and `trace append --role ...` already read.
+ * @param {string} key the subcommand key the words resolved to
+ * @param {string} flag @returns {string}
+ */
+function argRefusal(key, flag) {
+  const table = CONTRACTS['planning.mjs'];
+  const global = table['*'][flag];
+  const spec = global || (table[key] || {})[flag];
+  // EVERY occurrence is offered to the domain wording, because `evaluateRow`
+  // names only the flag (D-07) and now judges every occurrence: the decimal a
+  // caller has to re-place by hand is not always the first one they typed.
+  let domain = '';
+  for (let i = 0; i < ARGV.length && !domain; i++) {
+    if (ARGV[i] === flag) domain = decimalRefusal(key, ARGV[i + 1]);
+  }
+  if (domain) return domain;
+  return `${global ? '' : `${key} `}${flag} ${flagSentence(flag, spec)}`;
+}
+
 function parseArgs(argv) {
   const words = [];
   const opts = {};
@@ -5147,23 +5518,17 @@ const COMMANDS = {
   'lease-check': (dir, _sub, opts) => cmdLeaseCheck(dir, opts),
   // --root, never --dir: this one names the PROJECT root. A `--root` with
   // nothing usable after it is refused rather than silently answered about the
-  // cwd, which would report a different tree than the caller named (#42/#45).
-  // The predicate is `debt-harvest`'s below, character for character, TRIM
-  // clause included: a valueless `--root` was already refused, but `--root ""`
-  // answered `ok:true` about the cwd - exactly the silent substitution #42/#45
-  // closed - and `--root "   "` fell through to a `no-root` ENOENT, one refusal
-  // vocabulary answering in two. The refusal is `fail('bad-args', ...)` and not
-  // the `missing-flag-value` throw `weight.mjs`/`self-verify.mjs` raise: this
-  // file has ONE refusal vocabulary and no `e.seam` catch arm to render that
-  // throw as anything but `internal`.
-  'detect-commands': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
-    ? fail('bad-args', 'detect-commands --root needs a path after it: --root <project root>')
-    : cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd())),
-  // Same --root rule, same predicate, same refusal: a flag present with nothing
-  // usable after it is never silently answered about the cwd.
-  'detect-surfaces': (_dir, _sub, opts) => ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')
-    ? fail('bad-args', 'detect-surfaces --root needs a path after it: --root <project root>')
-    : cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd())),
+  // cwd, which would report a different tree than the caller named (#42/#45) -
+  // and the refusal is the DECLARED row's now, applied at the dispatch door
+  // below, rather than a predicate this arm restates. The row says the same
+  // thing the predicate did, trim clause included: `--root ""` answered
+  // `ok:true` about the cwd and `--root "   "` fell through to a `no-root`
+  // ENOENT, one refusal vocabulary answering in two.
+  'detect-commands': (_dir, _sub, opts) =>
+    cmdDetectCommands(typeof opts.root === 'string' ? opts.root : process.cwd()),
+  // Same --root row, same refusal, same door.
+  'detect-surfaces': (_dir, _sub, opts) =>
+    cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd()),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
@@ -5173,25 +5538,50 @@ const COMMANDS = {
   // drift kind inside it (D-07) - see cmdCaptureSections.
   'capture-sections': (dir, _sub, opts) => cmdCaptureSections(dir, opts),
   // --root, never --dir, for the reason stated above cmdDebtHarvest: it scans
-  // SOURCE and writes into `.planning`. Same present-but-unusable refusal
-  // `trace ignore` carries.
-  'debt-harvest': (_dir, _sub, opts) => {
-    if ('root' in opts && (typeof opts.root !== 'string' || opts.root.trim() === '')) {
-      return fail('bad-args', 'debt-harvest --root needs a path after it: --root <project root>');
-    }
-    return cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd());
-  },
+  // SOURCE and writes into `.planning`. Same declared row, same door.
+  'debt-harvest': (_dir, _sub, opts) =>
+    cmdDebtHarvest(typeof opts.root === 'string' ? opts.root : process.cwd()),
   renumber: (dir, sub, opts) => cmdRenumber(dir, sub, opts),
   'milestone-prune': (dir, _sub, opts) => cmdMilestonePrune(dir, opts),
 };
 
 try {
-  const { words, opts } = parseArgs(process.argv.slice(2));
+  const { words, opts } = parseArgs(ARGV);
   const [cmd, sub] = words;
-  const dir = opts.dir || '.planning';
+  // EVERY flag the resolved row declares is judged here, at the door, before
+  // any handler runs - not just `--dir`, and not at the two sites this file
+  // used to consult its own table from. 98 of the table's entries are this
+  // script's, and while only two of them were read, a row could say `refuse`
+  // while the CLI wrote the value through: `cursor set --name` (bare) answered
+  // ok:true and wrote `Phase: 1 of 5 (true)` into STATE.md.
+  //
+  // It is read from raw ARGV on purpose: parseArgs mints the boolean `true` for
+  // a bare flag, so by the time a value reaches `opts` the three spellings a
+  // declared row separates - bare, empty and flag-shaped - have collapsed into
+  // one. A bare `--dir` reached `existsSync(true)` that way and printed a
+  // DEP0187 deprecation warning on STDERR beside the answer, and stdout is the
+  // single channel the seam layer parses.
+  //
+  // The door judges PRESENCE-free: an absent flag is left to the handler that
+  // owns its wording, so `cursor set` with no `--phase` still answers `cursor
+  // set needs --phase <N>` and `capture` with no `--kind` still names its three
+  // kinds. The `'*'` row is evaluated first, which keeps `--dir`'s refusal the
+  // one that answers ahead of an unknown subcommand exactly as it did.
+  //
+  // `opts` is deliberately NOT mutated. The handlers pass their own values to
+  // `requireInt`, `requirePhaseArg` and `resolveTextFlag`, and overwriting or
+  // deleting a key here would change what `resolveTextFlag` sees and silently
+  // drop its "takes --x or --x-file, never both" refusal.
+  //
+  // The refusal is `fail('bad-args', ...)` and never the `missing-flag-value`
+  // throw the seam-input readers raise (D-07): this file has ONE refusal
+  // vocabulary and no `e.seam` catch arm to render that throw as anything but
+  // `internal`.
+  const args = evaluateRow(ARGV, CONTRACTS['planning.mjs'], subcommandKey(words));
   const handler = COMMANDS[cmd];
-  if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(dir, sub, opts, words.slice(1));
+  if (!args.ok) fail('bad-args', argRefusal(subcommandKey(words), args.detail));
+  else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
+  else handler(args.values['--dir'] || '.planning', sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }

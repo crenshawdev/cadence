@@ -9,6 +9,7 @@ import { basename, join, dirname, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readLayer, GLOBAL_CONFIG } from './lib/config-merge.mjs';
 import { RUNG_FILES } from './lib/rung-agent.mjs';
+import { CONTRACTS } from './lib/arg-contract.mjs';
 
 const CONFIG = join(dirname(fileURLToPath(import.meta.url)), 'config.mjs');
 const dir = mkdtempSync(join(tmpdir(), 'cad-config-'));
@@ -528,6 +529,29 @@ test('get: a BROKEN file reached under two spellings warns exactly once', () => 
   }
 });
 
+test('ARG-06: every subcommand that ACCEPTS --global declares it, and reads it off the row', () => {
+  // UAT item 9. `get --global` was live and undeclared while its two siblings
+  // each carried a row, so self-verify check 2 stayed green only because no
+  // workflow prose spelled the pair - the moment any did, correct prose would
+  // be reported `unknown-flag` against a flag this seam accepts.
+  //
+  // The row is now what the read NEEDS, which is what makes the class
+  // unrepeatable here: `optFile` asks `CONTRACTS['config.mjs'][cmd]` for the
+  // declaration, so a subcommand accepting a `--global` it does not declare is
+  // no longer expressible. Deleting the row below stops `get --global`
+  // answering `source: "global"` - watched failing.
+  const declared = { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' };
+  for (const cmd of ['validate', 'set', 'get']) {
+    assert.deepEqual(CONTRACTS['config.mjs'][cmd]['--global'], declared,
+      `${cmd} takes --global, so ${cmd} must declare it - with the same grammar its siblings carry`);
+  }
+  const gpath = join(dir, 'global-declared.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'critical' }));
+  const r = run(['get', '--global', 'stakes'], gpath);
+  assert.equal(r.source, 'global');
+  assert.equal(r.values['stakes'], 'critical');
+});
+
 test('get --global: the one file it reads by construction is the GLOBAL layer', () => {
   // config.mjs:289 hands GLOBAL_CONFIG in as the repo file, so `--global` makes
   // one file both layers on every invocation - it reported `global+repo`, i.e.
@@ -585,6 +609,34 @@ test('a QUOTED empty --file is refused too, not answered about the global layer'
     assert.match(r.detail, /--file/, args.join(' '));
     assert.equal(r.values, undefined, args.join(' ')); // never an answer about another file
   }
+});
+
+test('ARG-06: a FLAG-SHAPED --file value is refused too, not read as a path', () => {
+  // The third spelling, and the one `if (!tokens[i + 1])` could not see: a
+  // truthy token that is a FLAG. Measured 2026-08-19, `config.mjs validate
+  // --file --nonsense` returned `{"ok":false,"reason":"read","detail":"cannot
+  // read/parse --nonsense: ENOENT ..."}` - an answer about a file the caller
+  // never named, the same class as the two rows above one spelling further out.
+  // `--file` reads through its declared row in lib/arg-contract.mjs now, so all
+  // three are one rule, and the reason stays this bin's own `usage` (D-07).
+  const gpath = join(dir, 'flagshaped-file-global.json');
+  writeFileSync(gpath, JSON.stringify({ stakes: 'shipped' }));
+  for (const args of [['set', 'stakes=solo', '--file', '--nonsense'], ['get', '--file', '--nonsense', 'stakes'],
+    ['validate', '--file', '--nonsense']]) {
+    const r = run(args, gpath);
+    assert.equal(r.ok, false, args.join(' '));
+    assert.equal(r.reason, 'usage', `${args.join(' ')}: ${JSON.stringify(r)}`);
+    assert.match(r.detail, /--file/, args.join(' '));
+    assert.equal(r.values, undefined, args.join(' '));
+  }
+  // The two mechanics that must not move: `--global` is tested FIRST and
+  // short-circuits before `--file` is looked at...
+  assert.equal(run(['get', '--global', 'stakes'], gpath).values.stakes, 'shipped');
+  // ...and a real path still resolves, with the consumed flag and its value
+  // filtered out of the key list `get` reads.
+  const repo = join(dir, 'flagshaped-file-repo.json');
+  writeFileSync(repo, JSON.stringify({ stakes: 'solo' }));
+  assert.equal(run(['get', '--file', repo, 'stakes'], gpath).values.stakes, 'solo');
 });
 
 test('a path under a missing directory is a read failure naming it, never internal', () => {
@@ -1216,4 +1268,125 @@ test('check: null is still refused at the write face - the sentinel is not a val
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'review.triggers.diff.gate');
   assert.match(r.detail[0].error, /must be one of: off, advisory, blocking, adjudicated/);
+});
+
+// --- ARG-05: a prototype member is an unknown key at the READ face ------------
+//
+// The counterpart the merge-path block above says it lacks. Those three rows
+// PIN `constructor` and `prototype` on the merge path and distinguish nothing
+// about a repair; these rows go red the moment either `Object.hasOwn` in `get`
+// is reverted to the bare index read, because a bare `SCHEMA[k]` resolves every
+// Object.prototype member truthy through the prototype chain.
+//
+// The set is WALKED, never hand-listed (D-13): Object.prototype carries twelve
+// own names, and `__defineGetter__` and its three siblings are as much a hole
+// as the obvious `constructor` / `toString` / `valueOf`. A hand-list is how the
+// next member the language adds stops being covered.
+const PROTO_MEMBERS = Object.getOwnPropertyNames(Object.prototype);
+
+// `run` above discards the exit status; these rows assert it, because a
+// refusal that exits 0 is the shape being repaired.
+function runStatus(args, globalPath) {
+  const env = { ...process.env };
+  if (globalPath) env.CADENCE_GLOBAL_CONFIG = globalPath;
+  try {
+    return { status: 0, json: JSON.parse(execFileSync('node', [CONFIG, ...args], { encoding: 'utf8', env })) };
+  } catch (e) {
+    return { status: e.status, json: JSON.parse(e.stdout) };
+  }
+}
+
+test('get: every Object.prototype member is refused as an unknown key at exit 1', () => {
+  const gpath = join(dir, 'proto-read-no-global.json');
+  assert.ok(PROTO_MEMBERS.length >= 12, JSON.stringify(PROTO_MEMBERS));
+  for (const key of PROTO_MEMBERS) {
+    // `--file` at an absent path, so the answer comes from the schema alone and
+    // no layer can be blamed for it.
+    const { status, json } = runStatus(['get', '--file', join(dir, 'proto-read-absent.json'), key], gpath);
+    assert.equal(json.ok, false, `${key}: ${JSON.stringify(json)}`);
+    assert.equal(json.reason, 'unknown-key', key);
+    assert.deepEqual(json.detail, [key], key);
+    assert.equal(status, 1, key);
+    // The measured pre-repair answer, named so a reader knows what changed:
+    // `{"ok":true,"values":{}}` at exit 0 for `__proto__` (the assignment ran
+    // Object.prototype's setter and stored nothing) and for the rest (the
+    // spec's `.default` is undefined, which JSON.stringify drops).
+    assert.equal(json.values, undefined, key);
+  }
+});
+
+test('get: a mix of a real key and a prototype member refuses, never answers for one', () => {
+  const gpath = join(dir, 'proto-mixed-no-global.json');
+  const { status, json } = runStatus(
+    ['get', '--file', join(dir, 'proto-mixed-absent.json'), 'stakes', '__proto__'], gpath);
+  assert.equal(json.ok, false, JSON.stringify(json));
+  assert.equal(json.reason, 'unknown-key');
+  assert.deepEqual(json.detail, ['__proto__']);   // names the offender, not the pair
+  assert.equal(status, 1);
+  // Measured before the repair: {"ok":true,"values":{"stakes":"shipped"}} at
+  // exit 0 - one key of the two asked for, with nothing saying the other was
+  // dropped.
+  assert.equal(json.values, undefined);
+});
+
+test('get: the repair costs a live key nothing - one named and the keyless read both answer', () => {
+  const gpath = join(dir, 'proto-live-no-global.json');
+  const one = runStatus(['get', '--file', join(dir, 'proto-live-absent.json'), 'stakes'], gpath);
+  assert.equal(one.json.ok, true, JSON.stringify(one.json));
+  assert.equal(one.json.values['stakes'], 'shipped');
+  assert.equal(one.status, 0);
+
+  // The keyless arm walks Object.keys(SCHEMA), which yields own keys only, so
+  // it must still return every schema key with its default resolved.
+  const all = runStatus(['get', '--file', join(dir, 'proto-live-absent.json')], gpath);
+  assert.equal(all.json.ok, true, JSON.stringify(all.json).slice(0, 200));
+  const schemaKeys = Object.keys(run(['keys']).keys);
+  assert.deepEqual(Object.keys(all.json.values), schemaKeys);
+  assert.equal(all.json.values['stakes'], 'shipped');
+  assert.equal(all.status, 0);
+});
+
+// --- ARG-05: the WRITE face stops fabricating a retirement --------------------
+
+test('check: every Object.prototype member is an unknown key, never a retirement', () => {
+  // Measured before the repair: `check '__proto__=1'` answered
+  // `retired in v2.0.0: undefined`, and so did `constructor=1`, `toString=1` and
+  // `hasOwnProperty=1`. A WRONG diagnostic rather than a missing one - it names
+  // a retirement that never happened. Both bare index reads in checkPairs
+  // produced it: `RETIRED_KEYS[key]` resolved to Object.prototype and won the
+  // first arm, and `SCHEMA[key]` would have reached checkValue as a "spec"
+  // carrying no `type`.
+  for (const key of PROTO_MEMBERS) {
+    const { status, json } = runStatus(['check', `${key}=1`]);
+    assert.equal(json.ok, false, `${key}: ${JSON.stringify(json)}`);
+    assert.equal(json.reason, 'invalid', key);
+    assert.deepEqual(json.detail, [{ key, error: 'unknown key' }], key);
+    assert.equal(status, 1, key);
+  }
+});
+
+test('check: a genuinely retired key still reports its own milestone and remediation', () => {
+  // The guard's cost, measured: none. The retirement vocabulary has to survive
+  // the fix, or a real rename now reads as the generic `unknown key` and the
+  // user is sent nowhere.
+  const r = run(['check', 'review.triggers.pre_ship.gate=x']);
+  assert.equal(r.ok, false);
+  assert.equal(r.detail[0].key, 'review.triggers.pre_ship.gate');
+  assert.match(r.detail[0].error, /^retired in v3\.2\.0: /);
+  assert.match(r.detail[0].error, /risk_surface/);
+  assert.doesNotMatch(r.detail[0].error, /undefined/);
+  assert.notEqual(r.detail[0].error, 'unknown key');
+});
+
+test('set: a prototype member is refused and nothing is written', () => {
+  const gpath = join(dir, 'proto-write.json');
+  for (const key of ['__proto__', 'constructor', 'toString']) {
+    const { status, json } = runStatus(['set', '--global', `${key}=1`], gpath);
+    assert.equal(json.ok, false, key);
+    assert.equal(json.reason, 'invalid', key);
+    assert.deepEqual(json.detail, [{ key, error: 'unknown key' }], key);
+    assert.equal(status, 1, key);
+    // --global auto-creates, so an unrefused pair would have left a file here.
+    assert.equal(existsSync(gpath), false, key);
+  }
 });

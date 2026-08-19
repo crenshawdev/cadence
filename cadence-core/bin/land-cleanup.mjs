@@ -5,14 +5,20 @@
 // the merged integration branch) and whether an autonomous close halts before
 // merge on a blocking risk_surface finding. Like git-branch.mjs / git-guard.mjs it
 // only advises: it NEVER runs `checkout`, `pull`, or `branch -D` - that is
-// cad-land prose's job, gated by this advice. One JSON line on stdout, exit 0
-// (seam convention, lib/seam-io.mjs). The tested logic lives in
+// cad-land prose's job, gated by this advice. One JSON line on stdout (seam
+// convention, lib/seam-io.mjs): every piece of ADVICE is ok:true and exits 0,
+// and the only ok:false/exit-1 shapes are a malformed CALL - a bad subcommand,
+// or an empty or valueless --dir. The tested logic lives in
 // lib/close-decision.mjs; this wraps it with config + git-read I/O.
 //
 // Subcommands (each prints one JSON line):
 //   cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>]
 //     Decide the return-to-base + pull + reap for a land. --dir is the planning
-//     root (default cwd). Base resolves from --base, else git.base_branch, else
+//     root: ABSENT means the process cwd, while an EMPTY or valueless --dir
+//     REFUSES (`missing-flag-value`, exit 1) rather than advising a land in a
+//     tree the caller never named (phase 2 D-01) - true of `gate` too, whose
+//     refusal fires before stdin is read at all.
+//     Base resolves from --base, else git.base_branch, else
 //     the first git.protected_branches entry (cad-land / references/git-guard.md order). The reap
 //     target is resolveReapBranch(derived, `git branch --merged <base>`), where
 //     derived = --branch when given, else integrationBranchName(PROJECT/ROADMAP)
@@ -42,11 +48,20 @@ import { emit } from './lib/seam-io.mjs';
 import { integrationBranchName } from './lib/branch-decision.mjs';
 import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-decision.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-// The argv and file readers this file used to define for itself; both flag
-// contracts and the reason there are two of them live in lib/seam-input.mjs.
-// `readFileSync` stays imported above for readFindings' fd-0 stdin read, which
-// is a different question from "read this surface, '' if it is not there".
-import { optionalFlag, readText } from './lib/seam-input.mjs';
+// The file reader this file used to define for itself; its ''-on-failure
+// contract lives in lib/seam-input.mjs. `readFileSync` stays imported above for
+// readFindings' fd-0 stdin read, which is a different question from "read this
+// surface, '' if it is not there".
+import { readText } from './lib/seam-input.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what each flag may be, and what it costs when it is not, are DECLARED
+// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
+// throwing form the catch arm at the foot of this file already renders. `--dir`
+// declares `refuse` (D-01): this seam mutates nothing, but the advice it hands
+// cad-land is acted on, so an answer about the wrong tree is the same defect
+// the mutating seams had. `--branch`, `--base` and `--merged` declare
+// `fallback` - they legitimately default.
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 
 /**
  * The branches `git branch --merged <base>` reports at `dir`, or [] if git
@@ -163,20 +178,37 @@ function gate(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - this file's own argv, so every
- * call site below keeps its spelling - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['land-cleanup.mjs'];
+/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
+ * this binding owns nothing: it is an adapter over this file's own argv, never
+ * a second statement of what a flag may be. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
+  // `--dir` declares `refuse` on both axes: a genuinely ABSENT one still reads
+  // as undefined and the cwd default is unchanged, while the empty, valueless
+  // and flag-shaped spellings raise the refusal. It is raised while the
+  // argument is built, so `gate` refuses BEFORE it reads stdin - one JSON line
+  // out either way. The other three declare `fallback` (D-12), so a spelling
+  // carrying no usable value reads as ABSENT and this seam's own defaults
+  // answer: the derived integration branch, `git.base_branch`, and the merged
+  // list. That is the answer a bare `--branch` already gave.
   if (cmd === 'cleanup') {
-    cleanup(flag('--dir') || process.cwd(), flag('--branch'), flag('--base'), flag('--merged'));
+    cleanup(arg('cleanup', '--dir') || process.cwd(),
+      arg('cleanup', '--branch'), arg('cleanup', '--base'), arg('cleanup', '--merged'));
   } else if (cmd === 'gate') {
-    gate(flag('--dir') || process.cwd());
+    gate(arg('gate', '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommands: cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>] | gate [--dir <path>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
+  // refusal object carries no `message`, so without it a valueless --dir emits
+  // detail "[object Object]". One JSON line on stdout like every other verdict
+  // (D-02) - stderr is a channel no workflow reading this seam parses.
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

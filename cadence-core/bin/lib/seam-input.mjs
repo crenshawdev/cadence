@@ -1,6 +1,6 @@
 // @ts-check
 // seam-input.mjs - the ONE home for the argv and file INPUT helpers the bin
-// scripts had each copied into themselves: two flag readers and the
+// scripts had each copied into themselves: the throwing flag reader and the
 // ''-on-failure text reader. Zero-dep, node builtins only, pure (no emit, no
 // mergeLayers, no process): the caller owns its envelope.
 //
@@ -13,24 +13,41 @@
 // definitions (git-branch, git-publish, land-cleanup, release-bump,
 // worktree-base), two `flagValue` definitions (weight, self-verify) and three
 // `readText` definitions - twelve copies of three contracts, which is a drift
-// surface rather than a convenience. helper-census.test.mjs pins each of them
-// at exactly one definition so a sixth copy reddens instead of drifting.
+// surface rather than a convenience. helper-census.test.mjs pins each of the
+// surviving contracts at exactly one definition so a re-copy reddens instead
+// of drifting.
 //
-// THE TWO FLAG READERS ARE TWO CONTRACTS, AND BOTH SURVIVE (D-03). Do not
-// "fix" this into one:
+// ONE FLAG READER NOW, AND THE OTHER CONTRACT IS A DECLARED DISPOSITION
+// (ARG-06). There were two live readers here, answering DIFFERENTLY for a
+// present-but-valueless flag: `optionalFlag` read absent and
+// present-with-no-value both as `undefined` so the caller's own `|| fallback`
+// applied, and `flagValue` refused. The first has collapsed into
+// lib/arg-contract.mjs - a flag that legitimately defaults (`--branch`,
+// `--base`, `--remote`, `--merged`, `--version`, `--timeout-ms`) now DECLARES
+// the `fallback` disposition on its row, which is the same answer reached from
+// a declaration rather than from a second reader. That is the second reversal
+// of this header's two-contract guarantee, after phase 2 reversed it for
+// `--dir`, and it closed a defect the positional reader carried: it returned
+// the NEXT FLAG as a value, so `git-branch.mjs decide --branch --dir <p>` read
+// `--dir` as the branch name (D-13). A declared `fallback` reads that spelling
+// as ABSENT instead.
 //
-//   optionalFlag - absent OR present-with-no-value both read as `undefined`,
-//     never a throw. The five seams that call it default through
-//     `optionalFlag(argv,'--dir') || process.cwd()` and carry NO `e.seam` catch
-//     arm, so folding them into the throwing contract would turn a valueless
-//     `--dir` into `{"ok":false,"reason":"internal","detail":"[object Object]"}`
-//     at five seams.
 //   flagValue - a missing, empty or flag-shaped value THROWS
-//     `{seam:'missing-flag-value', detail}`. Its two callers (weight.mjs,
-//     self-verify.mjs) each carry the `e.seam` catch arm that turns that object
-//     into a named refusal, and the refusal is the point: `--root` with nothing
-//     after it used to fall through to the plugin's own tree and report
-//     confident numbers about a tree the caller never named.
+//     `{seam:'missing-flag-value', detail}`, built by `missingFlagValue`
+//     below. It is the rule lib/arg-contract.mjs CONSULTS for the
+//     absent-versus-nothing-usable split rather than re-spelling, so this stays
+//     the one place that line is drawn for the whole seam layer. The refusal is
+//     the point: `--root` with nothing after it used to fall through to the
+//     plugin's own tree and report confident numbers about a tree the caller
+//     never named.
+//
+// No bin calls it directly any more: each declares its flags and reads them
+// through lib/arg-contract.mjs, whose `requireFlag` raises this module's
+// refusal object for the bins holding an `e.seam` catch arm and whose
+// `evaluateFlag` returns a classification for the bins that name their own
+// refusal. A seam reading a `refuse` row through the raising form without that
+// arm surfaces the refusal as
+// `{"ok":false,"reason":"internal","detail":"[object Object]"}` (D-09).
 //
 // `readText` here is the ''-on-failure contract (a missing surface is not
 // fatal). lib/include-consumers.mjs:123-130 keeps a DIFFERENT `readText` - an
@@ -43,21 +60,23 @@
 import { readFileSync } from 'node:fs';
 
 /**
- * The argv entry positionally after `name`, or `undefined` when the flag is
- * absent. NEVER throws, and deliberately does not distinguish
- * present-with-no-value from absent - both are `undefined` so the caller's own
- * `|| fallback` applies. Callers that must tell those apart use `flagValue`.
+ * The refusal object, as a VALUE. One construction, two raisers: `flagValue`
+ * throws it below for the missing, empty and flag-shaped spellings, and
+ * lib/arg-contract.mjs's `requireFlag` throws the same object for a flag whose
+ * declared row refuses on the VALUE axis - `--root "   "` is neither empty nor
+ * flag-shaped, so `flagValue` waves it through and the row is what refuses it.
+ * Two raisers, ONE construction: helper-census.test.mjs pins this body here.
  *
- * Takes `argv` as a parameter because each copy this replaced closed over its
- * own module-level `argv`; the bins bridge with a one-line partial application
- * (`const flag = (name) => optionalFlag(argv, name)`), which is an adapter
- * binding, not a second definition of the reader.
+ * It is a function rather than a literal at each site for the reason
+ * helper-census.test.mjs states about every helper here: a second construction
+ * of one contract in a second file is what silently drifts, and the two fields
+ * are exactly what the callers' `e.seam` arms emit - a thrown object without
+ * them surfaces as detail `"[object Object]"`.
  *
- * @param {string[]} argv @param {string} name @returns {string|undefined}
+ * @param {string} flag @returns {{seam: string, detail: string}}
  */
-export function optionalFlag(argv, name) {
-  const i = argv.indexOf(name);
-  return i >= 0 ? argv[i + 1] : undefined;
+export function missingFlagValue(flag) {
+  return { seam: 'missing-flag-value', detail: flag };
 }
 
 /**
@@ -83,7 +102,7 @@ export function flagValue(argv, flag) {
   if (i < 0) return undefined;
   const v = argv[i + 1];
   if (v === undefined || v === '' || v.startsWith('--')) {
-    throw { seam: 'missing-flag-value', detail: flag };
+    throw missingFlagValue(flag);
   }
   return v;
 }

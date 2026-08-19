@@ -130,40 +130,40 @@ context-gathering, and debugging — without any external memory system.
 
 ### Active
 
-No cycle open. `v3.5.4 - the gate that clears itself wrong` closed on 2026-08-18:
-eight requirements (`EXP-02`, `PHS-01`, `DRF-01`, `DRF-02`, `TAG-01`, `RVW-03`,
-`REL-01`, `ISS-01`), three phases, 51 commits off `6d445f3`, the audit green (8/8
-traced, 0 broken, 0 deferred; 21/21 acceptance criteria covered), the manifest at
-`3.5.4`. Its eight rows sit in `.planning/REQUIREMENTS.md` under `## Shipped`, its
-narrative in `CHANGELOG.md`, its per-phase residue in `.planning/ARCHIVE.md` at 76
-rows, and its phase record in git history at the pruning commit - this close ran
-`--mode delete`, so there is no `_archive-v3.5.4/`. The merge and the release tag
-are both outstanding: `/cad-land` on `cadence/v3.5.4`, which cuts `v3.5.4` on the
-pulled base after the merge confirms.
+No cycle open.
 
-What it delivered: the shape `v3.5.3` closed for controls that never reached
-their path, closed again for controls that reach the path and mis-answer once
-they are there. Two of the eight cost something irreversible when they answered
-wrong - a credential reaching a third-party review provider in clear text, and a
-recursive delete of a phase directory whose git state was never read - and both
-now refuse rather than proceed. Three more were the ship gate itself FAILing
-correct docs, which is the failure mode that teaches a user to stop trusting the
-gate. The last three were flags whose documented reach and real reach disagreed.
-Every fix carries a check watched failing against the unpatched tree first.
+`v3.5.5 - a seam that accepts what it should refuse` closed on 2026-08-19:
+thirteen requirements (`GRD-01`, `SCR-01`, `ARG-01` through `ARG-06`, `RCH-01`,
+`RSK-03`, `RSK-04`, `SHP-01`, `RME-01`), five phases, 121 commits off `main`,
+the audit green (13/13 traced, 0 broken, 0 deferred; 35/35 acceptance criteria
+covered across five phases), the manifest at `3.5.5`. Its thirteen rows sit in
+`.planning/REQUIREMENTS.md` under `## Shipped`, its narrative in `CHANGELOG.md`,
+its per-phase residue in `.planning/ARCHIVE.md` at 127 rows, and its phase record
+in git history at the pruning commit - this close ran `--mode delete`, so there
+is no `_archive-v3.5.5/`. The merge and the release tag are both outstanding:
+`/cad-land` on `cadence/v3.5.5`, which cuts `v3.5.5` on the pulled base after the
+merge confirms.
 
-What is NOT closed: eight medium `risk_surface` survivors carried forward at this
-close, plus the phase-3 open items - no drift check ties `effort_names` or
-`tier_names` to the schema enums, `review-triggers.md`'s degraded-resolve fallback
-is unfollowable now that the schema defaults are `null`, `readTags` swallows
-ENOBUFS and answers `tags: []` with `ok:true`, and `git-branch.mjs tags` collapses
-an empty `--dir` with an absent one. None is scoped to a cycle. The four deferred
-ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their deferral reasons and
-none is promoted.
+What it delivered: the readers that accept what they have a rule against, closed
+by replacing nine hand-rolled argument parsers with one declarative table. A
+string `""` in `git.protected_branches` had been unprotecting `main` silently;
+`--dir ''` was read as "use the current directory" at six seams; a bare trailing
+`--date` dated the release today. The table now carries 16 scripts, 77 subcommand
+rows and 145 flag entries, and a census spawns the owning binary for all 231
+declared refusals, which is what caught the table being written but not read -
+`planning.mjs` applied two of its 145 rules. Three gates that answered about
+something other than what they were asked were fixed alongside it, and the
+landing page was rewritten from a 24,850-byte reference manual into a 14,433-byte
+decision document with the relocated claims under CI.
 
-Deviation from `milestone.md`: this is a close-only run. The workflow's steps 4
-and 5 assume every close opens the next cycle, so closing without one is
-hand-written rather than a path through it - the fourth time, and the open capture
-item asking for an explicit close-only arm is still open.
+What is NOT closed: three medium `risk_surface` survivors carried forward at this
+close, plus the eight from `v3.5.4`, all still unassigned. The four deferred ids
+`PRS-01`, `EVD-01`, `RCL-06` and `CTX-02` were not promoted and their 2026-08-18
+caveats stand undecided - `CTX-02`'s stated basis no longer holds (both its
+issues are closed and #29's ask shipped as `/cad-minimalism-review`), and
+`RCL-06` still carries no deferral reason and no promotion trigger, so nothing
+can re-ask it. Milestones `v3.5.6` and `v3.5.7` are scoped on the tracker and
+were not opened here; `/cad-phase add` opens whichever comes next.
 
 ## Key Decisions
 

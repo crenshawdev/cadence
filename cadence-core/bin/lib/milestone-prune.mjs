@@ -139,8 +139,8 @@ export function archiveRequirements(text, completed, label) {
   //    prose bullet whose id happened to collide with a shipped one.
   //
   //    The bullet scan is bounded the same way, to `## Active` - heading to the
-  //    next `^## `, the cut parseRequirements and lib/planning-files.mjs:388-391
-  //    already use. Unbounded it read the WHOLE file, so an id carrying a
+  //    next unfenced `## `, the cut `sectionSpan` gives every reader of these
+  //    tables. Unbounded it read the WHOLE file, so an id carrying a
   //    bullet under `## Active` AND under a later hold section had both
   //    deleted and `summaries.set` ran twice - last write wins, and the
   //    deferral note became the shipped row's summary. The bound is by
@@ -161,7 +161,14 @@ export function archiveRequirements(text, completed, label) {
   if (activeAt !== -1) {
     let body = lines.slice(activeAt + 1, activeEnd);
     for (const { id } of shipped) {
-      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*:\\s*(.*)$`);
+      // The lead line admits the tracker suffix this milestone's bullets carry -
+      // `- **GRD-01** (#219): ...` - which the bare `**<ID>**:` form did not
+      // match at all, so such a bullet was never removed and never summarized:
+      // its whole span survived into the pruned document as orphaned prose, and
+      // its Shipped row was built with no parenthetical. Still the NARROW form
+      // (D-03) - the suffix is `(#<digits>)` and nothing else, so a
+      // `- **Note**:` prose bullet remains unmatchable.
+      const bulletRe = new RegExp(`^- \\*\\*${escId(id)}\\*\\*(?: \\((#\\d+)\\))?:\\s*(.*)$`);
       const kept = [];
       for (let i = 0; i < body.length; i++) {
         const m = body[i].match(bulletRe);
@@ -172,7 +179,10 @@ export function archiveRequirements(text, completed, label) {
         // bullet apart from the whitespace join. A heuristic that lowercased the
         // lead word to match past hand repairs would mangle a span opening on a
         // proper noun or an identifier, which is the worse failure.
-        const parts = [m[1].trim()];
+        // The tracker ref rides the summary rather than being dropped on the
+        // colon split: it is the bullet's only pointer back to the issue, and
+        // the archived row is where a reader goes looking for it afterwards.
+        const parts = [m[1] ? `${m[1]}:` : '', m[2].trim()];
         let j = i + 1;
         while (j < body.length && body[j].trim() && /^\s/.test(body[j])) {
           parts.push(body[j].trim());
@@ -185,16 +195,24 @@ export function archiveRequirements(text, completed, label) {
     }
     lines = [...lines.slice(0, activeAt + 1), ...body, ...lines.slice(activeEnd)];
   }
-  let inTrace = false;
+  //    The Traceability removal is bounded by `sectionSpan` for the same
+  //    reason and by the same rule (D-08): the hand-rolled `inTrace` flag it
+  //    replaces set itself on a FENCED `## Traceability` and then deleted rows
+  //    out of the example - and `parseRequirements`, which decided WHICH rows
+  //    are shipped, now reads that table through this same call, so the reader
+  //    and the remover cannot disagree about where the table is. WHAT is
+  //    removed is unchanged: inside the span, a `|`-leading line whose first
+  //    cell is a shipped id, and nothing else.
+  const { start: traceAt, end: traceEnd } = sectionSpan(lines, '## Traceability');
   const shippedIds = new Set(shipped.map((r) => r.id));
-  lines = lines.filter((line) => {
-    if (/^## Traceability\s*$/.test(line)) { inTrace = true; return true; }
-    if (inTrace && /^## /.test(line)) inTrace = false;
-    if (!inTrace) return true;
-    const cells = line.match(/^\|([^|]*)\|/);
-    if (!cells) return true;
-    return !shippedIds.has(cells[1].replace(/\*/g, '').trim());
-  });
+  if (traceAt !== -1) {
+    const body = lines.slice(traceAt + 1, traceEnd).filter((line) => {
+      const cells = line.match(/^\|([^|]*)\|/);
+      if (!cells) return true;
+      return !shippedIds.has(cells[1].replace(/\*/g, '').trim());
+    });
+    lines = [...lines.slice(0, traceAt + 1), ...body, ...lines.slice(traceEnd)];
+  }
 
   // 2. Build the shipped rows, summary parenthesized when the bullet had one.
   //
@@ -213,7 +231,16 @@ export function archiveRequirements(text, completed, label) {
   });
 
   // 3. Land them under `## Shipped`.
-  const headingAt = lines.findIndex((l) => /^## Shipped\s*$/.test(l));
+  //
+  //    BOTH ends from `sectionSpan` (D-08/D-13), the third locator in this one
+  //    function to take them from there. The bare `findIndex` over an anchored
+  //    regex this replaces was fence-blind five lines below a fence-aware
+  //    `## Active` read: a document whose only `## Shipped` is an EXAMPLE - the
+  //    shape `templates/REQUIREMENTS.md` ships - had its archived rows appended
+  //    inside somebody's code block. A fenced `## Shipped` is now not the
+  //    section, so such a document takes the absent-heading arm below and gets
+  //    a real one created.
+  const { start: headingAt, end: shippedEnd } = sectionSpan(lines, '## Shipped');
   let createdSection = false;
   if (headingAt === -1) {
     // Create the section right after `## Active`'s span (before the next
@@ -228,10 +255,13 @@ export function archiveRequirements(text, completed, label) {
     const insertAt = afterActive === -1 ? lines.length : afterActive;
     lines.splice(insertAt, 0, '## Shipped', ...SHIPPED_PREAMBLE, ...newRows, '');
   } else {
-    // Append after the last table row inside the section.
+    // Append after the last table row inside the section. The END of the scan
+    // is the span's, not a fresh `/^## /` break (D-13): a start found
+    // fence-aware cannot be repaired by a fence-blind end either, and a fenced
+    // `## ` line inside `## Shipped` - a preamble quoting the next heading -
+    // cut the search short, landing the new rows above rows already there.
     let last = headingAt;
-    for (let i = headingAt + 1; i < lines.length; i++) {
-      if (/^## /.test(lines[i])) break;
+    for (let i = headingAt + 1; i < shippedEnd; i++) {
       if (/^\|/.test(lines[i])) last = i;
     }
     lines.splice(last + 1, 0, ...newRows);

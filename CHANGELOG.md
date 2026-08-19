@@ -6,6 +6,111 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.5] - 2026-08-19
+
+Last release closed controls that ran and answered wrong. This one closes
+readers that accept input they have a rule against, and it does it by giving
+every seam CLI one argument table instead of nine hand-rolled parsers. Five
+phases, thirteen requirements, 121 commits off `v3.5.4`. The landing page got
+rewritten in the same cycle, because a tool about evidence should not ask you to
+take its README on faith.
+
+### Added
+
+- **One declarative argument contract for every seam CLI.**
+  `cadence-core/bin/lib/arg-contract.mjs` carries 16 scripts, 77 subcommand rows
+  and 145 flag entries, each declaring `required`, `type`, `value` and `bare`,
+  and `self-verify` now checks documented invocations against that same table. A
+  flag with no row is a flag no prose may spell. `optionalFlag` is gone from
+  source.
+
+- **A census that proves the table is read, not just written.**
+  `arg-contract-adoption.test.mjs` spawns the owning script for all 231 declared
+  refusals across 145 entries, twice: the flag alone, and the same refusal
+  preceded by a well-formed occurrence of itself. The phase's own UAT caught why
+  this was needed. The table stated 145 rules and `planning.mjs` read two of
+  them, so `cursor set --name` with no value answered `ok:true` and wrote
+  `Phase: 1 of 5 (true)` into STATE.md.
+
+- **`docs/` joins self-verify's markdown walk**, so a config key or repo path
+  named on a `docs/` page has to exist, the same as on the README. Two pages
+  moved there: `docs/COST.md` and `docs/EXAMPLE.md`.
+
+### Changed
+
+- **The README is a landing page now, not a reference manual.** 24,850 bytes
+  down to 14,433. The cost-to-run section and the worked example moved to
+  `docs/`, the 21-bullet command list is one line pointing at `/cad-help` and
+  `cadence-core/references/COMMANDS.md`, and the page states what it asks of you
+  before it asks you to install it. `LINEAGE.md`'s counts were re-measured
+  against the tree: 19 rung files across 6 roles, 33 skills of which 27 are
+  user-invocable.
+
+- **Every bulk-output scratch file is written inside a `mktemp -d` made for that
+  run**, at all six sites, and each read-back refuses a truncated or
+  wrong-shaped file by name rather than parsing `{}` and calling it success.
+  This is now check 21 (`scratch-path`) in self-verify. The blocking re-arm cap
+  in `triage-gate.md` read a shared path before, which meant a render taken in
+  another repository on the same machine could spend or refund the one round
+  that gate has.
+
+### Fixed
+
+- **A string `""` in `git.protected_branches` protected nothing.** It coerced to
+  an empty list, so `main` was unprotected and the commit guard said nothing.
+  One non-empty resolver now sits behind all five readers, and the tests reach
+  the guard DECISION rather than the helper: `git-guard` returns a
+  protected-branch decision naming `main` under a string `""`, and
+  `land-cleanup` reports `base: "main"` where it reported `''`.
+
+- **`--dir ''` was read as "use the current directory" at six seams.**
+  `git-branch.mjs tags --dir ''` printed this repository's 33 tags when it was
+  asked about a project that does not exist. It answers
+  `{"ok":false,"reason":"missing-flag-value","detail":"--dir"}` now. An absent
+  `--dir` still resolves to the cwd, which is the behaviour that was actually
+  intended.
+
+- **A bare trailing `--date` on `release-bump` dated the release today.**
+  `bump --version 1.1.0 --date` wrote the manifest and a `## [1.1.0] - <today>`
+  heading at `ok:true`. Validated at the dispatch now, newline arm first,
+  because a `--date` can carry a forged release section.
+
+- **Numeric flags accepted values outside the safe-integer range**, so a
+  400-digit argument or `9007199254740993` was rounded or yielded `Infinity`
+  instead of refused. And a phase spelling that cannot round-trip is refused at
+  the two write faces that would otherwise merge it into another phase.
+
+- **`config.mjs` reported `__proto__` as a retirement that never happened.**
+  `check '__proto__=1'` answered `retired in v2.0.0: undefined`. Every bare
+  index read goes through `Object.hasOwn` now, and prototype members report as
+  the unknown keys they are.
+
+- **`detect-commands` named binaries that are not on PATH.** It now probes
+  reachability before naming a command, nulls an unreachable winning arm and
+  says so in `warnings[]`, with no fall-through to a lower arm. 402 planning
+  rows pass both with `ruff`/`mypy`/`eslint`/`tsc`/`go` absent and with all five
+  stubbed on, so the answer is pinned by fixtures and not by whichever machine
+  ran it.
+
+- **`risk-check status` could not be satisfied for a non-numeric worker key.**
+  Both `risk-check` faces read one 16-row grammar now, and a refused bracket key
+  lands in `malformed[]` instead of being dropped into `missing[]`.
+
+- **The `risk_surface` detector matched its own source and fixtures.** 29
+  literal sites split, reach proven unchanged, pinned by a census row watched
+  failing against the old blob.
+
+- **`## Shipped` and `## Traceability` lookups read inside fenced code blocks.**
+  All four locators plus `## Shipped`'s start and end route through
+  `sectionSpan`. The falsifier was observed by hand: the pre-change libraries
+  wrote a real traceability row inside a fenced example table.
+
+- **The argument door judged only a flag's first occurrence** while
+  `planning.mjs` keeps the last, so `--name valid --name` passed on `valid`.
+  Found by the blocking review on the very plan that existed to close this
+  class, at a spelling the census had never typed.
+
+
 ## [3.5.4] - 2026-08-18
 
 Every check in here already ran and already answered, and answered wrong in a
@@ -3022,6 +3127,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.5]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.5
 [3.5.4]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.4
 [3.5.3]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.3
 [3.5.2]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.2

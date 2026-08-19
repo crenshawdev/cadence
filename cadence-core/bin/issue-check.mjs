@@ -7,9 +7,11 @@
 // on (LND-01). Like land-cleanup.mjs it only advises, and it is READ-ONLY in
 // the strongest sense available: no argv it can build closes, reopens or
 // comments on an issue. Landing closes nothing; closing stays an explicit ask.
-// One JSON line on stdout, and the `check` arm is ok:true on EVERY path
-// including its failures - a tracker that cannot be read is a degraded report,
-// never a failed land. Three actions: `report` (the sentence), `skip` (ONE
+// One JSON line on stdout, and the `check` arm is ok:true on EVERY path it
+// reaches, including its failures - a tracker that cannot be read is a degraded
+// report, never a failed land. A malformed CALL never reaches that arm: an
+// empty or valueless --dir refuses at the dispatch (see the --dir line below),
+// which is a different thing from a tracker read going wrong. Three actions: `report` (the sentence), `skip` (ONE
 // degradation line the caller prints) and `off` (git.issue_check false - the
 // caller prints nothing at all).
 //
@@ -23,8 +25,12 @@
 //
 // Subcommand (one, printing one JSON line):
 //   check [--dir <path>] [--base <name>] [--timeout-ms <n>]
-//     --dir is the planning root AND the repository every read is bound to
-//     (default cwd). Base resolves from --base, else git.base_branch, else the
+//     --dir is the planning root AND the repository every read is bound to.
+//     ABSENT means the process cwd; an EMPTY or valueless --dir REFUSES
+//     (`missing-flag-value`, exit 1) before any spawn (phase 2 D-01). That is
+//     not this seam failing a land: nothing was read, so there is no tracker
+//     verdict to degrade, and what has to be fixed is the caller's own argv.
+//     Base resolves from --base, else git.base_branch, else the
 //     first git.protected_branches entry - the same order land-cleanup.mjs
 //     cleanup uses. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
 //     bounds each subprocess AND the whole per-issue resolve loop.
@@ -48,21 +54,36 @@
 // nothing to pay for that. Not a second regex; no third-party bytes at all.
 //
 // NO CADENCE ENV OVERRIDE AND NO --cli-dir. The forge binary is resolved on
-// PATH, in ONE place, because PATH is the OS's own lookup: a test injects a
-// stub by prepending a directory to the child's PATH and the PRODUCTION
-// resolver is what runs. A test-only override honoured in production is exactly
-// what review-provider.mjs:445-460 and EXP-01 refused.
+// PATH, in ONE place - `lib/on-path.mjs`, which this seam imports rather than
+// carries - because PATH is the OS's own lookup: a test injects a stub by
+// prepending a directory to the child's PATH and the PRODUCTION resolver is
+// what runs. A test-only override honoured in production is exactly what
+// review-provider.mjs:445-460 and EXP-01 refused, and that module reads no
+// Cadence variable of its own for the same reason. It moved to lib/ when
+// `detect-commands` needed the same question answered about a lint driver
+// (RCH-01): one rule, two callers, and no way for the seam that advises a land
+// and the seam that names an executor's command to disagree about "reachable".
 'use strict';
 
 import { execFileSync } from 'node:child_process';
-import { accessSync, constants } from 'node:fs';
-import { join, delimiter } from 'node:path';
+import { join } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { optionalFlag } from './lib/seam-input.mjs';
-import { requireInt } from './lib/require-int.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what each flag may be, and what it costs when it is not, are DECLARED
+// rows in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
+// throwing form the catch arm at the foot of this file already renders. `--dir`
+// declares `refuse` (D-01) - it names the repository every read is bound to.
+// `--base` and `--timeout-ms` declare `fallback`, the latter deliberately
+// landing on DEFAULT_TIMEOUT_MS rather than refusing (D-04): this seam's whole
+// contract is that it never fails a land, and a contract that made every typed
+// flag refuse would hand it the power to fail one. The `int` type it declares
+// is lib/require-int.mjs's own classifier, consulted through the row rather
+// than called here.
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
+import { onPath } from './lib/on-path.mjs';
 import {
   HOST_TABLE, classifyOrigin, scanIssueRefs, partitionIssues, decideIssueCheck,
 } from './lib/issue-decision.mjs';
@@ -125,16 +146,6 @@ function run(bin, args, { cwd, timeout }) {
       timedOut: err.signal === 'SIGKILL',
     };
   }
-}
-
-/** Is `bin` an executable on the CHILD's PATH? The one resolution site.
- * @param {string} bin @returns {boolean} */
-function onPath(bin) {
-  for (const dir of (process.env.PATH || '').split(delimiter)) {
-    if (!dir) continue;
-    try { accessSync(join(dir, bin), constants.X_OK); return true; } catch { /* next */ }
-  }
-  return false;
 }
 
 /**
@@ -295,22 +306,37 @@ function check(dir, baseArg, timeout) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['issue-check.mjs'];
+/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
+ * this binding owns nothing: it is an adapter over this file's own argv, never
+ * a second statement of what a flag may be. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
   if (cmd === 'check') {
-    const raw = flag('--timeout-ms');
-    const parsed = raw === undefined ? null : requireInt(raw);
-    // A malformed or non-positive --timeout-ms falls back to the constant
-    // rather than refusing: this seam's whole contract is that it never fails a
-    // land, and an unbounded call is the one thing it may never do instead.
-    const timeout = parsed && parsed.ok && parsed.value > 0 ? parsed.value : DEFAULT_TIMEOUT_MS;
-    check(flag('--dir') || process.cwd(), flag('--base'), timeout);
+    // `--timeout-ms` declares the `int` type with the `fallback` disposition on
+    // both axes, so a malformed, empty or valueless one reads as ABSENT and the
+    // constant answers - no refusal, ever. What the shared `int` type does NOT
+    // carry is positivity, so this seam's own extra term stays spelled here: an
+    // unbounded call is the one thing it may never do instead of refusing.
+    const ms = arg('check', '--timeout-ms');
+    const timeout = ms !== undefined && ms > 0 ? ms : DEFAULT_TIMEOUT_MS;
+    // `--dir` declares `refuse` on both axes: a genuinely ABSENT one still
+    // reads as undefined and the cwd default is unchanged, while the empty,
+    // valueless and flag-shaped spellings raise before any spawn and the
+    // e.seam arm names them. `--base` declares `fallback`, so a spelling
+    // carrying no usable value reads as absent and `git.base_branch` answers.
+    check(arg('check', '--dir') || process.cwd(), arg('check', '--base'), timeout);
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
+  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
+  // refusal object carries no `message`, so without it a valueless --dir emits
+  // detail "[object Object]". Its detail is the flag name this file wrote,
+  // never third-party bytes, so the no-output-reaches-the-envelope rule holds.
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

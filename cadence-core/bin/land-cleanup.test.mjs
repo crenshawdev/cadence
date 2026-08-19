@@ -4,7 +4,7 @@
 // through the seam with explicit --merged/--branch so no live git repo is needed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -117,6 +117,18 @@ test('a STRING protected_branches resolves base to that branch (#38, COR-01, D-0
   // An explicit --base still wins over the fallback.
   const forced = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true', '--base', 'main']);
   assert.equal(forced.base, 'main');
+});
+
+test('a protected_branches naming NO branch resolves base to main (GRD-01, D-02)', () => {
+  // The same fallback path as the row above, on the value that used to break
+  // it: `""` resolved to [""], so `base` became the empty string and the reap
+  // query became `git branch --merged ""` - a query that answers emptily and
+  // successfully rather than failing. A value naming no branch is a typo, so
+  // the default list applies and base lands on `main` (D-02).
+  const dir = fixture({ protected_branches: '' });
+  const r = seam(['cleanup', '--dir', dir, '--branch', 'cadence/v1.1.0-rc.2', '--merged', 'true']);
+  assert.equal(r.ok, true);
+  assert.equal(r.base, 'main');
 });
 
 test('cleanup with git.on_land_cleanup=false: skip, all flags false', () => {
@@ -304,3 +316,37 @@ test('unknown subcommand: usage, ok false', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'usage');
 });
+
+// --- --dir refuses rather than advising about the process cwd (D-01) --------
+
+/** Run the seam raw, keeping the JSON line AND the exit status: a refusal's
+ * whole contract is ok:false mirrored into exit 1 (lib/seam-io.mjs). */
+function seamStatus(args, stdin = '') {
+  const env = { ...process.env, CADENCE_GLOBAL_CONFIG: NO_GLOBAL };
+  const r = spawnSync('node', [SEAM, ...args], { encoding: 'utf8', env, input: stdin });
+  return { json: JSON.parse(r.stdout), status: r.status };
+}
+
+// Advisory, and in scope for the same reason as git-branch: cad-land ACTS on
+// this advice, so advice about a tree the caller never named is not harmless.
+// `gate` is the interesting arm - it reads findings from stdin, and the refusal
+// must still be exactly one JSON line and exit 1 whatever stdin carries,
+// because the throw happens while the argument is built.
+for (const [sub, rest, stdinLabel, stdin] of [
+  ['cleanup', ['--branch', 'cadence/v1.1.0-rc.2'], 'no stdin', ''],
+  ['gate', [], 'a blocking findings payload on stdin',
+    '{"findings":[{"severity":"high","trigger":"risk_surface"}]}'],
+  ['gate', [], 'unparseable stdin', 'not json at all']]) {
+  for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+    test(`${sub}: ${label} --dir refuses by name, exit 1 - ${stdinLabel}`, () => {
+      const { json, status } = seamStatus([sub, ...dirArgs, ...rest], stdin);
+      assert.equal(json.ok, false);
+      // The e.seam catch arm, not the generic one: the thrown refusal object
+      // carries no `message`, so without it this reads internal/"[object Object]".
+      assert.equal(json.reason, 'missing-flag-value', JSON.stringify(json));
+      assert.equal(json.detail, '--dir');
+      assert.equal(status, 1);
+      assert.equal(json.action, undefined, 'no advice rides a refusal');
+    });
+  }
+}
