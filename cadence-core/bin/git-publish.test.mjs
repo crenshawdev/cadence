@@ -222,11 +222,22 @@ test('reap refuse: the CHECKED-OUT branch, named rather than left to a git error
 });
 
 test('reap refuse: an option-shaped branch name never reaches git', () => {
+  // `--branch` declares the `fallback` disposition (D-12), so a value that is
+  // itself a flag reads as ABSENT and the refusal is `no-branch` - one layer
+  // EARLIER than it used to be. The old answer was `bad-branch`, because the
+  // permissive reader handed `'--force'` on to decideReap's SAFE_BRANCH arm.
+  // Nothing about the safety property moved: ok:false, exit 1, no argv built,
+  // and the branch still there. Only the reason names the earlier stop, and the
+  // SAFE_BRANCH rule itself keeps its own test at the core -
+  // publish-decision.test.mjs pins `'--force'` (and eight more) at `bad-branch`
+  // against decideReap directly. What changed is the seam-level ROUTE into the
+  // decision, not the decision.
   const { dir } = repo({ branch: 'main' });
   git(['-C', dir, 'branch', 'cadence/v2.2.0']);
-  const d = seam(['reap', '--dir', dir, '--branch', '--force']);
+  const { d, status } = seamStatus(['reap', '--dir', dir, '--branch', '--force']);
   assert.equal(d.ok, false);
-  assert.equal(d.reason, 'bad-branch');
+  assert.equal(d.reason, 'no-branch');
+  assert.equal(status, 1);
   assert.equal(refExists(dir, REAP_REF), true, 'nothing else was deleted');
 });
 

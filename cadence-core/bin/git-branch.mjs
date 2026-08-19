@@ -40,12 +40,17 @@ import { integrationBranchName, decideBranch } from './lib/branch-decision.mjs';
 // single-reader discipline branch-decision.mjs keeps for the prose version.
 import { readTags } from './lib/git-tags.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
-// The argv and file readers this file used to define for itself; both contracts
-// and the reason there are two of them live in lib/seam-input.mjs. `--dir`
-// takes the THROWING one even though this seam mutates nothing (D-01): an
+// The file reader this file used to define for itself; its ''-on-failure
+// contract lives in lib/seam-input.mjs.
+import { readText } from './lib/seam-input.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what `--dir` and `--branch` may be, and what each costs when it is not,
+// are DECLARED rows in lib/arg-contract.mjs, and `requireFlag` raises the
+// refusal in the throwing form the catch arm at the foot of this file already
+// renders. `--dir` refuses even though this seam mutates nothing (D-01): an
 // advisory reader that answers confidently about the wrong tree is the same
 // quiet-wrong-answer class, and `tags --dir ''` did exactly that.
-import { flagValue, optionalFlag, readText } from './lib/seam-input.mjs';
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 // The current-branch reader, shared with git-guard.mjs and git-publish.mjs. It
 // degrades to "" on failure, which is the degradation the header above states:
 // no repo / no commits reads as not-on-a-base.
@@ -106,27 +111,34 @@ function tags(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - this file's own argv, so every
- * call site below keeps its spelling - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['git-branch.mjs'];
+/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
+ * this binding owns nothing: it is an adapter over this file's own argv, never
+ * a second statement of what a flag may be. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
-  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
-  // default is unchanged; only the empty, valueless and flag-shaped spellings
-  // throw, and the e.seam arm below turns each into a named refusal.
+  // `--dir` declares `refuse` on both axes, so the empty, valueless and
+  // flag-shaped spellings raise the seam refusal the catch arm below names,
+  // while a genuinely ABSENT --dir still reads as undefined and the cwd default
+  // stands. `--branch` declares `fallback` (D-12), so a spelling that carries no
+  // usable value reads as absent and `decide` derives the branch as it always
+  // did - the permissive reader's answer, now a declared disposition.
   if (cmd === 'decide') {
-    decide(flagValue(argv, '--dir') || process.cwd(), flag('--branch'));
+    decide(arg('decide', '--dir') || process.cwd(), arg('decide', '--branch'));
   } else if (cmd === 'tags') {
-    tags(flagValue(argv, '--dir') || process.cwd());
+    tags(arg('tags', '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommands: decide [--dir <path>] [--branch <name>] | tags [--dir <path>]' });
   }
 } catch (e) {
-  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
-  // no `message`, so without it a valueless --dir emits detail
-  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
+  // refusal object carries no `message`, so without it a valueless --dir emits
+  // detail "[object Object]". One JSON line on stdout like every other verdict
+  // (D-02) - stderr is a channel no workflow reading this seam parses.
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

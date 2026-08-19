@@ -65,9 +65,11 @@ const HELPERS = [
   {
     name: 'the throwing flag-value reader (flagValue)',
     home: 'lib/seam-input.mjs',
-    // The refusal itself: a missing, empty or flag-shaped value throws a seam
-    // object whose two fields the callers' catch arms emit.
-    re: new RegExp("throw \\{ seam: 'missing-flag-value'", 'g'),
+    // The refusal object itself, matched at its CONSTRUCTION rather than at the
+    // throw: lib/arg-contract.mjs's `requireFlag` raises the same object for a
+    // row that refuses on the value axis, so two files throw it and exactly one
+    // builds it. Its two fields are what the callers' catch arms emit.
+    re: new RegExp("return \\{ seam: 'missing-flag-value', detail: flag \\};", 'g'),
     note: 'Import { flagValue } from ./lib/seam-input.mjs. It stays SEPARATE '
       + 'from optionalFlag on purpose: the two readers answer differently for '
       + 'a present-but-valueless flag, and the flags that legitimately default '

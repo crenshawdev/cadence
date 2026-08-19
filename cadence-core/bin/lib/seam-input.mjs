@@ -78,6 +78,25 @@ export function optionalFlag(argv, name) {
 }
 
 /**
+ * The refusal object, as a VALUE. One construction, two raisers: `flagValue`
+ * throws it below for the missing, empty and flag-shaped spellings, and
+ * lib/arg-contract.mjs's `requireFlag` throws the same object for a flag whose
+ * declared row refuses on the VALUE axis - `--root "   "` is neither empty nor
+ * flag-shaped, so `flagValue` waves it through and the row is what refuses it.
+ *
+ * It is a function rather than a literal at each site for the reason
+ * helper-census.test.mjs states about every helper here: a second construction
+ * of one contract in a second file is what silently drifts, and the two fields
+ * are exactly what the callers' `e.seam` arms emit - a thrown object without
+ * them surfaces as detail `"[object Object]"`.
+ *
+ * @param {string} flag @returns {{seam: string, detail: string}}
+ */
+export function missingFlagValue(flag) {
+  return { seam: 'missing-flag-value', detail: flag };
+}
+
+/**
  * Read a flag's value, distinguishing ABSENT from PRESENT-WITH-NO-VALUE.
  *
  * The two must not collapse. `--root` with nothing after it - the shape a
@@ -100,7 +119,7 @@ export function flagValue(argv, flag) {
   if (i < 0) return undefined;
   const v = argv[i + 1];
   if (v === undefined || v === '' || v.startsWith('--')) {
-    throw { seam: 'missing-flag-value', detail: flag };
+    throw missingFlagValue(flag);
   }
   return v;
 }

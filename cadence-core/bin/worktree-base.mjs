@@ -49,12 +49,14 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { emit } from './lib/seam-io.mjs';
-// The argv reader this file used to define for itself; both flag contracts and
-// the reason there are two of them live in lib/seam-input.mjs. `--dir` takes
-// the THROWING one (D-01): this seam mutates nothing, but the ref it resolves
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what `--dir` may be, and what it costs when it is not, is a DECLARED
+// row in lib/arg-contract.mjs, and `requireFlag` raises the refusal in the
+// throwing form the catch arm at the foot of this file already renders. `--dir`
+// declares `refuse` (D-01): this seam mutates nothing, but the ref it resolves
 // is what a worktree is then forked from, so an answer about the wrong tree is
 // not cheaper for being advisory.
-import { flagValue, optionalFlag } from './lib/seam-input.mjs';
+import { CONTRACTS, requireFlag } from './lib/arg-contract.mjs';
 
 /** The documented default when no layer sets the key. */
 const DEFAULT_BASE_REF = 'fresh';
@@ -147,24 +149,28 @@ function resolveBaseRef(dir) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - this file's own argv, so every
- * call site below keeps its spelling - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['worktree-base.mjs'];
+/** One flag of `sub`, read through its DECLARED row. The row owns the rule and
+ * this binding owns nothing: it is an adapter over this file's own argv, never
+ * a second statement of what a flag may be. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
-  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
-  // default is unchanged; only the empty, valueless and flag-shaped spellings
-  // throw, and the e.seam arm below turns each into a named refusal.
+  // `--dir` declares `refuse` on both axes, so a genuinely ABSENT one still
+  // reads as undefined and the cwd default is unchanged, while the empty,
+  // valueless and flag-shaped spellings raise the refusal the e.seam arm names.
   if (cmd === 'resolve') {
-    resolveBaseRef(flagValue(argv, '--dir') || process.cwd());
+    resolveBaseRef(arg('resolve', '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: resolve [--dir <path>]' });
   }
 } catch (e) {
-  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
-  // no `message`, so without it a valueless --dir emits detail
-  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  // The seam arm is what a `refuse` row costs its bin (D-08/D-09): the raised
+  // refusal object carries no `message`, so without it a valueless --dir emits
+  // detail "[object Object]". One JSON line on stdout like every other verdict
+  // (D-02) - stderr is a channel no workflow reading this seam parses.
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

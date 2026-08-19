@@ -85,6 +85,17 @@
 // prose. The prose side reads flag NAMES through `flagNames` rather than
 // spreading a row, so the lint keeps working now that a row is a grammar.
 //
+// TWO MECHANISMS, PICKED PER BIN (D-08), because both ship here and
+// harmonizing them would break one side. `evaluateFlag` RETURNS a
+// classification and the caller names the refusal: that is the only form
+// planning.mjs, route.mjs and config.mjs can use, since none of them holds an
+// `e.seam` catch arm and a throwing contract there surfaces every argument
+// refusal as `{"ok":false,"reason":"internal","detail":"[object Object]"}`.
+// `requireFlag` is the same classification RAISED as lib/seam-input.mjs's
+// refusal object, for the seven bins that already hold that arm and already
+// answer `missing-flag-value` through it - the disposition they were written
+// with, now read off a declared row instead of a hand-written `flagValue` call.
+//
 // PURE. It never emits, never reads `process` or the environment, never touches
 // the filesystem, and holds no state. The caller owns its envelope.
 //
@@ -97,7 +108,7 @@
 // branch that would only ever fire on a table this repo cannot ship.
 'use strict';
 
-import { flagValue } from './seam-input.mjs';
+import { flagValue, missingFlagValue } from './seam-input.mjs';
 import { requireInt, requireCursorNumber, requirePhaseArg } from './require-int.mjs';
 import { requirePlanKey } from './plan-key.mjs';
 
@@ -167,7 +178,8 @@ function dispose(disposition, flag, raw) {
  * flag-shaped spellings - so the rule is CONSULTED here rather than re-spelled
  * (helper-census.test.mjs pins its body to lib/seam-input.mjs, and a second
  * copy is what silently drifts). The throw is caught and turned into a
- * classification: this module never throws at its caller.
+ * classification: THIS function never throws at its caller. `requireFlag`
+ * below is the throwing half, for the bins that hold an `e.seam` arm.
  *
  * @param {string[]} argv the argument list, subcommand words included
  * @param {string} flag the flag as it is spelled on the command line (`--dir`)
@@ -196,6 +208,33 @@ export function evaluateFlag(argv, flag, spec) {
   const parsed = CLASSIFIERS[spec.type](raw);
   if (!parsed.ok) return dispose(spec.value, flag, raw);
   return { ok: true, value: parsed.value, detail: '' };
+}
+
+/**
+ * The same classification, RAISED rather than returned (D-08), for the seam
+ * bins whose dispatch already ends in an `e.seam` catch arm that emits
+ * `{ok:false, reason:e.seam, detail:e.detail}` on one stdout line. It is the
+ * form those seven bins were already written in - each read `--dir` through
+ * `flagValue` and caught its throw - so adopting a declared row costs them no
+ * new control flow and mints no new reason code (D-07): the refusal object is
+ * lib/seam-input.mjs's own `missingFlagValue`, and `missing-flag-value` is the
+ * code those bins already publish.
+ *
+ * A `fallback` row never reaches the throw - it is `ok:true` with an undefined
+ * value, so the caller's own `|| default` answers exactly as it did when the
+ * flag was read through the permissive reader (D-12). A `warn` row would return
+ * its raw value here and drop the diagnostic, which is why no bin using this
+ * entry point declares one: `warn` belongs to the returning form, where the
+ * caller can word the warning (route.mjs's `--phase`).
+ *
+ * @param {string[]} argv @param {string} flag @param {{required: boolean, type: string, value: string, bare: string}} spec
+ * @returns {any} the accepted value, or `undefined` for an absent or
+ *   fallback-dispositioned flag. Never returns on the refusing path.
+ */
+export function requireFlag(argv, flag, spec) {
+  const r = evaluateFlag(argv, flag, spec);
+  if (!r.ok) throw missingFlagValue(r.detail);
+  return r.value;
 }
 
 // --- the contract table: script -> subcommand -> flag -> grammar ------------
