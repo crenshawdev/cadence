@@ -7,9 +7,11 @@
 // on (LND-01). Like land-cleanup.mjs it only advises, and it is READ-ONLY in
 // the strongest sense available: no argv it can build closes, reopens or
 // comments on an issue. Landing closes nothing; closing stays an explicit ask.
-// One JSON line on stdout, and the `check` arm is ok:true on EVERY path
-// including its failures - a tracker that cannot be read is a degraded report,
-// never a failed land. Three actions: `report` (the sentence), `skip` (ONE
+// One JSON line on stdout, and the `check` arm is ok:true on EVERY path it
+// reaches, including its failures - a tracker that cannot be read is a degraded
+// report, never a failed land. A malformed CALL never reaches that arm: an
+// empty or valueless --dir refuses at the dispatch (see the --dir line below),
+// which is a different thing from a tracker read going wrong. Three actions: `report` (the sentence), `skip` (ONE
 // degradation line the caller prints) and `off` (git.issue_check false - the
 // caller prints nothing at all).
 //
@@ -23,8 +25,12 @@
 //
 // Subcommand (one, printing one JSON line):
 //   check [--dir <path>] [--base <name>] [--timeout-ms <n>]
-//     --dir is the planning root AND the repository every read is bound to
-//     (default cwd). Base resolves from --base, else git.base_branch, else the
+//     --dir is the planning root AND the repository every read is bound to.
+//     ABSENT means the process cwd; an EMPTY or valueless --dir REFUSES
+//     (`missing-flag-value`, exit 1) before any spawn (phase 2 D-01). That is
+//     not this seam failing a land: nothing was read, so there is no tracker
+//     verdict to degrade, and what has to be fixed is the caller's own argv.
+//     Base resolves from --base, else git.base_branch, else the
 //     first git.protected_branches entry - the same order land-cleanup.mjs
 //     cleanup uses. --timeout-ms overrides DEFAULT_TIMEOUT_MS below, which
 //     bounds each subprocess AND the whole per-issue resolve loop.
@@ -59,7 +65,10 @@ import { accessSync, constants } from 'node:fs';
 import { join, delimiter } from 'node:path';
 import { mergeLayers } from './lib/config-merge.mjs';
 import { emit } from './lib/seam-io.mjs';
-import { optionalFlag } from './lib/seam-input.mjs';
+// `--dir` takes the THROWING reader (D-01) - it names the repository every
+// read is bound to; `--base` and `--timeout-ms` keep the permissive one, the
+// latter deliberately falling back to DEFAULT_TIMEOUT_MS rather than refusing.
+import { flagValue, optionalFlag } from './lib/seam-input.mjs';
 import { requireInt } from './lib/require-int.mjs';
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
@@ -307,10 +316,18 @@ try {
     // rather than refusing: this seam's whole contract is that it never fails a
     // land, and an unbounded call is the one thing it may never do instead.
     const timeout = parsed && parsed.ok && parsed.value > 0 ? parsed.value : DEFAULT_TIMEOUT_MS;
-    check(flag('--dir') || process.cwd(), flag('--base'), timeout);
+    // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
+    // default is unchanged; the empty, valueless and flag-shaped spellings
+    // throw before any spawn and the e.seam arm names them.
+    check(flagValue(argv, '--dir') || process.cwd(), flag('--base'), timeout);
   } else {
     emit({ ok: false, reason: 'usage', detail: 'subcommand: check [--dir <path>] [--base <name>] [--timeout-ms <n>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
+  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
+  // no `message`, so without it a valueless --dir emits detail
+  // "[object Object]". Its detail is the flag name this file wrote, never
+  // third-party bytes, so the no-output-reaches-the-envelope rule holds.
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: redactUrl(e && e.message ? e.message : String(e)) });
 }

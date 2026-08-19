@@ -5,14 +5,20 @@
 // the merged integration branch) and whether an autonomous close halts before
 // merge on a blocking risk_surface finding. Like git-branch.mjs / git-guard.mjs it
 // only advises: it NEVER runs `checkout`, `pull`, or `branch -D` - that is
-// cad-land prose's job, gated by this advice. One JSON line on stdout, exit 0
-// (seam convention, lib/seam-io.mjs). The tested logic lives in
+// cad-land prose's job, gated by this advice. One JSON line on stdout (seam
+// convention, lib/seam-io.mjs): every piece of ADVICE is ok:true and exits 0,
+// and the only ok:false/exit-1 shapes are a malformed CALL - a bad subcommand,
+// or an empty or valueless --dir. The tested logic lives in
 // lib/close-decision.mjs; this wraps it with config + git-read I/O.
 //
 // Subcommands (each prints one JSON line):
 //   cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>]
 //     Decide the return-to-base + pull + reap for a land. --dir is the planning
-//     root (default cwd). Base resolves from --base, else git.base_branch, else
+//     root: ABSENT means the process cwd, while an EMPTY or valueless --dir
+//     REFUSES (`missing-flag-value`, exit 1) rather than advising a land in a
+//     tree the caller never named (phase 2 D-01) - true of `gate` too, whose
+//     refusal fires before stdin is read at all.
+//     Base resolves from --base, else git.base_branch, else
 //     the first git.protected_branches entry (cad-land / references/git-guard.md order). The reap
 //     target is resolveReapBranch(derived, `git branch --merged <base>`), where
 //     derived = --branch when given, else integrationBranchName(PROJECT/ROADMAP)
@@ -44,9 +50,13 @@ import { resolveReapBranch, decideCleanup, decideGateHalt } from './lib/close-de
 import { resolveProtectedBranches } from './lib/protected-branches.mjs';
 // The argv and file readers this file used to define for itself; both flag
 // contracts and the reason there are two of them live in lib/seam-input.mjs.
+// `--dir` takes the THROWING one (D-01): this seam mutates nothing, but the
+// advice it hands cad-land is acted on, so an answer about the wrong tree is
+// the same defect the mutating seams had. `--branch`, `--base` and `--merged`
+// keep the permissive reader - they legitimately default.
 // `readFileSync` stays imported above for readFindings' fd-0 stdin read, which
 // is a different question from "read this surface, '' if it is not there".
-import { optionalFlag, readText } from './lib/seam-input.mjs';
+import { flagValue, optionalFlag, readText } from './lib/seam-input.mjs';
 
 /**
  * The branches `git branch --merged <base>` reports at `dir`, or [] if git
@@ -169,14 +179,22 @@ const cmd = argv[0];
 const flag = (name) => optionalFlag(argv, name);
 
 try {
+  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
+  // default is unchanged; only the empty, valueless and flag-shaped spellings
+  // throw. The throw happens while the argument is built, so `gate` refuses
+  // BEFORE it reads stdin - one JSON line out either way.
   if (cmd === 'cleanup') {
-    cleanup(flag('--dir') || process.cwd(), flag('--branch'), flag('--base'), flag('--merged'));
+    cleanup(flagValue(argv, '--dir') || process.cwd(), flag('--branch'), flag('--base'), flag('--merged'));
   } else if (cmd === 'gate') {
-    gate(flag('--dir') || process.cwd());
+    gate(flagValue(argv, '--dir') || process.cwd());
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommands: cleanup [--dir <path>] [--branch <name>] [--base <name>] [--merged <true|false>] | gate [--dir <path>]' });
   }
 } catch (e) {
-  emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
+  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
+  // no `message`, so without it a valueless --dir emits detail
+  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
+  else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }

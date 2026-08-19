@@ -705,3 +705,38 @@ test('a token-carrying CLI stderr never reaches the envelope, in ANY shape', () 
   const wire = JSON.stringify(r);
   for (const secret of SECRETS) assert.ok(!wire.includes(secret), `${secret} reached the envelope: ${wire}`);
 });
+
+// --- --dir refuses rather than reading the process cwd's tracker (D-01) -----
+
+// The one shape where this seam DOES exit nonzero, and it is not a failed
+// tracker read: a malformed call never reaches the `check` arm, so there is no
+// degraded report to hand back. Nothing spawns - asserted through the same
+// marker file the issue_check:false arm uses.
+for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['--dir']]]) {
+  test(`check: ${label} --dir refuses by name, exit 1, no forge CLI spawned`, () => {
+    const marker = join(mkdtempSync(join(tmpdir(), 'cad-ic-mark-')), 'spawned.log');
+    const { status, envelope } = seamRun(['check', ...dirArgs, '--base', 'main'],
+      { stubs: ALL_STUBS, marker });
+    assert.equal(envelope.ok, false);
+    // The e.seam catch arm, not the generic one: the thrown refusal object
+    // carries no `message`, so without it this reads internal/"[object Object]".
+    assert.equal(envelope.reason, 'missing-flag-value', JSON.stringify(envelope));
+    assert.equal(envelope.detail, '--dir');
+    assert.equal(status, 1);
+    assert.equal(envelope.action, undefined, 'no tracker verdict rides a refusal');
+    assert.equal(existsSync(marker), false,
+      `a malformed call must spawn nothing, but one ran: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
+  });
+}
+
+test('check: a malformed --timeout-ms still runs on the default, unlike --dir', () => {
+  // D-01 names --dir and nothing else. --timeout-ms keeps its stated fallback:
+  // this seam may never make an unbounded call, and refusing here would fail a
+  // land over a flag the caller could simply have omitted.
+  const dir = repo({ originUrl: GH_REPO, commits: COMMITS });
+  const { status, envelope } = seamRun(['check', '--dir', dir, '--base', 'main', '--timeout-ms', 'abc'],
+    { stubs: { gh: { body: GH_BODY } } });
+  assert.equal(envelope.ok, true);
+  assert.equal(status, 0);
+  assert.equal(envelope.action, 'report');
+});
