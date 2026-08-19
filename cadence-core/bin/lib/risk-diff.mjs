@@ -98,36 +98,53 @@ const EXT_SIGNALS = Object.freeze({
  * Non-global regexes on purpose: a `/g` literal carries `lastIndex` between
  * calls, so the second line tested against one starts mid-string and the third
  * silently misses.
+ *
+ * AND WHY SO MANY ALTERNATIVES OPEN WITH A ONE-CHARACTER CLASS, and why some
+ * labels are two string literals joined: this file is scanned BY these patterns
+ * whenever a range that edits it reaches the `risk_surface` gate, and a pattern
+ * written plainly matches its own source. Ten lines here did until v3.5.5 - a
+ * whole-file add of this file evidenced six of the eight categories, every one
+ * of them from the table below rather than from anything the file does - and
+ * that gate is `blocking` at every stakes level, so a phase editing the
+ * detector spent its one re-arm on a self-match. `[x]yz` matches the same
+ * language as `xyz` while the source text no longer carries the literal, and
+ * `'ab' + 'cd'` is the same label bytes: REACH is unchanged and no emitted
+ * `signal` string moves, which is the whole constraint. Keep the device when
+ * you add an alternative or a label that would otherwise sit here plainly;
+ * bin/risk-diff.test.mjs's census row fails when one does. The fix is at the
+ * MENTION, never a path or filename exemption for this file - that is the rule
+ * lib/merge-warnings.mjs states for a lexical rule that reported itself, and a
+ * name-keyed detector is the one README.md deleted in v2.7.0.
  */
 const CONTENT_SIGNALS = Object.freeze({
   auth: [
     { re: /\bjsonwebtoken\b|\bjwt\.(sign|verify|decode)\s*\(/i, label: 'a JWT sign/verify call' },
     { re: /\bbcrypt|\bargon2|\bscrypt\s*\(/i, label: 'a password-hashing call' },
-    { re: /\bAuthorization\s*:\s*["'`]?\s*Bearer\b/i, label: 'an Authorization: Bearer header' },
+    { re: /\bAuthorization\s*:\s*["'`]?\s*Bearer\b/i, label: 'an Authorization' + ': Bearer header' },
     { re: /\b(is_?authenticated|require_?(auth|login)|check_?permission)\b/i, label: 'an authentication guard' },
   ],
   migrations: [
-    { re: /\bALTER\s+TABLE\b/i, label: 'an ALTER TABLE statement' },
-    { re: /\bCREATE\s+(TABLE|INDEX|UNIQUE\s+INDEX)\b/i, label: 'a CREATE TABLE/INDEX statement' },
+    { re: /\bALTER\s+TABLE\b/i, label: 'an ALTER' + ' TABLE statement' },
+    { re: /\bCREATE\s+(TABLE|INDEX|UNIQUE\s+INDEX)\b/i, label: 'a CREATE' + ' TABLE/INDEX statement' },
     { re: /\b(ADD|DROP|RENAME)\s+COLUMN\b/i, label: 'a column change' },
     { re: /\b(add_?column|create_?table|remove_?column|add_?index)\s*\(/i, label: 'a migration DSL call' },
   ],
   billing: [
-    { re: /\bstripe\b/i, label: 'a Stripe reference' },
-    { re: /\b(braintree|chargebee|recurly|paddle|paypal)\b/i, label: 'a payment-provider reference' },
-    { re: /\b(price_id|amount_cents|unit_amount|subscription_id)\b/i, label: 'a pricing field' },
+    { re: /\b[s]tripe\b/i, label: 'a Str' + 'ipe reference' },
+    { re: /\b([b]raintree|[c]hargebee|[r]ecurly|[p]addle|[p]aypal)\b/i, label: 'a payment-provider reference' },
+    { re: /\b([p]rice_id|[a]mount_cents|[u]nit_amount|[s]ubscription_id)\b/i, label: 'a pricing field' },
   ],
   concurrency: [
     { re: /\bPromise\.(all|allSettled|race)\s*\(/, label: 'a concurrent Promise combinator' },
     { re: /\bnew\s+(Worker|Thread)\s*\(/, label: 'a worker/thread construction' },
-    { re: /\b(Mutex|RwLock|Semaphore|threading\.Lock)\b/, label: 'a lock primitive' },
+    { re: /\b([M]utex|[R]wLock|[S]emaphore|threading\.Lock)\b/, label: 'a lock primitive' },
     { re: /\bgo\s+func\s*\(|\bgoroutine\b|\btokio::spawn\b/, label: 'a spawned task' },
   ],
   destructive: [
-    { re: /\brm\s+-[a-z]*[rf]/i, label: 'an `rm -rf`' },
+    { re: /\brm\s+-[a-z]*[rf]/i, label: 'an `rm' + ' -rf`' },
     { re: /\bDROP\s+(TABLE|DATABASE|SCHEMA|INDEX)\b/i, label: 'a DROP statement' },
     { re: /\b(TRUNCATE\s+TABLE|DELETE\s+FROM)\b/i, label: 'a bulk delete' },
-    { re: /\b(rmSync|unlinkSync|rimraf|shutil\.rmtree)\b/, label: 'a recursive delete call' },
+    { re: /\b([r]mSync|[u]nlinkSync|[r]imraf|shutil\.rmtree)\b/, label: 'a recursive delete call' },
     { re: /\bgit\s+(push[^\n]*--force|reset\s+--hard|clean\s+-[a-z]*f)/, label: 'a destructive git command' },
   ],
   secrets: [
@@ -145,7 +162,7 @@ const CONTENT_SIGNALS = Object.freeze({
     { re: /\bJSON\.parse\s*\(/, label: 'a JSON.parse call' },
     { re: /\b(req|request|ctx)\.(body|query|params|headers)\b/, label: 'a request-input read' },
     { re: /\b(yaml|YAML)\.(load|parse)\s*\(|\bparseXml\b|\bxml2js\b/, label: 'a markup parse call' },
-    { re: /\b(bodyParser|body-parser|multer|formidable)\b/, label: 'a request-body parser' },
+    { re: /\b([b]odyParser|[b]ody-parser|[m]ulter|[f]ormidable)\b/, label: 'a request-body parser' },
   ],
 });
 
