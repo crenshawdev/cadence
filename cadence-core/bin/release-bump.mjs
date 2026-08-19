@@ -29,9 +29,12 @@
 //                `2026-13-45`, `2026-8-1` and a newline-carrying value each
 //                refuse with `bad-date`. `--date ''` REFUSES rather than
 //                falling through to today (D-05) - absent and empty are two
-//                different calls. Residue, stated: `--date` reads through the
-//                permissive flag reader, so a BARE trailing `--date` is
-//                indistinguishable from an absent one and still dates today.
+//                different calls, and so is a BARE trailing `--date`, which
+//                refuses on the same sentence. That split is DECLARED, not
+//                probed: the row in lib/arg-contract.mjs refuses on both the
+//                value and the bare-flag axis, which is what retired the
+//                `argv.includes('--date')` probe this dispatch used to carry
+//                beside the value (ARG-06).
 // The bump writes `version` only where the field already exists: plugin.json is
 // rewritten, marketplace.json (which carries none) yields `skip` and is left
 // byte-untouched (D-03).
@@ -63,7 +66,10 @@
 //                         lib/release-decision.mjs verdict code - a caller
 //                         branching on `reason` must be able to tell a bad
 //                         --date from a bad subcommand.
-//   missing-flag-value  - an empty or valueless --dir (phase 2 D-01).
+//   missing-flag-value  - a --dir or --version spelling its declared row
+//                         refuses (phase 2 D-01). --date is NOT here: its own
+//                         `bad-date` is what a caller branches on, so it is
+//                         read in the returning form and named below (D-07).
 //   usage | internal    - bad subcommand / an unexpected throw.
 // The VERDICT codes (`no-target-version`, `no-version-field`,
 // `already-at-target`, `bump`) are owned by lib/release-decision.mjs's JSDoc
@@ -77,14 +83,20 @@ import { atomicWrite } from './lib/planning-files.mjs';
 import {
   normalizeTargetVersion, decideManifestBump, prependChangelogEntry, promoteUnreleased,
 } from './lib/release-decision.mjs';
-// The argv and file readers this file used to define for itself; both flag
-// contracts and the reason there are two of them live in lib/seam-input.mjs.
-// `--dir` takes the THROWING one - it names the tree this seam WRITES, so an
-// empty or valueless one refuses instead of defaulting to the cwd (D-01);
-// `--version` and `--date` keep the permissive reader.
-// `readFileSync` stays imported above for the manifest parse below, which must
-// tell an unreadable manifest from an empty one.
-import { flagValue, optionalFlag, readText } from './lib/seam-input.mjs';
+// The file reader this file used to define for itself; its ''-on-failure
+// contract lives in lib/seam-input.mjs. `readFileSync` stays imported above for
+// the manifest parse below, which must tell an unreadable manifest from an
+// empty one.
+import { readText } from './lib/seam-input.mjs';
+// The argument contract (ARG-06). This file states no flag rule of its own any
+// more: what each flag may be, and what it costs when it is not, are DECLARED
+// rows in lib/arg-contract.mjs. BOTH mechanisms are used here, picked per flag
+// rather than per bin (D-08), because this seam publishes two vocabularies:
+// `requireFlag` RAISES for `--dir` and `--version`, which the e.seam catch arm
+// at the foot of this file renders as `missing-flag-value`, and `evaluateFlag`
+// RETURNS for `--date`, whose refusal is this seam's own `bad-date` sentence
+// and must not be renamed by the mechanism that carries it (D-07).
+import { CONTRACTS, evaluateFlag, requireFlag } from './lib/arg-contract.mjs';
 
 /**
  * Build the release-tag URL a CHANGELOG link reference points at, from the
@@ -268,29 +280,43 @@ function badDateDetail(value) {
 
 const argv = process.argv.slice(2);
 const cmd = argv[0];
-/** Value after a `--flag`, or undefined if the flag is absent. An adapter
- * binding over lib/seam-input.mjs's reader - this file's own argv, so every
- * call site below keeps its spelling - never a second definition of it. */
-const flag = (name) => optionalFlag(argv, name);
+/** This script's declared rows. A subcommand's own row wins over the `'*'` row,
+ * where the flags allowed on every arm - here `--dir` - are declared once. */
+const ROWS = CONTRACTS['release-bump.mjs'];
+/** One flag of `sub`, read through its DECLARED row in the RAISING form, for
+ * the flags whose refusal this seam publishes as `missing-flag-value`. The row
+ * owns the rule and this binding owns nothing. */
+const arg = (sub, name) => requireFlag(argv, name, ROWS[sub][name] || ROWS['*'][name]);
 
 try {
-  // `flagValue` returns undefined for a genuinely ABSENT --dir, so the cwd
-  // default is unchanged; only the empty, valueless and flag-shaped spellings
-  // throw, and the e.seam arm below turns each into a named refusal.
   if (cmd === 'bump') {
-    const dir = flagValue(argv, '--dir') || process.cwd();
-    // Presence is the flag's OWN appearance in argv, never truthiness and never
-    // `dateArg !== undefined`. `''` is falsy, so a truthiness test would BE the
-    // absent-vs-empty collapse D-05 refuses - and `optionalFlag` answers
-    // `undefined` for a TRAILING valueless `--date` exactly as it does for an
-    // absent one, so reading presence off the VALUE lets that one spelling date
-    // today: the same collapse arriving by the other door. A present `--date`
-    // carrying no value is a malformed value, not an omitted flag.
-    const dateArg = flag('--date');
-    const datePresent = argv.includes('--date');
-    const badDate = !datePresent
-      ? null
-      : badDateDetail(dateArg === undefined ? '' : dateArg);
+    // `--dir` declares `refuse` on both axes: a genuinely ABSENT one still
+    // reads as undefined and the cwd default is unchanged, while the empty,
+    // valueless and flag-shaped spellings raise the refusal the e.seam arm
+    // names. `--version` declares `fallback` on the bare axis (D-12), so a
+    // spelling carrying no usable value reads as ABSENT and the verdict is
+    // `no-target-version` - never a swallowed neighbouring flag read as a
+    // target version.
+    const dir = arg('bump', '--dir') || process.cwd();
+    // ABSENT and PRESENT-WITH-NOTHING-USABLE are two different calls, and the
+    // DECLARATION is what tells them apart now. This dispatch used to probe the
+    // flag's own appearance in argv beside its value, because the permissive
+    // reader answered `undefined` for a TRAILING valueless `--date` exactly as
+    // it did for an absent one - reading presence off the VALUE let that one
+    // spelling date today, the absent-vs-empty collapse D-05 refuses arriving
+    // by the other door. The row refuses on both axes instead, so `''`, a
+    // blank, a flag-shaped value and a trailing bare `--date` all classify as
+    // present-with-nothing-usable and the probe is gone.
+    //
+    // Read in the RETURNING form (D-08) so this file names the refusal in its
+    // own vocabulary (D-07): a caller branching on `reason` must be able to
+    // tell a malformed date from a malformed `--dir`, and the raising form
+    // would render both as `missing-flag-value`.
+    const dateRead = evaluateFlag(argv, '--date', ROWS.bump['--date']);
+    const dateArg = dateRead.ok ? dateRead.value : undefined;
+    const badDate = dateRead.ok
+      ? (dateArg === undefined ? null : badDateDetail(dateArg))
+      : badDateDetail('');
     // Validated HERE, beside --version and before bump() is entered (D-06), so
     // the refusal does not depend on a manifest this path never read. That is
     // why the envelope carries no `manifest`, `siblings` or `changelog` - the
@@ -299,16 +325,17 @@ try {
     if (badDate) {
       emit({ ok: false, action: 'refuse', reason: 'bad-date', detail: badDate });
     } else {
-      bump(dir, flag('--version'), dateArg);
+      bump(dir, arg('bump', '--version'), dateArg);
     }
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommand: bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]' });
   }
 } catch (e) {
-  // The seam arm lands WITH flagValue (D-09): the thrown refusal object carries
-  // no `message`, so without it a valueless --dir emits detail
-  // "[object Object]". One JSON line on stdout like every other verdict (D-02).
+  // The seam arm is what a `refuse` row read in the RAISING form costs its bin
+  // (D-08/D-09): the raised refusal object carries no `message`, so without it
+  // a valueless --dir emits detail "[object Object]". One JSON line on stdout
+  // like every other verdict (D-02).
   if (e && e.seam) emit({ ok: false, reason: e.seam, detail: e.detail });
   else emit({ ok: false, reason: 'internal', detail: e && e.message ? e.message : String(e) });
 }
