@@ -251,6 +251,91 @@ export function requireFlag(argv, flag, spec) {
   return r.value;
 }
 
+// Subcommands whose first word takes a second word (sub-subcommand). This set
+// and the expression below it were self-verify.mjs's, beside the prose lint
+// that resolves a spelling it finds in a workflow; they live HERE because an
+// adopting dispatch has to resolve the SAME key to find its row, and two
+// spellings of one rule is the drift ARG-06 exists to end (D-06).
+const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
+
+/**
+ * Resolve a script's leading positional WORDS to the subcommand KEY its table
+ * is filed under.
+ *
+ * The BARE form - no words at all, or a first word that is really a flag -
+ * resolves to the `''` key, which is what stops a reader taking a first flag
+ * for a subcommand: `weight.mjs --root <path>` reported `unknown-subcommand`
+ * until that arm existed. A second word is consumed ONLY for the five
+ * two-word families, so `status --dir` keeps resolving to `status` and leaves
+ * `--dir` to be read as a flag.
+ *
+ * It answers about SPELLING alone and never about membership: a key no table
+ * declares comes back unchanged, and the caller decides whether an unknown
+ * subcommand is a refusal (planning.mjs's `usage` line) or a report
+ * (self-verify.mjs's `unknown-subcommand` problem).
+ * @param {string[]} words the positional words, subcommand first
+ * @returns {string} the table key, `''` for the bare form
+ */
+export function subcommandKey(words) {
+  const [w1, w2] = words || [];
+  if (!w1 || w1.startsWith('-')) return '';
+  return TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1;
+}
+
+/**
+ * Apply a whole resolved ROW's value grammar to one argument list, and return
+ * the FIRST refusal or the accepted values.
+ *
+ * THIS IS A VALUE DOOR, NOT A PRESENCE DOOR. It evaluates only the flags
+ * actually PRESENT in `argv` and leaves an absent-but-required flag to the bin
+ * that owns the wording. That is review-provider.mjs's shipped position - its
+ * `parseArgs` skips a flag with `if (!rest.includes(flag)) continue;` - and
+ * reversing it would replace diagnostics a declaration cannot express
+ * (`capture --kind must be one of todo | seed | note`, `milestone-prune needs
+ * --mode <delete|archive> (tagged release: ...)`) with one generic sentence.
+ * `required` therefore stays a fact the table states for the bins that choose
+ * to read it, not a rule this door enforces.
+ *
+ * THE `'*'` ROW IS EVALUATED FIRST, because a script-global flag is what
+ * answers first today: planning.mjs refused a valueless `--dir` before it
+ * looked at its subcommand at all, and the first failing flag is the one the
+ * refusal names. A resolved key the table does not declare leaves only the
+ * `'*'` row to evaluate, so an unknown subcommand still falls through to the
+ * caller's own usage refusal.
+ *
+ * IT CARRIES NO WORDING AND NO REASON CODE (D-07): `detail` is the flag name
+ * and nothing else, exactly as `evaluateFlag` answers, and the caller composes
+ * the sentence and names the refusal in the vocabulary it already owns.
+ *
+ * @param {string[]} argv the whole argument list, subcommand words included
+ * @param {Record<string, Record<string, any>>} table one script's table
+ * @param {string} key the subcommand key `subcommandKey` resolved
+ * @returns {{ok: boolean, detail: string, values: Record<string, any>,
+ *   warned: string[]}} `ok:false` refuses naming the flag in `detail`;
+ *   `values` holds each accepted flag's value, a `fallback` one omitted so it
+ *   reads as absent; `warned` names every flag a `warn` row kept raw, always
+ *   an array so no caller has to test for it.
+ */
+export function evaluateRow(argv, table, key) {
+  /** @type {Record<string, any>} */
+  const values = {};
+  /** @type {string[]} */
+  const warned = [];
+  const seen = new Set();
+  for (const row of [table['*'], table[key]]) {
+    for (const flag of flagNames(row)) {
+      if (seen.has(flag)) continue;
+      seen.add(flag);
+      if (!argv.includes(flag)) continue;
+      const r = evaluateFlag(argv, flag, row[flag]);
+      if (!r.ok) return { ok: false, detail: r.detail, values, warned };
+      if (r.detail) warned.push(r.detail);
+      if (r.value !== undefined) values[flag] = r.value;
+    }
+  }
+  return { ok: true, detail: '', values, warned };
+}
+
 // --- the contract table: script -> subcommand -> flag -> grammar ------------
 // Global flags allowed everywhere on that script are listed under '*'.
 //

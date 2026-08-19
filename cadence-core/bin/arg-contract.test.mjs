@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { evaluateFlag, DISPOSITIONS, TYPES, CONTRACTS, flagNames } from './lib/arg-contract.mjs';
+import { evaluateFlag, evaluateRow, subcommandKey, DISPOSITIONS, TYPES, CONTRACTS, flagNames } from './lib/arg-contract.mjs';
 
 const MODULE_URL = new URL('./lib/arg-contract.mjs', import.meta.url).href;
 
@@ -107,6 +107,77 @@ test('evaluateFlag: the stated table', () => {
   for (const [name, argv, flag, s, expected, why] of ROWS) {
     assert.deepEqual(evaluateFlag(argv, flag, s), expected, `${name} - ${why}`);
   }
+});
+
+// --- the row door, and the key it resolves a row by --------------------------
+
+test('subcommandKey: the words a script was invoked with, resolved to its table key', () => {
+  // A MOVE out of self-verify.mjs, not a second copy: the prose lint resolves
+  // the same key for a spelling it finds in a workflow, and an adopting
+  // dispatch has to reach the same row for the same words.
+  const ROWS = [
+    [['cursor', 'set'], 'cursor set', 'the five two-word families consume their second word'],
+    [['trace', 'append'], 'trace append', 'the same, on the family with the most rows'],
+    [['uat', 'record'], 'uat record', 'the same'],
+    [['risk-check', 'run'], 'risk-check run', 'a hyphenated first word is still one word'],
+    [['renumber', 'insert'], 'renumber insert', 'the same'],
+    [['status'], 'status', 'a one-word subcommand takes no second word'],
+    [['recall', 'some', 'query'], 'recall', "recall's trailing words are its QUERY, not a sub-subcommand"],
+    [['status', '--dir'], 'status', 'a flag after a one-word subcommand is a flag, not a key'],
+    [[], '', 'no words at all is the bare form'],
+    [['--root', 'x'], '', "the bare form's first token is a FLAG: reading it as a subcommand "
+      + 'reported unknown-subcommand on correct prose like weight.mjs --root <path>'],
+  ];
+  for (const [words, key, why] of ROWS) {
+    assert.equal(subcommandKey(words), key, `${JSON.stringify(words)} - ${why}`);
+  }
+});
+
+test('evaluateRow: the first refusal, over the flags actually present', () => {
+  const table = {
+    '*': { '--dir': spec({}) },
+    'cursor set': {
+      '--phase': spec({ required: true, type: 'phase' }),
+      '--name': spec({}),
+      '--total': spec({ type: 'cursor' }),
+    },
+    'trace close': { '--plan': spec({ value: 'fallback', bare: 'fallback' }) },
+    'trace render': { '--phase': spec({ type: 'phase', value: 'warn', bare: 'warn' }) },
+  };
+  const row = (argv, key) => evaluateRow(argv, table, key);
+
+  // A declared flag that is ABSENT is not judged, even declared `required`:
+  // the door is a VALUE door and the bin owns the absent-flag wording.
+  const secondBare = row(['cursor', 'set', '--name'], 'cursor set');
+  assert.equal(secondBare.ok, false);
+  assert.equal(secondBare.detail, '--name',
+    'the refusal names the flag that failed, not the first flag the row declares');
+
+  // The accepted values come back keyed by flag, which is what lets the
+  // dispatch read `--dir` off the door instead of off its own parse.
+  const accepted = row(['cursor', 'set', '--phase', '1.10', '--total', '5'], 'cursor set');
+  assert.deepEqual(accepted, { ok: true, detail: '',
+    values: { '--phase': '1.10', '--total': 5 }, warned: [] });
+
+  // A `fallback` bare flag is NOT refused and reads as absent, so every
+  // shipped `trace close` written without a --plan keeps answering ok:true.
+  assert.deepEqual(row(['trace', 'close', '--plan'], 'trace close'),
+    { ok: true, detail: '', values: {}, warned: [] });
+
+  // A `warn` row keeps its raw value and is NAMED, so the disposition cannot
+  // be silently swallowed by a door that only knows refuse and accept.
+  assert.deepEqual(row(['trace', 'render', '--phase', '1.x'], 'trace render'),
+    { ok: true, detail: '', values: { '--phase': '1.x' }, warned: ['--phase'] });
+
+  // The '*' row is evaluated FIRST: a script-global flag is what answers today,
+  // and the first failing flag is the one the refusal names.
+  assert.equal(row(['cursor', 'set', '--dir', '--name'], 'cursor set').detail, '--dir',
+    'a refusing global flag wins over a refusing subcommand flag');
+
+  // A key the table does not declare leaves only the '*' row, so an unknown
+  // subcommand still falls through to the caller's own usage refusal.
+  assert.equal(row(['bogus', '--name'], 'bogus').ok, true);
+  assert.equal(row(['bogus', '--dir'], 'bogus').detail, '--dir');
 });
 
 test('every disposition and every type in the table is one of the stated words', () => {

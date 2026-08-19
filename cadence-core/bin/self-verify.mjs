@@ -212,7 +212,7 @@ import { scratchPathIssues } from './lib/scratch-path.mjs';
 // of this file reads its OWN `--root` through the row it declares there rather
 // than through a hand-written reader call - the rule comes from the
 // declaration, not from a call this file restates.
-import { CONTRACTS, flagNames, evaluateFlag } from './lib/arg-contract.mjs';
+import { CONTRACTS, flagNames, evaluateFlag, subcommandKey } from './lib/arg-contract.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -264,9 +264,6 @@ const REACH_DOC = join('cadence-core', 'references', 'config-reach.md');
 // a sibling directory whose name merely starts the same cannot match.
 const WORKFLOWS_DIR = join('cadence-core', 'workflows') + sep;
 const REFERENCES_DIR = join('cadence-core', 'references') + sep;
-
-// Subcommands whose first word takes a second word (sub-subcommand).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
 
 // The canonical Claude Code tool vocabulary the agents-only tools lint checks
 // against - a FIXED set, not derived from the tree, so a single-agent fixture
@@ -568,7 +565,7 @@ function run(root) {
       // bare form. Reading it as a subcommand reported `unknown-subcommand` on
       // correct prose like `weight.mjs --root <path>`.
       const bare = w1.startsWith('-');
-      const sub = bare ? '' : (TWO_WORD.has(w1) && w2 ? `${w1} ${w2}` : w1);
+      const sub = subcommandKey([w1, w2]);
       if (!contract[sub]) {
         problems.push({ kind: 'unknown-subcommand', file: rel,
           detail: `${script} ${bare ? '(bare form)' : sub}` });
@@ -579,7 +576,7 @@ function run(root) {
       // subcommand forms consume w1 as the name and scan from w2 on.
       const rest = bare
         ? ` ${w1} ${w2 || ''}${restRaw}`
-        : (TWO_WORD.has(w1) && w2 ? '' : ` ${w2 || ''}`) + restRaw;
+        : (sub.includes(' ') ? '' : ` ${w2 || ''}`) + restRaw;
       for (const f of rest.matchAll(/--[a-z-]+/g)) {
         if (!allowed.has(f[0])) {
           problems.push({ kind: 'unknown-flag', file: rel, detail: `${script} ${sub} ${f[0]}` });
