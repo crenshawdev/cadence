@@ -67,10 +67,10 @@ evidence: conventions.md:76-111 '## Seam arguments' carries the three dispositio
 ### 8. the table declares refuse where the CLI still writes the boolean through
 expected: behavior wrong - a declared disposition that no reader applies. planning.mjs holds 98 of the table's 144 flag rows but consults the table at only two sites, so most of its rows state a rule the bin does not enforce, and for at least three of them the row and the shipped behavior disagree outright.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
-source: verifier
-evidence: cadence-core/bin/lib/arg-contract.mjs:331 declares cursor set --name {value:'refuse',bare:'refuse'}, yet `planning.mjs cursor set --dir <s>/.planning --phase 1 --status planned --next '/cad-plan 1' --total 5 --name` returns ok:true and writes `Phase: 1 of 5 (true)` into STATE.md. arg-contract.mjs:341 declares uat init --sources refuse, yet the bare spelling writes `sources: true` into the UAT front-matter. arg-contract.mjs:356 declares uat record --reason refuse, yet the bare spelling writes `reason: true` into UAT.md - into the very file this gate is merged onto. The readers that exist are planning.mjs:5486 (--dir only) and planning.mjs:3518 (trace grammar only); the other refusals remain the 79 hand-written fail('bad-args') sites. Nothing catches the divergence: arg-contract.test.mjs checks only the table's own shape, and self-verify reads flag NAMES through flagNames, never the required/type/value/bare fields. The module header (arg-contract.mjs:1-12, 'the rules are DECLARED here, once') carries no caveat that a row may be unread, and conventions.md:103-107 states the same claim in prose.
+source: model
+evidence: Fixed by plan 5 (ddf2f6f row door at dispatch, dafa18d every declared row gated, c32be66 every occurrence judged). All three cited spellings now refuse and leave their file byte-unchanged, against a scratch .planning: `cursor set --name` (bare) -> {"ok":false,"reason":"bad-args","detail":"cursor set --name needs a value after it: --name <value>"} exit 1, STATE.md diff UNCHANGED; the repeated form `--name valid --name` refuses identically, STATE.md UNCHANGED; `uat init --sources` (bare) -> same sentence for its flag, exit 1, no UAT.md written; `uat record --reason` (bare) -> same, exit 1, UAT.md UNCHANGED. The declared-vs-shipped divergence is now caught: cadence-core/bin/arg-contract-adoption.test.mjs reports `231 declared refusals exercised against the shipped CLI across 145 table entries`. Suite 2379/2379 pass 0 fail; self-verify ok:true.
 reported: behavior wrong - a declared disposition that no reader applies. planning.mjs holds 98 of the table's 144 flag rows but consults the table at only two sites, so most of its rows state a rule the bin does not enforce, and for at least three of them the row and the shipped behavior disagree outright.
 severity: major
 cause: Plan 1 declared rows for all 98 planning.mjs flag entries (its own deviation predicted this: 'Nothing adopts these rows in this plan... plan 2's adoption of planning.mjs is where they take effect'). Plan 2 then adopted only TWO of them - task 1 covered --dir (planning.mjs:5472) and task 2 covered the trace append|close grammar (planning.mjs:3278). No task covered the other 96 entries across 35 subcommand rows, so the remaining 79 hand-written fail('bad-args') sites D-02 measured were never migrated. Reproduced live: `cursor set --name` (bare) returns ok:true and writes `Phase: 1 of 5 (true)` into STATE.md. Root cause is plan scope, not an executor error - the phase's plans never contained a task for the bulk of D-02's centre of gravity.
@@ -79,10 +79,10 @@ fix: routed to /cad-plan
 ### 9. config.mjs get accepts --global with no row to declare it
 expected: missing - a live, exercised flag with no declaration on the subcommand that accepts it, inside the table whose completeness is the phase's product.
 origin: verifier
-status: fail
+status: pass
 first_pass: fail
-source: verifier
-evidence: `node cadence-core/bin/config.mjs get stakes --global` returns {"ok":true,"values":{"stakes":"shipped"},"source":"global"}, but CONTRACTS['config.mjs'].get in cadence-core/bin/lib/arg-contract.mjs declares only --file, while the validate and set rows each declare --global. self-verify is green only because no workflow prose spells `config.mjs get --global` (7 `config.mjs get` hits under cadence-core, none with --global), so check 2 never reaches the pair; the moment any prose spells it, correct prose reports unknown-flag. --global is also read by hand at config.mjs:331-333 rather than off a row.
+source: model
+evidence: Fixed by plan 5 task 5 (a4ee0d2). CONTRACTS['config.mjs'].get now declares --global: {"required":false,"type":"boolean","value":"fallback","bare":"fallback"} beside --file, so correct prose spelling `config.mjs get --global` no longer reports unknown-flag. It is read OFF that row, not by hand: config.mjs:344-346 resolves globalRow from CONTRACTS and calls evaluateFlag, replacing the hand-read at the old :331-333. Live: `node cadence-core/bin/config.mjs get stakes --global` -> {"ok":true,"values":{"stakes":"shipped"},"source":"global"} exit 0. self-verify ok:true, problems [].
 reported: missing - a live, exercised flag with no declaration on the subcommand that accepts it, inside the table whose completeness is the phase's product.
 severity: minor
 cause: Same defect class as item 8, one row further out: CONTRACTS['config.mjs'].get declares only --file while the validate and set rows each declare --global, and config.mjs reads --global by hand at config.mjs:331-333 rather than off a row. Recorded as an open item at execution time and filed to CAPTURE. Self-verify stays green only because no workflow prose spells `config.mjs get --global`, so check 2 never reaches the pair.
@@ -91,8 +91,8 @@ fix: routed to /cad-plan
 ## Summary
 
 total: 9
-passed: 7
-failed: 2
+passed: 9
+failed: 0
 pending: 0
 skipped: 0
 blocked: 0
