@@ -1,29 +1,29 @@
-# Requirements: Cadence (v3.5.5 open)
+# Requirements: Cadence (no cycle open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-`v3.5.5 - a seam that accepts what it should refuse`, opened 2026-08-18. Scoped
-from the tracker milestone `v3.5.5`. Each id names its issue; #219 through #224
-were filed at the open from a capture-queue audit that re-verified every defect
-live rather than trusting its note.
-
+No cycle open. `v3.5.5` closed on 2026-08-19; its thirteen shipped ids are in
+`## Shipped` below, each carrying the `v3.5.5` label. `/cad-phase add` opens the
+next cycle's first phase entry, and nothing is promoted here to fill the section
+in the meantime.
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted, with two caveats the 2026-08-18 audit
-recorded: `CTX-02`'s two issues (#69, #29) are both closed and #29's ask shipped
-as `/cad-minimalism-review`, so its stated basis no longer holds; and `RCL-06`
+deferral reasons and none is promoted, and the two caveats the 2026-08-18 audit
+recorded are still undecided rather than settled at this close: `CTX-02`'s two
+issues (#69, #29) are both closed and #29's ask shipped as
+`/cad-minimalism-review`, so its stated basis no longer holds; and `RCL-06`
 carries no deferral reason and no promotion trigger, so nothing can ever re-ask
-it. Both need a decision at the next close.
+it. Both want a decision before either is scoped.
 
 Milestones `v3.5.6` (#139, #140, #145, #195) and `v3.5.7` (#167, #174, #189,
-#206) are scoped on the tracker and are not this cycle. Issues #190 through #193
-carry no milestone. The open items filed at the `v3.5.1` close (#181
+#206) are scoped on the tracker and neither was opened here. Issues #190 through
+#193 carry no milestone. The open items filed at the `v3.5.1` close (#181
 through #187), the proposals filed at the `v3.5.2` close (#189 through #197),
-and the eight medium `risk_surface` survivors carried forward at the `v3.5.4`
-close are all unassigned and are not scoped here.
+the eight medium `risk_surface` survivors carried forward at the `v3.5.4` close
+and the three carried forward at this one are all unassigned.
 
 `/cad-plan` seeds each requirement's Traceability row as its phase is planned -
 rows are never hand-populated here.
