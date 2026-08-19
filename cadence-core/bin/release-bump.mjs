@@ -23,7 +23,15 @@
 //     --version  REQUIRED: the shipping release number, the one the milestone
 //                workflow already confirmed with the user. Its absence refuses
 //                (`no-target-version`) - the seam derives no number of its own.
-//     --date     the CHANGELOG entry date (test hook; default today, UTC).
+//     --date     the CHANGELOG entry date (test hook). ABSENT dates today, UTC.
+//                A PRESENT one must be `YYYY-MM-DD` and is validated at the
+//                dispatch, BEFORE anything is read or written (D-06): `''`,
+//                `2026-13-45`, `2026-8-1` and a newline-carrying value each
+//                refuse with `bad-date`. `--date ''` REFUSES rather than
+//                falling through to today (D-05) - absent and empty are two
+//                different calls. Residue, stated: `--date` reads through the
+//                permissive flag reader, so a BARE trailing `--date` is
+//                indistinguishable from an absent one and still dates today.
 // The bump writes `version` only where the field already exists: plugin.json is
 // rewritten, marketplace.json (which carries none) yields `skip` and is left
 // byte-untouched (D-03).
@@ -44,6 +52,18 @@
 //   no-plugin-manifest  - no .claude-plugin/plugin.json: not a plugin project,
 //                         an ok:true skip rather than a refusal (D-04 gating).
 //   unreadable-manifest - plugin.json present but not parseable JSON.
+//   bad-date            - a PRESENT --date that is not YYYY-MM-DD, or one
+//                         carrying a newline. Refused at the dispatch, so it
+//                         fires on a non-plugin project too, where the
+//                         manifest gate would otherwise answer
+//                         no-plugin-manifest first (D-06): a malformed value
+//                         is malformed whether or not this run would write.
+//                         A SEAM-level code by D-04, never `usage` (which is
+//                         this seam's bad-subcommand code) and never a
+//                         lib/release-decision.mjs verdict code - a caller
+//                         branching on `reason` must be able to tell a bad
+//                         --date from a bad subcommand.
+//   missing-flag-value  - an empty or valueless --dir (phase 2 D-01).
 //   usage | internal    - bad subcommand / an unexpected throw.
 // The VERDICT codes (`no-target-version`, `no-version-field`,
 // `already-at-target`, `bump`) are owned by lib/release-decision.mjs's JSDoc
@@ -205,6 +225,44 @@ function bump(dir, versionArg, dateArg) {
     siblings, changelog });
 }
 
+/**
+ * The `--date` grammar: the `YYYY-MM-DD` this seam's own header states, anchored
+ * over the WHOLE string with the month and day ranges spelled out, so
+ * `2026-13-45` and `2026-8-1` both fail. Deliberately NOT a calendar check -
+ * `2026-02-31` matches, and a rule the header never stated is one the shared
+ * argument contract would inherit unstated (D-10).
+ */
+const DATE_RE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/;
+
+/**
+ * The refusal sentence for a PRESENT `--date`, or null when it is well-formed.
+ *
+ * The newline arm comes FIRST and has its own sentence because "not YYYY-MM-DD"
+ * is the wrong diagnostic for a value that appended a release section: measured
+ * 2026-08-18, `--date $'2026-08-18\n## [9.9.9] - forged'` wrote a forged second
+ * `## [9.9.9] - forged` heading into CHANGELOG.md above the real one, since the
+ * date is interpolated straight into the dated heading. The precedent is
+ * planning.mjs's `cursor set --next` newline term (D-10). Neither arm echoes the
+ * value back: the sentence names the flag and the grammar, which is what fixes
+ * the call, and echoing a newline-carrying value would put it on a line the
+ * closing workflow prints.
+ *
+ * @param {string} value @returns {string|null}
+ */
+function badDateDetail(value) {
+  if (/[\r\n]/.test(value)) {
+    return '--date cannot contain a newline: the value is interpolated into the'
+      + ' `## [<version>] - <date>` heading, so a newline forges a second release'
+      + ' section. Pass one YYYY-MM-DD line, or omit --date to date today.';
+  }
+  if (!DATE_RE.test(value)) {
+    return '--date must be YYYY-MM-DD (zero-padded month 01-12 and day 01-31),'
+      + ' the format this seam writes into the CHANGELOG heading. An EMPTY --date'
+      + ' refuses here rather than dating today: omit the flag to do that.';
+  }
+  return null;
+}
+
 // --- dispatch ----------------------------------------------------------------
 
 const argv = process.argv.slice(2);
@@ -219,7 +277,21 @@ try {
   // default is unchanged; only the empty, valueless and flag-shaped spellings
   // throw, and the e.seam arm below turns each into a named refusal.
   if (cmd === 'bump') {
-    bump(flagValue(argv, '--dir') || process.cwd(), flag('--version'), flag('--date'));
+    const dir = flagValue(argv, '--dir') || process.cwd();
+    // Presence is `!== undefined`, never truthiness: `''` is falsy, so a
+    // truthiness test would BE the absent-vs-empty collapse D-05 refuses.
+    const dateArg = flag('--date');
+    const badDate = dateArg === undefined ? null : badDateDetail(dateArg);
+    // Validated HERE, beside --version and before bump() is entered (D-06), so
+    // the refusal does not depend on a manifest this path never read. That is
+    // why the envelope carries no `manifest`, `siblings` or `changelog` - the
+    // in-bump() refusals fill those from a manifest read; filling them here
+    // would fabricate them.
+    if (badDate) {
+      emit({ ok: false, action: 'refuse', reason: 'bad-date', detail: badDate });
+    } else {
+      bump(dir, flag('--version'), dateArg);
+    }
   } else {
     emit({ ok: false, reason: 'usage',
       detail: 'subcommand: bump [--dir <path>] [--version <v>] [--date <YYYY-MM-DD>]' });

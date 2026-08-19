@@ -371,3 +371,67 @@ for (const [label, dirArgs] of [['an EMPTY', ['--dir', '']], ['a VALUELESS', ['-
     assert.equal(status, 1);
   });
 }
+
+// --- --date is validated before bump() is entered (ARG-02) ------------------
+
+// Five malformed values, each refused with this seam's own bad-date code and
+// nothing written. `''` is in the list on purpose: before the fix it fell
+// through `dateArg || new Date()...` to today, so absent and empty gave the
+// same answer - measured 2026-08-18, `--date ''` wrote `## [1.1.0] - 2026-08-18`.
+// The newline value is the one that cost something: it wrote a forged second
+// release section `## [9.9.9] - forged` into CHANGELOG.md above the real one.
+const BAD_DATES = [
+  ['not-a-date', 'not a date at all'],
+  ['2026-13-45', 'a well-shaped value outside the month and day ranges'],
+  ['2026-8-1', 'unpadded month and day'],
+  ['', 'EMPTY - refuses rather than falling through to today (D-05)'],
+  ['2026-08-18\n## [9.9.9] - forged', 'a newline that forged a second release section'],
+];
+
+for (const [value, why] of BAD_DATES) {
+  test(`bump: --date refuses ${why}, writing nothing`, () => {
+    const dir = fixture();
+    const clBefore = readRaw(join(dir, 'CHANGELOG.md'));
+    const manifestBefore = readRaw(join(dir, '.claude-plugin', 'plugin.json'));
+
+    const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0', '--date', value]);
+    assert.equal(json.ok, false, JSON.stringify(json));
+    assert.equal(json.action, 'refuse');
+    assert.equal(json.reason, 'bad-date', JSON.stringify(json));
+    assert.equal(status, 1);
+    // No manifest/siblings/changelog fields: this refusal fires before any
+    // manifest is read, so filling them would fabricate them (D-06).
+    assert.equal(json.manifest, undefined, JSON.stringify(json));
+    assert.equal(json.siblings, undefined);
+    assert.equal(json.changelog, undefined);
+
+    assert.equal(readRaw(join(dir, 'CHANGELOG.md')), clBefore, 'CHANGELOG.md must be byte-identical');
+    assert.equal(readRaw(join(dir, '.claude-plugin', 'plugin.json')), manifestBefore);
+  });
+
+  test(`bump: --date refuses ${why} on a NON-plugin project too`, () => {
+    // D-06's stated consequence: the date is validated at the dispatch, so a
+    // malformed value no longer hides behind the manifest gate, which answered
+    // {"ok":true,"action":"skip","reason":"no-plugin-manifest"} here.
+    const dir = fixture({ plugin: null, marketplace: null });
+    const { json, status } = seamStatus(['bump', '--dir', dir, '--version', '1.1.0', '--date', value]);
+    assert.equal(json.reason, 'bad-date', JSON.stringify(json));
+    assert.equal(json.ok, false);
+    assert.equal(status, 1);
+  });
+}
+
+test('bump: a well-formed --date still writes its dated heading', () => {
+  const dir = fixture();
+  const r = seam(['bump', '--dir', dir, '--version', '1.1.0', '--date', '2026-08-18']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.match(readRaw(join(dir, 'CHANGELOG.md')), /## \[1\.1\.0\] - 2026-08-18/);
+});
+
+test('bump: an ABSENT --date still dates today - only a PRESENT one is validated', () => {
+  const dir = fixture();
+  const r = seam(['bump', '--dir', dir, '--version', '1.1.0']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const today = new Date().toISOString().slice(0, 10);
+  assert.match(readRaw(join(dir, 'CHANGELOG.md')), new RegExp(`## \\[1\\.1\\.0\\] - ${today}`));
+});
