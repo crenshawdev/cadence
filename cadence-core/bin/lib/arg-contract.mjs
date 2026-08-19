@@ -198,8 +198,57 @@ export function evaluateFlag(argv, flag, spec) {
   return { ok: true, value: parsed.value, detail: '' };
 }
 
-// --- the contract table: script -> subcommand -> allowed flags --------------
+// --- the contract table: script -> subcommand -> flag -> grammar ------------
 // Global flags allowed everywhere on that script are listed under '*'.
+//
+// EVERY ENTRY DECLARES FOUR FIELDS and none of them defaults: `required`,
+// `type`, `value` (what happens to a present-but-malformed value) and `bare`
+// (what happens to a flag present with nothing usable after it).
+// arg-contract.test.mjs walks all 144 of them, so a row added later without a
+// complete grammar reddens rather than picking up a silent default.
+//
+// REQUIRED-NESS IS PER SUBCOMMAND. `risk-check run` requires `--base` and
+// `--head`; `risk-check status` takes the same pair optionally, because its
+// triple is all-three-or-none and the seam owns that rule. `--plan` is three
+// different types on three rows for the same reason - `lease-check` names a
+// plan FILE and stays `int`, `risk-check` names the worker key and reads
+// `plan-key`, `trace append` stores the caller's string verbatim. Folding any
+// of those onto one row would state a bound one face does not hold.
+//
+// THE DISPOSITIONS REPRODUCE WHAT SHIPS, they do not tidy it. The ones that
+// carry a reason, each with its evidence:
+//
+//   `--dir` and `--root` refuse the empty, bare and flag-shaped spellings
+//     everywhere. `planning.mjs status --dir ''` answered ok:true about
+//     `./.planning`, a tree the caller never named, while `git-branch.mjs tags
+//     --dir ''` already refused the identical spelling.
+//   `--branch`, `--base`, `--remote`, `--merged` and `--version` declare
+//     `fallback` on the bare form (D-12). Their seams read them through the
+//     permissive reader and answer with `|| fallback`; declaring `refuse`
+//     would start refusing a valueless spelling those seams absorb today.
+//   `--timeout-ms` declares `fallback` on a MALFORMED VALUE as well.
+//     issue-check.mjs falls back to its constant because that seam's whole
+//     contract is that it never fails a land, and an unbounded call is the one
+//     thing it may never do instead.
+//   `route.mjs`'s `--phase` declares `warn` on both axes, never a `usage`
+//     refusal, which would route the phase LOWER than its own risk baseline.
+//     The value is kept raw so the floor computation still sees the spelling.
+//   On `trace append|close`, `--plan`, `--sha`, `--base` and `--detail` declare
+//     `fallback` on both axes - the drop the shared body already performs
+//     (`typeof opts.plan === 'string' && opts.plan`), so every shipped
+//     `trace close` without them keeps answering ok:true - while `--step`,
+//     `--reviewer`, `--trigger` and `--role` REFUSE the bare form on the same
+//     two subcommands. That split is D-05, and it is why the two axes are two
+//     fields: a bare `--role` wrote a record with no `role` key and `trace
+//     render` then aggregated it under the empty-string key.
+//   `--date` refuses the bare form, which release-bump.mjs hand-writes today by
+//     testing the flag's own appearance in argv beside the permissive reader: a
+//     valueless `--date` must refuse rather than silently date today.
+//
+// A `boolean` row's two dispositions are INERT by construction - presence is
+// the whole grammar, so neither axis can fire - and they are declared
+// `fallback` rather than omitted, because an omitted field is the silent
+// opt-out the completeness test exists to catch.
 //
 // The '' key is the BARE form - the script invoked with flags and no
 // subcommand, e.g. `weight.mjs --root <path>`. Without it check 2 reads the
@@ -213,55 +262,118 @@ export function evaluateFlag(argv, flag, spec) {
 // be deleted with self-verify still returning ok:true.
 export const CONTRACTS = {
   'planning.mjs': {
-    '*': ['--dir'],
-    status: [],
-    'cursor get': [],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    status: {},
+    'cursor get': {},
     // `--next-file` is `--next`'s path transport, for the two sites that COMPOSE
     // a resume pointer (/cad-pause, `progress`) rather than authoring a literal
     // `/cad-<command> N`. The seven literal sites keep the inline form.
-    'cursor set': ['--phase', '--status', '--next', '--next-file', '--name', '--total'],
-    'phase-done': ['--n', '--reqs', '--undo'],
-    'uat init': ['--phase', '--sources'],
-    'uat refresh': ['--phase'],
+    'cursor set': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--status': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--next': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--next-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--name': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--total': { required: false, type: 'cursor', value: 'refuse', bare: 'refuse' },
+    },
+    'phase-done': {
+      '--n': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--reqs': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--undo': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    'uat init': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--sources': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'uat refresh': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // `--fields-file` is the path transport for the five FREE-TEXT fields
     // (`reason`, `reported`, `cause`, `fix`, `evidence`) as ONE JSON object -
     // one file per failing item rather than three, on the workflow whose
     // per-item round-trip discipline is explicit. The enum-validated flags gain
     // no file form: a value that must survive `UAT_RESULTS.includes()` or an
     // `AC<N>` test is not caller-derived prose.
-    'uat record': ['--phase', '--item', '--result', '--reason', '--reported',
-      '--severity', '--cause', '--fix', '--evidence', '--fields-file', '--source',
-      '--origin', '--criterion'],
-    'uat merge': ['--phase', '--payload'],
-    'uat status': ['--phase'],
-    audit: [],
-    'criteria-coverage': [],
+    'uat record': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--item': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--result': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--reason': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--reported': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--severity': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--cause': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--fix': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--evidence': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--fields-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--source': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--origin': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--criterion': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'uat merge': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'uat status': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
+    audit: {},
+    'criteria-coverage': {},
     // The criteria-count ceilings, as the CALLER's literal numbers. Four bounds
     // rather than two because the two grammars have different ones - CONTEXT's
     // acceptance criteria 3-7, ROADMAP's per-phase criteria 2-5 - and folding
     // them onto one pair would make a workflow state a bound it does not hold.
     // No config keys: D-04, the rule `plan-size`'s row above already follows.
-    'criteria-size': ['--phase', '--context-min', '--context-max',
-      '--roadmap-min', '--roadmap-max'],
-    'plan-overlap': ['--phase'],
-    'plan-size': ['--phase', '--max-reqs', '--max-tasks'],
+    'criteria-size': {
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--context-min': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--context-max': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--roadmap-min': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--roadmap-max': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    'plan-overlap': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
+    'plan-size': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--max-reqs': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--max-tasks': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
     // `--label-file` is `--label`'s path transport: an untagged close takes the
     // label from PROJECT.md's milestone NAME, which is repository content. The
     // table term (`|` or a newline) and the containment term run on the
     // resolved value either way - the transport changes how it arrives, never
     // what it must satisfy.
-    'milestone-prune': ['--label', '--label-file', '--mode'],
-    'seed-reqs': ['--phase'],
-    'lease-check': ['--phase', '--plan'],
-    'detect-commands': ['--root'],
-    'detect-surfaces': ['--root'],
-    recall: ['--top'],
+    'milestone-prune': {
+      '--label': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--label-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--mode': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'seed-reqs': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
+    'lease-check': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    'detect-commands': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'detect-surfaces': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    recall: {
+      '--top': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
     // `--join` ties each record to the `trace.jsonl` dispatch bracket that
     // caused it, by role normalization and timestamp containment. Off by
     // default so the envelope every existing reader parses is unchanged, and
     // whole-record by construction: `reads.jsonl` carries no phase scoping, so
     // the brackets it joins to must span every phase.
-    reads: ['--join'],
+    reads: {
+      '--join': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
     // `--read` is ONE comma-separated value, never a repeated flag (parseArgs
     // keeps only the last). Its grammar is deliberately heterogeneous: an
     // element is any verbatim string naming something the site caused the
@@ -283,12 +395,23 @@ export const CONTRACTS = {
     // head is a range the caller never stated - and `--surfaces` narrows the
     // scope to the project's resolved set, refusing any token outside the
     // eight rather than answering about a narrower one.
-    'risk-check run': ['--phase', '--plan', '--base', '--head', '--surfaces'],
+    'risk-check run': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--surfaces': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // The completion gate. `--phase` alone keeps plan-level matching; the
     // optional `--plan --base --head` triple requires a record for THAT range,
     // so a record left by an earlier, narrower range of the same plan does not
     // satisfy a later one.
-    'risk-check status': ['--phase', '--plan', '--base', '--head'],
+    'risk-check status': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
+      '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
     // derived: the inline form puts that text in a double-quoted shell word,
     // where `$(...)` and a backtick execute before Node starts. Additive - the
@@ -303,9 +426,24 @@ export const CONTRACTS = {
     // on the `close` row below, for the reason `--read` is not: `close` fixes
     // its own family and event, and a flag row never widens what a subcommand
     // accepts.
-    'trace append': ['--phase', '--family', '--event', '--plan', '--base', '--sha', '--detail',
-      '--detail-file', '--role', '--tokens', '--raised', '--read', '--read-file',
-      '--step', '--reviewer', '--trigger'],
+    'trace append': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--family': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--event': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--base': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--sha': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--raised': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--read-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--step': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // The CLOSE half of a worker bracket. No `--family` and no `--event`: the
     // family is fixed to `lifecycle` in the seam and the arm is inferred from
     // `--detail` (present -> `checkpoint`, absent -> `return`), so a close site
@@ -321,14 +459,27 @@ export const CONTRACTS = {
     // CLOSE row only, exactly as `--raised` is listed on `append` only: the
     // flag is validated in the ONE shared `append|close` body, and this row is
     // a prose allowlist that never widens what a subcommand accepts.
-    'trace close': ['--phase', '--plan', '--role', '--tokens', '--turns', '--detail',
-      '--detail-file', '--reviewer'],
+    'trace close': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--plan': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--tokens': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--turns': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--detail': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--detail-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--reviewer': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // `--events` asks for the RAW event array. The default response carries the
     // paired `brackets` rows plus every `outcome` event instead, which is what
     // the two shipped readers (triage-gate's `rearm` lookup, report.md's
     // dispatch table) actually consume - and one to three of the bytes.
-    'trace render': ['--phase', '--events'],
-    'trace suggest': ['--phase'],
+    'trace render': {
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--events': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    'trace suggest': {
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // The dispatch-window report. `--phase` ALONE, and the absence of every
     // other flag is the point: the ceilings are CONFIG (six
     // `workflow.max_dispatch_tokens.<role>` keys), so a flag that could name a
@@ -336,115 +487,208 @@ export const CONTRACTS = {
     // ad-hoc override that makes a run's report disagree with the project's own
     // configured bound. `--phase` only scopes which brackets are read, exactly
     // as it does on `render` and `suggest`.
-    'trace window': ['--phase'],
-    'trace ignore': ['--root', '--check'],
+    'trace window': {
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
+    'trace ignore': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--check': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
     // `--file` overrides `<dir>/CAPTURE.md`, for `/cad-capture --cadence`'s
     // global queue alone - there is no `--section`, and that absence is the
     // point: a caller that could name a heading is how five filed bullets
     // landed outside the recall walk.
-    capture: ['--kind', '--text', '--text-file', '--phase', '--file'],
+    capture: {
+      '--kind': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--text': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--text-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // The read side of the same file, and the same `--file` override. No
     // `--section` and no allowlist flag either: the census is unconditional
     // (D-06), and a flag that could hide a section is what would have hidden
     // the five lost bullets.
-    'capture-sections': ['--file'],
-    'debt-harvest': ['--root'],
-    'renumber insert': ['--at', '--dry-run'],
-    'renumber remove': ['--n', '--dry-run'],
+    'capture-sections': {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'debt-harvest': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'renumber insert': {
+      '--at': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--dry-run': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    'renumber remove': {
+      '--n': { required: true, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--dry-run': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
   },
   'config.mjs': {
-    '*': [],
-    validate: ['--file', '--global'],
-    check: [],
-    set: ['--file', '--global'],
-    get: ['--file'],
-    keys: [],
+    '*': {},
+    validate: {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    check: {},
+    set: {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--global': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    get: {
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    keys: {},
   },
   'git-branch.mjs': {
-    '*': ['--dir'],
-    decide: ['--branch'],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    decide: {
+      '--branch': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+    },
     // The read-only tags arm. No flags of its own: `--dir` is the whole input
     // and it is BOTH the directory the question is asked from and the project
     // root the answer must belong to (TAG-01), so a second flag here would be
     // the way to ask one of those two questions without the other - which is
     // the upward discovery the bound closed.
-    tags: [],
+    tags: {},
   },
   'git-publish.mjs': {
-    '*': ['--dir'],
-    publish: ['--remote'],
-    reap: ['--branch'],
-    authorized: [],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    publish: {
+      '--remote': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+    },
+    reap: {
+      '--branch': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+    },
+    authorized: {},
   },
   'land-cleanup.mjs': {
-    '*': ['--dir'],
-    cleanup: ['--branch', '--base', '--merged'],
-    gate: [],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    cleanup: {
+      '--branch': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--base': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--merged': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+    },
+    gate: {},
   },
   'issue-check.mjs': {
-    '*': ['--dir'],
-    check: ['--base', '--timeout-ms'],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    check: {
+      '--base': { required: false, type: 'string', value: 'fallback', bare: 'fallback' },
+      '--timeout-ms': { required: false, type: 'int', value: 'fallback', bare: 'fallback' },
+    },
   },
   'release-bump.mjs': {
-    '*': ['--dir'],
-    bump: ['--version', '--date'],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    bump: {
+      '--version': { required: false, type: 'string', value: 'refuse', bare: 'fallback' },
+      '--date': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'route.mjs': {
-    '*': [],
-    resolve: ['--role', '--attempt', '--file', '--phase', '--bracket-read', '--bracket-plan'],
-    table: [],
+    '*': {},
+    resolve: {
+      '--role': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--attempt': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--phase': { required: false, type: 'phase', value: 'warn', bare: 'warn' },
+      '--bracket-read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--bracket-plan': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    table: {},
   },
   'worktree-base.mjs': {
-    '*': ['--dir'],
-    resolve: [],
+    '*': {
+      '--dir': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    resolve: {},
   },
   'review-provider.mjs': {
-    '*': ['--key-file'],
+    '*': {
+      '--key-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
     // `--trigger` names the review trigger the call was fired for; it rides the
     // provider trace event so a cross-model fire JOINS to its trigger through
     // the correlation id, which is what makes it distinguishable from the
     // subagent fire of the same trigger (RVW-02). Optional and review-only: a
     // consult has no trigger.
-    review: ['--provider', '--model', '--effort', '--payload', '--trigger'],
-    consult: ['--provider', '--model', '--effort', '--payload'],
-    'detect-models': ['--provider'],
+    review: {
+      '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--model': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--effort': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    consult: {
+      '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--model': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--effort': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    'detect-models': {
+      '--provider': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   'weight.mjs': {
-    '*': ['--root'],
-    '': [],
-    resident: ['--command', '--role'],
+    '*': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    '': {},
+    resident: {
+      '--command': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
   },
   // Two scripts with no subcommand at all. They carry rows because check 14
   // requires one, and the rows have teeth: the bare form's flag list is what
   // check 2 lints `self-verify.mjs --root <path>` against.
   'self-verify.mjs': {
-    '*': ['--root'],
-    '': [],
+    '*': {
+      '--root': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    '': {},
   },
   // git-guard.mjs is the commit hook - it reads its input on stdin and takes
   // no flags, so the bare form allows none.
   'git-guard.mjs': {
-    '*': [],
-    '': [],
+    '*': {},
+    '': {},
   },
 
   // read-trace.mjs is the PostToolUse recorder - like git-guard.mjs it reads
   // its input on stdin and takes no flags and no subcommand at all.
   'read-trace.mjs': {
-    '*': [],
-    '': [],
+    '*': {},
+    '': {},
   },
   // skim.mjs takes a FILE as its positional argument, never a subcommand, so
   // the bare row carries the whole flag set.
   'skim.mjs': {
-    '*': [],
-    '': ['--stats', '--no-numbers'],
+    '*': {},
+    '': {
+      '--stats': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+      '--no-numbers': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
   },
   // test.mjs takes GROUP NAMES as positional arguments, never subcommands, so
   // the bare form is the only form and `--list` is its one flag.
   'test.mjs': {
-    '*': ['--list'],
-    '': ['--list'],
+    '*': {
+      '--list': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
+    '': {
+      '--list': { required: false, type: 'boolean', value: 'fallback', bare: 'fallback' },
+    },
   },
 };
 
@@ -455,13 +699,12 @@ export const CONTRACTS = {
  * row - and unions the two.
  *
  * It exists so the lint never spreads a row DIRECTLY: a row is a value-grammar
- * object, and a check that spread one would read its flag specs as flag names
- * the moment the grammar landed. Asking for the names keeps the prose side
- * working across that change and keeps the table one source (D-06).
- * @param {Record<string, any>|string[]|undefined} row
+ * object, and a check that spread one would read its four grammar fields as
+ * flag names. Asking for the names is what lets ONE table serve the prose lint
+ * and the CLI refusals at once (D-06).
+ * @param {Record<string, any>|undefined} row
  * @returns {string[]}
  */
 export function flagNames(row) {
-  if (!row) return [];
-  return Array.isArray(row) ? row : Object.keys(row);
+  return row ? Object.keys(row) : [];
 }

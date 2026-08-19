@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { evaluateFlag, DISPOSITIONS, TYPES } from './lib/arg-contract.mjs';
+import { evaluateFlag, DISPOSITIONS, TYPES, CONTRACTS, flagNames } from './lib/arg-contract.mjs';
 
 const MODULE_URL = new URL('./lib/arg-contract.mjs', import.meta.url).href;
 
@@ -172,5 +172,95 @@ test('the module file itself is pure: no emit, no process, no filesystem', () =>
   const body = src.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n');
   for (const token of ['process.', 'readFileSync(', 'writeFileSync(', 'console.', 'emit(']) {
     assert.ok(!body.includes(token), `lib/arg-contract.mjs must stay pure; found ${token}`);
+  }
+});
+
+// --- the table itself: every row carries a complete grammar ------------------
+
+test('every flag in every row declares a complete grammar', () => {
+  // A row added later WITHOUT one must redden here rather than picking up a
+  // silent default: a defaulted disposition is the same species of hole as a
+  // deleted CONTRACTS row, which self-verify check 14 exists to catch from the
+  // tree side. This is that check for the value grammar.
+  let entries = 0;
+  for (const [script, row] of Object.entries(CONTRACTS)) {
+    for (const [sub, flags] of Object.entries(row)) {
+      for (const flag of flagNames(flags)) {
+        const at = `${script} ${sub || '(bare form)'} ${flag}`;
+        const spec = flags[flag];
+        assert.equal(typeof spec, 'object', `${at}: no grammar at all`);
+        assert.equal(typeof spec.required, 'boolean',
+          `${at}: required-ness is per SUBCOMMAND and must be stated, true or false`);
+        assert.ok(TYPES.includes(spec.type), `${at}: type "${spec.type}" is outside ${TYPES.join(' | ')}`);
+        assert.ok(DISPOSITIONS.includes(spec.value),
+          `${at}: value disposition "${spec.value}" is outside ${DISPOSITIONS.join(' | ')}`);
+        assert.ok(DISPOSITIONS.includes(spec.bare),
+          `${at}: bare-flag disposition "${spec.bare}" is outside ${DISPOSITIONS.join(' | ')}`);
+        assert.deepEqual(Object.keys(spec).sort(), ['bare', 'required', 'type', 'value'],
+          `${at}: a fifth field is a rule this table states in two places`);
+        entries += 1;
+      }
+    }
+  }
+  // The walk reached the whole table, so no arm above is vacuous.
+  assert.equal(entries, 144, `the table declares ${entries} flag entries`);
+  assert.equal(Object.keys(CONTRACTS).length, 16, 'one row per top-level bin script');
+});
+
+test('the declarations the CONTEXT decisions bind are the ones in the table', () => {
+  // Not tidiness: each of these reverses a documented decision if it flips, and
+  // the flip would be invisible - the contract is declarative, so a wrong word
+  // here is a wrong REFUSAL at whichever seam adopts the row.
+  const PINNED = [
+    ['planning.mjs', '*', '--dir', { value: 'refuse', bare: 'refuse' },
+      'AC1: --dir "" answered ok:true about a tree the caller never named'],
+    ['self-verify.mjs', '*', '--root', { value: 'refuse', bare: 'refuse' },
+      'the same rail on the linter that reports about a tree'],
+    ['route.mjs', 'resolve', '--phase', { value: 'warn', bare: 'warn' },
+      'D-04: a usage refusal here routes the phase LOWER than its own risk baseline'],
+    ['issue-check.mjs', 'check', '--timeout-ms', { value: 'fallback', bare: 'fallback' },
+      "D-04: this seam's whole contract is that it never fails a land"],
+    ['land-cleanup.mjs', 'cleanup', '--merged', { value: 'fallback', bare: 'fallback' },
+      "D-12: its seam's || fallback absorbs the valueless spelling today"],
+    ['release-bump.mjs', 'bump', '--version', { bare: 'fallback' }, 'D-12'],
+    ['release-bump.mjs', 'bump', '--date', { bare: 'refuse' },
+      'a valueless --date must refuse rather than silently date today'],
+    ['planning.mjs', 'trace append', '--role', { bare: 'refuse' },
+      'AC3/D-05: a bare --role wrote a record with no role key and render aggregated it under ""'],
+    ['planning.mjs', 'trace append', '--step', { bare: 'refuse' }, 'D-05, the same arm'],
+    ['planning.mjs', 'trace append', '--reviewer', { bare: 'refuse' }, 'D-05, the same arm'],
+    ['planning.mjs', 'trace append', '--trigger', { bare: 'refuse' }, 'D-05, the same arm'],
+    ['planning.mjs', 'trace close', '--plan', { bare: 'fallback' },
+      'D-05: making it refuse starts refusing every shipped trace close that omits it'],
+    ['planning.mjs', 'trace append', '--sha', { bare: 'fallback' }, 'D-05, the drop arm'],
+    ['planning.mjs', 'trace append', '--base', { bare: 'fallback' }, 'D-05, the drop arm'],
+  ];
+  for (const [script, sub, flag, want, why] of PINNED) {
+    const spec = CONTRACTS[script][sub][flag];
+    for (const [field, value] of Object.entries(want)) {
+      assert.equal(spec[field], value, `${script} ${sub} ${flag} ${field} - ${why}`);
+    }
+  }
+  // Required-ness is per subcommand, and this pair is the case that proves it.
+  assert.equal(CONTRACTS['planning.mjs']['risk-check run']['--head'].required, true,
+    'a defaulted head is a range the caller never stated');
+  assert.equal(CONTRACTS['planning.mjs']['risk-check status']['--head'].required, false,
+    "status takes the triple all-three-or-none, so requiring --head would state a bound that face does not hold");
+});
+
+test('every declared spec is one the evaluator can actually apply', () => {
+  // The table and the evaluator are two halves of one file, and this is the
+  // seam between them: a type or disposition the evaluator has no arm for would
+  // otherwise surface at whichever seam adopts the row, not here.
+  for (const [script, row] of Object.entries(CONTRACTS)) {
+    for (const [sub, flags] of Object.entries(row)) {
+      for (const flag of flagNames(flags)) {
+        for (const argv of [[], [flag], [flag, ''], [flag, '--other'], [flag, '1']]) {
+          const r = evaluateFlag(argv, flag, flags[flag]);
+          assert.deepEqual(Object.keys(r).sort(), ['detail', 'ok', 'value'],
+            `${script} ${sub} ${flag} on ${JSON.stringify(argv)}`);
+        }
+      }
+    }
   }
 });
