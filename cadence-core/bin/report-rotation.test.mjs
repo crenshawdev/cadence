@@ -10,9 +10,9 @@
 // with a picker that answers a name the caller is about to overwrite.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, existsSync, globSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, sep } from 'node:path';
 import { rotationTarget } from './lib/report-rotation.mjs';
 
 /** A fresh `<plandir>/reports/` holding `files` (name -> contents). */
@@ -124,4 +124,47 @@ test('unreadable inputs throw rather than answering "nothing to rotate"', () => 
   // What `readdirSync(dir, {withFileTypes:true})` returns: names that are not
   // strings would compare false against every candidate and answer `false`.
   assert.throws(() => rotationTarget(1, readdirSync(dir, { withFileTypes: true })), TypeError);
+});
+
+// --- AC6: the rotated report is still visible to the reader that lists reports
+
+test('AC6: both names rotation produces are matched by /cad-report\'s own glob', () => {
+  // What makes rotation SAFE rather than merely non-destructive. The reader
+  // that consumes per-task reports is `workflows/report.md`, which opens
+  // `.planning/phases/<N>/reports/plan-*.md` ONLY when SUMMARY.md is absent -
+  // so a SUMMARY-less phase is the observable form of the criterion, and that
+  // glob is the property under test. A per-run SUBDIRECTORY would satisfy every
+  // other test in this file and still hide the older record from the only
+  // reader that looks: `reports/<key>/plan-1.md` does not match it.
+  //
+  // /cad-report itself is deliberately NOT invoked: the workflow is prose an
+  // agent runs, not a callable, so the test targets the glob it names.
+  const root = mkdtempSync(join(tmpdir(), 'cad-ac6-'));
+  const phase = join(root, 'phases', '1');
+  const reports = join(phase, 'reports');
+  mkdirSync(reports, { recursive: true });
+  writeFileSync(join(reports, 'plan-1.md'), 'RUN A\nPLAN PARTIAL\n');
+  const runA = readFileSync(join(reports, 'plan-1.md'));
+
+  // The second run: rotate by the module's answer, then write at the base name.
+  // The parent of `to` is created first, so a module answering a subdirectory
+  // fails at the GLOB below rather than at a rename - the assertion that
+  // actually states the property.
+  const answer = rotationTarget(1, readdirSync(reports));
+  assert.equal(answer.rotate, true);
+  const to = join(reports, answer.to);
+  mkdirSync(dirname(to), { recursive: true });
+  renameSync(join(reports, answer.from), to);
+  writeFileSync(join(reports, 'plan-1.md'), 'RUN B\nPLAN COMPLETE\n');
+
+  // The premise: no SUMMARY.md, which is what makes report.md read this glob.
+  assert.ok(!existsSync(join(phase, 'SUMMARY.md')));
+
+  const matched = globSync('phases/1/reports/plan-*.md', { cwd: root }).sort();
+  assert.deepEqual(matched.map((m) => m.split(sep).pop()).sort(),
+    ['plan-1.1.md', 'plan-1.md'],
+    'the glob workflows/report.md names does not resolve to both records, so rotation '
+    + 'hid the previous run from the only reader that lists reports');
+  assert.deepEqual(readFileSync(join(reports, 'plan-1.1.md')), runA,
+    "the rotated record's bytes changed");
 });
