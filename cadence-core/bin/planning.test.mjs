@@ -3,7 +3,7 @@
 // spec file beyond them. Only node: builtins, per the repo ethos.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, symlinkSync, chmodSync, rmSync, renameSync, accessSync, constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
@@ -5489,6 +5489,48 @@ test('detect-surfaces: a real --root still answers about THAT tree', () => {
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.root, root);
   assert.deepEqual(r.evidenced.map((e) => e.category), ['billing']);
+});
+
+// --- the GLOBAL --dir refuses the empty, bare and flag-shaped spellings ------
+// Phase 2 closed this at the six `--dir` seams and left planning.mjs's own door
+// open, where the defect was worse than the gap recorded: measured 2026-08-19,
+// `status --dir ''` answered `{"ok":true,"current":4,"total":5,...}` about
+// `./.planning` - this repository's own tree, which the caller never named -
+// and a BARE `--dir` minted the boolean `true`, reached `existsSync(true)` and
+// printed a `DEP0187` deprecation warning on STDERR beside the answer. stdout
+// is the single channel the seam layer parses and that deprecation is scheduled
+// to become a throw, so the STDERR BYTE COUNT is part of the assertion rather
+// than decoration - it is what would redden if the boolean reached fs again.
+// The flag now reads through its declared row in lib/arg-contract.mjs, whose
+// `--dir` grammar refuses on both axes.
+const BLANK_DIRS = [
+  { name: '--dir with nothing after it', args: ['--dir'] },
+  { name: 'an empty --dir ""', args: ['--dir', ''] },
+  { name: 'a whitespace-only --dir', args: ['--dir', '   '] },
+  { name: 'a flag-shaped --dir value', args: ['--dir', '--undo'] },
+];
+
+for (const row of BLANK_DIRS) {
+  test(`status: ${row.name} is bad-args naming the flag, and stderr stays empty`, () => {
+    const r = spawnSync('node', [PLANNING, 'status', ...row.args], { encoding: 'utf8' });
+    const body = JSON.parse(r.stdout);
+    assert.equal(body.ok, false, r.stdout);
+    assert.equal(body.reason, 'bad-args', r.stdout);
+    assert.match(body.detail, /--dir/);
+    assert.equal(r.status, 1);
+    assert.equal(r.stderr, '', `stderr: ${r.stderr}`);
+  });
+}
+
+test('status: a genuinely ABSENT --dir still defaults to ./.planning', () => {
+  // The other half of the refusal: absent and present-with-nothing-usable are
+  // different inputs, and only the second one refuses.
+  const dir = makeTree({ roadmap: [{ n: 1, name: 'One', checked: false }] });
+  const r = spawnSync('node', [PLANNING, 'status'], { encoding: 'utf8', cwd: dirname(dir) });
+  const body = JSON.parse(r.stdout);
+  assert.equal(body.ok, true, r.stdout);
+  assert.equal(body.total, 1, r.stdout);
+  assert.equal(r.status, 0);
 });
 
 // --- lease-check: the declared file lease, enforced (QW-03) ------------------

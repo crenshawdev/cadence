@@ -192,6 +192,7 @@ import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
+import { evaluateFlag, CONTRACTS } from './lib/arg-contract.mjs';
 
 const ok = (o) => emit({ ok: true, ...o });
 const fail = (reason, detail, hint) =>
@@ -5431,12 +5432,28 @@ const COMMANDS = {
 };
 
 try {
-  const { words, opts } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  const { words, opts } = parseArgs(argv);
   const [cmd, sub] = words;
-  const dir = opts.dir || '.planning';
+  // `--dir` reads through its DECLARED row in lib/arg-contract.mjs rather than
+  // off `opts`, and it is read from raw argv on purpose: parseArgs mints the
+  // boolean `true` for a bare `--dir`, which used to reach `existsSync(true)`
+  // and print a DEP0187 deprecation warning on STDERR beside the answer -
+  // stdout is the single channel the seam layer parses, and that deprecation is
+  // scheduled to become a throw. The empty spelling was worse than noisy:
+  // `status --dir ''` answered ok:true about `./.planning`, a tree the caller
+  // never named. The row says refuse on both axes; a genuinely ABSENT --dir
+  // still falls through to `.planning`.
+  //
+  // The refusal is `fail('bad-args', ...)` and never the `missing-flag-value`
+  // throw the seam-input readers raise (D-07): this file has ONE refusal
+  // vocabulary and no `e.seam` catch arm to render that throw as anything but
+  // `internal` - the same reason the `--root` guards above state in code.
+  const dirFlag = evaluateFlag(argv, '--dir', CONTRACTS['planning.mjs']['*']['--dir']);
   const handler = COMMANDS[cmd];
-  if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
-  else handler(dir, sub, opts, words.slice(1));
+  if (!dirFlag.ok) fail('bad-args', '--dir needs a path after it: --dir <planning dir>');
+  else if (!handler) fail('usage', `subcommand: ${Object.keys(COMMANDS).join(' | ')} (got: ${cmd || 'none'})`);
+  else handler(dirFlag.value || '.planning', sub, opts, words.slice(1));
 } catch (e) {
   fail('internal', e && e.message ? e.message : String(e));
 }
