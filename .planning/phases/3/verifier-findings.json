@@ -1,0 +1,106 @@
+{
+  "status": "delivered",
+  "score": "8/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "An unreachable winning arm nulls its slot, names the tool in warnings[], and takes no lower arm (AC1)",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "Live probe on a fixture tree carrying pyproject.toml [tool.ruff] + go.mod with ruff absent from PATH and no node_modules: `node cadence-core/bin/planning.mjs detect-commands --root .` answered {\"lint\":null,\"typecheck\":null,\"source\":{\"lint\":null,\"typecheck\":null},\"warnings\":[\"lint: ruff is not on PATH or in node_modules/.bin, so `ruff check .` (from pyproject.toml) was not offered; no lower arm was taken in its place\", ...]} - `go vet ./...` was NOT substituted. Implementation: cadence-core/bin/planning.mjs:2645-2662 (`offer()` returns {command:null,source:null} and pushes the warning; provenance is dropped with the command). Named test `detect-commands: an unreachable winning arm nulls its slot and never falls through` (planning.test.mjs:5368) passes."
+    },
+    {
+      "n": 2,
+      "truth": "In this repository detect-commands returns `npx tsc -p tsconfig.ci.json` with tsc absent from PATH and present at node_modules/.bin/tsc (AC2)",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "Live in /code/cadence: `detect-commands --root .` -> {\"ok\":true,\"lint\":null,\"typecheck\":\"npx tsc -p tsconfig.ci.json\",\"source\":{\"typecheck\":\"tsconfig.ci.json\"}}; `command -v tsc` finds nothing, `node_modules/.bin/tsc` is a live symlink to ../typescript/bin/tsc. The delegated-tool half is at planning.mjs:2622-2639 (`needs()` splits an `npx <tool>` arm into driver + delegate) and the directory half at lib/on-path.mjs:65-71 (`executableIn`). MEASURED LIMITATION, already disclosed as SUMMARY open item (D-04 refutation): the probe is root-only, so a root whose node_modules sits in an ANCESTOR - a git worktree of this repo - answers typecheck:null with the warning `tsc is not on PATH or in node_modules/.bin` even though `npx tsc` resolves there. Reproduced live on a fixture: ancestor/node_modules/.bin/{npx,tsc} + ancestor/sub/tsconfig.ci.json, --root ancestor/sub -> typecheck null. The failure direction is conservative (a nulled command, never an unreachable named one), so AC2 and RCH-01 hold."
+    },
+    {
+      "n": 3,
+      "truth": "The detect-commands test set is machine-independent - it passes with ruff/mypy/eslint/tsc/go absent and again with all five stubbed onto PATH (AC3)",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "This machine has ruff, mypy, eslint, tsc and go all absent from PATH (verified with `command -v`). `node --test --test-name-pattern='detect-commands' cadence-core/bin/planning.test.mjs` -> tests 25, pass 25, fail 0. Re-run with a stub dir holding executable ruff/mypy/eslint/tsc/go prepended to PATH -> tests 25, pass 25, fail 0. Mechanism: the `detect()` harness (planning.test.mjs:5215-5227) passes EVERY_TOOL through CADENCE_DETECT_REACHABLE behind the CADENCE_TEST_SEAM sentinel; the override is read by presence, not through `||` (planning.mjs:2613-2618), and rows at planning.test.mjs:5403 and :5433 pin both the live probe (via a fixture's own node_modules/.bin) and the sentinel gate."
+    },
+    {
+      "n": 4,
+      "truth": "risk-check run --plan 1-fix records a row and risk-check status flips ok:false -> ok:true once the receipt lands under the same corr+key (AC4)",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "Named test `risk-check status: a 1-fix bracket is satisfiable - record, then fire receipt` (plan-key.test.mjs:180-211) walks the whole loop in a scratch git repo: status -> ok:false reason risk-record-missing missing:['1-fix']; `risk-check run --phase 3 --plan 1-fix --base <sha> --head <sha>` -> ok:true; status -> ok:false reason risk-fire-missing; `trace append ... --plan 1-fix` -> status ok:true with plans[0].plan === '1-fix'. Ran: node --test cadence-core/bin/plan-key.test.mjs -> 16/16 pass. Also `risk-check run: a fix-pass key is RECORDED` (:166) asserts the trace record carries plan '1-fix' verbatim. Live read-only cross-check on this repo: `planning.mjs risk-check status --phase 3` -> ok:true, three plans, all state 'recorded'. Refused keys land in malformed[] rather than missing[] (planning.mjs:4157; test at plan-key.test.mjs:213)."
+    },
+    {
+      "n": 5,
+      "truth": "Both risk-check faces reach the plan-key grammar through one exported predicate, and a test proves they cannot disagree (AC5)",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "One home: cadence-core/bin/lib/plan-key.mjs:65 exports requirePlanKey; the only production importer is planning.mjs:192, called at :3761 (`risk-check run`), :3983 (`risk-check status` named-range arm) and :4157 (the bracket walk). No surviving requireInt on either --plan path (grep for requireInt(opts.plan) returns nothing). Cross-face test `every spelling in the table is accepted by BOTH faces or refused by BOTH` (plan-key.test.mjs:243-270) drives all 16 table rows through both CLI faces and asserts runRefused === statusRefused; it passes. helper-census.test.mjs:141-148 registers lib/plan-key.mjs as the single home for the grammar."
+    },
+    {
+      "n": 6,
+      "truth": "scanDiff over whole-file adds of lib/risk-diff.mjs and risk-diff.test.mjs returns zero matches under both this repo's three surfaces and all eight, and the fix is pinned by a test that reddened pre-fix (AC6)",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "Independent probe (my own harness, not the repo's): scanDiff(wholeFileAdd(...)) over the current bytes of both files -> matches [] for scope ['secrets','destructive','untrusted_input'] (read from .planning/config.json) and [] for all eight. Falsifier re-run against the pre-phase blobs at 0e7844b: lib/risk-diff.mjs matched auth, billing, migrations, concurrency, destructive, untrusted_input (6) and risk-diff.test.mjs matched auth, migrations, destructive, untrusted_input (4) - so the census row was watched failing for real. Pin: `the census: neither this file nor the detector matches the detector` (risk-diff.test.mjs:1245-1258), asserts r.checked and r.matches === [] over 4 file x scope pairs with a `ran === 4` guard; passes. Reach unchanged, checked by reading the diff of lib/risk-diff.mjs 0e7844b..HEAD: every edit is either a one-character class (`[s]tripe` for `stripe`, `[M]utex`, `[b]odyParser`) or a split label literal ('an Authorization' + ': Bearer header'), both of which preserve the matched language and the emitted signal bytes exactly. No path or filename exemption was added."
+    },
+    {
+      "n": 7,
+      "truth": "## Shipped and every ## Traceability locator are found fence-aware through sectionSpan, start AND end (AC7)",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "All five locators D-08/D-13 name now call sectionSpan: lib/milestone-prune.mjs:206 (Traceability removal), :243 (## Shipped start AND end) and :254 (the append insertion point), lib/planning-files.mjs:235 (parseRequirements), :297 (setReqStatus) and :736 (insertReqRows). sectionSpan itself feeds a never-restarted fenceScanner over every line and returns both ends from one walk (planning-files.mjs:1531-1544). Seam behaviour, both halves of AC7, by named passing tests: `seam: a REQUIREMENTS.md whose sections are only fenced comes back byte-identical` (milestone-prune.test.mjs:729) asserts moved:[], created_shipped:false and a byte-identical file; `seam: with real sections below the fence, the row lands under the REAL ## Shipped` (:742) asserts the row lands after OLD-01 under the real heading with the fenced example untouched. Ran those plus `a fenced ## Shipped is not the section` (:473), `a document whose only ## Shipped is fenced gets a REAL section created` (:494) and `a fenced ## inside ## Shipped does not cut the append scan short` (:536) -> 6/6 pass. Unit fence rows for the three planning-files locators at planning-files.test.mjs:1710, :1714, :1720, :1752, :1757, :1796."
+    },
+    {
+      "n": 8,
+      "truth": "The merged tree's full suite passes",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "`node cadence-core/bin/test.mjs` on the merged phase-3 tree at 4d69457: tests 2357, pass 2357, fail 0, exit 0 - matching the SUMMARY's claimed count exactly. One full-suite run."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Unreachable configured tool nulls its slot",
+      "evidence": "Live fixture (pyproject [tool.ruff] + go.mod, ruff absent, no node_modules): lint null, source.lint null, warning names ruff and pyproject.toml, and `go vet ./...` was not substituted. planning.mjs:2645-2662; named test planning.test.mjs:5368 passes."
+    },
+    {
+      "k": 2,
+      "name": "npx-delegated typecheck resolves in this repo",
+      "evidence": "detect-commands --root . in /code/cadence -> typecheck 'npx tsc -p tsconfig.ci.json', source 'tsconfig.ci.json', with tsc absent from PATH and node_modules/.bin/tsc present. Delegated-tool split at planning.mjs:2622-2639, directory probe at lib/on-path.mjs:65-71. Known root-only limitation (ancestor node_modules) reproduced and conservative - it nulls, it never names an unreachable tool."
+    },
+    {
+      "k": 3,
+      "name": "detect-commands suite is machine-independent",
+      "evidence": "25/25 detect-commands rows pass on this machine with ruff/mypy/eslint/tsc/go all absent from PATH, and 25/25 again with executable stubs for all five prepended to PATH. Override is sentinel-gated and read by presence (planning.mjs:2613-2618)."
+    },
+    {
+      "k": 4,
+      "name": "risk-check accepts the worker-key grammar",
+      "evidence": "plan-key.test.mjs:180 walks refuse -> run ok:true -> refuse (risk-fire-missing) -> receipt -> ok:true for key '1-fix'; the record carries '1-fix' verbatim (:166). 16/16 pass. Live read-only `risk-check status --phase 3` on this repo answers ok:true, three plans recorded."
+    },
+    {
+      "k": 5,
+      "name": "One predicate behind both risk-check faces",
+      "evidence": "lib/plan-key.mjs:65 requirePlanKey is the only grammar; planning.mjs:192 imports it once and calls it at :3761, :3983 and :4157. Cross-face test plan-key.test.mjs:243 drives all 16 spellings through both CLI faces and asserts identical bad-args verdicts; passes."
+    },
+    {
+      "k": 6,
+      "name": "Risk detector stops matching itself",
+      "evidence": "Independent scanDiff probe: zero matches for both files under the repo's three surfaces and under all eight. Same probe against the 0e7844b blobs returns 6 and 4 categories, so the census row (risk-diff.test.mjs:1245) is a real falsifier. Detector reach unchanged - every edit is a one-character class or a split label with identical bytes."
+    },
+    {
+      "k": 7,
+      "name": "Fence-aware Shipped and Traceability locators",
+      "evidence": "sectionSpan at milestone-prune.mjs:206/:243/:254 and planning-files.mjs:235/:297/:736; both AC7 halves proven by milestone-prune.test.mjs:729 (fenced-only -> byte-identical, moved []) and :742 (real headings below the fence -> row archived under the real ## Shipped). 6/6 fence and census rows pass."
+    },
+    {
+      "k": 8,
+      "name": "Full suite passes on the merged tree",
+      "evidence": "node cadence-core/bin/test.mjs at 4d69457: 2357 pass, 0 fail, exit 0."
+    }
+  ],
+  "gaps": [],
+  "human_checks": []
+}
