@@ -7,17 +7,33 @@ ceremony exists inside the parallel opt-in branch and nowhere else.
 
 <step name="locate">
 Resolve the phase:
-- `$ARGUMENTS` gives a phase number, else run
-  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status` and
-  take `current` (on `ok:false`, relay its `reason` and `hint` and stop).
+- ALWAYS run
+  `node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" status`
+  (on `ok:false`, relay its `reason` and `hint` and stop). Unconditionally,
+  never under an "else" that `$ARGUMENTS` short-circuits: a phase number on the
+  command line must not skip the derivation, which is what the three bullets
+  below read.
   An `ok:true` carrying `cycle: "none"` with an empty `phases[]` is a
   derived closed milestone - `current` is legitimately null because no cycle
   is OPEN. Stop with "The milestone is closed - no active cycle.
   /cad-phase add opens the next one."
-  That phase's entry also lists its plan files
+- `$ARGUMENTS` gives a phase number, which selects that `phases[]` entry;
+  absent, take `current`. `--rerun` is the only other token it may carry -
+  parse it off beside the number. That phase's entry also lists its plan files
   (`PLAN.md`, or `PLAN-1.md`, `PLAN-2.md`, ... executed in numeric order).
 - Status `unplanned` / no plan files -> stop: "No plans for phase <N>.
   Run /cad-plan first."
+- DERIVED status `executed` or `complete`, and no `--rerun` -> stop: "Phase <N>
+  is already <status> - its plans are committed, and re-running would overwrite
+  the executor reports of the run that committed them. Run /cad-undo <N> first,
+  then /cad-execute <N>. To re-run over that record anyway: /cad-execute <N>
+  --rerun." Read the status from the `phases[]` DERIVATION and never from
+  `cursor.status` - `planning.mjs` states in as many words that the cursor is a
+  hint the derivation beats. `complete` is refused beside `executed` because it
+  re-runs identically and destroys the same evidence one status later. Stopping
+  HERE is the point: this is before the `git_guard` step, so before the
+  protected-branch guard, before the `phase_start` trace anchor, and before any
+  executor dispatch.
 
 Read the phase goal from ROADMAP.md (one line - the goal check and SUMMARY use
 it) and the config in one message - independent, so only a call that consumes a
