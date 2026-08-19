@@ -3,7 +3,9 @@
 Cadence's methodology descends from [GSD ("Get Shit Done")](https://github.com/open-gsd/gsd-core), and the rest is its own. GSD had the right loop buried inside an elephant, a mouse built to government standards, over a million words of it. I kept the loop and threw out the standards. This file records the measured distance between the two, so the lineage in [`DESIGN.md`](./DESIGN.md) rests on numbers, not adjectives.
 
 **Provenance.** Figures below are counted from GSD at commit `d010ea1` (2026-07-10)
-and Cadence at the same date. They are reproducible: clone both trees and re-run the
+and Cadence at the same date, except the Agents and Skills rows, whose
+Cadence cells were re-counted on 2026-08-19 so they agree with the counts
+`README.md` publishes. They are reproducible: clone both trees and re-run the
 counts (`find`/`wc` over `agents/`, `skills/`, `gsd-core/workflows/`, `*.md`).
 
 ## The distance
@@ -11,8 +13,8 @@ counts (`find`/`wc` over `agents/`, `skills/`, `gsd-core/workflows/`, `*.md`).
 | Surface | GSD (d010ea1) | Cadence (2026-07-10) | Retained |
 |---|---|---|---|
 | **Documentary mass (words)** | **1,113,812** | **33,621** | **~3%** |
-| Agents | 34 | 7 | 21% |
-| Skills | 71 | 22 | 31% |
+| Agents | 34 | 19 rung files (6 roles) | 56% |
+| Skills | 71 | 33 (27 user-invocable, 6 contract) | 46% |
 | Workflows | 114 | 16 | 14% |
 | References | 86 | 7 | 8% |
 | Commands | 71 | 0 (folded into skills) | — |
