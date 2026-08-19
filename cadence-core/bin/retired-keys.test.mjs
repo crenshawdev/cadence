@@ -123,3 +123,39 @@ test('a null or non-object config yields an empty list', () => {
   assert.deepEqual(retiredKeysIn(42), []);
   assert.deepEqual(retiredKeysIn('model.profile'), []);
 });
+
+// --- ARG-05: a prototype member is not a retirement ---------------------------
+
+test('every Object.prototype member reads as not-retired, never as a v2.0.0 removal', () => {
+  // RETIRED_KEYS is a plain frozen object, so a bare `RETIRED_KEYS[key]` answered
+  // any of these with Object.prototype itself - truthy, with `since`,
+  // `replacement` and `detail` all undefined - and `config.mjs check
+  // '__proto__=1'` reported `retired in v2.0.0: undefined`. That is a WRONG
+  // diagnostic rather than a missing one: it names a retirement that never
+  // happened and sends the user looking for a replacement.
+  //
+  // The set is WALKED rather than hand-listed (D-13): `__defineGetter__` and its
+  // three siblings sit beside the obvious `constructor` / `toString` / `valueOf`,
+  // and a hand-list is how the next member the language adds stops being covered.
+  const members = Object.getOwnPropertyNames(Object.prototype);
+  assert.ok(members.length >= 12, JSON.stringify(members));
+  for (const k of members) assert.equal(retiredKeyError(k), null, k);
+});
+
+test('the guard costs the vocabulary nothing: a real retirement still reports since, replacement and detail', () => {
+  // CONTEXT's flagged assumption, settled: `Object.hasOwn` changes nothing for a
+  // key that IS retired, because every row is an own property of the frozen
+  // literal. Checked on a row carrying all three fields at once - a non-default
+  // `since` would have read as v2.0.0, and a dropped `detail` as `undefined`.
+  const withReplacement = retiredKeyError('model.auto.escalate_on_failure');
+  assert.match(withReplacement, /^retired in v2\.0\.0: /);          // its own since
+  assert.match(withReplacement, /use "model\.escalate_on_failure" instead/);
+  assert.match(withReplacement, /honoured at every stakes level/);   // its own detail
+  assert.doesNotMatch(withReplacement, /undefined/);
+
+  // And a row whose `since` is NOT the v2.0.0 default, with no replacement.
+  const removed = retiredKeyError('workflow.subagent_timeout');
+  assert.match(removed, /^retired in v2\.7\.0: /);
+  assert.match(removed, /workflow\.max_plan_tasks/);                 // its own detail
+  assert.doesNotMatch(removed, /undefined/);
+});

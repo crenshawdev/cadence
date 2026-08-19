@@ -1293,3 +1293,48 @@ test('get: the repair costs a live key nothing - one named and the keyless read 
   assert.equal(all.json.values['stakes'], 'shipped');
   assert.equal(all.status, 0);
 });
+
+// --- ARG-05: the WRITE face stops fabricating a retirement --------------------
+
+test('check: every Object.prototype member is an unknown key, never a retirement', () => {
+  // Measured before the repair: `check '__proto__=1'` answered
+  // `retired in v2.0.0: undefined`, and so did `constructor=1`, `toString=1` and
+  // `hasOwnProperty=1`. A WRONG diagnostic rather than a missing one - it names
+  // a retirement that never happened. Both bare index reads in checkPairs
+  // produced it: `RETIRED_KEYS[key]` resolved to Object.prototype and won the
+  // first arm, and `SCHEMA[key]` would have reached checkValue as a "spec"
+  // carrying no `type`.
+  for (const key of PROTO_MEMBERS) {
+    const { status, json } = runStatus(['check', `${key}=1`]);
+    assert.equal(json.ok, false, `${key}: ${JSON.stringify(json)}`);
+    assert.equal(json.reason, 'invalid', key);
+    assert.deepEqual(json.detail, [{ key, error: 'unknown key' }], key);
+    assert.equal(status, 1, key);
+  }
+});
+
+test('check: a genuinely retired key still reports its own milestone and remediation', () => {
+  // The guard's cost, measured: none. The retirement vocabulary has to survive
+  // the fix, or a real rename now reads as the generic `unknown key` and the
+  // user is sent nowhere.
+  const r = run(['check', 'review.triggers.pre_ship.gate=x']);
+  assert.equal(r.ok, false);
+  assert.equal(r.detail[0].key, 'review.triggers.pre_ship.gate');
+  assert.match(r.detail[0].error, /^retired in v3\.2\.0: /);
+  assert.match(r.detail[0].error, /risk_surface/);
+  assert.doesNotMatch(r.detail[0].error, /undefined/);
+  assert.notEqual(r.detail[0].error, 'unknown key');
+});
+
+test('set: a prototype member is refused and nothing is written', () => {
+  const gpath = join(dir, 'proto-write.json');
+  for (const key of ['__proto__', 'constructor', 'toString']) {
+    const { status, json } = runStatus(['set', '--global', `${key}=1`], gpath);
+    assert.equal(json.ok, false, key);
+    assert.equal(json.reason, 'invalid', key);
+    assert.deepEqual(json.detail, [{ key, error: 'unknown key' }], key);
+    assert.equal(status, 1, key);
+    // --global auto-creates, so an unrefused pair would have left a file here.
+    assert.equal(existsSync(gpath), false, key);
+  }
+});

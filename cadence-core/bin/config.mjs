@@ -162,7 +162,13 @@ function checkPairs(tokens) {
     // read or write, so the refusal stays atomic.
     const retired = retiredKeyError(key);
     if (retired) { errors.push({ key, error: retired }); continue; }
-    const spec = SCHEMA[key];
+    // hasOwn, the third of the same guard (:142 in validate, :284 in get): a
+    // bare `SCHEMA[key]` answers `constructor` or any other Object.prototype
+    // member with a truthy "spec" carrying no `type`, which checkValue below
+    // reported as "unknown schema type undefined" instead of naming the key
+    // the schema does not hold. The retired lookup above carries its own half
+    // of this guard, inside retiredKeyError.
+    const spec = Object.hasOwn(SCHEMA, key) ? SCHEMA[key] : undefined;
     if (!spec) { errors.push({ key, error: 'unknown key' }); continue; }
     const value = parseToken(raw);
     const msg = checkValue(spec, value);
