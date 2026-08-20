@@ -304,7 +304,7 @@ test('R4: executor checkpoints at the floor suggest workflow.max_plan_tasks; oth
 // pure-render discipline intact.
 
 /** The resolution shape `planning.mjs`'s suggest arm passes in. */
-const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
 const RUNGS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const twoEmptyFires = (trigger, extra = {}) => Array.from(
   { length: MIN_FIRES_FOR_GATE_SUGGESTION },
@@ -321,7 +321,7 @@ test('SGT-01: R1s gate arm moves DOWN, prints the value a layer set, and propose
   assert.ok(s, JSON.stringify(out));
   assert.equal(s.direction, 'lower');
   assert.equal(s.current, 'blocking');
-  assert.equal(s.proposed, 'advisory', 'the target is one step down the ladder the caller passed');
+  assert.equal(s.proposed, 'deferred', 'the target is one step down the ladder the caller passed');
 });
 
 test('SGT-01: an unset gate names the level that decides it and carries NO proposed', () => {
@@ -845,7 +845,12 @@ test('SGT-01: `trace suggest` returns a direction, a current, and a proposed whe
     assert.ok(gate, JSON.stringify(keyed));
     assert.equal(gate.direction, 'lower');
     assert.equal(gate.current, 'blocking');
-    assert.equal(gate.proposed, 'advisory',
+    // `deferred`, not `advisory`: this arm reads the SHIPPED ladder in
+    // route-table.json, so it is the row that reddens if the gate this phase
+    // inserted is moved. Its position is the decision - a `blocking` gate whose
+    // fires keep coming back empty is proposed down to a mode that still stops
+    // the LAND, never to `advisory`, which stops nothing.
+    assert.equal(gate.proposed, 'deferred',
       'the gate arm prices its target one step down the ladder route-table.json states');
 
     const effort = keyed.find((s) => s.action === 'model.effort.cad-planner');

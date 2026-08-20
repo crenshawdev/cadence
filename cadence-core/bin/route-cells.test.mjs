@@ -11,7 +11,7 @@ import { cellIssues, declaredRoles, routableAgents, vocabularyIssues } from './l
 
 const LEVELS = ['solo', 'shipped', 'critical'];
 const TRIGGERS = ['plan', 'diff', 'risk_surface', 'phase_diff'];
-const GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
 const CATEGORIES = ['auth', 'migrations', 'billing', 'concurrency', 'destructive',
   'secrets', 'api_contract', 'untrusted_input'];
 const VOCAB = { levels: LEVELS, triggers: TRIGGERS, gates: GATES };
@@ -165,13 +165,13 @@ test('a verify value outside on/off is unknown-rung naming the level', () => {
   assert.match(hit.detail, /^shipped: verify "maybe"/);
 });
 
-test('a gate outside the four gate values is unknown-gate naming the cell', () => {
+test('a gate outside the five gate values is unknown-gate naming the cell', () => {
   const t = table();
   t.review.solo.diff = 'maybe';
   const hit = find(t, 'unknown-gate');
   assert.ok(hit, JSON.stringify(cellIssues(t, VOCAB)));
   assert.match(hit.detail, /solo\/diff/);
-  assert.match(hit.detail, /\[off, advisory, blocking, adjudicated\]/);
+  assert.match(hit.detail, /\[off, advisory, deferred, blocking, adjudicated\]/);
 });
 
 test('a review key that is not a schema trigger is unknown-trigger naming the cell', () => {
@@ -421,7 +421,7 @@ test('a drifted gates list is gate-vocabulary-drift naming both lists', () => {
   t.gates = ['off', 'advisory', 'blocking'];
   const hit = vFind(t, 'gate-vocabulary-drift');
   assert.ok(hit, JSON.stringify(vocabularyIssues(t, VOCAB_ARRAYS)));
-  assert.match(hit.detail, /off, advisory, blocking, adjudicated/);
+  assert.match(hit.detail, /off, advisory, deferred, blocking, adjudicated/);
 });
 
 test('an empty vocabulary checks nothing rather than failing everything', () => {

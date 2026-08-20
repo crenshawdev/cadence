@@ -1131,7 +1131,7 @@ test('a minimal (non-full-tree) fixture omitting optional inputs stays free of m
 function vocabTable() {
   const t = cellTable('cad-verifier');
   t.stakes_order = ['solo', 'shipped', 'critical'];
-  t.gates = ['off', 'advisory', 'blocking', 'adjudicated'];
+  t.gates = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
   return t;
 }
 
@@ -2069,7 +2069,7 @@ function gateRoot(triggers, review = FIXTURE_GRID) {
   };
   for (const [t, row] of Object.entries(triggers)) {
     keys[`review.triggers.${t}.gate`] = {
-      type: 'enum', values: ['off', 'advisory', 'blocking', 'adjudicated'],
+      type: 'enum', values: ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'],
       default: 'default' in row ? row.default : null,
       src: 'repo',
       purpose: 'purpose' in row ? row.purpose : fixturePurpose(t),

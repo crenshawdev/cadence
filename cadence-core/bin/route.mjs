@@ -123,7 +123,7 @@ const DEFAULTS = { stakes: 'shipped', escalate_on_failure: false,
 // an older or hand-edited route-table.json, or one injected through
 // CADENCE_ROUTE_TABLE - so a `"blockign"` typo would still reach the bundle
 // intact on the very input shape the check exists to cover.
-const DEFAULT_GATES = ['off', 'advisory', 'blocking', 'adjudicated'];
+const DEFAULT_GATES = ['off', 'advisory', 'deferred', 'blocking', 'adjudicated'];
 
 // The tier and effort vocabularies get the same fallback the gates do, and for
 // the same input shapes: an older or hand-edited route-table.json, or one

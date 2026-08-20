@@ -1148,7 +1148,7 @@ test('get: every unset gate answers null plus exactly one warning naming route.m
     assert.match(named[0], new RegExp(key.replace(/\./g, '\\.')));
     // D-07: the seam does not know the stakes level, so it must not answer for
     // one. A warning naming a gate would be the same defect pointed the other way.
-    assert.ok(!/\b(off|advisory|blocking|adjudicated)\b/.test(named[0]), named[0]);
+    assert.ok(!/\b(off|advisory|deferred|blocking|adjudicated)\b/.test(named[0]), named[0]);
   }
 });
 
@@ -1260,14 +1260,14 @@ test('check: null is still refused at the write face for a tier and an effort', 
 });
 
 test('check: null is still refused at the write face - the sentinel is not a value', () => {
-  // D-05: the `values` arrays stay four-membered, so `set` and `check` behave
+  // D-05: the `values` arrays are a closed enum, so `set` and `check` behave
   // byte-identically to before the default moved. `null` is the schema's way of
   // saying "nobody set one", never something a user writes.
   const r = run(['check', 'review.triggers.diff.gate=null']);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'invalid');
   assert.equal(r.detail[0].key, 'review.triggers.diff.gate');
-  assert.match(r.detail[0].error, /must be one of: off, advisory, blocking, adjudicated/);
+  assert.match(r.detail[0].error, /must be one of: off, advisory, deferred, blocking, adjudicated/);
 });
 
 // --- ARG-05: a prototype member is an unknown key at the READ face ------------
