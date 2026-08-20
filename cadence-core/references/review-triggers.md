@@ -302,12 +302,23 @@ set never does. Per backend:
 
 ### 5. Combine (review.mode)
 - `single` - use the first available reviewer only; its findings are the result.
-- `panel` - union all reviewers' findings (dedupe exact file+line+claim repeats).
+- `panel` - union all reviewers' findings, then dedupe exact file+line+claim
+  repeats.
 - `adjudicated` - all reviewers run independently, then YOU (the main model)
-  adjudicate: open the cited code, confirm or kill each finding, drop
-  false positives and overstatements, merge findings raised by more than one
-  reviewer (convergence = high confidence), and re-rank by grounded severity.
-  The adjudicated survivor list is the result.
+  adjudicate: open the cited code and confirm or kill EVERY finding raised, PER
+  RAISING VOICE, dropping false positives and overstatements and re-ranking by
+  grounded severity.
+
+RULE FIRST, MERGE AFTER, on both arms: the dedupe and the convergence merge that
+produce the survivor LIST run on the RULED set, never ahead of it. A merged
+finding has no raising voice, only a list, so merging first destroys the
+attribution before any record can hold it - and per-voice attribution is what
+makes a reviewer's individual hit rate countable, which is the measurable form
+of this project's claim that its controls are fallible machinery. Convergence
+still means high confidence and still ranks the survivor. What the gate acts on
+and what the user is shown do not change: the adjudicated survivor list, after
+the merge, is the result, it keeps its shape and its order, and
+`references/triage-gate.md` presents it as the same numbered multi-select.
 
 If `gate == "adjudicated"`, adjudicate regardless of `review.mode` (the gate is
 the stronger signal). Adjudication is the same discipline the panel-review skill
