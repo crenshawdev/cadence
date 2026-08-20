@@ -1,0 +1,71 @@
+{
+  "phase": "1",
+  "trigger": "plan",
+  "discriminator": "plan-1",
+  "round": 1,
+  "base": "3b06ae4cef8aeac3e2097d5f056516ec071de5fa",
+  "head": "e62a9c76b96aa20c048900395bf1655be6b1158f",
+  "base_id": "3b06ae4cef8aeac3e2097d5f056516ec071de5fa",
+  "head_id": "e62a9c76b96aa20c048900395bf1655be6b1158f",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 126,
+      "severity": "medium",
+      "claim": "Task 3 contains mutually incompatible editing instructions: it says no line in this section may use the hyphen/backticked-token/hyphen form, while its verification requires exactly eight existing category bullets in that same form.",
+      "failure_scenario": "An executor following the literal prohibition removes or rewrites the eight category bullets, causing CST-02 to stop finding the required eight categories. Retaining them instead violates the task's stated rail, so the task cannot be completed unambiguously.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": ".planning/phases/1/PLAN.md",
+        "line": 126,
+        "note": "Overstated at medium. The rail closes with \"write those instructions as sentences, not as that bullet form\", which scopes the prohibition to the lines being WRITTEN, and the same task Verify explicitly requires the eight existing bullets retained. An executor would have to ignore both to delete them. Real but low - the opening clause should read \"no NEW line\". Recorded in .planning/CAPTURE.md, not fixed: the blocking arm fixes blocker/high only."
+      },
+      "base_id": "3b06ae4cef8aeac3e2097d5f056516ec071de5fa",
+      "head_id": "e62a9c76b96aa20c048900395bf1655be6b1158f"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 36,
+      "severity": "high",
+      "claim": "The plan's required truth that the first option is scanTree's `recommended` set in either inconclusive/evidenced arm conflicts with Task 1's answered-set rule and Task 4's expected rerun transcript.",
+      "failure_scenario": "With an existing `['secrets']` answer and Stripe evidence, Task 1 explicitly makes the first option `['billing','secrets']`, while `scanTree.recommended` remains all eight. In the no-evidence rerun Task 4 likewise labels the current three-category set recommended while separately offering all eight. Thus the UI can label a non-`recommended` set as recommended, contradicting the roadmap diagnosis and leaving the meaning Task 5 is supposed to pin split between the envelope field and the displayed choice.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "e62a9c76b96aa20c048900395bf1655be6b1158f",
+      "base_id": "3b06ae4cef8aeac3e2097d5f056516ec071de5fa",
+      "head_id": "e62a9c76b96aa20c048900395bf1655be6b1158f"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": ".planning/phases/1/PLAN.md",
+      "line": 160,
+      "severity": "medium",
+      "claim": "No verification proves the required evidence-gap rendering for `/cad-config --surfaces`: naming every evidenced category absent from the current answer.",
+      "failure_scenario": "Task 4's only live scenario uses an answered three-category set with an inconclusive scan and zero evidenced categories. It will pass if the workflow entirely omits the required missing-category callout. Task 2 proves only that the CLI option set is merged; it does not prove the `/cad-config` rendering shows the answered set beside evidence or identifies uncovered evidenced categories on an answered, evidenced rerun.",
+      "ruling": "downgraded",
+      "convergent": false,
+      "counter_evidence": {
+        "file": ".planning/phases/1/PLAN.md",
+        "line": 160,
+        "note": "Confirmed as raised, at medium - the gap is real: the Must-be-true bullet and task 4 Action both require naming every evidenced category the answer does not cover, and task 4 only live scenario is this repo (inconclusive scan, zero evidenced), so it passes with the callout absent. Ruled downgraded rather than survived because the blocking arm fixes blocker/high only and no fix commit exists for it. Recorded in .planning/CAPTURE.md as a phase-1 todo so /cad-verify re-asks it."
+      },
+      "base_id": "3b06ae4cef8aeac3e2097d5f056516ec071de5fa",
+      "head_id": "e62a9c76b96aa20c048900395bf1655be6b1158f"
+    }
+  ]
+}
