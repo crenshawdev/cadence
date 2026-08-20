@@ -49,7 +49,7 @@ phase or visibly `unpicked` in `/cad-audit`.
 
 ## Phases
 
-- [ ] **Phase 1: The question you cannot ask again** - the risk-surface interview gains a deliberate entry point through `/cad-config`, and its menu stops offering the same set twice
+- [x] **Phase 1: The question you cannot ask again** - the risk-surface interview gains a deliberate entry point through `/cad-config`, and its menu stops offering the same set twice
 - [ ] **Phase 2: Blocking that blocks the land** - a third gate mode `deferred` moves the block from the dispatch boundary to the land boundary, so a phase finishes unattended and `/cad-land` refuses until the queue is triaged
 - [ ] **Phase 3: Ceremony the change pays for** - `stakes` becomes the floor rather than the level, and the phase's own declared files raise it
 
