@@ -4658,7 +4658,10 @@ function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
     const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
     return tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head));
   });
-  return hits.length === 1 ? join(pdir, hits[0]) : '';
+  // Through `regular` like the per-plan arm above: the glob found a NAME, and a
+  // symlink wearing that name is followed out of the tree by every reader after
+  // it, which is the disposition this function already declares.
+  return hits.length === 1 ? regular(hits[0]) : '';
 }
 
 /**
