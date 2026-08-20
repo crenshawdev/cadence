@@ -35,6 +35,7 @@ The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 
 - [x] **Phase 1: The re-run that overwrites its own evidence** - `/cad-execute` refuses a phase that already executed, and a plan's per-task report becomes run-scoped so a second run cannot destroy the first run's record
 - [ ] **Phase 2: The adjudication record nobody can recount** - a gate's per-finding rulings become an audit-grade `adjudication.json` beside the report, so survivor counts are recomputable and a refutation can be checked against the code it refuted
+- [ ] **Phase 3: The machinery that still assumes one report** - the risk gate stops deadlocking on a zero-commit range, and `lease-check`'s report exemption stops being pinned to the unrotated filename
 
 ## Phase Details
 
@@ -167,3 +168,69 @@ synthesized into one.
    exists, and reports a fire with no record as unrecorded - never narrating a
    count it cannot recompute, and never synthesizing entries for phases predating
    the format.
+
+### Phase 3: The machinery that still assumes one report
+**Goal:** Phase 1 made rotation and the guarded re-run real. Two places around
+them still assume the pre-rotation shape: the risk gate cannot tell an EMPTY
+committed range from an unjudged one and deadlocks on it, and `lease-check`'s
+single report exemption is a byte-equality test against `plan-<k>.md`, so the
+rotated sibling it now has to coexist with reads as a lease violation.
+**Depends on:** Phase 1
+**Requirements:** (seeded at /cad-context)
+
+Both were found by running phase 1's own acceptance, not by reading the code,
+and neither is reachable before phase 1 shipped.
+
+The deadlock, observed live on 2026-08-20. `/cad-execute 1 --rerun` correctly
+re-made nothing - all seven tasks were already satisfied - so the committed
+range was empty. `risk-check run --base ef17e85 --head HEAD` answered
+`checked:false, inconclusive:true, matches:[]`, because `base_id` and `head_id`
+are the same commit. `execute.md` reads `inconclusive: true` as a FIRE, on the
+one gate that is `blocking` at every stakes level, so a blocking cross-model
+review is demanded of a diff with nothing in it. `risk-check status` then
+refuses `risk-record-missing`, since an inconclusive record does not satisfy it,
+and `execute.md` says in as many words that the plan is not reported done while
+that call refuses. There is no arm out: the run needed a user override to
+finish. The widening rule that produced this is right - an unjudged range is not
+a cleared one - but a range with zero commits is not unjudged, it is empty, and
+those two states currently share one answer.
+
+The lease exemption, at `cadence-core/bin/planning.mjs:2449` and `:2463`.
+`cmdLeaseCheck` builds `reportFile` as `<pdir>/reports/plan-<k>.md` and filters
+the staged set with `p !== reportFile` - exactly one exemption, by byte
+equality. That was correct when a plan had exactly one report. After phase 1 an
+executor may hold `plan-<k>.md` and `plan-<k>.<n>.md` at once, and staging the
+rotated one during a task commit reports `undeclared-files` - the executor
+blocked by a gate for obeying its own contract. Phase 1's SUMMARY recorded this
+as deliberately not-reached and named it "the one place the two halves could
+later collide". Rotation is now live on the sequential path, so it is reachable.
+
+The exemption must not simply widen to the directory: `plan-<k>-risk.diff` and
+`plan-<k>-risk-task-<n>.diff` live there too, and a `risk_surface` checkpoint
+deliberately leaves flagged changes staged. An exemption that swallowed those
+would let a blocking gate's own evidence ride into a task commit - the failure
+`worktree-executor.md`'s bounded `git add` was just fixed to prevent.
+
+**Success Criteria:**
+
+1. `risk-check run` over a range whose `base_id` equals its `head_id` answers a
+   state distinguishable from `inconclusive` - an empty range and an unjudged
+   range no longer share one answer - and a test pins both cases.
+2. `risk-check status` accepts that empty-range state and returns `ok:true`,
+   where today it refuses `risk-record-missing`; reverting the fix reddens the
+   test.
+3. `/cad-execute <N> --rerun` against a phase whose tasks are all already
+   satisfied runs to completion with no user override of a blocking gate,
+   demonstrated on a live run.
+4. An unjudged non-empty range still fires the gate: the widening rule is
+   unchanged for every range that actually contains commits, proven by a test
+   that keeps `inconclusive: true` firing there.
+5. `lease-check` exempts a rotated report - staging `plan-<k>.<n>.md` alongside
+   `plan-<k>.md` during a task commit returns no `undeclared-files` - and the
+   test fails against the current byte-equality exemption.
+6. The exemption stays bounded: staging `plan-<k>-risk.diff` or
+   `plan-<k>-risk-task-<n>.diff` still reports `undeclared-files`, so a blocking
+   gate's flagged evidence cannot ride into a task commit.
+7. `node cadence-core/bin/self-verify.mjs --root .` returns `ok:true` with an
+   empty `problems` array, with any weight-budget row re-pinned in the same
+   commit as the prose edit that moved it.
