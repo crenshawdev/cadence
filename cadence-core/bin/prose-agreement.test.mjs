@@ -1814,3 +1814,96 @@ test('IVW-01: the prose and scanTree state one `recommended`, and only the reaso
     /the evidenced scan recommends 7/,
     'a recommendation missing a category passes this check');
 });
+
+// --- IVW-01: the ask-user rendering contract, at BOTH interview sites ---------
+//
+// Nothing structural enforces how a model renders a question. The seam states
+// three binding rules for a structured choice - the option cap per question,
+// the recommended option first and labelled, and that the label is a display
+// convention and never a pre-selection - and the two sites that ask the
+// risk-surface question restate them, because a workflow that pointed at
+// seams.md and stopped would leave the rules a step away at the moment the
+// question is put. Restatement is what makes them droppable one site at a
+// time, silently, so THIS check is the enforcement.
+//
+// The cap is read off seams.md rather than written here, so raising the seam's
+// cap moves both sites' requirement and the builder's ceiling together instead
+// of leaving three numbers to drift.
+
+test('IVW-01: both risk-surface interview sites carry the ask-user rules, and the builder holds the cap', () => {
+  const section = (text, heading, where) => {
+    const after = text.split(heading)[1];
+    assert.ok(after, `${where}: no ${heading} section`);
+    return after.split(/\n## /)[0];
+  };
+
+  const askUser = section(doc('cadence-core', 'references', 'seams.md'),
+    '## Seam: ask-user', 'references/seams.md');
+
+  const CAP = /at most (\w+) options per question/;
+  // Flattened: every one of these sentences wraps, and a regex over raw lines
+  // would read a rewrap as a deleted rule.
+  const capStated = flat(askUser).match(CAP);
+  assert.ok(capStated, 'references/seams.md `## Seam: ask-user`: no option cap per question');
+  const cap = countWord(capStated[1], 'references/seams.md `## Seam: ask-user`');
+
+  // Each rule as the CLAIM it makes, never the sentence shape around it: these
+  // are three prose surfaces with no stated grammar, and a rewrap that changed
+  // no fact must stay green (self-verify.mjs:927).
+  const RULES = [
+    { id: 'the option cap per question', re: CAP, cap: true },
+    { id: 'the recommended option FIRST and labelled `(recommended)`',
+      re: /\bfirst\b[^.]*`\(recommended\)`/i },
+    { id: 'the clause that the label is a display convention, never a pre-selection',
+      re: /never a pre-selection/i },
+    { id: 'the clause that the seam still blocks', re: /the seam still blocks/i },
+  ];
+
+  const SITES = [
+    { where: 'references/seams.md `## Seam: ask-user`', text: askUser },
+    {
+      where: 'references/review-triggers.md `## risk_surface detection`',
+      text: section(doc('cadence-core', 'references', 'review-triggers.md'),
+        '## risk_surface detection', 'references/review-triggers.md'),
+    },
+    {
+      where: 'workflows/config.md `## Risk surfaces (`--surfaces`)`',
+      text: section(doc('cadence-core', 'workflows', 'config.md'),
+        '## Risk surfaces', 'workflows/config.md'),
+    },
+  ];
+
+  for (const site of SITES) {
+    const flatText = flat(site.text);
+    for (const rule of RULES) {
+      const found = flatText.match(rule.re);
+      assert.ok(found, `${site.where}: dropped ${rule.id}`);
+      if (rule.cap) {
+        assert.equal(countWord(found[1], site.where), cap,
+          `${site.where} states a cap of ${found[1]} options per question, seams.md states ${cap}`);
+      }
+    }
+  }
+
+  // The code side of the same cap. A site can render at most what the builder
+  // hands it, so a candidate list that grew past the cap would break the rule
+  // above at a site that obeyed it word for word.
+  const ALL_SIGNALS = {
+    dependencies: ['express', 'stripe', 'prisma', 'passport'],
+    dirs: ['auth', 'migrations', 'api', 'workers'],
+    extensions: ['.sql'],
+    files: ['openapi.yaml'],
+  };
+  const CASES = [
+    ['an inconclusive scan, nobody answered', scanTree({}), []],
+    ['an evidenced scan, nobody answered', scanTree(ALL_SIGNALS), []],
+    ['an inconclusive scan, already answered', scanTree({}), ['secrets', 'destructive']],
+    ['an evidenced scan, already answered', scanTree(ALL_SIGNALS), ['secrets', 'destructive']],
+    ['an evidenced scan, everything already answered', scanTree(ALL_SIGNALS), [...CATEGORIES]],
+  ];
+  for (const [label, scan, answered] of CASES) {
+    const options = interviewOptions(scan, answered);
+    assert.ok(options.length >= 1 && options.length <= cap,
+      `${label}: the builder returned ${options.length} options against the seam's cap of ${cap}`);
+  }
+});
