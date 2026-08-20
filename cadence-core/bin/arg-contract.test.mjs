@@ -136,7 +136,8 @@ test('subcommandKey: the words a script was invoked with, resolved to its table 
   // the same key for a spelling it finds in a workflow, and an adopting
   // dispatch has to reach the same row for the same words.
   const ROWS = [
-    [['cursor', 'set'], 'cursor set', 'the five two-word families consume their second word'],
+    [['cursor', 'set'], 'cursor set', 'the six two-word families consume their second word'],
+    [['deferred', 'record'], 'deferred record', 'the sixth family: the deferred queue takes three operations'],
     [['trace', 'append'], 'trace append', 'the same, on the family with the most rows'],
     [['uat', 'record'], 'uat record', 'the same'],
     [['risk-check', 'run'], 'risk-check run', 'a hyphenated first word is still one word'],
@@ -294,7 +295,7 @@ test('every flag in every row declares a complete grammar', () => {
     }
   }
   // The walk reached the whole table, so no arm above is vacuous.
-  assert.equal(entries, 157, `the table declares ${entries} flag entries`);
+  assert.equal(entries, 164, `the table declares ${entries} flag entries`);
   assert.equal(Object.keys(CONTRACTS).length, 16, 'one row per top-level bin script');
 });
 

@@ -322,7 +322,7 @@ export function requireFlag(argv, flag, spec) {
 // that resolves a spelling it finds in a workflow; they live HERE because an
 // adopting dispatch has to resolve the SAME key to find its row, and two
 // spellings of one rule is the drift ARG-06 exists to end (D-06).
-const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
+const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check', 'deferred']);
 
 /**
  * Resolve a script's leading positional WORDS to the subcommand KEY its table
@@ -331,7 +331,7 @@ const TWO_WORD = new Set(['cursor', 'uat', 'renumber', 'trace', 'risk-check']);
  * The BARE form - no words at all, or a first word that is really a flag -
  * resolves to the `''` key, which is what stops a reader taking a first flag
  * for a subcommand: `weight.mjs --root <path>` reported `unknown-subcommand`
- * until that arm existed. A second word is consumed ONLY for the five
+ * until that arm existed. A second word is consumed ONLY for the six
  * two-word families, so `status --dir` keeps resolving to `status` and leaves
  * `--dir` to be read as a flag.
  *
@@ -658,6 +658,26 @@ export const CONTRACTS = {
     // exists to make durable. Optional, defaulting to 1, so an ordinary fire
     // keeps the sibling REVIEW file's exact name.
     adjudication: {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+    },
+    // THE QUEUE MEMBER a gate resolved `deferred` leaves beside that same
+    // REVIEW file: the reviewer ran, the findings are on disk, and nothing has
+    // ruled on them yet. Same flags as `adjudication` above and for the same
+    // reasons, because both name the same fire - `--payload` is the reviewer's
+    // own returned object as a FILE rather than inline JSON, `--base`/`--head`
+    // are both required so the stored ids are a range an auditor can check out,
+    // and `--round` keeps a re-arm's member off round one's file.
+    //
+    // TWO WORDS, unlike `adjudication`: the queue takes three operations
+    // (`record`, then `list` and `carry`), which is the `risk-check run|status`
+    // precedent for widening `TWO_WORD` rather than the single-operation one.
+    'deferred record': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },

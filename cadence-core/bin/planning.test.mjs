@@ -7125,3 +7125,136 @@ test('risk-check status: the acceptance is FIRE_RECEIPTS membership, not any out
   assert.equal(r.plans[0].state, 'unfired');
   assert.match(r.hint, /deferral/, 'the hint no longer names the receipt vocabulary it demands');
 });
+
+// --- deferred record: the queue member a `deferred` gate leaves (D-01) -------
+//
+// The I/O half of lib/deferred-queue.mjs, the way the block above is the I/O
+// half of lib/adjudication-record.mjs: the grammar is asserted in
+// deferred-queue.test.mjs, and what a repository is needed for is asserted
+// here - the resolved ids, the refusal to overwrite, where the file lands, and
+// that no adjudication record appears beside it.
+
+/** Run the queue seam with cwd INSIDE the repo - `resolveRange` asks git about
+ * the cwd, exactly as `adjRun` above needs. */
+function defRun(repo, dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'deferred', 'record', ...args],
+      { encoding: 'utf8', cwd: repo });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+/** The reviewer's returned object, which IS this seam's payload. */
+const defPayload = (over) => ({
+  findings: [{
+    file: 'src.js',
+    line: 1,
+    severity: 'high',
+    claim: 'the "x" binding is reassigned, so C:\\tmp is read twice',
+    failure_scenario: 'a second reader sees 1 where the first saw 2',
+    ...over,
+  }],
+});
+
+/** Every file under a phase directory, sorted - both stems, so a row can say
+ * what did NOT appear as well as what did. */
+const phaseFiles = (dir, phase = 2) =>
+  readdirSync(join(dir, 'phases', String(phase))).sort();
+
+test('deferred record: the member lands beside the sibling REVIEW discriminator', () => {
+  const { repo, dir, baseFull, headFull, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  const r = defRun(repo, dir, ['--phase', '2', '--trigger', 'diff',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.record, 'phases/2/DEFERRED-diff-plan-1.json');
+  assert.equal(r.round, 1);
+  assert.equal(r.findings, 1);
+
+  // NO adjudication record, and not by convention: `RULINGS` is frozen at three
+  // and a finding with no ruling is a refusal, so this seam has no way to write
+  // one (D-09).
+  assert.deepEqual(phaseFiles(dir), ['DEFERRED-diff-plan-1.json']);
+
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  assert.equal(rec.trigger, 'diff');
+  assert.equal(rec.discriminator, 'plan-1');
+  assert.equal(rec.round, 1);
+  // RESOLVED ids, never the caller's spelling: the member is read at land time,
+  // in another session, where `HEAD` names a different commit.
+  assert.equal(rec.base, base);
+  assert.equal(rec.head, 'HEAD');
+  assert.equal(rec.base_id, baseFull);
+  assert.equal(rec.head_id, headFull);
+  // VERBATIM, quoting and backslash included - the whole reason the payload is
+  // a file. `/cad-milestone` deletes the sibling REVIEW file, so a member that
+  // stored a COUNT would name a number nobody could triage.
+  assert.deepEqual(rec.findings, defPayload().findings);
+});
+
+test('deferred record: a second call refuses instead of overwriting the queue member', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  const args = ['--phase', '2', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD', '--payload', payload];
+  assert.equal(defRun(repo, dir, args).ok, true);
+
+  const second = defRun(repo, dir, args);
+  assert.equal(second.ok, false, JSON.stringify(second));
+  assert.equal(second.reason, 'record-exists');
+  assert.match(second.hint, /--round 2/);
+  // Round 2 lands BESIDE round 1, never on it - the re-arm's member is what the
+  // land refusal is still holding.
+  const rearm = defRun(repo, dir, [...args, '--round', '2']);
+  assert.equal(rearm.ok, true, JSON.stringify(rearm));
+  assert.deepEqual(phaseFiles(dir),
+    ['DEFERRED-diff-plan-1-r2.json', 'DEFERRED-diff-plan-1.json']);
+});
+
+test('deferred record: --trigger and --discriminator are refused by the FILENAME rule', () => {
+  // Both reach a filename, and `milestone-prune --label` is the precedent for
+  // refusing rather than sanitizing (VAL-01): a sanitized token writes a member
+  // under a name the caller did not choose, which is the same class of answer
+  // about something nobody asked for.
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  for (const [flag, bad] of [['--trigger', '../../etc'], ['--discriminator', '.'],
+    ['--trigger', '-rf'], ['--discriminator', 'plan 1']]) {
+    const args = { '--trigger': 'diff', '--discriminator': 'plan-1', [flag]: bad };
+    const r = defRun(repo, dir, ['--phase', '2',
+      '--trigger', args['--trigger'], '--discriminator', args['--discriminator'],
+      '--base', base, '--head', 'HEAD', '--payload', payload]);
+    assert.equal(r.ok, false, `${flag}=${bad}: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /reaches a FILENAME/);
+    assert.match(r.detail, /letters, digits, _ and -/);
+    assert.deepEqual(phaseFiles(dir), [], 'a refused call wrote something anyway');
+  }
+});
+
+test('deferred record: a malformed finding is refused in buildEntries own words', () => {
+  const { repo, dir, base } = adjRepo();
+  for (const [over, shape] of [[{ line: 0 }, /\.line must be an integer of at least 1$/],
+    [{ nope: true }, /carries an unknown key: nope$/]]) {
+    const payload = adjPayloadFile(repo, defPayload(over), `payload-${Object.keys(over)[0]}.json`);
+    const r = defRun(repo, dir, ['--phase', '2', '--trigger', 'diff',
+      '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.reason, 'bad-payload');
+    assert.match(r.detail, shape);
+    assert.deepEqual(phaseFiles(dir), []);
+  }
+});
+
+test('deferred record: an absent phase directory is refused, never minted', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  const r = defRun(repo, dir, ['--phase', '7', '--trigger', 'diff',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.equal(existsSync(join(dir, 'phases', '7')), false,
+    'the seam records a fire that HAPPENED - a mistyped flag must not mint a phase directory');
+});
