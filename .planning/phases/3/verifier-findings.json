@@ -1,0 +1,122 @@
+{
+  "status": "gaps",
+  "score": "7/9",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "risk-check run over a range whose DIFF BODY is empty writes a completed check - checked:true, inconclusive:false, matches:[], empty:true - decided from the body and not from base_id === head_id, while a diff read that FAILED still writes checked:false, inconclusive:true.",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/risk-diff.mjs:321 (non-string body keeps checked:false, empty:false), :328 (string body that trims to nothing is checked:true, empty:true), :372 (empty:false on the scanned return, so ABSENCE marks a pre-split record); cadence-core/bin/planning.mjs:4043 (record) and :4057 (envelope) both carry scan.empty. Behaviour observed through the real CLI: `node --test cadence-core/bin/risk-diff.test.mjs` 74/74, naming `risk-check run: a SAME-COMMIT range is a completed empty check, not an unchecked one`, `risk-check run: a REVERT PAIR is empty too - the ids differ and the net diff does not` (asserts base_id !== head_id), and `risk-check run: an unreadable range is ok:false, and STILL leaves its record`. Mutation in a scratch copy (collapsing :328 back to checked:false, inconclusive:true, empty:false) reddens exactly 4 rows including both of the above; restored."
+    },
+    {
+      "n": 2,
+      "truth": "risk-check status admits the empty record through the EXISTING `recorded` state (no fifth state name, no new fire clause), and a record written under the pre-fix shape does not read as empty.",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/planning.mjs:4370 `empty: e.empty === true` is the only reader change; the `usable`/`fired`/`offending` predicates are untouched in the phase diff. `risk-check status: an EMPTY committed range is `recorded`, not `risk-record-missing`` (risk-diff.test.mjs:572-599) drives the SEAM - it runs `risk-check run` over repoFixture(FROZEN_PHASE_1) and then `risk-check status --phase 1`, asserting state `recorded`, records[0].empty true and missing undefined. The mutation of truth 1 reddens exactly this row, so AC2's \"reverting the run-side fix reddens the test\" clause is observed, not asserted. `risk-check status: a PRE-FIX empty-range record still refuses - an absent flag is not empty` (:601-615) pins D-03 with state `unchecked` and reason `risk-record-missing`."
+    },
+    {
+      "n": 3,
+      "truth": "/cad-execute <N> --rerun against a phase whose tasks are all already satisfied runs to completion with no user override of a blocking gate.",
+      "status": "UNCERTAIN",
+      "uat_item": 3,
+      "evidence": "No commit in dc4c4b1..HEAD can evidence this. The seam halves it depends on are verified (truths 1 and 2), and the workflow spelling the criterion names is confirmed shipped - skills/cad-execute/SKILL.md carries `argument-hint: \"[phase number] [--rerun]\"` and cadence-core/workflows/execute.md:310 calls `risk-check status --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD` - but the end-to-end run itself is unobserved."
+    },
+    {
+      "n": 4,
+      "truth": "An unjudged NON-empty range is untouched: a range that contains commits but cannot be judged still answers inconclusive:true and still fires, and a failed read still fails to satisfy the record half.",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "parseDiff's `hunks === 0` arm is unchanged in the phase diff and :372 keeps `inconclusive: unreadable, empty: false`. Green rows in the same run: `a binary-only range is inconclusive, never collapsed into a clean answer`, `a gitlink bump is inconclusive: git emitted a hunk, the nested code is not in it`, `risk-check status: an INCONCLUSIVE record satisfies the RECORD half, with the flag on the row`, `risk-check status: a record whose git read FAILED is not a check, and does not satisfy`. No prose control-flow edit exists to change the fire rule: `git diff --stat dc4c4b1..HEAD` lists no file under cadence-core/workflows/ or references/ (D-05 held)."
+    },
+    {
+      "n": 5,
+      "truth": "lease-check exempts a rotated report staged beside the canonical one, and the exemption is a grammar consulted from lib/report-rotation.mjs rather than a second regex.",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "cadence-core/bin/planning.mjs:2472-2477 (`reportsDir` via the same repoRel/join construction, `isOwnReport` requiring a direct child and `isReportName(k, name)`), :2491 (`staged.filter((p) => !isOwnReport(p) ...)`), import at :190. `lease-check: the ROTATED report is exempt too, beside the canonical one` (planning.test.mjs:5618-5640) spawns the real CLI: plan-1.md + plan-1.1.md is ok:true with staged still 2 (D-09), and plan-1.12.md too. Mutation in a scratch copy reverting :2491 to `p !== repoRel(top, join(pdir, 'reports', `plan-${k}.md`))` fails exactly that row (426/427); restored."
+    },
+    {
+      "n": 6,
+      "truth": "The exemption stays bounded - the risk diffs, another plan's report, plan-11.md, a case variant and a nested path all stay undeclared-files.",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "`lease-check: the widened exemption is still THIS plan's, not the directory's` (planning.test.mjs:5642-5661) loops plan-2.md, plan-11.md, plan-1-risk.diff, plan-1-risk-task-2.diff, PLAN-1.1.MD and old/plan-1.1.md, asserting ok:false, reason undeclared-files and the exact named path for each. Byte-exactness is real, not incidental: cadence-core/bin/lib/report-rotation.mjs:128 uses `new RegExp(rotatedSource(k))` with no 'i', and a scratch mutation adding 'i' (plus toLowerCase on the canonical arm) fails `isReportName: byte-exact on case, unlike the rename scan above it` AND the lease row above; restored. The directory half is load-bearing too - isOwnReport rejects any remaining '/' (planning.mjs:2475), and repoRel normalises separators to '/' (:2284)."
+    },
+    {
+      "n": 7,
+      "truth": "self-verify is clean and the rotated-name grammar has exactly one statement, enforced mechanically rather than by convention.",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` -> {\"ok\":true, ... \"problems\":[]} across all 25 checks. `npx tsc -p tsconfig.ci.json` exits 0. The grammar is stated once at cadence-core/bin/lib/report-rotation.mjs:99 and consumed at :128 and :168; `grep -n \"1-9\\]\\[0-9\\]\\*\" cadence-core/bin/planning.mjs` returns nothing, so cmdLeaseCheck carries no second regex. The census row (helper-census.test.mjs:148) keys on the pattern SOURCE: pasting that RegExp construction into planning.mjs in a scratch copy fails `exactly one definition of the rotated-report name grammar (rotatedSource / isReportName)` with `found: ['lib/report-rotation.mjs (x1)', 'planning.mjs (x1)']`; restored."
+    },
+    {
+      "n": 8,
+      "truth": "A diff driver or textconv in the reader's own git config cannot present a risky range as an empty one.",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "cadence-core/bin/planning.mjs:3996 reads the range as `git -C <top> diff --no-ext-diff --no-textconv <base> <head> --`. `risk-check run: a diff DRIVER cannot turn a risky range into a completed EMPTY check` (risk-diff.test.mjs:361-396) builds a real repo with a checked-in `.gitattributes` `deploy.sh diff=silent` bound to `diff.silent.command=/bin/true`, asserts the plain `git diff` really does emit zero bytes, then asserts the seam answers empty:false with matches ['destructive'] on BOTH the envelope and the trace record. Scratch mutation dropping the two flags fails exactly that row (73/74); restored."
+    },
+    {
+      "n": 9,
+      "truth": "SUMMARY's deviation claim that the phase's own risk_surface fire is settled - \"gate_pass recorded, risk-check status is ok:true\" - holds for every matched range the phase recorded.",
+      "status": "FAILED",
+      "uat_item": null,
+      "evidence": "It holds only under the per-plan spelling. `node cadence-core/bin/planning.mjs risk-check status --phase 3 --plan 1 --base dc4c4b1 --head f5efcb4` -> ok:true, but the phase-wide `risk-check status --phase 3` -> {\"ok\":false,\"reason\":\"risk-fire-missing\",\"state\":\"unfired\",\"missing\":[\"1\"]}. Two matched records exist under corr 3-dc4c4b1 (head_id 31c2085 and head_id f5efcb4, both matches:['destructive']). Only the round-2 gate_pass carries a settling identity (sha f5efcb4, base dc4c4b1); the round-1 `rearm` receipt was written with sha 95ba7b2 - the pre-amend fix commit, `git merge-base --is-ancestor 95ba7b2 HEAD` says NOT-ancestor - not the reviewed head 31c2085, so settledBy (planning.mjs:4470-4478, both ends required) settles nothing for that record."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "risk-check run records an empty range as a completed check",
+      "evidence": "risk-diff.mjs:328 splits the empty-body arm to checked:true, inconclusive:false, matches:[], empty:true while :321 keeps the unreadable arm at checked:false; planning.mjs:4043/:4057 carry it onto both the trace record and the envelope. risk-diff.test.mjs 74/74 through the real CLI, including the same-commit row, the revert-pair row that asserts base_id !== head_id, and the unreadable-range row. Collapsing the split in a scratch copy reddens 4 rows."
+    },
+    {
+      "k": 2,
+      "name": "risk-check status accepts the empty record as recorded",
+      "evidence": "planning.mjs:4370 reads `empty: e.empty === true` and nothing else changed - no fifth state, no new fire clause. The end-to-end row (risk-diff.test.mjs:572) runs the seam then asserts state `recorded`, missing undefined; the scratch revert of the run-side split fails exactly that row. The pre-fix-shape row (:601) still refuses risk-record-missing with state `unchecked`."
+    },
+    {
+      "k": 4,
+      "name": "An unjudged non-empty range still fires the gate",
+      "evidence": "parseDiff's hunks===0 arm untouched; risk-diff.mjs:372 keeps inconclusive:unreadable, empty:false. Binary-only, gitlink, INCONCLUSIVE-satisfies-the-record-half and failed-read rows all green in the same 74/74 run. No workflows/ or references/ file appears in `git diff --stat dc4c4b1..HEAD`, so the prose fire rule is unchanged (D-05)."
+    },
+    {
+      "k": 5,
+      "name": "lease-check exempts a rotated report",
+      "evidence": "planning.mjs:2472-2477 + :2491 replace byte equality with \"directly in this plan's reports/ AND isReportName(k, name)\". planning.test.mjs:5618 spawns the CLI: plan-1.md + plan-1.1.md is ok:true, staged still 2; plan-1.12.md too. Reverting to `p !== reportFile` in a scratch copy fails exactly that row."
+    },
+    {
+      "k": 6,
+      "name": "The report exemption stays bounded",
+      "evidence": "planning.test.mjs:5642 loops plan-2.md, plan-11.md, plan-1-risk.diff, plan-1-risk-task-2.diff, PLAN-1.1.MD and old/plan-1.1.md, each ok:false with the path NAMED in undeclared. report-rotation.mjs:128 carries no 'i' flag; adding one in a scratch copy fails both the rotation row and the lease row."
+    },
+    {
+      "k": 7,
+      "name": "self-verify is clean and the rotated-name grammar is stated once",
+      "evidence": "self-verify.mjs --root . -> ok:true, problems:[] (25 checks); tsc -p tsconfig.ci.json exits 0. rotatedSource is stated once (report-rotation.mjs:99) and consulted by isReportName and rotationTarget; planning.mjs holds no copy of the pattern. The helper-census row (helper-census.test.mjs:148) keys on the pattern source and reddens naming both files when it is pasted back into planning.mjs."
+    },
+    {
+      "k": 8,
+      "name": "A diff driver cannot present a risky range as empty",
+      "evidence": "planning.mjs:3996 reads with --no-ext-diff --no-textconv. risk-diff.test.mjs:361 proves the fixture really suppresses the plain diff, then asserts empty:false with matches ['destructive'] on envelope and record. Dropping either flag in a scratch copy fails exactly that row."
+    }
+  ],
+  "gaps": [
+    {
+      "name": "The phase's own round-1 risk_surface receipt cites the amended sha, so the phase-wide risk-check status refuses",
+      "reason": "behavior wrong - the `rearm` receipt written for round 1 carries sha 95ba7b2 (the fix commit, later amended to f5efcb4 and now unreachable: `git merge-base --is-ancestor 95ba7b2 HEAD` -> NOT-ancestor) instead of the reviewed head 31c2085, so no receipt settles the first matched record.",
+      "evidence": ".planning/trace.jsonl, corr 3-dc4c4b1: outcome/risk_check at 13:52:12 head_id 31c2085 matches ['destructive']; outcome/rearm at 13:58:33 sha 95ba7b2 base dc4c4b1; outcome/risk_check at 14:00:20 head_id f5efcb4 matches ['destructive']; outcome/gate_pass at 14:00:24 sha f5efcb4 base dc4c4b1 round 2. `node cadence-core/bin/planning.mjs risk-check status --phase 3` -> ok:false, reason risk-fire-missing, state unfired, missing ['1']. The per-plan spelling the workflow actually uses (execute.md:310, with --base/--head) returns ok:true, and no workflow, reference, skill or bin caller invokes the phase-wide arm, so nothing automated is blocked - the cost is an auditor reading the phase's gate history as unsettled. Related and already disclosed: .planning/phases/3/ADJUDICATION-risk_surface-plan-1.json:30 records `fix_commit: 95ba7b2` for the same reason.",
+      "severity": "minor",
+      "missing": "Either append a rearm/gate_pass receipt for the round-1 range (`--sha 31c2085 --base dc4c4b1 --trigger risk_surface --plan 1` under corr 3-dc4c4b1), or narrow SUMMARY's deviation wording to say the gate is ok:true under the per-plan spelling execute.md uses and that the phase-wide arm still reports risk-fire-missing on the round-1 record."
+    }
+  ],
+  "human_checks": [
+    {
+      "name": "Run /cad-execute <N> --rerun against a phase whose tasks are all already satisfied, and transcribe the outcome into .planning/phases/3/UAT.md item 3",
+      "expected": "The run reaches completion with no user override of a blocking gate: the risk-check run over the empty committed range answers checked:true, inconclusive:false, matches:[], empty:true, and the following `risk-check status --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD` returns ok:true with state `recorded` rather than refusing risk-record-missing.",
+      "why_human": "Out of reach, not merely unexercised: /cad-execute is a slash command dispatched into an interactive Claude Code session with a live coordinator and subagent spend, and the criterion is specifically that no HUMAN override was needed - which only a human sitting in that run can observe. The seam halves it rests on are already verified end to end here (truths 1 and 2, both driven through the real CLI), and D-11 records that the machine trace of the run is gitignored, so the transcription into UAT.md is the only durable record."
+    }
+  ]
+}
