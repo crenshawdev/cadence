@@ -176,6 +176,43 @@ A fresh `phase_start` (a genuine re-run) derives a new id and gets a fresh
 round. The append is best-effort by the trace seam's own contract: when the
 record cannot be written or read, the count falls back to what this context
 remembers - the pre-persistence behavior, not a new failure mode.
+
+**The DEFERRED queue is triaged later, and its cap rides the QUEUE.** A deferred
+fire ruled nothing - it QUEUED, and the triage happens where `/cad-land`
+refuses, in a session that can be days and a `/clear` away from the run that
+deferred. Work the queue MEMBER BY MEMBER: rule each one through the
+adjudication seam `references/review-triggers.md` step 5 states, at that
+member's own trigger, discriminator and round. The record SUPERSEDES its member
+- same round, sibling filename - so a member with no record beside it is still
+queued and the refusal clears one ruling at a time, never all at once.
+
+Where a `blocker`/`high` survives that ruling, the fix re-arms the trigger for
+ONE narrowed round: the same cap, the same narrowed artifact and the same
+terminal STOP-and-ask the blocking re-arm above already states, and this arm
+restates none of them. What differs is WHERE THE ROUND COUNT IS READ. Read it
+off the QUEUE - the highest round on disk for THAT fire - and never by counting
+`rearm` outcome events under this run's `corr`. The corr-keyed count above is
+right where the fix and the fire are the same run; here the triage runs under a
+`corr` that matches no `rearm` the deferring run wrote, so it comes back 0 every
+time, reads as "the round is unspent", and re-arms again on this land and the
+next one - the unbounded loop the cap exists to forbid. The fire is what is
+still true in a session that has forgotten everything else, so the fire is what
+the count is keyed to.
+
+On disk means the FILENAMES in the fire's home
+(`.planning/phases/<N>/`, or `.planning/deferred/<N>/` once a close has carried
+it there): the highest `-r<n>` suffix among that fire's
+`DEFERRED-<trigger>-<discriminator>*.json`, an unsuffixed name being round one.
+Count a member an adjudication has already SUPERSEDED - a settled round is a
+round spent, and a cap that read only what is still queued would refund the
+round at the exact moment the triage clears it. The re-armed round records
+itself the same way it was queued: fire narrowed, then write its own member
+through the `deferred record` call above with `--round 2`, which mints
+`DEFERRED-<trigger>-<discriminator>-r2.json` beside round one on the
+round-suffixed naming `ADJUDICATION-<trigger>-<discriminator>-r2.json` already
+uses. The cap is then answered by reading what is on disk rather than by
+remembering it, whoever asks and from whichever session. A `blocker`/`high`
+still surviving round two is the terminal STOP-and-ask, never a round three.
 - **adjudicated** - the survivors are already grounded, so what remains is the
   USER's choice, not the model's. Present them as a NUMBERED list, one line per
   survivor: severity, `file:line`, claim. Then ask which to act on through

@@ -249,3 +249,82 @@ test('the module emits nothing: not one byte on stdout or stderr', () => {
   }
   assert.deepEqual(seen, []);
 });
+
+// --- The re-arm cap, keyed to the FIRE and not to a run (CONTEXT D-02). -----
+//
+// `references/triage-gate.md`'s blocking arm counts `rearm` outcome events
+// under the CURRENT run's `corr`, which is right there: the fix and the fire
+// are the same run. A deferred fire's triage is not - it happens where
+// `/cad-land` refuses, in a session whose `corr` matches no `rearm` the
+// deferring run ever wrote, so that count comes back 0 every time, reads as
+// "the round is unspent" and re-arms again on this land and the next. The cap
+// therefore rides the QUEUE, and this is that rule made mechanical over the
+// fields a queue reader actually has.
+
+/**
+ * The cap as the deferred triage reads it: the highest round ON DISK for ONE
+ * fire, off the directory's own entries. `entries` is [filename, parsed JSON]
+ * as a reader gets them; there is no correlation id parameter because there is
+ * nothing here for one to key.
+ */
+const roundOnDisk = (entries, trigger, discriminator) => entries
+  .filter(([name]) => isQueueName(name))
+  .map(([name, parsed]) => queueIdentity(name, parsed))
+  .filter((id) => id.ok && id.trigger === trigger && id.discriminator === discriminator)
+  .reduce((hi, id) => Math.max(hi, id.round), 0);
+
+/** One directory entry for a fire's queue member at `round`. */
+const entry = (trigger, discriminator, round, over = {}) => [
+  queueName(trigger, discriminator, round),
+  member({ trigger, discriminator, round, ...over }),
+];
+
+test('the deferred re-arm cap is spent by a round-2 member, whatever corr the caller holds', () => {
+  const roundOne = [entry('diff', 'plan-1', 1)];
+  // One round is available while round one is the only fire on disk - the cap
+  // is a cap, not a prohibition.
+  assert.equal(roundOnDisk(roundOne, 'diff', 'plan-1'), 1);
+
+  const reArmed = [...roundOne, entry('diff', 'plan-1', 2)];
+  assert.ok(roundOnDisk(reArmed, 'diff', 'plan-1') >= 2,
+    'a second re-arm was admitted on a fire that already holds a round-2 member - '
+    + 'the cap read something other than the queue');
+
+  // "Whatever correlation id the caller holds" has two halves, and both are
+  // absences. The reader's own identity carries no corr, so a caller has
+  // nowhere to key one...
+  assert.deepEqual(Object.keys(queueIdentity('DEFERRED-diff-plan-1.json', member())),
+    ['ok', 'detail', 'phase', 'trigger', 'discriminator', 'round', 'findings']);
+  // ...and a corr written INTO a member's bytes moves no field it reads, so
+  // the answer cannot become run-keyed through the artifact either.
+  const withCorr = [entry('diff', 'plan-1', 1, { corr: '01JA-deferring-run' }),
+    entry('diff', 'plan-1', 2, { corr: '01JB-triage-session' })];
+  assert.equal(roundOnDisk(withCorr, 'diff', 'plan-1'),
+    roundOnDisk(reArmed, 'diff', 'plan-1'));
+
+  // Keyed to the FIRE: a re-arm spent on one fire is not spent on another in
+  // the same directory, whether the trigger differs or only the discriminator.
+  const others = [...reArmed, entry('plan', 'plan-1', 1), entry('diff', 'plan-2', 1)];
+  assert.equal(roundOnDisk(others, 'plan', 'plan-1'), 1);
+  assert.equal(roundOnDisk(others, 'diff', 'plan-2'), 1);
+});
+
+test('a SUPERSEDED round still spends the round it was fired on', () => {
+  // The refund hole. A member an adjudication has ruled on drops off `deferred
+  // list` - that is what makes the land clearable - so a cap that counted only
+  // what is still QUEUED would read round two as never fired at the exact
+  // moment its triage clears it, and hand back the round that triage just
+  // spent. The round is read off the FILENAMES in the fire's home, which is
+  // why a settled member is still an entry here.
+  const settled = [
+    entry('diff', 'plan-1', 1),
+    ['ADJUDICATION-diff-plan-1.json', { ruled: true }],
+    entry('diff', 'plan-1', 2),
+    ['ADJUDICATION-diff-plan-1-r2.json', { ruled: true }],
+  ];
+  assert.equal(roundOnDisk(settled, 'diff', 'plan-1'), 2);
+  // The records themselves are not queue members and never raise the count on
+  // their own: a fire adjudicated at round 1 has one round left.
+  assert.equal(roundOnDisk([['ADJUDICATION-diff-plan-1-r2.json', { ruled: true }]],
+    'diff', 'plan-1'), 0);
+});

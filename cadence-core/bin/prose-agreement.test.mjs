@@ -2043,3 +2043,70 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
       `${label}: the builder returned ${options.length} options against the seam's cap of ${cap}`);
   }
 });
+
+// --- Two caps, two different reads, and neither one unified away ------------
+//
+// `references/triage-gate.md` now states the one-round re-arm cap TWICE, on
+// purpose (CONTEXT D-02): the blocking arm counts `rearm` outcome events under
+// the current run's `corr`, and the deferred arm reads the highest round on
+// disk for the fire. They look like duplication, and the obvious tidy - one
+// cap, one read - silently re-opens the loop criterion 6 forbids, because a
+// deferred fire's triage runs in a session whose `corr` matches no `rearm` the
+// deferring run wrote, so the corr-keyed count reads as unspent every single
+// time it is asked.
+//
+// Nothing else notices. The weight budget counts bytes, self-verify's
+// invocation lint reads flags against CONTRACTS rows, and the GAT-04 arm above
+// scans only fenced `trace append` lines - the read-back is a `node -e`, so
+// deleting it or re-pointing it at the queue is green everywhere. This arm is
+// the one place that fails.
+
+test('triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm beside it', () => {
+  const text = doc('cadence-core', 'references', 'triage-gate.md');
+
+  // 1. The blocking cap, at the bytes that MAKE it corr-keyed: the filter is
+  //    quoted whole rather than matched loosely, because every word in it is
+  //    load-bearing - the event name, the trigger FIELD (never its detail
+  //    text) and the run's own id.
+  const corrFilter = 'o.event==="rearm"&&o.trigger===process.argv[2]&&o.corr===r.corr';
+  assert.equal(text.split(corrFilter).length - 1, 1,
+    'triage-gate.md no longer counts the blocking re-arm under this run\'s own corr. '
+    + 'The deferred arm reads its cap off the queue instead; that is a SECOND rule '
+    + 'beside this one, never a replacement for it (D-02).');
+  // The FENCED BLOCK, not the line: the read-back is `&&`-chained across three
+  // physical lines, and the chaining is exactly what makes the count this run's
+  // own - a render that failed never reaches the reader.
+  const readBack = text.split('```').find((b) => b.includes(corrFilter)) || '';
+  assert.match(readBack, /mktemp -d "\$\{TMPDIR:-\/tmp\}\/cad-rearm-XXXXXX"/,
+    'the blocking read-back no longer renders into a directory made for this run');
+  assert.match(readBack, /trace render --phase <N> > "\$D\/render\.json"/,
+    'the blocking read-back no longer chains the render to that directory');
+
+  // 2. The deferred cap, read off its own named anchor so a rewrap that
+  //    changed no fact stays green. It runs to the `adjudicated` bullet.
+  const anchor = '**The DEFERRED queue is triaged later, and its cap rides the QUEUE.**';
+  const start = text.indexOf(anchor);
+  assert.ok(start > -1, 'triage-gate.md states no deferred triage arm - a queue nothing '
+    + 'says how to clear is a land that never unblocks');
+  assert.ok(start > text.indexOf(corrFilter),
+    'the deferred arm is stated ABOVE the blocking re-arm it defers to; it says "the '
+    + 'blocking re-arm above already states", which is then false');
+  const end = text.indexOf('- **adjudicated**', start);
+  assert.ok(end > start, 'the deferred triage arm runs past the adjudicated bullet');
+  const block = text.slice(start, end).replace(/\s+/g, ' ');
+
+  assert.match(block, /highest round on disk for THAT fire/,
+    'the deferred cap no longer says the round count is read off the queue');
+  assert.match(block, /never by counting `rearm` outcome events under this run's `corr`/,
+    'the deferred cap no longer refuses the corr-keyed count - the one substitution '
+    + 'that makes the gate loop forever');
+  assert.match(block, /SUPERSEDED/,
+    'the deferred cap no longer says a settled round still counts, so a triage that '
+    + 'clears round two hands the round back at the moment it spends it');
+  assert.match(block, /`deferred record` call above with `--round 2`/,
+    'the deferred re-arm no longer records itself as a queue member, so the next '
+    + 'session reads the cap off a fire that left no trace of its second round');
+  assert.match(block, /surviving round two is the terminal STOP-and-ask, never a round three/,
+    'the deferred arm no longer terminates - a cap with no terminal arm is the loop '
+    + 'with an extra step');
+});
