@@ -1,6 +1,6 @@
 # State
 
-Phase: 1 of 3 (The re-run that overwrites its own evidence)
-Status: phase complete
-Next: /cad-context 2
+Phase: 2 of 3 (The adjudication record nobody can recount)
+Status: context gathered
+Next: /cad-plan 2
 Updated: 2026-08-20
