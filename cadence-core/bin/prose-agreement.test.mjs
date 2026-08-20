@@ -740,10 +740,17 @@ test('#195: execute.md locates unconditionally and refuses an already-executed p
   assert.ok(refusal,
     "execute.md's locate step names no /cad-undo route, so it either refuses nothing or "
     + 'refuses without naming the supported path');
+  // The TRIGGER clause only - the arm text before `-> stop:`. Asserting against
+  // the whole arm passes on a trigger narrowed to `executed` alone, because the
+  // rationale sentence after the stop names `complete` on its own.
+  const trigger = refusal.split(/->\s*stop:/)[0];
+  assert.ok(trigger && trigger !== refusal,
+    "execute.md's refusal arm has no `-> stop:`, so its trigger clause cannot be "
+    + `read apart from its rationale: ${refusal}`);
   for (const derived of ['executed', 'complete']) {
-    assert.match(refusal, new RegExp(`\`${derived}\``),
-      `that refusal does not name derived status \`${derived}\`, which re-runs and overwrites `
-      + 'the executor reports of the run that committed the phase');
+    assert.match(trigger, new RegExp(`\`${derived}\``),
+      `that refusal does not TRIGGER on derived status \`${derived}\`, which re-runs and `
+      + 'overwrites the executor reports of the run that committed the phase');
   }
   assert.match(refusal, /\/cad-undo <N>/, 'the refusal does not name `/cad-undo <N>`');
   assert.match(refusal, /\/cad-execute <N>/, 'the refusal does not name `/cad-execute <N>`');
