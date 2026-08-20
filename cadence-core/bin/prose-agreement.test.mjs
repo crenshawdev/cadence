@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { activeVersion } from './lib/branch-decision.mjs';
 import { weighAll } from './lib/surface-weight.mjs';
 import { DEFERRED_READS, regionLabels } from './lib/deferred-reads.mjs';
+import { CATEGORIES, scanTree, interviewOptions } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..');
@@ -1723,4 +1724,93 @@ test('AC6: report.md renders its Gates line from the record, states the unrecord
   assert.doesNotMatch(refuted, /ADJUDICATION|survivors/,
     `${where}: the Refuted line acquired gate findings - it consumes SUMMARY deviations that `
     + `corrected a D-NN and nothing else (D-10): ${refuted}`);
+});
+
+// --- IVW-01: what `recommended` CONTAINS, read off the prose and off the lib --
+//
+// CST-02 above verifies the category LIST across three surfaces, and has never
+// once verified what the scan RECOMMENDS out of that list. That is the gap
+// #206 lived in: `scanTree` returned all eight while review-triggers.md still
+// described a recommendation narrowed to the evidenced categories, and the
+// disagreement survived a release because no check read the recommendation at
+// all. This reads it, on BOTH scan arms, because the collapse is the fact -
+// an inconclusive tree and one evidencing a category recommend the SAME set,
+// and only the reason the option states beside it differs.
+//
+// The figure is read as a WORD, which is how that section spells it. Nothing
+// here parses the section's bullet or table shape: self-verify.mjs:927 records
+// a standing decision that this surface has no stated grammar, so a shape check
+// would redden on a reformat that changed no fact.
+
+/**
+ * Assert one prose section and one set of scan arms state the same
+ * `recommended`. A function OVER its inputs, not a straight-line body, so the
+ * test can re-run it against doctored ones and prove it fails from either side
+ * - a one-sided assertion is exactly how this drifted for a release.
+ *
+ * @param {string} section - the `## risk_surface detection` section's text.
+ * @param {Record<string, string[]>} arms - `recommended`, keyed by scan arm.
+ */
+function pinRecommended(section, arms) {
+  const where = 'review-triggers.md `## risk_surface detection`';
+  // Flattened first: the sentence wraps, and a regex over raw lines would read
+  // a rewrap as a deleted claim.
+  const stated = flat(section).match(/`recommended` array, which is all (\w+) categories/);
+  assert.ok(stated,
+    `${where}: no sentence states what the recommended array contains`);
+  const count = countWord(stated[1], where);
+
+  const entries = Object.entries(arms);
+  for (const [arm, recommended] of entries) {
+    assert.equal(recommended.length, count,
+      `${where} says the recommendation is all ${count} categories; the ${arm} scan `
+      + `recommends ${recommended.length}: [${recommended}]`);
+  }
+  const [firstArm, firstSet] = entries[0];
+  for (const [arm, recommended] of entries.slice(1)) {
+    assert.deepEqual(recommended, firstSet,
+      `the ${arm} scan recommends [${recommended}] and the ${firstArm} scan [${firstSet}] - `
+      + 'the two arms differ by more than the reason, so the recommendation narrowed on '
+      + 'evidence (D-14)');
+  }
+}
+
+test('IVW-01: the prose and scanTree state one `recommended`, and only the reason moves', () => {
+  const section = doc('cadence-core', 'references', 'review-triggers.md')
+    .split('## risk_surface detection')[1];
+  assert.ok(section, 'review-triggers.md has no risk_surface detection section');
+
+  const blind = scanTree({});
+  const seeing = scanTree({ dependencies: ['stripe'] });
+  assert.equal(blind.inconclusive, true, 'scanTree({}) is no longer the inconclusive arm');
+  assert.equal(seeing.inconclusive, false,
+    'a stripe dependency no longer evidences a category, so this is not the evidenced arm');
+
+  const arms = { inconclusive: blind.recommended, evidenced: seeing.recommended };
+  pinRecommended(section, arms);
+
+  // The same sentence claims the FIRST option carries that array, which is the
+  // half a count comparison cannot see: an option builder that leads with a
+  // narrower set states a narrower recommendation whatever `recommended` holds.
+  for (const [arm, scan] of [['inconclusive', blind], ['evidenced', seeing]]) {
+    assert.deepEqual(interviewOptions(scan)[0].surfaces, scan.recommended,
+      `${arm}: the first option's set is not the scan's recommended array`);
+  }
+
+  // ...and the reason is the ONLY thing that moves between the arms.
+  assert.notEqual(interviewOptions(blind)[0].reason, interviewOptions(seeing)[0].reason,
+    'both arms state the same reason, so the inconclusive arm stopped saying the structure '
+    + 'evidences nothing');
+
+  // Falsified from the PROSE side.
+  const doctoredWord = section.replace(/(`recommended` array, which is all\s+)(\w+)(\s+categories)/,
+    '$1seven$3');
+  assert.notEqual(doctoredWord, section, 'the count word could not be doctored');
+  assert.throws(() => pinRecommended(doctoredWord, arms), /says the recommendation is all 7/,
+    'a prose count that disagrees with the scan passes this check');
+
+  // ...and from the CODE side, one category short of all eight.
+  assert.throws(() => pinRecommended(section, { ...arms, evidenced: arms.evidenced.slice(1) }),
+    /the evidenced scan recommends 7/,
+    'a recommendation missing a category passes this check');
 });
