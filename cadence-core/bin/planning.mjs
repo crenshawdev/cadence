@@ -192,7 +192,7 @@ import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
-import { buildEntries } from './lib/adjudication-record.mjs';
+import { buildEntries, deriveCounts } from './lib/adjudication-record.mjs';
 import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
 
 // The raw argument list, kept beside the envelope helpers because the flags
@@ -3423,6 +3423,47 @@ function cmdTrace(dir, sub, opts) {
       raised = parsed.value;
     }
 
+    // --survivors / --downgraded / --refuted: the SETTLED figures of a fire,
+    // the other side of the `--raised` count above. `9 raised` says what the
+    // reviewers found; these three say what survived being argued with, which
+    // is the whole of what an adjudication decided.
+    // Structured for the reason `--raised` is, and validated the same way: a
+    // malformed value is a malformed CALL and NOTHING is appended, never a
+    // best-effort append with the field dropped, because a dropped figure reads
+    // downstream as UNKNOWN while the caller believes a count landed. No
+    // comma-grouping exception, for the reason `--raised` and `--turns` both
+    // give - a finding count is never PRINTED grouped, so accepting `1,234`
+    // would only widen what can be mistyped.
+    // Each key is OMITTED when its flag was absent and a real `--survivors 0`
+    // still records a 0: a fire nobody counted and a fire that counted zero are
+    // different fires, and the key is what separates them.
+    const settled = {};
+    for (const flag of ['survivors', 'downgraded', 'refuted']) {
+      if (!(flag in opts)) continue;
+      const parsed = requireInt(opts[flag]);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`);
+      }
+      settled[flag] = parsed.value;
+    }
+
+    // --round: WHICH round of a capped re-arm this event belongs to. Not
+    // decoration - the record a receipt settles is written at
+    // `...-<discriminator>-r<round>.json` above round 1, so a settle that names
+    // no round resolves ROUND ONE's filename and would check round two's
+    // figures against round one's stale rulings, passing whenever the two
+    // happen to coincide. Absent means round 1 on both sides, so the write side
+    // and the receipt side resolve one filename by one rule.
+    let round = 1;
+    if ('round' in opts) {
+      const parsed = requireInt(opts.round);
+      if (!parsed.ok || parsed.value < 1) {
+        return fail('bad-args',
+          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`);
+      }
+      round = parsed.value;
+    }
+
     // --read: the read-set the SITE caused the worker to read, as ONE
     // comma-separated value split the way `phase-done --reqs` splits its ids.
     // A repeated flag is impossible by construction rather than by choice -
@@ -3519,6 +3560,23 @@ function cmdTrace(dir, sub, opts) {
     const reviewer = trimmed('--reviewer');
     const trigger = trimmed('--trigger');
 
+    // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
+    // the `adjudication` seam from the record's own rulings and copied onto
+    // this line by hand, so this is where a mistyped one is still cheap: the
+    // record for this fire is recounted and a figure that disagrees is a
+    // malformed CALL, refused with NOTHING appended. Left to a later test, the
+    // wrong count has already shipped on the fire's own receipt.
+    //
+    // ABSENT RECORD OMITS THE CHECK and stores the flags as given - a fire
+    // predating the format, or an advisory arm that wrote none. This is a
+    // cross-check between two artifacts, never a requirement that one exist:
+    // making a receipt depend on a record would make an unrecordable fire
+    // unrecordable in the trace as well.
+    const recount = recountReceipt(dir, parsedPhase.raw, {
+      trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled,
+    });
+    if (!recount.ok) return fail(recount.reason, recount.detail, recount.hint);
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
     // `escalation` store tokens identically. `--step` does not change that: the
@@ -3554,6 +3612,13 @@ function cmdTrace(dir, sub, opts) {
       // exactly as `--tokens 0` already does.
       ...(turns === undefined ? {} : { turns }),
       ...(raised === undefined ? {} : { raised }),
+      // The settled figures, each key present only when its flag was: a fire
+      // nobody counted stays distinguishable from one that counted zero.
+      ...settled,
+      // The round, only when the caller named one: an ordinary fire is round 1
+      // by omission on both sides, and writing a `round: 1` onto every event
+      // would put a re-arm field on the thousands that never re-armed.
+      ...('round' in opts ? { round } : {}),
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
@@ -4512,6 +4577,152 @@ function cmdRiskCheck(dir, sub, opts) {
 const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
 /**
+ * The record's filename, as ONE rule both sides resolve by.
+ *
+ * The writer below and the receipt recount in `cmdTrace` have to name the same
+ * file or the cross-check reads a different fire's rulings than the one being
+ * settled - and the failure of that is SILENT, since a recount against round
+ * one's record passes whenever the two rounds' counts happen to coincide. Round
+ * 1 keeps the sibling `REVIEW-<trigger>-<discriminator>.md`'s exact name; every
+ * round above it carries its round, so a re-arm lands beside round one rather
+ * than on top of it.
+ *
+ * @param {string} trigger @param {string} discriminator @param {number} round
+ */
+const recordName = (trigger, discriminator, round) =>
+  `ADJUDICATION-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
+
+/**
+ * The record a receipt SETTLES, as an absolute path, or '' when this fire has
+ * none that can be resolved.
+ *
+ * A receipt names its fire with `--trigger`, `--sha` and - on a per-plan fire -
+ * `--plan <k>`, which is the D-06 discriminator grammar minus the spelling: a
+ * per-plan fire's discriminator IS `plan-<k>`, and every other fire's is
+ * `<command>-<short head sha>`, whose command half no receipt carries. So the
+ * per-plan arm resolves ONE name and the other arm matches the directory on the
+ * trigger, the round and the head the discriminator ends with, taking a single
+ * unambiguous hit and nothing else. Two candidates answer '' rather than a
+ * guess: a check that might be reading another fire's rulings is worse than no
+ * check, because it refuses a correct receipt.
+ *
+ * EVERY ARM ANSWERS '' RATHER THAN THROWING. This resolves a cross-check, and
+ * an unresolvable one omits the check - it never fails the append.
+ *
+ * `trigger` is validated against `RECORD_TOKEN` before it reaches `join`, the
+ * same rail the writer applies for the same reason (VAL-01): it reaches a
+ * FILENAME, and a `--trigger ../../etc` that resolved anything at all would be
+ * reading outside the phase directory.
+ *
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {string|undefined} trigger @param {any} plan @param {any} sha
+ * @param {number} round
+ * @returns {string}
+ */
+function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
+  if (typeof trigger !== 'string' || !RECORD_TOKEN.test(trigger)) return '';
+  const pdir = join(dir, 'phases', String(phaseRaw));
+  /** A regular FILE at `name` under the phase directory, or ''. A symlink is
+   * not a record: it is followed out of the tree by every reader after it. */
+  const regular = (name) => {
+    const file = join(pdir, name);
+    try { return lstatSync(file).isFile() ? file : ''; } catch { return ''; }
+  };
+
+  const planKey = plan === undefined || plan === null ? '' : String(plan).trim();
+  if (planKey) {
+    const discriminator = `plan-${planKey}`;
+    // Refused here for the reason the writer refuses it: a discriminator
+    // outside this grammar names no record the writer could ever have written.
+    if (!RECORD_TOKEN.test(discriminator)) return '';
+    return regular(recordName(trigger, discriminator, round));
+  }
+
+  const head = typeof sha === 'string' ? sha.trim().toLowerCase() : '';
+  if (!/^[0-9a-f]{7,40}$/.test(head)) return '';
+  const prefix = `ADJUDICATION-${trigger}-`;
+  const suffix = round > 1 ? `-r${round}.json` : '.json';
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(pdir); } catch { return ''; }
+  const hits = names.filter((name) => {
+    if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
+    const discriminator = name.slice(prefix.length, name.length - suffix.length);
+    // At round 1 the suffix is bare `.json`, which every higher round's file
+    // also ends with - so a `-r<n>` tail is another round's record, not this
+    // fire's discriminator.
+    if (round === 1 && /-r\d+$/.test(discriminator)) return false;
+    // The discriminator's last segment is the short head sha. Compared as a
+    // PREFIX in whichever direction is shorter, because the receipt may spell
+    // the head 7-char or full while the filename is abbreviated.
+    const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
+    return tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head));
+  });
+  return hits.length === 1 ? join(pdir, hits[0]) : '';
+}
+
+/**
+ * Do this receipt's settled figures agree with the rulings in its fire's own
+ * record (AC4/D-01)?
+ *
+ * WHY IT IS ASKED HERE. The three figures are DERIVED by the `adjudication`
+ * seam and copied onto the receipt line by hand, so the receipt is where a
+ * mistyped one enters the record - and once appended, the trace and the record
+ * disagree forever with nothing saying which is right. Recounting at write time
+ * is what makes the survivor count recomputable rather than asserted.
+ *
+ * ONLY WHEN ALL THREE ARE PRESENT: a partial set cannot be checked against a
+ * recount that answers all three, and refusing on one of them would refuse a
+ * receipt shape nothing writes.
+ *
+ * An ABSENT record omits the check - a fire predating the format, or an
+ * advisory arm that wrote none. The trace is gitignored, so it is the local
+ * cross-check and the committed record is the custody artifact; a receipt that
+ * could not be cross-checked is not thereby wrong.
+ *
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
+ *   settled: Record<string, number>}} fire
+ * @returns {{ok: boolean, reason: string, detail: string, hint: string}}
+ */
+function recountReceipt(dir, phaseRaw, fire) {
+  const keys = ['survivors', 'downgraded', 'refuted'];
+  const pass = { ok: true, reason: '', detail: '', hint: '' };
+  if (!keys.every((k) => k in fire.settled)) return pass;
+  const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
+  if (!file) return pass;
+  const rel = relative(dir, file);
+
+  let record;
+  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
+    // REFUSED, not skipped. This file exists and was written by the seam as
+    // one atomic JSON object, so unparseable means truncated or edited - which
+    // is precisely the tampering the cross-check exists to surface, and
+    // appending a figure nothing can check against it would bury it.
+    // The parse error itself is deliberately NOT quoted back: the detail names
+    // the file, which is the whole of what a caller acts on here, and echoing a
+    // caught message is the idiom planning.test.mjs's redaction census counts.
+    return { ok: false, reason: 'bad-record',
+      detail: `${rel} exists but is not readable as JSON, so this receipt's counts cannot be `
+        + 'checked against its rulings and nothing was appended',
+      hint: 'restore or re-write the record for this fire, then append the receipt' };
+  }
+  const counts = deriveCounts(record && record.entries);
+  for (const [flag, counted] of [['survivors', counts.survived],
+    ['downgraded', counts.downgraded], ['refuted', counts.refuted]]) {
+    if (fire.settled[flag] !== counted) {
+      return { ok: false, reason: 'count-disagreement',
+        detail: `--${flag} says ${fire.settled[flag]}, but counting the rulings in ${rel} gives `
+          + `${counted} - the count is DERIVED from the record, never typed beside it, so `
+          + 'nothing was appended',
+        hint: `pass the figures the adjudication seam returned for this fire (round ${fire.round})`
+          + ', or fix the record if the receipt is the one that is right' };
+    }
+  }
+  return pass;
+}
+
+/**
  * Which of these entries cite a `file` that does not EXIST at `headId` (D-09,
  * AC5) - and whether the question could be asked at all.
  *
@@ -4659,7 +4870,9 @@ function cmdAdjudication(dir, opts) {
       + 'sibling REVIEW file, so the phase directory of the fire has to exist already');
   }
 
-  const name = `ADJUDICATION-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
+  // The ONE filename rule, shared with the receipt recount in `cmdTrace`: two
+  // spellings of it is two files, and the recount would read the wrong fire.
+  const name = recordName(trigger, discriminator, round);
   const rel = `phases/${n}/${name}`;
   const file = join(pdir, name);
   // REFUSED, never overwritten. A caller that forgot `--round` on a re-arm is

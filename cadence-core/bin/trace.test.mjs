@@ -637,6 +637,241 @@ test('seam: a malformed --raised appends NOTHING at all', () => {
   assert.equal(traceBytes(dir), null);
 });
 
+// --- the settled counts, and the record they are recounted against (AC4) -----
+//
+// D-01's cross-check is between two INDEPENDENT artifacts: the committed
+// `ADJUDICATION-*.json` and this receipt. The figures on the receipt are
+// DERIVED by the `adjudication` seam and copied here by hand, so the receipt is
+// where a mistyped one enters the record - and `.planning/trace.jsonl` is
+// gitignored, so the trace is the local cross-check and the record is what
+// carries custody. Every fixture below therefore builds its record by running
+// the REAL seam rather than hand-writing the JSON: a check against a shape the
+// writer never emits proves nothing about the writer.
+
+/** A scratch git repo with `.planning/phases/<phase>/` and two commits. */
+function fireRepo(phase = 2) {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-fire-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args],
+    { encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 'T');
+  const dir = join(repo, '.planning');
+  mkdirSync(join(dir, 'phases', String(phase)), { recursive: true });
+  writeFileSync(join(repo, 'src.js'), 'let x = 1;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  writeFileSync(join(repo, 'src.js'), 'let x = 2;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'head');
+  return { repo, dir, head: git('rev-parse', 'HEAD') };
+}
+
+/** One voice, one finding per ruling, each ruling carrying what its arm needs. */
+function firePayload(rulings) {
+  const findings = rulings.map((_, i) => ({
+    file: 'src.js', line: i + 1, severity: 'high',
+    claim: `claim ${i}`, failure_scenario: `scenario ${i}`,
+  }));
+  return {
+    voices: [{
+      voice: 'openai',
+      model: 'gpt-5',
+      returned: { findings },
+      rulings: rulings.map((ruling, i) => ({
+        finding: i,
+        ruling,
+        claim: `claim ${i}`,
+        failure_scenario: `scenario ${i}`,
+        ...(ruling === 'survived' ? { fix_commit: 'abcdef1' } : {}),
+        ...(ruling === 'refuted'
+          ? { counter_evidence: { file: 'src.js', line: 1, note: 'the branch is unreachable' } }
+          : {}),
+      })),
+    }],
+  };
+}
+
+/** Write one record through the REAL seam and answer its envelope. */
+function fireRecord(repo, dir, { phase = 2, trigger = 'plan', discriminator = 'plan-1',
+  round = 1, rulings }) {
+  const payload = join(repo, `payload-${trigger}-${discriminator}-${round}.json`);
+  writeFileSync(payload, `${JSON.stringify(firePayload(rulings))}\n`);
+  const args = ['adjudication', '--phase', String(phase), '--trigger', trigger,
+    '--discriminator', discriminator, '--base', 'HEAD~1', '--head', 'HEAD',
+    '--payload', payload, ...(round > 1 ? ['--round', String(round)] : [])];
+  let stdout;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, ...args],
+      { encoding: 'utf8', cwd: repo });
+  } catch (e) { stdout = e.stdout; }
+  const r = JSON.parse(stdout);
+  assert.equal(r.ok, true, stdout);
+  return r;
+}
+
+/** The receipt a settle point copies, minus the counts. */
+const receipt = (extra) => ['trace', 'append', '--phase', '2', '--family', 'outcome',
+  '--event', 'adjudication', '--trigger', 'plan', '--plan', '1',
+  '--base', 'HEAD~1', '--sha', 'deadbee', ...extra];
+
+test('seam: the three settled counts ride an outcome event as NUMBERS', () => {
+  const dir = root();
+  const r = run(dir, receipt(['--survivors', '2', '--downgraded', '1', '--refuted', '6']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const [e] = lines(dir);
+  assert.deepEqual([e.survivors, e.downgraded, e.refuted], [2, 1, 6]);
+  // NUMBERS, for the reason `--raised` beside them is one: a reader sums these
+  // without type-checking them first.
+  assert.deepEqual([typeof e.survivors, typeof e.downgraded, typeof e.refuted],
+    ['number', 'number', 'number']);
+  assert.match(traceBytes(dir), /"survivors":2/);
+});
+
+test('seam: a settled count of 0 is a recorded figure, an absent one omits the key', () => {
+  const dir = root();
+  run(dir, receipt(['--survivors', '0', '--downgraded', '0', '--refuted', '9']));
+  const [e] = lines(dir);
+  // `0 survivors of 9` and "nobody counted" are different fires, and the key is
+  // what separates them - the same distinction `--turns` and `--raised` state.
+  assert.equal(e.survivors, 0);
+  assert.ok('survivors' in e);
+
+  const other = root();
+  run(other, receipt([]));
+  const [bare] = lines(other);
+  for (const key of ['survivors', 'downgraded', 'refuted', 'round']) {
+    assert.equal(key in bare, false, `${key}: ${JSON.stringify(bare)}`);
+  }
+});
+
+test('seam: a malformed settled count appends NOTHING at all', () => {
+  for (const flag of ['--survivors', '--downgraded', '--refuted', '--round']) {
+    const dir = root();
+    // No comma-grouping exception, unlike `--tokens`: a finding count is never
+    // PRINTED grouped, so `1,234` is a typo rather than a transcription.
+    for (const bad of ['abc', '-1', '1.5', '', '1,234']) {
+      const r = run(dir, receipt([flag, bad]));
+      assert.equal(r.ok, false, `${flag} ${bad}`);
+      assert.equal(r.reason, 'bad-args', `${flag} ${bad}`);
+      assert.equal(traceBytes(dir), null, `${flag} ${bad}`);
+    }
+    // `--round 0` is malformed for a flag whose rounds start at 1.
+    if (flag === '--round') {
+      assert.equal(run(dir, receipt([flag, '0'])).ok, false);
+      assert.equal(traceBytes(dir), null);
+    }
+    // A bare flag (parsed as boolean true) is refused the same way.
+    const r = run(dir, receipt([flag]));
+    assert.equal(r.ok, false, flag);
+    assert.equal(r.reason, 'bad-args', flag);
+    assert.equal(traceBytes(dir), null, flag);
+  }
+});
+
+test('recount: counts matching the record\'s rulings append normally', () => {
+  const { repo, dir } = fireRepo();
+  const written = fireRecord(repo, dir, { rulings: ['survived', 'refuted', 'downgraded', 'refuted'] });
+  assert.deepEqual(written.counts, { raised: 4, survived: 1, downgraded: 1, refuted: 2 });
+  const r = run(dir, receipt(['--survivors', '1', '--downgraded', '1', '--refuted', '2']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const [e] = lines(dir);
+  assert.deepEqual([e.survivors, e.downgraded, e.refuted], [1, 1, 2]);
+});
+
+test('recount: a --survivors one higher than the rulings is REFUSED, trace untouched', () => {
+  const { repo, dir } = fireRepo();
+  fireRecord(repo, dir, { rulings: ['survived', 'refuted', 'downgraded', 'refuted'] });
+  // One receipt already on disk, so the assertion is that the file is
+  // byte-identical afterwards rather than merely absent.
+  run(dir, ['trace', 'append', '--phase', '2', '--family', 'lifecycle', '--event', 'phase_start']);
+  const before = traceBytes(dir);
+
+  const r = run(dir, receipt(['--survivors', '2', '--downgraded', '1', '--refuted', '2']));
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'count-disagreement');
+  // BOTH figures named: the one typed and the one the rulings count.
+  assert.match(r.detail, /--survivors says 2/);
+  assert.match(r.detail, /gives 1/);
+  assert.match(r.detail, /ADJUDICATION-plan-plan-1\.json/);
+  assert.equal(traceBytes(dir), before);
+});
+
+test('recount: the same call against a fire with NO record appends and stores the flags', () => {
+  const { dir } = fireRepo();
+  // The check is a cross-artifact guard, never a requirement that a record
+  // exist: a fire predating the format, and the advisory arm that writes none,
+  // both reach this arm.
+  const r = run(dir, receipt(['--survivors', '2', '--downgraded', '1', '--refuted', '2']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const [e] = lines(dir);
+  assert.deepEqual([e.survivors, e.downgraded, e.refuted], [2, 1, 2]);
+});
+
+test('recount: a partial count set is stored unchecked - there is nothing to recount', () => {
+  const { repo, dir } = fireRepo();
+  fireRecord(repo, dir, { rulings: ['survived', 'refuted'] });
+  const r = run(dir, receipt(['--survivors', '9']));
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(lines(dir)[0].survivors, 9);
+});
+
+test('recount: the ROUND decides which record is read, so a re-arm cannot pass on round one', () => {
+  const { repo, dir } = fireRepo();
+  // DIFFERENT rulings per round, which is what makes the round load-bearing:
+  // against identical rounds a wrong resolution passes on a coincidence.
+  fireRecord(repo, dir, { rulings: ['survived', 'refuted', 'refuted'] });
+  fireRecord(repo, dir, { round: 2, rulings: ['downgraded', 'refuted'] });
+  assert.deepEqual(
+    readdirSync(join(dir, 'phases', '2')).filter((f) => f.startsWith('ADJUDICATION')).sort(),
+    ['ADJUDICATION-plan-plan-1-r2.json', 'ADJUDICATION-plan-plan-1.json']);
+
+  const two = ['--survivors', '0', '--downgraded', '1', '--refuted', '1'];
+  const ok2 = run(dir, receipt([...two, '--round', '2']));
+  assert.equal(ok2.ok, true, JSON.stringify(ok2));
+  assert.equal(lines(dir)[0].round, 2);
+
+  // The SAME figures with no --round resolve round ONE's record, whose rulings
+  // are different - so the settle that forgot its round reddens instead of
+  // passing against stale rulings.
+  const before = traceBytes(dir);
+  const bad = run(dir, receipt(two));
+  assert.equal(bad.ok, false, JSON.stringify(bad));
+  assert.equal(bad.reason, 'count-disagreement');
+  assert.equal(traceBytes(dir), before);
+});
+
+test('recount: a fire with no --plan resolves its record by trigger and head sha', () => {
+  const { repo, dir, head } = fireRepo();
+  // `/cad-debug`, `/cad-task` and `/cad-verify` fire without a plan, and their
+  // discriminator is `<command>-<short head sha>` - so the receipt matches on
+  // the trigger, the round and the head the discriminator ends with.
+  fireRecord(repo, dir,
+    { trigger: 'risk_surface', discriminator: `cad-task-${head.slice(0, 7)}`, rulings: ['refuted'] });
+  const args = ['trace', 'append', '--phase', '2', '--family', 'outcome',
+    '--event', 'gate_pass', '--trigger', 'risk_surface', '--base', 'HEAD~1', '--sha', head];
+  const bad = run(dir, [...args, '--survivors', '1', '--downgraded', '0', '--refuted', '0']);
+  assert.equal(bad.ok, false, JSON.stringify(bad));
+  assert.equal(bad.reason, 'count-disagreement');
+  assert.equal(traceBytes(dir), null);
+
+  const good = run(dir, [...args, '--survivors', '0', '--downgraded', '0', '--refuted', '1']);
+  assert.equal(good.ok, true, JSON.stringify(good));
+});
+
+test('recount: a record that is not readable as JSON is refused, never appended past', () => {
+  const { repo, dir } = fireRepo();
+  const written = fireRecord(repo, dir, { rulings: ['survived'] });
+  // Truncated or edited - which is the tampering the cross-check exists to
+  // surface, so appending a figure nothing can check would bury it.
+  const file = join(dir, written.record);
+  writeFileSync(file, readFileSync(file, 'utf8').slice(0, 40));
+  const r = run(dir, receipt(['--survivors', '1', '--downgraded', '0', '--refuted', '0']));
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-record');
+  assert.equal(traceBytes(dir), null);
+});
+
 test('seam: a bare or blank --role appends NOTHING at all', () => {
   // REVERSES this row's earlier guarantee, which was that a bare `--role` wrote
   // the event with no `role` key rather than the literal `true`. Dropping the

@@ -408,7 +408,7 @@ export function evaluateRow(argv, table, key) {
 // EVERY ENTRY DECLARES FOUR FIELDS and none of them defaults: `required`,
 // `type`, `value` (what happens to a present-but-malformed value) and `bare`
 // (what happens to a flag present with nothing usable after it).
-// arg-contract.test.mjs walks all 152 of them, so a row added later without a
+// arg-contract.test.mjs walks all 156 of them, so a row added later without a
 // complete grammar reddens rather than picking up a silent default.
 //
 // REQUIRED-NESS IS PER SUBCOMMAND. `risk-check run` requires `--base` and
@@ -673,6 +673,27 @@ export const CONTRACTS = {
     // on the `close` row below, for the reason `--read` is not: `close` fixes
     // its own family and event, and a flag row never widens what a subcommand
     // accepts.
+    // `--survivors`, `--downgraded` and `--refuted` are the SETTLED figures of
+    // a fire, structured for the reason `--raised` beside them is: `--detail`
+    // is not a machine-join surface (one trigger was spelled four different
+    // ways across 35 shipped `outcome/adjudication` events), so a count parsed
+    // back out of it is exactly as trustworthy as the substitution that slot is
+    // already condemned for. This ROW is what makes the flag the only route:
+    // without it check 2 answers `unknown-flag` against the receipt prose, and
+    // a coordinator with nowhere structured to put the figure folds it into the
+    // free text. They are DERIVED by the `adjudication` seam above from the
+    // record's own rulings and copied here, never counted by hand - which is
+    // what lets the seam recount the record and refuse a receipt that disagrees
+    // with it (D-01).
+    // `--round` names WHICH round of a capped re-arm a receipt settles, so that
+    // recount reads the round's own record: a settle after a re-arm that names
+    // no round resolves round ONE's filename and checks round two's figures
+    // against round one's stale rulings, passing whenever the two happen to
+    // coincide. Optional and defaulting to 1, the same rule the `adjudication`
+    // row states, so the write side and the receipt side resolve one filename
+    // by one rule.
+    // All four are OFF the `close` row below, for the reason `--raised` is off
+    // it: a flag row never widens what a subcommand accepts.
     'trace append': {
       '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
       '--family': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
@@ -685,6 +706,10 @@ export const CONTRACTS = {
       '--role': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--tokens': { required: false, type: 'int', value: 'fallback', bare: 'refuse' },
       '--raised': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--survivors': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--downgraded': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--refuted': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
+      '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
       '--read': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--read-file': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--step': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
