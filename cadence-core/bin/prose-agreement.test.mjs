@@ -1034,6 +1034,49 @@ test('cad-land 3(b): the GitLab arm consults the authorization seam BEFORE it cr
     'step 3(b) never says what the GitLab arm does when the seam refuses');
 });
 
+test('cad-land step 3: the deferred queue refuses ahead of BOTH publish arms', () => {
+  // The falsifier for "an unadjudicated deferred finding stops the land":
+  // deleting the invocation has to redden something, or the guarantee is prose
+  // nobody checks. ORDER and REGION, not presence - a call that sits inside
+  // 3(a) never runs on the unattended arm, which is the one path nobody
+  // watches, and a call placed after either arm has already published.
+  const skill = doc('skills', 'cad-land', 'SKILL.md');
+  const labelOf = regionLabels(skill);
+  const lines = skill.split('\n');
+  const at = (needle) => lines.findIndex((l) => l.includes(needle));
+
+  const call = at('planning.mjs" deferred list');
+  assert.ok(call > -1, 'cad-land step 3 no longer asks the queue what is still deferred');
+  assert.equal(labelOf(call), '3',
+    'the deferred-queue refusal moved inside a publish arm; it governs both, so it '
+    + 'belongs to step 3 itself');
+  const armA = at('**(a) `git.auto_close` false');
+  const armB = at('**(b) `git.auto_close` true');
+  assert.ok(armA > -1 && armB > -1, 'step 3 no longer spells its two publish arms');
+  assert.ok(call < armA && call < armB,
+    'the queue is read AFTER a publish arm begins, so the land it must stop has already started');
+
+  // It is a NEW arm, never land-cleanup.mjs gate (D-06): that gate halts only
+  // under git.auto_close and reads only risk_surface survivors, so folding this
+  // into it would publish straight over a deferred plan/diff/phase_diff finding
+  // on the default configuration.
+  const step3 = lines.filter((l, i) => labelOf(i) === '3').join('\n');
+  assert.match(step3, /NOT `land-cleanup\.mjs gate`/,
+    'step 3 no longer says the deferred refusal is not the auto_close survivor gate');
+  assert.match(step3, /STOP the land here/, 'step 3 no longer says what a member does');
+  // An unprovable queue refuses exactly as a member does - the gate never
+  // reports "nothing deferred" about input it could not read.
+  assert.match(step3, /unreadable/,
+    'step 3 no longer states that a queue it could not read refuses too');
+  assert.match(step3, /references\/triage-gate\.md/,
+    'step 3 no longer routes the reader to the arm that says how to clear a member');
+
+  const guardrails = /<guardrails>([\s\S]*?)<\/guardrails>/.exec(skill);
+  assert.ok(guardrails, 'cad-land lost its guardrails block');
+  assert.match(guardrails[1], /deferred finding is the one thing that stops it/,
+    'the guardrails no longer name the one thing that stops a land');
+});
+
 test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
   // Detection without enforcement is precisely the outcome RSK-02 exists to
   // prevent, and it passes every other check in this phase. A tree carrying

@@ -63,6 +63,32 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
 
 3. **Publish - branch on `git.auto_close`.**
 
+   **First the deferred queue, on BOTH arms and ahead of the branch below.** A
+   gate resolved `deferred` ran its reviewer and let the run continue, so the
+   finding stops the LAND. Ask what is still queued:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred list
+```
+
+   On ANY entry in `members`, STOP the land here: no publish ask, no seam call,
+   no merge, no tag, neither arm. Print each member's `trigger`,
+   `discriminator` and finding count with the `path` its bodies are in, then
+   point the reader at
+   `${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, whose
+   `deferred` arm says how to clear one - triage the member's findings and
+   record the rulings with `planning.mjs adjudication` for the same trigger,
+   discriminator and round, which supersedes it. A non-empty `unreadable`
+   arrives as `ok:false` and refuses exactly as a member does: the queue could
+   not be PROVEN empty, and this gate never reports "nothing deferred" about
+   input it could not read, the disposition `land-cleanup.mjs gate` already
+   takes for a findings payload it could not parse.
+
+   It is NOT `land-cleanup.mjs gate` and must not be folded into it: that gate
+   halts only when `git.auto_close` is true and reads only `risk_surface`
+   survivors, so a default-configured project would publish straight over a
+   deferred `plan`, `diff` or `phase_diff` finding.
+
    **(a) `git.auto_close` false (default): ask the mechanism (ask-user seam, NO
    preselected default):**
    - **Direct push** - push the current branch to its remote.
@@ -222,4 +248,7 @@ node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/issue-check.mjs" check --dir <root>
 - `/cad-land` fires no review of its own and commits no fix: it publishes what
   was already reviewed and already triaged upstream. The unattended arm acts on
   no survivor either - it reads them only to halt or proceed.
+- It publishes what was already reviewed and TRIAGED, so an unadjudicated
+  deferred finding is the one thing that stops it - on both arms, before either
+  publishes anything.
 </guardrails>
