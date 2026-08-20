@@ -15,7 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanTree, CATEGORIES } from './lib/surface-scan.mjs';
+import { scanTree, CATEGORIES, interviewOptions, OPTION_CAP } from './lib/surface-scan.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PLANNING = join(HERE, 'planning.mjs');
@@ -89,6 +89,83 @@ test('a malformed tree description reports rather than throwing', () => {
   for (const t of [null, 'nope', 7, { dirs: 'migrations', dependencies: 3 }]) {
     assert.doesNotThrow(() => scanTree(t), JSON.stringify(t));
   }
+});
+
+// --- the interview's option list (#206) ---------------------------------------
+//
+// The defect these rows exist for: the option list used to be composed by a
+// model from three prose bullets, the last of which said "fill the remaining
+// slots with ... the evidenced categories alone, and all eight" - so slot 1 and
+// the last slot were the same eight categories, and no test could see it
+// because there was no list to read. Distinctness is now a property of a value.
+
+/** The sets a choice list offers, as joined keys. */
+const sets = (options) => options.map((o) => o.surfaces.join(','));
+const ALL_EIGHT = [...CATEGORIES].join(',');
+
+test('an inconclusive scan and an evidenced one both lead with all eight', () => {
+  // D-14 on the option list itself: `inconclusive` changes the REASON beside
+  // the recommendation, never its set. Narrowing the first choice on a scan
+  // that found nothing is the absence-from-silence conclusion again.
+  const blind = interviewOptions(scanTree({}));
+  const seen = interviewOptions(scanTree({ dirs: ['migrations'] }));
+  assert.equal(sets(blind)[0], ALL_EIGHT);
+  assert.equal(sets(seen)[0], ALL_EIGHT);
+  assert.notEqual(blind[0].reason, seen[0].reason,
+    'the two scan arms state the same reason, so the evidence is not being reported');
+  assert.match(seen[0].reason, /migrations\//, 'the evidenced arm drops the scan signal');
+});
+
+test('the evidenced-only choice is absent when nothing was evidenced', () => {
+  // An empty set is not an option: offering "review nothing" is not a narrower
+  // scope, it is turning the only blocking trigger off by accident.
+  const blind = interviewOptions(scanTree({}));
+  assert.deepEqual(sets(blind), [ALL_EIGHT], JSON.stringify(blind));
+  const seen = interviewOptions(scanTree({ dirs: ['migrations'] }));
+  assert.deepEqual(sets(seen), [ALL_EIGHT, 'migrations'], JSON.stringify(seen));
+});
+
+test('an answered set gains the newly evidenced category as the SECOND choice', () => {
+  // The whole reason the arm is re-enterable: a project answered `secrets` and
+  // added Stripe six months later. The recommendation is still all eight, and
+  // the union sits where a user who wants the minimum change will find it.
+  const options = interviewOptions(scanTree({ dependencies: ['stripe'] }), ['secrets']);
+  assert.equal(sets(options)[0], ALL_EIGHT);
+  assert.deepEqual(options[1].surfaces, ['billing', 'secrets']);
+  assert.match(options[1].reason, /stripe/, 'the union choice does not name what it added');
+});
+
+test('an answered set equal to all eight still leads with all eight and repeats nothing', () => {
+  const options = interviewOptions(scanTree({ dependencies: ['stripe'] }), [...CATEGORIES]);
+  assert.equal(sets(options)[0], ALL_EIGHT);
+  assert.equal(new Set(sets(options)).size, options.length,
+    `two choices carry the same set: ${JSON.stringify(sets(options))}`);
+});
+
+test('no call returns more than the ask-user seam option cap', () => {
+  for (const [tree, answered] of [
+    [{}, undefined],
+    [{ dirs: ['migrations'] }, undefined],
+    [{ dependencies: ['stripe'] }, ['secrets']],
+    [{ dirs: ['auth', 'migrations', 'api', 'workers'], dependencies: ['stripe', 'dotenv'] }, ['secrets']],
+    [{ dirs: ['migrations'] }, [...CATEGORIES]],
+  ]) {
+    const options = interviewOptions(scanTree(tree), answered);
+    assert.ok(options.length <= OPTION_CAP, JSON.stringify(sets(options)));
+    assert.equal(new Set(sets(options)).size, options.length, JSON.stringify(sets(options)));
+    for (const o of options) assert.ok(o.reason, 'a choice arrived with no reason');
+  }
+});
+
+test('a malformed scan or answered set reports rather than throwing', () => {
+  for (const bad of [null, 'nope', 7, { evidenced: 'migrations', recommended: 3 }]) {
+    assert.doesNotThrow(() => interviewOptions(bad), JSON.stringify(bad));
+  }
+  // An unrecognised answered token is dropped, never written into a choice:
+  // `answeredSurfaces` already reads such a list as UNANSWERED, and offering a
+  // typo back as a set would persist it.
+  const options = interviewOptions(scanTree({}), ['secret', 'secrets']);
+  for (const o of options) assert.ok(!o.surfaces.includes('secret'), JSON.stringify(o));
 });
 
 // --- the disk half ------------------------------------------------------------
