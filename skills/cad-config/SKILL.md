@@ -1,7 +1,7 @@
 ---
 name: cad-config
 description: "Configure Cadence's config.json - workflow toggles, routing stakes, and interactive cross-model review provider setup"
-argument-hint: "[--review [redetect] | <key>=<value> ...]"
+argument-hint: "[--review [redetect] | --surfaces | <key>=<value> ...]"
 allowed-tools:
   - Read
   - Write
@@ -20,6 +20,8 @@ Routing:
 - **--review [redetect]**: run the cross-model review-provider setup - detect
   each provider's accessible models and assign them to the flagship/balanced/
   cheap tiers.
+- **--surfaces**: re-open the one-time risk-surface question - the answered set
+  beside what the structure evidences now, re-answerable or declinable.
 - **`<key>=<value>` ...**: set config keys directly (validated against the config schema).
 - **default** (no args): walk every knob as a selectable list (batched pages),
   each preselected to its current value.
