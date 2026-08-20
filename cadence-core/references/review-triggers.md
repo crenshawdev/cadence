@@ -559,20 +559,27 @@ asking the user to supply it:
 node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" detect-surfaces --root .
 ```
 
-Then ask through the ask-user seam (seams.md): at most four options, the
-recommended one first and labelled `(recommended)`, its REASON taken from the
-scan's own output - which costs no research pass, because the scan already ran.
+Then ask through the ask-user seam (seams.md), whose conventions bind here: at
+most four options per question, the recommended one FIRST and labelled
+`(recommended)`, and that label is a display convention and never a
+pre-selection - the user still chooses and the seam still blocks.
 
-- When the scan reports `inconclusive: true`, recommend its `recommended` array
-  (all eight) and say why in the reason: it found no dependency manifest and no
-  category directory, so the structure evidences nothing either way. Never
-  present a narrower set as the recommendation on evidence that does not exist
-  (D-14) - the scan reports what it can SEE, and silence is never absence.
-- Otherwise recommend its `recommended` array - what it evidenced, plus the
-  categories no structure can ever evidence (`unspeakable`) - and name the
-  `signal` string behind each evidenced one in the reason.
-- Fill the remaining slots with the narrower sets a user plausibly wants: the
-  evidenced categories alone, and all eight. Four options is the cap.
+Do NOT compose the options at this site. The `detect-surfaces` envelope returns
+them as `options`, already ordered and already de-duplicated: each entry's
+`surfaces` is the set that picking it writes, and each entry's `reason` is what
+the option states beside it, built from the scan's own `evidenced` signals and
+its `unspeakable` categories - which costs no research pass, because the scan
+already ran. Render that array in the order it arrives and add nothing to it.
+Composing the list from prose here is what put the same categories in the first
+slot and again in the last one (#206): a list a model assembles per run is a
+list no check can read.
+
+The first entry is always the scan's `recommended` array, which is all eight
+categories, and it is the same set on both scan arms. An `inconclusive: true`
+scan changes only the REASON that entry states - no dependency manifest and no
+category directory matched, so the structure evidences nothing either way.
+Never present a narrower set as the recommendation on evidence that does not
+exist (D-14) - the scan reports what it can SEE, and silence is never absence.
 
 Persist the answer at the repo layer, which is what makes it a one-time ask:
 
