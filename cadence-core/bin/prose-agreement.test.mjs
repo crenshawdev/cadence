@@ -1077,6 +1077,55 @@ test('cad-land step 3: the deferred queue refuses ahead of BOTH publish arms', (
     'the guardrails no longer name the one thing that stops a land');
 });
 
+test('progress.md: the deferred count is read off the envelope at both its sites', () => {
+  // D-05's enforcement. The COUNT comes from `status`, never parsed back out of
+  // the cursor's `Next:` free text - the substitution this repository already
+  // condemned for trigger names, where one trigger was spelled four different
+  // ways across 35 shipped events. A workflow that named the queue only in its
+  // report would leave the figure to be derived by hand.
+  const wf = doc('cadence-core', 'workflows', 'progress.md');
+  const labelOf = regionLabels(wf);
+  const lines = wf.split('\n');
+  const region = (name) => lines.filter((l, i) => labelOf(i) === name).join('\n');
+
+  const derive = region('derive');
+  assert.match(derive, /`deferred`/,
+    'the derive step no longer names the `deferred` key the one status line carries');
+  assert.match(derive, /ALWAYS present/,
+    'the derive step no longer says the key is always present, so an absent one reads as empty');
+  assert.match(derive, /never from\s+the cursor's `Next:` text/,
+    'the derive step no longer forbids taking the count off the cursor');
+
+  const report = region('report');
+  assert.match(report, /deferred\.findings/,
+    'the report step no longer prints the count, or no longer takes it from the envelope');
+  assert.match(report, /never taken off the\s+cursor/,
+    'the report step no longer forbids taking the count off the cursor');
+
+  // The ROUTE row, and where it sits. Every row below it ends a cycle and each
+  // of those leads to a land - /cad-milestone chains /cad-land after its prune.
+  const route = region('route');
+  const routeLines = route.split('\n');
+  const at = (needle) => routeLines.findIndex((l) => l.includes(needle));
+  const queued = at('`deferred.findings` non-zero');
+  assert.ok(queued > -1, 'the route table no longer has a row for a non-zero deferred count');
+  assert.match(routeLines[queued], /never \/cad-land/,
+    'the deferred route row no longer says a queued finding does not route to a land');
+  for (const later of ['Drift kind `phase-dir`', '`cycle` is `none`', '`current` is null']) {
+    assert.ok(at(later) > queued, `the deferred row sits below "${later}", which routes toward a land`);
+  }
+  for (const earlier of ['Paused cursor', 'Lowest **planned** phase']) {
+    assert.ok(at(earlier) > -1 && at(earlier) < queued,
+      `the deferred row displaced "${earlier}", which is a recovery state and takes precedence`);
+  }
+
+  // And no new cursor status value (D-05): one outside planning.mjs's AGREE map
+  // is reported as `cursor` drift and rewritten by the very next /cad-progress,
+  // so the cursor would stop naming the queue one command after it was written.
+  assert.doesNotMatch(region('reconcile'), /deferred/,
+    'the reconcile step gained a deferred status mapping; the cursor carries a POINTER, not a state');
+});
+
 test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
   // Detection without enforcement is precisely the outcome RSK-02 exists to
   // prevent, and it passes every other check in this phase. A tree carrying

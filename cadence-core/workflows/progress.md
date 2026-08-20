@@ -35,6 +35,14 @@ Its one JSON line carries everything this workflow reads:
 - `drift[]` - contradictions, by kind: `cursor`, `roadmap-box`, `req-status`,
   `phase-dir` (a `phases/<N>/` dir surviving a milestone close),
   `phase-dir-grammar` (a `phases/` entry outside the directory grammar).
+- `deferred` - the unadjudicated review queue: `members[]` (each with `phase`,
+  `trigger`, `discriminator`, `round`, `path` and its own `findings` count),
+  the total `findings`, and `unreadable[]`. ALWAYS present, unlike `cycle` and
+  `drift`: an absent key means a seam that predates the queue, never "nothing
+  is deferred". The count this workflow reports comes from HERE and never from
+  the cursor's `Next:` text - the cursor is a hint the derivation overrides,
+  and parsing a count back out of free text is the substitution this repository
+  already condemned for trigger names.
 
 On `ok:false`, relay `reason`/`hint` (e.g. `no-planning-dir` -> "No Cadence
 project here. /cad-new-project starts one from a blank page; /cad-adopt starts
@@ -152,7 +160,13 @@ Compact status, no banners:
 
 Recent: {2-3 recent commit subjects}
 Paused: {the cursor's Next line}   (only when Status is paused)
+Deferred: {deferred.findings} finding(s) across {deferred.members.length} queued fire(s)
 ```
+
+The `Deferred:` line prints only when `deferred.findings` is non-zero or
+`deferred.unreadable` is non-empty, and both figures are read off the `status`
+envelope's `deferred` block - never counted by hand and never taken off the
+cursor's `Next:` text, even when that text names the queue.
 
 When `cycle` is `none`, the header is `# {project} - milestone closed - no
 active cycle` and there is no phase list to print.
@@ -168,6 +182,7 @@ only:
 | Lowest **planned** phase | /cad-execute {N} |
 | Lowest **executed** phase | /cad-verify {N} |
 | `current` is **unplanned** | /cad-context {N}, or /cad-plan {N} when `workflow.skip_discuss` is true |
+| `deferred.findings` non-zero, or `deferred.unreadable` non-empty | triage the queue (`${CLAUDE_PLUGIN_ROOT}/cadence-core/references/triage-gate.md`, the `deferred` arm) - never /cad-land |
 | Drift kind `phase-dir` (interrupted prune) | /cad-milestone |
 | `cycle` is `none` (milestone closed) | /cad-phase add |
 | `current` is null (all complete) | /cad-milestone |
@@ -180,6 +195,14 @@ different phase than the derivation is shown as context but does not route.
 The `phase-dir` row sits ABOVE `cycle is none` deliberately: an interrupted
 close returns both at once, and finishing the prune precedes opening a new
 cycle. Reordering them offers a new phase on top of unfinished work.
+
+The `deferred` row sits BELOW every recovery and work row - a paused cursor, a
+planned phase, an executed one - because those are where the work that clears
+the queue happens, and ABOVE the three rows that end a cycle, because each of
+them leads to a land: `/cad-milestone` chains `/cad-land` after its prune, and
+`/cad-land` refuses on this same queue. It is the one row whose next step is
+not a skill invocation, so the ask-user offer below reads "triage the queue"
+and this workflow invokes nothing.
 
 Offer the suggestion through the ask-user seam (references/seams.md):
 1. Continue now - invoke the suggested skill
