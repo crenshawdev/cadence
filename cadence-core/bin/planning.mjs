@@ -4313,6 +4313,20 @@ function cmdRiskCheckStatus(dir, opts) {
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
       inconclusive: e.inconclusive === true,
+      // WHY a range with nothing in it is `recorded` and not a refusal. An
+      // empty committed range is a check that RAN, so it arrives here
+      // `checked: true, inconclusive: false, matches: []` and reaches
+      // `recorded` through the arms below unaided - no fifth state name, which
+      // `offending` (`row.state !== 'recorded'`) would turn into an automatic
+      // `ok:false`, and no extra clause in `fired`. The flag is read for the
+      // reader's sake alone: it rides the reported `records` array so an
+      // auditor can see WHY a row is `recorded` with nothing matched.
+      //
+      // `=== true` for the reason stated two fields up: 69 `outcome/risk_check`
+      // events on this repository's own trace were written before the seam
+      // separated an empty range from an unread one, and an absent field is not
+      // an empty range.
+      empty: e.empty === true,
       // The category TOKENS `cmdRiskCheckRun` writes onto every record and this
       // reader used to drop. They are what makes a range FIRED: a record
       // carrying one is a range workflows/execute.md was obliged to fire the

@@ -523,8 +523,53 @@ test('risk-check status: appending the plan-1 record makes the identical call pa
   assert.deepEqual(r.plans[0].records,
     [{
       base: 'ae5ca09', head: 'HEAD', base_id: null, head_id: null,
-      checked: true, inconclusive: false, matches: [],
+      checked: true, inconclusive: false, matches: [], empty: false,
     }]);
+});
+
+test('risk-check status: an EMPTY committed range is `recorded`, not `risk-record-missing`', () => {
+  // AC2, end to end: the record is written by the SEAM rather than by hand, so
+  // reverting the run-side split reddens this row. The deadlock it pins:
+  // `/cad-execute --rerun` over a phase whose tasks are all already satisfied
+  // commits nothing, the range is `HEAD..HEAD`, and the gate refused
+  // `risk-record-missing` on a check that had in fact run - with no argv that
+  // could clear it, because re-running the detector wrote the same record.
+  const { repo, dir } = repoFixture(FROZEN_PHASE_1);
+  commitFile(repo, 'README.md', 'start\n');
+  const run = riskCheck(repo, dir,
+    ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--head', 'HEAD']);
+  assert.equal(run.ok, true, JSON.stringify(run));
+  assert.equal(run.empty, true, JSON.stringify(run));
+
+  const r = riskStatus(dir, ['--phase', '1'], repo);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r._exit, 0);
+  assert.equal(r.plans.length, 1, JSON.stringify(r.plans));
+  assert.equal(r.plans[0].state, 'recorded', JSON.stringify(r.plans[0]));
+  // The row says WHY it is recorded with nothing matched, which is the whole
+  // reason the flag is reported rather than only consumed.
+  assert.equal(r.plans[0].records[0].empty, true, JSON.stringify(r.plans[0].records));
+  assert.equal(r.plans[0].records[0].checked, true);
+  assert.equal(r.plans[0].records[0].inconclusive, false);
+  // An empty range is not a FIRED range, so no receipt is required for it and
+  // none was written: the pass is by not firing, never by inheriting a receipt.
+  assert.equal(r.missing, undefined);
+});
+
+test('risk-check status: a PRE-FIX empty-range record still refuses - an absent flag is not empty', () => {
+  // D-03. The 69 `outcome/risk_check` events already on this repository's trace
+  // carry the old shape, and a reader that treated an absent flag as empty
+  // would retroactively clear every one of them.
+  const dir = traceFixture([...FROZEN_PHASE_1,
+    recordLine('1', 'ae5ca09', 'HEAD', { checked: false, inconclusive: true })]);
+  const r = riskStatus(dir, ['--phase', '1']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-record-missing');
+  assert.equal(r._exit, 1);
+  assert.equal(r.plans[0].state, 'unchecked');
+  assert.equal(r.plans[0].records[0].empty, false,
+    'a record written before the split read as an empty range');
+  assert.deepEqual(r.missing, ['1']);
 });
 
 test('risk-check status: a checkpoint AND a return for one plan report it once, not twice', () => {
