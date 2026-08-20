@@ -187,6 +187,7 @@ import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-
 import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
+import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
@@ -2445,9 +2446,35 @@ function cmdLeaseCheck(dir, opts) {
   const staged = [...new Set(parsed.entries.flatMap(
     (e) => (e.source === null ? [e.path] : [e.source, e.path])))];
 
-  // Exactly ONE exemption, and nothing else: the plan's own report file, which
-  // the contract requires the executor to write and which no plan declares.
-  const reportFile = repoRel(top, join(pdir, 'reports', `plan-${k}.md`));
+  // Exactly ONE exemption, and nothing else: the plan's own REPORTS, which the
+  // contract requires the executor to write and which no plan declares.
+  //
+  // It used to be one name by byte equality, and that was correct while a plan
+  // had exactly one report. Since rotation (#195) an executor holds
+  // `plan-<k>.md` and `plan-<k>.<n>.md` at once - it renames the previous run's
+  // record aside before its first write - so a re-run staging the rotated
+  // sibling during a task commit was refused `undeclared-files`, blocking the
+  // executor for obeying its own contract.
+  //
+  // NOT a directory lease, and the distinction is the whole bound (D-06).
+  // `plan-<k>-risk.diff` and `plan-<k>-risk-task-<n>.diff` live in this same
+  // directory, and a `risk_surface` checkpoint deliberately leaves flagged
+  // changes staged: a directory exemption would let a blocking gate's own
+  // evidence ride into a task commit unnamed. So the test is two halves - the
+  // path sits DIRECTLY in this plan directory's `reports/` (a further separator
+  // disqualifies it, so a nested `reports/old/plan-1.1.md` no executor writes
+  // stays refused), and its final component is a name for THIS `k`.
+  //
+  // Which names those are is `lib/report-rotation.mjs`'s answer and not this
+  // function's, for the reason the `covers` block below states: a second copy
+  // here is exactly how two seams come to disagree, and the disagreement
+  // available here is the rename picker minting a name this gate then refuses.
+  const reportsDir = repoRel(top, join(pdir, 'reports'));
+  const isOwnReport = (/** @type {string} */ p) => {
+    if (!p.startsWith(`${reportsDir}/`)) return false;
+    const name = p.slice(reportsDir.length + 1);
+    return !name.includes('/') && isReportName(k, name);
+  };
 
   // What a declaration covers is `lib/lease-grammar.mjs`'s answer and not this
   // function's - the same module `cmdPlanOverlap` asks, which is the whole
@@ -2461,7 +2488,7 @@ function cmdLeaseCheck(dir, opts) {
   // canonical through `repoRel`, and a second transform over paths that
   // round-tripped through the byte-level guard above is how the non-ASCII hard
   // block gets re-broken.
-  const undeclared = staged.filter((p) => p !== reportFile
+  const undeclared = staged.filter((p) => !isOwnReport(p)
     && !declared.some((d) => covers(d, p)));
 
   const common = {
