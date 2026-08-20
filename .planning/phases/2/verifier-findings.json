@@ -1,0 +1,126 @@
+{
+  "status": "needs_human",
+  "score": "8/10",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "`deferred` is a real gate value: the schema, the route table and the resolver all admit it, an unknown gate is refused naming five, and self-verify reports no vocabulary drift",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/config.schema.json:77,80,83,87 (all four `review.triggers.<t>.gate` values arrays), cadence-core/route-table.json:19 `[\"off\",\"advisory\",\"deferred\",\"blocking\",\"adjudicated\"]`, cadence-core/bin/route.mjs:126 DEFAULT_GATES same five same order. Live: `config.mjs set review.triggers.<t>.gate=deferred` returned ok:true for plan, diff, risk_surface and phase_diff; `config.mjs check review.triggers.diff.gate=nope` returned `must be one of: off, advisory, deferred, blocking, adjudicated`; `route.mjs resolve --role cad-reviewer` against that tree returned review={plan,diff,risk_surface,phase_diff}=deferred; `self-verify.mjs --root .` returned ok:true, problems:[] over all 25 checks including routing-cells and gate-agreement."
+    },
+    {
+      "n": 2,
+      "truth": "`deferral` is a fire receipt `risk-check status` joins on, so a deferred fire clears the range instead of leaving it unfired forever",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "cadence-core/bin/planning.mjs:4169 FIRE_RECEIPTS now five names, with the block comment at 4140-4167 rewritten to name what produces the fifth. Live, both polarities in two scratch repos: with a `destructive` match recorded by `risk-check run` and NO receipt, `risk-check status` answered {ok:false, reason:\"risk-fire-missing\", state:\"unfired\"}; after `trace append --family outcome --event deferral --trigger risk_surface --plan 1 --base <b> --sha <h>` returned ok:true, the same call on the same range answered {ok:true, state:\"recorded\"}. Test pin: planning.test.mjs 'risk-check status: a `deferral` receipt settles the range it names' and 'the acceptance is FIRE_RECEIPTS membership, not any outcome event', both green."
+    },
+    {
+      "n": 3,
+      "truth": "A deferred fire leaves the queue member beside the REVIEW file and writes no adjudication record - a record at fire time is impossible by construction, not by convention",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "Live `planning.mjs deferred record --phase 7 --trigger diff --discriminator plan-1 --base <b> --head <h> --payload <findings>` wrote only .planning/phases/7/DEFERRED-diff-plan-1.json, findings stored verbatim, resolved base_id/head_id not the caller's spelling; no ADJUDICATION-* appeared. Second identical call refused with reason:\"record-exists\". The construction half probed directly against cadence-core/bin/lib/adjudication-record.mjs buildEntries: a ruling of `undefined` and a ruling of `unadjudicated` are both refused with 'ruling must be one of survived | downgraded | refuted', and RULINGS is frozen at three. The advisory-arm shape the deferred arm reuses is the raw {\"findings\": []} object - .planning/phases/2/REVIEW-risk_surface-plan-1.md holds exactly that, and cadence-core/references/triage-gate.md:19 passes that same file as --payload."
+    },
+    {
+      "n": 4,
+      "truth": "`deferred list` is ONE derivation over both homes: supersession by the sibling record only, an unreadable path refused rather than counted as empty",
+      "status": "VERIFIED",
+      "uat_item": 9,
+      "evidence": "cadence-core/bin/planning.mjs:5292 QUEUE_HOMES=['phases','deferred'], readQueue at 5300-5400. Live: a member under phases/7/ was listed by phase/trigger/discriminator/round with its finding count; after `deferred carry` the same member listed from deferred/7/; writing ADJUDICATION-diff-plan-1.json beside it dropped it while the -r2 member stayed (round 2 is superseded by round 2 and nothing else); a SYMLINK named ADJUDICATION-diff-plan-1-r2.json did NOT settle its member (lstat isFile gate at planning.mjs:5384); `chmod 000` on phases/9 produced {ok:false, reason:\"unprovable-queue\"} carrying the readable members alongside unreadable:[{path:\"phases/9\",...}] rather than reporting zero; `--phase 3` returned both homes' phase-3 members and `--phase 9` returned an empty set."
+    },
+    {
+      "n": 5,
+      "truth": "The unadjudicated count rides the `planning.mjs status` envelope ALWAYS, and `/cad-progress` reads it there rather than off the cursor string",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "cadence-core/bin/planning.mjs:496-513 - readQueue(dir,null) is unconditional and `deferred` sits on the ok() envelope beside `current`, not inside a spread like `cycle`/`drift`. Live on this repository: \"deferred\":{\"members\":[],\"findings\":0,\"unreadable\":[]}; live on a scratch tree holding two carried members: the same key naming both with findings:2. cadence-core/workflows/progress.md:38,42 (derive), :163,166-168 (report, 'read off the status envelope ... never taken off the cursor'), :185 (route row), :199 (placed below the recovery rows). Cursor half: cadence-core/workflows/execute.md:471-487 branches `cursor set` to --next-file on a deferring run, and :493-495 adds .planning/phases/<N>/DEFERRED-*.json to the staged paths. Pinned by prose-agreement.test.mjs 'progress.md: the deferred count is read off the envelope at both its sites' and 'execute.md state: a deferring run points the cursor at its queue and commits it'."
+    },
+    {
+      "n": 6,
+      "truth": "The queue survives the milestone prune and a carried member stays both adjudicable and re-armable from its new home",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "cadence-core/bin/planning.mjs:5446-5570 cmdDeferredCarry; the two-home resolver fireHome at :5004-5017 is shared by cmdAdjudication and cmdDeferredRecord. Live: `deferred carry --phase 3` moved the unadjudicated member to deferred/3/ and LEFT the one carrying ADJUDICATION-plan-plan-2.json behind to be pruned with the phase; a second carry onto an existing destination answered {ok:false, reason:\"carry-exists\"} and moved nothing. With .planning/phases/7 deleted entirely, `deferred record --phase 7 ... --round 2` wrote deferred/7/DEFERRED-diff-plan-1-r2.json instead of refusing, and `deferred list` then reported it. Call site wired at cadence-core/workflows/milestone.md:108-120, inside step 3 and above the milestone-prune fence at :130."
+    },
+    {
+      "n": 7,
+      "truth": "Neither forbidden rail moved: no gate value reaches git-guard.mjs, no stakes cell fires `deferred`, and the one-round re-arm cap gained a queue-keyed reading without disturbing the corr-keyed one",
+      "status": "VERIFIED",
+      "uat_item": 7,
+      "evidence": "`git diff --stat bedf576..8bd5243 -- cadence-core/bin/git-guard.mjs` is empty. git-guard.test.mjs 'census: no gate value reaches the protected-branch guard (D-11)' matches all five names as quoted literals, pins the config reads to exactly git.on_protected + git.protected_branches and config.git, and pins the whole IMPORT SET so a routing seam cannot be plumbed in; 'a deferred gate in the config layer changes no guard decision' is the behavioural half. route.test.mjs 'no stakes level fires `deferred`' walks every review cell of route-table.json (all nine hold advisory/off/blocking/adjudicated - confirmed by reading the shipped table), then re-asks the RESOLVER at solo/shipped/critical with nothing configured, then proves the config-set door still opens. Cap: prose-agreement.test.mjs 'triage-gate.md: the corr-keyed re-arm read-back survives the deferred arm beside it' pins the blocking arm's corr filter byte-for-byte AND pins the deferred arm's five load-bearing clauses ('highest round on disk for THAT fire', the refusal of the corr-keyed count, SUPERSEDED counting, --round 2 self-recording, 'never a round three'); deferred-queue.test.mjs's two cap arms prove the mechanics over queueIdentity/queueName. Enforcement is prose-plus-artifact rather than a code branch, which is the same disposition the pre-existing corr-keyed cap already has - no .mjs in this tree branches on any gate value (grep for quoted 'blocking' across cadence-core/bin returns only route.mjs's DEFAULT_GATES). Full suite: 2525 of 2526."
+    },
+    {
+      "n": 8,
+      "truth": "The land refusal exists at the top of `/cad-land` step 3, governs both publish arms, and deleting it reddens a test",
+      "status": "VERIFIED",
+      "uat_item": null,
+      "evidence": "skills/cad-land/SKILL.md:65-88 - the `deferred list` fence sits under step 3's heading and above both the (a) git.auto_close-false ask and the (b) true branch, states 'STOP the land here: no publish ask, no seam call, no merge, no tag, neither arm', prints trigger/discriminator/count/path, routes to references/triage-gate.md, refuses on a non-empty `unreadable`, and says it is NOT land-cleanup.mjs gate; the guardrails at :250-252 carry the one-sentence rule. prose-agreement.test.mjs:1037 asserts ORDER and REGION, not presence: regionLabels puts the call in step '3' itself and requires call < armA && call < armB, so both moving it inside an arm and deleting it redden. This is the machine-checkable half of UAT 5; the live refusal itself is the human check below."
+    },
+    {
+      "n": 9,
+      "truth": "A run whose gate defers a blocker finishes unattended - the phase reaches executed and its commits sit on the integration branch with nothing prompting",
+      "status": "UNCERTAIN",
+      "uat_item": 4,
+      "evidence": "Every seam on the path is proven individually (truths 1-3), and the receipt half that would otherwise halt the run is proven live in truth 2, but the hop from the fire site to the `deferred` arm is agent-executed prose in cadence-core/references/triage-gate.md:9-35 with no code branch behind it, so only a live /cad-execute chain can observe it."
+    },
+    {
+      "n": 10,
+      "truth": "`/cad-land` actually refuses a live land while a deferred finding is unadjudicated, with git.auto_close false, naming each finding",
+      "status": "UNCERTAIN",
+      "uat_item": 5,
+      "evidence": "The refusal's text, siting and test pin are verified in truth 8 and the `deferred list` answer it consumes is verified live in truth 4, but /cad-land's body is a skill: whether an agent reading it stops is only observable by running the command."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "deferred is a real gate value the config and resolver both accept",
+      "evidence": "Live: config.mjs set succeeded for all four triggers; check on `nope` refused with 'must be one of: off, advisory, deferred, blocking, adjudicated'; route.mjs resolve --role cad-reviewer returned deferred for every pinned trigger; self-verify.mjs --root . returned ok:true with problems:[] (routing-cells and gate-agreement included). config.schema.json:77,80,83,87 + route-table.json:19 + route.mjs:126 carry the same five names in the same order."
+    },
+    {
+      "k": 2,
+      "name": "deferral is a fire receipt risk-check status joins on",
+      "evidence": "Live in two scratch repos, both polarities: a matched `destructive` range with no receipt answered {ok:false, reason:\"risk-fire-missing\", state:\"unfired\"}; after `trace append --family outcome --event deferral` (ok:true) the same range answered {ok:true, state:\"recorded\"}. planning.mjs:4169 FIRE_RECEIPTS; planning.test.mjs's two new risk-check arms are green."
+    },
+    {
+      "k": 3,
+      "name": "a deferred fire leaves the queue member and the review file, and no adjudication",
+      "evidence": "Live `deferred record` wrote DEFERRED-diff-plan-1.json holding the findings verbatim with resolved base_id/head_id, no ADJUDICATION-* alongside, and a second call refused with `record-exists`. buildEntries probed directly refuses a missing ruling and a fourth ruling value; RULINGS is frozen at three. The REVIEW file's shape is the raw {\"findings\": [...]} object (.planning/phases/2/REVIEW-risk_surface-plan-1.md) and triage-gate.md:19 passes that same path as --payload."
+    },
+    {
+      "k": 6,
+      "name": "/cad-progress reports the deferred count off the status envelope",
+      "evidence": "planning.mjs:496-513 puts `deferred` on every ok status envelope unconditionally; observed live as {\"members\":[],\"findings\":0,\"unreadable\":[]} on this repo and as two named members on a scratch tree. progress.md names the key at its derive site (:38), its report site (:163-168, 'never taken off the cursor'), and a route row (:185) placed below the recovery rows (:199); execute.md:471-487 switches the cursor to --next-file on a deferring run and :493 stages the queue. Both pinned by new prose-agreement arms."
+    },
+    {
+      "k": 7,
+      "name": "neither rail moved",
+      "evidence": "git diff --stat for git-guard.mjs across bedf576..8bd5243 is empty; git-guard.test.mjs censuses the five gate literals, the exact config keys, and the whole import set, plus a behavioural case with review.triggers.risk_surface.gate=deferred pinned; route.test.mjs censuses all nine review cells and re-asks the resolver at each level; prose-agreement.test.mjs pins the blocking arm's corr filter byte-for-byte beside the deferred arm's queue-keyed rule. self-verify --root . ok:true, problems:[]; full suite 2525/2526 with the one red (milestone-prune corpus) pre-existing - .planning/REQUIREMENTS.md, milestone-prune.mjs and milestone-prune.test.mjs are all absent from this range's diff."
+    },
+    {
+      "k": 8,
+      "name": "the queue survives the milestone prune",
+      "evidence": "Live: `deferred carry --phase 3` moved the unadjudicated member to deferred/3/ and left the settled one behind; a repeat onto an existing destination answered `carry-exists` and moved nothing; with phases/7 deleted, `deferred record --round 2` wrote into deferred/7/ and `deferred list` reported it. fireHome (planning.mjs:5004) is the one two-home resolver shared by adjudication and deferred record. Wired at milestone.md:108-120, above the milestone-prune call at :130."
+    },
+    {
+      "k": 9,
+      "name": "deferred list is one derivation over both homes",
+      "evidence": "Live: members found in phases/<N>/ and in deferred/<N>/ by the same call; a real ADJUDICATION sibling dropped its member while a SYMLINK wearing that name did not; chmod 000 on a phase directory produced {ok:false, reason:\"unprovable-queue\"} with the readable members still reported; --phase narrowed across both homes. readQueue at planning.mjs:5300-5400 is the single derivation cmdStatus also calls."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "Run a live /cad-execute chain under bypass permissions on a tree with review.triggers.<t>.gate=deferred set and a fire that raises a blocker",
+      "expected": "The gate fires, the reviewer runs, a REVIEW-<trigger>-<discriminator>.md and a DEFERRED-<trigger>-<discriminator>.json land in .planning/phases/<N>/, a `deferral` receipt is appended, the run CONTINUES to `executed` with nothing prompting for input, and the phase's commits sit on the integration branch.",
+      "why_human": "Out of reach, not merely unexercised: /cad-execute's body is a skill and no agent (including this verifier) can invoke a slash command, and the fire-site hop into triage-gate.md's `deferred` arm is agent-executed prose with no code branch to probe. It also needs the host's bypass-permissions mode, which is a property of the operator's session rather than of this repository."
+    },
+    {
+      "name": "Run a live /cad-land against a tree with an unadjudicated DEFERRED-*.json and git.auto_close false",
+      "expected": "The land refuses at the top of step 3 before any publish ask, naming each queued finding by trigger and discriminator with its count, and pointing at references/triage-gate.md; nothing is pushed, merged or tagged.",
+      "why_human": "Out of reach and irreversible on the other branch: /cad-land is a skill this verifier cannot invoke, and the arm that would run if it did NOT refuse publishes to a remote. The refusal's siting and its test pin are already verified statically (truth 8); what a live run adds is whether the reading agent obeys it."
+    }
+  ]
+}
