@@ -29,11 +29,35 @@ still be told the gate was satisfied. `risk-check status` therefore joins a
 receipt to a record by head commit, and a receipt carrying no `--sha` settles
 nothing. Pass the same head the fire's own artifact was built from.
 
+**Every blocking settle also leaves the ADJUDICATION RECORD.** The receipt says
+a fire HAPPENED; the record says what was raised and how each finding was ruled,
+and both settle points below - a `gate_pass` and an `override` - carry no
+finding body at all without it. So a blocking fire writes it at the same settle
+point, from the payload, the path and the discriminator
+`references/review-triggers.md` step 5 states - and this file deliberately does
+not restate any of them: it is re-read at the gate step WITHOUT loading that one,
+so what it owes a coordinator is the obligation plus the pointer, and a copy
+here is a second statement that can drift. The ADVISORY arm writes no record and
+reads as unrecorded, for the reason step 5 gives.
+
+**A settle receipt carries the counts the RECORD SEAM derived**, on
+`--survivors`, `--downgraded` and `--refuted` - the figures that seam returned
+on its envelope, never a number counted by hand off the survivor list and never
+folded into `--detail`, the slot a trigger was already spelled four ways inside.
+The seam recounts the record's own rulings against them and refuses a receipt
+that disagrees, so the survivor count is recomputable rather than asserted. A
+`gate_pass` where nothing survived still carries three zeroes: `0 of 9 refuted`
+and "nobody counted" are different fires. `--round <round>` is omitted on an
+ordinary fire and carries the round on a re-armed one, since the re-arm below
+writes its own record and a settle naming no round is checked against round
+one's stale rulings. The `rearm` receipt itself gains none of the four: it marks
+a round opening, and a count there would describe a fire still in flight.
+
 Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
 whose fire found no blocker becomes permanently unclearable:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --plan <k> --base <base> --sha <head>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event gate_pass --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>]
 ```
 
 The user explicitly overrides a FAIL - record that instead. The reason is the
@@ -44,7 +68,7 @@ review's settled outcome, so it is REFUSED as a receipt when that reason is
 empty - a blank override is indistinguishable from a manufactured clear:
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event override --trigger <trigger> --plan <k> --base <base> --sha <head> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
 ```
 
 **The blocking re-arm is capped at ONE round.** A fix made to clear a blocking

@@ -1,7 +1,7 @@
 ---
 name: cad-execute
 description: "Execute a phase's plans - a subagent per plan, an atomic commit per task, a slim per-phase SUMMARY"
-argument-hint: "[phase number]"
+argument-hint: "[phase number] [--rerun]"
 allowed-tools:
   - Read
   - Write

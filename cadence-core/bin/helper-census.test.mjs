@@ -145,6 +145,30 @@ const HELPERS = [
       + 'PATHEXT arm, which is the only reason npm/npx/tsc resolve on win32.',
   },
   {
+    name: 'the rotated-report name grammar (rotatedSource / isReportName)',
+    home: 'lib/report-rotation.mjs',
+    // The pattern SOURCE, not either exported name: `rotationTarget` scans a
+    // reports/ directory for a free suffix and `cmdLeaseCheck` asks whether a
+    // staged name is this plan's report, and both build their RegExp from this
+    // one string. Matching the body is what makes a paste-back under a new name
+    // fail here - the suffix class and the two anchors are the whole grammar,
+    // and a copy is a copy of them.
+    re: new RegExp("\\\\\\\\\\.\\(\\[1-9\\]\\[0-9\\]\\*\\)\\\\\\\\\\.md\\$", 'g'),
+    note: 'Import { isReportName } from ./lib/report-rotation.mjs. A second '
+      + 'copy here is not a style point: the picker that MINTS a rotated name '
+      + 'and the lease gate that EXEMPTS one would then hold two statements of '
+      + 'the same grammar, and a name one produced is a name the other refuses '
+      + '- the executor blocked with undeclared-files for obeying its own '
+      + 'contract, which is the same failure the covers row records for '
+      + 'plan-overlap and lease-check. The anchors are load-bearing: the '
+      + 'trailing extension and the dot before the suffix are what keep '
+      + 'plan-11.md from reading as plan 1 rotated once. The FLAG is the '
+      + "caller's, and the two callers differ on purpose - the scan is "
+      + 'case-insensitive so a rename cannot destroy a report, the lease '
+      + 'question is byte-exact so a spelling no executor writes is not '
+      + 'exempted from a parallel-safety gate.',
+  },
+  {
     name: 'the worker-key grammar (requirePlanKey)',
     home: 'lib/plan-key.mjs',
     // The outer-whitespace clause, which is the arm that distinguishes this

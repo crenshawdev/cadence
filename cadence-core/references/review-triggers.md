@@ -302,29 +302,45 @@ set never does. Per backend:
 
 ### 5. Combine (review.mode)
 - `single` - use the first available reviewer only; its findings are the result.
-- `panel` - union all reviewers' findings (dedupe exact file+line+claim repeats).
+- `panel` - union all reviewers' findings, then dedupe exact file+line+claim
+  repeats.
 - `adjudicated` - all reviewers run independently, then YOU (the main model)
-  adjudicate: open the cited code, confirm or kill each finding, drop
-  false positives and overstatements, merge findings raised by more than one
-  reviewer (convergence = high confidence), and re-rank by grounded severity.
-  The adjudicated survivor list is the result.
+  adjudicate: open the cited code and confirm or kill EVERY finding raised, PER
+  RAISING VOICE, dropping false positives and overstatements and re-ranking by
+  grounded severity.
+
+RULE FIRST, MERGE AFTER, on both arms: the dedupe and the convergence merge that
+produce the survivor LIST run on the RULED set, never ahead of it. A merged
+finding has no raising voice, only a list, so merging first destroys the
+attribution before any record can hold it - and per-voice attribution is what
+makes a reviewer's individual hit rate countable, which is the measurable form
+of this project's claim that its controls are fallible machinery. Convergence
+still means high confidence and still ranks the survivor. What the gate acts on
+and what the user is shown do not change: the adjudicated survivor list, after
+the merge, is the result, it keeps its shape and its order, and
+`references/triage-gate.md` presents it as the same numbered multi-select.
 
 If `gate == "adjudicated"`, adjudicate regardless of `review.mode` (the gate is
 the stronger signal). Adjudication is the same discipline the panel-review skill
 uses: reviewers critique, the main model grounds and owns the verdict.
 
-Once the survivor list is settled, record the outcome. This append and the
+Once the survivor list is settled, record the outcome. The trace append and the
 reported line below it are the ADJUDICATED arm's alone: advisory and blocking
 fires keep writing exactly what they write today, and the stated cost is that
 at `solo`, where `plan` stays advisory, `trace suggest` gets no rows about the
-gate that fires most often there.
+gate that fires most often there. The ADJUDICATION RECORD further down is NOT
+scoped that way: it is written on the BLOCKING arm as well, at the settle point
+`references/triage-gate.md` names. The ADVISORY arm writes neither, and the
+reason is not tidiness - its reviewer writes the findings file and closes its
+own bracket, and this session may end before the return lands, so nothing is
+positioned to rule. An advisory fire reads as unrecorded.
 
 Write the detail - `<trigger>: <n> survivors; voices <the reviewers that
 actually ran>` - to a scratch file and pass its path; the voice list is composed
 from what actually ran (caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
 ```
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
@@ -347,7 +363,16 @@ leaves a matched range reading as never fired.
 The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
 figure parsed back out of that free-text slot would be exactly as trustworthy
 as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in. The TRIGGER travels the same way, on `--trigger`,
+helpfully fold it back in. The three SETTLED counts travel the same way, on
+`--survivors`, `--downgraded` and `--refuted`, and they are the figures the
+record seam DERIVED and returned on its envelope - never a number you counted
+by hand off the survivor list, and never folded into `--detail` either. The
+seam recounts the record's rulings against them and REFUSES a receipt that
+disagrees, which is what makes the survivor count recomputable instead of
+asserted. `--round <round>` is omitted on an ordinary fire and carries the
+round on a re-armed one, because that is the record the recount has to read:
+without it a round-two settle is checked against round one's stale rulings and
+passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
 and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
 range to its receipt on those two structured fields and never on the detail
 (`references/triage-gate.md` states the rule at all four settle points).
@@ -359,6 +384,53 @@ provider event of its own, and the survivor count alone cannot show a panel
 silently reduced to one voice while the gate reports clean - the dropped
 cross-model reviewer is only half of it. Name the set that RAN, never the set
 the trigger asked for.
+
+Then WRITE THE ADJUDICATION RECORD: the rulings themselves, not a count of them.
+An adjudicated-only rule would record nothing at all on most projects -
+`route.mjs resolve` returns `plan: blocking` and `risk_surface: blocking` at
+`shipped` stakes - and would exclude the sharpest case there is, a gate that
+passed with everything killed.
+
+YOU compose the payload, because you are the only actor holding both the raised
+finding bodies and the ruling: `review-provider.mjs` returns `findings` on
+stdout and never persists them, its own record carries provider, model, effort,
+tier, duration and outcome with no finding field, and
+`skills/cad-reviewer-contract/SKILL.md` specifies a return shape only. Compose
+it as a FILE in THIS RUN's own scratch directory, the way the provider payload
+is composed above, and NEVER hand-assemble that JSON with `echo` or a heredoc:
+the record's whole content is verbatim reviewer text with arbitrary quoting, so
+one unescaped quote makes the payload unparseable after the adjudication is
+already done and cannot be redone.
+
+The payload carries, PER VOICE, the reviewer's returned findings object
+VERBATIM, that voice's model, and one ruling per returned finding -
+`{voices: [{voice, model, returned, rulings: [...]}]}`, one entry per finding
+RAISED per raising voice. A `ruling` is `survived`, `downgraded` or `refuted`
+and there is no fourth value. Each ruling RESTATES the claim and the failure
+scenario it rules on, and the seam REFUSES the payload when a restatement
+differs from the returned text by one byte: the entry is stored from the
+reviewer's own words, so a paraphrase is refused rather than recorded. A
+`refuted` ruling names the contradicting code in its counter-evidence; a
+`survived` one names the fix commit.
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" adjudication --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload <path>
+```
+
+It lands at `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`,
+beside the sibling `REVIEW-<trigger>-<discriminator>.md` and on the same
+discriminator grammar - `plan-<k>` for a per-plan fire, `<command>-<short HEAD
+sha>` otherwise. It does NOT go inside `<plandir>/reports/`: the lease check
+exempts exactly one path under that directory by byte equality, so anything else
+staged from there answers `undeclared-files`.
+
+A RE-ARM PASSES `--round 2`, and the fire site is the only actor that knows
+which round it is on. A capped re-arm (`references/triage-gate.md`, ONE round)
+is a SECOND fire of the same trigger on the same plan, so it resolves to the
+same discriminator: round two lands at `...-<discriminator>-r2.json`, while an
+ordinary fire passes nothing and keeps the sibling's exact name. Omitting it on
+a re-arm is REFUSED - never merged and never overwritten - because round one's
+record is what an auditor reads to see the finding a fix was claimed to close.
 
 **A `risk_surface` fire PERSISTS its settled survivors, at every gate.** Unlike
 the append above, this is not the adjudicated ARM's alone: `risk_surface` is

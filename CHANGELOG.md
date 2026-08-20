@@ -6,6 +6,106 @@ All notable changes to Cadence are recorded here. The format follows
 
 ## [Unreleased]
 
+## [3.5.6] - 2026-08-20
+
+Last release fixed readers that accepted input they had a rule against. This one
+fixes the machinery that recorded what happened afterward, because a run that
+destroys the record of the run before it has no evidence to audit. Three phases,
+45 commits off `v3.5.5`, no requirement ids seeded: this cycle was planned
+against acceptance criteria alone, 20 of them, all 20 traced to a UAT item.
+
+### Added
+
+- **Executor reports rotate instead of overwriting.** A re-run used to write
+  `reports/plan-<k>.md` over the previous run's copy on its first task commit, so
+  the most detailed per-task record in the tree was the only one that was not
+  run-scoped. `cadence-core/bin/lib/report-rotation.mjs` answers a free suffix
+  from the directory listing, the executor rotates `plan-<k>.md` aside to
+  `plan-<k>.<n>.md` before its first write, and two runs now leave two readable
+  records. 7 tests in `report-rotation.test.mjs`.
+
+- **A gate fire writes an adjudication record you can recount.**
+  `ADJUDICATION-<trigger>-<discriminator>.json` lands beside the REVIEW file with
+  one entry per finding raised, per raising voice: the model, the severity as
+  raised, `file` and `line`, the claim and the failure scenario stored
+  byte-for-byte, and `base_id`/`head_id` as full 40-character SHAs. The ruling is
+  `survived`, `downgraded` or `refuted`, a refutation carries the code that
+  contradicts the claim, and a survivor carries its fix commit. Every citation is
+  grounded with `git cat-file -e <head_id>:<file>` before the record is accepted.
+  The seam refuses to overwrite an existing record and refuses a paraphrased
+  ruling.
+
+  The point is the auditor walk: `git checkout <head_id>`, open the cited
+  `file:line`, read the verbatim claim, decide for yourself whether the
+  adjudication was right. Before this, the outcome survived as one sentence on a
+  trace event.
+
+- **`trace append` takes `--survivors`, `--downgraded` and `--refuted`**, and
+  `recountReceipt` re-derives all three from the stored rulings before it lets
+  the receipt onto the trace. A count that disagrees with the record is refused
+  as `count-disagreement` and nothing is appended. The survivor count is now
+  derived, not asserted.
+
+### Changed
+
+- **`/cad-report` renders the Gates line from the record** rather than narrating
+  a figure out of a `detail` string, names a disagreement when it finds one, and
+  reads a fire with no record as `unrecorded`. Nothing is synthesized for phases
+  that predate the format.
+
+### Fixed
+
+- **`/cad-execute` refuses a phase that already executed.** The locate step
+  stopped on unplanned and on missing plan files and nothing else, so a phase
+  whose derived status was `executed` was dispatched again from task 1 against a
+  plan whose tasks were already committed. It now refuses on derived status
+  `executed` or `complete`, names `/cad-undo <N>` then `/cad-execute <N>` as the
+  supported path, and `--rerun` is the deliberate override.
+
+- **The risk gate no longer deadlocks on an empty range.** A range with zero
+  commits answered `checked:false, inconclusive:true`, `execute.md` reads
+  inconclusive as a fire, and `risk-check status` then refuses
+  `risk-record-missing`, so a blocking cross-model review was demanded of a diff
+  with nothing in it and the run needed a user override to finish. An empty range
+  is now `checked:true, inconclusive:false, empty:true` and `status` admits it
+  through the existing `recorded` arm. A range that contains commits but cannot
+  be judged still fires, unchanged. Emptiness is decided from the diff body, not
+  from `base_id === head_id`, so a revert pair with a zero net diff takes the
+  empty arm too.
+
+- **The risk range is read with `--no-ext-diff --no-textconv`.** The gate's own
+  review caught this one and it was real: a `diff=<driver>` attribute in a
+  checked-in `.gitattributes` binds to a `diff.<driver>.command` or `.textconv`
+  in the reader's own git config, so `git diff <base> <head>` can emit zero bytes
+  for a range that changed a file. No attacker needed, a `textconv` for pdf or
+  docx in your own `~/.gitconfig` does it. Confirmed in a scratch repo before it
+  was ruled: the driver emitted 0 bytes across a commit whose changed line was a
+  recursive delete, `--no-ext-diff` emitted 109. Without this the new empty arm
+  would have been a silent clear on the one trigger that blocks at every stakes
+  level.
+
+- **`lease-check` exempts a rotated report.** The exemption was byte equality
+  against `<pdir>/reports/plan-<k>.md`, which was correct while a plan had
+  exactly one report and wrong the moment rotation shipped, so an executor
+  staging `plan-<k>.<n>.md` during a task commit was blocked with
+  `undeclared-files` for obeying its own contract. `isReportName(k, name)` states
+  the grammar once in the rotation module and `lease-check` imports it. The
+  exemption stays bounded: `plan-<k>-risk.diff`, `plan-<k>-risk-task-<n>.diff`,
+  another plan's report, a case variant and a nested path are all still refused,
+  so a blocking gate's flagged evidence cannot ride into a task commit.
+
+### Known issues
+
+- `cadence-core/bin/milestone-prune.test.mjs:557` fails against this repository's
+  own `.planning/`, because the corpus row expects `## Active` to carry the
+  current cycle's requirement rows and this cycle seeded none. Full suite is
+  2464/2465 with that as the only failure. It is a fixture-state mismatch, not a
+  defect in `milestone-prune`.
+
+- `lib/trace-suggest.mjs` still parses survivor counts out of the `--detail`
+  string and ignores the three structured flags, so one reader in the tree
+  continues to trust the prose this cycle set out to replace.
+
 ## [3.5.5] - 2026-08-19
 
 Last release closed controls that ran and answered wrong. This one closes
@@ -3127,6 +3227,7 @@ found was fixed in this release rather than deferred.
 /plugin install cadence@cadence
 ```
 
+[3.5.6]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.6
 [3.5.5]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.5
 [3.5.4]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.4
 [3.5.3]: https://git.jcrenshaw.dev/crenshawdev/cadence/releases/tag/v3.5.3

@@ -200,6 +200,13 @@ Derive it from the plan path alone - never ask for a phase number, never assume
 `.planning/tasks/<slug>/PLAN.md`, and its report must land beside it; a
 dispatch-supplied path is exactly what would break that.
 
+**Rotate before your FIRST write of the dispatch**: rename any
+`<plandir>/reports/plan-<k>.md` already on disk to the free `plan-<k>.<n>.md`
+name that `${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/lib/report-rotation.mjs`
+states and tests, because that file is a previous run's only per-task record of
+what ran and what it printed, and your first task commit would otherwise
+overwrite it before anything read it.
+
 **Write it after EVERY task commit**, not once at the end, rewriting the whole
 file each time with `Write`: status `PLAN PARTIAL` until the last task's row
 lands, `PLAN COMPLETE` after it. A timed-out executor returns nothing at all,

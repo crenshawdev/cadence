@@ -695,6 +695,76 @@ test('WIR-01: the recovery arm names its producers in both documents, and the de
     `review-triggers.md's \`claude-subagent\` bullet names no maxTurns ${bound} bound`);
 });
 
+// --- #195: the locate step's re-run refusal, and its unconditional status call
+
+/** The body of a named `<step>` in a workflow, read by its own anchor. */
+const stepBody = (text, name, where) => {
+  const m = text.match(new RegExp(`<step name="${name}">([\\s\\S]*?)</step>`));
+  assert.ok(m, `${where} has no <step name="${name}">`);
+  return m[1];
+};
+
+test('#195: execute.md locates unconditionally and refuses an already-executed phase', () => {
+  // The defect. `/cad-execute <N>` re-dispatched a phase whose plans were
+  // already committed, and the second run's first task write landed on top of
+  // the first run's `reports/plan-<k>.md` - destroying the only per-task record
+  // of the run being re-run. Two halves fix it (CONTEXT D-04), and each has its
+  // own way of silently coming back:
+  //   - the refusal itself, which a later edit can narrow to `executed` alone,
+  //     leaving `complete` re-running identically one status later; and
+  //   - the `status` call, which was under an `else` that `$ARGUMENTS`
+  //     short-circuited, so `/cad-execute 3` reached this step with no derived
+  //     status to refuse ON. Restoring that `else` turns the refusal into dead
+  //     prose while every word of it is still on the page.
+  // So both are read out of the step by its own anchor rather than grepped for
+  // across the file, and no report-path literal is asserted anywhere here: the
+  // current run's path is still `plan-<k>.md`, so a literal would be a string
+  // this same commit writes and could never fail.
+  const locate = stepBody(doc('cadence-core', 'workflows', 'execute.md'), 'locate', 'execute.md');
+
+  // 1. The status call is not conditioned on the phase argument. Extracted, not
+  //    grepped: the sentence that CARRIES the invocation is the one that would
+  //    have to say "else" for the call to be skippable.
+  const call = sentenceAround(locate, 'planning.mjs" status', "execute.md's locate step");
+  assert.doesNotMatch(call, /\belse\b|\botherwise\b|\bonly (?:if|when)\b/i,
+    'execute.md runs `planning.mjs status` conditionally, so a phase number on the command '
+    + `line skips the derivation the refusal below reads: ${call}`);
+  assert.doesNotMatch(call, /\$ARGUMENTS/,
+    'execute.md\'s `planning.mjs status` call is back inside the `$ARGUMENTS` bullet, which '
+    + `is the branch that short-circuited it: ${call}`);
+
+  // 2. The refusal arm, found by the recovery path it names - a refusal that
+  //    named no way forward would fail this at the anchor itself.
+  const arms = locate.split(/\n- /).slice(1);
+  const refusal = arms.find((a) => a.includes('/cad-undo'));
+  assert.ok(refusal,
+    "execute.md's locate step names no /cad-undo route, so it either refuses nothing or "
+    + 'refuses without naming the supported path');
+  // The TRIGGER clause only - the arm text before `-> stop:`. Asserting against
+  // the whole arm passes on a trigger narrowed to `executed` alone, because the
+  // rationale sentence after the stop names `complete` on its own.
+  const trigger = refusal.split(/->\s*stop:/)[0];
+  assert.ok(trigger && trigger !== refusal,
+    "execute.md's refusal arm has no `-> stop:`, so its trigger clause cannot be "
+    + `read apart from its rationale: ${refusal}`);
+  for (const derived of ['executed', 'complete']) {
+    assert.match(trigger, new RegExp(`\`${derived}\``),
+      `that refusal does not TRIGGER on derived status \`${derived}\`, which re-runs and `
+      + 'overwrites the executor reports of the run that committed the phase');
+  }
+  assert.match(refusal, /\/cad-undo <N>/, 'the refusal does not name `/cad-undo <N>`');
+  assert.match(refusal, /\/cad-execute <N>/, 'the refusal does not name `/cad-execute <N>`');
+  assert.match(refusal, /--rerun/,
+    'the refusal names no deliberate way through, so an intentional re-run has no route but '
+    + 'editing the workflow');
+
+  // 3. It stops BEFORE the guard and the trace anchor, which is what makes it a
+  //    refusal rather than a late apology: `locate` is the first step, and the
+  //    arm is inside it.
+  assert.ok(locate.indexOf('/cad-undo') > locate.indexOf('planning.mjs" status'),
+    'the refusal is read before the derivation it refuses on');
+});
+
 // --- DOC-02: README counts its own skills, roles and rung files --------------
 
 test('README\'s "Today it is N skills and M agent roles across K rung files" matches the tree', () => {
@@ -1584,4 +1654,73 @@ test('REL-01: git.create_tag is read at one prose site, and its purpose names th
     `git.create_tag's schema purpose - "${purpose}" - still names the milestone close, `
     + `which stopped reading the key: the cut is ${moment}'s, on the pulled base after the `
     + 'merge confirms');
+});
+
+// --- AC6: /cad-report's Gates line is rendered, not narrated ------------------
+//
+// The three clauses AC6 asks for live in ONE workflow file and nothing else can
+// hold them: the Gates line is prose the model executes, so a revert of any
+// clause is invisible to every other check here - self-verify's flag lint sees
+// no flag, the weight budget sees only bytes, and no seam is invoked by the
+// line at all. The Refuted clause is pinned in the same test because the
+// decision that made this edit safe was that the two lines have different
+// sources (D-10): gate findings for one, SUMMARY deviations that corrected a
+// D-NN for the other, and folding the record into the second is the edit this
+// row exists to catch.
+//
+// Read by NAMED ANCHOR - each line's own `Gates:` / `Refuted:` opening and the
+// rules bullet's own subject - never by the shape of the sentences around it,
+// so a rewrap that changed no fact stays green.
+
+test('AC6: report.md renders its Gates line from the record, states the unrecorded arm, and leaves Refuted on SUMMARY', () => {
+  const text = doc('cadence-core', 'workflows', 'report.md');
+  const where = 'cadence-core/workflows/report.md';
+  const line = (label) => {
+    const found = text.split('\n').find((l) => l.startsWith(`${label}:`));
+    assert.ok(found, `${where}: the composed shape no longer carries a ${label} line`);
+    return found;
+  };
+
+  // 1. THE RECORD IS AN ARTIFACT THE STEP OPENS. The `REVIEW-*.md` glob beside
+  //    it cannot match a `.json` sibling, so without this entry the Gates line
+  //    below asks for a file the step never opened.
+  assert.match(text, /\.planning\/phases\/<N>\/ADJUDICATION-\*\.json/,
+    `${where}: read_record's scoped-artifact list no longer opens the adjudication record`);
+
+  // 2. THE GATES LINE COUNTS, and compares against the event's own figures.
+  const gates = line('Gates');
+  assert.match(gates, /ADJUDICATION/,
+    `${where}: the Gates line no longer names the record: ${gates}`);
+  assert.match(gates, /COUNTED/,
+    `${where}: the Gates line stopped saying the rulings are COUNTED, so it is back to `
+    + `narrating a figure nothing recomputes: ${gates}`);
+  for (const flag of ['survivors', 'downgraded', 'refuted']) {
+    assert.ok(gates.includes(flag),
+      `${where}: the Gates line no longer compares the count against the event's ${flag}: ${gates}`);
+  }
+
+  // 3. THE UNRECORDED ARM, which is what stops a phase predating the format
+  //    being synthesized into a record it never had.
+  assert.match(gates, /unrecorded/,
+    `${where}: the Gates line no longer reads a fire with no record as unrecorded: ${gates}`);
+  const rule = sentenceAround(text, 'A fire with NO record', where);
+  assert.match(rule, /unrecorded/, `${where}: ${rule}`);
+  assert.match(sentenceAround(text, 'Synthesize no entry', where), /recomputed|recompute/,
+    `${where}: the no-synthesis rule stopped saying a count that cannot be recomputed is not `
+    + 'narrated, which is the whole of what "unrecorded" buys');
+
+  // 4. A DISAGREEMENT IS NAMED. Silently preferring one side would launder the
+  //    exact defect the two-artifact comparison exists to surface.
+  assert.match(sentenceAround(text, 'DISAGREEMENT', where), /NAMED/,
+    `${where}: a record disagreeing with its trace event is no longer NAMED`);
+
+  // 5. THE REFUTED LINE IS UNTOUCHED, and still sourced from SUMMARY.
+  const refuted = line('Refuted');
+  assert.match(refuted, /SUMMARY deviations/,
+    `${where}: the Refuted line stopped reading SUMMARY deviations: ${refuted}`);
+  assert.match(refuted, /D-NN/,
+    `${where}: the Refuted line stopped naming the decision a deviation corrected: ${refuted}`);
+  assert.doesNotMatch(refuted, /ADJUDICATION|survivors/,
+    `${where}: the Refuted line acquired gate findings - it consumes SUMMARY deviations that `
+    + `corrected a D-NN and nothing else (D-10): ${refuted}`);
 });

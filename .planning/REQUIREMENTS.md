@@ -1,32 +1,35 @@
-# Requirements: Cadence (no cycle open)
+# Requirements: Cadence (v3.5.7 open)
 
 **Defined:** 2026-07-16
 **Core Value:** What Cadence writes down during a project (deviations, decisions, captures, UAT findings) must come back on its own at the moment it matters — planning, context-gathering, and debugging — without any external memory system.
 
 ## Active
 
-No cycle open. `v3.5.5` closed on 2026-08-19; its thirteen shipped ids are in
-`## Shipped` below, each carrying the `v3.5.5` label. `/cad-phase add` opens the
-next cycle's first phase entry, and nothing is promoted here to fill the section
-in the meantime.
+Committed scope for **`v3.5.7 - measured, and no lever to change it`**, opened
+2026-08-20 from the tracker milestone holding #167, #174, #189 and #206. Ids are
+seeded here at the open, deliberately: `v3.5.6` seeded none, so its `/cad-audit`
+traced zero requirements and returned PASS on an empty set while the coverage arm
+carried the entire proof. `/cad-plan` seeds each Traceability row as its phase is
+planned; rows are never hand-populated here.
+
+- **RDX-01**: the read-set redundancy the read trace already measures reaches a consumer that acts on it, rather than being a number nothing reads (#167)
+- **BCH-01**: N security reviews run in one process paying one cold prefix, not N invocations paying N (#174)
+- **CER-01**: ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)
+- **IVW-01**: the risk-surface interview has a user-triggerable entry point and its menu stops offering the same set twice (#206)
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
-deferral reasons and none is promoted, and the two caveats the 2026-08-18 audit
-recorded are still undecided rather than settled at this close: `CTX-02`'s two
-issues (#69, #29) are both closed and #29's ask shipped as
-`/cad-minimalism-review`, so its stated basis no longer holds; and `RCL-06`
-carries no deferral reason and no promotion trigger, so nothing can ever re-ask
-it. Both want a decision before either is scoped.
+deferral reasons and none is promoted into this cycle. Their 2026-08-18 caveats
+are still undecided: `CTX-02`'s stated basis no longer holds, since both its
+issues (#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`;
+and `RCL-06` carries no deferral reason and no promotion trigger, so nothing can
+ever re-ask it. Both want a decision before either is scoped.
 
-Milestones `v3.5.6` (#139, #140, #145, #195) and `v3.5.7` (#167, #174, #189,
-#206) are scoped on the tracker and neither was opened here. Issues #190 through
-#193 carry no milestone. The open items filed at the `v3.5.1` close (#181
-through #187), the proposals filed at the `v3.5.2` close (#189 through #197),
-the eight medium `risk_surface` survivors carried forward at the `v3.5.4` close
-and the three carried forward at this one are all unassigned.
-
-`/cad-plan` seeds each requirement's Traceability row as its phase is planned -
-rows are never hand-populated here.
+Not in this cycle and unassigned: #139, #140 and #145, which were scoped to
+`v3.5.6` and never planned into a phase, so that milestone's stated theme went
+untouched. Issues #190 through #193 carry no milestone. The open items filed at
+the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and the medium
+`risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6`
+closes are all still unassigned.
 
 ## Shipped
 
@@ -261,4 +264,4 @@ from `/cad-plan`'s `seed-reqs` call as each phase is planned - never
 hand-populated.
 
 ---
-*Last updated: 2026-08-16 v3.5.1 closed with all four requirements delivered and verified (4/4 traced, 14/14 acceptance criteria covered); AUT-01, AUT-02, PRN-01 and TRK-01 move to `## Shipped` as rows and `## Traceability` starts clean. `v3.5.2 - one reader, one transport` scoped as TRN-01 and LSE-01*
+*Last updated: 2026-08-20 v3.5.6 closed. It seeded no requirement ids, so `## Traceability` held no rows to archive and the audit's trace arm ran over zero requirements while the coverage arm carried the proof at 20/20 criteria across 3 phases. `v3.5.7 - measured, and no lever to change it` scoped as RDX-01, BCH-01, CER-01 and IVW-01, seeded at the open so the trace arm is live from the first phase*

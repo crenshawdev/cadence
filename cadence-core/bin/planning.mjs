@@ -187,11 +187,13 @@ import { requireCursorNumber, requireInt, requirePhaseArg } from './lib/require-
 import { resolveTextFlag } from './lib/text-flag-file.mjs';
 import { redactUrl } from './lib/redact-url.mjs';
 import { covers, intersects } from './lib/lease-grammar.mjs';
+import { isReportName } from './lib/report-rotation.mjs';
 import { testSeamOpen } from './lib/test-seam.mjs';
 import { onPath, executableIn } from './lib/on-path.mjs';
 import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
+import { buildEntries, deriveCounts } from './lib/adjudication-record.mjs';
 import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
 
 // The raw argument list, kept beside the envelope helpers because the flags
@@ -2444,9 +2446,35 @@ function cmdLeaseCheck(dir, opts) {
   const staged = [...new Set(parsed.entries.flatMap(
     (e) => (e.source === null ? [e.path] : [e.source, e.path])))];
 
-  // Exactly ONE exemption, and nothing else: the plan's own report file, which
-  // the contract requires the executor to write and which no plan declares.
-  const reportFile = repoRel(top, join(pdir, 'reports', `plan-${k}.md`));
+  // Exactly ONE exemption, and nothing else: the plan's own REPORTS, which the
+  // contract requires the executor to write and which no plan declares.
+  //
+  // It used to be one name by byte equality, and that was correct while a plan
+  // had exactly one report. Since rotation (#195) an executor holds
+  // `plan-<k>.md` and `plan-<k>.<n>.md` at once - it renames the previous run's
+  // record aside before its first write - so a re-run staging the rotated
+  // sibling during a task commit was refused `undeclared-files`, blocking the
+  // executor for obeying its own contract.
+  //
+  // NOT a directory lease, and the distinction is the whole bound (D-06).
+  // `plan-<k>-risk.diff` and `plan-<k>-risk-task-<n>.diff` live in this same
+  // directory, and a `risk_surface` checkpoint deliberately leaves flagged
+  // changes staged: a directory exemption would let a blocking gate's own
+  // evidence ride into a task commit unnamed. So the test is two halves - the
+  // path sits DIRECTLY in this plan directory's `reports/` (a further separator
+  // disqualifies it, so a nested `reports/old/plan-1.1.md` no executor writes
+  // stays refused), and its final component is a name for THIS `k`.
+  //
+  // Which names those are is `lib/report-rotation.mjs`'s answer and not this
+  // function's, for the reason the `covers` block below states: a second copy
+  // here is exactly how two seams come to disagree, and the disagreement
+  // available here is the rename picker minting a name this gate then refuses.
+  const reportsDir = repoRel(top, join(pdir, 'reports'));
+  const isOwnReport = (/** @type {string} */ p) => {
+    if (!p.startsWith(`${reportsDir}/`)) return false;
+    const name = p.slice(reportsDir.length + 1);
+    return !name.includes('/') && isReportName(k, name);
+  };
 
   // What a declaration covers is `lib/lease-grammar.mjs`'s answer and not this
   // function's - the same module `cmdPlanOverlap` asks, which is the whole
@@ -2460,7 +2488,7 @@ function cmdLeaseCheck(dir, opts) {
   // canonical through `repoRel`, and a second transform over paths that
   // round-tripped through the byte-level guard above is how the non-ASCII hard
   // block gets re-broken.
-  const undeclared = staged.filter((p) => p !== reportFile
+  const undeclared = staged.filter((p) => !isOwnReport(p)
     && !declared.some((d) => covers(d, p)));
 
   const common = {
@@ -3422,6 +3450,47 @@ function cmdTrace(dir, sub, opts) {
       raised = parsed.value;
     }
 
+    // --survivors / --downgraded / --refuted: the SETTLED figures of a fire,
+    // the other side of the `--raised` count above. `9 raised` says what the
+    // reviewers found; these three say what survived being argued with, which
+    // is the whole of what an adjudication decided.
+    // Structured for the reason `--raised` is, and validated the same way: a
+    // malformed value is a malformed CALL and NOTHING is appended, never a
+    // best-effort append with the field dropped, because a dropped figure reads
+    // downstream as UNKNOWN while the caller believes a count landed. No
+    // comma-grouping exception, for the reason `--raised` and `--turns` both
+    // give - a finding count is never PRINTED grouped, so accepting `1,234`
+    // would only widen what can be mistyped.
+    // Each key is OMITTED when its flag was absent and a real `--survivors 0`
+    // still records a 0: a fire nobody counted and a fire that counted zero are
+    // different fires, and the key is what separates them.
+    const settled = {};
+    for (const flag of ['survivors', 'downgraded', 'refuted']) {
+      if (!(flag in opts)) continue;
+      const parsed = requireInt(opts[flag]);
+      if (!parsed.ok || parsed.value < 0) {
+        return fail('bad-args', `trace ${sub} --${flag} needs a non-negative integer`);
+      }
+      settled[flag] = parsed.value;
+    }
+
+    // --round: WHICH round of a capped re-arm this event belongs to. Not
+    // decoration - the record a receipt settles is written at
+    // `...-<discriminator>-r<round>.json` above round 1, so a settle that names
+    // no round resolves ROUND ONE's filename and would check round two's
+    // figures against round one's stale rulings, passing whenever the two
+    // happen to coincide. Absent means round 1 on both sides, so the write side
+    // and the receipt side resolve one filename by one rule.
+    let round = 1;
+    if ('round' in opts) {
+      const parsed = requireInt(opts.round);
+      if (!parsed.ok || parsed.value < 1) {
+        return fail('bad-args',
+          `trace ${sub} --round needs the re-arm round after it, a whole number of at least 1`);
+      }
+      round = parsed.value;
+    }
+
     // --read: the read-set the SITE caused the worker to read, as ONE
     // comma-separated value split the way `phase-done --reqs` splits its ids.
     // A repeated flag is impossible by construction rather than by choice -
@@ -3518,6 +3587,23 @@ function cmdTrace(dir, sub, opts) {
     const reviewer = trimmed('--reviewer');
     const trigger = trimmed('--trigger');
 
+    // THE CROSS-ARTIFACT CHECK (AC4). The three settled figures are DERIVED by
+    // the `adjudication` seam from the record's own rulings and copied onto
+    // this line by hand, so this is where a mistyped one is still cheap: the
+    // record for this fire is recounted and a figure that disagrees is a
+    // malformed CALL, refused with NOTHING appended. Left to a later test, the
+    // wrong count has already shipped on the fire's own receipt.
+    //
+    // ABSENT RECORD OMITS THE CHECK and stores the flags as given - a fire
+    // predating the format, or an advisory arm that wrote none. This is a
+    // cross-check between two artifacts, never a requirement that one exist:
+    // making a receipt depend on a record would make an unrecordable fire
+    // unrecordable in the trace as well.
+    const recount = recountReceipt(dir, parsedPhase.raw, {
+      trigger, plan: flags['--plan'], sha: flags['--sha'], round, settled,
+    });
+    if (!recount.ok) return fail(recount.reason, recount.detail, recount.hint);
+
     // No flag below is coupled to an event NAME: the seam stays event-agnostic
     // exactly as it is today, which is what makes `return`, `checkpoint` and
     // `escalation` store tokens identically. `--step` does not change that: the
@@ -3553,6 +3639,13 @@ function cmdTrace(dir, sub, opts) {
       // exactly as `--tokens 0` already does.
       ...(turns === undefined ? {} : { turns }),
       ...(raised === undefined ? {} : { raised }),
+      // The settled figures, each key present only when its flag was: a fire
+      // nobody counted stays distinguishable from one that counted zero.
+      ...settled,
+      // The round, only when the caller named one: an ordinary fire is round 1
+      // by omission on both sides, and writing a `round: 1` onto every event
+      // would put a re-arm field on the thousands that never re-armed.
+      ...('round' in opts ? { round } : {}),
       ...(read === undefined ? {} : { read }),
       ...(step === undefined ? {} : { step }),
       ...(reviewer === undefined ? {} : { reviewer }),
@@ -3886,7 +3979,21 @@ function cmdRiskCheckRun(dir, opts) {
       // the spellings, so the body read is exactly the range recorded. The
       // trailing `--` ends the revision list: a ref that also names a path
       // cannot turn into a pathspec here.
-      body = execFileSync('git', ['-C', range.top, 'diff', baseId, headId, '--'],
+      //
+      // `--no-ext-diff --no-textconv` are what make the EMPTY answer mean what
+      // scanDiff reports it to mean. A `diff=<driver>` attribute in a checked-in
+      // `.gitattributes` binds to a `diff.<driver>.command` or `.textconv` in
+      // the reader's OWN git config, so a repository the user merely cloned can
+      // route this read through a helper that prints nothing and exits 0 - and
+      // no attacker is needed for it, since a `textconv` for pdf/docx in
+      // `~/.gitconfig` does it by accident. `git diff <base> <head> --` then
+      // emits zero bytes for a file whose changed line is a recursive delete, and
+      // scanDiff answers `checked: true, empty: true, matches: []`: a COMPLETED
+      // clear on the one gate that is blocking at every stakes level. Both flags
+      // are diff-generation switches only - they change no id, no range and no
+      // exit status, so the empty/unreadable split above is untouched.
+      body = execFileSync('git',
+        ['-C', range.top, 'diff', '--no-ext-diff', '--no-textconv', baseId, headId, '--'],
         { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: RISK_DIFF_MAX_BUFFER });
     } catch (e) {
       // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set`
@@ -3929,6 +4036,11 @@ function cmdRiskCheckRun(dir, opts) {
     // has to state a reason.
     matches: scan.matches.map((m) => m.category),
     inconclusive: scan.inconclusive,
+    // The range was READ and held nothing - a completed check, not an
+    // unchecked one (D-01/D-02). Written beside `checked` on the record and on
+    // the envelope both, so the record a later `status` joins and the envelope
+    // the coordinator reads cannot disagree about it.
+    empty: scan.empty,
   });
 
   const envelope = {
@@ -3942,6 +4054,7 @@ function cmdRiskCheckRun(dir, opts) {
     categories: scan.categories,
     matches: scan.matches,
     inconclusive: scan.inconclusive,
+    empty: scan.empty,
     trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
   };
 
@@ -4241,6 +4354,20 @@ function cmdRiskCheckStatus(dir, opts) {
       // neither field, and an absent verdict is not a passing one.
       checked: e.checked === true,
       inconclusive: e.inconclusive === true,
+      // WHY a range with nothing in it is `recorded` and not a refusal. An
+      // empty committed range is a check that RAN, so it arrives here
+      // `checked: true, inconclusive: false, matches: []` and reaches
+      // `recorded` through the arms below unaided - no fifth state name, which
+      // `offending` (`row.state !== 'recorded'`) would turn into an automatic
+      // `ok:false`, and no extra clause in `fired`. The flag is read for the
+      // reader's sake alone: it rides the reported `records` array so an
+      // auditor can see WHY a row is `recorded` with nothing matched.
+      //
+      // `=== true` for the reason stated two fields up: 69 `outcome/risk_check`
+      // events on this repository's own trace were written before the seam
+      // separated an empty range from an unread one, and an absent field is not
+      // an empty range.
+      empty: e.empty === true,
       // The category TOKENS `cmdRiskCheckRun` writes onto every record and this
       // reader used to drop. They are what makes a range FIRED: a record
       // carrying one is a range workflows/execute.md was obliged to fire the
@@ -4460,6 +4587,436 @@ function cmdRiskCheck(dir, sub, opts) {
   if (sub === 'run') return cmdRiskCheckRun(dir, opts);
   if (sub === 'status') return cmdRiskCheckStatus(dir, opts);
   return fail('usage', 'risk-check <run|status>');
+}
+
+// ---------------------------------------------------------------------------
+// adjudication - the record a blocking or adjudicated gate fire leaves beside
+// its sibling REVIEW-<trigger>-<discriminator>.md.
+//
+// THE DEFECT IT CLOSES. A gate settled its findings and then summarized itself:
+// the trace kept `<n> survivors of <m> raised`, the finding BODIES were never
+// written anywhere, and a refutation - the ruling that DELETES a finding -
+// could not be checked against the code it claimed to refute, because the claim
+// was gone by the time anyone asked. This seam writes one entry per finding
+// RAISED per raising voice, carrying the reviewer's own words, so the auditor
+// path `git checkout <head_id>` then open `file:line` is mechanical.
+//
+// THE GRAMMAR IS lib/adjudication-record.mjs's; THE I/O IS THIS FUNCTION'S.
+// The module classifies a composed payload and derives the counts, and every
+// decision it cannot make without touching the world - reading the payload
+// file, resolving the range, choosing the path, refusing to overwrite - is made
+// here. That split is why the module can be tested without a repository.
+//
+// THE PAYLOAD IS A FILE, never inline JSON (D-03), read through
+// `readJsonPayload` - the reader `uat merge` already uses, whose
+// `no-payload`/`bad-payload` split is exactly what a truncated or never-written
+// file looks like. The record's whole content is verbatim reviewer text with
+// arbitrary quoting, so one unescaped quote in a heredoc would make the payload
+// unparseable after the adjudication was already done and could not be redone.
+//
+// THE IDS ARE RESOLVED HERE AND THE CALLER'S SPELLING IS NOT TRUSTED (D-08):
+// measured on this repository, 44 of the 52 outcome receipts carrying a `base`
+// spell it 7-char, and `workflows/execute.md` passes the literal `HEAD`, which
+// is not a commit id at all. An unresolvable range is a REFUSAL rather than a
+// record with null ids - a record whose head cannot be checked out is not the
+// artifact this subcommand exists to produce.
+// ---------------------------------------------------------------------------
+
+/**
+ * The spelling `--trigger` and `--discriminator` may carry: the character set
+ * the `REVIEW-<trigger>-<discriminator>.md` filenames already on disk use.
+ *
+ * VALIDATED AND REFUSED, never sanitized, because both reach a FILENAME.
+ * `milestone-prune --label` was only TRIMMED before `join(dir, '_archive-' +
+ * label)` and a label read out of PROJECT.md escaped the tree (VAL-01);
+ * sanitizing silently writes a record under a name the caller did not choose,
+ * which is the same class of answer about something nobody asked for. No path
+ * separator, no `.` - which takes `..` with it and keeps the `.json` suffix
+ * this seam's own - and no leading `-`, so the name can never be read as an
+ * option by whatever later walks the directory.
+ */
+const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * The record's filename, as ONE rule both sides resolve by.
+ *
+ * The writer below and the receipt recount in `cmdTrace` have to name the same
+ * file or the cross-check reads a different fire's rulings than the one being
+ * settled - and the failure of that is SILENT, since a recount against round
+ * one's record passes whenever the two rounds' counts happen to coincide. Round
+ * 1 keeps the sibling `REVIEW-<trigger>-<discriminator>.md`'s exact name; every
+ * round above it carries its round, so a re-arm lands beside round one rather
+ * than on top of it.
+ *
+ * @param {string} trigger @param {string} discriminator @param {number} round
+ */
+const recordName = (trigger, discriminator, round) =>
+  `ADJUDICATION-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`;
+
+/**
+ * The record a receipt SETTLES, as an absolute path, or '' when this fire has
+ * none that can be resolved.
+ *
+ * A receipt names its fire with `--trigger`, `--sha` and - on a per-plan fire -
+ * `--plan <k>`, which is the D-06 discriminator grammar minus the spelling: a
+ * per-plan fire's discriminator IS `plan-<k>`, and every other fire's is
+ * `<command>-<short head sha>`, whose command half no receipt carries. So the
+ * per-plan arm resolves ONE name and the other arm matches the directory on the
+ * trigger, the round and the head the discriminator ends with, taking a single
+ * unambiguous hit and nothing else. Two candidates answer '' rather than a
+ * guess: a check that might be reading another fire's rulings is worse than no
+ * check, because it refuses a correct receipt.
+ *
+ * EVERY ARM ANSWERS '' RATHER THAN THROWING. This resolves a cross-check, and
+ * an unresolvable one omits the check - it never fails the append.
+ *
+ * `trigger` is validated against `RECORD_TOKEN` before it reaches `join`, the
+ * same rail the writer applies for the same reason (VAL-01): it reaches a
+ * FILENAME, and a `--trigger ../../etc` that resolved anything at all would be
+ * reading outside the phase directory.
+ *
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {string|undefined} trigger @param {any} plan @param {any} sha
+ * @param {number} round
+ * @returns {string}
+ */
+function recordForFire(dir, phaseRaw, trigger, plan, sha, round) {
+  if (typeof trigger !== 'string' || !RECORD_TOKEN.test(trigger)) return '';
+  const pdir = join(dir, 'phases', String(phaseRaw));
+  /** A regular FILE at `name` under the phase directory, or ''. A symlink is
+   * not a record: it is followed out of the tree by every reader after it. */
+  const regular = (name) => {
+    const file = join(pdir, name);
+    try { return lstatSync(file).isFile() ? file : ''; } catch { return ''; }
+  };
+
+  const planKey = plan === undefined || plan === null ? '' : String(plan).trim();
+  if (planKey) {
+    const discriminator = `plan-${planKey}`;
+    // Refused here for the reason the writer refuses it: a discriminator
+    // outside this grammar names no record the writer could ever have written.
+    if (!RECORD_TOKEN.test(discriminator)) return '';
+    return regular(recordName(trigger, discriminator, round));
+  }
+
+  const head = typeof sha === 'string' ? sha.trim().toLowerCase() : '';
+  if (!/^[0-9a-f]{7,40}$/.test(head)) return '';
+  const prefix = `ADJUDICATION-${trigger}-`;
+  const suffix = round > 1 ? `-r${round}.json` : '.json';
+  /** @type {string[]} */
+  let names = [];
+  try { names = readdirSync(pdir); } catch { return ''; }
+  const hits = names.filter((name) => {
+    if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
+    const discriminator = name.slice(prefix.length, name.length - suffix.length);
+    // At round 1 the suffix is bare `.json`, which every higher round's file
+    // also ends with - so a `-r<n>` tail is another round's record, not this
+    // fire's discriminator.
+    if (round === 1 && /-r\d+$/.test(discriminator)) return false;
+    // The discriminator's last segment is the short head sha. Compared as a
+    // PREFIX in whichever direction is shorter, because the receipt may spell
+    // the head 7-char or full while the filename is abbreviated.
+    const tail = discriminator.slice(discriminator.lastIndexOf('-') + 1).toLowerCase();
+    return tail.length >= 7 && (head.startsWith(tail) || tail.startsWith(head));
+  });
+  // Through `regular` like the per-plan arm above: the glob found a NAME, and a
+  // symlink wearing that name is followed out of the tree by every reader after
+  // it, which is the disposition this function already declares.
+  return hits.length === 1 ? regular(hits[0]) : '';
+}
+
+/**
+ * Do this receipt's settled figures agree with the rulings in its fire's own
+ * record (AC4/D-01)?
+ *
+ * WHY IT IS ASKED HERE. The three figures are DERIVED by the `adjudication`
+ * seam and copied onto the receipt line by hand, so the receipt is where a
+ * mistyped one enters the record - and once appended, the trace and the record
+ * disagree forever with nothing saying which is right. Recounting at write time
+ * is what makes the survivor count recomputable rather than asserted.
+ *
+ * ONLY WHEN ALL THREE ARE PRESENT: a partial set cannot be checked against a
+ * recount that answers all three, and refusing on one of them would refuse a
+ * receipt shape nothing writes.
+ *
+ * An ABSENT record omits the check - a fire predating the format, or an
+ * advisory arm that wrote none. The trace is gitignored, so it is the local
+ * cross-check and the committed record is the custody artifact; a receipt that
+ * could not be cross-checked is not thereby wrong.
+ *
+ * @param {string} dir @param {string|number} phaseRaw
+ * @param {{trigger: string|undefined, plan: any, sha: any, round: number,
+ *   settled: Record<string, number>}} fire
+ * @returns {{ok: boolean, reason: string, detail: string, hint: string}}
+ */
+function recountReceipt(dir, phaseRaw, fire) {
+  const keys = ['survivors', 'downgraded', 'refuted'];
+  const pass = { ok: true, reason: '', detail: '', hint: '' };
+  if (!keys.every((k) => k in fire.settled)) return pass;
+  const file = recordForFire(dir, phaseRaw, fire.trigger, fire.plan, fire.sha, fire.round);
+  if (!file) return pass;
+  const rel = relative(dir, file);
+
+  let record;
+  try { record = JSON.parse(readFileSync(file, 'utf8')); } catch {
+    // REFUSED, not skipped. This file exists and was written by the seam as
+    // one atomic JSON object, so unparseable means truncated or edited - which
+    // is precisely the tampering the cross-check exists to surface, and
+    // appending a figure nothing can check against it would bury it.
+    // The parse error itself is deliberately NOT quoted back: the detail names
+    // the file, which is the whole of what a caller acts on here, and echoing a
+    // caught message is the idiom planning.test.mjs's redaction census counts.
+    return { ok: false, reason: 'bad-record',
+      detail: `${rel} exists but is not readable as JSON, so this receipt's counts cannot be `
+        + 'checked against its rulings and nothing was appended',
+      hint: 'restore or re-write the record for this fire, then append the receipt' };
+  }
+  const counts = deriveCounts(record && record.entries);
+  for (const [flag, counted] of [['survivors', counts.survived],
+    ['downgraded', counts.downgraded], ['refuted', counts.refuted]]) {
+    if (fire.settled[flag] !== counted) {
+      return { ok: false, reason: 'count-disagreement',
+        detail: `--${flag} says ${fire.settled[flag]}, but counting the rulings in ${rel} gives `
+          + `${counted} - the count is DERIVED from the record, never typed beside it, so `
+          + 'nothing was appended',
+        hint: `pass the figures the adjudication seam returned for this fire (round ${fire.round})`
+          + ', or fix the record if the receipt is the one that is right' };
+    }
+  }
+  return pass;
+}
+
+/**
+ * Which of these entries cite a `file` that does not EXIST at `headId` (D-09,
+ * AC5) - and whether the question could be asked at all.
+ *
+ * WHY IT IS ASKED. The auditor path this record exists to buy is `git checkout
+ * <head_id>` then open `file:line`, and NOTHING upstream checks either field:
+ * review-provider.mjs's `FINDING_SCHEMA` bounds `file` only as a non-empty
+ * string of at most 1024 characters, and skills/cad-reviewer-contract/SKILL.md
+ * calls `line` best-effort in as many words. So the citation is checked here,
+ * once, while the head is already resolved - which buys the auditor path
+ * instead of demonstrating it.
+ *
+ * A MARKED ENTRY IS STILL STORED, NEVER DROPPED. The mark is the auditor's
+ * warning that the citation cannot be opened; dropping the entry would delete
+ * the very finding whose grounding is in question, which is the summarizing
+ * this whole record exists to end.
+ *
+ * THE PROBE FIRST, and this is the load-bearing part. `git cat-file -e
+ * <sha>:<path>` exits 128 both for a path absent at that commit and for "this
+ * is not a repository" (measured - it is NOT the documented exit 1 on this
+ * git), so the two are indistinguishable per entry. The probe asks one question
+ * whose answer cannot be about any path - can this repository read the head
+ * commit object - and only once it says yes is a later nonzero exit
+ * attributable to the citation. A check that could not run AT ALL is reported
+ * ONCE by the caller and marks NOTHING: an unprovable citation set is not a bad
+ * one, and marking every entry there is the collapsed-stdin defect
+ * `land-cleanup.mjs` already cost this project once, rewritten.
+ *
+ * `-C top` - the repository top `resolveRange` returned - the way
+ * `cmdRiskCheckRun` reads its diff, so the answer is the repository's and not
+ * the process cwd's.
+ *
+ * @param {string} top the repository top
+ * @param {string} headId the resolved 40-character head id
+ * @param {any[]} entries
+ * @returns {{checked: boolean, missing: Set<number>, reason: string}}
+ *   `checked: false` carries an EMPTY `missing` by construction, so a caller
+ *   cannot mark entries against a check that never ran.
+ */
+function groundCitations(top, headId, entries) {
+  const git = (/** @type {string} */ arg) => execFileSync('git',
+    ['-C', top, 'cat-file', '-e', arg], { stdio: ['ignore', 'ignore', 'pipe'] });
+  try {
+    git(`${headId}^{commit}`);
+  } catch (e) {
+    // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set` applies:
+    // a git failure detail can carry a remote URL with credentials in it.
+    return { checked: false, missing: new Set(),
+      reason: redactUrl(e && e.message ? e.message : String(e)) };
+  }
+  /** @type {Set<number>} */
+  const missing = new Set();
+  for (let i = 0; i < entries.length; i += 1) {
+    // The path is the SECOND half of one `<sha>:<path>` argument, so a citation
+    // opening with `-` can never be read by git as an option.
+    try { git(`${headId}:${entries[i].file}`); } catch { missing.add(i); }
+  }
+  return { checked: true, missing, reason: '' };
+}
+
+function cmdAdjudication(dir, opts) {
+  const parsedPhase = requirePhaseArg(opts.phase);
+  if (!parsedPhase.ok) return fail('bad-args', 'adjudication needs --phase <N>');
+  // The caller's OWN spelling, the way `uatFile` addresses a phase: every use
+  // of it here is a path or a label, never arithmetic.
+  const n = parsedPhase.raw;
+
+  const trigger = opts.trigger;
+  const discriminator = opts.discriminator;
+  for (const [flag, raw] of [['--trigger', trigger], ['--discriminator', discriminator]]) {
+    if (typeof raw !== 'string' || !RECORD_TOKEN.test(raw)) {
+      return fail('bad-args',
+        `adjudication ${flag} reaches a FILENAME, so it takes letters, digits, _ and - `
+        + 'only, opening with a letter or a digit and at most 64 characters - got '
+        + `${typeof raw === 'string' ? JSON.stringify(raw) : 'nothing'}`);
+    }
+  }
+
+  // THE RE-ARM'S ROUND. A blocking re-arm (references/triage-gate.md caps it at
+  // ONE) is a SECOND fire of the same trigger on the same plan, so it resolves
+  // to the same discriminator: without this flag round two's record would
+  // replace round one's rulings, and round one is exactly the record an auditor
+  // reads to see the finding a fix was claimed to close.
+  let round = 1;
+  if ('round' in opts) {
+    const parsedRound = requireInt(opts.round);
+    if (!parsedRound.ok || parsedRound.value < 1) {
+      return fail('bad-args',
+        'adjudication --round needs the re-arm round after it, a whole number of at '
+        + 'least 1: --round 2');
+    }
+    round = parsedRound.value;
+  }
+
+  // BOTH required and neither defaulted, the rule `risk-check run` already
+  // states: a defaulted head is a range the caller never stated, and this
+  // record IS the evidence of what was judged.
+  const base = riskRef(opts.base);
+  const head = riskRef(opts.head);
+  if (!base || !head) {
+    return fail('bad-args',
+      'adjudication needs --base <ref> and --head <ref>, neither opening with `-`');
+  }
+
+  // Absent `--payload` is refused rather than fed to stdin: the declared row
+  // says required, `evaluateRow` is a VALUE door and not a presence one, and
+  // `readJsonPayload()` with no argument would sit reading a stdin no gate site
+  // opens.
+  if (opts.payload === undefined) {
+    return fail('bad-args',
+      'adjudication needs --payload <file> - the composed payload is a FILE, never '
+      + 'inline JSON and never stdin');
+  }
+  const payload = readJsonPayload(opts.payload);
+  if (!payload.ok) return;
+  const built = buildEntries(payload.value);
+  if (!built.ok) return fail('bad-payload', built.detail);
+
+  const range = resolveRange(base, head);
+  if (!range.ok) {
+    return emit({
+      ok: false,
+      reason: 'unresolved-range',
+      phase: n,
+      base,
+      head,
+      detail: range.error,
+      hint: 'name a --base and --head this repository can resolve, then re-run this record',
+    });
+  }
+
+  // BESIDE THE SIBLING REVIEW FILE (D-06), and never inside `<plandir>/
+  // reports/`: `cmdLeaseCheck` exempts exactly one path under that directory by
+  // byte equality, so anything else staged from there answers `undeclared-files`.
+  // The phase directory has to already exist - this seam records a fire that
+  // happened, and minting `phases/<N>/` for a mistyped flag would leave a
+  // directory nothing else in the tree accounts for. `lstatSync`, so a SYMLINK
+  // sitting where the phase directory should be is refused rather than followed
+  // out of the tree, the disposition the read side of this file already takes.
+  const pdir = join(dir, 'phases', String(n));
+  let pdirStat = null;
+  try { pdirStat = lstatSync(pdir); } catch { /* absent is the answer, never a throw */ }
+  if (!pdirStat || !pdirStat.isDirectory()) {
+    return fail('no-phase-dir',
+      `phases/${n}/ is not a directory under ${dir} - the record is written BESIDE the `
+      + 'sibling REVIEW file, so the phase directory of the fire has to exist already');
+  }
+
+  // The ONE filename rule, shared with the receipt recount in `cmdTrace`: two
+  // spellings of it is two files, and the recount would read the wrong fire.
+  const name = recordName(trigger, discriminator, round);
+  const rel = `phases/${n}/${name}`;
+  const file = join(pdir, name);
+  // REFUSED, never overwritten. A caller that forgot `--round` on a re-arm is
+  // the failure the flag exists FOR, and replacing the file there lands in
+  // exactly the state it was added to prevent: the first round's rulings gone,
+  // silently, with ok:true. `lstatSync` again - a symlink at the target is
+  // something already there, whatever it points at.
+  let existing = null;
+  try { existing = lstatSync(file); } catch { /* the ordinary case */ }
+  if (existing) {
+    return fail('record-exists',
+      `${rel} already exists and holds round ${round}'s rulings - this seam never `
+      + 'overwrites a record',
+      'a re-arm is a SECOND fire of the same trigger on the same plan: pass --round '
+      + `${round + 1} so it lands beside round ${round} instead of replacing it`);
+  }
+
+  // EVERY CITATION GROUNDED AT THE HEAD (D-09, AC5), before the record is
+  // written and after every refusal above, so a refused call does no git work.
+  const cites = groundCitations(range.top, range.head, built.entries);
+
+  // ONE COPY OF THE RESOLVED PAIR PER ENTRY, deliberately, on top of the pair
+  // on the record's own header: an entry is what gets quoted, copied into a
+  // report and argued about, and an entry that cannot say which head it was
+  // judged at sends the auditor back to the file it came from to find out.
+  const record = {
+    phase: n,
+    trigger,
+    discriminator,
+    round,
+    // Both spellings AND both ids, the shape `risk-check run` records: the
+    // spelling is what the caller recognises, the id is the range's identity.
+    base,
+    head,
+    base_id: range.base,
+    head_id: range.head,
+    // The ROSTER of voices that ran, which the entries alone cannot carry: a
+    // fire where every voice returned nothing has no entries at all, and a
+    // record that cannot say which voices ran is not evidence that any did.
+    voices: built.voices,
+    // WHETHER THE GROUNDING RAN, on the record itself: the absence of a
+    // `citation_missing` mark below means "checked and found" only when this
+    // says the check happened, and means nothing at all when it did not. No
+    // COUNT rides it - the record stores none of its own, and a reader recounts
+    // the marks the same way it recounts the rulings.
+    citations: cites.checked ? { checked: true } : { checked: false, reason: cites.reason },
+    entries: built.entries.map((e, i) => ({
+      ...e,
+      // MARKED, never dropped: the mark is the auditor's warning that this
+      // citation cannot be opened at `head_id`, and the finding whose grounding
+      // is in question is the last one a record may lose.
+      ...(cites.missing.has(i) ? { citation_missing: true } : {}),
+      base_id: range.base,
+      head_id: range.head,
+    })),
+  };
+  atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
+
+  // The counts ride the ENVELOPE and never the record (the record stores no
+  // count of its own): a stored count is a second place for the record to
+  // disagree with itself, and the cross-check that matters is between the
+  // record and the trace receipt. `deriveCounts` recomputes these from the
+  // stored entries for any later reader.
+  return ok({
+    phase: n,
+    trigger,
+    discriminator,
+    round,
+    record: rel,
+    base,
+    head,
+    base_id: range.base,
+    head_id: range.head,
+    voices: built.voices.length,
+    counts: built.counts,
+    // The count lives HERE and not on the record, where every figure is derived.
+    citations: cites.checked
+      ? { checked: true, missing: cites.missing.size }
+      : { checked: false, reason: cites.reason },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -5531,6 +6088,10 @@ const COMMANDS = {
     cmdDetectSurfaces(typeof opts.root === 'string' ? opts.root : process.cwd()),
   trace: (dir, sub, opts) => cmdTrace(dir, sub, opts),
   'risk-check': (dir, sub, opts) => cmdRiskCheck(dir, sub, opts),
+  // The gate fire's per-finding rulings, beside the sibling REVIEW file. ONE
+  // word, never a two-word spelling: `subcommandKey` consumes a second word only
+  // for the `TWO_WORD` families, and one operation does not earn widening it.
+  adjudication: (dir, _sub, opts) => cmdAdjudication(dir, opts),
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.
   capture: (dir, _sub, opts) => cmdCapture(dir, opts),

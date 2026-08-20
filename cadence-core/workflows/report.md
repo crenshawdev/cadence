@@ -62,7 +62,11 @@ over `.planning/reads.jsonl` - `fileCalls`, `fileRedundancy`, `topFiles` - and
 Then open the scoped
 phase artifacts that ground the narrative, each at most once:
 `.planning/phases/<N>/SUMMARY.md` (deviations, gate-fix commits),
-`.planning/phases/<N>/REVIEW-*.md` (persisted advisory findings), and
+`.planning/phases/<N>/REVIEW-*.md` (persisted advisory findings),
+`.planning/phases/<N>/ADJUDICATION-*.json` (one per blocking or adjudicated
+fire: the finding bodies and the ruling each was given - that `REVIEW-*.md` glob
+cannot match a `.json` sibling, so it is listed separately or the Gates line has
+nothing to count), and
 `.planning/phases/<N>/reports/plan-*.md` ONLY when SUMMARY is absent (an
 unfinished phase). Do not re-read the trace file itself - the render is the
 reader.
@@ -97,7 +101,7 @@ Compose the report, tersest form that keeps the receipts. Shape:
 ```
 Phase <N>: <name> - run record
 Dispatches: <table: role | rung | tokens | turns | minutes, one row per `brackets` entry (minutes from its `ms`, turns from its `turns` key - absent on a row whose close carried none), rung from routing resolves>
-Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files>
+Gates: <one line per review fire: trigger, gate, outcome - PASS / FAIL+rearm / survivors count / advisory findings file - from `outcomes` and REVIEW files. Where the fire left an ADJUDICATION record, the survivor figure is that record's rulings COUNTED and checked against the `survivors`/`downgraded`/`refuted` on the event; a fire with no record reads `unrecorded`>
 Refuted: <one line per deviation that corrected a D-NN, from SUMMARY deviations; omit the section when none>
 Tokens on subagent returns (the host's own per-dispatch figure, not the run's cost - it excludes the orchestrator's own turns, cross-model provider calls, and figureless returns): <total recorded; top role and its share; unrecorded dispatch count>
 Gap terms, never a product: <dispatch count; turn count with `turns_unrecorded` beside it; the per-dispatch window figure; the count of dispatches carrying no figure - then the comparator to run for the billed number>
@@ -196,6 +200,29 @@ Rules, all load-bearing:
   say so in those words. `coordinator` reads have no worker bracket by
   construction and `unresolved` ones carried no readable agent - report either
   only when nonzero, and never as a failed join.
+- The Gates line's survivor figure is COUNTED from the record and never narrated
+  out of the event alone. Read the fire's
+  `.planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json`, count its
+  entries by `ruling`, and compare that against the `survivors`, `downgraded`
+  and `refuted` the same fire's `outcomes` event carries. Two independent
+  artifacts is the whole point: `.planning/trace.jsonl` is gitignored, so
+  custody rests on the committed record and the trace is the local cross-check,
+  and comparing them is the only thing that makes a tampered record visible.
+- A DISAGREEMENT between the two is NAMED, never silently resolved to one side:
+  print both figures and the record's path and say which artifact said which.
+  Preferring either one quietly is how the report would launder exactly the
+  defect the comparison exists to surface.
+- A fire with NO record reads as `unrecorded`. Synthesize no entry and narrate
+  no count that cannot be recomputed: earlier phases kept counters rather than
+  finding bodies, and the advisory arm writes no record at all
+  (`references/review-triggers.md` states why), so a fire predating the format
+  has nothing faithful to reconstruct from and says so - the same voice this
+  command already uses for an absent `coordinator` block, and not a zero.
+- The record is read for the ONE count the line needs, exactly as `read_record`'s
+  read-back bound requires of the render: it is a phase artifact opened at most
+  once, never dumped whole into the transcript. The Refuted line below reads
+  SUMMARY deviations and nothing from here - it consumes a deviation that
+  corrected a D-NN, which has nothing to do with a gate's findings.
 - An advisory fire whose findings file is absent AND whose return is missing
   reports as `lost before persistence shipped` when the dispatch predates the
   findings-file convention, else as `in flight`.
