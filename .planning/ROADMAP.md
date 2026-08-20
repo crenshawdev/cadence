@@ -2,36 +2,35 @@
 
 ## Overview
 
-**`v3.5.5 - a seam that accepts what it should refuse`, opened 2026-08-18.**
-Scoped from the tracker milestone `v3.5.5`, which holds twelve issues: #137,
-#142, #144, #147, #182, #183, #219, #220, #221, #222, #223 and #224. Six of
-those (#219 through #224) were filed at the open, from a full audit of the
-capture queue that re-verified each defect live rather than trusting its note.
+**`v3.5.7 - measured, and no lever to change it`, opened 2026-08-20.** Scoped
+from the tracker milestone `v3.5.7`, which holds four issues: #167, #174, #189
+and #206.
 
-**The theme is one sentence: an argument face that says yes to input it has a
-rule against.** `v3.5.4` closed the shape for a control that reaches its path
-and mis-answers. This cycle takes the door: a reader that accepts a malformed
-value and answers as if it were well-formed, a guard that reads an empty string
-as a configured one, a gate that cannot be satisfied by the key its own seam
-document permits.
+**The theme is one sentence: Cadence measures its own cost and gives you nothing
+to spend it with.** `v3.5.6` closed the machinery that records what a run did.
+This cycle takes the controls over what a run costs. A read trace that measures
+read-set redundancy and no consumer that acts on the number (#167). A security
+review invoked 61 times, paying 61 cold prefixes where one process reviewing N
+diffs pays one (#174). `stakes` as a single project-level dial, so a README phase
+and an auth phase buy the same model, the same effort rung and the same gates
+(#189). And the one question Cadence asks on its own, the risk-surface interview,
+asked exactly once with no way back to it and a menu that offers the same set
+twice (#206).
 
-The first four phases are ordered by what a wrong answer costs, not by where the
-code lives. Phase 1 carries the two that REMOVE a protection - one unprotects every
-branch, the other lets one repository answer another's blocking gate. Phase 2
-carries the readers that accept malformed input and answer anyway. Phase 3
-carries the gates that fire on themselves or cannot be satisfied at all. Phase 4
-is the structural form of phase 2, and goes last on purpose: a declarative
-argument contract is only worth writing once the case-by-case fixes have said
-what it has to express.
+Three of the four are a control at the wrong granularity or missing outright;
+#174 is the bill that granularity runs up, which is why it is scoped here rather
+than filed as a cost note.
 
-Phase 5 is not part of that theme and does not pretend to be. It is the README
-restructure decided 2026-08-18, promoted into this cycle from the capture queue
-rather than held for a docs milestone. It shares no code with the four defect
-phases and depends on none of them.
-
-The prune left the Overview describing `v3.5.4`; it now describes this cycle.
+No phases yet. `/cad-phase add` opens the first, and `/cad-plan` seeds each
+requirement's Traceability row as its phase is planned. This cycle seeds
+requirement ids up front - `RDX-01`, `BCH-01`, `CER-01`, `IVW-01` - because
+`v3.5.6` seeded none and its audit consequently traced zero requirements and
+returned PASS on an empty set.
 
 ## Phases
 
+_None yet._
 
 ## Phase Details
+
+_None yet._
