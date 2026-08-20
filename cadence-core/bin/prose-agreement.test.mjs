@@ -1885,6 +1885,20 @@ test('IVW-01: both risk-surface interview sites carry the ask-user rules, and th
     }
   }
 
+  // Scoped to the `--surfaces` arm alone, which is why it cannot join RULES
+  // above: RULES runs against all three sites, and neither seams.md nor
+  // review-triggers.md states this. The arm's whole reason for existing is
+  // that a project which added Stripe six months after answering has no other
+  // way to see it, and nothing else holds the sentence - /code/cadence returns
+  // `inconclusive: true` with `evidenced: []`, so the callout cannot fire on
+  // the only tree the human check runs against.
+  const surfacesSite = SITES.find((s) => s.where.startsWith('workflows/config.md'));
+  assert.ok(surfacesSite, 'the `--surfaces` site left the SITES list');
+  const surfaces = flat(surfacesSite.text);
+  assert.match(surfaces, /call(?:s|ing)? out every evidenced category the answered set does not contain/i,
+    'workflows/config.md `## Risk surfaces`: dropped the clause that every evidenced '
+    + 'category the answered set does not cover is called out');
+
   // The code side of the same cap. A site can render at most what the builder
   // hands it, so a candidate list that grew past the cap would break the rule
   // above at a site that obeyed it word for word.
