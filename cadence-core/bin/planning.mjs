@@ -5421,6 +5421,120 @@ function cmdDeferredList(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// deferred carry - the queue OUT of the phase directory a close is about to
+// delete, so the refusal it feeds still has something to read.
+//
+// WHY A SEAM AND NOT A PROSE INSTRUCTION (D-10). The `risk_surface` union
+// beside it in `workflows/milestone.md` is prose because it composes a
+// TRANSIENT file the same close deletes at step 7. This one MOVES committed
+// artifacts during a close that runs completely unattended - `/cad-milestone`
+// chains `/cad-land` after the prune - and a prose step that half-ran there
+// leaves the only thing stopping that land in a directory `milestone-prune` is
+// about to remove.
+//
+// A MOVE AND NOT A COPY. `milestone-prune --mode archive` puts the phase
+// directory under `_archive-<label>/`, which no reader here walks; a COPY would
+// leave a second member inside it and, if that tree were ever read, one fire
+// would be counted twice. A move also means the carried member is the only
+// copy, which is what makes it clear when it is adjudicated.
+//
+// THE PHASE STAYS A DIRECTORY LEVEL, never folded into the filename: two phases
+// routinely defer the same trigger on the same `plan-<k>` discriminator, so a
+// flat carry would collide, and the collision would be one queue member
+// silently replacing another's.
+//
+// A SETTLED MEMBER IS LEFT BEHIND to be pruned with its phase. It has its
+// `ADJUDICATION` sibling, so it is not in the queue at all - carrying it would
+// put a cleared finding in front of every later land.
+// ---------------------------------------------------------------------------
+function cmdDeferredCarry(dir, opts) {
+  const parsed = requirePhaseArg(opts.phase);
+  if (!parsed.ok) return fail('bad-args', 'deferred carry needs --phase <N>');
+  const n = parsed.raw;
+  if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
+
+  // THE DESTINATION FIRST, before this seam has read a single member.
+  // `lstatSync` and `isDirectory`, the rail `milestone-prune --mode archive`
+  // states for its own archive root: a symlink or a regular file squatting the
+  // destination is FOLLOWED by `renameSync`, which would deposit committed
+  // artifacts wherever it points. Asked ahead of the queue read deliberately -
+  // it is a fact about where things go, not about what is queued, and its
+  // refusal is the actionable one. Absent is the ordinary case; the mkdir
+  // below creates it.
+  const dest = join(dir, 'deferred', n);
+  const destStat = lstatSync(dest, { throwIfNoEntry: false });
+  if (destStat && !destStat.isDirectory()) {
+    return fail('carry-dest-unusable',
+      `deferred/${n} exists and is not a real directory`
+      + `${destStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
+      + ' - move or remove it, then re-run');
+  }
+
+  const q = readQueue(dir, n);
+  // REFUSED before anything moves, and for a sharper reason than the reader
+  // has: this call is the last thing that runs before `milestone-prune`
+  // DELETES the directory. Carrying what was provable and saying nothing about
+  // the rest would destroy exactly the members it could not read.
+  if (q.unreadable.length) {
+    return emit({
+      ok: false,
+      reason: 'unprovable-queue',
+      phase: n,
+      moved: [],
+      unreadable: q.unreadable,
+      detail: `${q.unreadable.length} path(s) under ${dir} could not be read, so this carry `
+        + `cannot prove what phase ${n} has queued: ${q.unreadable.map((u) => u.path).join(', ')}`,
+      hint: 'make them readable and re-run BEFORE milestone-prune, which deletes the directory',
+    });
+  }
+
+  // Only what is still in the phase directory. A member already under
+  // `deferred/<N>/` is where this face puts things, so a re-run after a partial
+  // carry finishes the job instead of refusing it.
+  const src = join(dir, 'phases', n);
+  const moving = q.members.filter((m) => m.path.startsWith(`phases/${n}/`));
+  if (!moving.length) {
+    return ok({ phase: n, moved: [], carried: 0, findings: 0 });
+  }
+
+  // ALL destinations checked BEFORE the first rename, so a collision refuses
+  // the whole carry rather than leaving half the queue in each home. Never
+  // overwritten: a destination already holding this name is a member from an
+  // earlier carry, and it is another fire's only copy.
+  for (const m of moving) {
+    const name = queueName(m.trigger, m.discriminator, m.round);
+    if (lstatSync(join(dest, name), { throwIfNoEntry: false })) {
+      return fail('carry-exists',
+        `deferred/${n}/${name} already exists - this seam never overwrites a carried queue member`,
+        'adjudicate or move it first; it is another fire\'s only copy of what was deferred');
+    }
+  }
+
+  mkdirSync(dest, { recursive: true });
+  const moved = [];
+  for (const m of moving) {
+    const name = queueName(m.trigger, m.discriminator, m.round);
+    // The BASENAME is preserved so `deferred list` reads a carried member by
+    // exactly the rule it reads a fresh one - the name is part of the identity.
+    renameSync(join(src, name), join(dest, name));
+    moved.push({
+      trigger: m.trigger,
+      discriminator: m.discriminator,
+      round: m.round,
+      from: m.path,
+      to: `deferred/${n}/${name}`,
+      findings: m.findings,
+    });
+  }
+  return ok({
+    phase: n,
+    moved,
+    carried: moved.length,
+    findings: moved.reduce((t, m) => t + m.findings, 0),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -6503,7 +6617,8 @@ const COMMANDS = {
   deferred: (dir, sub, opts) => {
     if (sub === 'record') return cmdDeferredRecord(dir, opts);
     if (sub === 'list') return cmdDeferredList(dir, opts);
-    return fail('usage', 'deferred record|list');
+    if (sub === 'carry') return cmdDeferredCarry(dir, opts);
+    return fail('usage', 'deferred record|list|carry');
   },
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.

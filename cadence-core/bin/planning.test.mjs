@@ -7478,3 +7478,128 @@ test('status: an unreadable queue rides the envelope without failing the status'
     chmodSync(join(dir, 'phases', '1'), 0o755);
   }
 });
+
+// --- deferred carry: the queue OUT of the directory the prune deletes (D-10) -
+
+/** Run the carry face. */
+function defCarry(dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'deferred', 'carry', ...args],
+      { encoding: 'utf8' });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+/** Write a queue member straight into `phases/<phase>/`, no repository needed. */
+function putMember(dir, phase, trigger, discriminator, round, findings, home = 'phases') {
+  const file = join(dir, home, String(phase),
+    `DEFERRED-${trigger}-${discriminator}${round > 1 ? `-r${round}` : ''}.json`);
+  writeFileSync(file, `${JSON.stringify({
+    phase: String(phase), trigger, discriminator, round,
+    findings: Array.from({ length: findings }, () => defPayload().findings[0]),
+  })}\n`);
+  return file;
+}
+
+test('deferred carry: the unadjudicated members move, the settled ones are pruned with the phase', () => {
+  const { dir } = adjRepo({ phase: 4 });
+  putMember(dir, 4, 'diff', 'plan-1', 1, 2);
+  putMember(dir, 4, 'plan', 'plan-2', 1, 1);
+  writeFileSync(join(dir, 'phases', '4', 'ADJUDICATION-plan-plan-2.json'), '{}\n');
+
+  const r = defCarry(dir, ['--phase', '4']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.carried, 1);
+  assert.equal(r.findings, 2);
+  assert.deepEqual(r.moved[0].from, 'phases/4/DEFERRED-diff-plan-1.json');
+  assert.deepEqual(r.moved[0].to, 'deferred/4/DEFERRED-diff-plan-1.json');
+  // A MOVE, never a copy: `--mode archive` would otherwise leave a second copy
+  // under `_archive-<label>/` for the same fire.
+  assert.equal(existsSync(join(dir, 'phases', '4', 'DEFERRED-diff-plan-1.json')), false);
+  // The SETTLED one stays to be pruned with its phase - carrying it would put a
+  // cleared finding in front of every later land.
+  assert.equal(existsSync(join(dir, 'phases', '4', 'DEFERRED-plan-plan-2.json')), true);
+
+  // The whole point: after the prune, the refusal still has something to read.
+  rmSync(join(dir, 'phases', '4'), { recursive: true });
+  const listed = defList(dir);
+  assert.equal(listed.ok, true, JSON.stringify(listed));
+  assert.deepEqual(listed.members.map((m) => m.path), ['deferred/4/DEFERRED-diff-plan-1.json']);
+  assert.equal(listed.findings, 2);
+});
+
+test('deferred carry: a destination that already exists refuses, and moves NOTHING', () => {
+  // All destinations are checked before the first rename, so a collision leaves
+  // the queue in one home rather than half in each.
+  const { dir } = adjRepo({ phase: 4 });
+  putMember(dir, 4, 'diff', 'plan-1', 1, 1);
+  assert.equal(defCarry(dir, ['--phase', '4']).ok, true);
+  putMember(dir, 4, 'diff', 'plan-1', 1, 1);
+  putMember(dir, 4, 'plan', 'plan-9', 1, 1);
+
+  const r = defCarry(dir, ['--phase', '4']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-exists');
+  assert.match(r.detail, /deferred\/4\/DEFERRED-diff-plan-1\.json already exists/);
+  assert.equal(existsSync(join(dir, 'phases', '4', 'DEFERRED-plan-plan-9.json')), true,
+    'the collision moved the OTHER member anyway, splitting one phase queue across two homes');
+
+  // A re-run after the colliding member is cleared finishes the job rather than
+  // refusing forever: what is already carried is not re-carried.
+  rmSync(join(dir, 'phases', '4', 'DEFERRED-diff-plan-1.json'));
+  const again = defCarry(dir, ['--phase', '4']);
+  assert.equal(again.ok, true, JSON.stringify(again));
+  assert.deepEqual(again.moved.map((m) => m.to), ['deferred/4/DEFERRED-plan-plan-9.json']);
+});
+
+test('deferred carry: an unreadable phase refuses BEFORE the prune deletes it', {
+  skip:
+    typeof process.getuid === 'function' && process.getuid() === 0
+      ? 'root bypasses mode bits'
+      : false,
+}, () => {
+  // Sharper than the reader's refusal, and for a sharper reason: this call is
+  // the last thing that runs before milestone-prune deletes the directory, so
+  // carrying what was provable and saying nothing about the rest would destroy
+  // exactly the members it could not read.
+  const { dir } = adjRepo({ phase: 4 });
+  putMember(dir, 4, 'diff', 'plan-1', 1, 1);
+  writeFileSync(join(dir, 'phases', '4', 'DEFERRED-plan-plan-2.json'), '{not json\n');
+
+  const r = defCarry(dir, ['--phase', '4']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unprovable-queue');
+  assert.deepEqual(r.moved, []);
+  assert.match(r.hint, /BEFORE milestone-prune/);
+  assert.equal(existsSync(join(dir, 'deferred', '4')), false,
+    'a refused carry created the destination anyway');
+});
+
+test('deferred carry: a symlink squatting the destination is refused, never followed', () => {
+  // milestone-prune --mode archive states the same rail for its archive root:
+  // renameSync FOLLOWS a symlink, and would deposit committed artifacts
+  // wherever it points.
+  const { dir } = adjRepo({ phase: 4 });
+  putMember(dir, 4, 'diff', 'plan-1', 1, 1);
+  mkdirSync(join(dir, 'deferred'), { recursive: true });
+  mkdirSync(join(dir, 'elsewhere'));
+  symlinkSync(join(dir, 'elsewhere'), join(dir, 'deferred', '4'));
+
+  const r = defCarry(dir, ['--phase', '4']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-dest-unusable');
+  assert.match(r.detail, /renameSync would follow out of the planning root/);
+  assert.deepEqual(readdirSync(join(dir, 'elsewhere')), []);
+});
+
+test('deferred carry: a phase with nothing queued is an answer, not a refusal', () => {
+  const { dir } = adjRepo({ phase: 4 });
+  const r = defCarry(dir, ['--phase', '4']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.moved, []);
+  assert.equal(r.carried, 0);
+  assert.equal(existsSync(join(dir, 'deferred')), false,
+    'an empty carry minted a destination directory nothing accounts for');
+});

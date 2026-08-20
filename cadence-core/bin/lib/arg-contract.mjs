@@ -696,6 +696,15 @@ export const CONTRACTS = {
     'deferred list': {
       '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
     },
+    // THE CARRY a milestone close runs before `milestone-prune` deletes the
+    // phase directory (D-10). `--phase` is REQUIRED and there is no whole-tree
+    // form: this face MOVES committed artifacts, and a mistyped or absent flag
+    // that carried every phase at once would be indistinguishable from the one
+    // the caller meant. It takes no other flag - the SET it moves is exactly
+    // what `deferred list --phase` returns, derived rather than named.
+    'deferred carry': {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
     // derived: the inline form puts that text in a double-quoted shell word,
     // where `$(...)` and a backtick execute before Node starts. Additive - the
