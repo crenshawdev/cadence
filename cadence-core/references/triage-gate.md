@@ -1,10 +1,39 @@
 # The consequence gate (triage)
 
 What each gate arm does once a review's findings are in hand. The gate is one of
-`off | advisory | blocking | adjudicated`, resolved from the routing bundle at
-`references/review-triggers.md` step 1 - `off` returned before any reviewer ran.
+`off | advisory | deferred | blocking | adjudicated`, resolved from the routing
+bundle at `references/review-triggers.md` step 1 - `off` returned before any
+reviewer ran.
 
 - **advisory** - report the findings, continue. Nothing halts.
+- **deferred** - the reviewer RAN and what it found stops the LAND instead of
+  the RUN. Persist the findings exactly as the `risk_surface` persistence rule
+  in `references/review-triggers.md` step 5 already specifies - the settled
+  `{ "findings": [...] }` object written to
+  `.planning/phases/<N>/REVIEW-<trigger>-<discriminator>.md`, on the same
+  discriminator grammar (`plan-<k>` for a per-plan fire, `<command>-<short HEAD
+  sha>` otherwise, and no unsuffixed path). Then pass THAT SAME FILE as the
+  queue member's payload:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" deferred record --phase <N> --trigger <trigger> --discriminator <discriminator> --base <base> --head <head> --payload .planning/phases/<N>/REVIEW-<trigger>-<discriminator>.md [--round <round>]
+```
+
+  then leave the receipt that says this fire happened:
+
+```
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event deferral --trigger <trigger> --plan <k> --base <base> --sha <head> [--round <round>]
+```
+
+  Then the run CONTINUES. No halt, no ask, no re-arm here, and nothing is fixed
+  at the fire - the finding is answered at `/cad-land`, which refuses while any
+  queue member is unadjudicated. The queue member is COMMITTED, unlike the
+  REVIEW file beside it: stage it with the next commit this run makes.
+  `.planning/trace.jsonl` is gitignored and a REVIEW file left untracked
+  evaporates on a fresh clone, so a queue that lived in either is a queue that
+  is gone by the time the land reads it. This arm writes NO adjudication record
+  - `RULINGS` has three values and none of them is "not yet" - so a member
+  reads as unruled until a real adjudication supersedes it.
 - **blocking** - PASS if no `blocker`/`high` finding survives, else FAIL. On
   FAIL, halt and surface the findings; resume only after they are fixed or the
   user explicitly overrides. A reviewer that could not run does not silently
@@ -13,8 +42,9 @@ What each gate arm does once a review's findings are in hand. The gate is one of
 
 **Every blocking settle leaves a JOINABLE receipt.** `planning.mjs risk-check
 status` refuses a range its detector matched until an outcome event says the
-fire happened, so all four settle points append one: `adjudication`
-(`references/review-triggers.md` step 5), `rearm` below, and the two here. Each
+fire happened, so all five settle points append one: `adjudication`
+(`references/review-triggers.md` step 5), `rearm` below, the `deferral` above,
+and the two here. Each
 carries `--trigger <trigger>` in that structured flag rather than inside a
 detail - a trigger parsed back out of free text clears a range on one spelling
 and refuses an identical one on another - plus `--plan <k>` when the fire is
@@ -50,8 +80,11 @@ that disagrees, so the survivor count is recomputable rather than asserted. A
 and "nobody counted" are different fires. `--round <round>` is omitted on an
 ordinary fire and carries the round on a re-armed one, since the re-arm below
 writes its own record and a settle naming no round is checked against round
-one's stale rulings. The `rearm` receipt itself gains none of the four: it marks
-a round opening, and a count there would describe a fire still in flight.
+one's stale rulings. The `rearm` and `deferral` receipts gain none of the four:
+one marks a round opening and the other a fire nobody has ruled on yet, and a
+count there would describe a fire still in flight either way. `deferral` keeps
+`--round` for the same reason every other receipt does - a re-armed fire's queue
+member is a second file, and a receipt naming no round points at the first.
 
 Nothing `blocker`/`high` survives - PASS, and record it, or every matched range
 whose fire found no blocker becomes permanently unclearable:

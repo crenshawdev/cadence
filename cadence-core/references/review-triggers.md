@@ -30,7 +30,7 @@ cross-model half's model tier and reasoning effort from that line's
 `reviewer_tiers` and `reviewer_efforts` maps, keyed the same way again (step
 4). If
 the gate is `off`, return immediately (no-op). Else it is one of
-`advisory | blocking | adjudicated` (step 6). The stakes level sets it, so the
+`advisory | deferred | blocking | adjudicated` (step 6). The stakes level sets it, so the
 same trigger gates differently on a solo project and a critical one.
 
 The seam has ALREADY applied config-wins precedence: a
@@ -461,9 +461,9 @@ CLEAN rather than erroring:
 
 ### 6. Consequence (gate)
 RE-READ `references/triage-gate.md` before acting on ANY gate - `blocking`
-included, not only `adjudicated`. It holds this step whole: all three arms
-(`advisory` / `blocking` / `adjudicated`), the ONE-round cap on a blocking
-re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
+included, not only `adjudicated`. It holds this step whole: all four arms
+(`advisory` / `deferred` / `blocking` / `adjudicated`), the ONE-round cap on a
+blocking re-arm, the multi-select triage the adjudicated arm asks, the `git.auto_close`
 carve-out inside `/cad-land`, and the `cad-verify`
 fix-list rule. It is a separate file because the fire sites re-read it at their
 gate step without loading this one - and a `blocking` site that treats the read

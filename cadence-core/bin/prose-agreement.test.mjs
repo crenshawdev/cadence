@@ -1197,11 +1197,14 @@ test('GAT-04: every fenced outcome receipt names its trigger, plan and both rang
       }
     }
   }
-  // All four settle points, so a receipt block DELETED fails here too rather
-  // than passing vacuously: adjudication (review-triggers.md) plus the three
-  // in triage-gate.md.
-  assert.deepEqual(seen.sort(), ['adjudication', 'gate_pass', 'override', 'rearm'],
-    'the four blocking settle points no longer print one fenced receipt command each');
+  // All five settle points, so a receipt block DELETED fails here too rather
+  // than passing vacuously: adjudication (review-triggers.md) plus the four
+  // in triage-gate.md - `gate_pass`, `override`, `rearm` and the `deferred`
+  // arm's `deferral`, which settles by QUEUING rather than by ruling and needs
+  // the same joinable receipt to keep `risk-check status` from reading its
+  // range as unfired forever.
+  assert.deepEqual(seen.sort(), ['adjudication', 'deferral', 'gate_pass', 'override', 'rearm'],
+    'the five settle points no longer print one fenced receipt command each');
 });
 
 // --- MSR-01: the close-half turn rule is stated ONCE, in seams.md ------------
