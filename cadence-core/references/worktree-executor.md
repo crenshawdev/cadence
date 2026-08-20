@@ -21,19 +21,26 @@ dispatch; none of them applies on the sequential path.
 - Stay inside the worktree path; keep every file operation within it.
 - Commit the report file on EVERY return that ends your turn - `PLAN COMPLETE`,
   `PLAN PARTIAL` and any CHECKPOINT, not only after the last task. Write it
-  first, then commit by PATHSPEC, naming the rotated report too whenever your
-  first write rotated a previous run's aside - unnamed it stays untracked, never
-  reaches the branch, and dies with the worktree, which is the evidence the
-  rotation exists to keep:
+  first, then STAGE those exact paths and commit them by PATHSPEC, naming the
+  rotated report too whenever your first write rotated a previous run's aside -
+  unnamed it stays untracked, never reaches the branch, and dies with the
+  worktree, which is the evidence the rotation exists to keep:
+  `git add <plandir>/reports/plan-<k>.md [<plandir>/reports/plan-<k>.<n>.md]`
+  then
   `git commit -- <plandir>/reports/plan-<k>.md [<plandir>/reports/plan-<k>.<n>.md]`
-  with message `docs({phase}-{plan}): plan {k} executor report`. Both halves are
-  load-bearing. The pathspec keeps a guardrail intact: a `risk_surface`
+  with message `docs({phase}-{plan}): plan {k} executor report`. All three parts
+  are load-bearing. The `add` is not optional: `git commit -- <pathspec>` commits
+  only paths git already TRACKS, so an untracked report - every rotated
+  `plan-<k>.<n>.md`, and a first run's `plan-<k>.md` on a path not yet in history
+  - aborts the entire commit with `did not match any file(s) known to git`. The
+  pathspec keeps a guardrail intact: a `risk_surface`
   checkpoint deliberately leaves the flagged changes STAGED, and a bare
-  `git commit` after a `git add` would sweep them in - turning a blocking gate
-  into a landed commit. Naming the paths commits the reports and leaves
+  `git commit` after a broad `git add` would sweep them in - turning a blocking
+  gate into a landed commit. Naming the paths commits the reports and leaves
   everything else staged exactly as it was; the enclosing `<plandir>/reports/`
-  directory is NOT a pathspec you may use here, because the flagged diff below
-  lives inside it. Committing on the non-final branches is what makes the report
+  directory is NOT a path you may `add` or commit here, because the flagged diff
+  below lives inside it - which is why the `add` names the same exact paths the
+  commit does. Committing on the non-final branches is what makes the report
   survive at all: a partial or checkpointed
   worktree is the one most likely to be removed or abandoned before you are
   dispatched again, and an uncommitted report dies with it - the re-run hazard
