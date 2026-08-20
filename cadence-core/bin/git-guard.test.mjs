@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -434,4 +434,89 @@ test('a torn repo layer never CANCELS a deny the global layer configured', () =>
   assert.equal(d.permissionDecision, 'deny');
   assert.match(d.permissionDecisionReason, /failed to parse/);
   assert.match(d.permissionDecisionReason, /protected branch/);
+});
+
+// --- No gate value reaches this rail (phase 2, D-11). -----------------------
+//
+// Phase 2 makes a `deferred` gate defer a blocking finding to the LAND. The
+// criterion the phase is written against is that the protected-branch guard did
+// NOT move: it answers where commits go, never what a review found, so it must
+// stay reachable by no gate value at all. A change made to give this pin
+// something to observe - a routing import, a resolved gate threaded near
+// commitDecision - is the failure it exists to detect, not a way to pass it.
+//
+// The census is LEXICAL over git-guard.mjs's own source. Every pattern is built
+// from an escaped string through `new RegExp`, the discipline
+// helper-census.test.mjs declares - but the read set here is ONE NAMED FILE,
+// the file-scoped `redactUrl` precedent rather than the tree-wide walk, so a
+// rule that states its own subject in this file is out of its own read set by
+// construction and needs no exemption. Widening any of these to the whole tree
+// would need that discipline honoured for real.
+
+const GUARD_SRC = readFileSync(GUARD, 'utf8');
+
+test('census: no gate value reaches the protected-branch guard (D-11)', () => {
+  // The five names `review.triggers.<t>.gate` accepts. Matched as STRING
+  // LITERALS, not as English: the source comments legitimately say "taken off
+  // the call" and "the old deny gate", and a gate a hook could act on is a
+  // quoted value or nothing.
+  for (const gate of ['off', 'advisory', 'deferred', 'blocking', 'adjudicated']) {
+    const re = new RegExp("['\"]" + gate + "['\"]", 'g');
+    assert.equal(GUARD_SRC.match(re), null,
+      `git-guard.mjs names the gate value "${gate}". The guard decides where a `
+      + 'commit may land, not what a review found: no gate value may reach it '
+      + '(D-11). If a rail genuinely needs one, that is a phase decision, not '
+      + 'a plumbing change.');
+  }
+
+  // What commitDecision consults from the merged config, as the dotted paths
+  // the source spells. `config.json` is the layer FILENAME, not a key, so the
+  // config arm excludes it by name rather than by a second allowlist.
+  const gitKeys = GUARD_SRC.match(new RegExp("\\bgit\\.[a-z_]+", 'g')) || [];
+  assert.deepEqual([...new Set(gitKeys)].sort(), ['git.on_protected', 'git.protected_branches'],
+    'git-guard.mjs reads a git.* config key beyond on_protected and '
+    + 'protected_branches. protected_branches is read through '
+    + 'lib/protected-branches.mjs, which reads that one key and nothing else.');
+  const configKeys = GUARD_SRC.match(new RegExp("\\bconfig\\.(?!json\\b)[a-z_]+", 'g')) || [];
+  assert.deepEqual([...new Set(configKeys)].sort(), ['config.git'],
+    'git-guard.mjs reads a second branch of the merged config. `git` is the '
+    + 'whole of what this hook consults (D-11).');
+
+  // The bypass the two rules above cannot see: importing the resolver and
+  // handing it a config, so no gate name and no config path is ever spelled
+  // here. The import set is pinned whole - a new dependency in this file is
+  // the rail moving, whatever it is for.
+  const imports = (GUARD_SRC.match(new RegExp("from '[^']+'", 'g')) || [])
+    .map((m) => m.slice(6, -1));
+  assert.deepEqual([...new Set(imports)].sort(), [
+    './lib/config-merge.mjs',
+    './lib/git-head.mjs',
+    './lib/git-segments.mjs',
+    './lib/protected-branches.mjs',
+    'node:fs',
+    'node:path',
+  ], 'git-guard.mjs gained an import. The guard is frozen at the rails it '
+    + 'already holds; a routing seam imported here is exactly the plumbing '
+    + 'D-11 forbids.');
+});
+
+test('a deferred gate in the config layer changes no guard decision', () => {
+  // The behavioural half: the same protected-branch commit, once under a bare
+  // config and once under a config that ALSO pins a deferred gate on the
+  // trigger whose findings this phase queues. The guard reads the same merged
+  // layer both times, so "unreached" has to be observable in the decision.
+  const bare = guard('git commit -m "x"', project('main', { git: {} }));
+  const withGate = guard('git commit -m "x"', project('main', {
+    git: {},
+    review: { triggers: { risk_surface: { gate: 'deferred' } } },
+  }));
+  assert.equal(JSON.stringify(withGate), JSON.stringify(bare),
+    'a deferred gate moved the protected-branch decision');
+  assert.equal(bare.permissionDecision, 'ask');
+
+  // And the silent arm stays silent: a gate value cannot manufacture a rail on
+  // a task branch either.
+  assert.equal(guard('git commit -m "x"', project('improve/thing', {
+    review: { triggers: { risk_surface: { gate: 'deferred' } } },
+  })), null);
 });
