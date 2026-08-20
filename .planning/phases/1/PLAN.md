@@ -9,6 +9,7 @@ files:
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/lib/arg-contract.mjs
   - cadence-core/bin/prose-agreement.test.mjs
+  - cadence-core/bin/arg-contract.test.mjs
   - cadence-core/references/review-triggers.md
   - cadence-core/references/config-catalog.md
   - cadence-core/references/COMMANDS.md
