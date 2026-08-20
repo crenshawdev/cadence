@@ -74,6 +74,10 @@ test('a clean range is judged clean: no matches, and not inconclusive', () => {
   assert.equal(r.inconclusive, false);
   assert.equal(r.checked, true);
   assert.deepEqual(r.categories, ALL);
+  // A range with content that matched nothing is NOT an empty range: the field
+  // rides the scanned return too, so its absence marks a pre-#140 record rather
+  // than a fresh `false` (D-03).
+  assert.equal(r.empty, false);
 });
 
 test('a binary-only range is inconclusive, never collapsed into a clean answer', () => {
@@ -88,11 +92,23 @@ test('a binary-only range is inconclusive, never collapsed into a clean answer',
   assert.deepEqual(r.matches, []);
 });
 
-test('an empty body is `checked: false`, and that implies inconclusive', () => {
+test('an empty body is a COMPLETED check of an empty range, not an unchecked one', () => {
+  // The collapse #140 removed. Reading a zero-byte diff IS a check that ran and
+  // matched nothing, so `checked: false` narrows to "there was no body to read
+  // at all" - the arm the null and scalar rows below hold. While the two shared
+  // one answer, an empty committed range refused `risk-record-missing` at
+  // `risk-check status`, which filters on `checked` before its fire predicate,
+  // and re-running the detector wrote the same refusal again.
   const r = scanDiff('', ALL);
-  assert.equal(r.checked, false);
-  assert.equal(r.inconclusive, true);
+  assert.equal(r.checked, true);
+  assert.equal(r.inconclusive, false);
+  assert.equal(r.empty, true);
   assert.deepEqual(r.matches, []);
+  assert.deepEqual(r.categories, ALL);
+
+  // Whitespace is not content either: git emits a trailing newline for a range
+  // that changed nothing.
+  assert.equal(scanDiff('\n', ALL).empty, true);
 });
 
 test('a substring is not a path signal: src/authority.rs is not `auth`', () => {
@@ -104,9 +120,13 @@ test('a substring is not a path signal: src/authority.rs is not `auth`', () => {
 });
 
 test('a null body returns a record rather than throwing', () => {
+  // `cmdRiskCheckRun`'s own null: `resolveRange` refused, or the `git diff`
+  // threw, so nothing was read. Never `empty` - that would report a range
+  // nobody looked at as a range that held nothing.
   const r = scanDiff(null, ALL);
   assert.equal(r.checked, false);
   assert.equal(r.inconclusive, true);
+  assert.equal(r.empty, false);
   assert.deepEqual(r.matches, []);
 });
 
@@ -114,6 +134,7 @@ test('a scalar body returns a record rather than throwing', () => {
   const r = scanDiff(42, ALL);
   assert.equal(r.checked, false);
   assert.equal(r.inconclusive, true);
+  assert.equal(r.empty, false);
   assert.deepEqual(r.categories, ALL);
 });
 
@@ -281,6 +302,57 @@ test('risk-check run: a CLEAN range leaves the same record - the whole point of 
   assert.equal(records[0].inconclusive, false);
 });
 
+test('risk-check run: a SAME-COMMIT range is a completed empty check, not an unchecked one', () => {
+  // The deadlock #140 closes, at its narrowest shape: `/cad-execute --rerun`
+  // over a phase whose tasks are all already satisfied commits nothing, so the
+  // range the gate is handed is `HEAD..HEAD`. It answered `checked: false`,
+  // `risk-check status` refused `risk-record-missing`, and re-running the
+  // detector wrote the same refusal - no argv could clear it.
+  const { repo, dir } = riskRepo();
+  commitFile(repo, 'README.md', 'start\n');
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', 'HEAD', '--head', 'HEAD']);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.inconclusive, false);
+  assert.equal(r.empty, true);
+  assert.deepEqual(r.matches, []);
+  assert.equal(r._exit, 0);
+
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].checked, true);
+  assert.equal(records[0].inconclusive, false);
+  assert.equal(records[0].empty, true, 'the envelope said empty and the record did not');
+  assert.deepEqual(records[0].matches, []);
+});
+
+test('risk-check run: a REVERT PAIR is empty too - the ids differ and the net diff does not', () => {
+  // Why emptiness is decided from the BODY and never from `base_id ===
+  // head_id` (D-01). This range spans two commits and resolves to two different
+  // ids; the tree it starts at and the tree it ends at are the same. An id
+  // compare would answer `checked: false` here and leave the defect class
+  // alive one shape over.
+  const { repo, dir } = riskRepo();
+  const base = commitFile(repo, 'README.md', 'start\n');
+  commitFile(repo, 'README.md', 'a line the revert takes back\n');
+  const head = commitFile(repo, 'README.md', 'start\n');
+  assert.notEqual(base, head, 'the fixture did not produce two distinct commits');
+
+  const r = riskCheck(repo, dir, ['run', '--phase', '1', '--plan', '1', '--base', base, '--head', head]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.base_id, base);
+  assert.equal(r.head_id, head);
+  assert.equal(r.checked, true, JSON.stringify(r));
+  assert.equal(r.inconclusive, false);
+  assert.equal(r.empty, true);
+
+  const records = riskRecords(dir);
+  assert.equal(records.length, 1, `expected exactly one risk_check line, got ${records.length}`);
+  assert.equal(records[0].empty, true);
+  assert.notEqual(records[0].base_id, records[0].head_id,
+    'the record read as empty on identical ids, which is not the case under test');
+});
+
 test('risk-check run: a --surfaces token outside the eight is refused, and appends NOTHING', () => {
   // A caller who mistyped the scope of a blocking gate must see a refusal, not
   // a narrowed clean answer - the rule `trace append --tokens` already states.
@@ -303,9 +375,15 @@ test('risk-check run: an unreadable range is ok:false, and STILL leaves its reco
   assert.equal(r.ok, false, JSON.stringify(r));
   assert.equal(r.checked, false);
   assert.equal(r._exit, 1);
+  // An unresolvable ref reads nothing, so it is the OPPOSITE of empty: the
+  // record has to keep saying the check never happened, or the deadlock fix
+  // would clear a range git refused.
+  assert.equal(r.empty, false, JSON.stringify(r));
   const records = riskRecords(dir);
   assert.equal(records.length, 1, 'a range that could not be read left no record of the attempt');
   assert.equal(records[0].checked, false);
+  assert.equal(records[0].inconclusive, true);
+  assert.equal(records[0].empty, false);
 });
 
 test('risk-check run: --base and --head are required, and a flag-shaped ref is refused', () => {

@@ -3995,6 +3995,11 @@ function cmdRiskCheckRun(dir, opts) {
     // has to state a reason.
     matches: scan.matches.map((m) => m.category),
     inconclusive: scan.inconclusive,
+    // The range was READ and held nothing - a completed check, not an
+    // unchecked one (D-01/D-02). Written beside `checked` on the record and on
+    // the envelope both, so the record a later `status` joins and the envelope
+    // the coordinator reads cannot disagree about it.
+    empty: scan.empty,
   });
 
   const envelope = {
@@ -4008,6 +4013,7 @@ function cmdRiskCheckRun(dir, opts) {
     categories: scan.categories,
     matches: scan.matches,
     inconclusive: scan.inconclusive,
+    empty: scan.empty,
     trace: { written: res.written, ...(res.reason ? { reason: res.reason } : {}) },
   };
 

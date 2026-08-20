@@ -293,21 +293,42 @@ function parseDiff(body) {
  *   `review.triggers.risk_surface.surfaces` set. A category not in this list is
  *   not looked for and is not reported.
  * @returns {{checked: boolean, categories: string[],
- *   matches: Array<{category: string, signal: string}>, inconclusive: boolean}}
+ *   matches: Array<{category: string, signal: string}>, inconclusive: boolean,
+ *   empty: boolean}}
  *   `checked` is FALSE only when there was no diff body to read at all, and
- *   `checked: false` implies `inconclusive: true`. Each `matches` entry names
- *   the category and the ONE signal that found it first, the shape
+ *   `checked: false` implies `inconclusive: true`. `empty` is TRUE only on the
+ *   opposite arm: a body that WAS read and held nothing. Each `matches` entry
+ *   names the category and the ONE signal that found it first, the shape
  *   `scanTree`'s `evidenced` uses, so a fire site can state a reason instead of
  *   a bare verdict.
  */
 export function scanDiff(body, categories) {
   const wanted = strs(categories);
-  const text = typeof body === 'string' ? body : '';
-  if (!text.trim()) {
-    return { checked: false, categories: wanted, matches: [], inconclusive: true };
+
+  // TWO STATES THIS USED TO COLLAPSE INTO ONE ANSWER (#140, D-01). A non-string
+  // body was coerced to `''` and then took the same arm as a zero-byte diff, so
+  // "git handed back nothing to read" and "git read the range and it was empty"
+  // were byte-identical records: `checked: false, inconclusive: true`. The
+  // second is a COMPLETED check that matched nothing, and reporting it as
+  // unchecked deadlocked the blocking `risk_surface` gate - `risk-check status`
+  // filters on `checked` before its fire predicate is ever consulted, so an
+  // empty committed range refused `risk-record-missing` and no re-run could
+  // clear it, because re-running wrote the same record again.
+  //
+  // A non-string body is what `cmdRiskCheckRun` leaves when `resolveRange`
+  // refused or the `git diff` threw. It keeps today's answer.
+  if (typeof body !== 'string') {
+    return { checked: false, categories: wanted, matches: [], inconclusive: true, empty: false };
+  }
+  // EMPTY IS DECIDED FROM THE BODY, never from the resolved ids being equal
+  // (D-01): a revert pair has `base_id !== head_id` and a zero net diff, and an
+  // id compare would leave that shape deadlocked exactly as before. `checked`
+  // is the load-bearing half of the answer and `inconclusive: false` is not.
+  if (!body.trim()) {
+    return { checked: true, categories: wanted, matches: [], inconclusive: false, empty: true };
   }
 
-  const { paths, changed, unreadable } = parseDiff(text);
+  const { paths, changed, unreadable } = parseDiff(body);
   const segments = new Set();
   const bases = new Set();
   const exts = new Set();
@@ -345,5 +366,8 @@ export function scanDiff(body, categories) {
   // INDEPENDENT of `matches`, deliberately: a range that is partly binary and
   // partly a matched secrets change reports both, because collapsing either
   // into the other loses the half the caller has to act on.
-  return { checked: true, categories: wanted, matches, inconclusive: unreadable };
+  // `empty: false` on the scanned arm too, so the field is on EVERY return and
+  // its ABSENCE marks a record written before this seam split the two states,
+  // rather than a fresh honest `false` (D-03).
+  return { checked: true, categories: wanted, matches, inconclusive: unreadable, empty: false };
 }
