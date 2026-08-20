@@ -4122,21 +4122,34 @@ const planKey = (v) => (v === undefined || v === null ? '' : String(v));
 const RISK_TRIGGER = 'risk_surface';
 
 /**
- * The four `outcome` event names a blocking `risk_surface` fire can settle at,
- * and the whole vocabulary `risk-check status` accepts as proof the fire
- * HAPPENED (GAT-04):
+ * The five `outcome` event names a `risk_surface` fire can settle at, and the
+ * whole vocabulary `risk-check status` accepts as proof the fire HAPPENED
+ * (GAT-04):
  *   - `adjudication` - the adjudicated arm reported its survivors
  *   - `rearm`        - the one-round re-arm fired a narrowed second round
  *   - `gate_pass`    - the fire came back with nothing blocker/high
  *   - `override`     - the user cleared a FAIL deliberately, reason on file
+ *   - `deferral`     - a gate resolved `deferred` queued what it found
  * `gate_pass` is here because the roadmap's stated acceptance set has no arm
  * for a clean pass and a blocking PASS wrote nothing: without it, every matched
  * range whose fire found no blocker would be permanently unclearable, and this
  * tree has already stated its verdict on that shape - an unclearable gate is
- * one that gets bypassed. A FIFTH name would be a state nothing produces; the
- * producers are references/triage-gate.md and references/review-triggers.md.
+ * one that gets bypassed.
+ *
+ * `deferral` is the FIFTH name this list once said nothing produces, and what
+ * produces it is the `deferred` gate mode: that arm runs the reviewer, persists
+ * the findings and writes a queue member, then lets the run continue - it
+ * settles by QUEUING rather than by adjudicating, so none of the four names
+ * above describes it. It cannot borrow one either: `gate_pass` reads as a clean
+ * gate in every downstream recount, and `override` is the coordinator's own
+ * say-so, which is the manufactured clear the receipt machinery exists to
+ * refuse. Without an accepted receipt of its own, `cmdRiskCheckStatus` reports
+ * the matched range `unfired` forever and the run halts at exactly the step
+ * deferring it was meant to let through.
+ *
+ * The producers are references/triage-gate.md and references/review-triggers.md.
  */
-const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override'];
+const FIRE_RECEIPTS = ['adjudication', 'rearm', 'gate_pass', 'override', 'deferral'];
 
 function cmdRiskCheckStatus(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
@@ -4436,11 +4449,13 @@ function cmdRiskCheckStatus(dir, opts) {
    * unskippable. "The detector ran" and "the fire happened" are two different
    * claims, so they are two different receipts and this reader demands both.
    *
-   * Four event names, because those are the four outcomes a blocking fire can
-   * reach: the adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
-   * and references/triage-gate.md's two settle points - `gate_pass` when
-   * nothing blocker/high survived, `override` when the user cleared a FAIL
-   * deliberately. A fifth name would be a state nothing produces.
+   * Five event names, because those are the five outcomes a fire can reach: the
+   * adjudicated arm's `adjudication`, the capped re-arm's `rearm`,
+   * references/triage-gate.md's two settle points - `gate_pass` when nothing
+   * blocker/high survived, `override` when the user cleared a FAIL deliberately
+   * - and `deferral`, which the `deferred` gate mode writes when it queues what
+   * it found instead of halting. The list itself is FIRE_RECEIPTS, one
+   * consultation, and its block comment states why each name is on it.
    *
    * The trigger is read off the STRUCTURED `trigger` field and never parsed out
    * of `detail` (D-12): measured on this repository's 35 `outcome/adjudication`

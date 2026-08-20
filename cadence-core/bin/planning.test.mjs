@@ -7010,3 +7010,118 @@ test('adjudication: a citation pointing outside the repository is marked, never 
   assert.equal(rec.entries.length, 1);
   assert.equal(rec.entries[0].citation_missing, true);
 });
+
+// --- FIRE_RECEIPTS: `deferral`, the fifth name a fire can settle at ----------
+//
+// The `deferred` gate mode settles a fire by QUEUEING what it found and letting
+// the run continue, so it produces an outcome none of the four older receipt
+// names describes. `risk-check status` is the reader that decides whether a
+// matched range was ever fired on, and it accepts a receipt only if its event
+// name is in FIRE_RECEIPTS - so without `deferral` on that list a deferring run
+// clears its own gate never, and halts at exactly the step deferring it was
+// meant to let through.
+//
+// Both arms run the REAL seams end to end - `risk-check run` writes the record,
+// `trace append` writes the receipt, `risk-check status` reads them - rather
+// than hand-writing trace lines. The correlation id, the resolved range ids and
+// the row key are then all the seam's own, which is the half a hand-built
+// fixture would assert nothing about.
+
+/** A git repo with a risky range: `.planning` answering the surface question,
+ * a base commit, and a head commit adding a file under a `secrets/` directory.
+ * Returns the full ids of both ends. */
+function deferralRepo() {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-deferral-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args],
+    { encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 'T');
+  git('config', 'commit.gpgsign', 'false');
+  const dir = join(repo, '.planning');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'config.json'),
+    JSON.stringify({ review: { triggers: { risk_surface: { surfaces: ['secrets'] } } } }));
+  writeFileSync(join(repo, 'README.md'), 'start\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  const base = git('rev-parse', 'HEAD');
+  mkdirSync(join(repo, 'src', 'secrets'), { recursive: true });
+  writeFileSync(join(repo, 'src', 'secrets', 'vault.ts'), 'export const K = 1;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'head');
+  const head = git('rev-parse', 'HEAD');
+  // The anchor, so the record and the receipt derive the SAME `<phase>-<sha>`
+  // correlation id the way a real run does rather than falling back to the
+  // phase-only form.
+  plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'lifecycle', '--event', 'phase_start', '--sha', head.slice(0, 7)]);
+  return { repo, dir, base, head };
+}
+
+/** Any planning.mjs subcommand, run with cwd INSIDE the repo - `resolveRange`
+ * and the detector both ask git about the cwd. The global config layer is
+ * pinned out: a developer whose own config answers the surface question would
+ * otherwise see a row pass here and fail in CI. */
+function plRun(repo, dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, ...args], {
+      encoding: 'utf8',
+      cwd: repo,
+      env: { ...process.env, CADENCE_GLOBAL_CONFIG: join(tmpdir(), 'cad-deferral-no-global.json') },
+    });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+test('risk-check status: a `deferral` receipt settles the range it names', () => {
+  const { repo, dir, base, head } = deferralRepo();
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+
+  const recorded = plRun(repo, dir, ['risk-check', 'run', ...range]);
+  assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  assert.ok(recorded.matches.some((m) => m.category === 'secrets'),
+    `the fixture range matched no secrets surface: ${JSON.stringify(recorded.matches)}`);
+
+  // Recorded but unfired: the detector ran, nothing says the review did.
+  const before = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(before.ok, false, JSON.stringify(before));
+  assert.equal(before.reason, 'risk-fire-missing');
+  assert.equal(before.plans[0].state, 'unfired');
+
+  // The deferring fire's receipt. No `--detail`: a deferral is a review's
+  // settled outcome, not a coordinator's say-so, so it needs no reason the way
+  // `override` does - it is exactly as joinable as `gate_pass`.
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'deferral', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head]);
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+
+  const after = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(after.ok, true, JSON.stringify(after));
+  assert.equal(after._exit, 0);
+  assert.equal(after.plans[0].state, 'recorded');
+});
+
+test('risk-check status: the acceptance is FIRE_RECEIPTS membership, not any outcome event', () => {
+  // The negative half, and the falsifier for the row above: an `outcome` event
+  // on the same trigger, the same plan and the same range, whose only defect is
+  // a name the accepted set does not carry, settles nothing. Drop `deferral`
+  // from FIRE_RECEIPTS and the row above answers exactly like this one.
+  const { repo, dir, base, head } = deferralRepo();
+  const range = ['--phase', '1', '--plan', '1', '--base', base, '--head', head];
+  assert.equal(plRun(repo, dir, ['risk-check', 'run', ...range]).ok, true);
+
+  const receipt = plRun(repo, dir, ['trace', 'append', '--phase', '1',
+    '--family', 'outcome', '--event', 'deferred', '--trigger', 'risk_surface',
+    '--plan', '1', '--base', base, '--sha', head]);
+  assert.equal(receipt.ok, true, 'the trace takes any event name - it is the READER that judges');
+
+  const r = plRun(repo, dir, ['risk-check', 'status', ...range]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'risk-fire-missing');
+  assert.equal(r.plans[0].state, 'unfired');
+  assert.match(r.hint, /deferral/, 'the hint no longer names the receipt vocabulary it demands');
+});
