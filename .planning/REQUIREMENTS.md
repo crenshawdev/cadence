@@ -6,7 +6,10 @@
 ## Active
 
 Committed scope for **`v3.5.7 - measured, and no lever to change it`**, opened
-2026-08-20 from the tracker milestone holding #167, #174, #189 and #206. Ids are
+2026-08-20 from the tracker milestone holding #167, #174, #189, #193 and #206.
+#193 was folded in on 2026-08-20: "blocking blocks the land, not the run" is the
+same theme as #189 and #174, and it was carrying no milestone at all, which is
+the state #139, #140 and #145 were in when they were dropped. Ids are
 seeded here at the open, deliberately: `v3.5.6` seeded none, so its `/cad-audit`
 traced zero requirements and returned PASS on an empty set while the coverage arm
 carried the entire proof. `/cad-plan` seeds each Traceability row as its phase is
@@ -16,6 +19,7 @@ planned; rows are never hand-populated here.
 - **BCH-01**: N security reviews run in one process paying one cold prefix, not N invocations paying N (#174)
 - **CER-01**: ceremony is chosen per change rather than per project, so a README phase and an auth phase stop buying the same model, effort rung and gate set (#189)
 - **IVW-01**: the risk-surface interview has a user-triggerable entry point and its menu stops offering the same set twice (#206)
+- **HLT-01**: a blocking finding defers to the land instead of stopping the run, so unreviewed work cannot reach base but a phase can finish with nobody watching (#193)
 
 The four deferred ids - `PRS-01`, `EVD-01`, `RCL-06`, `CTX-02` - keep their
 deferral reasons and none is promoted into this cycle. Their 2026-08-18 caveats
@@ -24,9 +28,13 @@ issues (#69, #29) are closed and #29's ask shipped as `/cad-minimalism-review`;
 and `RCL-06` carries no deferral reason and no promotion trigger, so nothing can
 ever re-ask it. Both want a decision before either is scoped.
 
-Not in this cycle and unassigned: #139, #140 and #145, which were scoped to
-`v3.5.6` and never planned into a phase, so that milestone's stated theme went
-untouched. Issues #190 through #193 carry no milestone. The open items filed at
+Not in this cycle: #139, #140 and #145, which were scoped to `v3.5.6`, never
+planned into a phase, and re-milestoned to `v3.5.8` on 2026-08-20 so the unit
+stops floating - #145 is the journal primitive and #139 and #140 are its first
+two consumers, so they are one piece of work rather than three. Issues #190,
+#191 and #192 still carry no milestone: they are product-surface proposals about
+reading the corpus back, which is a cycle of their own rather than filler for
+this one. The open items filed at
 the `v3.5.1` close, the proposals filed at the `v3.5.2` close, and the medium
 `risk_surface` survivors carried forward at the `v3.5.4`, `v3.5.5` and `v3.5.6`
 closes are all still unassigned.

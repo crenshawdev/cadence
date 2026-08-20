@@ -133,8 +133,8 @@ context-gathering, and debugging — without any external memory system.
 ### Active
 
 **`v3.5.7 - measured, and no lever to change it`, opened 2026-08-20.** Scoped
-from the tracker milestone `v3.5.7`, which holds four issues: #167, #174, #189
-and #206. The theme is one sentence: Cadence measures its own cost and then
+from the tracker milestone `v3.5.7`, which holds five issues: #167, #174, #189,
+#193 and #206. The theme is one sentence: Cadence measures its own cost and then
 gives you nothing to spend it with. #167 has a read trace that measures read-set
 redundancy and nothing that acts on the number. #174 pays a cold prefix per
 security-review invocation, 61 of them, where one process reviewing N diffs pays
@@ -143,10 +143,14 @@ phase buy the same model, the same effort rung and the same gates. #206 asks the
 one question Cadence asks on its own, the risk-surface interview, exactly once
 and offers no way back to it. Three of the four are a control at the wrong
 granularity or missing outright; #174 is the bill that granularity runs up.
-Phases are not yet added.
+#193 was folded in on 2026-08-20 and belongs to the same sentence from the other
+end: blocking currently blocks the RUN, which is the constraint that stops
+Cadence working while nobody watches. Defer it to the LAND and the guarantee
+that matters, unreviewed work never reaches base, survives intact. Phases are
+not yet added.
 
-Requirement ids ARE seeded this cycle - `RDX-01`, `BCH-01`, `CER-01`, `IVW-01`
-in `REQUIREMENTS.md`'s `## Active` - which `v3.5.6` did not do, and the close
+Requirement ids ARE seeded this cycle - `RDX-01`, `BCH-01`, `CER-01`, `IVW-01`,
+`HLT-01` in `REQUIREMENTS.md`'s `## Active` - which `v3.5.6` did not do, and the close
 below records what that cost.
 
 `v3.5.6` closed on 2026-08-20: three phases, 45 commits off `v3.5.5`, the
@@ -175,8 +179,9 @@ four issues and shipped one. #195 was phase 1; phases 2 and 3 were both found by
 running phase 1's own acceptance and map to no tracker issue. #139, #140 and
 #145 - the multi-file transition reported as all-or-nothing, and the shared
 journal primitive that was to express it - were never planned into a phase, so
-the milestone's stated theme went untouched and its three issues stay open and
-unassigned. `/cad-audit` could not catch this: the cycle seeded no requirement
+the milestone's stated theme went untouched. All three were re-milestoned to
+`v3.5.8` on 2026-08-20 rather than left floating, and the `v3.5.6` tracker
+milestone was closed. `/cad-audit` could not catch this: the cycle seeded no requirement
 ids, so its trace arm ran over zero requirements and returned PASS on an empty
 set while the coverage arm carried the whole proof at 20/20 criteria. That is the
 gap the seeded ids above are meant to close next cycle.
