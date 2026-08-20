@@ -342,3 +342,67 @@ A line that is not a row is skipped, so a note added here mints no recall entry.
 - `phases/5/CONTEXT.md`: D-05 (Enforcement): `docs/` joins the `mdFiles` walk in
 - `phases/5/CONTEXT.md`: D-07 (Ledger): The 23 `README-*` rows following the changed sections split
 - `phases/5/CONTEXT.md`: D-10 (Accuracy): `README.md:142`'s "went from 8,550 bytes to 5,397" is cut
+
+## v3.5.6
+
+- `phases/1/SUMMARY.md`: AC4 is a human-verify arm: it needs a live `/cad-execute <N>` against a phase
+- `phases/1/SUMMARY.md`: `--rerun` takes no `cadence-core/references/COMMANDS.md` row, per the plan's
+- `phases/1/SUMMARY.md`: `lease-check`'s report exemption is still exactly `<pdir>/reports/plan-<k>.md`
+- `phases/1/SUMMARY.md`: The correlation-id overstatement in `cadence-core/bin/lib/trace.mjs` stays live
+- `phases/1/UAT.md`: Suffix picker passes three fixture states and is mutation-sensitive report-rotation.test.mjs passes with no report present, one present, and several already rotated; mutating the picker to return the base name unchanged fails at least one case.
+- `phases/1/UAT.md`: Two rotations leave three readable reports, earliest byte-identical In a fixture plan directory, rotating twice leaves three readable reports and the earliest is byte-identical to its pre-rotation content.
+- `phases/1/UAT.md`: Prose-agreement pins the locate refusal and unconditional status call A prose-agreement test asserts execute.md's locate step refuses derived status executed and complete, and that its status call is not under the else branch; the test fails when either is reverted.
+- `phases/1/UAT.md`: Live /cad-execute refuses an already-executed phase /cad-execute <N> against a phase whose derived status is executed refuses, names /cad-undo <N> then /cad-execute <N>, and the phase trace records no executor dispatch for that invocation. (human-verify: needs a live /cad-execute run)
+- `phases/1/UAT.md`: self-verify clean with weight budgets re-pinned node cadence-core/bin/self-verify.mjs --root . returns ok:true with an empty problems array, and weight-budgets.json rows 65 and 91 were re-pinned in the same commit as the prose edits.
+- `phases/1/UAT.md`: /cad-report lists both reports on a SUMMARY-less rotated phase On a SUMMARY-less phase carrying a rotated report, /cad-report <N>'s glob .planning/phases/<N>/reports/plan-*.md lists both the rotated and the current report.
+- `phases/1/UAT.md`: Rotated report survives the commit transports The worktree executor commit pathspec covers plan-<k>.md and plan-<k>.<n>.md, and the phase docs commit stages the reports/ directory with the risk .diff excluded by pathspec, so a rotated report is neither left untracked nor deleted from history.
+- `phases/1/UAT.md`: The prose-agreement test stays green when the refusal is narrowed to `executed` alone behavior wrong (weak assertion) - the test's own comment claims it catches 'a later edit [that] can narrow [the refusal] to `executed` alone', but it only greps the arm for the literal `complete`, which the arm's explanatory sentence supplies independently of the trigger.
+- `phases/1/UAT.md`: Run /cad-execute <N> against a phase whose DERIVED status is `executed` and observe the refusal, then run `node cadence-core/bin/planning.mjs trace render --phase <N>` It stops in the locate step with the refusal naming /cad-undo <N> then /cad-execute <N> and --rerun; the trace shows no phase_start anchor and no executor dispatch for that invocation.
+- `phases/1/UAT.md`: Do a deliberate second run of one plan (/cad-execute <N> --rerun) and inspect <plandir>/reports/ plus git log for that plan afterwards The first run's report is readable at plan-<k>.<n>.md with its original bytes, the second run's record is at plan-<k>.md, and both are in history after the docs commit (and, on the worktree path, after the executor's own report commit - which is the gap above).
+- `phases/1/CONTEXT.md`: D-01 (The run-scoping key): Run scoping is rotation-on-write, not a key. The
+- `phases/1/CONTEXT.md`: D-02 (The failing-capable test): The free-suffix choice is a pure function in
+- `phases/2/SUMMARY.md`: Plan 1 task 2's `Verify:` named `arg-contract-adoption.test.mjs`,
+- `phases/2/SUMMARY.md`: `9d10919` is a gate fix, not a plan task: the `risk_surface` fire
+- `phases/2/SUMMARY.md`: AC5's human-verify half is now partly met by this run's own two live
+- `phases/2/SUMMARY.md`: AC6's render half is unexercised: no `/cad-report 2` run has rendered a Gates
+- `phases/2/SUMMARY.md`: Plan 1's `gate_pass` receipt carries no counts - the three flags did not exist
+- `phases/2/SUMMARY.md`: `lib/trace-suggest.mjs`'s `parseAdjudication` still reads survivors out of
+- `phases/2/SUMMARY.md`: `groundCitations`' `checked: false` arm is implemented and untested - reaching
+- `phases/2/SUMMARY.md`: PRE-EXISTING: `cadence-core/bin/milestone-prune.test.mjs:557` is the one
+- `phases/2/UAT.md`: Record written per fire, one entry per raising voice A blocking/adjudicated gate fire leaves .planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json beside its sibling REVIEW-<trigger>-<discriminator>.md, using the same discriminator. Each entry carries voice, model and the severity as raised; a two-voice convergent finding yields TWO entries, not one.
+- `phases/2/UAT.md`: Verbatim claim text and full 40-char SHAs Each entry's claim and failure_scenario are byte-identical to the reviewer's returned payload, and a payload paraphrased before storage is refused by the seam. base_id/head_id are stored as full 40-character SHAs even when the caller spelled them 7-char or as the literal HEAD.
+- `phases/2/UAT.md`: Three refusals: bad ruling, unevidenced refutation, unfixed survivor The seam refuses a ruling outside survived|downgraded|refuted; refuses a refuted entry with no counter-evidence naming contradicting code; refuses a survived entry with no fix commit SHA. One fixture per refusal, each rejected.
+- `phases/2/UAT.md`: Counts derived from rulings, not parsed from --detail Survivor/downgrade/refutation counts are derived by counting rulings and ride trace append's structured --survivors/--downgraded/--refuted flags. Flipping one fixture entry's ruling changes the recomputed count, and a record whose counts disagree with its trace event is detected and refused.
+- `phases/2/UAT.md`: Unresolvable citation is flagged, never dropped An entry whose file does not resolve at head_id via `git cat-file -e <head_id>:<file>` is stored with a flag set and still present in the record - no entry is silently dropped.
+- `phases/2/UAT.md`: Auditor walk on a real fire reaches the cited code On one real fire, `git checkout <head_id>` then opening the cited file:line reaches the code the verbatim claim describes. (human-verify: needs a live cross-model gate fire)
+- `phases/2/UAT.md`: /cad-report Gates line renders from the record `/cad-report 2` renders its Gates line from the ADJUDICATION record; `/cad-report 1` prints its fire as unrecorded and synthesizes no entry for the pre-format phase; the Refuted line still reads SUMMARY deviations unchanged.
+- `phases/2/UAT.md`: self-verify clean, GAT-04 green, CONTRACTS row present `node cadence-core/bin/self-verify.mjs --root .` returns ok:true with an empty problems array; prose-agreement.test.mjs GAT-04 passes with its outcome-event list still exactly four names; the new subcommand has an arg-contract.mjs CONTRACTS row; weight-budgets.json was re-pinned in the same commit as the prose edits.
+- `phases/2/UAT.md`: Run /cad-report 2 and then /cad-report 1, and read the Gates line each produces /cad-report 2 shows a Gates line whose survivor figure is the ADJUDICATION record's rulings COUNTED and checked against the event's survivors/downgraded/refuted (and names any disagreement rather than picking a side); /cad-report 1 shows its fires as `unrecorded` with no synthesized entry; both leave the Refuted line reading SUMMARY deviations.
+- `phases/2/CONTEXT.md`: D-01 (The recount authority): Survivor, downgrade and refutation counts are
+- `phases/2/CONTEXT.md`: D-02 (Arm scope): A record is written on the BLOCKING arm as well as the
+- `phases/2/CONTEXT.md`: D-03 (The write path): The record is written by a validating seam taking a
+- `phases/2/CONTEXT.md`: D-04 (Per-voice attribution): Under a panel, one entry per finding per RAISING
+- `phases/2/CONTEXT.md`: D-05 (A fourth file): The record subsumes neither `FINDINGS.json` nor
+- `phases/2/CONTEXT.md`: D-06 (Location and identity): One record per FIRE at
+- `phases/3/SUMMARY.md`: Task 5's Verify asserts `node cadence-core/bin/test.mjs other`
+- `phases/3/SUMMARY.md`: The `risk_surface` gate FAILED on the plan's committed range with
+- `phases/3/SUMMARY.md`: `ADJUDICATION-risk_surface-plan-1.json` names `fix_commit
+- `phases/3/SUMMARY.md`: The pre-existing `milestone-prune.test.mjs:557` corpus failure needs
+- `phases/3/SUMMARY.md`: Observed once in six runs of `planning.test.mjs`: `renumber remove: cuts line
+- `phases/3/SUMMARY.md`: AC3 is unverified here by design: it needs a live `/cad-execute <N> --rerun`,
+- `phases/3/SUMMARY.md`: `cadence-core/workflows/execute.md` writes the `risk_surface` payload with a
+- `phases/3/UAT.md`: risk-check run records an empty range as a completed check A range whose diff body is empty answers checked:true, inconclusive:false, matches:[], empty:true and writes that record; a revert pair whose base_id differs from head_id but whose net diff is empty reads the same; a range whose diff read FAILS still answers checked:false, inconclusive:true. Tests pin all three.
+- `phases/3/UAT.md`: risk-check status accepts the empty record as recorded risk-check status over the empty-range record returns ok:true with the row's state `recorded` (it refused risk-record-missing before). Reverting the run-side split reddens the test. A record written under the old shape, carrying no empty field, does NOT read as empty.
+- `phases/3/UAT.md`: /cad-execute <N> --rerun completes with no override of a blocking gate Running /cad-execute against a phase whose tasks are all already satisfied runs to completion without the user overriding a blocking gate, and the outcome is transcribed here. (human-verify: needs a live /cad-execute run)
+- `phases/3/UAT.md`: An unjudged non-empty range still fires the gate A range that CONTAINS commits but whose diff cannot be judged (binary-only, gitlink) still answers inconclusive:true and still fires, with a test keeping that arm green.
+- `phases/3/UAT.md`: lease-check exempts a rotated report Staging plan-<k>.<n>.md alongside plan-<k>.md during a task commit returns no undeclared-files, and the test fails against the old byte-equality exemption. Staging plan-2.md or plan-11.md under plan 1's lease still reports undeclared-files.
+- `phases/3/UAT.md`: The report exemption stays bounded Staging plan-<k>-risk.diff or plan-<k>-risk-task-<n>.diff still reports undeclared-files, and a staged PLAN-1.1.MD is not exempted.
+- `phases/3/UAT.md`: self-verify is clean and the rotated-name grammar is stated once node cadence-core/bin/self-verify.mjs --root . returns ok:true with an empty problems array; the rotated-name grammar has exactly one statement in cadence-core/bin/lib/report-rotation.mjs, with no second regex in cmdLeaseCheck.
+- `phases/3/UAT.md`: A diff driver cannot present a risky range as empty With a checked-in .gitattributes diff=<driver> bound to a command that prints nothing, risk-check run over a range that changed a file to a recursive delete still answers empty:false with a destructive match - the seam reads with --no-ext-diff --no-textconv.
+- `phases/3/UAT.md`: The phase's own round-1 risk_surface receipt cites the amended sha, so the phase-wide risk-check status refuses behavior wrong - the `rearm` receipt written for round 1 carries sha 95ba7b2 (the fix commit, later amended to f5efcb4 and now unreachable: `git merge-base --is-ancestor 95ba7b2 HEAD` -> NOT-ancestor) instead of the reviewed head 31c2085, so no receipt settles the first matched record.
+- `phases/3/UAT.md`: Run /cad-execute <N> --rerun against a phase whose tasks are all already satisfied, and transcribe the outcome into .planning/phases/3/UAT.md item 3 The run reaches completion with no user override of a blocking gate: the risk-check run over the empty committed range answers checked:true, inconclusive:false, matches:[], empty:true, and the following `risk-check status --phase <N> --plan <k> --base {pre-plan HEAD} --head HEAD` returns ok:true with state `recorded` rather than refusing risk-record-missing.
+- `phases/3/CONTEXT.md`: D-01 (The empty test): EMPTY is decided from the DIFF BODY being empty and
+- `phases/3/CONTEXT.md`: D-02 (The record shape): An empty range answers `checked: true`,
+- `phases/3/CONTEXT.md`: D-04 (The status state): An empty range reports through the EXISTING
+- `phases/3/CONTEXT.md`: D-06 (The exemption's bound): The exemption becomes `plan-<k>.md` plus the
+- `phases/3/CONTEXT.md`: D-08 (Case): The exemption stays byte-exact on the canonical lowercase
