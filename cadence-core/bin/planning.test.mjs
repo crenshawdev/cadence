@@ -5732,18 +5732,20 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // requirement does not cover - partial-apply, write-failed, the
   // dispatch-level internal catch, `capture --text-file`'s read failure,
   // `capture-sections`' unreadable-capture and `uat record --fields-file`'s
-  // JSON parse failure - so the pin is by COUNT: nine uses of the idiom,
-  // exactly three of them wrapped. Adding a site moves the first number whether
+  // JSON parse failure - so the pin is by COUNT: ten uses of the idiom,
+  // exactly four of them wrapped. Adding a site moves the first number whether
   // or not the author remembered the helper.
   //
-  // The three wrapped sites, all git failures on the same EXP-01 rail:
+  // The four wrapped sites, all git failures on the same EXP-01 rail:
   // `cmdLeaseCheck`'s `no-staged-set` detail; `resolveRange`, where a failing
   // `git rev-parse` quotes back a remote URL that can carry credentials in its
   // userinfo, and whose redacted error is the detail BOTH `risk-check run`
-  // (`no-diff`) and `risk-check status` (`unresolved-range`) emit; and
-  // `risk-check run`'s own `git diff` catch. A git failure detail is exactly
-  // the string EXP-01 covers, so a git call added to this file arrives wrapped
-  // or this row goes red.
+  // (`no-diff`) and `risk-check status` (`unresolved-range`) emit;
+  // `risk-check run`'s own `git diff` catch; and `groundCitations`' probe,
+  // whose failure is the one the adjudication record reports as a grounding
+  // check that could not run. A git failure detail is exactly the string EXP-01
+  // covers, so a git call added to this file arrives wrapped or this row goes
+  // red - which is how this row answered the tenth site.
   //
   // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
   // detail is an `fs` error over a path the CALLER just named, so the only
@@ -5757,9 +5759,10 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 9, 'planning.mjs gained or lost a detail site');
-  assert.equal((src.match(WRAPPED) || []).length, 3,
-    'a git-failure detail (no-staged-set, resolveRange, or risk-check run\'s diff catch) is unredacted');
+  assert.equal((src.match(IDIOM) || []).length, 10, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(WRAPPED) || []).length, 4,
+    'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch or '
+    + 'groundCitations\' probe) is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
 
@@ -6912,4 +6915,53 @@ test('adjudication: --round 0 and a non-numeric round are refused', () => {
     assert.equal(r.reason, 'bad-args');
   }
   assert.deepEqual(adjFiles(dir), []);
+});
+
+test('adjudication: a citation absent at head is MARKED and still stored, the present one is not (AC5)', () => {
+  const { repo, dir, base } = adjRepo();
+  const two = adjPayload();
+  const findings = two.voices[0].returned.findings;
+  // One citation present at head (`src.js`), one that is not.
+  findings.push({
+    file: 'deleted/gone.js',
+    line: 12,
+    severity: 'medium',
+    claim: 'the helper is never called',
+    failure_scenario: 'dead code ships',
+  });
+  two.voices[0].rulings.push({
+    finding: 1,
+    ruling: 'downgraded',
+    claim: findings[1].claim,
+    failure_scenario: findings[1].failure_scenario,
+  });
+  const payload = adjPayloadFile(repo, two);
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.citations, { checked: true, missing: 1 });
+
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  // BOTH stored: the entry count is the number of findings RAISED, and a
+  // finding whose grounding is in question is the last one a record may lose.
+  assert.equal(rec.entries.length, 2);
+  assert.deepEqual(rec.entries.map((e) => e.file), ['src.js', 'deleted/gone.js']);
+  assert.equal(rec.entries[0].citation_missing, undefined);
+  assert.equal(rec.entries[1].citation_missing, true);
+  assert.deepEqual(rec.citations, { checked: true });
+  assert.deepEqual(r.counts, { raised: 2, survived: 1, downgraded: 1, refuted: 0 });
+});
+
+test('adjudication: a citation pointing outside the repository is marked, never a crash (AC5)', () => {
+  const { repo, dir, base } = adjRepo();
+  const escaped = adjPayload();
+  escaped.voices[0].returned.findings[0].file = '../outside/secrets.env';
+  const payload = adjPayloadFile(repo, escaped);
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.citations, { checked: true, missing: 1 });
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  assert.equal(rec.entries.length, 1);
+  assert.equal(rec.entries[0].citation_missing, true);
 });

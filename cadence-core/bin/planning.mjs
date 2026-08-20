@@ -4511,6 +4511,66 @@ function cmdRiskCheck(dir, sub, opts) {
  */
 const RECORD_TOKEN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
+/**
+ * Which of these entries cite a `file` that does not EXIST at `headId` (D-09,
+ * AC5) - and whether the question could be asked at all.
+ *
+ * WHY IT IS ASKED. The auditor path this record exists to buy is `git checkout
+ * <head_id>` then open `file:line`, and NOTHING upstream checks either field:
+ * review-provider.mjs's `FINDING_SCHEMA` bounds `file` only as a non-empty
+ * string of at most 1024 characters, and skills/cad-reviewer-contract/SKILL.md
+ * calls `line` best-effort in as many words. So the citation is checked here,
+ * once, while the head is already resolved - which buys the auditor path
+ * instead of demonstrating it.
+ *
+ * A MARKED ENTRY IS STILL STORED, NEVER DROPPED. The mark is the auditor's
+ * warning that the citation cannot be opened; dropping the entry would delete
+ * the very finding whose grounding is in question, which is the summarizing
+ * this whole record exists to end.
+ *
+ * THE PROBE FIRST, and this is the load-bearing part. `git cat-file -e
+ * <sha>:<path>` exits 128 both for a path absent at that commit and for "this
+ * is not a repository" (measured - it is NOT the documented exit 1 on this
+ * git), so the two are indistinguishable per entry. The probe asks one question
+ * whose answer cannot be about any path - can this repository read the head
+ * commit object - and only once it says yes is a later nonzero exit
+ * attributable to the citation. A check that could not run AT ALL is reported
+ * ONCE by the caller and marks NOTHING: an unprovable citation set is not a bad
+ * one, and marking every entry there is the collapsed-stdin defect
+ * `land-cleanup.mjs` already cost this project once, rewritten.
+ *
+ * `-C top` - the repository top `resolveRange` returned - the way
+ * `cmdRiskCheckRun` reads its diff, so the answer is the repository's and not
+ * the process cwd's.
+ *
+ * @param {string} top the repository top
+ * @param {string} headId the resolved 40-character head id
+ * @param {any[]} entries
+ * @returns {{checked: boolean, missing: Set<number>, reason: string}}
+ *   `checked: false` carries an EMPTY `missing` by construction, so a caller
+ *   cannot mark entries against a check that never ran.
+ */
+function groundCitations(top, headId, entries) {
+  const git = (/** @type {string} */ arg) => execFileSync('git',
+    ['-C', top, 'cat-file', '-e', arg], { stdio: ['ignore', 'ignore', 'pipe'] });
+  try {
+    git(`${headId}^{commit}`);
+  } catch (e) {
+    // redactUrl first, the EXP-01 rail cmdLeaseCheck's `no-staged-set` applies:
+    // a git failure detail can carry a remote URL with credentials in it.
+    return { checked: false, missing: new Set(),
+      reason: redactUrl(e && e.message ? e.message : String(e)) };
+  }
+  /** @type {Set<number>} */
+  const missing = new Set();
+  for (let i = 0; i < entries.length; i += 1) {
+    // The path is the SECOND half of one `<sha>:<path>` argument, so a citation
+    // opening with `-` can never be read by git as an option.
+    try { git(`${headId}:${entries[i].file}`); } catch { missing.add(i); }
+  }
+  return { checked: true, missing, reason: '' };
+}
+
 function cmdAdjudication(dir, opts) {
   const parsedPhase = requirePhaseArg(opts.phase);
   if (!parsedPhase.ok) return fail('bad-args', 'adjudication needs --phase <N>');
@@ -4617,6 +4677,10 @@ function cmdAdjudication(dir, opts) {
       + `${round + 1} so it lands beside round ${round} instead of replacing it`);
   }
 
+  // EVERY CITATION GROUNDED AT THE HEAD (D-09, AC5), before the record is
+  // written and after every refusal above, so a refused call does no git work.
+  const cites = groundCitations(range.top, range.head, built.entries);
+
   // ONE COPY OF THE RESOLVED PAIR PER ENTRY, deliberately, on top of the pair
   // on the record's own header: an entry is what gets quoted, copied into a
   // report and argued about, and an entry that cannot say which head it was
@@ -4636,7 +4700,21 @@ function cmdAdjudication(dir, opts) {
     // fire where every voice returned nothing has no entries at all, and a
     // record that cannot say which voices ran is not evidence that any did.
     voices: built.voices,
-    entries: built.entries.map((e) => ({ ...e, base_id: range.base, head_id: range.head })),
+    // WHETHER THE GROUNDING RAN, on the record itself: the absence of a
+    // `citation_missing` mark below means "checked and found" only when this
+    // says the check happened, and means nothing at all when it did not. No
+    // COUNT rides it - the record stores none of its own, and a reader recounts
+    // the marks the same way it recounts the rulings.
+    citations: cites.checked ? { checked: true } : { checked: false, reason: cites.reason },
+    entries: built.entries.map((e, i) => ({
+      ...e,
+      // MARKED, never dropped: the mark is the auditor's warning that this
+      // citation cannot be opened at `head_id`, and the finding whose grounding
+      // is in question is the last one a record may lose.
+      ...(cites.missing.has(i) ? { citation_missing: true } : {}),
+      base_id: range.base,
+      head_id: range.head,
+    })),
   };
   atomicWrite(file, `${JSON.stringify(record, null, 2)}\n`);
 
@@ -4657,6 +4735,10 @@ function cmdAdjudication(dir, opts) {
     head_id: range.head,
     voices: built.voices.length,
     counts: built.counts,
+    // The count lives HERE and not on the record, where every figure is derived.
+    citations: cites.checked
+      ? { checked: true, missing: cites.missing.size }
+      : { checked: false, reason: cites.reason },
   });
 }
 
