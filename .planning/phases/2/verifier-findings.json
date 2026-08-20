@@ -1,0 +1,107 @@
+{
+  "status": "needs_human",
+  "score": "7/8",
+  "truths": [
+    {
+      "n": 1,
+      "truth": "A blocking or adjudicated fire writes .planning/phases/<N>/ADJUDICATION-<trigger>-<discriminator>.json beside its sibling REVIEW file, holding one entry per finding RAISED per raising voice (voice, model, severity as raised), with convergence derived and never collapsed",
+      "status": "VERIFIED",
+      "uat_item": 1,
+      "evidence": "cadence-core/bin/lib/adjudication-record.mjs buildEntries emits one entry per returned finding per voice and derives `convergent` from a file+line+claim key over distinct voices (:onvergenceKey / raisedBy loop); the seam cmdAdjudication (cadence-core/bin/planning.mjs:4788-4958) resolves the name through the shared recordName() and refuses rather than overwrites. Named tests pass: 'AC1: two voices raising one convergent finding produce TWO entries, not one', 'AC1: a returned finding with no ruling is REFUSED, never silently absent', 'adjudication: the record lands beside the sibling REVIEW discriminator (AC1)'. Live proof on disk: .planning/phases/2/ADJUDICATION-risk_surface-plan-2.json beside REVIEW-risk_surface-plan-2.md, entries carrying voice openai / model gpt-5.6-terra / severity high and medium."
+    },
+    {
+      "n": 2,
+      "truth": "Each entry's claim and failure_scenario are byte-identical to the reviewer's returned payload (a paraphrase is refused), and base_id/head_id are stored as full 40-character SHAs regardless of the caller's spelling",
+      "status": "VERIFIED",
+      "uat_item": 2,
+      "evidence": "adjudication-record.mjs compares each ruling's restatement against the RETURNED side byte-for-byte and always copies the entry from the returned side; the seam resolves the range through resolveRange and stamps range.base/range.head on the header and on every entry (planning.mjs:4900-4935). Tests: 'AC2: a ruling that paraphrases the claim is REFUSED', 'AC2: a one-byte difference in the claim is REFUSED', 'adjudication: every entry carries full 40-char ids from a 7-char base and a literal HEAD (AC2)'. Spot-check against the real binary in a scratch git repo with --base HEAD~1 --head HEAD returned base_id 1e721540c3f0026ad20b855da371aab571f66c4b / head_id 77289b7f2c0d7030aa1a5ea69a8b811f84ba54bb, 40 chars on the header and on both entries. Live record shows 7028a81 -> 7028a81bfd5e52e7a5568a650d95a86f17907260."
+    },
+    {
+      "n": 3,
+      "truth": "The seam refuses a ruling outside survived|downgraded|refuted, a refuted entry with no counter-evidence naming contradicting code, and a survived entry with no usable fix commit",
+      "status": "VERIFIED",
+      "uat_item": 3,
+      "evidence": "adjudication-record.mjs RULINGS is a frozen three-value list with no fourth, plus the counter_evidence and FIX_COMMIT arms; cmdAdjudication relays the refusal as ok:false reason 'bad-payload' (planning.mjs:4845-4847). Tests pass: 'AC3: a ruling outside survived | downgraded | refuted is REFUSED', 'AC3: a refuted entry with no counter-evidence is REFUSED', 'AC3: a survived entry with no fix commit is REFUSED', 'AC3: a blank or non-hexadecimal fix commit is REFUSED like an absent one'. Live spot-check through the real binary with ruling 'unadjudicated' returned {\"ok\":false,\"reason\":\"bad-payload\",\"detail\":\"voices[0].rulings[0].ruling must be one of survived | downgraded | refuted, got \\\"unadjudicated\\\"\"} and wrote no file."
+    },
+    {
+      "n": 4,
+      "truth": "Counts are derived by counting rulings, ride trace append's structured --survivors/--downgraded/--refuted, and a receipt whose figures disagree with the record is refused with nothing appended",
+      "status": "VERIFIED",
+      "uat_item": 4,
+      "evidence": "deriveCounts recounts the STORED entries; arg-contract.mjs declares the three flags plus --round on the 'trace append' row (int/refuse/refuse) and on neither close row; cmdTrace reads them into `settled` and calls recountReceipt before appendEvent (planning.mjs:3439-3448, :3562-3567), which resolves the fire's record by the SAME recordName rule and refuses 'count-disagreement' or 'bad-record'. Tests: 'recount: counts matching the record's rulings append normally', 'recount: a --survivors one higher than the rulings is REFUSED, trace untouched', 'recount: the ROUND decides which record is read', 'AC4: flipping ONE entry's ruling makes the record and its event disagree'. Live spot-check: --survivors 2 against a 1-survivor record returned count-disagreement and created no trace file at all; --survivors 1 appended {\"survivors\":1,\"downgraded\":0,\"refuted\":1}. End-to-end on this repo: the plan-2 record's rulings (1 survived, 1 refuted) match the gate_pass event surfaced by `trace render --phase 2` carrying survivors:1 downgraded:0 refuted:1."
+    },
+    {
+      "n": 5,
+      "truth": "An entry whose cited file does not resolve at head_id is stored with a flag and never dropped, and a check that could not run at all marks nothing",
+      "status": "VERIFIED",
+      "uat_item": 5,
+      "evidence": "groundCitations (planning.mjs:4740-4786) probes `<headId>^{commit}` first so a repository failure is distinguishable from a missing path, returns {checked:false, missing: empty Set} on that arm, and the writer stamps citation_missing per index without dropping any entry. Tests: 'adjudication: a citation absent at head is MARKED and still stored, the present one is not (AC5)', 'adjudication: a citation pointing outside the repository is marked, never a crash (AC5)'. Live spot-check with two findings (src.js present, gone.js absent) wrote BOTH entries, only gone.js carrying citation_missing:true, envelope citations {checked:true, missing:1}, raised count 2."
+    },
+    {
+      "n": 6,
+      "truth": "On a real fire, the recorded head SHA plus the cited file:line reaches the code the verbatim claim describes, so a refutation is auditable",
+      "status": "VERIFIED",
+      "uat_item": 6,
+      "evidence": "The plan-2 record's refuted high cites cadence-core/bin/planning.mjs:4705 at head_id b4d00ebb3bbe9d2d8b2fa52ddc93918b684017df with counter-evidence at cadence-core/bin/lib/adjudication-record.mjs:156. Walked read-only with `git cat-file blob b4d00eb:<path>` (a working-tree checkout would mutate the repo, which this pass may not do): the cited region is the bad-record return followed by `const counts = deriveCounts(record && record.entries);` outside the try/catch - exactly the code the claim describes - and the counter-evidence region is deriveCounts with `if (!Array.isArray(entries)) return counts;` and the isPlainObject per-element guard, which is exactly what refutes it. The fire was live cross-model (voice openai, model gpt-5.6-terra on the record)."
+    },
+    {
+      "n": 7,
+      "truth": "/cad-report <N> renders its Gates line from the record, names a record/event disagreement, reads a fire with no record as unrecorded, and leaves the Refuted line on SUMMARY deviations",
+      "status": "UNCERTAIN",
+      "uat_item": 7,
+      "evidence": "The rule and its inputs are present and wired: cadence-core/workflows/report.md:66 adds `.planning/phases/<N>/ADJUDICATION-*.json` to the read_record artifact list with the stated reason the REVIEW-*.md glob cannot match a .json sibling; :104 sources the Gates survivor figure from the record's counted rulings checked against the event's survivors/downgraded/refuted; :203-215 state the count-from-record rule, the NAMED disagreement and the `unrecorded` arm; :105 leaves Refuted on SUMMARY deviations. prose-agreement.test.mjs 'AC6: report.md renders its Gates line from the record, states the unrecorded arm, and leaves Refuted on SUMMARY' passes, and `trace render --phase 2` was confirmed to surface the structured counts the line compares against. What is NOT observed is a live render: no /cad-report 2 or /cad-report 1 run has produced a Gates line."
+    },
+    {
+      "n": 8,
+      "truth": "self-verify is clean, GAT-04 stays green with exactly four outcome event names, the new subcommand has a CONTRACTS row, and weight-budgets.json was re-pinned in the same commit as each prose edit",
+      "status": "VERIFIED",
+      "uat_item": 8,
+      "evidence": "`node cadence-core/bin/self-verify.mjs --root .` returns {\"ok\":true,...,\"problems\":[]} across all 25 checks. prose-agreement.test.mjs 'GAT-04: every fenced outcome receipt names its trigger, plan and both range ends' passes, and its assertion at :1202 still deep-equals ['adjudication','gate_pass','override','rearm']; `grep -c 'family outcome' triage-gate.md` is still 3. arg-contract.mjs:653-661 declares the `adjudication` row (7 flags, refuse/refuse throughout); arg-contract.test.mjs and arg-contract-adoption.test.mjs pass 13/13. Every prose commit carries weight-budgets.json in the same commit: 3212db3, b610021, 7028a81, d1d6e0a, d3a1494 (git show --stat). `node cadence-core/bin/test.mjs --list` shows the `adjudication-record` stem, so CI runs it."
+    }
+  ],
+  "passes": [
+    {
+      "k": 1,
+      "name": "Record written per fire, one entry per raising voice",
+      "evidence": "buildEntries emits per finding per voice with derived convergence; tests 'AC1: two voices raising one convergent finding produce TWO entries, not one' and 'adjudication: the record lands beside the sibling REVIEW discriminator (AC1)' pass; live .planning/phases/2/ADJUDICATION-risk_surface-plan-2.json sits beside REVIEW-risk_surface-plan-2.md with voice/model/severity on each entry."
+    },
+    {
+      "k": 2,
+      "name": "Verbatim claim text and full 40-char SHAs",
+      "evidence": "Entry text is always copied from the returned side and a restatement differing by one byte is refused; spot-check through the real binary with --base HEAD~1 --head HEAD stored 40-char base_id/head_id on the header and on every entry, matching the live record's 7028a81 -> 7028a81bfd5e52e7a5568a650d95a86f17907260."
+    },
+    {
+      "k": 3,
+      "name": "Three refusals: bad ruling, unevidenced refutation, unfixed survivor",
+      "evidence": "Three named tests, one per refusal, pass; live spot-check of a 'unadjudicated' ruling through the real binary returned ok:false bad-payload naming voices[0].rulings[0].ruling and wrote no file."
+    },
+    {
+      "k": 4,
+      "name": "Counts derived from rulings, not parsed from --detail",
+      "evidence": "recountReceipt re-derives the three figures from the record before appendEvent; live spot-check refused --survivors 2 against a 1-survivor record with no trace file created, then appended on the correct figure. On this repo the plan-2 gate_pass carries survivors:1 downgraded:0 refuted:1 matching its record's rulings."
+    },
+    {
+      "k": 5,
+      "name": "Unresolvable citation is flagged, never dropped",
+      "evidence": "Live spot-check with one present and one absent citation wrote both entries, marked only the absent one citation_missing:true, and reported citations {checked:true, missing:1} on the envelope; the checked:false arm returns an empty missing set by construction."
+    },
+    {
+      "k": 6,
+      "name": "Auditor walk on a real fire reaches the cited code",
+      "evidence": "git cat-file blob b4d00eb:cadence-core/bin/planning.mjs at the record's cited line reaches the deriveCounts call outside the try/catch that the verbatim claim describes, and b4d00eb:cadence-core/bin/lib/adjudication-record.mjs at the counter-evidence line reaches the Array.isArray guard that refutes it. Read-only walk rather than a working-tree checkout, because this pass may not mutate the repo."
+    },
+    {
+      "k": 8,
+      "name": "self-verify clean, GAT-04 green, CONTRACTS row present",
+      "evidence": "self-verify --root . returns ok:true with problems:[]; GAT-04 passes with the four-name deep-equal intact at prose-agreement.test.mjs:1202; arg-contract.mjs:653 carries the adjudication row; weight-budgets.json rides all five prose commits."
+    }
+  ],
+  "gaps": [],
+  "human_checks": [
+    {
+      "name": "Run /cad-report 2 and then /cad-report 1, and read the Gates line each produces",
+      "expected": "/cad-report 2 shows a Gates line whose survivor figure is the ADJUDICATION record's rulings COUNTED and checked against the event's survivors/downgraded/refuted (and names any disagreement rather than picking a side); /cad-report 1 shows its fires as `unrecorded` with no synthesized entry; both leave the Refuted line reading SUMMARY deviations.",
+      "why_human": "Out of reach for this pass rather than merely unexercised: the Gates line is rendered by a model executing cadence-core/workflows/report.md inside the orchestrator's own /cad-report session, and no CLI entry point renders it, so there is no probe a subagent can run. The prose rule, its prose-agreement test, and the data it reads (`trace render --phase 2` surfacing survivors/downgraded/refuted, and the record listed in the read_record artifact list) are all verified; only the live render is not."
+    }
+  ]
+}

@@ -34,7 +34,7 @@ The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 ## Phases
 
 - [x] **Phase 1: The re-run that overwrites its own evidence** - `/cad-execute` refuses a phase that already executed, and a plan's per-task report becomes run-scoped so a second run cannot destroy the first run's record
-- [ ] **Phase 2: The adjudication record nobody can recount** - a gate's per-finding rulings become an audit-grade `adjudication.json` beside the report, so survivor counts are recomputable and a refutation can be checked against the code it refuted
+- [x] **Phase 2: The adjudication record nobody can recount** - a gate's per-finding rulings become an audit-grade `adjudication.json` beside the report, so survivor counts are recomputable and a refutation can be checked against the code it refuted
 - [ ] **Phase 3: The machinery that still assumes one report** - the risk gate stops deadlocking on a zero-commit range, and `lease-check`'s report exemption stops being pinned to the unrotated filename
 
 ## Phase Details
