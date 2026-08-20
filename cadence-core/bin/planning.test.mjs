@@ -7603,3 +7603,83 @@ test('deferred carry: a phase with nothing queued is an answer, not a refusal', 
   assert.equal(existsSync(join(dir, 'deferred')), false,
     'an empty carry minted a destination directory nothing accounts for');
 });
+
+// --- a carried member stays adjudicable AND re-armable (D-10) ---------------
+
+test('adjudication + deferred record: a carried fire resolves its home in deferred/<N>/', () => {
+  // The failure this closes: `deferred carry` moves the member out of
+  // `phases/<N>/` so it survives the prune, and both write faces refused on
+  // that now-deleted directory - leaving the finding that stops the land
+  // permanently unclearable. An unclearable gate is one that gets bypassed.
+  const { repo, dir, base } = adjRepo({ phase: 4 });
+  putMember(dir, 4, 'diff', 'plan-1', 1, 1);
+  assert.equal(defCarry(dir, ['--phase', '4']).ok, true);
+  rmSync(join(dir, 'phases', '4'), { recursive: true });
+  const fire = ['--phase', '4', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD'];
+
+  // The TRIAGE, in a later session, which is the whole point of the carry.
+  const ruled = adjRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, adjPayload())]);
+  assert.equal(ruled.ok, true, JSON.stringify(ruled));
+  assert.equal(ruled.record, 'deferred/4/ADJUDICATION-diff-plan-1.json',
+    'the record must land BESIDE the member it supersedes, or it supersedes nothing');
+  assert.deepEqual(defList(dir).members, [], 'the carried member is still queued after its ruling');
+
+  // The RE-ARM, off the same resolver: a triage that rules a blocker/high
+  // survived has to record its narrowed round, and a `deferred record` still
+  // refusing here would leave the cap reading unspent off a queue that could
+  // never gain a round-2 member.
+  const rearm = defRun(repo, dir, [...fire, '--round', '2',
+    '--payload', adjPayloadFile(repo, defPayload(), 'round2.json')]);
+  assert.equal(rearm.ok, true, JSON.stringify(rearm));
+  assert.equal(rearm.record, 'deferred/4/DEFERRED-diff-plan-1-r2.json');
+  assert.deepEqual(defList(dir).members.map((m) => m.round), [2],
+    'round two is queued again; round one stays settled');
+});
+
+test('adjudication + deferred record: the live phase directory still wins', () => {
+  // ORDER, not either-or. A live phase is where a fire's REVIEW sibling is, and
+  // a stale `deferred/<N>/` left by an earlier close must not capture it.
+  const { repo, dir, base } = adjRepo({ phase: 4 });
+  mkdirSync(join(dir, 'deferred', '4'), { recursive: true });
+  const fire = ['--phase', '4', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD'];
+  assert.equal(defRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, defPayload())]).record,
+    'phases/4/DEFERRED-diff-plan-1.json');
+  assert.equal(adjRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, adjPayload(), 'adj.json')]).record,
+    'phases/4/ADJUDICATION-diff-plan-1.json');
+});
+
+test('adjudication + deferred record: with NEITHER home present the refusal names both', () => {
+  const { repo, dir, base } = adjRepo({ phase: 4 });
+  const fire = ['--phase', '9', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD'];
+  for (const [face, r] of [
+    ['adjudication', adjRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, adjPayload())])],
+    ['deferred record', defRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, defPayload(), 'q.json')])],
+  ]) {
+    assert.equal(r.ok, false, `${face}: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'no-phase-dir');
+    assert.match(r.detail, /neither phases\/9\/ nor deferred\/9\//, face);
+    assert.equal(existsSync(join(dir, 'phases', '9')), false);
+    assert.equal(existsSync(join(dir, 'deferred', '9')), false,
+      'a mistyped flag minted a home nothing else in the tree accounts for');
+  }
+});
+
+test('adjudication + deferred record: a symlink at the carried home is refused, never followed', () => {
+  // The lstatSync check moved WITH the resolution, so the second home gets the
+  // same rail the first has: a symlink there is followed straight out of the
+  // planning root by every writer after it.
+  const { repo, dir, base } = adjRepo({ phase: 4 });
+  rmSync(join(dir, 'phases', '4'), { recursive: true });
+  mkdirSync(join(dir, 'deferred'), { recursive: true });
+  mkdirSync(join(dir, 'elsewhere'));
+  symlinkSync(join(dir, 'elsewhere'), join(dir, 'deferred', '4'));
+
+  const r = adjRun(repo, dir, ['--phase', '4', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD', '--payload', adjPayloadFile(repo, adjPayload())]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.deepEqual(readdirSync(join(dir, 'elsewhere')), []);
+});

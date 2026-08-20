@@ -4970,33 +4970,50 @@ function fireIdentity(face, opts) {
 }
 
 /**
- * The phase directory a fire's artifact is written into, or `null` once the
- * refusal has been emitted.
+ * The directory a fire's artifact is written into, or `null` once the refusal
+ * has been emitted.
  *
  * BESIDE THE SIBLING REVIEW FILE (D-06), and never inside `<plandir>/reports/`:
  * `cmdLeaseCheck` exempts exactly one path under that directory by byte
  * equality, so anything else staged from there answers `undeclared-files`. The
- * phase directory has to already exist - these seams record a fire that
- * HAPPENED, and minting `phases/<N>/` for a mistyped flag would leave a
- * directory nothing else in the tree accounts for. `lstatSync`, so a SYMLINK
- * sitting where the phase directory should be is refused rather than followed
- * out of the tree, the disposition the read side of this file already takes.
+ * directory has to already exist - these seams record a fire that HAPPENED, and
+ * minting one for a mistyped flag would leave a directory nothing else in the
+ * tree accounts for. `lstatSync` on whichever home is chosen, so a SYMLINK
+ * sitting where it should be is refused rather than followed out of the tree,
+ * the disposition the read side of this file already takes.
+ *
+ * TWO HOMES, IN ORDER: `phases/<N>/` while the phase is live, else
+ * `.planning/deferred/<N>/` once `deferred carry` has moved that phase's queue
+ * out ahead of `milestone-prune`. Without the second, a carried queue member is
+ * PERMANENTLY unclearable - `adjudication` refuses on the deleted phase
+ * directory, so the finding that stops the land can never be ruled on, and an
+ * unclearable gate is one that gets bypassed. `deferred record` resolves the
+ * same way and in the same order, because a triage that rules a `blocker`/
+ * `high` survived has to re-arm, and a re-arm with nowhere to write its round-2
+ * member leaves the cap reading unspent off a queue that could never gain one.
+ *
+ * `recordForFire` deliberately does NOT widen with them. It resolves the
+ * receipt RECOUNT, whose own contract already states that an unresolvable
+ * record OMITS the check rather than failing the append - so a carried fire
+ * degrades to no cross-check instead of to a wrong one, and that is the safe
+ * direction there while it is the unsafe one here.
  *
  * @param {string} dir @param {string} n the phase as the caller spelled it
  * @param {string} what the artifact, for the refusal's wording
  * @returns {string|null}
  */
-function firePhaseDir(dir, n, what) {
-  const pdir = join(dir, 'phases', String(n));
-  let pdirStat = null;
-  try { pdirStat = lstatSync(pdir); } catch { /* absent is the answer, never a throw */ }
-  if (!pdirStat || !pdirStat.isDirectory()) {
-    fail('no-phase-dir',
-      `phases/${n}/ is not a directory under ${dir} - the ${what} is written BESIDE the `
-      + 'sibling REVIEW file, so the phase directory of the fire has to exist already');
-    return null;
+function fireHome(dir, n, what) {
+  for (const home of QUEUE_HOMES) {
+    const hdir = join(dir, home, String(n));
+    let hstat = null;
+    try { hstat = lstatSync(hdir); } catch { /* absent is the answer, never a throw */ }
+    if (hstat && hstat.isDirectory()) return hdir;
   }
-  return pdir;
+  fail('no-phase-dir',
+    `neither phases/${n}/ nor deferred/${n}/ is a directory under ${dir} - the ${what} is `
+    + 'written BESIDE the sibling REVIEW file, or beside the queue member a milestone close '
+    + 'carried out of that phase, so one of the two has to exist already');
+  return null;
 }
 
 function cmdAdjudication(dir, opts) {
@@ -5031,14 +5048,17 @@ function cmdAdjudication(dir, opts) {
     });
   }
 
-  const pdir = firePhaseDir(dir, n, 'record');
+  const pdir = fireHome(dir, n, 'record');
   if (!pdir) return;
 
   // The ONE filename rule, shared with the receipt recount in `cmdTrace`: two
   // spellings of it is two files, and the recount would read the wrong fire.
   const name = recordName(trigger, discriminator, round);
-  const rel = `phases/${n}/${name}`;
   const file = join(pdir, name);
+  // DERIVED from the home that was chosen, never the literal `phases/<N>/`: a
+  // carried fire is adjudicated in `deferred/<N>/`, and an envelope naming a
+  // path the record is not at is a path an auditor cannot open.
+  const rel = relative(dir, file);
   // REFUSED, never overwritten. A caller that forgot `--round` on a re-arm is
   // the failure the flag exists FOR, and replacing the file there lands in
   // exactly the state it was added to prevent: the first round's rulings gone,
@@ -5180,12 +5200,14 @@ function cmdDeferredRecord(dir, opts) {
     });
   }
 
-  const pdir = firePhaseDir(dir, n, 'queue member');
+  const pdir = fireHome(dir, n, 'queue member');
   if (!pdir) return;
 
   const name = queueName(trigger, discriminator, round);
-  const rel = `phases/${n}/${name}`;
   const file = join(pdir, name);
+  // Same derivation as the record's, and the same reason: a capped re-arm's
+  // round-2 member is written into whichever home the round-1 member is in.
+  const rel = relative(dir, file);
   // REFUSED, never overwritten, exactly as the record beside it is: a caller
   // that forgot `--round` on a re-arm would otherwise drop the round the land
   // refusal is still holding, silently, with ok:true. `lstatSync` - a symlink
@@ -5306,7 +5328,7 @@ function readQueue(dir, wantPhase) {
       if (wantPhase !== null && ent.name !== wantPhase) continue;
       const rel = `${home}/${ent.name}`;
       // `withFileTypes` classifies the LINK, never its target, the disposition
-      // `firePhaseDir` takes at the write face: a symlink where a phase
+      // `fireHome` takes at the write face: a symlink where a phase
       // directory should be is refused rather than followed out of the tree.
       if (ent.isSymbolicLink()) {
         unreadable.push({ path: rel, detail: 'a symlink where a phase directory should be - not followed' });
