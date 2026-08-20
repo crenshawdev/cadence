@@ -1126,6 +1126,33 @@ test('progress.md: the deferred count is read off the envelope at both its sites
     'the reconcile step gained a deferred status mapping; the cursor carries a POINTER, not a state');
 });
 
+test('execute.md state: a deferring run points the cursor at its queue and commits it', () => {
+  // Both halves of what makes a deferred finding survive the session that
+  // deferred it: a resume pointer that says the queue is there, and the member
+  // itself in git. `.planning/trace.jsonl` is gitignored and the sibling REVIEW
+  // file is committed by nothing, so an untracked member is gone on a fresh
+  // clone - and the land it was written to stop publishes over it.
+  const wf = doc('cadence-core', 'workflows', 'execute.md');
+  const labelOf = regionLabels(wf);
+  const state = wf.split('\n').filter((l, i) => labelOf(i) === 'state').join('\n');
+
+  assert.match(state, /cursor set --phase <N> --status executed --next-file <path>/,
+    'the deferring branch no longer takes the --next-file transport');
+  assert.match(state, /DEFERRED a fire/,
+    'the state step no longer branches on whether this run deferred anything');
+  // The transport is the POINT: the pointer is composed from what the run did,
+  // which is caller-derived text, and conventions.md binds that to a path.
+  assert.match(state, /caller-derived text rides a path/,
+    'the state step no longer says WHY the deferring branch uses a file');
+  // And NO new cursor status (D-05): one outside planning.mjs's AGREE map is
+  // reported as `cursor` drift and rewritten by the very next /cad-progress.
+  assert.match(state, /Keep `--status executed` exactly as it\s+is/,
+    'the state step no longer pins --status executed on the deferring branch');
+
+  assert.match(state, /\.planning\/phases\/<N>\/DEFERRED-\*\.json/,
+    'the commit list no longer stages the queue member, so it is untracked on a fresh clone');
+});
+
 test('ENFORCEMENT, execute.md: the plan is not reported done while risk-check status refuses', () => {
   // Detection without enforcement is precisely the outcome RSK-02 exists to
   // prevent, and it passes every other check in this phase. A tree carrying
