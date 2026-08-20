@@ -5,6 +5,7 @@ requirements:        # none seeded for v3.5.6 - planned against CONTEXT.md AC1-A
 files:
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/lib/arg-contract.mjs
+  - cadence-core/bin/arg-contract.test.mjs
   - cadence-core/bin/trace.test.mjs
   - cadence-core/references/review-triggers.md
   - cadence-core/references/triage-gate.md

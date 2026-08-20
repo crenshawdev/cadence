@@ -1,0 +1,53 @@
+{
+  "phase": "2",
+  "trigger": "risk_surface",
+  "discriminator": "plan-2",
+  "round": 1,
+  "base": "7028a81",
+  "head": "b4d00eb",
+  "base_id": "7028a81bfd5e52e7a5568a650d95a86f17907260",
+  "head_id": "b4d00ebb3bbe9d2d8b2fa52ddc93918b684017df",
+  "voices": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra"
+    }
+  ],
+  "citations": {
+    "checked": true
+  },
+  "entries": [
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning.mjs",
+      "line": 4705,
+      "severity": "high",
+      "claim": "A syntactically valid but structurally malformed adjudication record can crash `trace append` instead of being refused as `bad-record`.",
+      "failure_scenario": "An edited or malicious record such as `{\"entries\":null}` (or `[]`, `{}`, or an `entries` object rather than an array) passes `JSON.parse` at the preceding line. `deriveCounts(record && record.entries)` is outside the `try`/`catch` and receives an invalid entries value, so its normal array operations can throw a TypeError. The append process then exits exceptionally rather than returning the documented handled outcome, despite this path explicitly treating edited records as tampering that must be surfaced safely.",
+      "ruling": "refuted",
+      "convergent": false,
+      "counter_evidence": {
+        "file": "cadence-core/bin/lib/adjudication-record.mjs",
+        "line": 156,
+        "note": "deriveCounts opens with `if (!Array.isArray(entries)) return counts;` and guards each element with isPlainObject, so entries of null, [], {} or an object all return zeroed counts rather than throwing."
+      },
+      "base_id": "7028a81bfd5e52e7a5568a650d95a86f17907260",
+      "head_id": "b4d00ebb3bbe9d2d8b2fa52ddc93918b684017df"
+    },
+    {
+      "voice": "openai",
+      "model": "gpt-5.6-terra",
+      "file": "cadence-core/bin/planning.mjs",
+      "line": 4654,
+      "severity": "medium",
+      "claim": "The no-plan record resolver follows symlinks even though the code's safety contract says records must be regular files.",
+      "failure_scenario": "For a receipt without `--plan`, an attacker who can place a matching `ADJUDICATION-<trigger>-<discriminator>-<sha>.json` symlink in the phase directory can make `recordForFire` return `join(pdir, hits[0])` without calling `lstatSync`. `readFileSync` subsequently follows that symlink outside the phase tree. The per-plan arm correctly uses `regular()` specifically to reject this condition, but the no-plan arm bypasses it; a hostile repository can therefore make receipt validation consume arbitrary local JSON or fail on an arbitrary target.",
+      "ruling": "survived",
+      "convergent": false,
+      "fix_commit": "9d10919",
+      "base_id": "7028a81bfd5e52e7a5568a650d95a86f17907260",
+      "head_id": "b4d00ebb3bbe9d2d8b2fa52ddc93918b684017df"
+    }
+  ]
+}

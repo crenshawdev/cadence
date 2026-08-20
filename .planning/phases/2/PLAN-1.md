@@ -7,6 +7,7 @@ files:
   - cadence-core/bin/adjudication-record.test.mjs
   - cadence-core/bin/planning.mjs
   - cadence-core/bin/lib/arg-contract.mjs
+  - cadence-core/bin/arg-contract.test.mjs
   - cadence-core/bin/planning.test.mjs
   - cadence-core/references/review-triggers.md
   - cadence-core/references/triage-gate.md
