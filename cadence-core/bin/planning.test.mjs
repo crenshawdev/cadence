@@ -7594,6 +7594,28 @@ test('deferred carry: a symlink squatting the destination is refused, never foll
   assert.deepEqual(readdirSync(join(dir, 'elsewhere')), []);
 });
 
+test('deferred carry: a symlink squatting the PARENT is refused too', () => {
+  // The sibling above pins the final component. `lstatSync` does not follow the
+  // final component and follows every one before it, so a check aimed at
+  // `deferred/<N>` alone answers "absent, go ahead" while `deferred/` is
+  // already a link out of the tree - and the mkdir then builds the phase
+  // directory THERE and the rename fills it. Two levels down takes two checks.
+  const { dir } = adjRepo({ phase: 4 });
+  putMember(dir, 4, 'diff', 'plan-1', 1, 1);
+  mkdirSync(join(dir, 'elsewhere'));
+  symlinkSync(join(dir, 'elsewhere'), join(dir, 'deferred'));
+
+  const r = defCarry(dir, ['--phase', '4']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'carry-dest-unusable');
+  assert.match(r.detail, /renameSync would follow out of the planning root/);
+  assert.equal(existsSync(join(dir, 'elsewhere', '4')), false,
+    'the carry built its destination outside the planning root');
+  assert.deepEqual(readdirSync(join(dir, 'elsewhere')), []);
+  assert.equal(existsSync(join(dir, 'phases', '4', 'DEFERRED-diff-plan-1.json')), true,
+    'the queue member left the phase directory on a refused carry');
+});
+
 test('deferred carry: a phase with nothing queued is an answer, not a refusal', () => {
   const { dir } = adjRepo({ phase: 4 });
   const r = defCarry(dir, ['--phase', '4']);

@@ -5483,6 +5483,23 @@ function cmdDeferredCarry(dir, opts) {
   // it is a fact about where things go, not about what is queued, and its
   // refusal is the actionable one. Absent is the ordinary case; the mkdir
   // below creates it.
+  // EVERY component this seam creates, not only the last one. `lstatSync` does
+  // not follow the FINAL component and follows every one before it, so a check
+  // aimed at `deferred/<N>` alone answers "absent, go ahead" while the parent
+  // is already a link out of the tree - and the `mkdirSync(recursive)` below
+  // then builds `<wherever>/<N>` and `renameSync` fills it. `milestone-prune`'s
+  // archive root escapes this because it sits ONE level under the planning root
+  // and its single lstat therefore IS the intermediate check; this destination
+  // sits two levels down, so it takes two.
+  const carryRoot = join(dir, 'deferred');
+  const rootStat = lstatSync(carryRoot, { throwIfNoEntry: false });
+  if (rootStat && !rootStat.isDirectory()) {
+    return fail('carry-dest-unusable',
+      'deferred/ exists and is not a real directory'
+      + `${rootStat.isSymbolicLink() ? ' (it is a symlink, which renameSync would follow out of the planning root)' : ''}`
+      + ' - move or remove it, then re-run');
+  }
+
   const dest = join(dir, 'deferred', n);
   const destStat = lstatSync(dest, { throwIfNoEntry: false });
   if (destStat && !destStat.isDirectory()) {
