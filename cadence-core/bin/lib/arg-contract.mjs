@@ -408,7 +408,7 @@ export function evaluateRow(argv, table, key) {
 // EVERY ENTRY DECLARES FOUR FIELDS and none of them defaults: `required`,
 // `type`, `value` (what happens to a present-but-malformed value) and `bare`
 // (what happens to a flag present with nothing usable after it).
-// arg-contract.test.mjs walks all 144 of them, so a row added later without a
+// arg-contract.test.mjs walks all 152 of them, so a row added later without a
 // complete grammar reddens rather than picking up a silent default.
 //
 // REQUIRED-NESS IS PER SUBCOMMAND. `risk-check run` requires `--base` and
@@ -625,6 +625,39 @@ export const CONTRACTS = {
       '--plan': { required: false, type: 'plan-key', value: 'refuse', bare: 'refuse' },
       '--base': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
       '--head': { required: false, type: 'string', value: 'refuse', bare: 'refuse' },
+    },
+    // THE ADJUDICATION RECORD a blocking or adjudicated gate fire leaves beside
+    // its sibling `REVIEW-<trigger>-<discriminator>.md`. ONE WORD, never `record
+    // write`: `subcommandKey` consumes a second word only for the families in
+    // `TWO_WORD`, and one operation does not earn widening that Set -
+    // `plan-overlap`, `lease-check` and `criteria-coverage` are the precedent.
+    //
+    // `--payload` is a FILE and never inline JSON: the record's whole content is
+    // verbatim reviewer text with arbitrary quoting, so one unescaped quote in a
+    // heredoc makes it unparseable after the adjudication is already done
+    // (references/review-triggers.md states the rule; `uat merge --payload` is
+    // the precedent reader).
+    //
+    // `--base` and `--head` are both REQUIRED for the reason the `risk-check
+    // run` row above states - a defaulted head is a range the caller never
+    // stated - and this record IS the evidence of what was judged, so the seam
+    // resolves both to full ids rather than storing the caller's spelling.
+    //
+    // `--round` is the blocking re-arm's round (references/triage-gate.md caps
+    // it at ONE). A re-arm is a SECOND fire of the same trigger on the same
+    // plan and resolves to the same discriminator, so without it round two's
+    // record would replace round one's rulings - the self-overwriting evidence
+    // #195 fixed for executor reports, reappearing on the artifact this record
+    // exists to make durable. Optional, defaulting to 1, so an ordinary fire
+    // keeps the sibling REVIEW file's exact name.
+    adjudication: {
+      '--phase': { required: true, type: 'phase', value: 'refuse', bare: 'refuse' },
+      '--trigger': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--discriminator': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--base': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--head': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
+      '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
     // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
     // derived: the inline form puts that text in a double-quoted shell word,

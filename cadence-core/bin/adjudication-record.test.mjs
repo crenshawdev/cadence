@@ -109,6 +109,26 @@ test('AC1: a ruling naming no returned finding is REFUSED', () => {
   assert.match(res.detail, /names no returned finding/);
 });
 
+test('the voice ROSTER survives a fire where every voice returned nothing', () => {
+  // The `gate_pass` case D-02 names: a blocking fire that raised nothing still
+  // writes a record, and a record that cannot say which voices ran is not
+  // evidence that anything ran.
+  const res = buildEntries(payload(voice('openai', 'gpt-5', []), voice('deepseek', 'ds', [])));
+  assert.equal(res.ok, true, res.detail);
+  assert.deepEqual(res.entries, []);
+  assert.deepEqual(res.voices, [
+    { voice: 'openai', model: 'gpt-5' },
+    { voice: 'deepseek', model: 'ds' },
+  ]);
+  assert.deepEqual(res.counts, { raised: 0, survived: 0, downgraded: 0, refuted: 0 });
+});
+
+test('the roster carries no per-voice COUNT - every figure is derived', () => {
+  const res = buildEntries(payload(voice('openai', 'gpt-5', [finding()])));
+  assert.equal(res.ok, true, res.detail);
+  assert.deepEqual(Object.keys(res.voices[0]).sort(), ['model', 'voice']);
+});
+
 // --- AC2: the verbatim comparison -------------------------------------------
 
 test('AC2: a ruling that paraphrases the claim is REFUSED', () => {

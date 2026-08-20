@@ -6632,3 +6632,284 @@ test('capture-sections: a VALUELESS --file is bad-args, never silently the --dir
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'bad-args');
 });
+
+// --- adjudication: the record a gate fire leaves (phase 2) ------------------
+//
+// The seam is exercised against a REAL repository under mkdtempSync, because
+// half of what it promises is git's: full 40-character ids resolved from the
+// caller's spelling, and a refusal when the range does not resolve at all.
+// Nothing here reads this repository's own `.planning`.
+
+/**
+ * A scratch git repo holding `.planning/phases/<phase>/` and two commits.
+ * Returns {repo, dir, base, head} - `base` is the FIRST commit's 7-char
+ * abbreviation, deliberately, because that is what 44 of this repo's 52
+ * receipts actually spell.
+ */
+function adjRepo({ phase = 2 } = {}) {
+  const repo = mkdtempSync(join(tmpdir(), 'cad-adj-'));
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args],
+    { encoding: 'utf8', stdio: 'pipe' }).trim();
+  git('init', '-q');
+  git('config', 'user.email', 't@example.com');
+  git('config', 'user.name', 'T');
+  const dir = join(repo, '.planning');
+  mkdirSync(join(dir, 'phases', String(phase)), { recursive: true });
+  writeFileSync(join(repo, 'src.js'), 'let x = 1;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'base');
+  const baseFull = git('rev-parse', 'HEAD');
+  writeFileSync(join(repo, 'src.js'), 'let x = 2;\n');
+  git('add', '-A');
+  git('commit', '-q', '-m', 'head');
+  const headFull = git('rev-parse', 'HEAD');
+  return { repo, dir, phase, base: baseFull.slice(0, 7), baseFull, headFull };
+}
+
+/** Run the seam with cwd INSIDE the repo - resolveRange asks git about the cwd. */
+function adjRun(repo, dir, args) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'adjudication', ...args],
+      { encoding: 'utf8', cwd: repo });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+/** One voice raising one finding, ruled `survived`. The claim carries a quote
+ * and a backslash on purpose: this payload is a FILE for exactly that reason. */
+function adjPayload(over) {
+  return {
+    voices: [{
+      voice: 'openai',
+      model: 'gpt-5',
+      returned: {
+        findings: [{
+          file: 'src.js',
+          line: 1,
+          severity: 'high',
+          claim: 'the "x" binding is reassigned, so C:\\tmp is read twice',
+          failure_scenario: 'a second reader sees 1 where the first saw 2',
+        }],
+      },
+      rulings: [{
+        finding: 0,
+        ruling: 'survived',
+        claim: 'the "x" binding is reassigned, so C:\\tmp is read twice',
+        failure_scenario: 'a second reader sees 1 where the first saw 2',
+        fix_commit: 'abcdef1',
+      }],
+    }],
+    ...(over || {}),
+  };
+}
+
+/** Write a payload file inside the repo and answer its path. */
+function adjPayloadFile(repo, payload, name = 'payload.json') {
+  const file = join(repo, name);
+  writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`);
+  return file;
+}
+
+/** Every ADJUDICATION-* file under a phase directory, sorted. */
+const adjFiles = (dir, phase = 2) =>
+  readdirSync(join(dir, 'phases', String(phase))).filter((f) => f.startsWith('ADJUDICATION')).sort();
+
+test('adjudication: the record lands beside the sibling REVIEW discriminator (AC1)', () => {
+  const { repo, dir, baseFull, headFull, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.record, 'phases/2/ADJUDICATION-plan-plan-1.json');
+  assert.equal(r.round, 1);
+  assert.deepEqual(r.counts, { raised: 1, survived: 1, downgraded: 0, refuted: 0 });
+  assert.deepEqual(adjFiles(dir), ['ADJUDICATION-plan-plan-1.json']);
+
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  assert.equal(rec.trigger, 'plan');
+  assert.equal(rec.discriminator, 'plan-1');
+  assert.equal(rec.base_id, baseFull);
+  assert.equal(rec.head_id, headFull);
+  // The record stores NO count of its own - every figure is derived on read.
+  assert.equal(rec.counts, undefined);
+  assert.deepEqual(rec.voices, [{ voice: 'openai', model: 'gpt-5' }]);
+  assert.equal(rec.entries.length, 1);
+  assert.equal(rec.entries[0].voice, 'openai');
+  assert.equal(rec.entries[0].severity, 'high');
+  // VERBATIM, quoting and backslash intact.
+  assert.equal(rec.entries[0].claim, adjPayload().voices[0].returned.findings[0].claim);
+});
+
+test('adjudication: every entry carries full 40-char ids from a 7-char base and a literal HEAD (AC2)', () => {
+  const { repo, dir, base, baseFull, headFull } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'risk_surface',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  // The caller's SPELLING stays on the envelope for the reader; the id is what
+  // an auditor spends.
+  assert.equal(r.base, base);
+  assert.equal(r.head, 'HEAD');
+  assert.equal(r.base_id.length, 40);
+  assert.equal(r.head_id.length, 40);
+  const rec = JSON.parse(readFileSync(join(dir, r.record), 'utf8'));
+  for (const e of rec.entries) {
+    assert.equal(e.base_id, baseFull);
+    assert.equal(e.head_id, headFull);
+    assert.equal(e.base_id.length, 40);
+    assert.equal(e.head_id.length, 40);
+  }
+});
+
+test('adjudication: a payload whose ruling paraphrases the claim is refused, no file written (AC2)', () => {
+  const { repo, dir, base } = adjRepo();
+  const bad = adjPayload();
+  bad.voices[0].rulings[0].claim = 'x is reassigned';
+  const payload = adjPayloadFile(repo, bad);
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-payload');
+  assert.match(r.detail, /byte-identical/);
+  assert.deepEqual(adjFiles(dir), []);
+});
+
+for (const spelling of ['../escaped', 'sub/plan-1', 'plan-1.json', '.', '-plan-1']) {
+  test(`adjudication: a --discriminator spelled ${JSON.stringify(spelling)} is refused with NO file created`, () => {
+    const { repo, dir, base } = adjRepo();
+    const payload = adjPayloadFile(repo, adjPayload());
+    const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+      '--discriminator', spelling, '--base', base, '--head', 'HEAD', '--payload', payload]);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.reason, 'bad-args');
+    assert.match(r.detail, /--discriminator/);
+    assert.deepEqual(adjFiles(dir), []);
+    // ...and nothing landed anywhere else either: the repo holds exactly what
+    // the fixture put there.
+    assert.deepEqual(readdirSync(repo).sort(), ['.git', '.planning', 'payload.json', 'src.js']);
+    assert.deepEqual(readdirSync(join(dir, 'phases')), ['2']);
+  });
+}
+
+test('adjudication: a --trigger carrying a path separator is refused the same way', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', '../../etc/plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /--trigger/);
+  assert.deepEqual(adjFiles(dir), []);
+});
+
+test('adjudication: an unresolvable --head is refused with no file created', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'no-such-ref', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unresolved-range');
+  assert.equal(r._exit, 1);
+  assert.deepEqual(adjFiles(dir), []);
+});
+
+test('adjudication: a re-arm passes --round 2 and round one survives byte for byte', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const args = (extra) => ['--phase', '2', '--trigger', 'plan', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD', '--payload', payload, ...extra];
+
+  const first = adjRun(repo, dir, args(['--round', '1']));
+  assert.equal(first.ok, true, JSON.stringify(first));
+  assert.equal(first.record, 'phases/2/ADJUDICATION-plan-plan-1.json');
+  const roundOne = readFileSync(join(dir, first.record), 'utf8');
+
+  // Round two rules the SAME findings differently - that is what a re-arm is -
+  // so the two records must both survive or the re-arm erases the evidence of
+  // what the first round said.
+  const second = adjPayload();
+  second.voices[0].rulings[0] = {
+    finding: 0,
+    ruling: 'refuted',
+    claim: second.voices[0].returned.findings[0].claim,
+    failure_scenario: second.voices[0].returned.findings[0].failure_scenario,
+    counter_evidence: { file: 'src.js', line: 1, note: 'the binding is const at head' },
+  };
+  const payload2 = adjPayloadFile(repo, second, 'payload-2.json');
+  const r2 = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD', '--payload', payload2, '--round', '2']);
+  assert.equal(r2.ok, true, JSON.stringify(r2));
+  assert.equal(r2.record, 'phases/2/ADJUDICATION-plan-plan-1-r2.json');
+  assert.deepEqual(r2.counts, { raised: 1, survived: 0, downgraded: 0, refuted: 1 });
+
+  assert.deepEqual(adjFiles(dir),
+    ['ADJUDICATION-plan-plan-1-r2.json', 'ADJUDICATION-plan-plan-1.json']);
+  assert.equal(readFileSync(join(dir, first.record), 'utf8'), roundOne,
+    'round one\'s rulings are unchanged byte for byte');
+});
+
+test('adjudication: a second fire that forgot --round is REFUSED, not merged and not overwritten', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const args = ['--phase', '2', '--trigger', 'plan', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD', '--payload', payload];
+
+  const first = adjRun(repo, dir, args);
+  assert.equal(first.ok, true, JSON.stringify(first));
+  const before = readFileSync(join(dir, first.record), 'utf8');
+
+  const again = adjRun(repo, dir, args);
+  assert.equal(again.ok, false, JSON.stringify(again));
+  assert.equal(again.reason, 'record-exists');
+  assert.match(again.detail, /phases\/2\/ADJUDICATION-plan-plan-1\.json/);
+  assert.match(again.hint, /--round 2/);
+  assert.equal(again._exit, 1);
+  assert.deepEqual(adjFiles(dir), ['ADJUDICATION-plan-plan-1.json']);
+  assert.equal(readFileSync(join(dir, first.record), 'utf8'), before,
+    'the existing record is untouched byte for byte');
+});
+
+test('adjudication: a phase directory that does not exist is refused rather than minted', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  const r = adjRun(repo, dir, ['--phase', '9', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-phase-dir');
+  assert.deepEqual(readdirSync(join(dir, 'phases')), ['2']);
+});
+
+test('adjudication: an absent --payload is bad-args, never a read of stdin', () => {
+  const { repo, dir, base } = adjRepo();
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD']);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'bad-args');
+  assert.match(r.detail, /--payload/);
+  assert.deepEqual(adjFiles(dir), []);
+});
+
+test('adjudication: a payload file that was never written is no-payload, not a record', () => {
+  const { repo, dir, base } = adjRepo();
+  const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+    '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD',
+    '--payload', join(repo, 'never-written.json')]);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'no-payload');
+  assert.deepEqual(adjFiles(dir), []);
+});
+
+test('adjudication: --round 0 and a non-numeric round are refused', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, adjPayload());
+  for (const round of ['0', '-1']) {
+    const r = adjRun(repo, dir, ['--phase', '2', '--trigger', 'plan',
+      '--discriminator', 'plan-1', '--base', base, '--head', 'HEAD',
+      '--payload', payload, '--round', round]);
+    assert.equal(r.ok, false, `--round ${round}: ${JSON.stringify(r)}`);
+    assert.equal(r.reason, 'bad-args');
+  }
+  assert.deepEqual(adjFiles(dir), []);
+});

@@ -137,7 +137,7 @@ function emptyCounts() {
 }
 
 /** A refusal, as the one flat shape. @param {string} detail */
-const no = (detail) => ({ ok: false, detail, entries: [], counts: emptyCounts() });
+const no = (detail) => ({ ok: false, detail, entries: [], voices: [], counts: emptyCounts() });
 
 /**
  * The counts, DERIVED by counting rulings over an entry list.
@@ -181,10 +181,11 @@ const convergenceKey = (f) => `${f.file}\u0000${f.line}\u0000${f.claim}`;
  *   `returned` is the reviewer's own object VERBATIM and each ruling names the
  *   finding it rules by index and restates that finding's claim and failure
  *   scenario so they can be compared.
- * @returns {{ok: boolean, detail: string, entries: any[], counts: {raised: number, survived: number, downgraded: number, refuted: number}}}
+ * @returns {{ok: boolean, detail: string, entries: any[], voices: any[], counts: {raised: number, survived: number, downgraded: number, refuted: number}}}
  *   `ok: false` names the entry and the rule it broke. `ok: true` carries one
  *   entry per finding raised per raising voice, in each voice's own returned
- *   order, plus the counts derived from their rulings.
+ *   order, the roster of voices that RAN, and the counts derived from the
+ *   rulings.
  */
 export function buildEntries(payload) {
   if (!isPlainObject(payload)) return no('payload is not a JSON object');
@@ -197,6 +198,15 @@ export function buildEntries(payload) {
 
   /** @type {any[]} */
   const entries = [];
+  // The ROSTER, separately from the entries, because a fire where every voice
+  // returned nothing has no entries at all - the `gate_pass` case - and a
+  // record that cannot say which voices ran is not evidence that anything ran.
+  // references/review-triggers.md calls the voice list load-bearing for exactly
+  // that reason: the survivor count alone cannot show a panel silently reduced
+  // to one voice while the gate reports clean. No per-voice COUNT rides it -
+  // that is derived from the entries, like every other figure here.
+  /** @type {any[]} */
+  const roster = [];
   /** @type {Set<string>} */
   const seenVoices = new Set();
 
@@ -212,6 +222,7 @@ export function buildEntries(payload) {
     // between a voice and itself, and would double that voice's hit rate.
     if (seenVoices.has(block.voice)) return no(`${at}.voice ${block.voice} appears twice`);
     seenVoices.add(block.voice);
+    roster.push({ voice: block.voice, model: block.model });
 
     const returned = block.returned;
     if (!isPlainObject(returned)) {
@@ -364,5 +375,5 @@ export function buildEntries(payload) {
     e.convergent = Boolean(voicesForKey && voicesForKey.size > 1);
   }
 
-  return { ok: true, detail: '', entries, counts: deriveCounts(entries) };
+  return { ok: true, detail: '', entries, voices: roster, counts: deriveCounts(entries) };
 }
