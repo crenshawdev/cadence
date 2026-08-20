@@ -195,7 +195,7 @@ import { requirePlanKey } from './lib/plan-key.mjs';
 import { scanTree, CATEGORIES, answeredSurfaces, interviewOptions } from './lib/surface-scan.mjs';
 import { scanDiff } from './lib/risk-diff.mjs';
 import { buildEntries, deriveCounts, recordName } from './lib/adjudication-record.mjs';
-import { buildQueue, queueName } from './lib/deferred-queue.mjs';
+import { buildQueue, isQueueName, queueIdentity, queueName } from './lib/deferred-queue.mjs';
 import { evaluateFlag, evaluateRow, subcommandKey, CONTRACTS } from './lib/arg-contract.mjs';
 
 // The raw argument list, kept beside the envelope helpers because the flags
@@ -5218,6 +5218,193 @@ function cmdDeferredRecord(dir, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// deferred list - WHAT IS STILL QUEUED, and the one derivation every reader of
+// that question runs.
+//
+// MEMBERSHIP IS A FILE EXISTING (CONTEXT D-01), never absence-of-record: a
+// `DEFERRED-<trigger>-<discriminator>[-r<round>].json` whose `ADJUDICATION`
+// sibling - the name `recordName` resolves for the SAME trigger, discriminator
+// and round - is not beside it. Absence alone cannot be the test because every
+// advisory fire also leaves a REVIEW file with no record beside it, so "no
+// record here" describes the whole advisory arm as well as the queue.
+//
+// TWO HOMES AND NO THIRD. `.planning/phases/<N>/` is where a fire writes, and
+// `.planning/deferred/<N>/` is where `deferred carry` moves what a milestone
+// close is about to prune. An `_archive-<label>/` tree is deliberately out of
+// reach: `milestone-prune --mode archive` puts it at the planning ROOT rather
+// than under either home, and what it holds is a closed milestone's copy of
+// work that was already carried - counting it would refuse every land after a
+// close over findings that are no longer in the live tree.
+//
+// AN UNPROVABLE QUEUE IS NOT AN EMPTY ONE. A directory this cannot read, a
+// member whose bytes do not parse, a symlink wearing a member's name: each
+// lands on `unreadable` and the envelope answers `ok:false`, because the one
+// caller that matters is a REFUSAL and reporting "nothing deferred" about input
+// it could not read is the fail-open arm `decideGateHalt` already names for an
+// unreadable findings payload. The counts still ride the refusal, so the
+// operator sees what WAS provable beside what was not.
+//
+// NO FINDING BODIES CROSS THIS SEAM, only counts and identities - so the land
+// refusal and the progress line print the answer directly instead of routing
+// bulk reviewer text through a scratch file (RES-03). A triage reads the bodies
+// out of the member file itself, whose path this names.
+// ---------------------------------------------------------------------------
+
+/** The two directories under `.planning/` a queue member may live in. */
+const QUEUE_HOMES = ['phases', 'deferred'];
+
+/**
+ * Every unadjudicated queue member under `dir`, and everything in the two homes
+ * that could not be proven to hold none.
+ *
+ * ONE derivation with TWO callers - `deferred list` and the `status` envelope -
+ * so `/cad-land` and `/cad-progress` cannot disagree about what is queued.
+ *
+ * @param {string} dir the planning directory
+ * @param {string|null} wantPhase a phase as the caller spelled it, or null for
+ *   the whole tree
+ * @returns {{members: {phase: string, trigger: string, discriminator: string,
+ *            round: number, path: string, findings: number}[],
+ *            findings: number, unreadable: {path: string, detail: string}[]}}
+ */
+function readQueue(dir, wantPhase) {
+  /** @type {{phase: string, trigger: string, discriminator: string, round: number, path: string, findings: number}[]} */
+  const members = [];
+  /** @type {{path: string, detail: string}[]} */
+  const unreadable = [];
+  // redactUrl on every message, the EXP-01 rail: these strings are printed by
+  // a land refusal and can carry a path a caller would rather not publish.
+  const why = (/** @type {any} */ e) => redactUrl(e && e.message ? e.message : String(e));
+
+  for (const home of QUEUE_HOMES) {
+    let entries;
+    try { entries = readdirSync(join(dir, home), { withFileTypes: true }); } catch (e) {
+      // ENOENT is ABSENCE and absence is data: `.planning/deferred/` exists only
+      // once a close has carried something, and a project with no `phases/` at
+      // all has no fires. Every OTHER error is a home that might hold a queue.
+      if (e && /** @type {any} */ (e).code === 'ENOENT') continue;
+      unreadable.push({ path: `${home}/`, detail: why(e) });
+      continue;
+    }
+    for (const ent of entries) {
+      if (wantPhase !== null && ent.name !== wantPhase) continue;
+      const rel = `${home}/${ent.name}`;
+      // `withFileTypes` classifies the LINK, never its target, the disposition
+      // `firePhaseDir` takes at the write face: a symlink where a phase
+      // directory should be is refused rather than followed out of the tree.
+      if (ent.isSymbolicLink()) {
+        unreadable.push({ path: rel, detail: 'a symlink where a phase directory should be - not followed' });
+        continue;
+      }
+      // A regular file under `phases/` holds no queue member and is some other
+      // reader's business; only a directory can.
+      if (!ent.isDirectory()) continue;
+      const pdir = join(dir, home, ent.name);
+      /** @type {string[]} */
+      let names;
+      try { names = readdirSync(pdir); } catch (e) {
+        unreadable.push({ path: rel, detail: why(e) });
+        continue;
+      }
+      const present = new Set(names);
+      for (const name of names) {
+        if (!isQueueName(name)) continue;
+        const path = `${rel}/${name}`;
+        const file = join(pdir, name);
+        let stat = null;
+        try { stat = lstatSync(file); } catch (e) {
+          unreadable.push({ path, detail: why(e) });
+          continue;
+        }
+        if (!stat.isFile()) {
+          unreadable.push({ path, detail: 'not a regular file - a symlink wearing a queue member\'s name is not a queue member' });
+          continue;
+        }
+        let parsed;
+        try { parsed = JSON.parse(readFileSync(file, 'utf8')); } catch (e) {
+          unreadable.push({ path, detail: why(e) });
+          continue;
+        }
+        const id = queueIdentity(name, parsed);
+        if (!id.ok) {
+          unreadable.push({ path, detail: id.detail });
+          continue;
+        }
+        // The member's own `phase` against the directory holding it. They are
+        // written together - the write face resolves `phases/<N>/` from the
+        // same `--phase` it stores, and `deferred carry` preserves both - so a
+        // disagreement means the file was moved by hand, and `--phase` would
+        // then narrow to a phase the member does not claim.
+        if (id.phase !== ent.name) {
+          unreadable.push({ path, detail: `queue member says phase ${id.phase} but sits in ${rel}/` });
+          continue;
+        }
+        // THE SUPERSESSION TEST, as one filename comparison (D-01). A REGULAR
+        // FILE only, the disposition `recordForFire` already states: a symlink
+        // is not a record, and accepting one here would let a queue be cleared
+        // by a link to anything at all.
+        const record = recordName(id.trigger, id.discriminator, id.round);
+        if (present.has(record)) {
+          let rstat = null;
+          try { rstat = lstatSync(join(pdir, record)); } catch { /* unreadable is not superseded */ }
+          if (rstat && rstat.isFile()) continue;
+        }
+        members.push({
+          phase: id.phase,
+          trigger: id.trigger,
+          discriminator: id.discriminator,
+          round: id.round,
+          path,
+          findings: id.findings,
+        });
+      }
+    }
+  }
+  // Stable and derivation-owned rather than readdir's order, so a refusal
+  // prints the same list twice running and two homes interleave by phase.
+  members.sort((a, b) => a.path.localeCompare(b.path));
+  unreadable.sort((a, b) => a.path.localeCompare(b.path));
+  return { members, findings: members.reduce((n, m) => n + m.findings, 0), unreadable };
+}
+
+function cmdDeferredList(dir, opts) {
+  let wantPhase = null;
+  if ('phase' in opts) {
+    const parsed = requirePhaseArg(opts.phase);
+    if (!parsed.ok) {
+      return fail('bad-args', 'deferred list --phase needs a phase number (N or N.M)');
+    }
+    // The caller's OWN spelling, the way every other phase-addressed read in
+    // this file works: the value is a directory component before it is
+    // anything arithmetic, and `String(Number('08'))` names a different phase.
+    wantPhase = parsed.raw;
+  }
+  if (!existsSync(dir)) return fail('no-planning-dir', `${dir} not found`, '/cad-new-project');
+
+  const q = readQueue(dir, wantPhase);
+  const answer = {
+    ...(wantPhase !== null ? { phase: wantPhase } : {}),
+    members: q.members,
+    findings: q.findings,
+    unreadable: q.unreadable,
+  };
+  if (q.unreadable.length) {
+    // ok:false, carrying the counts anyway. The question this seam answers is
+    // "is anything still queued", and it could not answer it - so it says so
+    // rather than handing a refusal surface a number that is only a floor.
+    return emit({
+      ok: false,
+      reason: 'unprovable-queue',
+      detail: `${q.unreadable.length} path(s) under ${dir} could not be read, so the queue `
+        + `cannot be proven empty: ${q.unreadable.map((u) => u.path).join(', ')}`,
+      hint: 'make them readable and re-run - an unreadable queue refuses a land exactly as a member does',
+      ...answer,
+    });
+  }
+  return ok(answer);
+}
+
+// ---------------------------------------------------------------------------
 // renumber - phase insert/remove mechanics. Structured edits (Phase tokens,
 // phases/K/ paths, dirs, cursor) are automated; lowercase prose refs are
 // reported for the model to repair with judgment. --dry-run computes the full
@@ -6299,7 +6486,8 @@ const COMMANDS = {
   // rather than the single-operation `adjudication` one.
   deferred: (dir, sub, opts) => {
     if (sub === 'record') return cmdDeferredRecord(dir, opts);
-    return fail('usage', 'deferred record');
+    if (sub === 'list') return cmdDeferredList(dir, opts);
+    return fail('usage', 'deferred record|list');
   },
   // `--file` overrides `<dir>/CAPTURE.md` for `/cad-capture --cadence`'s global
   // queue, which sits beside the global config layer and not in any `.planning`.

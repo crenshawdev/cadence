@@ -14,7 +14,7 @@
 // takes, for the same reason: these cases need no repository and no subprocess.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildQueue, queueName } from './lib/deferred-queue.mjs';
+import { buildQueue, isQueueName, queueIdentity, queueName } from './lib/deferred-queue.mjs';
 import { buildEntries, recordName, RAISED_SEVERITIES } from './lib/adjudication-record.mjs';
 
 /** A finding as a reviewer returns one. */
@@ -133,6 +133,99 @@ test('the two seams give the SAME sentence for the same malformed finding', () =
   assert.equal(built.detail, `voices[0].returned.findings[0]${rule}`);
 });
 
+/** A queue member as `deferred record` writes one. */
+const member = (over = {}) => ({
+  phase: '2',
+  trigger: 'diff',
+  discriminator: 'plan-1',
+  round: 1,
+  base: 'abc1234',
+  head: 'HEAD',
+  base_id: 'a'.repeat(40),
+  head_id: 'b'.repeat(40),
+  findings: [finding()],
+  ...over,
+});
+
+test('isQueueName selects a member filename and nothing that merely sits beside one', () => {
+  for (const yes of ['DEFERRED-diff-plan-1.json', 'DEFERRED-plan-cad-plan-9d10919.json',
+    'DEFERRED-diff-plan-1-r2.json']) {
+    assert.equal(isQueueName(yes), true, yes);
+  }
+  for (const no of ['ADJUDICATION-diff-plan-1.json', 'REVIEW-diff-plan-1.md',
+    'DEFERRED-.json', 'DEFERRED-diff-plan-1.json.bak', 'deferred-diff-plan-1.json',
+    'SUMMARY.md', '', 'DEFERRED-diff-plan-1', 42, null, undefined]) {
+    assert.equal(isQueueName(no), false, JSON.stringify(no));
+  }
+});
+
+test('queueIdentity answers the fire a member belongs to, and COUNTS its findings', () => {
+  // The count and never the bodies: a refusal and a progress line print the
+  // number, and a triage reads the bodies out of the file this names.
+  const r = queueIdentity('DEFERRED-diff-plan-1.json', member());
+  assert.deepEqual(r, {
+    ok: true, detail: '', phase: '2', trigger: 'diff', discriminator: 'plan-1',
+    round: 1, findings: 1,
+  });
+  const rearm = queueIdentity('DEFERRED-diff-plan-1-r2.json',
+    member({ round: 2, findings: [finding(), finding()] }));
+  assert.equal(rearm.ok, true, rearm.detail);
+  assert.equal(rearm.round, 2);
+  assert.equal(rearm.findings, 2);
+});
+
+test('a member whose fields spell ANOTHER filename is refused, never adopted', () => {
+  // The rail that keeps the supersession test honest. The caller resolves the
+  // superseding `ADJUDICATION` name from these FIELDS, so a member filed under
+  // one fire's name while claiming another's would be cleared by an
+  // adjudication it has nothing to do with - the queue emptying itself
+  // silently, which is the one failure a land refusal cannot survive.
+  const r = queueIdentity('DEFERRED-plan-plan-1.json', member());
+  assert.equal(r.ok, false);
+  assert.equal(r.detail,
+    'queue member is filed as DEFERRED-plan-plan-1.json but its own fields spell '
+    + 'DEFERRED-diff-plan-1.json');
+  // A dropped round suffix is the same defect one field over: round 2 filed as
+  // round 1 would be settled by round 1's record.
+  const dropped = queueIdentity('DEFERRED-diff-plan-1.json', member({ round: 2 }));
+  assert.equal(dropped.ok, false);
+  assert.match(dropped.detail, /spell DEFERRED-diff-plan-1-r2\.json$/);
+});
+
+test('every field the identity is built from is refused when it cannot bear one', () => {
+  const cases = [
+    ['not an object', 'queue member is not a JSON object'],
+    [null, 'queue member is not a JSON object'],
+    [[], 'queue member is not a JSON object'],
+    [member({ phase: '' }), 'queue member .phase must be a non-blank string'],
+    [member({ phase: 2 }), 'queue member .phase must be a non-blank string'],
+    [member({ trigger: null }), 'queue member .trigger must be a non-blank string'],
+    [member({ discriminator: '  ' }), 'queue member .discriminator must be a non-blank string'],
+    [member({ round: 0 }), 'queue member .round must be an integer of at least 1'],
+    [member({ round: 1.5 }), 'queue member .round must be an integer of at least 1'],
+    [member({ round: '1' }), 'queue member .round must be an integer of at least 1'],
+    [member({ findings: null }), 'queue member .findings must be an array'],
+    [member({ findings: { 0: finding() } }), 'queue member .findings must be an array'],
+  ];
+  for (const [bad, detail] of cases) {
+    const r = queueIdentity('DEFERRED-diff-plan-1.json', bad);
+    assert.equal(r.ok, false, JSON.stringify(bad));
+    assert.equal(r.detail, detail);
+    assert.equal(r.findings, 0, 'a refused member must not report a count anyway');
+  }
+});
+
+test('the finding BODIES are not re-validated on the way out', () => {
+  // Deliberate, and stated rather than discovered: the bodies went through
+  // `findingIssue` at the write face, and re-running it here would let a later
+  // tightening of that shape block every land over a member already on disk,
+  // with no route to clear it but a hand edit.
+  const r = queueIdentity('DEFERRED-diff-plan-1.json',
+    member({ findings: [{ nope: true }, 'not an object'] }));
+  assert.equal(r.ok, true, r.detail);
+  assert.equal(r.findings, 2);
+});
+
 test('the module emits nothing: not one byte on stdout or stderr', () => {
   // The purity claim its header makes, asserted rather than described. A lib
   // that printed would print from inside a seam whose one JSON line is its
@@ -147,6 +240,9 @@ test('the module emits nothing: not one byte on stdout or stderr', () => {
     buildQueue({ findings: [{ nope: true }] });
     buildQueue(null);
     queueName('diff', 'plan-1', 2);
+    isQueueName('DEFERRED-diff-plan-1.json');
+    queueIdentity('DEFERRED-diff-plan-1.json', member());
+    queueIdentity('nope', null);
   } finally {
     process.stdout.write = outWrite;
     process.stderr.write = errWrite;

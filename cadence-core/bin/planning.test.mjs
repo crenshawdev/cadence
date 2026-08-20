@@ -5777,11 +5777,11 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // requirement does not cover - partial-apply, write-failed, the
   // dispatch-level internal catch, `capture --text-file`'s read failure,
   // `capture-sections`' unreadable-capture and `uat record --fields-file`'s
-  // JSON parse failure - so the pin is by COUNT: ten uses of the idiom,
-  // exactly four of them wrapped. Adding a site moves the first number whether
+  // JSON parse failure - so the pin is by COUNT: eleven uses of the idiom,
+  // exactly five of them wrapped. Adding a site moves the first number whether
   // or not the author remembered the helper.
   //
-  // The four wrapped sites, all git failures on the same EXP-01 rail:
+  // The first four wrapped sites, all git failures on the same EXP-01 rail:
   // `cmdLeaseCheck`'s `no-staged-set` detail; `resolveRange`, where a failing
   // `git rev-parse` quotes back a remote URL that can carry credentials in its
   // userinfo, and whose redacted error is the detail BOTH `risk-check run`
@@ -5791,6 +5791,14 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   // check that could not run. A git failure detail is exactly the string EXP-01
   // covers, so a git call added to this file arrives wrapped or this row goes
   // red - which is how this row answered the tenth site.
+  //
+  // The FIFTH wrapped site is not a git failure: it is `readQueue`'s, shared by
+  // its scandir, lstat and JSON.parse arms. The parse arm is why it is wrapped
+  // at all - a queue member's bytes are what a REVIEW PROVIDER returned, so
+  // V8's parse message quotes text this repository did not author, and that
+  // detail is printed straight at a human by the land refusal. One helper
+  // covers all three arms rather than the parse arm alone, because splitting
+  // them would leave the next arm added there to guess which class it is in.
   //
   // Why `capture --text-file` and `capture-sections` are NOT wrapped: each
   // detail is an `fs` error over a path the CALLER just named, so the only
@@ -5804,10 +5812,10 @@ test('source: planning.mjs\'s no-staged-set detail goes through redactUrl', () =
   const IDIOM = /e && e\.message \? e\.message : String\(e\)/g;
   const WRAPPED = /redactUrl\(e && e\.message \? e\.message : String\(e\)\)/g;
   const src = readFileSync(PLANNING, 'utf8');
-  assert.equal((src.match(IDIOM) || []).length, 10, 'planning.mjs gained or lost a detail site');
-  assert.equal((src.match(WRAPPED) || []).length, 4,
+  assert.equal((src.match(IDIOM) || []).length, 11, 'planning.mjs gained or lost a detail site');
+  assert.equal((src.match(WRAPPED) || []).length, 5,
     'a git-failure detail (no-staged-set, resolveRange, risk-check run\'s diff catch or '
-    + 'groundCitations\' probe) is unredacted');
+    + 'groundCitations\' probe) or readQueue\'s provider-authored parse detail is unredacted');
   assert.match(src, /could not read the staged set: \$\{redactUrl\(/);
 });
 
@@ -7257,4 +7265,161 @@ test('deferred record: an absent phase directory is refused, never minted', () =
   assert.equal(r.reason, 'no-phase-dir');
   assert.equal(existsSync(join(dir, 'phases', '7')), false,
     'the seam records a fire that HAPPENED - a mistyped flag must not mint a phase directory');
+});
+
+// --- deferred list: what is still queued, across both homes (D-01) ----------
+//
+// The membership half of the same module. The grammar - what makes a member's
+// fields agree with its filename - is asserted in deferred-queue.test.mjs;
+// what a filesystem is needed for is asserted here: the supersession test, the
+// two homes, and the refusal to call an unreadable queue an empty one.
+
+/** Run the reader. No cwd requirement: it resolves no git range. */
+function defList(dir, args = []) {
+  let stdout;
+  let code = 0;
+  try {
+    stdout = execFileSync('node', [PLANNING, '--dir', dir, 'deferred', 'list', ...args],
+      { encoding: 'utf8' });
+  } catch (e) { stdout = e.stdout; code = e.status; }
+  return { ...JSON.parse(stdout), _exit: code };
+}
+
+test('deferred list: a member is queued until its ADJUDICATION sibling is beside it', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  const fire = ['--phase', '2', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD'];
+  assert.equal(defRun(repo, dir, [...fire, '--payload', payload]).ok, true);
+
+  const listed = defList(dir);
+  assert.equal(listed.ok, true, JSON.stringify(listed));
+  assert.deepEqual(listed.members, [{
+    phase: '2', trigger: 'diff', discriminator: 'plan-1', round: 1,
+    path: 'phases/2/DEFERRED-diff-plan-1.json', findings: 1,
+  }], 'a member is named by phase, trigger, discriminator and round, with its own count');
+  assert.equal(listed.findings, 1);
+  assert.deepEqual(listed.unreadable, []);
+
+  // MEMBERSHIP IS SUPERSESSION, never absence-of-record (D-01): the record for
+  // the SAME trigger, discriminator and round, beside it.
+  assert.equal(adjRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, adjPayload(), 'adj.json')]).ok,
+    true);
+  const settled = defList(dir);
+  assert.equal(settled.ok, true, JSON.stringify(settled));
+  assert.deepEqual(settled.members, []);
+  assert.equal(settled.findings, 0);
+});
+
+test('deferred list: a round 2 member is superseded by round 2 and by nothing else', () => {
+  // The whole reason the two names share one round rule. A re-arm cleared by
+  // round one's record would drop the finding the re-arm was fired over.
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  const fire = ['--phase', '2', '--trigger', 'diff', '--discriminator', 'plan-1',
+    '--base', base, '--head', 'HEAD'];
+  assert.equal(defRun(repo, dir, [...fire, '--payload', payload]).ok, true);
+  assert.equal(defRun(repo, dir, [...fire, '--payload', payload, '--round', '2']).ok, true);
+  assert.equal(adjRun(repo, dir, [...fire, '--payload', adjPayloadFile(repo, adjPayload(), 'adj.json')]).ok,
+    true);
+
+  const listed = defList(dir);
+  assert.equal(listed.ok, true, JSON.stringify(listed));
+  assert.deepEqual(listed.members.map((m) => m.round), [2],
+    'round one settled; round two is still queued');
+});
+
+test('deferred list: both homes are read, and --phase narrows to one', () => {
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  assert.equal(defRun(repo, dir, ['--phase', '2', '--trigger', 'diff', '--discriminator',
+    'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]).ok, true);
+  // The CARRIED home, where a milestone close moves a queue member before the
+  // prune deletes its phase directory.
+  mkdirSync(join(dir, 'deferred', '3'), { recursive: true });
+  writeFileSync(join(dir, 'deferred', '3', 'DEFERRED-plan-plan-1.json'),
+    `${JSON.stringify({
+      phase: '3', trigger: 'plan', discriminator: 'plan-1', round: 1,
+      findings: [defPayload().findings[0], defPayload().findings[0]],
+    })}\n`);
+
+  const both = defList(dir);
+  assert.equal(both.ok, true, JSON.stringify(both));
+  assert.deepEqual(both.members.map((m) => m.path),
+    ['deferred/3/DEFERRED-plan-plan-1.json', 'phases/2/DEFERRED-diff-plan-1.json']);
+  assert.equal(both.findings, 3, 'the total is summed across homes, not per home');
+
+  const one = defList(dir, ['--phase', '3']);
+  assert.equal(one.phase, '3');
+  assert.deepEqual(one.members.map((m) => m.phase), ['3']);
+  assert.equal(one.findings, 2);
+});
+
+test('deferred list: an unreadable directory refuses instead of reporting an empty queue', {
+  skip:
+    typeof process.getuid === 'function' && process.getuid() === 0
+      ? 'root bypasses mode bits'
+      : false,
+}, () => {
+  // An unprovable queue is not an empty one - the disposition `decideGateHalt`
+  // already states for a findings payload it could not parse. Reporting zero
+  // here is what would let a land publish over a queue it never read.
+  const { dir } = adjRepo();
+  chmodSync(join(dir, 'phases', '2'), 0o000);
+  try {
+    const r = defList(dir);
+    assert.equal(r.ok, false, JSON.stringify(r));
+    assert.equal(r.reason, 'unprovable-queue');
+    assert.deepEqual(r.unreadable.map((u) => u.path), ['phases/2']);
+    assert.match(r.detail, /cannot be proven empty/);
+    assert.equal(r._exit, 1, 'the exit code mirrors ok, so a shell arm can branch on it');
+  } finally {
+    chmodSync(join(dir, 'phases', '2'), 0o755);
+  }
+});
+
+test('deferred list: a member that cannot be read lands on the same refusing list', () => {
+  const { dir } = adjRepo();
+  const pdir = join(dir, 'phases', '2');
+  // Three ways a member stops being provable, and none of them is "nothing
+  // deferred": bytes that do not parse, fields that spell another filename, and
+  // a symlink wearing a member's name.
+  writeFileSync(join(pdir, 'DEFERRED-diff-plan-1.json'), '{not json\n');
+  writeFileSync(join(pdir, 'DEFERRED-plan-plan-2.json'), `${JSON.stringify({
+    phase: '2', trigger: 'diff', discriminator: 'plan-2', round: 1, findings: [],
+  })}\n`);
+  writeFileSync(join(dir, 'elsewhere.json'), `${JSON.stringify({
+    phase: '2', trigger: 'plan', discriminator: 'plan-3', round: 1, findings: [],
+  })}\n`);
+  symlinkSync(join(dir, 'elsewhere.json'), join(pdir, 'DEFERRED-plan-plan-3.json'));
+
+  const r = defList(dir);
+  assert.equal(r.ok, false, JSON.stringify(r));
+  assert.equal(r.reason, 'unprovable-queue');
+  assert.deepEqual(r.unreadable.map((u) => u.path), [
+    'phases/2/DEFERRED-diff-plan-1.json',
+    'phases/2/DEFERRED-plan-plan-2.json',
+    'phases/2/DEFERRED-plan-plan-3.json',
+  ]);
+  assert.match(r.unreadable[1].detail, /its own fields spell DEFERRED-diff-plan-2\.json/,
+    'a member whose fields name another fire would be cleared by that fire s record');
+  assert.match(r.unreadable[2].detail, /not a regular file/);
+  assert.deepEqual(r.members, []);
+});
+
+test('deferred list: an ADJUDICATION symlink does not settle a member', () => {
+  // `recordForFire`s disposition, held on the read side: a symlink is not a
+  // record, and accepting one would let a queue be cleared by a link to
+  // anything at all.
+  const { repo, dir, base } = adjRepo();
+  const payload = adjPayloadFile(repo, defPayload());
+  assert.equal(defRun(repo, dir, ['--phase', '2', '--trigger', 'diff', '--discriminator',
+    'plan-1', '--base', base, '--head', 'HEAD', '--payload', payload]).ok, true);
+  writeFileSync(join(dir, 'anything.json'), '{}\n');
+  symlinkSync(join(dir, 'anything.json'),
+    join(dir, 'phases', '2', 'ADJUDICATION-diff-plan-1.json'));
+
+  const r = defList(dir);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.members.map((m) => m.path), ['phases/2/DEFERRED-diff-plan-1.json']);
 });

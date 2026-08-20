@@ -109,3 +109,78 @@ export function buildQueue(payload) {
   // the record beside it refuses.
   return { ok: true, detail: '', findings };
 }
+
+/**
+ * Is `name` a queue member's filename, whatever fire wrote it?
+ *
+ * A PREFIX/SUFFIX test and never a parse, because
+ * `DEFERRED-<trigger>-<discriminator>` cannot be split back into its two
+ * tokens: both admit `-`, so `DEFERRED-diff-plan-1.json` reads equally as
+ * trigger `diff` with discriminator `plan-1` and as trigger `diff-plan` with
+ * discriminator `1`. A reader that guessed would resolve the wrong
+ * `ADJUDICATION` sibling and report a settled fire as queued, or a queued one
+ * as settled. So the identity comes off the member's OWN fields and
+ * `queueIdentity` below closes the loop by rebuilding this name from them.
+ *
+ * @param {unknown} name one directory-entry name
+ * @returns {boolean}
+ */
+export const isQueueName = (name) => typeof name === 'string'
+  && name.startsWith('DEFERRED-') && name.endsWith('.json')
+  && name.length > 'DEFERRED-.json'.length;
+
+/**
+ * Classify ONE candidate queue file: the name it is filed under, and the value
+ * its bytes parsed to.
+ *
+ * WHY THE NAME IS REBUILT AND COMPARED. This is the only rail that ties a
+ * member's contents to its filename, and the supersession test the caller runs
+ * next is a filename comparison built from these fields. Without the
+ * round-trip a member whose `trigger` said `diff` while its name said
+ * `DEFERRED-plan-plan-1.json` would be cleared by an adjudication of a fire it
+ * does not belong to - the queue silently emptying itself, which is the one
+ * failure a land refusal cannot survive.
+ *
+ * WHY A MALFORMED MEMBER IS NOT A SKIP. The caller reports what this refuses on
+ * its unreadable list and refuses the land over it, exactly as it does for a
+ * member: an unprovable queue is not an empty one. A file wearing this name
+ * that cannot be read is evidence a fire was deferred, not evidence it was not.
+ *
+ * The findings are COUNTED here and their bodies are not returned. The count is
+ * what a refusal and a progress line print; the bodies are what a triage reads
+ * out of the file itself, and carrying them through every reader would put
+ * reviewer text on a path that has no file transport (RES-03/TRN-01).
+ *
+ * @param {unknown} name the directory-entry name the value was read from
+ * @param {unknown} parsed the file's parsed JSON
+ * @returns {{ok: boolean, detail: string, phase: string, trigger: string,
+ *            discriminator: string, round: number, findings: number}}
+ */
+export function queueIdentity(name, parsed) {
+  const no = (/** @type {string} */ detail) => ({
+    ok: false, detail, phase: '', trigger: '', discriminator: '', round: 0, findings: 0,
+  });
+  if (!isPlainObject(parsed)) return no('queue member is not a JSON object');
+  const { phase, trigger, discriminator, round, findings } = parsed;
+  for (const [k, v] of [['phase', phase], ['trigger', trigger], ['discriminator', discriminator]]) {
+    if (typeof v !== 'string' || v.trim() === '') {
+      return no(`queue member .${k} must be a non-blank string`);
+    }
+  }
+  // The same bound `fireIdentity` applies at the write face. A round below 1 or
+  // a fractional one names a file `queueName` never mints, so the round-trip
+  // below would refuse it anyway - this answers in the field's own words.
+  if (!Number.isSafeInteger(round) || round < 1) {
+    return no('queue member .round must be an integer of at least 1');
+  }
+  // The bodies are NOT re-validated through `findingIssue` here: they went
+  // through it at the write face, and a member that failed a later tightening
+  // of that shape would block every land with no way to clear it but hand-edit.
+  // An array is what the count needs, and the count is what this answers.
+  if (!Array.isArray(findings)) return no('queue member .findings must be an array');
+  const spelled = queueName(trigger, discriminator, round);
+  if (spelled !== name) {
+    return no(`queue member is filed as ${name} but its own fields spell ${spelled}`);
+  }
+  return { ok: true, detail: '', phase, trigger, discriminator, round, findings: findings.length };
+}

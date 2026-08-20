@@ -686,6 +686,16 @@ export const CONTRACTS = {
       '--payload': { required: true, type: 'string', value: 'refuse', bare: 'refuse' },
       '--round': { required: false, type: 'int', value: 'refuse', bare: 'refuse' },
     },
+    // THE QUEUE AS A WHOLE: every member with no `ADJUDICATION` sibling, across
+    // both homes. `--phase` is OPTIONAL here and required on every sibling row
+    // above, and the asymmetry is the point - the writers name ONE fire, while
+    // the reader answers the question `/cad-land` asks, which is about the tree
+    // and not about a phase. Absent means the whole tree; present narrows to
+    // one phase, and it takes the `phase` type its siblings take so `--phase 2`
+    // and `--phase 2.1` address the directory the caller spelled.
+    'deferred list': {
+      '--phase': { required: false, type: 'phase', value: 'refuse', bare: 'refuse' },
+    },
     // `--detail-file` is `--detail`'s path transport, for a detail the CALLER
     // derived: the inline form puts that text in a double-quoted shell word,
     // where `$(...)` and a backtick execute before Node starts. Additive - the
