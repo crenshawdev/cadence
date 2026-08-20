@@ -340,7 +340,7 @@ actually ran>` - to a scratch file and pass its path; the voice list is composed
 from what actually ran (caller-derived text - references/conventions.md):
 
 ```
-node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --detail-file <path>
+node "${CLAUDE_PLUGIN_ROOT}/cadence-core/bin/planning.mjs" trace append --phase <N> --family outcome --event adjudication --trigger <trigger> --plan <k> --base <base> --sha <head> --raised <findings the reviewers raised before adjudication> --survivors <n> --downgraded <n> --refuted <n> [--round <round>] --detail-file <path>
 ```
 
 Then report `<n> survivors of <m> raised` to the user at this step - the line
@@ -363,7 +363,16 @@ leaves a matched range reading as never fired.
 The RAISED count travels on the `--raised` FLAG and never inside `--detail`: a
 figure parsed back out of that free-text slot would be exactly as trustworthy
 as the voice-list substitution the slot is already condemned for, so do not
-helpfully fold it back in. The TRIGGER travels the same way, on `--trigger`,
+helpfully fold it back in. The three SETTLED counts travel the same way, on
+`--survivors`, `--downgraded` and `--refuted`, and they are the figures the
+record seam DERIVED and returned on its envelope - never a number you counted
+by hand off the survivor list, and never folded into `--detail` either. The
+seam recounts the record's rulings against them and REFUSES a receipt that
+disagrees, which is what makes the survivor count recomputable instead of
+asserted. `--round <round>` is omitted on an ordinary fire and carries the
+round on a re-armed one, because that is the record the recount has to read:
+without it a round-two settle is checked against round one's stale rulings and
+passes whenever the two counts happen to coincide. The TRIGGER travels the same way, on `--trigger`,
 and `--plan <k>` rides a per-plan fire: `risk-check status` joins a matched
 range to its receipt on those two structured fields and never on the detail
 (`references/triage-gate.md` states the rule at all four settle points).
