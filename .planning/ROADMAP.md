@@ -34,6 +34,7 @@ The prune left the Overview describing `v3.5.4`; it now describes this cycle.
 ## Phases
 
 - [ ] **Phase 1: The re-run that overwrites its own evidence** - `/cad-execute` refuses a phase that already executed, and a plan's per-task report becomes run-scoped so a second run cannot destroy the first run's record
+- [ ] **Phase 2: The adjudication record nobody can recount** - a gate's per-finding rulings become an audit-grade `adjudication.json` beside the report, so survivor counts are recomputable and a refutation can be checked against the code it refuted
 
 ## Phase Details
 
@@ -91,3 +92,78 @@ surface under a weight budget, so the shorter spelling is the cheaper one.
    empty `problems` array, with `cadence-core/bin/weight-budgets.json` re-pinned
    in the same commit as the prose edits.
 6. `/cad-report <N>` on a phase carrying a rotated report lists both reports.
+
+### Phase 2: The adjudication record nobody can recount
+**Goal:** An adjudication outcome stops being a sentence someone wrote. Each
+gate fire writes one record per finding raised - the raising voice, the claim
+and failure scenario VERBATIM, the base and head SHAs, and a ruling - so the
+survivor count is derived by counting rulings instead of asserted in prose, and
+a refutation can be audited by checking out the head SHA and opening the cited
+file:line.
+**Depends on:** Nothing
+**Requirements:** (seeded at /cad-context)
+
+Cadence's assurance claim is self-attested: it verifies its own mechanics with
+its own mechanics. The evidence that would answer that already exists from
+dogfooding, but in three inconsistent shapes, and the load-bearing one is prose.
+`verifier-findings.json` is genuinely audit-grade - per-truth records whose
+evidence names real commands and real numbers, which an auditor can rerun. That
+is the shape to copy. `FINDINGS.json` is counters plus the entries the merge
+discarded, so it carries no bodies for the findings that were KEPT. And the
+adjudication outcome - the thing most worth proving - survives only as the
+`detail` string on a trace event: "risk_surface plan-2: 6 survivors of 10 (4
+downgraded to open items)". Nothing recounts it.
+
+The sharpest case is a `gate_pass` where `openai/gpt-5.4-mini` returned a high
+severity claiming a `restore()` had "no lock or revalidation", and it did not
+survive grounding. A reviewer asserting something false and the machinery
+catching it is the single best artifact Cadence has for its own "controls are
+fallible machinery" claim - and it survives as a paragraph. The finding's file,
+line and failure scenario were never preserved, so nobody can open the code and
+judge the refutation. Cadence summarized its own gate instead of recording it,
+which is the exact failure mode Cadence exists to prevent. The format is already
+drifting between phases, too: a dogfooding phase 4 carries neither
+`FINDINGS.json` nor `verifier-findings.json`, only `reports/*.md`.
+
+The record is one `adjudication.json` per gate fire, written beside the report,
+one entry per finding: the voice and model that raised it and the severity as
+raised; `file`, `line`, the claim VERBATIM and the failure scenario VERBATIM -
+never paraphrased, because the paraphrase is the tampering surface; `base_id`
+and `head_id` as full SHAs (`risk_check` events already carry these, adjudication
+events do not); and a `ruling` of `survived` | `downgraded` | `refuted`, where a
+refutation carries the grounding counter-evidence and the code that contradicts
+the claim, and a survivor carries its fix commit SHA. Chain of custody is
+already free: `.planning/` is committed alongside the code it judges, so nothing
+can be backdated.
+
+The knock-on is free too. `/cad-report` already renders "what the gates caught,
+what got refuted" from `trace.jsonl`, and today it narrates over prose it cannot
+check. Fixing the record fixes the report.
+
+NOT in scope: backfilling. Earlier phases kept counters rather than bodies, and
+the structured data was never written for the rest - there is nothing faithful
+to reconstruct from. This takes effect from the next gate fire forward, and a
+phase with no `adjudication.json` must READ as unrecorded rather than be
+synthesized into one.
+
+**Success Criteria:**
+
+1. A gate fire writes `adjudication.json` beside that gate's report, holding one
+   entry per finding RAISED (not only per survivor), and an entry carries the
+   raising voice, the model, and the severity as raised.
+2. Each entry carries `file`, `line`, the claim and the failure scenario as
+   VERBATIM strings, plus `base_id` and `head_id` as full 40-character SHAs;
+   mutating a stored claim to a paraphrase is detectable against the reviewer's
+   own returned text.
+3. Each entry carries `ruling` of exactly `survived`, `downgraded` or `refuted`;
+   a `refuted` entry carries counter-evidence naming the contradicting code, and
+   a `survived` entry carries its fix commit SHA.
+4. Survivor and downgrade counts are DERIVED: recomputing them by counting
+   rulings reproduces the number in the gate's trace `detail`, and changing one
+   entry's ruling changes the recomputed count.
+5. An auditor path is mechanical end to end: `git checkout <head_id>`, open
+   `file:line`, read the verbatim claim. Demonstrated once on a real fire.
+6. `/cad-report <N>` renders the gate section from `adjudication.json` when one
+   exists, and reports a fire with no record as unrecorded - never narrating a
+   count it cannot recompute, and never synthesizing entries for phases predating
+   the format.
